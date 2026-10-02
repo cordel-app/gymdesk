@@ -1243,8 +1243,17 @@ meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('tra
 });
 
 /**
- * #55: log completion of a workout block. result_type is read server-side
- * from the block's own configuration — never trusted from the client.
+ * #55: log completion of a workout block.
+ *
+ * #1009: there is no result *type* here. Migration 074 (#154) moved it from the
+ * block down to the exercise instance, so this handler's pre-insert SELECT —
+ * which read `wb.result_type` to snapshot it — answered `Unknown column
+ * 'wb.result_type' in 'field list'` and every member's "mark done" was a 500.
+ * The SELECT survives as what it always also was: the ownership probe behind
+ * the 403 below. Migration 209 dropped `workout_block_logs.result_type` rather
+ * than re-vocabularying it, because nothing read it (see that migration).
+ * `result_value` stays free text the member typed for the block; typed,
+ * per-set results are the exercise instance's, in `exercise_logs`.
  */
 meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
@@ -1256,7 +1265,7 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows: blockRows } = await db.query(
-      `SELECT wb.result_type FROM workout_blocks wb
+      `SELECT 1 FROM workout_blocks wb
        JOIN workouts w ON w.id = wb.workout_id
        JOIN training_plans tp ON tp.id = w.training_plan_id
        WHERE wb.id = ? AND wb.gym_id = ? AND tp.member_id = ? AND wb.deleted_at IS NULL`,
@@ -1265,10 +1274,10 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
     if (blockRows.length === 0) return res.status(403).json({ error: 'You can only log against your own training plan.' });
 
     const row = await insertAndFetch(
-      `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date, started_at, finished_at, result_type, result_value, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date, started_at, finished_at, result_value, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, memberId, workout_block_id, logged_date, started_at ?? null, finished_at ?? null,
-       blockRows[0].result_type, result_value ?? null, notes ?? null],
+       result_value ?? null, notes ?? null],
       'SELECT * FROM workout_block_logs WHERE id = ?',
       (id) => [id],
     );

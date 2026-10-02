@@ -18,7 +18,7 @@ import {
  * An exercise's name is the only field a member ever reads in a workout, and it
  * existed in one language. The shape is the one `CLAUDE.md` pins for translated
  * *data* and #643 built for the Nutrition Library: one row per
- * `(exercise_id, locale)` in `exercise_translations` (migration 208), with
+ * `(exercise_id, locale)` in `exercise_translations` (migration 210), with
  * `exercises.name` staying the base (English) value, the fallback for a locale
  * with no row, and the value an edit form submits back.
  *
@@ -35,7 +35,7 @@ export const EXERCISE_TRANSLATIONS: TranslatedNameConfig = {
   table: 'exercise_translations',
   entityColumn: 'exercise_id',
   subqueryAlias: 'ext',
-  // `exercises.name` is VARCHAR(200) (migration 023), and migration 208 mirrors
+  // `exercises.name` is VARCHAR(200) (migration 023), and migration 210 mirrors
   // it: a translation that would not fit the base column is a 400, not a silent
   // truncation.
   maxNameLength: 200,

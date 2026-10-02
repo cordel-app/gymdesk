@@ -2,7 +2,11 @@
 
 import React from 'react';
 import { useTranslations } from 'next-intl';
-import { btnSmall, primaryBtnSmall } from '@/components/ui';
+import { primaryBtnSmall } from '@/components/ui';
+// #968: the form's own actions wear the platform's chrome — the left-aligned
+// inline row, the themed primary and the neutral secondary — rather than a
+// right-aligned pair with a grey Cancel of this form's own.
+import { formErrorStyle, inlineActionsRowStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { localeLabel } from '@/lib/localeLabels';
 import {
   EXERCISE_STATUSES,
@@ -11,6 +15,18 @@ import {
   type ResultTypeRow,
 } from './exerciseForm';
 import type { ExerciseEditorState } from './useExerciseEditorState';
+// #965: the field chrome is shared with `ExerciseReadOnlyView`, so the Edit view
+// and the read-only expanded view cannot be laid out differently.
+import {
+  exerciseFieldGridStyle,
+  exerciseFieldLabelStyle,
+  exerciseFieldWideStyle,
+  exerciseMediaGridStyle,
+  exerciseOptionRowStyle,
+  exerciseResultTypeGridStyle,
+  exerciseSectionLabelStyle,
+  exerciseSubSectionStyle,
+} from './exerciseFieldChrome';
 
 /**
  * The languages an exercise name is entered in (#967): the base locale
@@ -112,14 +128,14 @@ export function ExerciseEditor({
   return (
     <>
       <p style={sectionLabelSt}>{t('section_general')}</p>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+      <div style={exerciseFieldGridStyle}>
         {/* #967 §3: NAME is one input per supported language. The base locale's
             is the exercise's own `name` — required, uniqueness-checked, and the
             value every other locale falls back to — and each translatable
             locale's is optional, so an exercise with one name stays legal (§5).
             The labels come from the API's locale list, never from a language
             list declared here. */}
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div style={exerciseFieldWideStyle}>
           <label htmlFor={id('name')} style={inlineLabelSt}>
             {translatableLocales.length > 0 && nameLocales
               ? `${t('label_name')} — ${localeName(nameLocales.base)} *`
@@ -128,7 +144,7 @@ export function ExerciseEditor({
           <input id={id('name')} ref={nameRef} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inlineInputSt} />
         </div>
         {translatableLocales.map((loc) => (
-          <div key={loc} style={{ gridColumn: '1 / -1' }}>
+          <div key={loc} style={exerciseFieldWideStyle}>
             <label htmlFor={id(`name-${loc}`)} style={inlineLabelSt}>
               {`${t('label_name')} — ${localeName(loc)}`}
             </label>
@@ -141,11 +157,11 @@ export function ExerciseEditor({
           </div>
         ))}
         {translatableLocales.length > 0 && (
-          <p style={{ gridColumn: '1 / -1', margin: '-6px 0 12px', fontSize: 12, color: '#888' }}>
+          <p style={{ ...exerciseFieldWideStyle, margin: '-6px 0 12px', fontSize: 12, color: '#888' }}>
             {t('name_translations_hint')}
           </p>
         )}
-        <div style={{ gridColumn: '1 / -1' }}>
+        <div style={exerciseFieldWideStyle}>
           <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
           <input id={id('description')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={inlineInputSt} />
         </div>
@@ -159,7 +175,7 @@ export function ExerciseEditor({
 
       <div style={subSectionSt}>
         <p style={sectionLabelSt}>{t('section_configuration')}</p>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+        <div style={exerciseFieldGridStyle}>
           <div>
             <label htmlFor={id('min_reps')} style={inlineLabelSt}>{t('label_min_reps_default')}</label>
             <input id={id('min_reps')} type="number" min="0" value={form.min_reps_default} onChange={(e) => setForm({ ...form, min_reps_default: e.target.value })} style={inlineInputSt} />
@@ -176,7 +192,7 @@ export function ExerciseEditor({
             <label htmlFor={id('rest')} style={inlineLabelSt}>{t('label_rest_default_seconds')}</label>
             <input id={id('rest')} type="number" min="0" value={form.rest_default_seconds} onChange={(e) => setForm({ ...form, rest_default_seconds: e.target.value })} style={inlineInputSt} />
           </div>
-          <div style={{ gridColumn: '1 / -1' }}>
+          <div style={exerciseFieldWideStyle}>
             <label htmlFor={id('notes')} style={inlineLabelSt}>{t('label_notes_default')}</label>
             <input id={id('notes')} value={form.notes_default} onChange={(e) => setForm({ ...form, notes_default: e.target.value })} style={inlineInputSt} />
           </div>
@@ -242,9 +258,14 @@ export function ExerciseEditor({
         {media}
       </div>
 
-      {state.error && <p style={{ margin: '8px 0 0', fontSize: 13, color: '#c0392b' }}>{state.error}</p>}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-        <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
+      {state.error && <p style={formErrorStyle}>{state.error}</p>}
+      {/* #968: left-aligned, at the form's own content margin, in the order and
+          with the styles every other inline section editor in the app uses —
+          `secondaryBtnSmall` for Cancel, `primaryBtnSmall()` for Save. Nothing
+          here spells a colour, so a gym theming Buttons → Primary Button moves
+          Save Changes on both Exercise screens at once. */}
+      <div style={inlineActionsRowStyle}>
+        <button onClick={onCancel} style={secondaryBtnSmall}>{t('cancel')}</button>
         <button onClick={onSave} disabled={state.saving} style={primaryBtnSmall()}>
           {state.saving ? t('saving') : primaryLabel}
         </button>
@@ -282,14 +303,15 @@ export function ExerciseMediaPair({ image, video }: { image: React.ReactNode; vi
 //
 // The editor's own, so both screens are laid out by the same values (AC2).
 
-const inlineLabelSt: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' };
+// The label, the section heading, the grids and the hairline all come from
+// `exerciseFieldChrome.ts` now (#965), so the read-only view renders the same
+// five sections at the same sizes. What stays here is the two **control** boxes,
+// which only a form has.
+const inlineLabelSt = exerciseFieldLabelStyle;
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
 const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };
-const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
-// #805 §7: the Allowed Result Types grid — columns that reflow with the card
-// width, one comfortable click target per option.
-const resultTypeGridSt: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: '4px 16px' };
-const checkboxRowSt: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer', padding: '4px 0' };
-// #805 §10/§18: Image and Video side by side while both fit, stacked below that.
-const mediaGridSt: React.CSSProperties = { display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 24, alignItems: 'start' };
-const sectionLabelSt: React.CSSProperties = { margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' };
+const subSectionSt = exerciseSubSectionStyle;
+const resultTypeGridSt = exerciseResultTypeGridStyle;
+const checkboxRowSt: React.CSSProperties = { ...exerciseOptionRowStyle, cursor: 'pointer' };
+const mediaGridSt = exerciseMediaGridStyle;
+const sectionLabelSt = exerciseSectionLabelStyle;

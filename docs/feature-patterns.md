@@ -66,7 +66,7 @@ All API errors must return JSON in this shape — never HTML, never a raw string
 - Every route that does a DB write must wrap the query in `try/catch` and forward unexpected errors to Express via `next(err)`.
 - Catch MySQL duplicate-key errors (`err.code === 'ER_DUP_ENTRY'`, errno 1062) explicitly and return 409 before calling `next(err)`.
 - MySQL has no `RETURNING`: insert first, then `SELECT` the row via the `insertId` that `db.query` returns.
-- A global error handler in `index.ts` catches anything that falls through and returns `{ "error": "Internal server error" }` with status 500.
+- A global error handler in `app.ts` catches anything that falls through and returns `{ "error": "Internal server error" }` with status 500. **Since #966 that is literally true**: it used to forward `err.message`, so a mysql2 failure answered `Unknown column 'b.result_type' in 'field list'` to the browser. `api/src/domain/httpErrorResponse.ts` is the one place that decides it — an error carrying an explicit HTTP `status` keeps its message, anything else gets the generic 500 — so a route that needs a specific message for a specific failure **gives the error a status** (`throw Object.assign(new Error('…'), { status: 409 })`) or answers in the route; it must never rely on the handler forwarding a driver's words.
 
 Use the shared helpers in `api/src/infra/db-helpers.ts`:
 
@@ -118,6 +118,45 @@ try {
 ```
 
 ---
+
+## A lazily loaded expansion needs three states, not two (#966)
+
+An expandable list row that fetches its own detail on first expand has three
+outcomes, and a body written as `loading ? spinner : <Detail/>` can only render
+two of them — so a failed fetch renders the spinner for ever. That is how a
+Training Plan Template whose hierarchy request 500'd sat on `Loading…`
+indefinitely, with the only report a toast that had already faded.
+
+Keep the failure, per row, beside the cache:
+
+```tsx
+const [details, setDetails] = useState<Record<number, Detail>>({});
+const [detailLoading, setDetailLoading] = useState<Set<number>>(new Set());
+const [detailError, setDetailError] = useState<Record<number, string>>({});
+
+async function loadDetail(id: number, opts: { retry?: boolean } = {}) {
+  if (detailLoading.has(id)) return;
+  if (details[id] && !opts.retry) return;   // the retry has to get past the cache guard
+  setDetailError((prev) => { const next = { ...prev }; delete next[id]; return next; });
+  // …fetch, then setDetails on success and setDetailError in the catch
+}
+```
+
+…and render the three cases in order — the detail, then loading, then the
+error:
+
+```tsx
+{detail ? <Detail … /> : loading || !error ? <p>{t('loading')}</p> : (
+  <div><p style={errorStyle}>{t('detail_error')}</p>
+       <button onClick={onRetry}>{t('retry')}</button></div>
+)}
+```
+
+Two rules come with it. The retry must be able to bypass the "already cached"
+early return, or the button does nothing on a row that half-loaded; and the
+error line is an **application-level** sentence of the page's own
+(`<entity>.hierarchy_error`, in en/es/ca), not the API's message — what the API
+is allowed to say is the Standard Error Response rule above.
 
 ## Deployment
 
@@ -680,8 +719,24 @@ a Base Exercises page hanging off them would break when the superadmin's
 selected gym had exercises switched off (`GET /platform/exercises/lookups`,
 registered before `/:id` so Express does not read `lookups` as an id).
 
-Reference implementation: `components/exercises/` + both pages. Regression test:
-`apps/admin/src/test/exercise-editor-unification.test.ts`.
+**The read-only half moves up with it (#965).** A shared editor only fixes half
+the drift: the two pages still rendered two different *read-only* views of the
+same entity — the gym's a list of whichever sections happened to be non-empty,
+the platform's a flat `Label: Value` table — and neither matched the form. So the
+expanded body is the editor's **counterpart**, `ExerciseReadOnlyView`, rendering
+the same sections from the same declaration with the values in the box each input
+occupies (`formValueStyle`, #929), and the chrome both halves wear is a third
+module beside them (`exerciseFieldChrome.ts`) so neither can be restyled alone.
+Keep it free of controls — an allowed option is a span with a tick, never a
+disabled checkbox — and hand it anything with state as a node the page builds, the
+way the editor already takes its `media`: `ExerciseMediaPreview` owns the one
+control a read-only card may have (the poster doubles as the play button, a read),
+and *which* exercise is playing stays the page's, so a second clip cannot start
+over the first.
+
+Reference implementation: `components/exercises/` + both pages. Regression tests:
+`apps/admin/src/test/exercise-editor-unification.test.ts` and
+`exercise-read-only-expansion.test.ts`.
 
 ### When the card's sections have their own editors (#816)
 
@@ -1609,7 +1664,25 @@ Once the pair exists, a *third* button that needs it must not re-spell it. `apps
 - **Spread it first, keep the state on top.** `{ ...primaryBtnSmall(), opacity: …, cursor: … }` keeps the disabled affordance a button already had; the helper decides colour and geometry, never state.
 - **#954: the rule is now app-wide, and a test enforces it.** Every filled primary action in `apps/admin` derives from the two helpers — 56 call sites across 27 files were converted — so a new `btnStyle('#6c63ff')` or `btnSmall('#6c63ff')` is a regression, not a style choice. `apps/admin/src/test/theme-primary-buttons.test.ts` walks every source under `apps/admin/src` outside `src/test` and fails on either call, on a flat `background: '#6c63ff'`, and on any module but `ui.tsx` naming `--gd-primary-btn` for itself. If you add a page with a Save button, that scan is what tells you.
 - **A button with its own geometry spreads the pair, not a helper.** The two Calendar detail panels' full-width actions are not `btnStyle()` geometry, so they spread `primaryActionColors` exactly where their `background`/`color` pair used to sit — which keeps the trailing `opacity`/`cursor` overrides winning and adds no fourth helper. Reach for the pair only when neither helper's geometry fits.
-- **A file picker is not its form's primary action.** Its Save is. `ImageUploadField`, `ExerciseImageField` and `ExerciseVideoField` keep the colour they had, and the test names all three — so theming them later is a decision someone makes, not a line someone forgets.
+- **A file picker is not its form's primary action.** Its Save is. `ImageUploadField`, `ExerciseImageField` and `ExerciseVideoField` kept the colour they had, and the test names them — so theming them later is a decision someone makes, not a line someone forgets.
+- **#968 is that decision, for the two Exercise pickers.** The Base Exercise form's `Upload Image` / `Upload Video` were the only lilac left in a view whose Save already followed the Theme, so both take `primaryBtnSmall()` now; `ImageUploadField`, which that form does not render, is unchanged and still named by the test. Each picker's position, gating, hidden `<input>` and neutral `Remove` are untouched — only the colour moved.
+- **Which row the Save/Cancel pair sits on is `formChrome.ts`'s call too.** `formActionsRowStyle` is the card-level pair: right-aligned, under its own hairline. `inlineActionsRowStyle` is the section-level and inline-editor pair: left-aligned at the fields' own content margin, no rule above. The one Exercise editor (#806) spelled `{ display: 'flex', gap: 8, justifyContent: 'flex-end' }` and `btnSmall('#888')` for itself, so its actions sat where no other inline editor's did on both Exercise screens at once — #968 moved it onto the shared row and `secondaryBtnSmall`. A new inline form picks a row from that module rather than declaring a justification.
+
+---
+
+## Importing a Third-Party Catalogue (#964)
+
+When a ticket says "import dataset X into catalogue Y", the deliverable is an **operator script over a pure mapping module**, writing into the catalogue that already exists. `api/src/scripts/import-free-exercise-db.ts` + `api/src/domain/freeExerciseDb.ts` is the reference:
+
+- **A script, never a migration and never an endpoint.** A Knex migration must stay deterministic offline SQL, so `npm run db:migrate` may not depend on a network round trip; and a platform catalogue has no gym request to hang a route off and no `tenantCtx` actor to record an audit row with. Add it to `api/package.json` beside `nutrition:base-images`, read the dataset from `--from <file>` / `--url` / an env var / a documented default (never a hardcoded URL in a code path), and support `--dry-run`, `--limit` and `--only`.
+- **Every rule in a pure module, the script only I/O.** Validation, slugs, the field mapping, the match precedence and *what a match does* are exported functions with no database in them, which is what lets the whole import be asserted in a unit test (and dry-run against the real dataset offline) in a repo whose integration tests need MySQL.
+- **Provenance is a column pair, not the display name.** `source` + `source_id` make the run idempotent; matching by name alone is what produces a second copy the first time somebody renames a row. Scope the uniqueness to the rows the import owns with a VIRTUAL generated column plus a UNIQUE index (migration 183's shape) — a plain `UNIQUE (source, source_id)` reaches rows the import never touches, and MySQL's NULL handling will not constrain the ones it does.
+- **Decide deliberately whether a deleted row is in or out of that key.** Keeping deleted rows inside it is what lets the importer see that somebody removed a row *on purpose* and skip it; leaving them out resurrects it on the next run.
+- **Match conservatively, and report instead of merging.** Provenance → stable slug → exact (trimmed, case-folded) name, with the two fallbacks adopting only a row that carries no provenance of its own. A row already claimed by a different source id is a potential duplicate for a human to reconcile, never an automatic merge.
+- **Never overwrite what a user can edit.** An update fills what is empty, keeps the source's own facts in step, and adds to a many-to-many without removing from it. Otherwise the second run undoes every correction the product's own editor made, and "idempotent" becomes "destructive on a schedule".
+- **A value the source has and the model does not is preserved verbatim, not coerced.** Where the ticket names a taxonomy that does not exist, add plain columns for the source's values and map only onto the vocabulary the product really has — then *report* the ambiguity. Inventing a taxonomy to make an import look complete is the expensive mistake; so is dropping the data.
+- **One bad record never ends the run.** One transaction per record, failures collected with their source id, name and problem, a report with the counters the ticket asks for, and a non-zero exit when anything failed so a cron or CI invocation surfaces it. A value that can be *added* (a new muscle key) is a reported note, not a failure.
+- **Filter the grown catalogue server-side.** A few hundred rows become a thousand; the list route gains the query params (multi-select as a comma-separated *or* repeated value), and the inline UI for them can be a separate ticket.
 
 ---
 
@@ -1684,11 +1757,11 @@ moment a pattern either becomes a module or becomes two copies of a `COALESCE`.
   place a locale gets a *label*, resolved before `t()` so an unlabelled tag renders
   `FR` rather than `languages.fr`.
 - **Seed nothing you cannot source.** There is no base-exercise catalogue in the
-  repo to translate, so migration 208 is pure DDL: an existing exercise keeps its
+  repo to translate, so migration 210 is pure DDL: an existing exercise keeps its
   one name, and §9's "do not silently invent translations" is satisfied by doing
   nothing rather than by guessing.
 
-Reference implementation: migration 208 + `api/src/domain/nameTranslations.ts` +
+Reference implementation: migration 210 + `api/src/domain/nameTranslations.ts` +
 `api/src/domain/exerciseTranslations.ts` +
 `apps/admin/src/components/exercises/ExerciseEditor.tsx`. Regression tests:
 `api/src/test/exercise-translations.unit.test.ts` (which also fails if a router
@@ -2029,6 +2102,43 @@ Two rules come with it:
   pins the order, the two `danger` flags and every handler/gate pairing together, so a later
   alignment sweep cannot quietly restore "Details first" or drop a gate while reordering.
 
+
+## A recurring defect class gets a gate, not a fourth point fix (#1009)
+
+When the same kind of defect is found more than twice, one ticket at a time, the
+fix is a test that fails on the **class** — not a third correction of the same
+shape. Migration 074 (#154) dropped six columns, and three separate queries were
+later found still reading one of them (#966's Training Plan Template tree,
+`POST /me/workout-block-logs`, and the Members App's My Training page), each a
+500 or a render-time `TypeError` that no test caught, because nothing asserted
+the **absence** of a dropped column.
+
+`api/src/test/migration-074-dropped-columns.unit.test.ts` is that gate. Four
+properties are what make it worth trusting rather than weakening:
+
+* **The rule is true of the schema, not of a convention.** It forbids
+  `result_type`, `exercise_type`, `distance_value` and `distance_unit` because
+  `information_schema` reports **zero** tables with a column of any of those
+  names. `duration_seconds` is deliberately excluded: 074 dropped it from
+  `workout_template_exercises` only, and three tables still have it, so a
+  name-based rule cannot speak about it. Derive the set from what the schema
+  actually says, and leave out anything the name alone cannot decide.
+* **No per-file exemption** — in particular none for the files that shipped the
+  defect. Comment lines are stripped instead, so a file may document the column
+  it must not read. Only each root's own `test` directory is excluded, because a
+  test asserting absence has to name the thing.
+* **It asserts its own coverage.** A test checks that the two routers and the
+  page are inside the scan, so a refactor that moves a file cannot turn the gate
+  into a silent pass.
+* **It is verified to fail.** Reintroduce each real defect and watch the gate
+  name the exact file before trusting it. A guard nobody has seen fail is a
+  guard nobody should rely on.
+
+Note where it lives: **CI runs `npm test` in `api/` only** — the admin job
+type-checks and builds, so `apps/admin/src/test` and `apps/member/src/test` do
+not run there. A cross-app rule therefore belongs in the API suite, even though
+it scans another workspace; a copy in the app's own suite is documentation for
+local runs, not enforcement.
 
 ## Testing a payment-provider call (#773, #791)
 

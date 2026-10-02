@@ -133,6 +133,12 @@ describe('platform exercises CRUD', () => {
     expect(res.body.gym_id).toBeNull();
     expect(res.body.status).toBe('active');
     expect(res.body.sets_default).toBe(3);
+    // #965 / migration 208: a base exercise's creator is snapshotted at write
+    // time, because the superadmin who wrote it has no `gym_memberships` row for
+    // `created_by` to point at. Nothing has modified it yet.
+    expect(res.body.created_by_name).toBe('Super Admin');
+    expect(res.body.created_by_type).toBe('superadmin');
+    expect(res.body.modified_by_name).toBeNull();
     const muscles: any[] = res.body.muscles ?? [];
     expect(muscles.some((m: any) => m.key === 'chest' && m.role === 'principal')).toBe(true);
     exerciseId = res.body.id;
@@ -190,6 +196,10 @@ describe('platform exercises CRUD', () => {
     expect(res.body.name).toBe(`Platform Exercise Updated ${suffix}`);
     expect(res.body.sets_default).toBe(4);
     expect(res.body.modified_at).not.toBeNull();
+    // #965: the actor pair moves with `modified_at`, never behind it.
+    expect(res.body.modified_by_name).toBe('Super Admin');
+    expect(res.body.modified_by_type).toBe('superadmin');
+    expect(res.body.created_by_name).toBe('Super Admin');
   });
 
   it('PUT /platform/exercises/:id returns 400 for invalid status', async () => {

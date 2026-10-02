@@ -26,7 +26,13 @@ const SRC = join(__dirname, '..');
 const EDITOR = join(SRC, 'components', 'exercises', 'ExerciseEditor.tsx');
 const GYM_PAGE = join(SRC, 'app', '[locale]', 'exercises', 'page.tsx');
 const BASE_PAGE = join(SRC, 'app', '[locale]', 'cordel', 'exercises', 'page.tsx');
-const DETAIL_MODAL = join(SRC, 'app', '[locale]', 'exercises', 'ExerciseDetailModal.tsx');
+// #965 moved the read-only half of the card into one shared component, and
+// `⋮ → Details` with it — which is where the per-language Name rows live: the
+// read-only view *is* the editor with its controls replaced by values, so the
+// editor's one input per language has one row per language beside it, and the
+// Details modal stays the technical metadata alone (#965 §12).
+const READ_ONLY_VIEW = join(SRC, 'components', 'exercises', 'ExerciseReadOnlyView.tsx');
+const DETAIL_MODAL = join(SRC, 'components', 'exercises', 'ExerciseDetailModal.tsx');
 const IMPORT_MODAL = join(SRC, 'app', '[locale]', 'exercises', 'ImportExercisesModal.tsx');
 const NUTRITION_PAGE = join(SRC, 'app', '[locale]', 'cordel', 'nutrition-library', 'page.tsx');
 const LOCALES_DIR = join(SRC, '..', 'locales', 'base');
@@ -40,6 +46,7 @@ const read = (path: string) => stripComments(readFileSync(path, 'utf-8'));
 const editor = read(EDITOR);
 const gymPage = read(GYM_PAGE);
 const basePage = read(BASE_PAGE);
+const readOnlyView = read(READ_ONLY_VIEW);
 const detailModal = read(DETAIL_MODAL);
 const importModal = read(IMPORT_MODAL);
 const nutritionPage = read(NUTRITION_PAGE);
@@ -133,15 +140,22 @@ describe('both pages read the languages from their own API', () => {
 describe('every surface renders the resolved name', () => {
   it('the two lists, the dependency dialog, the Details title and the Import modal', () => {
     expect(gymPage).toContain('ex.display_name ?? ex.name');
-    expect(gymPage).toContain('detailFor.display_name ?? detailFor.name');
+    // The Details modal is shared since #965, so the resolved name is read there
+    // rather than passed in by each page.
+    expect(detailModal).toContain('exerciseName(exercise)');
     expect(gymPage).toContain('depDialog.entity.display_name ?? depDialog.entity.name');
     expect(basePage).toContain('row.display_name ?? row.name');
     expect(importModal).toContain('row.display_name ?? row.name');
   });
 
-  it('Details lists every stored translation — it is the multilingual view (§6)', () => {
-    expect(detailModal).toContain('detail.translations');
-    expect(detailModal).toContain('localeLabel(');
+  it('the expanded card lists every stored translation — the editor read-only (§6)', () => {
+    expect(readOnlyView).toContain('exercise.translations');
+    expect(readOnlyView).toContain('localeLabel(');
+  });
+
+  it('Details stays the technical metadata alone (#965 §12)', () => {
+    expect(detailModal).not.toContain('translations');
+    expect(detailModal).not.toContain('localeLabel(');
   });
 
   it('exerciseName() prefers the resolved field and never renders undefined', () => {

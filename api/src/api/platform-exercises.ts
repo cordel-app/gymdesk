@@ -20,6 +20,8 @@ import {
 } from '../infra/locale';
 import { logger } from '../lib/logger';
 import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
+import { EXERCISE_TYPES } from '../domain/exerciseTypes';
+import { actorSnapshot } from '../domain/nutritionLibrary';
 import {
   EXERCISE_IMAGE_MASTER_MAX_BYTES,
   EXERCISE_IMAGE_MIME,
@@ -61,6 +63,19 @@ import {
 export const platformExercisesRouter = Router();
 
 const SETTABLE_STATUSES = ['active', 'inactive'];
+
+/**
+ * The actor pair to stamp on a write (#965, migration 208).
+ *
+ * Every write on this router is a superadmin's, by `requireSuperadmin`, so the
+ * type is fixed and only the name comes from the request. A base exercise has no
+ * `gym_memberships` row to point `created_by` at — which is why the name is
+ * snapshotted rather than joined, exactly as `platform-nutrition-library.ts` does
+ * for a base food.
+ */
+function platformActor(req: { superadminName?: string | null }) {
+  return actorSnapshot({ name: req.superadminName, isSuperadmin: true });
+}
 
 /**
  * #967: a Base Exercise carries the same two name fields a gym's own does —
@@ -108,6 +123,33 @@ async function nameTaken(name: string, excludeId?: string | number): Promise<boo
 
 /* ── List ─────────────────────────────────────────────────────────────────── */
 
+/**
+ * A repeatable, comma-separated filter value — `?muscle=chest,triceps` and
+ * `?muscle=chest&muscle=triceps` mean the same thing, which is what lets #969's
+ * checkbox groups send either shape.
+ */
+function listParam(value: unknown): string[] | null {
+  const raw = Array.isArray(value) ? value : [value];
+  const values = raw
+    .filter((entry): entry is string => typeof entry === 'string')
+    .flatMap((entry) => entry.split(','))
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  return values.length > 0 ? Array.from(new Set(values)) : null;
+}
+
+/**
+ * #964 §18: the Base Exercises catalogue is ~900 rows after the Free Exercise DB
+ * import, so every filter the list offers is applied **here** rather than in the
+ * browser — the rule `GET /exercises/base` already follows for the Import modal.
+ *
+ * `q` matches the name **or** the slug, and the five metadata filters read the
+ * columns migration 209 added. Muscle filtering is multi-select and comes in
+ * three flavours on purpose: `muscle` matches either role (the checkbox group),
+ * while `primary_muscle` / `secondary_muscle` ask the question the dataset itself
+ * distinguishes. The UI that renders them inline is #969's and the expanded
+ * view's new fields are #965's; this ticket is the data and the query (§20).
+ */
 platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
   const status = req.query.status as string | undefined;
   const q = req.query.q as string | undefined;
@@ -115,12 +157,48 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
   const locale = getRequestLocale(req);
+  const exerciseType = req.query.exercise_type as string | undefined;
+  if (exerciseType && !(EXERCISE_TYPES as readonly string[]).includes(exerciseType)) {
+    return res.status(400).json({ error: `exercise_type must be one of: ${EXERCISE_TYPES.join(', ')}` });
+  }
   const params: any[] = [];
   let sql = `${selectFor(locale)} WHERE e.gym_id IS NULL AND e.status != 'deleted'`;
   if (status) { sql += ' AND e.status = ?'; params.push(status); }
   // #967 §7: matches the base name or any stored translation, and orders by what
-  // the page actually shows — the same rule the gym-facing list follows.
-  if (q) { sql += ` AND ${exerciseNameSearchSql('e')}`; params.push(`%${q}%`, `%${q}%`); }
+  // the page actually shows — the same rule the gym-facing list follows. The
+  // `slug` arm is #964's: a Free Exercise DB row is found by its source handle too.
+  if (q) {
+    sql += ` AND (${exerciseNameSearchSql('e')} OR e.slug LIKE ?)`;
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+  }
+  if (exerciseType) { sql += ' AND e.exercise_type = ?'; params.push(exerciseType); }
+  for (const [column, value] of [
+    ['equipment', req.query.equipment],
+    ['category', req.query.category],
+    ['level', req.query.level],
+    ['mechanic', req.query.mechanic],
+    ['source', req.query.source],
+  ] as const) {
+    const values = listParam(value);
+    if (!values) continue;
+    // The column itself, not `LOWER(e.<column>)`: the table's collation is
+    // `utf8mb4_0900_ai_ci`, so the comparison is already case-insensitive, and
+    // wrapping the column in a function only makes any index on it unusable.
+    sql += ` AND e.${column} IN (${values.map(() => '?').join(', ')})`;
+    params.push(...values);
+  }
+  for (const [role, value] of [
+    [null, req.query.muscle],
+    ['principal', req.query.primary_muscle],
+    ['secondary', req.query.secondary_muscle],
+  ] as const) {
+    const values = listParam(value);
+    if (!values) continue;
+    sql += ` AND EXISTS (SELECT 1 FROM exercise_muscles em WHERE em.exercise_id = e.id
+               AND em.muscle IN (${values.map(() => '?').join(', ')})${role ? ' AND em.role = ?' : ''})`;
+    params.push(...values);
+    if (role) params.push(role);
+  }
   sql += ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
   try {
     const { rows } = await db.query(sql, params);
@@ -197,6 +275,7 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
   // mechanism for both kinds of exercise (§8, §10).
   const { translations, error: translationsError } = parseExerciseTranslations(req.body);
   if (translationsError) return res.status(400).json({ error: translationsError });
+  const actor = platformActor(req);
   try {
     if (await nameTaken(name.trim())) {
       return res.status(409).json({ error: 'A base exercise with this name already exists.' });
@@ -205,11 +284,13 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
           (gym_id, name, description, video_url, image_url,
-           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status)
-         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status,
+           created_by_name, created_by_type)
+         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [name.trim(), description ?? null, video_url ?? null, image_url ?? null,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
-         sets_default ?? null, notes_default ?? null, status ?? 'active'],
+         sets_default ?? null, notes_default ?? null, status ?? 'active',
+         actor.name, actor.type],
       );
       if (muscles) {
         for (const m of muscles) {
@@ -257,6 +338,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
   // clear the catalogue's translations).
   const { translations, error: translationsError } = parseExerciseTranslations(req.body);
   if (translationsError) return res.status(400).json({ error: translationsError });
+  const actor = platformActor(req);
   try {
     const { rows: existing } = await db.query(
       "SELECT id FROM exercises WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
@@ -288,7 +370,10 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           sets_default          = IF(?, ?, sets_default),
           notes_default         = IF(?, ?, notes_default),
           status                = COALESCE(?, status),
-          modified_at           = UTC_TIMESTAMP()
+          modified_at           = UTC_TIMESTAMP(),
+          -- #965: who last changed it, snapshotted beside when (migration 208).
+          modified_by_name      = ?,
+          modified_by_type      = ?
          WHERE id = ? AND gym_id IS NULL AND status != 'deleted'`,
         [
           name?.trim() ?? null,
@@ -303,6 +388,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           'sets_default' in req.body ? 1 : 0, sets_default ?? null,
           'notes_default' in req.body ? 1 : 0, notes_default ?? null,
           status ?? null,
+          actor.name, actor.type,
           id,
         ],
       );
@@ -539,10 +625,15 @@ platformExercisesRouter.post('/:id/image', requireSuperadmin, async (req, res, n
       return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
     }
 
+    const actor = platformActor(req);
+    // #965: a media change is a modification, so the actor pair moves with
+    // `modified_at` — leaving it behind would attribute this upload to whoever
+    // last ran `PUT /:id`, which is worse than the em dash.
     await db.query(
-      `UPDATE exercises SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP()
+      `UPDATE exercises SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(),
+              modified_by_name = ?, modified_by_type = ?
         WHERE id = ? AND gym_id IS NULL`,
-      [imageUrl, thumbnailUrl, exercise.id],
+      [imageUrl, thumbnailUrl, actor.name, actor.type, exercise.id],
     );
 
     // The keys are deterministic, so a replacement normally overwrites the
@@ -582,10 +673,13 @@ platformExercisesRouter.delete('/:id/image', requireSuperadmin, async (req, res,
     const exercise = await loadBaseExerciseForMedia(req, res);
     if (!exercise) return;
 
+    const actor = platformActor(req);
+    // #965: removing media is a modification too — same pair, same reason.
     await db.query(
-      `UPDATE exercises SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP()
+      `UPDATE exercises SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(),
+              modified_by_name = ?, modified_by_type = ?
         WHERE id = ? AND gym_id IS NULL`,
-      [exercise.id],
+      [actor.name, actor.type, exercise.id],
     );
 
     await deleteReplacedBaseExerciseMedia(
@@ -706,10 +800,15 @@ platformExercisesRouter.post('/:id/video', requireSuperadmin, async (req, res, n
       return res.status(502).json({ error: `Failed to upload video: ${details.message}`, details });
     }
 
+    const actor = platformActor(req);
+    // #965: a media change is a modification, so the actor pair moves with
+    // `modified_at` — leaving it behind would attribute this upload to whoever
+    // last ran `PUT /:id`, which is worse than the em dash.
     await db.query(
-      `UPDATE exercises SET video_url = ?, video_thumbnail_url = ?, modified_at = UTC_TIMESTAMP()
+      `UPDATE exercises SET video_url = ?, video_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(),
+              modified_by_name = ?, modified_by_type = ?
         WHERE id = ? AND gym_id IS NULL`,
-      [videoUrl, posterUrl, exercise.id],
+      [videoUrl, posterUrl, actor.name, actor.type, exercise.id],
     );
 
     // The keys are deterministic, so a replacement normally overwrites the
@@ -746,10 +845,13 @@ platformExercisesRouter.delete('/:id/video', requireSuperadmin, async (req, res,
     const exercise = await loadBaseExerciseForMedia(req, res);
     if (!exercise) return;
 
+    const actor = platformActor(req);
+    // #965: removing media is a modification too — same pair, same reason.
     await db.query(
-      `UPDATE exercises SET video_url = NULL, video_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP()
+      `UPDATE exercises SET video_url = NULL, video_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(),
+              modified_by_name = ?, modified_by_type = ?
         WHERE id = ? AND gym_id IS NULL`,
-      [exercise.id],
+      [actor.name, actor.type, exercise.id],
     );
 
     await deleteReplacedBaseExerciseMedia(

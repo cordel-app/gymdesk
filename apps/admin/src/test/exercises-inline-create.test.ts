@@ -31,6 +31,11 @@ const EXERCISES_DIR = join(__dirname, '..', 'app', '[locale]', 'exercises');
 // #806 moved the form body out of the page and into the shared editor both
 // Exercise screens render, so the structural assertions below read it there.
 const EDITOR = join(__dirname, '..', 'components', 'exercises', 'ExerciseEditor.tsx');
+// #965 moved the field chrome one file over again, so the Edit view and the
+// read-only expanded view are laid out by the same values — and the read-only
+// counterpart of the editor is where the expanded card's sections now live.
+const CHROME = join(__dirname, '..', 'components', 'exercises', 'exerciseFieldChrome.ts');
+const READ_ONLY = join(__dirname, '..', 'components', 'exercises', 'ExerciseReadOnlyView.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 function stripComments(src: string): string {
@@ -38,7 +43,8 @@ function stripComments(src: string): string {
 }
 
 const pageSrc = stripComments(readFileSync(join(EXERCISES_DIR, 'page.tsx'), 'utf-8'));
-const detailSrc = stripComments(readFileSync(join(EXERCISES_DIR, 'ExerciseDetailModal.tsx'), 'utf-8'));
+const chromeSrc = stripComments(readFileSync(CHROME, 'utf-8'));
+const readOnlySrc = stripComments(readFileSync(READ_ONLY, 'utf-8'));
 const editorSrc = stripComments(readFileSync(EDITOR, 'utf-8'));
 const hookSrc = stripComments(readFileSync(
   join(__dirname, '..', 'components', 'exercises', 'useExerciseEditorState.ts'), 'utf-8'));
@@ -156,26 +162,33 @@ describe('Exercises: inline creation (#805)', () => {
       expect(resultTypeLabel({ id: 99, name: 'Heart Rate', slug: 'heart_rate' }, translate)).toBe('Heart Rate');
     });
 
-    it('the form, the expanded row and the Details modal all go through the helper', () => {
+    it('both halves of the card go through the helper', () => {
       expect(formSrc).toContain('resultTypeLabel(rt,');
-      expect(slice('function renderViewSection(', 'function renderRow(')).toContain('resultTypeLabel(rt,');
-      expect(detailSrc).toContain('resultTypeLabel(rt,');
-      // The raw catalogue name is never rendered on its own any more.
-      expect(detailSrc).not.toContain('.map((rt) => rt.name)');
+      // #965: the expanded row renders the editor's read-only counterpart, so the
+      // helper is called there rather than in each page — and the Details modal no
+      // longer restates the configuration at all (§12).
+      expect(readOnlySrc).toContain('resultTypeLabel(rt,');
+      // The raw catalogue name is never rendered on its own.
+      expect(readOnlySrc).not.toContain('.map((rt) => rt.name)');
     });
   });
 
   describe('AC5 — the result types have a grid layout', () => {
     it('renders a reflowing column grid rather than a wrapping row', () => {
       expect(editorSrc).toContain('const resultTypeGridSt');
-      expect(editorSrc).toMatch(/resultTypeGridSt[^;]*repeat\(auto-fill, minmax\(180px, 1fr\)\)/);
+      // #965: declared once in the shared chrome, so the read-only view's own
+      // Allowed Result Types grid cannot be a different shape.
+      expect(chromeSrc).toMatch(/exerciseResultTypeGridStyle[^;]*repeat\(auto-fill, minmax\(180px, 1fr\)\)/);
+      expect(editorSrc).toContain('const resultTypeGridSt = exerciseResultTypeGridStyle;');
       expect(formSrc).toContain('style={resultTypeGridSt}');
+      expect(readOnlySrc).toContain('style={exerciseResultTypeGridStyle}');
     });
 
     it('each option is a real checkbox with an aligned label', () => {
       expect(formSrc).toContain('type="checkbox"');
       expect(formSrc).toContain('style={checkboxRowSt}');
-      expect(editorSrc).toMatch(/checkboxRowSt[^;]*alignItems: 'center'/);
+      expect(chromeSrc).toMatch(/exerciseOptionRowStyle[\s\S]*?alignItems: 'center'/);
+      expect(editorSrc).toContain("...exerciseOptionRowStyle, cursor: 'pointer'");
     });
   });
 
@@ -199,7 +212,8 @@ describe('Exercises: inline creation (#805)', () => {
     });
 
     it('the media pair is one responsive grid, Image before Video', () => {
-      expect(editorSrc).toMatch(/mediaGridSt[^;]*repeat\(auto-fit, minmax\(260px, 1fr\)\)/);
+      expect(chromeSrc).toMatch(/exerciseMediaGridStyle[\s\S]*?repeat\(auto-fit, minmax\(260px, 1fr\)\)/);
+      expect(editorSrc).toContain('const mediaGridSt = exerciseMediaGridStyle;');
       const pairSrc = slice('export function ExerciseMediaPair(', 'const inlineLabelSt', editorSrc);
       expect(pairSrc).toContain('style={mediaGridSt}');
       expect(pairSrc.indexOf("t('label_image')")).toBeLessThan(pairSrc.indexOf("t('label_video')"));

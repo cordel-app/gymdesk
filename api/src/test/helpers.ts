@@ -85,12 +85,26 @@ export async function cleanupTestGyms() {
   // #647 stage 3 note: `member_recurring_slots` needs no line of its own —
   // every one of its FKs (gym, member, activity type, professional service,
   // center) is ON DELETE CASCADE, so the members delete below clears it.
+  // #1009: `workout_block_logs.workout_block_id` is ON DELETE RESTRICT (migration
+  // 042), and deleting a member cascades `training_plans` -> `workouts` ->
+  // `workout_blocks`. MySQL does not order the cascades a single DELETE fans out
+  // into, so the block can go while its log still points at it — which fails the
+  // members delete below rather than the gyms one. The log's own `member_id` and
+  // `gym_id` are both CASCADE, so this line is only about getting there first.
+  await db.query(`DELETE FROM workout_block_logs WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM members WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM staff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids).catch(() => {});
   await db.query(`DELETE FROM spaces WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM activity_type_eligible_plans WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM activity_types WHERE gym_id IN (${marks})`, ids);
+  // #966: `tptw_workout_template_id` is the one FK into `workout_templates` that
+  // is ON DELETE RESTRICT (migration 038), so a gym's plan-template → workout-
+  // template links have to go before the `workout_templates` delete below. The
+  // `training_plan_templates` line beside it is cascade-covered, listed for the
+  // same readable-order reason the benefit tables further down are.
+  await db.query(`DELETE FROM training_plan_template_workouts WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM training_plan_templates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM workout_template_exercises WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM workout_template_blocks WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM workout_templates WHERE gym_id IN (${marks})`, ids);

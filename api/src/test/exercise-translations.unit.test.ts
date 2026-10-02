@@ -27,7 +27,7 @@ afterEach(() => {
   }
 });
 
-const MIGRATION = path.join(__dirname, '../infra/migrations/208_exercise_translations.js');
+const MIGRATION = path.join(__dirname, '../infra/migrations/210_exercise_translations.js');
 
 describe('localizedExerciseNameSql()', () => {
   it('collapses to the base column for the base locale, so the common path costs nothing', async () => {
@@ -198,7 +198,7 @@ describe('every exercise read resolves the name through the one helper', () => {
   });
 });
 
-describe('migration 208', () => {
+describe('migration 210', () => {
   const sql = fs.readFileSync(MIGRATION, 'utf8');
 
   it('declares the junction shape the helpers query', () => {

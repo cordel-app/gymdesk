@@ -1,7 +1,7 @@
 // #967 — multilingual exercise names, end to end.
 //
 // `exercises.name` stays the base (English) value an edit form submits back, and
-// `exercise_translations` (migration 208) carries one row per (exercise, locale).
+// `exercise_translations` (migration 210) carries one row per (exercise, locale).
 // Every read resolves the caller's `x-locale` into `display_name`, falls back to
 // the base name, and carries the stored map as `translations` so the editor can
 // seed its inputs from the row it already holds.
