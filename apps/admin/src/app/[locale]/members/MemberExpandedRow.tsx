@@ -29,7 +29,12 @@ import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { MemberAdditionalServices } from './MemberAdditionalServices';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
-import { formatProfileDate, type MemberProfile } from './memberProfile';
+import {
+  formatProfileDate,
+  newMemberAnnounceKey,
+  newMemberValueKey,
+  type MemberProfile,
+} from './memberProfile';
 import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './MemberProfileLayout';
 
 interface Plan {
@@ -196,7 +201,7 @@ export function MemberExpandedRow({
     }
   }
 
-  // #634 §12: every change in the MEMBERSHIP PLANS or ADDITIONAL SERVICES
+  // #634 §12: every change in the MEMBERSHIP PLANS or ADDITIONAL PRODUCTS
   // sections lands here — it re-reads the configuration both are rendered from
   // and remounts the Billing Simulation, so the simulation always
   // shows the Member's current complete configuration. The other expanded-row
@@ -308,7 +313,8 @@ export function MemberExpandedRow({
               renderCalculated={() => (
                 <NewMemberValue
                   isNewMember={member.is_new_member}
-                  label={t(member.is_new_member ? 'members.new_member_yes' : 'members.new_member_no')}
+                  label={t(`members.${newMemberValueKey(member.is_new_member)}`)}
+                  announce={t(`members.${newMemberAnnounceKey(member.is_new_member)}`)}
                 />
               )}
               centers={{
@@ -382,13 +388,16 @@ export function MemberExpandedRow({
         />
       </Section>
 
-      {/* 2. ADDITIONAL SERVICES — recurring Sellable Items, added and removed at
-          any time, independent from plans and promotions (§4). */}
+      {/* 2. ADDITIONAL PRODUCTS — recurring Sellable Items, added and removed at
+          any time, independent from plans and promotions (§4). #957: the
+          section reads in both modes; its `+ Add Product` button is Edit
+          mode's alone. */}
       <Section label={t('members.section_additional_services')}>
         <MemberAdditionalServices
           plans={configuration.plans}
           services={configuration.services}
           canWrite={isAdmin}
+          editing={editing}
           onChanged={reloadConfiguration}
         />
       </Section>

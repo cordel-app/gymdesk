@@ -267,7 +267,9 @@ describe('#924 stage 5: expanding reads, ⋮ → Edit writes (#797/#897)', () =>
     expect(promotionsSrc).toMatch(/\{cardEditing && \(\s*<input/);
     // …the Remove of an attached product, and its `+ Add`.
     expect(servicesSrc).toMatch(/editing \? \(\s*<button/);
-    expect(servicesSrc).toContain('{!adding && canAttach && editing && (');
+    // #957 gates the same action on `canAdd` for the Member card; both
+    // conditions stand, so the add action needs this card's Edit mode too.
+    expect(servicesSrc).toContain('{!adding && canAttach && editing && canAdd && (');
   });
 
   it('closes every section editor when the mode is left (#897)', () => {
