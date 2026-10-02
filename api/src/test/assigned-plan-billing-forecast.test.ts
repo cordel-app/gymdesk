@@ -74,6 +74,14 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     cadence?: { interval: number; unit: string } | null;
     free?: number | null;
     paid?: number | null;
+    /**
+     * When the Plan's price window opens. It has to cover the start date the
+     * assignment is created with: `POST /user-memberships` freezes
+     * `membership_fee_price` from `effectivePrice(plan, starts_at)` and leaves
+     * it NULL when no window matches, which is an assignment with no fee to
+     * project at all. A back-dated contract therefore needs a back-dated price.
+     */
+    priceFrom?: string;
   } = {}): Promise<number> {
     const { insertId } = await db.query(
       `INSERT INTO membership_plans
@@ -86,7 +94,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     await db.query(
       `INSERT INTO membership_plan_prices (gym_id, membership_plan_id, price, valid_from, status)
        VALUES (?, ?, ?, ?, 'active')`,
-      [gymId, insertId, opts.price ?? 70, dayOffset(-365)],
+      [gymId, insertId, opts.price ?? 70, opts.priceFrom ?? dayOffset(-365)],
     );
     const cadence = opts.cadence === undefined ? { interval: 1, unit: 'month' } : opts.cadence;
     if (cadence) {
@@ -281,7 +289,10 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
   });
 
   it('forecasts from today for a contract that started long ago', async () => {
-    const umId = await assignPlan(await createPlan({ price: 70 }), dayOffset(-800));
+    const umId = await assignPlan(
+      await createPlan({ price: 70, priceFrom: dayOffset(-900) }),
+      dayOffset(-800),
+    );
     const forecast = await forecastOf(umId);
     expect(forecast.available).toBe(true);
     expect(forecast.anchor_date).toBe(TODAY());
