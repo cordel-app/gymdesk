@@ -19,7 +19,11 @@ const CSS_RULES = stripComments(CALENDAR_THEME_CSS);
 
 const LOCALES_DIR = join(SRC, '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
-const BADGE_STATUSES = ['draft', 'scheduled', 'completed', 'cancelled', 'full'] as const;
+// #977 added `not_used` to the badge's vocabulary: a scheduled event that
+// ended with nobody booked. It is covered by the same two guarantees as the
+// rest — a label in every locale, and a colour of its own that reads over any
+// configured event background.
+const BADGE_STATUSES = ['draft', 'scheduled', 'not_used', 'completed', 'cancelled', 'full'] as const;
 
 describe('Calendar event colors come from the theme (#559 stage 3)', () => {
   it('sets no per-event background or border on the admin calendar', () => {

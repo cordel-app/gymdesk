@@ -41,7 +41,7 @@ function formatHM(d: Date): string {
 // Statuses with a `calendar.status_*` translation (#559 stage 3). next-intl
 // has no locale fallback, so an unknown status would render as its raw key
 // path — anything outside this list falls back to the raw value instead.
-const TRANSLATED_BADGE_STATUSES = ['draft', 'scheduled', 'completed', 'cancelled', 'full'];
+const TRANSLATED_BADGE_STATUSES = ['draft', 'scheduled', 'not_used', 'completed', 'cancelled', 'full'];
 
 function statusBadgeLabel(t: (key: any) => string, status: string): string {
   return TRANSLATED_BADGE_STATUSES.includes(status) ? t(`status_${status}`) : status.toUpperCase();
@@ -488,12 +488,29 @@ export default function CalendarPage() {
               const spaceName: string | null = e.space_name ?? null;
               const bookingCount: string | null = isSession ? `${e.booked_count}/${e.effective_capacity}` : null;
 
-              // `full` is a derived status: a scheduled session whose bookings
-              // reached capacity. It takes the badge over `scheduled` because
-              // it's the more actionable of the two.
-              const isFull = isSession && Number(e.booked_count) >= Number(e.effective_capacity) && e.status === 'scheduled';
-              const badgeStatus: string = isFull ? 'full' : (e.status ?? '');
+              // #977 — the badge carries the event's **execution** status, as
+              // the API reports it (`execution_status`): `Scheduled` while it
+              // has not finished or is awaiting confirmation, `Not used` once
+              // an empty slot has passed, `Completed` and `Cancelled` when a
+              // human said so. It is never re-derived here, so the calendar,
+              // the session panel and any later report answer the same way.
+              // A `draft` manual event has no execution status, and falls back
+              // to the stored value it has always shown.
+              const executionStatus: string = e.execution_status ?? e.status ?? '';
+              // `full` is the one derived status the UI still adds: a scheduled
+              // session whose bookings reached capacity. It takes the badge
+              // over `scheduled` because it's the more actionable of the two —
+              // and it can no longer hide `Not used`, since an empty slot is
+              // never full.
+              const isFull = isSession && Number(e.booked_count) >= Number(e.effective_capacity) && executionStatus === 'scheduled';
+              const badgeStatus: string = isFull ? 'full' : executionStatus;
               const statusLabel = badgeStatus ? statusBadgeLabel(t, badgeStatus) : null;
+              // §9: the waitlist of this one occurrence, shown while it can
+              // still move — a finished or cancelled event's queue is noise.
+              const waiting = Number(e.waitlist_count ?? 0);
+              const waitlistLine = waiting > 0 && (executionStatus === 'scheduled')
+                ? t('waitlist_count', { count: waiting })
+                : null;
 
               if (viewType === 'dayGridMonth') {
                 return (
@@ -525,10 +542,13 @@ export default function CalendarPage() {
                     <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {arg.event.title}
                     </div>
-                    {(bookingCount || statusLabel) && (
+                    {(bookingCount || waitlistLine || statusLabel) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
                         {bookingCount && (
                           <span style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap' }}>{bookingCount}</span>
+                        )}
+                        {waitlistLine && (
+                          <span style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{waitlistLine}</span>
                         )}
                         {statusLabel && (
                           <CalendarStatusBadge status={badgeStatus} label={statusLabel} compact />
@@ -544,6 +564,7 @@ export default function CalendarPage() {
               if (trainerName) line2Parts.push(trainerName);
               if (spaceName) line2Parts.push(spaceName);
               if (bookingCount) line2Parts.push(bookingCount);
+              if (waitlistLine) line2Parts.push(waitlistLine);
               return (
                 <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>

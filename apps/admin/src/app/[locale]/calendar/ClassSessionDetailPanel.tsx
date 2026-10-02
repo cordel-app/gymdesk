@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { cardSurfaceStyle, primaryActionColors } from '@/components/ui';
+import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
 
 interface ClassSession {
@@ -17,6 +19,13 @@ interface ClassSession {
   effective_waitlist_mode: 'disabled' | 'open' | 'closed';
   booked_count: number;
   status: string;
+  /**
+   * #977 — the event's execution status as the API derives it: `scheduled`,
+   * `not_used` (it ended with nobody booked), `completed` or `cancelled`.
+   * Read, never re-derived: the panel must not be able to call a slot unused
+   * that the calendar beside it calls scheduled.
+   */
+  execution_status: 'scheduled' | 'not_used' | 'completed' | 'cancelled' | null;
 }
 
 interface Booking {
@@ -67,6 +76,11 @@ const btnBase: React.CSSProperties = {
 // eligibility and center coverage.
 const OVERRIDABLE_ACCESS_CODES = ['plan_not_eligible', 'plan_required', 'center_not_covered'];
 
+// The execution statuses with a `calendar.status_*` translation. next-intl has
+// no locale fallback and no `defaultValue` option, so the label is decided
+// before `t()` is called (CLAUDE.md) and anything else shows its raw value.
+const EXECUTION_STATUS_KEYS = ['scheduled', 'not_used', 'completed', 'cancelled', 'draft'];
+
 function fmt(iso: string) {
   const d = new Date(iso);
   return d.toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
@@ -77,6 +91,7 @@ function fmtTime(iso: string) {
 }
 
 export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrite }: Props) {
+  const t = useTranslations('calendar');
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
@@ -98,6 +113,12 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
   // #481: staff-override confirm for an access-hook rejection (eligibility/entitlement).
   const [accessOverrideError, setAccessOverrideError] = useState<{ code: string; message: string } | null>(null);
   const [overriding, setOverriding] = useState(false);
+
+  // #977 — Mark as completed flow (§4/§11): a past event with bookings is
+  // never completed automatically, so this is the explicit confirmation.
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [completeError, setCompleteError] = useState<string | null>(null);
 
   // Cancel flow
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -243,6 +264,31 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
     setShowChangeTime(true);
   }
 
+  // #977 §11 — the explicit confirmation that the session took place. It
+  // preserves every booking and every attendance record (the route writes the
+  // event's status and nothing else), and who confirmed it and when is the
+  // audit row's. The 400 it can answer is actionable rather than generic:
+  // attendance still pending, or no trainer on the event.
+  async function handleMarkCompleted() {
+    setCompleting(true);
+    setCompleteError(null);
+    try {
+      await apiFetch(`/class-sessions/${sessionId}/complete`, { method: 'POST' });
+      setShowCompleteConfirm(false);
+      onMutated();
+      await load();
+    } catch (err: any) {
+      const pending = Number(err?.body?.pending_count ?? 0);
+      setCompleteError(
+        err?.body?.missing_trainer ? t('complete_blocked_trainer')
+        : pending > 0 ? t('complete_blocked_attendance', { count: pending })
+        : err.message ?? t('error_generic'),
+      );
+    } finally {
+      setCompleting(false);
+    }
+  }
+
   async function handleSaveTime() {
     setSavingTime(true);
     try {
@@ -270,6 +316,18 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
 
   const isCancelled = session.status === 'cancelled';
   const waitlistOpen = session.effective_waitlist_mode === 'open';
+  // #977 — the four execution statuses, read from the API. `scheduled` is
+  // also what a past event with bookings reads until somebody confirms it
+  // (§13), which is exactly when the action below is worth offering; a
+  // `not_used` slot may still be completed deliberately, which is how
+  // `Completed · 0 attendees` is reached (§5).
+  const executionStatus = session.execution_status ?? session.status;
+  const hasEnded = new Date(session.ends_at).getTime() <= Date.now();
+  const canMarkCompleted = canWrite && hasEnded
+    && (executionStatus === 'scheduled' || executionStatus === 'not_used');
+  const statusLabel = EXECUTION_STATUS_KEYS.includes(executionStatus)
+    ? t(`status_${executionStatus}` as any)
+    : executionStatus.toUpperCase();
 
   return (
     <div style={panelStyle}>
@@ -307,11 +365,14 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
             {enrolled.length} / {session.effective_capacity}
           </span>
         </div>
-        {isCancelled && (
-          <div style={{ marginTop: 8, padding: '4px 8px', background: '#fef2f2', borderRadius: 4, fontSize: 12, color: '#dc2626', fontWeight: 600 }}>
-            CANCELLED
-          </div>
-        )}
+        {/* #977 §7 — the execution status, in the calendar's own badge rather
+            than a red CANCELLED line of this panel's own: one status
+            vocabulary, one look, and `Not used` and `Completed` are as worth
+            saying here as `Cancelled` ever was. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 8 }}>
+          <span style={{ fontSize: 13, color: '#6b7280' }}>{t('event_status')}:</span>
+          <CalendarStatusBadge status={executionStatus} label={statusLabel} />
+        </div>
       </div>
 
       {/* Enrolled members */}
@@ -496,6 +557,45 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
         <div>
           <div style={sectionLabel}>Actions</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* #977 §4/§11 — Mark as completed. Offered only once the event
+                has ended and only while it is awaiting confirmation: a future
+                event needs no action from the teacher (§2), and an empty slot
+                that passed is already `Not used` without one (§3). */}
+            {canMarkCompleted && (
+              !showCompleteConfirm ? (
+                <button
+                  onClick={() => { setShowCompleteConfirm(true); setCompleteError(null); }}
+                  style={{ ...btnBase, ...primaryActionColors, textAlign: 'left' }}
+                >
+                  {t('mark_completed')}
+                </button>
+              ) : (
+                <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t('mark_completed_confirm_title')}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>{t('mark_completed_confirm_message')}</div>
+                  {completeError && (
+                    <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{completeError}</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={handleMarkCompleted}
+                      disabled={completing}
+                      style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: completing ? 0.6 : 1 }}
+                    >
+                      {completing ? t('marking_completed') : t('mark_completed')}
+                    </button>
+                    <button
+                      onClick={() => { setShowCompleteConfirm(false); setCompleteError(null); }}
+                      disabled={completing}
+                      style={{ ...btnBase, background: '#f3f4f6', color: '#374151' }}
+                    >
+                      {t('cancel')}
+                    </button>
+                  </div>
+                </div>
+              )
+            )}
+
             {/* Change time */}
             {!showChangeTime ? (
               <button
