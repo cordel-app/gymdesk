@@ -111,7 +111,11 @@ describe('the gym-facing read masks the platform actor', () => {
   });
 
   it('keeps the shadowing alias after `e.*`, which is what makes it win', () => {
-    const select = gymRouter.slice(gymRouter.indexOf('const SELECT = `'), gymRouter.indexOf('FROM exercises e'));
+    // #967 made the projection a function of the caller's locale (`selectFor`),
+    // so the anchor is the builder rather than a constant — the rule it asserts
+    // is unchanged: every alias shadowing a column of `e.*` comes after it.
+    const select = gymRouter.slice(gymRouter.indexOf('const selectFor ='), gymRouter.indexOf('FROM exercises e'));
+    expect(select).toContain('SELECT e.*');
     expect(select.indexOf('SELECT e.*')).toBeLessThan(select.indexOf('AS created_by_name'));
   });
 });

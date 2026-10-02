@@ -4,6 +4,7 @@ import React from 'react';
 import { useTranslations } from 'next-intl';
 import { ViewAuditLogButton, AuditLogScope } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
+import { exerciseName } from '@/lib/exerciseNames';
 import {
   exerciseDisplayValue,
   formatExerciseTimestamp,
@@ -50,7 +51,8 @@ export function ExerciseDetailModal({ exercise, scope = 'gym', onClose }: {
     <div style={overlayStyle} onClick={onClose}>
       <div style={{ ...modalStyle, width: 520, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
         <h2 style={{ margin: '0 0 4px' }}>{t('detail_title')}</h2>
-        <p style={{ margin: '0 0 20px', color: '#666', fontSize: 14 }}>{exercise.name}</p>
+        {/* #967: the modal names the exercise in the reader's own language. */}
+        <p style={{ margin: '0 0 20px', color: '#666', fontSize: 14 }}>{exerciseName(exercise)}</p>
 
         <p style={sectionLabelStyle}>{t('section_audit')}</p>
         {/* §12: the internal identifier belongs here and nowhere else — it is the

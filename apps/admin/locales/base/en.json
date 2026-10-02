@@ -1608,7 +1608,8 @@
     "saving": "Saving…",
     "save_changes": "Save Changes",
     "new_exercise": "New Exercise",
-    "save": "Save"
+    "save": "Save",
+    "name_translations_hint": "Leave a language blank to fall back to the name above."
   },
   "muscles": {
     "chest": "Chest",
@@ -3879,5 +3880,10 @@
     "how_4": "Any accepted request answers 202, whether or not the email was already known. Show the visitor a \"check your inbox\" message.",
     "how_5": "To test the connection, send the same request with the name \"test\" and an empty email. It answers 200 and registers nobody.",
     "error_generic": "Something went wrong."
+  },
+  "languages": {
+    "en": "English",
+    "es": "Spanish",
+    "ca": "Catalan"
   }
 }

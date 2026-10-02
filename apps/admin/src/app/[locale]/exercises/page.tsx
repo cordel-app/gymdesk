@@ -20,7 +20,7 @@ import { btnStyle, cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/co
 // #806: the Exercise editor, its form-state hook and the form declaration are
 // shared with the platform Base Exercises page — there is one implementation of
 // the form and this page supplies the gym context's persistence.
-import { ExerciseEditor, ExerciseMediaPair } from '@/components/exercises/ExerciseEditor';
+import { ExerciseEditor, ExerciseMediaPair, type ExerciseNameLocales } from '@/components/exercises/ExerciseEditor';
 import { useExerciseEditorState, useMuscleLabel } from '@/components/exercises/useExerciseEditorState';
 import {
   EXERCISE_STATUSES,
@@ -42,7 +42,12 @@ import { ImportExercisesModal } from './ImportExercisesModal';
 interface ExerciseMuscle { key: string; role: MuscleRole }
 type ResultType = ResultTypeRow;
 interface Exercise {
-  id: number; name: string; description: string | null;
+  id: number; name: string;
+  /** #967: the name in the caller's language, resolved server-side (base name as the fallback). */
+  display_name: string;
+  /** #967: the stored per-locale names — what `⋮ → Edit` seeds its language inputs from. */
+  translations: Record<string, string>;
+  description: string | null;
   /** #719: the video reference, and its stored poster when the gym uploaded one. */
   video_url: string | null; video_thumbnail_url: string | null;
   /** #719: the master reference, and the 512×512 thumbnail when the gym uploaded one. */
@@ -89,6 +94,9 @@ export default function ExercisesPage() {
   // holds only *which* row is open.
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
+  // #967 §3: which languages a name is entered in comes from the API, never from
+  // a list in this page.
+  const [nameLocales, setNameLocales] = useState<ExerciseNameLocales | null>(null);
   const editState = useExerciseEditorState();
   const nameInputRef = useRef<HTMLInputElement>(null);
 
@@ -125,12 +133,14 @@ export default function ExercisesPage() {
 
   async function loadLookups() {
     try {
-      const [mu, rt] = await Promise.all([
+      const [mu, rt, loc] = await Promise.all([
         apiFetch<{ key: string }[]>('/muscles'),
         apiFetch<ResultType[]>('/result-types'),
+        apiFetch<{ base_locale: string; translatable: string[] }>('/exercises/locales'),
       ]);
       setMuscleKeys(mu.map((m) => m.key));
       setResultTypes(rt);
+      setNameLocales({ base: loc.base_locale, translatable: loc.translatable });
     } catch { /* non-critical */ }
   }
 
@@ -387,6 +397,7 @@ export default function ExercisesPage() {
             mode="create"
             idPrefix="exercise-new"
             state={addState}
+            nameLocales={nameLocales}
             muscleKeys={muscleKeys}
             muscleLabel={muscleLabel}
             resultTypes={resultTypes}
@@ -414,6 +425,7 @@ export default function ExercisesPage() {
           mode="edit"
           idPrefix={`exercise-${ex.id}`}
           state={editState}
+          nameLocales={nameLocales}
           muscleKeys={muscleKeys}
           muscleLabel={muscleLabel}
           resultTypes={resultTypes}
@@ -512,7 +524,9 @@ export default function ExercisesPage() {
       <div key={ex.id} style={cardSt}>
         <div style={rowSt} onClick={() => toggleExpand(ex.id)}>
           <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {ex.name}
+            {/* #967 §6: the list shows the name in the application's language —
+                the server resolved it, falling back to the base name. */}
+            {ex.display_name ?? ex.name}
           </div>
           <div style={{ flex: 3, fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {truncate(ex.description)}
@@ -612,7 +626,7 @@ export default function ExercisesPage() {
 
       <DependencyDialog
         open={depDialog !== null}
-        message={depDialog ? tDeps(`exercise_${depDialog.action}` as any, { name: depDialog.entity.name, count: depDialog.refs.usageCount }) : ''}
+        message={depDialog ? tDeps(`exercise_${depDialog.action}` as any, { name: depDialog.entity.display_name ?? depDialog.entity.name, count: depDialog.refs.usageCount }) : ''}
         question={tDeps('question')}
         references={depDialog?.refs.references ?? []}
         moreLabel={depDialog && depDialog.refs.usageCount > depDialog.refs.references.length

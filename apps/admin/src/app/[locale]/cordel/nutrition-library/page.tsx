@@ -4,6 +4,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
+import { localeLabel as localeLabelFor } from '@/lib/localeLabels';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -59,15 +60,12 @@ type EditForm = NutritionItemFormValues;
 
 const emptyEditForm = emptyNutritionItemForm;
 
-const LOCALE_LABELS: Record<string, string> = {
-  en: 'English',
-  es: 'Spanish',
-  ca: 'Catalan',
-};
-
-function localeLabel(locale: string) {
-  return LOCALE_LABELS[locale] ?? locale.toUpperCase();
-}
+/**
+ * #967 moved the language names into `lib/localeLabels.ts`, so the Nutrition
+ * Library's translation inputs and the Exercises editor's cannot label the same
+ * locale two ways — and the labels are translated now rather than English in
+ * every language.
+ */
 
 const CATEGORY_LABELS: Record<string, string> = {
   main_dish: 'Main Dish',
@@ -101,6 +99,10 @@ export default function CordelNutritionLibraryPage() {
   // superadmin screen and was written that way); the new sections are not, because
   // they are the very same component the gym's library renders.
   const tGoals = useTranslations('goal_library');
+  const tCommon = useTranslations();
+  // #967: the language names come from `lib/localeLabels.ts`, translated, rather
+  // than from a map in this file.
+  const localeLabel = (loc: string) => localeLabelFor(loc, (key) => tCommon(key as any));
   const { apiFetch } = useApiClient();
   const { getToken } = useAuth();
   const { toast } = useToast();

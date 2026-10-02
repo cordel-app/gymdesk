@@ -315,6 +315,10 @@ describe('Exercises: inline creation (#805)', () => {
         status: 'inactive',
         muscles: [{ key: 'quads', role: 'principal' }, { key: 'glutes', role: 'secondary' }],
         allowed_result_type_ids: [1, 2],
+        // #967: the per-language names ride along with the base one; this form
+        // has none typed, so the set is empty (never absent — omitting the field
+        // means "leave the stored translations alone").
+        translations: {},
       });
     });
 
@@ -349,6 +353,8 @@ describe('Exercises: inline creation (#805)', () => {
         name: 'Deadlift', description: '', video_url: '',
         min_reps_default: '3', max_reps_default: '', sets_default: '5',
         rest_default_seconds: '', notes_default: '', status: 'active',
+        // #967: a row with no stored translations seeds an empty map.
+        translations: {},
       });
     });
 

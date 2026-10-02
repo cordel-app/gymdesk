@@ -3,6 +3,8 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
+import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
+import { SupportedLocale, getRequestLocale } from '../infra/locale';
 
 /**
  * #55: the clone/assigned-plan hierarchy — TrainingPlan -> Workout ->
@@ -124,7 +126,7 @@ function parseExerciseItemBody(body: Record<string, unknown>):
 
 // MySQL's JSON_ARRAYAGG has no ORDER BY clause of its own — each level aggregates
 // over a derived table that is pre-sorted by position, not the aggregate itself.
-export const PLAN_TREE_SELECT = `
+export const planTreeSelect = (locale: SupportedLocale) => `
   SELECT tp.*,
     (SELECT JSON_ARRAYAGG(item) FROM (
       SELECT JSON_OBJECT(
@@ -138,7 +140,7 @@ export const PLAN_TREE_SELECT = `
                 'is_optional', b.is_optional, 'notes', b.notes,
                 'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                   SELECT JSON_OBJECT(
-                      'id', we.id, 'position', we.position, 'exercise_id', we.exercise_id, 'exercise_name', e.name,
+                      'id', we.id, 'position', we.position, 'exercise_id', we.exercise_id, 'exercise_name', ${localizedExerciseNameSql('e', locale)},
                       'exercise_image_url', e.image_url, 'exercise_image_thumbnail_url', e.image_thumbnail_url, 'exercise_video_url', e.video_url, 'exercise_video_thumbnail_url', e.video_thumbnail_url,
                       'min_reps', we.min_reps, 'max_reps', we.max_reps, 'sets', we.sets,
                       'rest_seconds', we.rest_seconds, 'tempo', we.tempo, 'notes', we.notes,
@@ -169,7 +171,7 @@ trainingPlansRouter.get('/:planId', async (req, res, next) => {
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   try {
     const { rows } = await db.query(
-      `${PLAN_TREE_SELECT} WHERE tp.id = ? AND tp.member_id = ? AND tp.gym_id = ? AND tp.status != 'deleted'`,
+      `${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ? AND tp.member_id = ? AND tp.gym_id = ? AND tp.status != 'deleted'`,
       [planId, memberId, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
@@ -219,7 +221,7 @@ trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, 
        planId, memberId, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Training plan not found' });
-    const { rows } = await db.query(`${PLAN_TREE_SELECT} WHERE tp.id = ?`, [planId]);
+    const { rows } = await db.query(`${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ?`, [planId]);
     recordAudit(req, { action: 'update', entityType: 'training_plan', entityId: planId, next: rows[0] });
     res.json(rows[0]);
   } catch (err) {
@@ -444,7 +446,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
       [gymId, blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
        parsed.sets, parsed.rest_seconds, parsed.tempo, parsed.notes,
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit, gymMembershipId],
-      `SELECT we.*, e.name AS exercise_name,
+      `SELECT we.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       (id) => [id],
@@ -495,7 +497,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
-      `SELECT we.*, e.name AS exercise_name,
+      `SELECT we.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       [exId],
@@ -636,7 +638,7 @@ trainingPlansRouter.put('/:planId/workouts/:workoutId/blocks/:blockId/exercises/
       await reorder(tx, 'workout_exercises', 'workout_block_id', String(targetId), targetOrder);
     });
     const { rows } = await db.query(
-      `SELECT we.*, e.name AS exercise_name,
+      `SELECT we.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       [exId],
@@ -774,7 +776,7 @@ trainingPlansRouter.post('/:planId/complete', requireModuleWrite('TRAINING'), as
        WHERE id = ? AND member_id = ? AND gym_id = ?`,
       [resolvedEndDate, gymMembershipId, planId, memberId, gymId],
     );
-    const { rows } = await db.query(`${PLAN_TREE_SELECT} WHERE tp.id = ?`, [planId]);
+    const { rows } = await db.query(`${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ?`, [planId]);
     recordAudit(req, { action: 'status_change', entityType: 'training_plan', entityId: planId,
       previous: { status: planRows[0].status }, next: { status: 'completed', end_date: resolvedEndDate } });
     res.json(rows[0]);
@@ -789,7 +791,7 @@ trainingPlansRouter.post('/:planId/duplicate', requireModuleWrite('TRAINING'), a
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   try {
     const { rows: planRows } = await db.query(
-      `${PLAN_TREE_SELECT} WHERE tp.id = ? AND tp.member_id = ? AND tp.gym_id = ? AND tp.status != 'deleted'`,
+      `${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ? AND tp.member_id = ? AND tp.gym_id = ? AND tp.status != 'deleted'`,
       [planId, memberId, gymId],
     );
     if (planRows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
@@ -831,7 +833,7 @@ trainingPlansRouter.post('/:planId/duplicate', requireModuleWrite('TRAINING'), a
       }
       return newId;
     });
-    const { rows } = await db.query(`${PLAN_TREE_SELECT} WHERE tp.id = ?`, [newPlanId]);
+    const { rows } = await db.query(`${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ?`, [newPlanId]);
     recordAudit(req, { action: 'create', entityType: 'training_plan', entityId: newPlanId,
       next: { duplicated_from: planId, member_id: memberId } });
     res.status(201).json(rows[0]);
@@ -858,7 +860,7 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/exercises
     );
     if (!insertId) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
-      `SELECT we.*, e.name AS exercise_name,
+      `SELECT we.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id WHERE we.id = ?`,
       [insertId],

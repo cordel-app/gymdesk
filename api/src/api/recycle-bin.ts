@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
+import { SupportedLocale, getRequestLocale } from '../infra/locale';
 
 export const recycleBinRouter = Router();
 
@@ -47,7 +49,7 @@ interface UnionBranch {
   params: unknown[];
 }
 
-function branchFor(type: EntityType, gymId: string): UnionBranch {
+function branchFor(type: EntityType, gymId: string, locale: SupportedLocale): UnionBranch {
   switch (type) {
     case 'member':
       return {
@@ -115,7 +117,12 @@ function branchFor(type: EntityType, gymId: string): UnionBranch {
       };
     case 'exercise':
       return {
-        sql: `SELECT 'exercise' AS entity_type, e.id, e.name, e.description,
+        // #967: the deleted exercise's name in the caller's language. The
+        // Recycle Bin's `name` column is shared by every entity type, so the
+        // localized value takes its place here rather than arriving as a second
+        // field nothing renders.
+        sql: `SELECT 'exercise' AS entity_type, e.id,
+               ${localizedExerciseNameSql('e', locale)} AS name, e.description,
                COALESCE(e.deleted_by_name, gm_d.name) AS deleted_by_name, e.deleted_at,
                e.created_at, gm_c.name AS created_by_name
              FROM exercises e
@@ -214,7 +221,8 @@ recycleBinRouter.get('/', async (req, res) => {
   const sortCol = SORT_COLUMNS[sort] ?? 'deleted_at';
 
   const types = entityType ? [entityType as EntityType] : VALID_ENTITY_TYPES;
-  const branches = types.map(t => branchFor(t, gymId));
+  const locale = getRequestLocale(req);
+  const branches = types.map(t => branchFor(t, gymId, locale));
   const innerSql = branches.map(b => `(${b.sql})`).join('\nUNION ALL\n');
   const innerParams = branches.flatMap(b => b.params);
 
@@ -265,12 +273,12 @@ recycleBinRouter.get('/:entityType/:id', async (req, res) => {
     return res.status(400).json({ error: `entityType must be one of: ${VALID_ENTITY_TYPES.join(', ')}` });
   }
 
-  const row = await fetchDeletedEntity(entityType as EntityType, id, gymId);
+  const row = await fetchDeletedEntity(entityType as EntityType, id, gymId, getRequestLocale(req));
   if (!row) return res.status(404).json({ error: 'Deleted entity not found' });
   res.json(row);
 });
 
-async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): Promise<Record<string, unknown> | null> {
+async function fetchDeletedEntity(type: EntityType, id: string, gymId: string, locale: SupportedLocale): Promise<Record<string, unknown> | null> {
   let sql: string;
   switch (type) {
     case 'member':
@@ -335,7 +343,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string): 
              WHERE gc.id = ? AND gc.gym_id = ? AND gc.is_system = 0 AND gc.deleted_at IS NOT NULL`;
       break;
     case 'exercise':
-      sql = `SELECT e.id, e.name, e.description, e.video_url, e.image_url, e.status,
+      sql = `SELECT e.id, ${localizedExerciseNameSql('e', locale)} AS name,
+                    e.description, e.video_url, e.image_url, e.status,
                     e.created_at, e.modified_at, e.deleted_at,
                     gm_c.name AS created_by_name, gm_m.name AS modified_by_name,
                     COALESCE(e.deleted_by_name, gm_d.name) AS deleted_by_name

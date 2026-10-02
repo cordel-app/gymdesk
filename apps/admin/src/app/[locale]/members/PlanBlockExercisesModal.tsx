@@ -7,8 +7,12 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
 import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
+import { exerciseMatchesQuery, exerciseName } from '@/lib/exerciseNames';
 
-interface ExerciseOption { id: number; name: string; min_reps_default: number | null; max_reps_default: number | null; sets_default: number | null; rest_default_seconds: number | null }
+interface ExerciseOption {
+  id: number; name: string;
+  /** #967: the name in the user's language, and the stored translations a search also matches. */
+  display_name?: string | null; translations?: Record<string, string> | null; min_reps_default: number | null; max_reps_default: number | null; sets_default: number | null; rest_default_seconds: number | null }
 interface BlockExercise {
   id: number; position: number; exercise_id: number; exercise_name: string;
   // #720: the exercise's own media, returned with the row. #719 added the
@@ -155,7 +159,7 @@ export function PlanBlockExercisesModal({ memberId, planId, workoutId, blockId, 
             <Field label={t('block_exercises.col_exercise')}>
               <select value={form.exercise_id} onChange={(e) => setForm({ ...form, exercise_id: e.target.value })} style={input}>
                 <option value="">—</option>
-                {exercises.map((ex) => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
+                {exercises.map((ex) => <option key={ex.id} value={ex.id}>{exerciseName(ex)}</option>)}
               </select>
             </Field>
             <Field label={t('block_exercises.col_min_reps')}>

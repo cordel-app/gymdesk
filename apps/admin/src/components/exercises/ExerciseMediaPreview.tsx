@@ -2,6 +2,8 @@
 
 import React from 'react';
 import { useTranslations } from 'next-intl';
+// #967: the alt text is the name in the reader's own language.
+import { exerciseName } from '@/lib/exerciseNames';
 import { EXERCISE_IMAGE_MASTER_SIZE, SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import { exerciseMediaGridStyle, exerciseFieldLabelStyle } from './exerciseFieldChrome';
 import type { ExerciseMediaRow } from './exerciseForm';
@@ -80,7 +82,7 @@ function ImagePreview({ exercise }: { exercise: ExerciseMediaRow }) {
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`${thumbnail}?v=${version}`}
-            alt={exercise.name}
+            alt={exerciseName(exercise)}
             loading="lazy"
             style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
           />
