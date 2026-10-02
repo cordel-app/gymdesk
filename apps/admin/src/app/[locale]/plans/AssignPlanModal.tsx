@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
-import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
+import { btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 import { MemberSearchInput, MemberResult } from '../calendar/MemberSearchInput';
 
 interface Plan {
@@ -138,7 +138,7 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={btnStyle('#aaa')} disabled={saving}>{t('plans.cancel')}</button>
-          <button onClick={handleSubmit} style={btnStyle('#6c63ff')} disabled={saving}>
+          <button onClick={handleSubmit} style={primaryBtnStyle()} disabled={saving}>
             {saving ? t('plans.saving') : t('plans.assign_submit')}
           </button>
         </div>

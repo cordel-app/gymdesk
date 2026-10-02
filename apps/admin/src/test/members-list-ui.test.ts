@@ -191,11 +191,13 @@ describe('Members list: one list with Sellable Items (#928)', () => {
       expect(sellableItemsSrc, `Sellable Items no longer has ${label}`).toMatch(pattern);
       expect(pageSrc, `the Members list has no ${label}`).toMatch(pattern);
     }
-    // And the same `+ Add` button: the shared helper, at the same colour.
+    // And the same `+ Add` button: the shared helper, at the same colour —
+    // which since #954 is the Theme's Primary Button rather than the lilac both
+    // pages used to spell out, so the assertion moves with it.
     expect(sellableItemsSrc).toMatch(/from '@\/components\/ui'/);
-    expect(pageSrc).toMatch(/import \{ btnStyle \} from '@\/components\/ui'/);
+    expect(pageSrc).toMatch(/import \{[^}]*\bprimaryBtnStyle\b[^}]*\} from '@\/components\/ui'/);
     expect(pageSrc, 'the page still carries its own copy of btnStyle').not.toMatch(/function btnStyle\(/);
-    expect(pageHeaderSrc).toMatch(/style=\{btnStyle\('#6c63ff'\)\}/);
+    expect(pageHeaderSrc).toMatch(/style=\{primaryBtnStyle\(\)\}/);
   });
 
   // ── Filters ─────────────────────────────────────────────────────────────────

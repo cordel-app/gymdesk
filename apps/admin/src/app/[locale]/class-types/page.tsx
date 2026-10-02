@@ -11,7 +11,7 @@ import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnSmall, primaryBtnStyle } from '@/components/ui';
 
 interface ClassType {
   id: number;
@@ -112,7 +112,7 @@ export default function ClassTypesPage() {
           <StatusFilter value={statusFilter} onChange={setStatusFilter}
                         options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
                         allLabel={t('status.all')} />
-          <button onClick={() => { setEditing(null); setForm(emptyForm); setError(null); setModalOpen(true); }} style={btnStyle('#6c63ff')}>{t('class_types.add')}</button>
+          <button onClick={() => { setEditing(null); setForm(emptyForm); setError(null); setModalOpen(true); }} style={primaryBtnStyle()}>{t('class_types.add')}</button>
         </div>
       </div>
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { FormLabel, FormInput } from '@/components/CrudModal';
+import { primaryActionColors } from '@/components/ui';
 import { toDateTimeLocal, type CalendarEventForm } from './CalendarEventModal';
 
 interface ActivityType {
@@ -290,7 +291,7 @@ export function EventDetailsPanel({
             <button
               onClick={handleSave}
               disabled={busy}
-              style={{ width: '100%', padding: '9px 0', borderRadius: 6, border: 'none', background: '#6c63ff', color: '#fff', fontSize: 14, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}
+              style={{ width: '100%', padding: '9px 0', borderRadius: 6, border: 'none', ...primaryActionColors, fontSize: 14, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.7 : 1 }}
             >
               {saving ? t('saving') : (isNew ? t('save_changes') : t('save_changes'))}
             </button>

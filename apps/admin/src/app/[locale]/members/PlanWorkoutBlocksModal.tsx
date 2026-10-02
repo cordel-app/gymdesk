@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
+import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 import {
   BLOCK_TYPES, blockConfigInput, blockConfigPatch, getBlockConfig,
 } from '../workout-templates/blockFieldConfig';
@@ -172,7 +172,7 @@ export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutNam
             </Field>
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-            <button onClick={save} style={btnStyle('#6c63ff')} disabled={saving}>
+            <button onClick={save} style={primaryBtnStyle()} disabled={saving}>
               {saving ? t('workout_template_blocks.saving') : editingId ? t('workout_template_blocks.save_changes') : t('workout_template_blocks.add')}
             </button>
             {editingId && <button onClick={resetForm} style={btnStyle('#aaa')} disabled={saving}>{t('workout_template_blocks.cancel')}</button>}
