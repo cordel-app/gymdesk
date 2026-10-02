@@ -20,7 +20,7 @@
  */
 
 import React from 'react';
-import { btnSmall } from '@/components/ui';
+import { primaryBtnSmall } from '@/components/ui';
 import {
   DEFAULT_BENEFIT_ACTION,
   SellableItemBenefitAction,
@@ -573,7 +573,7 @@ export function SellableItemBenefitEditor({
         <p style={{ ...hintSt, marginBottom: 8 }}>{t('session_frequency_hint')}</p>
       )}
       {hasMoreToAdd && (
-        <button onClick={() => addBenefitRow(setDraft, categoryItems, draft)} style={btnSmall('#6c63ff')}>{t(addKey)}</button>
+        <button onClick={() => addBenefitRow(setDraft, categoryItems, draft)} style={primaryBtnSmall()}>{t(addKey)}</button>
       )}
     </>
   );

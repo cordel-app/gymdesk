@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
-import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
+import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 
 interface Membership { id: number; member_name: string; plan_name: string | null; membership_fee: number | null }
 interface Applied {
@@ -102,7 +102,7 @@ export function PromotionApplyModal({ membership, onClose }: { membership: Membe
                   <option value="">—</option>
                   {eligible.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
-                <button onClick={apply} disabled={saving || !pickId} style={btnStyle('#6c63ff')}>
+                <button onClick={apply} disabled={saving || !pickId} style={primaryBtnStyle()}>
                   {saving ? t('memberships.saving') : t('memberships.promotions_apply_button')}
                 </button>
               </div>

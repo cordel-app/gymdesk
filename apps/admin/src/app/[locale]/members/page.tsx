@@ -15,7 +15,7 @@ import {
   LIST_PADDING_X, listCellStyle, listExpandedStyle, listHeaderCellStyle,
   listHeaderRowStyle, listNameBadgeAccentStyle, listRowDividerStyle, listSurfaceStyle,
 } from '@/components/listChrome';
-import { btnStyle } from '@/components/ui';
+import { btnStyle, primaryBtnStyle } from '@/components/ui';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { MemberExpandedRow } from './MemberExpandedRow';
@@ -561,7 +561,7 @@ export default function MembersPage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <h1 style={{ margin: 0 }}>{t('members.title')}</h1>
-        <button onClick={() => guardUnsaved(openAdd)} style={btnStyle('#6c63ff')}>{t('members.add')}</button>
+        <button onClick={() => guardUnsaved(openAdd)} style={primaryBtnStyle()}>{t('members.add')}</button>
       </div>
 
       {/* Filters — the same labelled bar every other list wears (#724). The
@@ -706,7 +706,7 @@ export default function MembersPage() {
 
             <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
               <button onClick={closeModal} style={btnStyle('#aaa')} disabled={saving}>{t('members.cancel')}</button>
-              <button onClick={handleAdd} style={btnStyle('#6c63ff')} disabled={saving}>
+              <button onClick={handleAdd} style={primaryBtnStyle()} disabled={saving}>
                 {saving ? t('members.saving') : t('members.modal_add')}
               </button>
             </div>

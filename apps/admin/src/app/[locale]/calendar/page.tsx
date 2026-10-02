@@ -11,7 +11,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
-import { btnStyle } from '@/components/ui';
+import { primaryBtnStyle } from '@/components/ui';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from './CalendarEventModal';
 import { EventDetailsPanel, type EventMeta } from './EventDetailsPanel';
@@ -408,7 +408,7 @@ export default function CalendarPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         {canWrite && (
-          <button onClick={() => openCreate(new Date())} style={btnStyle('#6c63ff')}>
+          <button onClick={() => openCreate(new Date())} style={primaryBtnStyle()}>
             {t('new_event')}
           </button>
         )}

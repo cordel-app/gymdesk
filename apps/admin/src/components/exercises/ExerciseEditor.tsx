@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useTranslations } from 'next-intl';
-import { btnSmall } from '@/components/ui';
+import { btnSmall, primaryBtnSmall } from '@/components/ui';
 import {
   EXERCISE_STATUSES,
   resultTypeLabel,
@@ -190,7 +190,7 @@ export function ExerciseEditor({
       {state.error && <p style={{ margin: '8px 0 0', fontSize: 13, color: '#c0392b' }}>{state.error}</p>}
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
         <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
-        <button onClick={onSave} disabled={state.saving} style={btnSmall('#6c63ff')}>
+        <button onClick={onSave} disabled={state.saving} style={primaryBtnSmall()}>
           {state.saving ? t('saving') : primaryLabel}
         </button>
       </div>

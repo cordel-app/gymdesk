@@ -6,7 +6,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
-import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
+import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 
 interface ExerciseOption { id: number; name: string; min_reps_default: number | null; max_reps_default: number | null; sets_default: number | null; rest_default_seconds: number | null }
 interface BlockExercise {
@@ -180,7 +180,7 @@ export function PlanBlockExercisesModal({ memberId, planId, workoutId, blockId, 
             </Field>
           </div>
           <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-            <button onClick={save} style={btnStyle('#6c63ff')} disabled={saving}>
+            <button onClick={save} style={primaryBtnStyle()} disabled={saving}>
               {saving ? t('block_exercises.saving') : editingId ? t('block_exercises.save_changes') : t('block_exercises.add')}
             </button>
             {editingId && <button onClick={resetForm} style={btnStyle('#aaa')} disabled={saving}>{t('block_exercises.cancel')}</button>}

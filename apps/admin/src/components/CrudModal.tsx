@@ -1,7 +1,7 @@
 'use client';
 
 import React, { ReactNode } from 'react';
-import { overlayStyle, modalStyle, btnStyle } from './ui';
+import { btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from './ui';
 
 interface CrudModalProps {
   open: boolean;
@@ -34,7 +34,7 @@ export function CrudModal({ open, title, error, saving, saveDisabled, hideSave, 
         <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end', alignItems: 'center' }}>
           {extraFooter}
           <button onClick={onCancel} style={btnStyle('#aaa')} disabled={saving}>{cancelLabel}</button>
-          {!hideSave && <button onClick={onSave} style={btnStyle('#6c63ff')} disabled={saving || saveDisabled}>{saveLabel}</button>}
+          {!hideSave && <button onClick={onSave} style={primaryBtnStyle()} disabled={saving || saveDisabled}>{saveLabel}</button>}
         </div>
       </div>
     </div>
