@@ -1637,7 +1637,7 @@ Reference implementation: `api/src/domain/nutritionComponentTypes.ts` +
 `apps/admin/src/app/[locale]/nutrition/nutrition-plan-templates/NutritionPlanTree.tsx`
 + `apps/admin/src/test/nutrition-food-type-selector.test.ts`.
 
-### Retiring one option from such a set (#821)
+### Retiring one option from such a set (#821, #945)
 
 Dropping a value from a dropdown is not dropping it from the column. Rows already
 store it, and for a *price* — a Sellable Item billed weekly — there is no safe
@@ -1667,6 +1667,30 @@ would change what a gym charges. The pattern is to split one set into two.
 - **A copy is a copy.** `POST /:id/duplicate` copies the stored value verbatim:
   Duplicate is not the dropdown, and re-mapping there changes a price's period
   behind the user's back.
+
+#945 retired a **second** value from the same set (`per_session`), which is the
+proof the split scales — the two changes it needed are the only things a third
+one will need:
+
+- **The notice names the value, once the set has more than one retired member.**
+  `frequency_legacy_notice` said "billed weekly" in all three languages. With two
+  retired values it takes the label as an interpolated value instead
+  (`t('frequency_legacy_notice', { frequency: t(labelKey) })`), with the key
+  resolved by `legacyFrequencyLabelKey(current)` **before** `t()` is called —
+  next-intl has no `defaultValue` option and would print the key.
+- **"Bills identically" is still not a reason to backfill.** `per_session` and
+  `once` produce the same charges today (`cadenceForSellableItem()` gives neither
+  a schedule), so a coercion would have been behaviour-preserving — and #945 §3
+  invites one "where the intended behaviour is known". It was declined anyway:
+  what a gym *meant* by configuring Per Session is not knowable from the row, and
+  the ticket's own fallback ("flag the value for correction rather than
+  guessing") is already what the disabled option plus its notice do. A retirement
+  ships no migration, and the editor is where the correction happens.
+- **Check the retired value is not someone else's offered one.** `week` is
+  retired here and deliberately *offered* by a Session Benefit's own Frequency
+  (#918) — how often an allowance renews and how often an item is priced are
+  different questions. Retiring from one set must not touch the other's
+  declaration or CHECK.
 
 Reference implementation: `api/src/domain/sellableItemFrequency.ts` +
 `apps/admin/src/app/[locale]/financials/sellable-items/sellableItemFrequency.ts`

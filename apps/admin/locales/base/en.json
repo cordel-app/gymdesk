@@ -3263,7 +3263,7 @@
     "frequency_week": "Week",
     "frequency_month": "Month",
     "frequency_year": "Year",
-    "frequency_legacy_notice": "This item is billed weekly, a frequency that is no longer offered. Choosing another one replaces it; it cannot be selected again.",
+    "frequency_legacy_notice": "This item is billed \"{frequency}\", a frequency that is no longer offered. Choosing another one replaces it; it cannot be selected again.",
     "system_badge": "System",
     "mandatory_badge": "Mandatory",
     "section_general": "General",

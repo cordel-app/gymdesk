@@ -3249,7 +3249,7 @@
     "frequency_week": "Semana",
     "frequency_month": "Mes",
     "frequency_year": "Año",
-    "frequency_legacy_notice": "Este artículo se factura semanalmente, una frecuencia que ya no está disponible. Si eliges otra, la reemplazarás y no podrás volver a seleccionarla.",
+    "frequency_legacy_notice": "Este artículo se factura «{frequency}», una frecuencia que ya no está disponible. Si eliges otra, la reemplazarás y no podrás volver a seleccionarla.",
     "system_badge": "Sistema",
     "mandatory_badge": "Obligatorio",
     "section_general": "General",

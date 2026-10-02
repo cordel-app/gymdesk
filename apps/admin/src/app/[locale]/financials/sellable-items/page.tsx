@@ -17,7 +17,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { listNameBadgeAccentStyle, listNameBadgeStyle } from '@/components/listChrome';
 import { formHelpTextStyle } from '@/components/formChrome';
-import { Frequency, frequencyOptions, isLegacyFrequency } from './sellableItemFrequency';
+import { Frequency, frequencyOptions, legacyFrequencyLabelKey } from './sellableItemFrequency';
 import {
   SESSION_ITEM_TYPE,
   SessionPackageNote,
@@ -561,8 +561,9 @@ export default function SellableItemsPage() {
             </div>
             <div>
               <label style={inlineLabelStyle}>{t('label_frequency')}</label>
-              {/* #821: five choices, and 'week' is not one of them. A new item
-                  never holds a legacy value, so this list is always the five. */}
+              {/* #821 / #945: four choices — neither 'week' nor 'per_session'
+                  is one of them. A new item never holds a legacy value, so
+                  this list is always the four. */}
               <select
                 value={inlineNew.billing_frequency}
                 onChange={(e) => setInlineNew({ ...inlineNew, billing_frequency: e.target.value })}
@@ -634,6 +635,10 @@ export default function SellableItemsPage() {
     // but not yet saved.
     const sessionNote = noteText(sessionPackageNote(item));
     const editSessionNote = editForm ? noteText(sessionPackageNoteForForm(editForm)) : null;
+    // #945: null unless the form holds a retired frequency ('week', #821;
+    // 'per_session', #945) — the editor is where such a value gets corrected,
+    // so the notice that flags it belongs beside its select.
+    const editLegacyFrequencyLabelKey = editForm ? legacyFrequencyLabelKey(editForm.billing_frequency) : null;
 
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetails(item) },
@@ -816,9 +821,10 @@ export default function SellableItemsPage() {
               </div>
               <div>
                 <label style={inlineLabelStyle}>{t('label_frequency')}</label>
-                {/* #821: an item stored on the retired 'week' frequency still
-                    shows it — disabled, so it reads truthfully and submits back
-                    unchanged, but cannot be re-chosen once the user moves off it. */}
+                {/* #821 / #945: an item stored on a retired frequency
+                    ('week', 'per_session') still shows it — disabled, so it
+                    reads truthfully and submits back unchanged, but cannot be
+                    re-chosen once the user moves off it. */}
                 <select
                   value={editForm.billing_frequency}
                   onChange={(e) => setEditForm({ ...editForm, billing_frequency: e.target.value })}
@@ -829,9 +835,14 @@ export default function SellableItemsPage() {
                     <option key={o.value} value={o.value} disabled={o.disabled}>{t(o.labelKey as any)}</option>
                   ))}
                 </select>
-                {isLegacyFrequency(editForm.billing_frequency) && (
+                {/* #945: the notice names the frequency the row holds, since
+                    there are two retired values now ('week', 'per_session').
+                    The label is resolved before `t()` is called and passed in
+                    as a value — next-intl has no `defaultValue` option and
+                    would print the key. */}
+                {editLegacyFrequencyLabelKey && (
                   <div style={{ fontSize: 11, color: '#8a6d1f', marginTop: 4 }}>
-                    {t('frequency_legacy_notice')}
+                    {t('frequency_legacy_notice', { frequency: t(editLegacyFrequencyLabelKey as any) })}
                   </div>
                 )}
               </div>
