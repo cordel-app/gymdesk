@@ -58,7 +58,7 @@ describe('workout template exercises (#720)', () => {
     const tpl = await auth(request.post('/workout-templates')).send({ name: 'Media Template', status: 'active' });
     templateId = tpl.body.id;
     const block = await auth(request.post(`/workout-templates/${templateId}/blocks`))
-      .send({ type: 'Circuit', result_type: 'None' });
+      .send({ type: 'Circuit' });
     blockId = block.body.id;
   });
 
@@ -124,7 +124,7 @@ describe('training plan exercises (#720)', () => {
       .send({ name: 'Day 1' });
     const block = await auth(
       request.post(`/members/${memberId}/training-plans/${planId}/workouts/${workout.body.id}/blocks`),
-    ).send({ type: 'Circuit', result_type: 'None' });
+    ).send({ type: 'Circuit' });
 
     await auth(
       request.post(
