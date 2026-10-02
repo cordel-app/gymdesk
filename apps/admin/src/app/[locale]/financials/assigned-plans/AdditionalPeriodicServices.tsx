@@ -1,6 +1,8 @@
 'use client';
 
-// #631 — ADDITIONAL PERIODIC SERVICES on an Assigned Plan.
+// #631 — ADDITIONAL PRODUCTS on an Assigned Plan (named "Additional Periodic
+// Services" until #924, whose thread renamed the section; the functionality is
+// unchanged, per §11 "retain its existing functionality").
 //
 // Inline row CRUD, no modal (#631 §1/§2): the table lists what is attached and
 // "+ Add Service" opens one inline draft row, saved or discarded in place.
@@ -18,11 +20,25 @@
 // Plans expanded row, and the current plan card on the Member page — where
 // `onChanged` also re-runs the Member's Billing Simulation, so adding or
 // removing a service updates it immediately (#631 §6).
+//
+// #924 stage 5: on the Assigned Plan card the write affordances live behind
+// `⋮ → Edit` (#797/#897), so `editing` decides whether Remove and `+ Add` are
+// rendered at all — absent, not disabled. It defaults to true for the Member
+// page, whose ADDITIONAL SERVICES section is editable in place and is not this
+// ticket's.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
+import {
+  cardMutedTextStyle,
+  cardTextLinkStyle,
+  formControlStyle,
+  formFieldErrorStyle,
+  secondaryBtnSmall,
+} from '@/components/formChrome';
+import { primaryBtnSmall } from '@/components/ui';
 import type { AssignedPlanService } from './types';
 
 interface SellableItem {
@@ -46,6 +62,11 @@ interface Props {
   /** The plan's stored status — services can only be attached while it still bills. */
   planStatus: string;
   services: AssignedPlanService[];
+  /**
+   * Whether the owning card is in Edit mode. `false` renders the table
+   * read-only: no Remove, no `+ Add`, no draft row.
+   */
+  editing?: boolean;
   canWrite: boolean;
   readOnlyTitle?: string;
   /** Re-fetches whatever embeds this section (and the Billing Simulation, where shown). */
@@ -65,7 +86,7 @@ function todayISO() {
 }
 
 export function AdditionalPeriodicServices({
-  assignedPlanId, planStartsAt, planStatus, services, canWrite, readOnlyTitle, onChanged,
+  assignedPlanId, planStartsAt, planStatus, services, editing = true, canWrite, readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
   const { apiFetch } = useApiClient();
@@ -98,6 +119,16 @@ export function AdditionalPeriodicServices({
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adding]);
+
+  // Leaving the card's Edit mode discards the draft row with it (#897), so a
+  // half-filled service cannot survive out of sight and reappear on the next
+  // Edit.
+  useEffect(() => {
+    if (!editing) {
+      setAdding(false);
+      setError(null);
+    }
+  }, [editing]);
 
   function startAdd() {
     setDraftItemId('');
@@ -192,14 +223,18 @@ export function AdditionalPeriodicServices({
                 <td style={td}>{s.ends_at ? fmtDate(s.ends_at) : '—'}</td>
                 <td style={{ ...td, textAlign: 'right' }}>
                   {s.ends_at == null ? (
-                    <button
-                      onClick={() => remove(s)}
-                      disabled={!canWrite || busyId === s.id}
-                      title={canWrite ? undefined : readOnlyTitle}
-                      style={linkBtn}
-                    >
-                      {busyId === s.id ? t('saving') : t('services_remove')}
-                    </button>
+                    // #797: the control is absent outside Edit mode, so the
+                    // read-only table says what is attached and nothing more.
+                    editing ? (
+                      <button
+                        onClick={() => remove(s)}
+                        disabled={!canWrite || busyId === s.id}
+                        title={canWrite ? undefined : readOnlyTitle}
+                        style={linkBtn}
+                      >
+                        {busyId === s.id ? t('saving') : t('services_remove')}
+                      </button>
+                    ) : null
                   ) : (
                     <span style={dim}>{t('services_removed')}</span>
                   )}
@@ -239,8 +274,8 @@ export function AdditionalPeriodicServices({
                 </td>
                 <td style={td}>—</td>
                 <td style={{ ...td, textAlign: 'right', whiteSpace: 'nowrap' }}>
-                  <button onClick={cancelAdd} disabled={saving} style={linkBtn}>{t('cancel')}</button>
-                  <button onClick={saveAdd} disabled={saving} style={{ ...linkBtn, fontWeight: 600 }}>
+                  <button onClick={cancelAdd} disabled={saving} style={secondaryBtnSmall}>{t('cancel')}</button>
+                  <button onClick={saveAdd} disabled={saving} style={{ ...primaryBtnSmall(), marginLeft: 6 }}>
                     {saving ? t('saving') : t('services_save')}
                   </button>
                 </td>
@@ -250,9 +285,9 @@ export function AdditionalPeriodicServices({
         </table>
       )}
 
-      {error && <p style={{ color: '#c0392b', fontSize: 12, margin: '6px 0 0' }}>{error}</p>}
+      {error && <p style={{ ...formFieldErrorStyle, margin: '6px 0 0' }}>{error}</p>}
 
-      {!adding && canAttach && (
+      {!adding && canAttach && editing && (
         <button onClick={startAdd} {...write} style={{ ...linkBtn, marginTop: 8, paddingLeft: 0 }}>
           {t('services_add')}
         </button>
@@ -261,17 +296,18 @@ export function AdditionalPeriodicServices({
   );
 }
 
-const dim: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
+// #929: the muted sentence, the control box, the error line and the text link
+// all come from `components/formChrome.ts`; what stays here is the table's own
+// structure.
+const dim = cardMutedTextStyle;
 const table: React.CSSProperties = { width: '100%', borderCollapse: 'collapse', fontSize: 13 };
 const th: React.CSSProperties = {
   textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#888',
   textTransform: 'uppercase', letterSpacing: '0.04em', padding: '0 8px 4px 0',
 };
-const td: React.CSSProperties = { padding: '6px 8px 6px 0', borderTop: '1px solid #f0f0f3', verticalAlign: 'middle' };
-const inputStyle: React.CSSProperties = {
-  padding: '4px 8px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, minWidth: 130,
+const td: React.CSSProperties = {
+  padding: '6px 8px 6px 0', borderTop: '1px solid var(--gd-card-border, #f0f0f3)',
+  verticalAlign: 'middle',
 };
-const linkBtn: React.CSSProperties = {
-  background: 'none', border: 'none', color: '#6c63ff', cursor: 'pointer',
-  fontSize: 13, padding: '0 8px',
-};
+const inputStyle: React.CSSProperties = { ...formControlStyle, fontSize: 13, minWidth: 130 };
+const linkBtn: React.CSSProperties = { ...cardTextLinkStyle, padding: '0 8px' };

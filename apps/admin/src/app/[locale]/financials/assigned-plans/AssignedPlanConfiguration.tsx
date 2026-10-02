@@ -17,11 +17,31 @@
 //
 // Nothing is computed here (CLAUDE.md: no business logic in the frontend): the
 // server returns the section after each save and the card re-reads the rest.
+//
+// #924 stage 5 — these five are the card's own sections, not a nested group:
+// they are the contiguous slice of `ASSIGNED_PLAN_SECTION_ORDER` named
+// `ASSIGNED_PLAN_CONFIGURATION_SECTIONS` (assignedPlanProfile.ts), rendered with
+// the same `CardSection` heading and hairline as every other section of the
+// card, so an Assigned Plan reads at one level exactly as a Membership Plan does
+// (§1). The section `Edit` buttons are `SectionEditButton` (#901) and exist only
+// while the card is in Edit mode (#897): `cardEditing` is the card's flag, and
+// leaving the mode closes whichever section editor was open.
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
+import { CardDetailRow } from '@/components/CardDetailRow';
+import { CardSection } from '@/components/CardSection';
+import { SectionEditButton } from '@/components/SectionEditButton';
+import { primaryBtnSmall } from '@/components/ui';
+import {
+  formControlStyle,
+  formFieldLabelStyle,
+  formHelpTextStyle,
+  inlineActionsRowStyle,
+  secondaryBtnSmall,
+} from '@/components/formChrome';
 import {
   BenefitFrequencyColumn,
   SellableItemBenefitEditor,
@@ -106,6 +126,11 @@ interface Props {
   /** The assignment's stored status — a terminal one is read-only. */
   planStatus: string;
   snapshot: AssignedPlanSnapshot;
+  /**
+   * Whether the card is in Edit mode (#797/#897). Outside it every section is
+   * read-only and carries no `Edit` button at all — absent, not disabled.
+   */
+  cardEditing: boolean;
   canWrite: boolean;
   readOnlyTitle?: string;
   /** Re-reads the expanded card (and with it the Billing Events section). */
@@ -161,7 +186,7 @@ function toViewRow(b: AssignedPlanSnapshotBenefit): SellableItemBenefitRow {
 }
 
 export function AssignedPlanConfiguration({
-  assignedPlanId, planStatus, snapshot, canWrite, readOnlyTitle, onChanged,
+  assignedPlanId, planStatus, snapshot, cardEditing, canWrite, readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
   const { apiFetch } = useApiClient();
@@ -175,8 +200,16 @@ export function AssignedPlanConfiguration({
   const [items, setItems] = useState<SellableItemOption[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const editable = canWrite && EDITABLE_STATUSES.includes(planStatus);
+  const editable = cardEditing && canWrite && EDITABLE_STATUSES.includes(planStatus);
   const editTitle = canWrite ? undefined : readOnlyTitle;
+
+  // Leaving the card's Edit mode closes every section editor with it (#897), and
+  // discards whatever was being typed — the same thing the card's own Cancel
+  // does on the Membership Plan and Promotion cards.
+  useEffect(() => {
+    if (!cardEditing) cancelEdit();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardEditing]);
 
   // The catalogue is only needed to *add* a line, so it is fetched the first
   // time a benefit section is opened rather than with every expanded card.
@@ -317,21 +350,30 @@ export function AssignedPlanConfiguration({
     return monthly ? t('months_value', { n: value }) : t('periods_value_plain', { n: value });
   }
 
+  // #897: outside Edit mode this answers `null`, so the button is absent rather
+  // than disabled. Inside it, the one shared subsection action (#901) — never a
+  // text link or a colour of this page's own.
   function editButton(onClick: () => void) {
     if (!editable) return null;
     return (
-      <button onClick={onClick} disabled={editing !== null} title={editTitle} style={linkBtn}>
-        {t('action_edit')}
-      </button>
+      <SectionEditButton
+        label={t('action_edit')}
+        onClick={onClick}
+        disabled={editing !== null}
+        title={editTitle}
+      />
     );
   }
 
   return (
-    <div>
+    <>
       {/* §7/§9 — Billing & Duration, the Promotion's Free Period / Paid
           Duration / Bonus Duration, plus the cadence and the regular
           Membership Fee this assignment was agreed at. */}
-      <SectionHeader title={t('section_billing_duration')} action={editing === 'billing' ? null : editButton(openDurationEdit)} />
+      <CardSection
+        label={t('section_billing_duration')}
+        action={editing === 'billing' ? null : editButton(openDurationEdit)}
+      >
       {editing === 'billing' && durationForm ? (
         <div style={{ margin: '6px 0 14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 8, marginBottom: 8 }}>
@@ -383,32 +425,33 @@ export function AssignedPlanConfiguration({
           <SaveCancel saving={saving} onSave={saveDuration} onCancel={cancelEdit} t={t} />
         </div>
       ) : (
-        <div style={{ marginBottom: 14 }}>
+        <div>
           {DURATION_FIELDS.map((field) => (
-            <DetailRow
+            <CardDetailRow
               key={field}
               label={t(`label_${field}` as any)}
               value={durationText(snapshot[field] as number | null)}
             />
           ))}
-          <DetailRow
+          <CardDetailRow
             label={t('label_billing_frequency')}
             value={snapshot.recurring_billing_interval != null && snapshot.recurring_billing_unit
               ? `${snapshot.recurring_billing_interval} × ${t(`unit_${snapshot.recurring_billing_unit}` as any)}`
               : t('not_configured')}
           />
-          <DetailRow label={t('label_membership_fee')} value={fmtMoney(snapshot.membership_fee_price)} />
+          <CardDetailRow label={t('label_membership_fee')} value={fmtMoney(snapshot.membership_fee_price)} />
         </div>
       )}
+      </CardSection>
 
       {/* #772 — the Personal Membership Fee Benefit. Its own section, right
           under the fee it discounts: it is neither a Promotion benefit (it
           never expires) nor part of the frozen snapshot (it is agreed with
           this member, not captured from the catalogue). */}
-      <SectionHeader
-        title={t('section_membership_fee_benefit')}
+      <CardSection
+        label={t('section_membership_fee_benefit')}
         action={editing === 'fee_benefit' ? null : editButton(openFeeBenefitEdit)}
-      />
+      >
       {editing === 'fee_benefit' && feeBenefitForm ? (
         <div style={{ margin: '6px 0 14px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 8, marginBottom: 8 }}>
@@ -443,15 +486,14 @@ export function AssignedPlanConfiguration({
           <SaveCancel saving={saving} onSave={saveFeeBenefit} onCancel={cancelEdit} t={t} />
         </div>
       ) : (
-        <div style={{ marginBottom: 14 }}>
-          <DetailRow
-            label={t('label_personal_fee_benefit')}
-            value={snapshot.personal_fee_benefit.action === 'percentage_discount'
-              ? t('personal_fee_benefit_percentage_value', { value: snapshot.personal_fee_benefit.value ?? 0 })
-              : t('personal_fee_benefit_no_benefit')}
-          />
-        </div>
+        <CardDetailRow
+          label={t('label_personal_fee_benefit')}
+          value={snapshot.personal_fee_benefit.action === 'percentage_discount'
+            ? t('personal_fee_benefit_percentage_value', { value: snapshot.personal_fee_benefit.value ?? 0 })
+            : t('personal_fee_benefit_no_benefit')}
+        />
       )}
+      </CardSection>
 
       {/* §3–§5/§9 — the three Sellable-Item-keyed sections, in the order the
           Plans page lists them so both surfaces read the same way. */}
@@ -460,11 +502,11 @@ export function AssignedPlanConfiguration({
       }) => {
         const rows = snapshot[snapshotKey] ?? [];
         return (
-          <div key={section} style={{ marginBottom: 14 }}>
-            <SectionHeader
-              title={t(titleKey as any)}
-              action={editing === section ? null : editButton(() => openBenefitEdit(section, rows))}
-            />
+          <CardSection
+            key={section}
+            label={t(titleKey as any)}
+            action={editing === section ? null : editButton(() => openBenefitEdit(section, rows))}
+          >
             {editing === section ? (
               <div style={{ margin: '6px 0 4px' }}>
                 <SellableItemBenefitEditor
@@ -501,22 +543,19 @@ export function AssignedPlanConfiguration({
                 showPrices
               />
             )}
-          </div>
+          </CardSection>
         );
       })}
-    </div>
+    </>
   );
 }
 
-function SectionHeader({ title, action }: { title: string; action: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-      <div style={sectionLabelSt}>{title}</div>
-      {action}
-    </div>
-  );
-}
-
+/**
+ * A section editor's Cancel/Save pair. #929/#954: the geometry and the neutral
+ * colours are `secondaryBtnSmall`, and the primary action takes the Theme's own
+ * Primary Button colours through `primaryBtnSmall()` — never a `#111` of this
+ * page's own, which no Theme could reach.
+ */
 function SaveCancel({ saving, onSave, onCancel, t }: {
   saving: boolean;
   onSave: () => void;
@@ -524,39 +563,17 @@ function SaveCancel({ saving, onSave, onCancel, t }: {
   t: ReturnType<typeof useTranslations>;
 }) {
   return (
-    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-      <button onClick={onCancel} disabled={saving} style={btnSt}>{t('cancel')}</button>
-      <button onClick={onSave} disabled={saving} style={{ ...btnSt, background: '#111', color: '#fff', borderColor: '#111' }}>
+    <div style={{ ...inlineActionsRowStyle, justifyContent: 'flex-end' }}>
+      <button onClick={onCancel} disabled={saving} style={secondaryBtnSmall}>{t('cancel')}</button>
+      <button onClick={onSave} disabled={saving} style={primaryBtnSmall()}>
         {saving ? t('saving') : t('save_changes')}
       </button>
     </div>
   );
 }
 
-function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, marginBottom: 4 }}>
-      <span style={{ color: '#888', minWidth: 140, fontSize: 13 }}>{label}</span>
-      <span>{value}</span>
-    </div>
-  );
-}
-
-const sectionLabelSt: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase',
-  letterSpacing: '0.07em',
-};
-const labelSt: React.CSSProperties = { display: 'block', fontSize: 12, color: '#888', marginBottom: 4 };
-const inputSt: React.CSSProperties = {
-  width: '100%', boxSizing: 'border-box', padding: '6px 10px',
-  border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13, background: '#fff',
-};
-const btnSt: React.CSSProperties = {
-  background: 'none', border: '1px solid #d0d0d0', borderRadius: 4,
-  padding: '6px 14px', fontSize: 13, cursor: 'pointer', color: '#444',
-};
-const linkBtn: React.CSSProperties = {
-  background: 'none', border: 'none', color: '#6c63ff', cursor: 'pointer',
-  fontSize: 12, padding: 0,
-};
-const hintSt: React.CSSProperties = { color: '#888', fontSize: 12, margin: '8px 0 0' };
+// #929: the card's chrome is `components/formChrome.ts`, so this page restates
+// no field label, no control box and no hint sentence of its own.
+const labelSt = formFieldLabelStyle;
+const inputSt = formControlStyle;
+const hintSt: React.CSSProperties = { ...formHelpTextStyle, margin: '8px 0 0' };
