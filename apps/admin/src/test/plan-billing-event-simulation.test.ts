@@ -61,9 +61,9 @@ describe('Plans: Billing Event Simulation', () => {
   it('is a declared section, last, after the Example Timeline', () => {
     expect(PLAN_SECTION_ORDER).toContain('section_billing_event_simulation');
     expect(PLAN_SECTION_ORDER.indexOf('section_billing_event_simulation'))
-      .toBeGreaterThan(PLAN_SECTION_ORDER.indexOf('section_example_timeline'));
+      .toBeGreaterThan(PLAN_SECTION_ORDER.indexOf('section_fee_simulation'));
     // The two projections answer different questions and both stay on the card.
-    expect(PLAN_SECTION_ORDER).toContain('section_example_timeline');
+    expect(PLAN_SECTION_ORDER).toContain('section_fee_simulation');
   });
 
   it('renders through the shared component, from the server-embedded field', () => {

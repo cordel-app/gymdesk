@@ -1399,7 +1399,7 @@ export default function PlansPage() {
                         and never persisted, and a Membership Plan is not
                         assigned to anybody, so the dates are an illustration
                         from a hypothetical enrollment today. */}
-                    <SectionHeader title={t('plans.section_example_timeline')} />
+                    <SectionHeader title={t('plans.section_fee_simulation')} />
                     {plan.example_timeline?.available ? (
                       <>
                         {plan.example_timeline.anchorDate && (
