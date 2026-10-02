@@ -33,6 +33,11 @@ function stripComments(src: string): string {
 
 describe('Sellable Items: Mandatory attribute (#832)', () => {
   const page = stripComments(readFileSync(PAGE, 'utf-8'));
+  // #974: the field set and the row → form mapping live beside the page.
+  const profile = stripComments(readFileSync(
+    join(__dirname, '..', 'app', '[locale]', 'financials', 'sellable-items', 'sellableItemProfile.ts'),
+    'utf-8',
+  ));
 
   it.each(LOCALE_CODES)('translates the label and the read-only values in %s.json', (code) => {
     for (const key of KEYS) {
@@ -51,7 +56,9 @@ describe('Sellable Items: Mandatory attribute (#832)', () => {
 
   it('defaults a new item to unchecked and seeds the editor from the stored row', () => {
     expect(page).toContain('mandatory: false, professionalServiceIds: []');
-    expect(page).toContain('mandatory: Boolean(item.mandatory)');
+    // #974: the row → form mapping lives beside the field set it fills, so a
+    // column added to the card cannot be left out of the form.
+    expect(profile).toContain('mandatory: Boolean(item.mandatory)');
   });
 
   it('submits the flag from the create and the edit payload', () => {
@@ -73,7 +80,9 @@ describe('Sellable Items: Mandatory attribute (#832)', () => {
   });
 
   it('shows the flag on the read-only expanded row and in the Details modal', () => {
-    expect(page).toContain("value={item.mandatory ? t('yes') : t('no')}");
+    // #974: the expanded card reads the flag through the shared layout's
+    // read-only cell, from the same `isMandatory` the list badge uses.
+    expect(page).toContain("{isMandatory ? t('yes') : t('no')}");
     expect(page).toContain("value={details.mandatory ? t('yes') : t('no')}");
   });
 

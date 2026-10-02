@@ -183,7 +183,12 @@ describe('#942 the page renders the note everywhere a price surfaces', () => {
     expect(source).toContain(
       '{sessionNote && <span style={listHintStyle} title={sessionNote}>{sessionNote}</span>}',
     );
-    expect(source).toMatch(/label=\{t\('label_price'\)\}[\s\S]{0,160}hint=\{sessionNote\}/);
+    // #974: the expanded card renders Price through the shared layout, so the
+    // note is a line under the value rather than a `hint` prop — same rule,
+    // same resolution, one layout for both halves of the card.
+    expect(source).toMatch(
+      /case 'amount':[\s\S]{0,500}\{sessionNote && <p style=\{valueHintStyle\}>\{sessionNote\}<\/p>\}/,
+    );
   });
 
   it('shows it in the Details modal', () => {
@@ -225,6 +230,7 @@ describe('#942 the page renders the note everywhere a price surfaces', () => {
   });
 
   it('does not restate the help line\'s chrome (#929)', () => {
-    expect(source).toContain("import { formHelpTextStyle } from '@/components/formChrome';");
+    expect(source).toMatch(/formHelpTextStyle,[\s\S]{0,400}\} from '@\/components\/formChrome';/);
+    expect(source).not.toMatch(/const formHelpTextStyle/);
   });
 });

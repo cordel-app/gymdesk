@@ -51,6 +51,10 @@ const EXPECTED_LABEL: Record<(typeof LOCALE_CODES)[number], string> = {
 
 describe('Sellable Items: "Amount" renamed to "Price" (#670)', () => {
   const source = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
+const PROFILE_PATH = join(
+  __dirname, '..', 'app', '[locale]', 'financials', 'sellable-items', 'sellableItemProfile.ts',
+);
+const profileSource = readFileSync(PROFILE_PATH, 'utf-8');
 
   it.each(LOCALE_CODES)('labels the list column and the field "Price" in %s.json', (code) => {
     expect(sellableItemsKey(locales[code], 'col_price')).toBe(EXPECTED_LABEL[code]);
@@ -90,9 +94,12 @@ describe('Sellable Items: "Amount" renamed to "Price" (#670)', () => {
   });
 
   it('renders the new label at every place the price surfaces', () => {
-    // The inline create form, the inline edit form, the expanded detail row and
-    // the details modal — four call sites, all on the one key.
-    expect(source.match(/t\('label_price'\)/g) ?? []).toHaveLength(4);
+    // #974: the expanded card and the inline editor are one layout over one
+    // field declaration now, so the Price label is named *there* and the page
+    // resolves it generically. What is left in the page is the two forms that
+    // have a field list of their own — the create card and the Details modal.
+    expect(source.match(/t\('label_price'\)/g) ?? []).toHaveLength(2);
+    expect(profileSource).toContain("key: 'amount', labelKey: 'label_price'");
     // The list header comes from the shared column list, in the Amount column's
     // original position (after Units, before Tax Rate).
     expect(source).toMatch(

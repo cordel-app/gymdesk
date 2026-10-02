@@ -8,6 +8,7 @@ import {
   isLegacyFrequency,
   legacyFrequencyLabelKey,
 } from '@/app/[locale]/financials/sellable-items/sellableItemFrequency';
+import { EMPTY_VALUE } from '@/app/[locale]/financials/sellable-items/sellableItemProfile';
 
 // #821 / #945 — a Sellable Item's Billing Frequency dropdown offers four choices.
 //
@@ -108,7 +109,12 @@ describe('the page renders the declaration, not its own list', () => {
   });
 
   it('keeps the — placeholder both selects had', () => {
-    expect((pageSrc.match(/<option value="">—<\/option>/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    // #974: the inline editor spells it `{EMPTY_VALUE}` — the one placeholder
+    // the card's field declaration declares, so every unset value on the card
+    // reads the same way — while the create card still carries the literal.
+    const placeholders = pageSrc.match(/<option value="">(?:—|\{EMPTY_VALUE\})<\/option>/g) ?? [];
+    expect(placeholders.length).toBeGreaterThanOrEqual(2);
+    expect(EMPTY_VALUE).toBe('—');
   });
 
   it('honours the disabled flag rather than rendering every option selectable', () => {
