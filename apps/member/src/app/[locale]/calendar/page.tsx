@@ -11,6 +11,12 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
+import {
+  EVENT_STATUS_CHIP_STYLE,
+  eventBackgroundColor,
+  memberEventStatusLine,
+  readableEventTextColor,
+} from '@/lib/calendarEventDisplay';
 
 interface ActivityType { id: number; name: string; color: string | null }
 
@@ -57,18 +63,12 @@ interface ScheduleSession {
   occupancy_status: OccupancyStatus;
   waitlist_status: WaitlistStatus;
   waitlist_count: number;
+  // #976: the event's own colour — COALESCE(calendar_events.color,
+  // activity_types.color) — which is what the event box is painted with now.
+  // `null` means the gym configured none, and the theme's Calendar event
+  // colour paints it instead.
+  color: string | null;
 }
-
-const STATE_COLORS: Record<ScheduleSession['availability_state'], string> = {
-  UNAVAILABLE:                '#9ca3af',
-  BOOKED_BY_MEMBER:           '#22c55e',
-  AVAILABLE:                  '#3b82f6',
-  WAITLISTED_BY_MEMBER:       '#f59e0b',
-  SHARED_REQUESTED_BY_MEMBER: '#a78bfa',
-  SHARED_REQUEST_AVAILABLE:   '#8b5cf6',
-  WAITLIST_AVAILABLE:         '#f97316',
-  FULL:                       '#ef4444',
-};
 
 export default function MemberCalendarPage() {
   const t = useTranslations('member_calendar');
@@ -142,15 +142,28 @@ export default function MemberCalendarPage() {
       apiFetch<ScheduleSession[]>(`/me/schedule?${params}`)
         .then((sessions) =>
           successCb([
-            ...sessions.map((s) => ({
-              id: String(s.id),
-              title: s.class_type_name,
-              start: s.starts_at,
-              end: s.ends_at,
-              backgroundColor: STATE_COLORS[s.availability_state],
-              borderColor:     STATE_COLORS[s.availability_state],
-              extendedProps: s,
-            })),
+            // #976: the box takes the *event's* colour, never the member's
+            // own booking state. An event with no colour configured gets no
+            // inline style at all, so the theme's `calendarEventBackground`
+            // /`Border`/`Text` show through (#559 stage 2) — FullCalendar
+            // writes these as inline styles, which would otherwise beat it.
+            ...sessions.map((s) => {
+              const background = eventBackgroundColor(s);
+              return {
+                id: String(s.id),
+                title: s.class_type_name,
+                start: s.starts_at,
+                end: s.ends_at,
+                ...(background
+                  ? {
+                      backgroundColor: background,
+                      borderColor: background,
+                      textColor: readableEventTextColor(background),
+                    }
+                  : {}),
+                extendedProps: s,
+              };
+            }),
             ...holidayBackgroundEvents(holidays, info.start, info.end),
           ]),
         )
@@ -401,6 +414,11 @@ export default function MemberCalendarPage() {
           dateClick={handleDateClick}
           eventContent={(arg: any) => {
             const s = arg.event.extendedProps as ScheduleSession;
+            // #976: the member's own relationship with the event, as text.
+            // `null` is the answer for a member who never booked it — a past
+            // class they skipped is just a past class, and the slot's own
+            // operational state is none of their business.
+            const statusLine = memberEventStatusLine(s);
             return (
               <div style={{ padding: '1px 3px', fontSize: 11, overflow: 'hidden', cursor: 'pointer' }}>
                 <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
@@ -414,6 +432,13 @@ export default function MemberCalendarPage() {
                 <div style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {t('occupancy_count', { booked: s.booked_count, capacity: s.effective_capacity })}
                 </div>
+                {statusLine && (
+                  <div style={{ marginTop: 1, overflow: 'hidden' }}>
+                    <span style={EVENT_STATUS_CHIP_STYLE}>
+                      {t(statusLine.key, statusLine.values)}
+                    </span>
+                  </div>
+                )}
               </div>
             );
           }}

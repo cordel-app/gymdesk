@@ -176,7 +176,15 @@
     "occupancy_count": "{booked}/{capacity}",
     "waitlist_open": "Llista d'espera oberta",
     "waitlist_closed": "Llista d'espera tancada",
-    "waitlist_count": "{count} persones en espera"
+    "waitlist_count": "{count} persones en espera",
+    "event_status_booked": "Reservat",
+    "event_status_booked_waiting": "Reservat · {waiting} en espera",
+    "event_status_completed": "Finalitzat",
+    "event_status_cancelled": "Cancel·lat",
+    "event_status_waitlist": "Llista d'espera",
+    "event_status_waitlist_waiting": "Llista d'espera · {waiting} en espera",
+    "event_status_waitlist_position": "Llista d'espera · Posició núm. {position}",
+    "event_status_waitlist_position_waiting": "Llista d'espera · Posició núm. {position} · {waiting} en espera"
   },
   "notifications": {
     "title": "Alertes",

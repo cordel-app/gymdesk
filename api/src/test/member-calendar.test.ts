@@ -625,4 +625,49 @@ describe('#503 stage 6: schedule filters and /me/trainers', () => {
     expect(row).not.toHaveProperty('role');
     expect(row).not.toHaveProperty('user_id');
   });
+  // #976: the member calendar paints an event with the *event's* colour, so
+  // GET /me/schedule has to report one. The resolution is the event's own
+  // column first and the Activity Type's as the fallback, because a
+  // schedule-rule-materialized occurrence never went through the admin event
+  // form that pre-fills it.
+  describe('#976: the event colour the member calendar paints with', () => {
+    it('reports the occurrence’s own colour when it has one', async () => {
+      const atId = await createActivityType(gymId, 0, 5);
+      await db.query('UPDATE activity_types SET color = ? WHERE id = ?', ['#112233', atId]);
+      const sId = await createSession(gymId, atId, centerId, 0);
+      await db.query('UPDATE calendar_events SET color = ? WHERE id = ?', ['#aabbcc', sId]);
+      const res = await request
+        .get(`/me/schedule?activity_type_id=${atId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      const session = (res.body as any[]).find((x: any) => x.id === sId);
+      expect(session.color).toBe('#aabbcc');
+    });
+
+    it('falls back to the Activity Type’s colour for an occurrence that carries none', async () => {
+      const atId = await createActivityType(gymId, 0, 5);
+      await db.query('UPDATE activity_types SET color = ? WHERE id = ?', ['#112233', atId]);
+      const sId = await createSession(gymId, atId, centerId, 0);
+      const res = await request
+        .get(`/me/schedule?activity_type_id=${atId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      const session = (res.body as any[]).find((x: any) => x.id === sId);
+      expect(session.color).toBe('#112233');
+    });
+
+    it('reports null when neither configured one, so the member app uses the theme’s', async () => {
+      const atId = await createActivityType(gymId, 0, 5);
+      const sId = await createSession(gymId, atId, centerId, 0);
+      const res = await request
+        .get(`/me/schedule?activity_type_id=${atId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(res.status).toBe(200);
+      const session = (res.body as any[]).find((x: any) => x.id === sId);
+      expect(session.color).toBeNull();
+    });
+  });
 });
