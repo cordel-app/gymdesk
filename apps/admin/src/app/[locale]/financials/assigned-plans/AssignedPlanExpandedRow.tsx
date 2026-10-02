@@ -13,6 +13,7 @@ import { AdditionalPeriodicServices } from './AdditionalPeriodicServices';
 import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
 import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
+import { BillingEventSimulation } from '@/components/BillingEventSimulation';
 import {
   exampleTimelineRowTone,
   formatExampleTimelineBilling,
@@ -291,6 +292,26 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
           // rather than relayed in English.
           <p style={dim}>{t('timeline_unavailable')}</p>
         )}
+      </Section>
+
+      {/* #924 stage 4 (§8) — the BILLING EVENT FORECAST: the Membership Plan
+          card's Billing Event Simulation, for this contract. One group per
+          billing *date*, listing every line that falls on it — the Membership
+          Fee plus each Sellable Item the assignment carries, each item its
+          standing Promotions grant and each Additional Periodic Service — over
+          two complete cycles of every recurring frequency present (§10).
+          Where the Membership Fee Simulation above answers "what does each
+          billing period do to the fee", this answers "what is billed, in full,
+          on each date"; neither grows into the other. Every date and amount is
+          the shared Billing Simulation engine's, read from this assignment's
+          own snapshot, so the forecast cannot disagree with what the nightly
+          run charges. Read-only: computed on every read, persisted nowhere. */}
+      <Section label={t('section_billing_forecast')}>
+        <BillingEventSimulation
+          simulation={detail.billing_event_simulation}
+          t={(key, values) => t(key as any, values as any)}
+          formatDate={(date) => fmtTimelineDate(date, locale)}
+        />
       </Section>
 
       {/* #631: Additional Periodic Services belong to the Assigned Plan itself —

@@ -1,5 +1,6 @@
 import type { SellableItemBenefitAction } from '@/lib/sellableItemBenefitActions';
 import type { SessionBenefitFrequency } from '@/lib/sessionBenefitFrequency';
+import type { BillingEventSimulationData } from '@/lib/billingEventSimulation';
 import type {
   ExampleTimelineProjection,
   ExampleTimelineStatus,
@@ -274,4 +275,13 @@ export interface AssignedPlanDetail {
    * frequency.
    */
   example_timeline: ExampleTimelineProjection | null;
+  /**
+   * #924 stage 4 (§8) — the Billing Event Forecast: one group per billing
+   * *date*, carrying every line that falls on it. Where `example_timeline`
+   * above is one row per billing *period* and is about the Membership Fee
+   * alone, this one adds the Sellable Items, the standing Promotions' grants
+   * and the Additional Periodic Services. Both are the server's, computed on
+   * every read and persisted nowhere.
+   */
+  billing_event_simulation: BillingEventSimulationData | null;
 }

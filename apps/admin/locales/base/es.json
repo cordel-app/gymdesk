@@ -3564,7 +3564,21 @@
     "timeline_prepaid_periods": "{count, plural, one {# periodo prepagado} other {# periodos prepagados}}",
     "tax_included_suffix": "IVA incluido",
     "timeline_disclaimer": "Simulación de la configuración propia de este plan asignado, incluidas sus promociones aplicadas. Los períodos futuros son una proyección y aún no se han facturado.",
-    "timeline_unavailable": "Este plan asignado no tiene frecuencia de facturación, por lo que no hay nada que simular."
+    "timeline_unavailable": "Este plan asignado no tiene frecuencia de facturación, por lo que no hay nada que simular.",
+    "section_billing_forecast": "Previsión de eventos de facturación",
+    "simulation_example_note": "Próximos eventos de facturación desde el {date}",
+    "simulation_unavailable": "No hay próximos eventos de facturación para este plan asignado.",
+    "simulation_mandatory": "Obligatorio",
+    "simulation_total": "Total",
+    "simulation_regular_was": "Precio regular {amount}",
+    "simulation_price_regular": "Precio regular",
+    "simulation_price_waived": "Exento",
+    "simulation_price_percentage": "{value}% de descuento",
+    "simulation_price_fixed_discount": "{amount} de descuento",
+    "simulation_price_fixed_price": "Precio fijo {amount}",
+    "simulation_prepaid_periods": "{count, plural, one {# periodo prepagado} other {# periodos prepagados}}",
+    "simulation_disclaimer": "Proyectado a partir de la configuración de este plan asignado, incluidas sus promociones aplicadas. Las fechas y los importes se recalculan en cada consulta y aquí no se cobra nada.",
+    "simulation_truncated": "La proyección se ha detenido en su límite de seguridad: no se muestran los eventos de facturación posteriores."
   },
   "taxes": {
     "title": "Impuestos",

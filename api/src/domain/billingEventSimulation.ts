@@ -75,7 +75,12 @@ export interface BillingEventSimulationResult {
   /** Why there is nothing to simulate, for the caller to render in its own words. */
   reason: string | null;
   currency: 'EUR';
-  /** The hypothetical enrollment date the dates were counted from. */
+  /**
+   * The date the projection is counted from: the hypothetical enrollment date
+   * for a Plan or Promotion preview, and — for an assignment that already
+   * exists (#924 stage 4) — the date its forecast starts at, which is today
+   * rather than an enrollment the card would be inventing.
+   */
   anchor_date: string | null;
   /** The last date the projection runs to. */
   horizon_date: string | null;
@@ -120,10 +125,19 @@ export const emptyBillingEventSimulation = (
 export function groupBillingEventsByDate(
   simulation: BillingSimulationResult,
   mandatoryByCharge: Map<number, boolean>,
+  /**
+   * #924 stage 4 — drops the billing dates before this one, for a projection of
+   * an assignment that already exists: its streams are anchored at its own
+   * `starts_at`, so an old contract's walk begins with cycles that were charged
+   * years ago (and whose ledger the card shows beside this section). A Plan or
+   * Promotion preview starts today and passes nothing.
+   */
+  fromDate?: string | null,
 ): { dates: BillingEventDate[]; total: number } {
   const byDate = new Map<string, BillingEventDate>();
   for (const section of simulation.sections) {
     for (const event of section.events) {
+      if (fromDate != null && event.date < fromDate) continue;
       let group = byDate.get(event.date);
       if (!group) {
         group = { date: event.date, lines: [], total: 0 };

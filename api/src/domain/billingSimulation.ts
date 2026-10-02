@@ -306,6 +306,25 @@ export interface BillingSimulationInput {
    * `cap` and by each stream's own end date.
    */
   minimumCycles?: number;
+  /**
+   * #924 stage 4 — the date the `minimumCycles` floor and the safety cap are
+   * counted from, for a projection of an assignment that **already exists**.
+   *
+   * Every stream is anchored at the assignment's own `starts_at`, because that
+   * is what the Billing & Duration counts from and what each billing date is
+   * stepped from (#635 §7). For a contract signed three years ago that leaves
+   * both bounds in the past — the horizon would be `starts_at + 2 cycles` and
+   * the cap `starts_at + 36 months` — so a forecast of what is still to come
+   * would be empty. Counting the two bounds from here instead keeps the dates
+   * exactly where the assignment puts them and only extends how far the walk
+   * runs.
+   *
+   * It is ignored for any stream that starts later than it (a Promotion
+   * grant's, an Additional Periodic Service's), whose own start is already the
+   * later anchor. Omitted — by the Plan and Promotion previews, whose
+   * hypothetical assignment starts today — nothing changes.
+   */
+  horizonFrom?: string;
 }
 
 /** Why an actual charge differs from the regular price. */
@@ -1380,7 +1399,11 @@ export function computeBillingSimulation(input: BillingSimulationInput): Billing
     ...streams.map((s) => s.start),
     ...singles.map((s) => s.date),
   ].reduce(minDate);
-  const cap = advanceBillingDate(startDate, input.maxMonths ?? MAX_SIMULATION_MONTHS, 'month');
+  // #924 stage 4: both bounds are counted from `horizonFrom` when it is later
+  // than the earliest stream — see the field's own note. Without it this is
+  // `startDate`, exactly as before.
+  const boundsFrom = input.horizonFrom != null ? maxDate(startDate, input.horizonFrom) : startDate;
+  const cap = advanceBillingDate(boundsFrom, input.maxMonths ?? MAX_SIMULATION_MONTHS, 'month');
 
   // Pass 1 — each stream's own first regular (unbenefited) charge, and (#915)
   // the caller's floor of N complete cycles of that stream, whichever is later.
@@ -1392,7 +1415,7 @@ export function computeBillingSimulation(input: BillingSimulationInput): Billing
     if (capped) truncated = true;
     const last = events[events.length - 1];
     if (last) horizon = maxDate(horizon, last.date);
-    const floor = cyclesFrom(stream.start, minimumCycles, stream.cadence);
+    const floor = cyclesFrom(maxDate(stream.start, boundsFrom), minimumCycles, stream.cadence);
     const bounded = stream.end != null ? minDate(floor, stream.end) : floor;
     horizon = maxDate(horizon, minDate(bounded, cap));
   }

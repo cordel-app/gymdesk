@@ -59,7 +59,7 @@ function toDateOnly(v: unknown): string {
   return v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10);
 }
 
-interface AssignmentRow {
+export interface AssignmentRow {
   id: number;
   membership_plan_id: number | null;
   status: string;
@@ -175,8 +175,39 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
   return byPromotion;
 }
 
-/** Builds the engine's input for one Member and runs it. Read-only end to end. */
-export async function computeMemberBillingSimulation(gymId: string, memberId: number): Promise<BillingSimulationResult> {
+/**
+ * Which assignments a simulation is built over — a whole Member's (#629), or
+ * one Assigned Plan's (#924 stage 4's Billing Event Forecast).
+ *
+ * Exactly one of the two is given. Both apply `SIMULATED_STATUSES`: an
+ * assignment that is `cancelled` or `expired` bills nothing further, so it
+ * contributes no future charges to either surface.
+ */
+export type SimulationAssignmentFilter =
+  | { memberId: number }
+  | { userMembershipId: number };
+
+/**
+ * Reads the assignments a simulation covers and builds the engine's input for
+ * each, snapshot-first (§14).
+ *
+ * Shared by the Member's consolidated Billing Simulation and by one Assigned
+ * Plan's Billing Event Forecast, so the rules that decide what an assignment
+ * bills — its frozen cadence (`ASSIGNMENT_CADENCE`), its frozen Billing &
+ * Duration, its frozen benefit rows, each application's own grant snapshot and
+ * its Personal Membership Fee Benefit — are resolved in one place rather than
+ * re-derived per surface. The raw row travels with each assignment because a
+ * caller may still need a column the engine does not take (#924 stage 4 reads
+ * `membership_plan_id` to gross the Membership Fee up at the Plan's tax rate).
+ *
+ * Read-only end to end.
+ */
+export async function loadSimulationAssignments(
+  gymId: string, filter: SimulationAssignmentFilter,
+): Promise<{ row: AssignmentRow; assignment: SimulationAssignment }[]> {
+  const scope = 'memberId' in filter
+    ? { sql: 'um.member_id = ?', param: filter.memberId }
+    : { sql: 'um.id = ?', param: filter.userMembershipId };
   const { rows } = await db.query<AssignmentRow>(
     `SELECT um.id, um.membership_plan_id, um.status, um.starts_at, um.ends_at,
             um.membership_fee_price, um.base_price,
@@ -197,10 +228,10 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      LEFT JOIN billing_policies bp
             ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
-     WHERE um.gym_id = ? AND um.member_id = ?
+     WHERE um.gym_id = ? AND ${scope.sql}
        AND um.status IN (${SIMULATED_STATUSES.map(() => '?').join(',')})
      ORDER BY um.starts_at ASC, um.id ASC`,
-    [gymId, memberId, ...SIMULATED_STATUSES],
+    [gymId, scope.param, ...SIMULATED_STATUSES],
   );
 
   const applicationsPerAssignment = await Promise.all(
@@ -226,7 +257,7 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
     hasBillingSnapshot: Number(row.has_billing_snapshot) === 1,
   })));
 
-  const assignments: SimulationAssignment[] = await Promise.all(rows.map(async (row, i) => {
+  return Promise.all(rows.map(async (row, i) => {
     const startsAt = toDateOnly(row.starts_at);
     const promotions: SimulationPromotion[] = applicationsPerAssignment[i].map((a) => ({
       name: a.name,
@@ -239,7 +270,7 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
       membershipFeeBenefits: a.membershipFeeBenefits,
       grants: grantsByApplication.get(a.id) ?? grantsByPromotion.get(a.promotionId) ?? [],
     }));
-    return {
+    const assignment: SimulationAssignment = {
       userMembershipId: row.id,
       planName: row.plan_name,
       startsAt,
@@ -255,9 +286,14 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
       // counterpart, so the snapshot's all-or-nothing fallback does not apply.
       personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
     };
+    return { row, assignment };
   }));
+}
 
-  return computeBillingSimulation({ assignments });
+/** Builds the engine's input for one Member and runs it. Read-only end to end. */
+export async function computeMemberBillingSimulation(gymId: string, memberId: number): Promise<BillingSimulationResult> {
+  const loaded = await loadSimulationAssignments(gymId, { memberId });
+  return computeBillingSimulation({ assignments: loaded.map((l) => l.assignment) });
 }
 
 // Mounted at /user-memberships/member/:memberId/billing-simulation (app.ts),

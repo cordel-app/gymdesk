@@ -22,6 +22,7 @@ import {
   priceMembershipFeeOn,
 } from './membership-fee-pricing';
 import { assignedPlanFeeTimeline, assignedPlanFeeTimelineById } from './assigned-plan-fee-timeline';
+import { assignedPlanBillingForecast } from './assigned-plan-billing-forecast';
 import {
   loadAssignedPlanBenefitSection,
   loadAssignedPlanSnapshot,
@@ -392,6 +393,13 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   const feeRow = await loadFeeAssignment(gymId, Number(um.id));
   const membershipFee = feeRow ? (await priceMembershipFeeOn(feeRow, currentCycleDate(feeRow))).amount : null;
   const exampleTimeline = feeRow ? await assignedPlanFeeTimeline(gymId, feeRow) : null;
+  // #924 stage 4 (§8) — the Billing Event Forecast: every line this assignment
+  // still has to be charged, grouped by the date it falls on. The Membership
+  // Fee Simulation above is one row per billing *period* and is about the fee
+  // alone; this is one group per billing *date* and carries the Sellable Items,
+  // the standing Promotions' grants and the Additional Periodic Services with
+  // it. Same engine, same snapshot, computed on every read, persisted nowhere.
+  const billingEventSimulation = await assignedPlanBillingForecast(gymId, Number(um.id));
 
   res.json({
     ...um, ...audit,
@@ -409,8 +417,21 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // `resolveMembershipFee()` the nightly run charges with. Read-only,
     // computed on every read, persisted nowhere (see docs/architecture.md).
     example_timeline: exampleTimeline,
+    billing_event_simulation: billingEventSimulation,
     snapshot,
   });
+});
+
+// The same forecast on its own, for a caller that only needs this section —
+// the counterpart of `/:id/example-timeline` beside it, and of
+// `GET /promotions/:id/billing-event-simulation` (#922) one entity over.
+userMembershipsRouter.get('/:id/billing-event-simulation', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const forecast = await assignedPlanBillingForecast(gymId, Number(req.params.id));
+    if (!forecast) return res.status(404).json({ error: 'Membership not found' });
+    res.json(forecast);
+  } catch (err) { next(err); }
 });
 
 // The same projection on its own, for a caller that only needs this section —
