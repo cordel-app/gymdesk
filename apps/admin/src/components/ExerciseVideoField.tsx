@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { gymStorageBlock } from '@/lib/gymStorageReadiness';
-import { btnSmall } from './ui';
+import { btnSmall, primaryBtnSmall } from './ui';
 import { ConfirmDialog } from './ConfirmDialog';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import {
@@ -201,7 +201,12 @@ export function ExerciseVideoField({
           onClick={() => inputRef.current?.click()}
           disabled={blocked || busy !== null}
           title={disabled ? disabledTitle : undefined}
-          style={btnSmall('#6c63ff')}
+          // #968 §6: the picker takes the Theme's Primary Button colours
+          // through the shared helper rather than the legacy lilac, so a gym
+          // that themes Buttons → Primary Button sees it here too. Its
+          // geometry, its position and its behaviour are unchanged, and
+          // `Remove` beside it stays neutral.
+          style={primaryBtnSmall()}
         >
           {busy === 'upload' ? t('video_uploading') : hasVideo ? t('video_replace') : t('video_upload')}
         </button>

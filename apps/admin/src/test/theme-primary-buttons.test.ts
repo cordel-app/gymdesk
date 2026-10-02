@@ -141,14 +141,24 @@ const APP = join(SRC, 'app');
 const COMPONENTS = join(SRC, 'components');
 
 /**
- * The three file-picker controls keep their own colour on purpose: a file picker
- * is not its form's primary action (its Save is), and CLAUDE.md lists
- * "secondary, file-picker and destructive buttons keep their own colours"
- * beside the helpers this ticket is about. They are named here so removing one
- * from the list is a deliberate edit rather than an oversight.
+ * The file-picker controls that still keep their own colour: a file picker is
+ * not its form's primary action (its Save is), so #954 left all three out of
+ * the sweep and named them here, "so theming them later is a decision someone
+ * makes, not a line someone forgets".
+ *
+ * #968 is that decision, for the two Exercise media controls: the Base Exercise
+ * form's `Upload Image` / `Upload Video` were the only lilac left in that view,
+ * so they now take `primaryBtnSmall()` and are asserted as themed below
+ * (`exercise-form-actions.test.ts` covers the rest of the form). The generic
+ * `ImageUploadField`, which the Exercise form does not render, is unchanged and
+ * stays on this list.
  */
 const FILE_PICKERS = [
   join(COMPONENTS, 'ImageUploadField.tsx'),
+];
+
+/** The two pickers #968 moved onto the Theme's Primary Button pair. */
+const THEMED_EXERCISE_PICKERS = [
   join(COMPONENTS, 'ExerciseImageField.tsx'),
   join(COMPONENTS, 'ExerciseVideoField.tsx'),
 ];
@@ -223,14 +233,22 @@ describe('No primary action in the Admin app is hardcoded lilac (#954 §1, §2)'
     expect(wrapped.length).toBeGreaterThan(8);
   });
 
-  it('leaves the file pickers, the secondaries and the destructive buttons alone', () => {
-    // §5: these are explicitly not primary actions. The pickers keep the colour
-    // they had — this assertion is what makes changing that a decision.
+  it('leaves the remaining file picker, the secondaries and the destructive buttons alone', () => {
+    // §5: these are explicitly not primary actions. The picker keeps the colour
+    // it had — this assertion is what makes changing that a decision.
     for (const path of FILE_PICKERS) {
       const src = read(path);
       expect(src, `${path} no longer renders its own picker colour`).toContain("btnSmall('#6c63ff')");
+    }
+    // #968: the two Exercise pickers are the ones that moved, and their neutral
+    // `Remove` stayed exactly as it was.
+    for (const path of THEMED_EXERCISE_PICKERS) {
+      const src = read(path);
+      expect(src, `${path} still spells the legacy lilac`).not.toContain('#6c63ff');
+      expect(src, `${path} does not use the shared primary helper`).toContain('style={primaryBtnSmall()}');
       expect(src, `${path} lost its neutral Remove button`).toContain("btnSmall('#888')");
     }
+    expect(read(join(COMPONENTS, 'ImageUploadField.tsx'))).toContain("btnSmall('#888')");
     // A modal's Cancel is still grey, and a destructive action still red.
     expect(read(join(COMPONENTS, 'CrudModal.tsx'))).toContain("btnStyle('#aaa')");
     expect(read(join(APP, '[locale]', 'calendar', 'ClassSessionDetailPanel.tsx'))).toContain("background: '#dc2626'");

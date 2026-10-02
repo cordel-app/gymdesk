@@ -2,7 +2,11 @@
 
 import React from 'react';
 import { useTranslations } from 'next-intl';
-import { btnSmall, primaryBtnSmall } from '@/components/ui';
+import { primaryBtnSmall } from '@/components/ui';
+// #968: the form's own actions wear the platform's chrome — the left-aligned
+// inline row, the themed primary and the neutral secondary — rather than a
+// right-aligned pair with a grey Cancel of this form's own.
+import { formErrorStyle, inlineActionsRowStyle, secondaryBtnSmall } from '@/components/formChrome';
 import {
   EXERCISE_STATUSES,
   resultTypeLabel,
@@ -199,9 +203,14 @@ export function ExerciseEditor({
         {media}
       </div>
 
-      {state.error && <p style={{ margin: '8px 0 0', fontSize: 13, color: '#c0392b' }}>{state.error}</p>}
-      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-        <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
+      {state.error && <p style={formErrorStyle}>{state.error}</p>}
+      {/* #968: left-aligned, at the form's own content margin, in the order and
+          with the styles every other inline section editor in the app uses —
+          `secondaryBtnSmall` for Cancel, `primaryBtnSmall()` for Save. Nothing
+          here spells a colour, so a gym theming Buttons → Primary Button moves
+          Save Changes on both Exercise screens at once. */}
+      <div style={inlineActionsRowStyle}>
+        <button onClick={onCancel} style={secondaryBtnSmall}>{t('cancel')}</button>
         <button onClick={onSave} disabled={state.saving} style={primaryBtnSmall()}>
           {state.saving ? t('saving') : primaryLabel}
         </button>
