@@ -108,6 +108,37 @@ export const cardHintStyle: React.CSSProperties = {
   margin: '0 0 12px',
 };
 
+/**
+ * A `Label: Value` pair on one line — the shape an expanded card uses for an
+ * entity's own read-only fields (`Start date`, `Membership fee`, `Billing
+ * frequency`). The vertical `formFieldLabelStyle` + `formValueStyle` pair above
+ * is the *form's* layout; this is the denser one a card reads in, and the
+ * Membership Plan card has rendered it since #547.
+ *
+ * #924 stage 5: the Assigned Plan card had three copies of it, each with its own
+ * label width and type size, so the same pair sat at 140px there and 200px on
+ * the Plan card it is meant to mirror. The numbers here are the Plan card's.
+ */
+export const cardDetailRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 12,
+  padding: '4px 0',
+  fontSize: 13.5,
+};
+
+/** That pair's label: fixed width, so every value on a card lines up. */
+export const cardDetailLabelStyle: React.CSSProperties = {
+  width: 200,
+  flexShrink: 0,
+  color: '#888',
+};
+
+/** And its value. */
+export const cardDetailValueStyle: React.CSSProperties = {
+  color: '#222',
+  flex: 1,
+};
+
 /** The label above a field, in a form and beside a read-only value alike. */
 export const formFieldLabelStyle: React.CSSProperties = {
   display: 'block',
