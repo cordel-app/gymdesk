@@ -306,6 +306,21 @@ export interface BillingSimulationInput {
    * `cap` and by each stream's own end date.
    */
   minimumCycles?: number;
+  /**
+   * #924 stage 4 — the date the horizon (both the `minimumCycles` floor and the
+   * safety cap) is measured from. Defaults to the earliest stream start, which
+   * is what every hypothetical-assignment caller wants: a Plan or Promotion
+   * preview starts today, so the two are the same date.
+   *
+   * An **existing** assignment is the case that needs it. Its streams are
+   * anchored on the contract's real `starts_at`, so a projection of a member
+   * who enrolled three years ago would measure both the floor and the 36-month
+   * cap from 2023 and report an empty projection — every date it could name is
+   * already in the past. Passing today here keeps the dates, the amounts and
+   * the period statuses exactly as the engine computes them from `starts_at`
+   * (nothing is re-anchored) and only extends how far forward it runs.
+   */
+  horizonFrom?: string;
 }
 
 /** Why an actual charge differs from the regular price. */
@@ -830,6 +845,16 @@ function cyclesFrom(start: string, cycles: number, cadence: Cadence): string {
     cursor = next;
   }
   return cursor;
+}
+
+/**
+ * #924 stage 4 — the date of the first occurrence of `start`'s own schedule
+ * that falls on or after `from`; `start` itself when it is already there, which
+ * is every stream of a hypothetical assignment and every stream beginning after
+ * the anchor. Composed from the two helpers above rather than scanning again.
+ */
+function firstOccurrenceFrom(start: string, from: string, cadence: Cadence): string {
+  return cyclesFrom(start, occurrenceIndexOf(start, from, cadence), cadence);
 }
 
 /** A non-recurring charge: one line, on the assignment's start date. */
@@ -1380,7 +1405,13 @@ export function computeBillingSimulation(input: BillingSimulationInput): Billing
     ...streams.map((s) => s.start),
     ...singles.map((s) => s.date),
   ].reduce(minDate);
-  const cap = advanceBillingDate(startDate, input.maxMonths ?? MAX_SIMULATION_MONTHS, 'month');
+  // #924 stage 4 — where the horizon is measured from. For a hypothetical
+  // assignment (a Plan or Promotion preview) that is the earliest stream start,
+  // which is today; for a contract that already exists it is the caller's own
+  // anchor, because a cap counted from a `starts_at` three years ago lands in
+  // the past and would project nothing at all for the cycles still ahead.
+  const horizonFrom = maxDate(startDate, input.horizonFrom ?? startDate);
+  const cap = advanceBillingDate(horizonFrom, input.maxMonths ?? MAX_SIMULATION_MONTHS, 'month');
 
   // Pass 1 — each stream's own first regular (unbenefited) charge, and (#915)
   // the caller's floor of N complete cycles of that stream, whichever is later.
@@ -1392,7 +1423,14 @@ export function computeBillingSimulation(input: BillingSimulationInput): Billing
     if (capped) truncated = true;
     const last = events[events.length - 1];
     if (last) horizon = maxDate(horizon, last.date);
-    const floor = cyclesFrom(stream.start, minimumCycles, stream.cadence);
+    // Counted from this stream's first occurrence at or after the anchor, not
+    // from its own start, for the same reason: N cycles of a stream that began
+    // years ago are already behind us. For a stream that starts at the anchor —
+    // every stream of a hypothetical assignment — the two are the same date, so
+    // the Plan and Promotion previews are unaffected.
+    const floor = cyclesFrom(
+      firstOccurrenceFrom(stream.start, horizonFrom, stream.cadence), minimumCycles, stream.cadence,
+    );
     const bounded = stream.end != null ? minDate(floor, stream.end) : floor;
     horizon = maxDate(horizon, minDate(bounded, cap));
   }

@@ -22,6 +22,7 @@ import {
   priceMembershipFeeOn,
 } from './membership-fee-pricing';
 import { assignedPlanFeeTimeline, assignedPlanFeeTimelineById } from './assigned-plan-fee-timeline';
+import { assignedPlanBillingForecast } from './assigned-plan-billing-forecast';
 import {
   loadAssignedPlanBenefitSection,
   loadAssignedPlanSnapshot,
@@ -392,6 +393,11 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   const feeRow = await loadFeeAssignment(gymId, Number(um.id));
   const membershipFee = feeRow ? (await priceMembershipFeeOn(feeRow, currentCycleDate(feeRow))).amount : null;
   const exampleTimeline = feeRow ? await assignedPlanFeeTimeline(gymId, feeRow) : null;
+  // #924 stage 4 (§8) — the Billing Event Forecast: every line this assignment
+  // still has ahead of it, grouped by the date it falls on. Read through the
+  // very loader the Member-level Billing Simulation uses, so it cannot price a
+  // date differently from the nightly run.
+  const billingEventSimulation = await assignedPlanBillingForecast(gymId, Number(um.id));
 
   res.json({
     ...um, ...audit,
@@ -409,6 +415,13 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // `resolveMembershipFee()` the nightly run charges with. Read-only,
     // computed on every read, persisted nowhere (see docs/architecture.md).
     example_timeline: exampleTimeline,
+    // #924 stage 4 (§8/§9/§10) — the Billing Event Forecast: one group per
+    // billing *date*, listing every line that falls on it (the Membership Fee
+    // plus each Sellable Item and Additional Periodic Service this contract
+    // carries), where the Membership Fee Simulation above is one row per
+    // billing *period* about the fee alone. Neither replaces the other.
+    // Read-only, computed on every read, persisted nowhere.
+    billing_event_simulation: billingEventSimulation,
     snapshot,
   });
 });
@@ -423,6 +436,21 @@ userMembershipsRouter.get('/:id/example-timeline', async (req, res, next) => {
     const timeline = await assignedPlanFeeTimelineById(gymId, Number(req.params.id));
     if (!timeline) return res.status(404).json({ error: 'Membership not found' });
     res.json(timeline);
+  } catch (err) { next(err); }
+});
+
+// The same projection on its own, for the refetch the card does after a
+// configuration or promotion edit — `GET /membership-plans/:id/billing-event-simulation`
+// is its Membership Plan counterpart (#915) and
+// `GET /promotions/:id/billing-event-simulation` the Promotion's (#922).
+userMembershipsRouter.get('/:id/billing-event-simulation', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      'SELECT id FROM user_memberships WHERE id = ? AND gym_id = ?', [req.params.id, gymId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
+    res.json(await assignedPlanBillingForecast(gymId, Number(req.params.id)));
   } catch (err) { next(err); }
 });
 
