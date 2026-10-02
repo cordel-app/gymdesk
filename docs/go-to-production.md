@@ -132,6 +132,22 @@ Tick items off in the PR that completes them.
       column is what a member was *agreed*, and a re-apply would reinstate it empty
       — which reads as a one-time allowance and would under-report every renewing
       one.
+- [ ] **Run migration 207 in a maintenance window** (#959). The same six tables
+      migration 203 rebuilt: `promotion_{session,oneoff,periodical}` (per-gym
+      catalogue, small) and the three `user_membership_promotion_*_snapshot` tables,
+      which grow with every Promotion application. Each gains a
+      `requirement VARCHAR(20) NOT NULL DEFAULT 'mandatory'` — appended at the end
+      of the row, so the add is INSTANT and backfills every existing row in the same
+      statement — plus a `chk_<table>_requirement` CHECK, which MySQL 8 applies with
+      ALGORITHM=COPY. One rebuild per table, so the cost is the CHECK and nothing
+      else; time the three snapshot tables against a copy first, and if 203 has not
+      run in production yet, schedule 203 and 207 together since they rebuild the
+      same six tables back to back. Every statement is guarded independently, so a
+      re-run after a crash resumes rather than skipping the CHECK. Its `down`
+      deliberately **refuses** to drop the column — on all six tables, not only the
+      snapshots — while any row holds `optional`: unlike 205's nullable column, a
+      rollback-and-re-apply here would not leave the value empty but rewrite it as
+      `mandatory`, which tells the member the opposite of what was configured.
 - [ ] **Time migration 175's backfill before running it** (#635 stage 2). The DDL is
       cheap — six nullable column adds on `user_memberships` plus three new tables —
       but the file ends with data statements that touch every existing row: one

@@ -85,7 +85,9 @@ describe('the option set mirrors the API declaration', () => {
 describe('the Frequency column stays one column', () => {
   it('is the same shared column declaration, between Quantity and Benefit', () => {
     expect(SELLABLE_ITEM_BENEFIT_COLUMNS.map((c) => c.key)).toEqual([
-      'item', 'quantity', 'frequency', 'action', 'original_price', 'final_price',
+      // #959 appended Requirement after Benefit; Frequency's position is unmoved.
+      'item', 'quantity', 'frequency', 'action', 'requirement',
+      'original_price', 'final_price',
     ]);
   });
 

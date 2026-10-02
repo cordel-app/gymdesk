@@ -110,10 +110,15 @@ describe('Plans: the expanded card is read-only (#816 §1, §12)', () => {
       'isEditing && durationEditForPlanId === plan.id ?',
       'isEditing && isEditingBenefit(plan.id, section) ?',
       'isEditing && centersForPlanId === plan.id ?',
-      'isEditing && plan.current_price != null &&',
     ]) {
       expect(expandedSrc, `missing guard: ${guard}`).toContain(guard);
     }
+    // #963 moved the apply-price action into the PRICING header, beside `Edit
+    // pricing`, so its own `isEditing` guard is now the header slot's — it is
+    // still offered only inside Edit mode, and only while PRICING is not open.
+    expect(expandedSrc).toMatch(
+      /isEditing && pricingForPlanId !== plan\.id \? \([\s\S]*?plan\.current_price != null && \([\s\S]*?apply_price_to_assigned/,
+    );
   });
 
   it('leaves Edit mode with every section editor closed rather than half-typed', () => {

@@ -62,7 +62,7 @@ describe('Promotions: component Edit actions live inside Edit mode (#897)', () =
       /isEditingCard\(promo\.id\) && !editing \? \(\) => enterSectionEdit\(promo, 'membership_fee'\) : null/,
     );
     // The shell renders the button only when it is handed one.
-    expect(fn('renderSectionHeader')).toMatch(/onEdit && \(/);
+    expect(fn('renderSectionHeader')).toMatch(/const slot = onEdit/);
   });
 
   it('keeps the existing Edit button, its placement and its label', () => {
@@ -76,8 +76,13 @@ describe('Promotions: component Edit actions live inside Edit mode (#897)', () =
     expect(header, 'the section Edit button is no longer the shared one').toContain('<SectionEditButton');
     expect(header, 'the section Edit button lost its label').toContain("label={t('edit')}");
     expect(header, 'the section Edit button lost its disabled state').toContain('disabled={disabled}');
-    expect(header, 'the header is no longer title-left / button-right')
-      .toContain("justifyContent: 'space-between'");
+    // #963 moved the row itself into the shared `CardSectionHeader`, which puts
+    // the action immediately after the title rather than at the far right of the
+    // card. The page no longer lays the row out at all.
+    expect(header, 'the header is no longer the shared section header')
+      .toContain('<CardSectionHeader');
+    expect(header, 'the header still spaces the action away from its title')
+      .not.toContain("justifyContent: 'space-between'");
   });
 
   it('renders the main configuration as a form for as long as Edit mode lasts', () => {
@@ -117,12 +122,18 @@ describe('Promotions: component Edit actions live inside Edit mode (#897)', () =
 
   it('gives a section editor its own error line, apart from the main form', () => {
     expect(pageSrc).toContain('setSectionError');
+    // #963 split the pair from its error line: the Save/Cancel buttons are
+    // rendered in the section's own header beside its title, while the error
+    // stays in the body under the fields it belongs to. The main form keeps
+    // `renderSectionActions`, which prints `editError` and nothing else.
     for (const call of [
-      /handleSaveBenefitSection\(promo\.id, cfg\.section\),\s*\{ onCancel: cancelSectionEdit, error: sectionError \}/,
-      /handleSaveBenefitSection\(promo\.id, 'membership_fee'\),\s*\{ onCancel: cancelSectionEdit, error: sectionError \}/,
+      /sectionHeaderActions\(\(\) => handleSaveBenefitSection\(promo\.id, cfg\.section\), cancelSectionEdit\)/,
+      /sectionHeaderActions\(\(\) => handleSaveBenefitSection\(promo\.id, 'membership_fee'\), cancelSectionEdit\)/,
     ]) {
       expect(pageSrc).toMatch(call);
     }
+    expect(pageSrc.match(/renderSectionError\(sectionError\)/g) ?? []).toHaveLength(2);
+    expect(pageSrc).toContain('function renderSectionActions(onSave: () => void)');
   });
 
   it('leaves the read-only presentation and the section set alone', () => {
