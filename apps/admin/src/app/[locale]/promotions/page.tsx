@@ -991,6 +991,11 @@ export default function PromotionsPage() {
         categoryItems={opts.categoryItems}
         showFrequency={opts.showFrequency}
         benefitContext="promotion"
+        // #959: Mandatory / Optional per configured item — whether the member may
+        // decline it when the Promotion is assigned. Promotions only (the ticket
+        // thread excludes Membership Plans), and this one wrapper is where the
+        // Promotion's context is named, so all three sections get it at once.
+        showRequirement
       />
     );
   }
@@ -1007,6 +1012,9 @@ export default function PromotionsPage() {
         rows={rows}
         showFrequency={showFrequency}
         benefitContext="promotion"
+        // #959: the read-only half of the same column — the card says what the
+        // editor holds.
+        showRequirement
         // #920: Regular Price and Final Price, both VAT-inclusive and both the
         // server's (`withSellableItemBenefitPrices`) — the page does no
         // arithmetic of its own (#817). The two columns are labelled from the

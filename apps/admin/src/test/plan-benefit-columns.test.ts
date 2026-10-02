@@ -46,8 +46,13 @@ const keysOf = (cols: { key: SellableItemBenefitColumnKey }[]) => cols.map((c) =
 
 describe('#916: one shared column declaration', () => {
   it('fixes the column order the ticket asks for', () => {
+    // #959 appended Requirement — a Promotion line's Mandatory/Optional flag —
+    // between Benefit and the prices. It is off for every Plan section
+    // (`showRequirement` defaults to false), so the Plan grid below is unchanged;
+    // what the declaration pins is the order, not the length.
     expect(keysOf([...SELLABLE_ITEM_BENEFIT_COLUMNS])).toEqual([
-      'item', 'quantity', 'frequency', 'action', 'original_price', 'final_price',
+      'item', 'quantity', 'frequency', 'action', 'requirement',
+      'original_price', 'final_price',
     ]);
   });
 
@@ -63,7 +68,7 @@ describe('#916: one shared column declaration', () => {
     const align = Object.fromEntries(SELLABLE_ITEM_BENEFIT_COLUMNS.map((c) => [c.key, c.align]));
     expect(align).toMatchObject({
       item: 'left', quantity: 'right', frequency: 'left', action: 'left',
-      original_price: 'right', final_price: 'right',
+      requirement: 'left', original_price: 'right', final_price: 'right',
     });
   });
 

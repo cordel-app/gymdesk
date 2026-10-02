@@ -15,6 +15,12 @@ import {
   toSellableItemBenefit,
 } from '../domain/sellableItemBenefitActions';
 import {
+  DEFAULT_PROMOTION_ITEM_REQUIREMENT,
+  PromotionItemRequirement,
+  parsePromotionItemRequirementInput,
+  toPromotionItemRequirement,
+} from '../domain/promotionItemRequirement';
+import {
   grossBenefitUnitPrice,
   withSellableItemBenefitPrices,
 } from './sellable-item-benefit-pricing';
@@ -269,6 +275,8 @@ interface PromotionBenefitRow {
   quantity: number;
   action: string | null;
   value: string | number | null;
+  /** #959 — whether the member may decline this item when the Promotion is assigned. */
+  requirement: string | null;
   gym_charge_name: string;
   gym_charge_type: string;
   gym_charge_billing_frequency: string | null;
@@ -297,7 +305,13 @@ async function loadPromotionBenefits(table: string, promotionId: unknown, gymId:
   );
   return withSellableItemBenefitPrices(
     'promotion',
-    rows.map((row) => shapeSellableItemBenefitRow('promotion', row)),
+    // #959: `b.*` brings the column along raw; normalize it so the wire shape is
+    // always one of the two accepted values, the way the pair beside it is
+    // normalized rather than echoed.
+    rows.map((row) => ({
+      ...shapeSellableItemBenefitRow('promotion', row),
+      requirement: toPromotionItemRequirement(row.requirement),
+    })),
   );
 }
 
@@ -326,7 +340,13 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
     if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
 
     const gymChargeIds: number[] = [];
-    const submitted: { gym_charge_id: number; quantity: number; benefit: SellableItemBenefit | null }[] = [];
+    const submitted: {
+      gym_charge_id: number;
+      quantity: number;
+      benefit: SellableItemBenefit | null;
+      /** #959: absent means the request named none, which is *keep what is stored*. */
+      requirement?: PromotionItemRequirement;
+    }[] = [];
     const seen = new Set<number>();
     for (const item of items) {
       const gymChargeId = parseInt(item.gym_charge_id, 10);
@@ -345,9 +365,18 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
       // this is the 400.
       const parsed = parseSellableItemBenefitInput('promotion', item);
       if (parsed.error) return res.status(400).json({ error: parsed.error });
+      // #959 — whether the member may decline this item when the Promotion is
+      // assigned. An unknown value is a 400, never coerced: `optional` and
+      // `mandatory` are opposite promises, so a typo must not silently become
+      // either one. The CHECK beside the table is the backstop.
+      const requirement = parsePromotionItemRequirementInput(item);
+      if (requirement.error) return res.status(400).json({ error: requirement.error });
       seen.add(gymChargeId);
       gymChargeIds.push(gymChargeId);
-      submitted.push({ gym_charge_id: gymChargeId, quantity, benefit: parsed.benefit });
+      submitted.push({
+        gym_charge_id: gymChargeId, quantity, benefit: parsed.benefit,
+        ...(requirement.keep ? {} : { requirement: requirement.requirement }),
+      });
     }
 
     if (gymChargeIds.length > 0) {
@@ -392,22 +421,34 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
         // meant; rewriting them to the neutral default here would, at stage 3,
         // start charging for an item the Promotion gives away.
         const { rows: stored } = await tx.query(
-          `SELECT gym_charge_id, \`action\`, \`value\` FROM ${table}
+          `SELECT gym_charge_id, \`action\`, \`value\`, requirement FROM ${table}
             WHERE promotion_id = ? AND gym_id = ? FOR UPDATE`,
           [promotionId, gymId],
         );
         const kept = new Map<number, SellableItemBenefit>(
           stored.map((r: any) => [Number(r.gym_charge_id), shapeSellableItemBenefitRow('promotion', r)]),
         );
+        // #959: and the Requirement it is stored with, for the same replace-all
+        // reason — a quantity-only save must not reset an item the gym made
+        // optional back to mandatory.
+        const keptRequirement = new Map<number, PromotionItemRequirement>(
+          stored.map((r: any) => [
+            Number(r.gym_charge_id), toPromotionItemRequirement(r.requirement),
+          ]),
+        );
         await tx.query(`DELETE FROM ${table} WHERE promotion_id = ? AND gym_id = ?`, [promotionId, gymId]);
         for (const item of submitted) {
           const benefit = item.benefit ?? kept.get(item.gym_charge_id) ?? NO_SELLABLE_ITEM_BENEFIT;
+          const requirement = item.requirement
+            ?? keptRequirement.get(item.gym_charge_id)
+            ?? DEFAULT_PROMOTION_ITEM_REQUIREMENT;
           await tx.query(
             `INSERT INTO ${table}
-               (gym_id, promotion_id, gym_charge_id, quantity, \`action\`, \`value\`, created_by_membership_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+               (gym_id, promotion_id, gym_charge_id, quantity, \`action\`, \`value\`,
+                requirement, created_by_membership_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
             [gymId, promotionId, item.gym_charge_id, item.quantity,
-             benefit.action, benefit.value, gymMembershipId ?? null],
+             benefit.action, benefit.value, requirement, gymMembershipId ?? null],
           );
         }
       });
