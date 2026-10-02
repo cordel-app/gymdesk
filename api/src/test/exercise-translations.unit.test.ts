@@ -202,7 +202,7 @@ describe('migration 208', () => {
   const sql = fs.readFileSync(MIGRATION, 'utf8');
 
   it('declares the junction shape the helpers query', () => {
-    expect(sql).toContain('CREATE TABLE ${TABLE}');
+    expect(sql).toMatch(/CREATE TABLE (IF NOT EXISTS )?\$\{TABLE\}/);
     expect(sql).toContain('PRIMARY KEY (exercise_id, locale)');
     expect(sql).toContain('KEY ext_locale_name (locale, name)');
     expect(sql).toContain('REFERENCES exercises(id) ON DELETE CASCADE');

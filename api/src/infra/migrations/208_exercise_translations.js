@@ -7,13 +7,21 @@
  * the junction shape `CLAUDE.md` pins for translated *data* and migration 166
  * already built for `nutrition_library_items`: one row per
  * `(exercise_id, locale)`, `PRIMARY KEY` on the pair, FK `ON DELETE CASCADE`,
- * plus `KEY (locale, name)` for the search subquery. Adding a fourth locale is
- * then data rather than DDL, and every existing id, FK and relationship is
- * untouched.
+ * plus `KEY (locale, name)` kept for symmetry with 166 — every query this ticket
+ * adds is served by the PRIMARY KEY, the cross-language search included (it
+ * correlates on `exercise_id` and carries no `locale` predicate), so the index is
+ * there for a future per-locale lookup rather than for one that exists today.
+ * Adding a fourth locale is data rather than DDL, and every existing id, FK and
+ * relationship is untouched.
  *
  * `exercises.name` stays the base (English) value: it is what a locale with no
  * row falls back to at read time (so nothing ever renders blank), what the
  * routers' own duplicate check compares, and what an edit form submits back.
+ * Uniqueness therefore stays on the base name alone — as it does for
+ * `nutrition_library_items` (166) — and two exercises of one gym may carry the
+ * same Spanish name while their base names differ. Deliberate: a live-name unique
+ * index here (183's `live_name_key` device) would make a gym's second translation
+ * fail a save for a reason no screen could explain.
  * The table serves **both** kinds of exercise — a Base Exercise (`gym_id IS
  * NULL`) and a gym's own — because they are one table and #967 §8 asks for one
  * contract; the FK is to `exercises(id)` and carries no `gym_id` of its own, so
@@ -21,15 +29,20 @@
  * exactly where it already is (on `exercises`).
  *
  * **Nothing is seeded, and nothing is backfilled.** There is no base-exercise
- * seed in this repository to translate (the catalogue is written by
- * `/platform/exercises` and, since #964, by the Free Exercise DB importer, whose
- * source is English-only), and an existing exercise — base or custom — keeps its
+ * seed in this repository to translate — the catalogue is written by
+ * `/platform/exercises` — and an existing exercise — base or custom — keeps its
  * current name as the base value with no rows here. That is exactly what #967 §9
  * asks for: an exercise with one name keeps it, and a translation is never
  * invented on its behalf. A locale with no row simply renders the base name
  * until someone types one in the editor.
  */
 
+/**
+ * 207 is deliberately skipped: #964's Free Exercise DB import is in flight on its
+ * own branch and already holds `207_exercise_source_provenance.js`, so taking 207
+ * here would land two migrations under one number. Numbering stays sequential
+ * once that branch merges.
+ */
 const TABLE = 'exercise_translations';
 
 /**
@@ -65,7 +78,7 @@ exports.up = async (knex) => {
   // VARCHAR(200) mirrors `exercises.name`: a translation that would not fit the
   // column it falls back to is refused by the router (400), never truncated.
   await knex.raw(`
-    CREATE TABLE ${TABLE} (
+    CREATE TABLE IF NOT EXISTS ${TABLE} (
       exercise_id INT UNSIGNED NOT NULL,
       locale      VARCHAR(10)  NOT NULL,
       name        VARCHAR(200) CHARACTER SET ${charset} COLLATE ${collation} NOT NULL,
