@@ -395,6 +395,7 @@ A member's card lives in `payment_methods` (one row per member and gym, `payment
 - `promotions` — applied promotions with their stage-2 snapshot overlay, via the same `fetchAppliedPromotions()` also used by `GET /:id/promotions`.
 - `additional_services` — the Additional Periodic Services attached to the assignment (#631, below).
 - `billing_events` — the Billing Events view (below).
+- `example_timeline` — the **Membership Fee Simulation** (#924 stage 3, below).
 
 `GET /user-memberships/:id/billing-events` exposes that last section on its own (a lighter, single-section fetch), computed by the same `computeBillingEventsView()` the `:id` response embeds it from.
 
@@ -405,6 +406,26 @@ A member's card lives in `payment_methods` (one row per member and gym, `payment
 `user_membership_promotions.revoked_at` (nullable `DATETIME`, migration 150) is stamped when a promotion is revoked (`DELETE /user-memberships/:id/promotions/:promotionId`) — together with `applied_at`, it defines the `[applied_at, revoked_at]` window used to tag whether a given billing event (or projected cycle) was affected by that promotion, independent of the row's `status`. Migration 150 also adds a `billing_events (user_membership_id, created_at)` composite index, since the range calculation reads every ledger row for one membership ordered by `created_at`.
 
 The Close action's unused-value check warns on a pending `next_billing_date`. #511 stage 3 also warned about a `session_count` allowance with sessions left in its window; #635 stage 4 (part 2) retired Included Services, so that half is gone — a Plan's Session Benefits are billed up front rather than consumed per booking, so closing forfeits nothing.
+
+### Membership Fee Simulation — the Assigned Plan's Example Timeline (#924 stage 3 — no migration)
+
+`GET /user-memberships/:id/example-timeline`, also embedded as `example_timeline` on `GET /user-memberships/:id`, is the Membership Plan card's **Example Timeline** (#818) for a contract that really exists: one row per billing period, with Period / Dates / Status / Billing. Read-only, recomputed on every request, persisted nowhere, charges nothing.
+
+§7 of #924 forbids the shortcut — *"the simulation should not implement a separate calculation engine"* — so the projection is shared and each entity owns only an adapter, exactly as #922 arranged the Billing Event Simulation:
+
+- `api/src/domain/exampleTimeline.ts` — the walk: period stepping over a cadence, the horizon (`TRAILING_REGULAR_PERIODS = 2` regular periods after everything configured has run out), the `MAX_TIMELINE_PERIODS = 60` cap and the open-ended final row. It prices nothing and classifies nothing.
+- `api/src/domain/planExampleTimeline.ts` — the Plan adapter (#818): one price for every period, each row classified by `classifyPlanDurationPeriod()`.
+- `api/src/domain/assignmentExampleTimeline.ts` — the assignment adapter: every row priced by `resolveMembershipFee()`, the one implementation the nightly run, `GET /me/membership` and every staff surface already read (#635 stage 12), so the table cannot advertise a charge the run does not make in either direction.
+- `api/src/api/assigned-plan-fee-timeline.ts` — the reads. It hands the adapter the very `MembershipFeeContext` `priceMembershipFeeOn()` builds (`membershipFeeContextFor()` in `membership-fee-pricing.ts`, extracted beside `negotiatedFeeLapsed()` and `standingFeePromotions()`), so the assignment's frozen Billing & Duration, its standing Promotion applications and its Personal Membership Fee Benefit (#772) are all in the numbers by construction.
+
+What the assignment contributes that a Plan preview cannot: real dates counted from its own `starts_at` in periods of its own cadence (`ASSIGNMENT_CADENCE`, #892); its applied Promotions, which outrank the Plan's durations wherever they govern a date (#635's Q2 answer); and a negotiated fee that lapses (`discount_expires_at`), resolved as the two numbers `regularMembershipFee()` can answer and picked per period by the same `negotiatedFeeLapsed()` predicate the nightly run asks.
+
+Two rules are load-bearing:
+
+- **The Status is reported, never re-derived.** `resolveMembershipFee()` returns a `periodStatus` (`free_plan` … `pay_regular`, or `free_promotion` … when a Promotion governs), because the precedence between the two is its decision alone. A caller classifying the period itself would label a cycle `free_plan` that the governing Promotion is charging the regular price for.
+- **Rows start at the period containing today**, while the period *numbers* count from `starts_at`: an assignment three years old has three years of elapsed cycles and the section answers what will be charged from here on. An assignment with no billing frequency at all reports `available: false` with a reason, exactly as a Plan with no `billing_policies` row does.
+
+Admin: `[locale]/financials/assigned-plans/AssignedPlanExpandedRow.tsx` renders `MEMBERSHIP FEE SIMULATION` between the applied Promotions and the Additional Periodic Services (§11's order), through the shared `components/ExampleTimeline.tsx` — the same table the Plan and Promotion cards use. The formatting rules are shared too (`apps/admin/src/lib/exampleTimeline.ts`: the Billing cell and the three row tones, which `plans/planProfile.ts` now delegates to); the page contributes only labels, and unlike the Plan card's — which may only say *(benefit)* — these may say *(promotion)*, because an Assigned Plan really can be inside one.
 
 ### Additional Periodic Services (#631, migration 164)
 

@@ -1,5 +1,9 @@
 import type { SellableItemBenefitAction } from '@/lib/sellableItemBenefitActions';
 import type { SessionBenefitFrequency } from '@/lib/sessionBenefitFrequency';
+import type {
+  ExampleTimelineProjection,
+  ExampleTimelineStatus,
+} from '@/lib/exampleTimeline';
 
 export interface AssignedPlanMember {
   member_id: number;
@@ -201,6 +205,40 @@ export interface BillingEventsView {
   events: BillingEventItem[];
 }
 
+/* ── Membership Fee Simulation (#924 stage 3, §7) ─────────────────────────── */
+//
+// The Membership Plan card's Example Timeline (#818), for this contract: one
+// row per billing period of the assignment's own cadence, each priced by the
+// same `resolveMembershipFee()` the nightly run charges with. The rows come
+// from the server (`example_timeline`) — which period is Free / Pre-paid /
+// Pay / Bonus and whether the Plan's duration or an applied Promotion decided
+// it are billing rules and are never re-derived here. What lives in this
+// declaration is how a row *reads*.
+//
+// Unlike the Plan card's version the labels may say **(promotion)**: an
+// Assigned Plan really can be inside one, and #635's Q2 answer is that where a
+// Promotion governs a date it decides the fee alone — so naming the Plan's own
+// durations there would attribute the price to the wrong agreement.
+
+export const ASSIGNED_PLAN_TIMELINE_STATUSES: ExampleTimelineStatus[] = [
+  'free_plan', 'prepaid_plan', 'pay_plan', 'bonus_plan',
+  'free_promotion', 'prepaid_promotion', 'pay_promotion', 'bonus_promotion',
+  'pay_regular',
+];
+
+/** The `assigned_plans_page.*` key labelling each status. */
+export const ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS: Record<ExampleTimelineStatus, string> = {
+  free_plan: 'timeline_free_plan',
+  prepaid_plan: 'timeline_prepaid_plan',
+  pay_plan: 'timeline_pay_plan',
+  bonus_plan: 'timeline_bonus_plan',
+  free_promotion: 'timeline_free_promotion',
+  prepaid_promotion: 'timeline_prepaid_promotion',
+  pay_promotion: 'timeline_pay_promotion',
+  bonus_promotion: 'timeline_bonus_promotion',
+  pay_regular: 'timeline_pay_regular',
+};
+
 export interface AssignedPlanDetail {
   id: number;
   status: string;
@@ -229,4 +267,11 @@ export interface AssignedPlanDetail {
   promotions: AppliedPromotion[];
   additional_services: AssignedPlanService[];
   billing_events: BillingEventsView;
+  /**
+   * #924 stage 3 — the Membership Fee Simulation. `null` only for a response
+   * written before the projection existed; the card renders the unavailable
+   * line for it, exactly as it does for an assignment with no billing
+   * frequency.
+   */
+  example_timeline: ExampleTimelineProjection | null;
 }

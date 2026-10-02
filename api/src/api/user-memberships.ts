@@ -14,7 +14,14 @@ import {
   validatePromotionSelection,
 } from './membership-promotions';
 import { loadAssignedPlanServices } from './user-membership-services';
-import { currentMembershipFee, currentMembershipFees } from './membership-fee-pricing';
+import {
+  currentCycleDate,
+  currentMembershipFee,
+  currentMembershipFees,
+  loadFeeAssignment,
+  priceMembershipFeeOn,
+} from './membership-fee-pricing';
+import { assignedPlanFeeTimeline, assignedPlanFeeTimelineById } from './assigned-plan-fee-timeline';
 import {
   loadAssignedPlanBenefitSection,
   loadAssignedPlanSnapshot,
@@ -379,7 +386,12 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     loadAssignedPlanSnapshot(gymId, um.id),
   ]);
   const billingEvents = await computeBillingEventsView(gymId, um);
-  const membershipFee = await currentMembershipFee(gymId, Number(um.id));
+  // One pricing row for both answers: what this cycle costs, and what every
+  // cycle from here on will (#924 stage 3). Loading it twice is two queries for
+  // one question.
+  const feeRow = await loadFeeAssignment(gymId, Number(um.id));
+  const membershipFee = feeRow ? (await priceMembershipFeeOn(feeRow, currentCycleDate(feeRow))).amount : null;
+  const exampleTimeline = feeRow ? await assignedPlanFeeTimeline(gymId, feeRow) : null;
 
   res.json({
     ...um, ...audit,
@@ -392,8 +404,26 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     promotions,
     additional_services: additionalServices,
     billing_events: billingEvents,
+    // #924 stage 3 (§7) — the Membership Fee Simulation: the Membership Plan
+    // card's Example Timeline for this contract, priced by the same
+    // `resolveMembershipFee()` the nightly run charges with. Read-only,
+    // computed on every read, persisted nowhere (see docs/architecture.md).
+    example_timeline: exampleTimeline,
     snapshot,
   });
+});
+
+// The same projection on its own, for a caller that only needs this section —
+// the card refetches it after a configuration or promotion edit, exactly as it
+// does the Billing Events view above. `GET /membership-plans/:id/example-timeline`
+// is its Membership Plan counterpart (#818).
+userMembershipsRouter.get('/:id/example-timeline', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const timeline = await assignedPlanFeeTimelineById(gymId, Number(req.params.id));
+    if (!timeline) return res.status(404).json({ error: 'Membership not found' });
+    res.json(timeline);
+  } catch (err) { next(err); }
 });
 
 // A lighter, single-section fetch for callers that only need the Billing

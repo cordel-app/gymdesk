@@ -532,15 +532,19 @@ export function resolveMembershipFee(regular: number, date: string, a: Membershi
 /** Everything that is bounded in time: the Promotions, then the Plan's own durations. */
 function resolveAgreedMembershipFee(regular: number, date: string, a: MembershipFeeContext): ResolvedCharge {
   const fromPromotions = resolvePromotionMembershipFee(regular, date, a.promotions);
+  // The governing Promotion decided the fee, so its own period is what this
+  // cycle's status is — the Plan's Billing & Duration is not consulted at all.
   if (fromPromotions.promotional || fromPromotions.benefits.length > 0) return fromPromotions;
 
   const status = classifyPlanDurationPeriod(a.planDuration, a.startsAt, date);
-  if (status === 'pay_regular') return fromPromotions;
+  if (status === 'pay_regular') return { ...fromPromotions, periodStatus: status };
   if (!planDurationWaivesFee(status)) {
     // Inside the Paid Duration: the regular amount either way, so this only
     // decides whether the projection may stop here — it may not while a Bonus
     // Duration behind it still has to be shown.
-    return a.planDuration.bonusPeriods > 0 ? { ...fromPromotions, promotional: true } : fromPromotions;
+    return a.planDuration.bonusPeriods > 0
+      ? { ...fromPromotions, promotional: true, periodStatus: status }
+      : { ...fromPromotions, periodStatus: status };
   }
   if (status === 'prepaid_plan') return resolvePrepaidMembershipFee(regular, date, a, fromPromotions);
   return {
@@ -548,6 +552,7 @@ function resolveAgreedMembershipFee(regular: number, date: string, a: Membership
     benefits: [{ source: 'membership_plan', name: null, action: 'waive', value: null, period_status: status }],
     promotional: true,
     pending: fromPromotions.pending,
+    periodStatus: status,
   };
 }
 
@@ -601,6 +606,7 @@ function resolvePrepaidMembershipFee(
       benefits: [],
       promotional: true,
       pending: fromPromotions.pending,
+      periodStatus: 'prepaid_plan',
       prepaidPeriods: periods,
     };
   }
@@ -612,6 +618,7 @@ function resolvePrepaidMembershipFee(
     }],
     promotional: true,
     pending: fromPromotions.pending,
+    periodStatus: 'prepaid_plan',
   };
 }
 
@@ -670,11 +677,19 @@ function resolvePromotionMembershipFee(regular: number, date: string, promotions
   // regular price but is still *inside* the promotion, so it is not the
   // "first regular billing milestone" the horizon stops at (#629 §6).
   let promotional = false;
+  // #924 stage 3 — which promotional period the caller is being charged for.
+  // The last covering Promotion wins, exactly as the amount above does: the
+  // loop folds them in order, so the status reported is the one that decided
+  // the number beside it.
+  let periodStatus: PromotionTimelineStatus | undefined;
 
   for (const promo of promotions) {
     if (!promotionCoversDate(promo, date)) continue;
     const { status, billingAction, billingValue } = classifyPromotionPeriod(promo, date);
-    if (status !== 'pay_regular') promotional = true;
+    if (status !== 'pay_regular') {
+      promotional = true;
+      periodStatus = status;
+    }
 
     if (status === 'free_promotion' || status === 'bonus_promotion') {
       amount = 0;
@@ -699,7 +714,7 @@ function resolvePromotionMembershipFee(regular: number, date: string, promotions
   }
 
   const pending = promotions.some((p) => date < p.appliedAt && hasPromotionalEffect(p));
-  return { amount: round2(amount), benefits, promotional, pending };
+  return { amount: round2(amount), benefits, promotional, pending, periodStatus };
 }
 
 /** Does this Promotion change the Membership Fee at all, in any period? */
@@ -745,6 +760,21 @@ export interface ResolvedCharge {
    * the first charge already covers generates no billing event.
    */
   quantity?: number;
+  /**
+   * Which configured period decided this charge — the governing Promotion's
+   * (`free_promotion`, `pay_promotion`, …) when one governs the date, else the
+   * assignment's own Billing & Duration (`free_plan`, `prepaid_plan`, …).
+   *
+   * It is reported rather than re-derived because the precedence between the
+   * two is this function's alone (#635's Q2 answer: where a Promotion governs
+   * the date it decides the fee *alone*). A caller that classified the period
+   * itself would label a cycle `free_plan` that the governing Promotion is in
+   * fact charging the regular price for — which is exactly how a projection
+   * comes to advertise a charge the nightly run does not make. Set on every
+   * Membership Fee charge since #924 stage 3; absent on the Sellable Item
+   * streams, which have no period of their own.
+   */
+  periodStatus?: PlanDurationStatus | PromotionTimelineStatus;
   /**
    * #946 — how many Pre-paid periods this charge covers, set only on the one
    * Membership Fee charge that collects a Plan's Pre-paid Duration up front.

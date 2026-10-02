@@ -30,6 +30,14 @@
 //     calendar months — which is the inconsistency #892 removes, in the run as
 //     well as in the preview.)
 //
+// Since #924 stage 3 the walk itself — the period stepping, the horizon and
+// the open-ended final row — is the shared `exampleTimeline.ts`, because the
+// Assigned Plan card renders the same table for a real assignment (§7). What
+// stays here is the Plan's own half: a Plan's price is one number for every
+// period, and which period is Free / Pre-paid / Pay / Bonus is
+// `classifyPlanDurationPeriod()` alone, since a Membership Plan carries no
+// Promotions and no Personal Membership Fee Benefit to outrank it.
+//
 // Nothing here is persisted and nothing here charges: a Membership Plan is not
 // assigned to anybody, so the timeline is an illustration anchored on a
 // hypothetical enrollment date (today, UTC, unless the caller names one). It is
@@ -37,7 +45,12 @@
 // preview is — `planDuration.ts` already refuses that snap, because a Plan's
 // durations are counted from a real assignment's `starts_at`.
 
-import { advanceBillingDate } from './billingDate';
+import {
+  ExampleTimelineResult,
+  MAX_TIMELINE_PERIODS,
+  TRAILING_REGULAR_PERIODS,
+  walkExampleTimeline,
+} from './exampleTimeline';
 import {
   PlanDuration,
   PlanDurationCadence,
@@ -80,6 +93,11 @@ export interface PlanExampleTimelineInput {
   anchorDate?: string;
 }
 
+/**
+ * One row. The shared shape, narrowed to the statuses a *Plan* can produce:
+ * no Promotion is involved in a catalogue preview, so a `*_promotion` status
+ * can never appear here.
+ */
 export interface PlanExampleTimelinePeriod {
   period: number;
   status: PlanDurationStatus;
@@ -96,7 +114,7 @@ export interface PlanExampleTimelinePeriod {
    * whole Pre-paid Duration is collected, so it carries the fee times the
    * periods it pays for (`prepaidPeriods` below) and is not waived. Otherwise
    * this table would read `No charge` for the very date the Billing Event
-   * Simulation beside it bills €210.
+   * Simulation beside it bills.
    */
   amount: number | null;
   /** Whether `amount: null` means "no charge" rather than "no price yet". */
@@ -108,31 +126,11 @@ export interface PlanExampleTimelinePeriod {
   prepaidPeriods: number | null;
 }
 
-export interface PlanExampleTimelineResult {
-  available: boolean;
-  /** Why there is no timeline, for the caller to render verbatim. */
-  reason: string | null;
-  currency: 'EUR';
-  /** The hypothetical enrollment date the dates were counted from. */
-  anchorDate: string | null;
+export interface PlanExampleTimelineResult extends ExampleTimelineResult {
   periods: PlanExampleTimelinePeriod[];
 }
 
-/**
- * How many regular periods trail the configured ones. Two, per the thread's Q5
- * answer ("Free Period + Paid Duration + Bonus Duration + 2"): one alone reads
- * like the contract ends there, and the second is what shows the Plan simply
- * keeps billing.
- */
-export const TRAILING_REGULAR_PERIODS = 2;
-
-/**
- * Upper bound on the rows a timeline may hold. The durations are free-form
- * numbers on the Plan form; a Plan configured with 500 free periods must not
- * turn a card render into a 500-row table (or, for a weekly legacy cadence, a
- * multi-thousand-row one).
- */
-export const MAX_TIMELINE_PERIODS = 60;
+export { TRAILING_REGULAR_PERIODS, MAX_TIMELINE_PERIODS };
 
 const NO_CADENCE_REASON = 'Configure a billing frequency to preview an example timeline.';
 
@@ -145,52 +143,29 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
  *
  * A Plan with no durations at all is not a special case: it is
  * `TRAILING_REGULAR_PERIODS` rows of `pay_regular`.
- *
- * The final row is open-ended (`endsOn: null`) only when it is a regular
- * period — with a 4-weekly cadence the configured durations can still be
- * running when the row budget ends, and "Bonus, from 24 Nov onwards" would be
- * a lie.
  */
 export function computePlanExampleTimeline(input: PlanExampleTimelineInput): PlanExampleTimelineResult {
   const { cadence, priceInclTax } = input;
-  if (!cadence || !Number.isInteger(Number(cadence.interval)) || Number(cadence.interval) < 1) {
-    return { available: false, reason: NO_CADENCE_REASON, currency: 'EUR', anchorDate: null, periods: [] };
-  }
-
+  const anchor = (input.anchorDate ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
   // #892 — one period length for both halves of a row: the durations are
   // counted in the same cadence the rows step by.
-  const duration = withDurationCadence(input.duration, cadence);
-  const anchor = (input.anchorDate ?? new Date().toISOString().slice(0, 10)).slice(0, 10);
-  const interval = Number(cadence.interval);
-  const configured = duration.freePeriods + duration.paidPeriods + duration.bonusPeriods;
-  const count = Math.min(configured + TRAILING_REGULAR_PERIODS, MAX_TIMELINE_PERIODS);
+  const duration = cadence ? withDurationCadence(input.duration, cadence) : input.duration;
 
-  const periods: PlanExampleTimelinePeriod[] = [];
-  let cursor = anchor;
-  for (let i = 0; i < count; i++) {
-    const startsOn = cursor;
-    const next = advanceBillingDate(startsOn, interval, cadence.unit);
-    const status = classifyPlanDurationPeriod(duration, anchor, startsOn);
-    // #946 — the Pre-paid Duration is paid, not waived, and it is paid on the
-    // first of its periods. `prepaidPeriodsDueOn()` is the one place that says
-    // so; the row simply multiplies the price it was handed.
-    const prepaidPeriods = prepaidPeriodsDueOn(duration, anchor, startsOn) || null;
-    const waived = prepaidPeriods == null && planDurationWaivesFee(status);
-    const amount = prepaidPeriods != null && priceInclTax != null
-      ? round2(priceInclTax * prepaidPeriods)
-      : priceInclTax;
-    const openEnded = i === count - 1 && status === 'pay_regular';
-    periods.push({
-      period: i + 1,
-      status,
-      startsOn,
-      endsOn: openEnded ? null : advanceBillingDate(next, -1, 'day'),
-      amount: waived ? null : amount,
-      waived,
-      prepaidPeriods,
-    });
-    cursor = next;
-  }
-
-  return { available: true, reason: null, currency: 'EUR', anchorDate: anchor, periods };
+  return walkExampleTimeline({
+    cadence,
+    anchorDate: anchor,
+    reasonWhenNoCadence: NO_CADENCE_REASON,
+    priceOn: (startsOn) => {
+      const status = classifyPlanDurationPeriod(duration, anchor, startsOn);
+      // #946 — the Pre-paid Duration is paid, not waived, and it is paid on the
+      // first of its periods. `prepaidPeriodsDueOn()` is the one place that says
+      // so; the row simply multiplies the price it was handed.
+      const prepaidPeriods = prepaidPeriodsDueOn(duration, anchor, startsOn) || null;
+      const waived = prepaidPeriods == null && planDurationWaivesFee(status);
+      const amount = prepaidPeriods != null && priceInclTax != null
+        ? round2(priceInclTax * prepaidPeriods)
+        : priceInclTax;
+      return { status, amount, waived, prepaidPeriods, regular: status === 'pay_regular' };
+    },
+  }) as PlanExampleTimelineResult;
 }
