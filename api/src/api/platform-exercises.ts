@@ -49,7 +49,7 @@ export const platformExercisesRouter = Router();
 const SETTABLE_STATUSES = ['active', 'inactive'];
 
 /**
- * The actor pair to stamp on a write (#965, migration 207).
+ * The actor pair to stamp on a write (#965, migration 208).
  *
  * Every write on this router is a superadmin's, by `requireSuperadmin`, so the
  * type is fixed and only the name comes from the request. A base exercise has no
@@ -257,7 +257,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           notes_default         = IF(?, ?, notes_default),
           status                = COALESCE(?, status),
           modified_at           = UTC_TIMESTAMP(),
-          -- #965: who last changed it, snapshotted beside when (migration 207).
+          -- #965: who last changed it, snapshotted beside when (migration 208).
           modified_by_name      = ?,
           modified_by_type      = ?
          WHERE id = ? AND gym_id IS NULL AND status != 'deleted'`,

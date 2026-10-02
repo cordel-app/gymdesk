@@ -70,7 +70,7 @@ interface Exercise {
   created_at: string;
   modified_at: string | null;
   /**
-   * Who created and last changed it (#965, migration 207). A Base Exercise is a
+   * Who created and last changed it (#965, migration 208). A Base Exercise is a
    * `gym_id IS NULL` row written by a superadmin, who has no `gym_memberships`
    * row to join a name from, so the name is snapshotted at write time — a row
    * written before that migration carries NULL and reads as the em dash.

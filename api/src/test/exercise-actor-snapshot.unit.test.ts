@@ -4,7 +4,7 @@ import { join } from 'path';
 import { actorSnapshot } from '../domain/nutritionLibrary';
 
 /**
- * #965 / migration 207 — who created and last changed an Exercise.
+ * #965 / migration 208 — who created and last changed an Exercise.
  *
  * `exercises` has carried `created_by` / `modified_by` since migration 096, both
  * FKs to `gym_memberships`, and that can never answer for a **Base** Exercise: it
@@ -27,13 +27,13 @@ import { actorSnapshot } from '../domain/nutritionLibrary';
 
 const API = join(__dirname, '..');
 const migration = readFileSync(
-  join(API, 'infra', 'migrations', '207_exercises_actor_snapshot.js'), 'utf-8');
+  join(API, 'infra', 'migrations', '208_exercises_actor_snapshot.js'), 'utf-8');
 const platformRouter = readFileSync(join(API, 'api', 'platform-exercises.ts'), 'utf-8');
 const gymRouter = readFileSync(join(API, 'api', 'exercises.ts'), 'utf-8');
 
 const ACTOR_COLUMNS = ['created_by_name', 'created_by_type', 'modified_by_name', 'modified_by_type'];
 
-describe('migration 207', () => {
+describe('migration 208', () => {
   it('adds both actor pairs, each column under its own guard', () => {
     for (const column of ACTOR_COLUMNS) {
       expect(migration, `${column} is missing`).toContain(column.replace(/^(created|modified)_/, ''));

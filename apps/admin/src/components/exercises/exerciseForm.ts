@@ -232,7 +232,7 @@ export interface ExerciseReadOnlyRow extends ExerciseRowValues, ExerciseMediaRow
 
 /**
  * What `⋮ → Details` renders (#965 §12): the technical metadata the expanded card
- * no longer carries. The actor names are the snapshot migration 207 added for a
+ * no longer carries. The actor names are the snapshot migration 208 added for a
  * Base Exercise and the `gym_memberships` join for a gym's own, resolved by
  * whichever router served the row — the modal only reports what it was handed.
  */

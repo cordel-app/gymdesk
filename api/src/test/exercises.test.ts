@@ -632,7 +632,7 @@ describe('GET /exercises/base', () => {
     );
 
     inactiveBaseId = await createBaseExercise('Zz718 Retired Machine Press', 'inactive');
-    // #965 / migration 207: a base exercise carries the Cordel administrator who
+    // #965 / migration 208: a base exercise carries the Cordel administrator who
     // wrote it. The gym-facing router must not report that name — see below.
     await db.query(
       `UPDATE exercises SET created_by_name = ?, created_by_type = 'superadmin' WHERE id = ?`,

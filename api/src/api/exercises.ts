@@ -93,7 +93,7 @@ musclesRouter.get('/', (_req, res) => {
 });
 
 /* ---- Exercises ---- */
-// #965/migration 207 added `created_by_name` / `created_by_type` /
+// #965/migration 208 added `created_by_name` / `created_by_type` /
 // `modified_by_name` / `modified_by_type` to `exercises`, written **only** by the
 // platform router and therefore only ever on a Base Exercise — a superadmin has
 // no `gym_memberships` row for `created_by` to point at. A gym-owned exercise's

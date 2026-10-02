@@ -133,7 +133,7 @@ describe('platform exercises CRUD', () => {
     expect(res.body.gym_id).toBeNull();
     expect(res.body.status).toBe('active');
     expect(res.body.sets_default).toBe(3);
-    // #965 / migration 207: a base exercise's creator is snapshotted at write
+    // #965 / migration 208: a base exercise's creator is snapshotted at write
     // time, because the superadmin who wrote it has no `gym_memberships` row for
     // `created_by` to point at. Nothing has modified it yet.
     expect(res.body.created_by_name).toBe('Super Admin');

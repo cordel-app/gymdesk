@@ -31,7 +31,7 @@ import {
  *
  * The actor names resolve differently per side and that is the router's business,
  * not this component's: a gym exercise's creator is the `gym_memberships` row the
- * gym router joins, while a **Base** exercise's is the snapshot migration 207
+ * gym router joins, while a **Base** exercise's is the snapshot migration 208
  * added, because a superadmin has no membership row to point at. A base exercise
  * written before that migration carries no name and reads as the em dash — the
  * Audit Log link is what covers its history.
