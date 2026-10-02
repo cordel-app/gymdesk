@@ -99,8 +99,10 @@ describe('the shared benefit editor', () => {
     // it. #896 stage 4 added a second <select> to the grid — the line's pricing
     // treatment — which a mandatory row *does* get: Mandatory says the item must
     // exist, never what it costs. #918 added a third, the Session Benefit's
-    // renewal Frequency, which a mandatory row gets for the same reason.
-    expect(componentSrc.match(/<select/g) ?? []).toHaveLength(3);
+    // renewal Frequency, which a mandatory row gets for the same reason, and #959
+    // a fourth — a Promotion line's Requirement, which no Plan section renders at
+    // all (`showRequirement` is a Promotions-only opt-in).
+    expect(componentSrc.match(/<select/g) ?? []).toHaveLength(4);
     expect(componentSrc).toContain('{benefitActionsFor(benefitContext).map((a) => (');
   });
 

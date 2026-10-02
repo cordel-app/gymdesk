@@ -13,6 +13,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { SectionEditButton } from '@/components/SectionEditButton';
+import { CardSectionHeader } from '@/components/CardSectionHeader';
 import { ExampleTimeline, ExampleTimelineTone } from '@/components/ExampleTimeline';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import {
@@ -991,6 +992,11 @@ export default function PromotionsPage() {
         categoryItems={opts.categoryItems}
         showFrequency={opts.showFrequency}
         benefitContext="promotion"
+        // #959: Mandatory / Optional per configured item — whether the member may
+        // decline it when the Promotion is assigned. Promotions only (the ticket
+        // thread excludes Membership Plans), and this one wrapper is where the
+        // Promotion's context is named, so all three sections get it at once.
+        showRequirement
       />
     );
   }
@@ -1007,6 +1013,9 @@ export default function PromotionsPage() {
         rows={rows}
         showFrequency={showFrequency}
         benefitContext="promotion"
+        // #959: the read-only half of the same column — the card says what the
+        // editor holds.
+        showRequirement
         // #920: Regular Price and Final Price, both VAT-inclusive and both the
         // server's (`withSellableItemBenefitPrices`) — the page does no
         // arithmetic of its own (#817). The two columns are labelled from the
@@ -1021,7 +1030,7 @@ export default function PromotionsPage() {
     if (timelineError) {
       return (
         <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_timeline')}</p>
+          <CardSectionHeader title={t('section_fee_simulation')} />
           <p style={{ margin: 0, fontSize: 12, color: '#c0392b' }}>{timelineError}</p>
         </div>
       );
@@ -1029,7 +1038,7 @@ export default function PromotionsPage() {
     if (!timeline || timeline.periods.length === 0) {
       return (
         <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_timeline')}</p>
+          <CardSectionHeader title={t('section_fee_simulation')} />
           <p style={hintSt}>{t('timeline_empty')}</p>
         </div>
       );
@@ -1042,7 +1051,7 @@ export default function PromotionsPage() {
     // stay here, where the Promotion's own Membership Fee Benefit lives.
     return (
       <div style={subSectionSt}>
-        <p style={sectionLabelSt}>{t('section_timeline')}</p>
+        <CardSectionHeader title={t('section_fee_simulation')} />
         <p style={{ margin: '0 0 8px', fontSize: 12, color: '#666' }}>{t('timeline_example_note', { date: enrollmentStr })}</p>
         <ExampleTimeline
           labels={{ period: t('col_period'), dates: t('col_dates'), status: t('col_status'), billing: t('col_billing') }}
@@ -1080,7 +1089,7 @@ export default function PromotionsPage() {
   function renderBillingEventSimulation(promo: Promo) {
     return (
       <div style={subSectionSt}>
-        <p style={sectionLabelSt}>{t('section_billing_event_simulation')}</p>
+        <CardSectionHeader title={t('section_billing_event_simulation')} />
         <BillingEventSimulation
           simulation={cachedSimulation[promo.id]}
           t={(key, values) => t(key as any, values as any)}
@@ -1100,7 +1109,7 @@ export default function PromotionsPage() {
       <>
 
         {/* General */}
-        <p style={sectionLabelSt}>{t('section_general')}</p>
+        <CardSectionHeader title={t('section_general')} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={inlineLabelSt}>{t('label_name')} *</label>
@@ -1168,7 +1177,7 @@ export default function PromotionsPage() {
             `handleSaveMain` leaves `promotion_membership_plans` alone while the
             target is `sellable_item` instead of writing an empty list. */}
         <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_applies_to')}</p>
+          <CardSectionHeader title={t('section_applies_to')} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {PROMOTION_TARGET_OPTIONS.map((opt) => (
               <label key={opt.value} style={{ ...checkboxLabelSt, cursor: 'pointer' }}>
@@ -1193,12 +1202,14 @@ export default function PromotionsPage() {
             is a Sellable Item. */}
         {targetsMembershipPlan(editForm.applies_to) && (
         <div style={subSectionSt}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <p style={sectionLabelSt}>{t('section_suitable_plans')}</p>
-            {plansStatus === 'error' && (
+          {/* #963: Retry sits beside the section title like every other
+              subsection action, not at the far right of the card. */}
+          <CardSectionHeader
+            title={t('section_suitable_plans')}
+            actions={plansStatus === 'error' ? (
               <button onClick={loadPlans} style={btnSmall('#888')}>{t('retry')}</button>
-            )}
-          </div>
+            ) : null}
+          />
           {plansStatus === 'loading' && <p style={hintSt}>{t('plans_loading')}</p>}
           {plansStatus === 'error' && <p style={{ margin: 0, fontSize: 13, color: '#c0392b' }}>{t('plans_load_error')}</p>}
           {plansStatus === 'ready' && plans.length === 0 && <p style={hintSt}>{t('plans_empty')}</p>}
@@ -1234,7 +1245,7 @@ export default function PromotionsPage() {
 
         {/* Billing & Duration */}
         <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_billing_duration')}</p>
+          <CardSectionHeader title={t('section_billing_duration')} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 16px' }}>
             <div>
               <label style={inlineLabelSt}>{t('label_free_months')}</label>
@@ -1372,38 +1383,62 @@ export default function PromotionsPage() {
   // passes `null` for it in every other state, so a read-only expanded card
   // carries no Edit affordance at all). Only one section can be open at a time,
   // so every other section's button is disabled while one is.
-  function renderSectionHeader(titleKey: string, onEdit: (() => void) | null) {
+  //
+  // #963: the row is the shared `CardSectionHeader`, so the action sits
+  // immediately after the title instead of at the far right of the card, and
+  // `actions` carries the Save/Cancel pair of whichever section is open —
+  // `onEdit` and `actions` are the two states of one slot, never both at once.
+  function renderSectionHeader(titleKey: string, onEdit: (() => void) | null, actions?: React.ReactNode) {
     const disabled = !canWrite || sectionEditBusy;
+    // A section with neither hands the header no actions at all, so a read-only
+    // card renders the title and nothing beside it.
+    const slot = onEdit
+      ? (
+        <SectionEditButton
+          label={t('edit')}
+          onClick={onEdit}
+          disabled={disabled}
+          title={!canWrite ? readOnlyTitle : sectionEditBusy ? t('edit_busy_hint') : undefined}
+        />
+      )
+      : actions ?? null;
+    return <CardSectionHeader title={t(titleKey as any)} actions={slot} />;
+  }
+
+  // #963 — a section-level editor's Save/Cancel pair, for that section's own
+  // header. The buttons, their handlers, the `disabled`-while-saving state and
+  // the labels are `renderSectionActions`' unchanged; what moved is where they
+  // are rendered, so a section whose editor is open still says which section it
+  // is. The error line stays in the body, under the fields it belongs to.
+  function sectionHeaderActions(onSave: () => void, onCancel: () => void) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-        <p style={sectionLabelSt}>{t(titleKey as any)}</p>
-        {onEdit && (
-          <SectionEditButton
-            label={t('edit')}
-            onClick={onEdit}
-            disabled={disabled}
-            title={!canWrite ? readOnlyTitle : sectionEditBusy ? t('edit_busy_hint') : undefined}
-          />
-        )}
-      </div>
+      <>
+        <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
+        <button onClick={onSave} disabled={editSaving} style={primaryBtnSmall()}>
+          {editSaving ? t('saving') : t('save_changes')}
+        </button>
+      </>
     );
   }
 
-  // Save / Cancel for whichever part of the card is being edited. Saving one
-  // section never writes another; cancelling discards only that part's draft —
-  // a Benefit section's Cancel closes that section (#897), the main
-  // configuration's leaves Edit mode. Each renders its own error, so a failed
-  // section save never prints its message under the main form.
-  function renderSectionActions(
-    onSave: () => void,
-    opts: { onCancel?: () => void; error?: string | null } = {},
-  ) {
-    const { onCancel = cancelEdit, error = editError } = opts;
+  // That pair's error line, on its own: a failed section save reports itself
+  // under the fields, never under the main form (#897).
+  function renderSectionError(error: string | null) {
+    return error ? <p style={{ margin: '16px 0 0', fontSize: 13, color: '#c0392b' }}>{error}</p> : null;
+  }
+
+  // Save / Cancel for the **main** Promotion configuration — the card's own
+  // form, and the one pair that is not a subsection's. It stays at the end of
+  // the fields it commits (#963 moved the *subsection* actions into their
+  // headers; the main form is the card's form, not a subsection with a
+  // contextual action), and it renders its own error there, so a failed main
+  // save never prints its message under a Benefit section.
+  function renderSectionActions(onSave: () => void) {
     return (
       <>
-        {error && <p style={{ margin: '16px 0 0', fontSize: 13, color: '#c0392b' }}>{error}</p>}
+        {editError && <p style={{ margin: '16px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
-          <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
           <button onClick={onSave} disabled={editSaving} style={primaryBtnSmall()}>
             {editSaving ? t('saving') : t('save_changes')}
           </button>
@@ -1419,6 +1454,9 @@ export default function PromotionsPage() {
         {renderSectionHeader(
           cfg.titleKey,
           isEditingCard(promo.id) && !editing ? () => enterSectionEdit(promo, cfg.section) : null,
+          editing
+            ? sectionHeaderActions(() => handleSaveBenefitSection(promo.id, cfg.section), cancelSectionEdit)
+            : null,
         )}
         {editing ? (
           <>
@@ -1429,10 +1467,7 @@ export default function PromotionsPage() {
               categoryItems: sellableSectionItems(cfg.section),
               showFrequency: cfg.showFrequency,
             })}
-            {renderSectionActions(
-              () => handleSaveBenefitSection(promo.id, cfg.section),
-              { onCancel: cancelSectionEdit, error: sectionError },
-            )}
+            {renderSectionError(sectionError)}
           </>
         ) : renderSellableItemBenefitView(cfg.emptyKey, sellableSectionSaved(promo.id, cfg.section), cfg.showFrequency)}
       </div>
@@ -1446,14 +1481,14 @@ export default function PromotionsPage() {
         {renderSectionHeader(
           'section_membership_fee_benefits',
           isEditingCard(promo.id) && !editing ? () => enterSectionEdit(promo, 'membership_fee') : null,
+          editing
+            ? sectionHeaderActions(() => handleSaveBenefitSection(promo.id, 'membership_fee'), cancelSectionEdit)
+            : null,
         )}
         {editing ? (
           <>
             {renderMembershipFeeEditor(promo.id)}
-            {renderSectionActions(
-              () => handleSaveBenefitSection(promo.id, 'membership_fee'),
-              { onCancel: cancelSectionEdit, error: sectionError },
-            )}
+            {renderSectionError(sectionError)}
           </>
         ) : renderMembershipFeeView(cachedMf[promo.id] ?? null)}
       </div>
@@ -1542,14 +1577,14 @@ export default function PromotionsPage() {
             everything this card configures — the same field the radio group
             writes, shown as a value. */}
         <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_applies_to')}</p>
+          <CardSectionHeader title={t('section_applies_to')} />
           <p style={{ margin: '2px 0', fontSize: 13 }}>{t(targetLabelKey as any)}</p>
         </div>
 
         {/* Billing & Duration summary */}
         {(free > 0 || paid > 0 || bonus > 0) && (
           <div style={subSectionSt}>
-            <p style={sectionLabelSt}>{t('section_billing_duration')}</p>
+            <CardSectionHeader title={t('section_billing_duration')} />
             {/* #879: the look of this summary now lives in the shared
                 component, so the Membership Plan card renders the same one.
                 Which items appear stays the Promotion's own decision — an
@@ -1569,7 +1604,7 @@ export default function PromotionsPage() {
             Promotion exactly as it is in the form above. */}
         {targetsMembershipPlan(target) && (
         <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_suitable_plans')}</p>
+          <CardSectionHeader title={t('section_suitable_plans')} />
           {associatedPlans.length === 0
             ? <p style={hintSt}>{t('no_suitable_plans_selected')}</p>
             // Renders directly off GET /promotions/:id/plans' own {id, name}
@@ -1731,7 +1766,6 @@ const inlineLabelSt: React.CSSProperties = { display: 'block', fontSize: 12, fon
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
 const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };
 const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
-const sectionLabelSt: React.CSSProperties = { margin: '0 0 10px', fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' };
 const hintSt: React.CSSProperties = { color: '#aaa', fontSize: 13, margin: 0 };
 const checkboxLabelSt: React.CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' };
 const colHeaderSt: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em', paddingBottom: 2 };
