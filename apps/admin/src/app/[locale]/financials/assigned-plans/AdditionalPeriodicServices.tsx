@@ -1,9 +1,9 @@
 'use client';
 
-// #631 — ADDITIONAL PERIODIC SERVICES on an Assigned Plan.
+// #631 — ADDITIONAL PERIODIC PRODUCTS on an Assigned Plan.
 //
 // Inline row CRUD, no modal (#631 §1/§2): the table lists what is attached and
-// "+ Add Service" opens one inline draft row, saved or discarded in place.
+// "+ Add Product" opens one inline draft row, saved or discarded in place.
 // Removal is a single click and is future-only on the server (it stamps the
 // effective end date), so there is no destructive confirmation to put behind a
 // dialog — a service removed by mistake is re-attached with a new start date.
@@ -18,10 +18,24 @@
 // Plans expanded row, and the current plan card on the Member page — where
 // `onChanged` also re-runs the Member's Billing Simulation, so adding or
 // removing a service updates it immediately (#631 §6).
+//
+// #957: the label says *Product*, not Service — the UI copy is the final
+// terminology the Service → Product rename (#949) lands everywhere else, so
+// nothing here is named after an intermediate state. Only the locale values
+// moved: the keys stay `services_*` because renaming identifiers is #949's,
+// and a key renamed here would collide with it for no user-visible gain.
+//
+// Also #957: the add action is a real themed button (`primaryBtnSmall()`, the
+// Theme's Buttons group via #912/#954) rather than the lilac text link it was,
+// and `canAdd` is what decides whether it is rendered at all — the Member card
+// passes its Edit-mode flag, so expanding a Member reads and `⋮ → Edit` writes
+// (#797). It defaults to `true` for the Assigned Plans card, which has no edit
+// mode of its own and keeps the action it always had.
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
+import { primaryBtnSmall, readOnlyStyle } from '@/components/ui';
 import { useToast } from '@/components/Toast';
 import type { AssignedPlanService } from './types';
 
@@ -47,6 +61,12 @@ interface Props {
   planStatus: string;
   services: AssignedPlanService[];
   canWrite: boolean;
+  /**
+   * #957 — whether the add action is offered at all. The Member card passes its
+   * Edit-mode flag (the action is absent in the read-only view, not disabled);
+   * a surface with no edit mode omits it and keeps the action.
+   */
+  canAdd?: boolean;
   readOnlyTitle?: string;
   /** Re-fetches whatever embeds this section (and the Billing Simulation, where shown). */
   onChanged: () => void;
@@ -65,7 +85,8 @@ function todayISO() {
 }
 
 export function AdditionalPeriodicServices({
-  assignedPlanId, planStartsAt, planStatus, services, canWrite, readOnlyTitle, onChanged,
+  assignedPlanId, planStartsAt, planStatus, services, canWrite, canAdd = true,
+  readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
   const { apiFetch } = useApiClient();
@@ -252,8 +273,12 @@ export function AdditionalPeriodicServices({
 
       {error && <p style={{ color: '#c0392b', fontSize: 12, margin: '6px 0 0' }}>{error}</p>}
 
-      {!adding && canAttach && (
-        <button onClick={startAdd} {...write} style={{ ...linkBtn, marginTop: 8, paddingLeft: 0 }}>
+      {!adding && canAttach && canAdd && (
+        <button
+          onClick={startAdd}
+          {...write}
+          style={readOnlyStyle({ ...primaryBtnSmall(), marginTop: 8 }, !canWrite)}
+        >
           {t('services_add')}
         </button>
       )}

@@ -196,7 +196,7 @@ export function MemberExpandedRow({
     }
   }
 
-  // #634 §12: every change in the MEMBERSHIP PLANS or ADDITIONAL SERVICES
+  // #634 §12: every change in the MEMBERSHIP PLANS or ADDITIONAL PRODUCTS
   // sections lands here — it re-reads the configuration both are rendered from
   // and remounts the Billing Simulation, so the simulation always
   // shows the Member's current complete configuration. The other expanded-row
@@ -382,13 +382,16 @@ export function MemberExpandedRow({
         />
       </Section>
 
-      {/* 2. ADDITIONAL SERVICES — recurring Sellable Items, added and removed at
-          any time, independent from plans and promotions (§4). */}
+      {/* 2. ADDITIONAL PRODUCTS — recurring Sellable Items, added and removed at
+          any time, independent from plans and promotions (§4). #957: the
+          section reads in both modes; its `+ Add Product` button is Edit
+          mode's alone. */}
       <Section label={t('members.section_additional_services')}>
         <MemberAdditionalServices
           plans={configuration.plans}
           services={configuration.services}
           canWrite={isAdmin}
+          editing={editing}
           onChanged={reloadConfiguration}
         />
       </Section>
