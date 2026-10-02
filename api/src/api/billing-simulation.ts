@@ -175,8 +175,29 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
   return byPromotion;
 }
 
-/** Builds the engine's input for one Member and runs it. Read-only end to end. */
-export async function computeMemberBillingSimulation(gymId: string, memberId: number): Promise<BillingSimulationResult> {
+/**
+ * Which assignments a simulation is built from: every one of a Member's, or one
+ * named assignment.
+ *
+ * #924 stage 4 — the second shape exists because the Assigned Plan card's
+ * Billing Event Forecast is one assignment's, and reading it through the very
+ * loader the Member-level simulation uses is what keeps the two from drifting:
+ * the snapshot rules (#635 §13–§17), the Promotion grant fallback (§16), the
+ * Additional Periodic Services and the Billing & Duration fallback are all
+ * applied once, here.
+ */
+export type SimulationScope = { memberId: number } | { userMembershipId: number };
+
+/**
+ * The engine's input for one Member or one assignment — every read the
+ * simulation needs, and nothing else. Read-only end to end.
+ */
+export async function loadSimulationAssignments(
+  gymId: string, scope: SimulationScope,
+): Promise<SimulationAssignment[]> {
+  const scoped = 'memberId' in scope
+    ? { sql: 'um.member_id = ?', param: scope.memberId }
+    : { sql: 'um.id = ?', param: scope.userMembershipId };
   const { rows } = await db.query<AssignmentRow>(
     `SELECT um.id, um.membership_plan_id, um.status, um.starts_at, um.ends_at,
             um.membership_fee_price, um.base_price,
@@ -197,10 +218,10 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      LEFT JOIN billing_policies bp
             ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
-     WHERE um.gym_id = ? AND um.member_id = ?
+     WHERE um.gym_id = ? AND ${scoped.sql}
        AND um.status IN (${SIMULATED_STATUSES.map(() => '?').join(',')})
      ORDER BY um.starts_at ASC, um.id ASC`,
-    [gymId, memberId, ...SIMULATED_STATUSES],
+    [gymId, scoped.param, ...SIMULATED_STATUSES],
   );
 
   const applicationsPerAssignment = await Promise.all(
@@ -226,7 +247,7 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
     hasBillingSnapshot: Number(row.has_billing_snapshot) === 1,
   })));
 
-  const assignments: SimulationAssignment[] = await Promise.all(rows.map(async (row, i) => {
+  return Promise.all(rows.map(async (row, i) => {
     const startsAt = toDateOnly(row.starts_at);
     const promotions: SimulationPromotion[] = applicationsPerAssignment[i].map((a) => ({
       name: a.name,
@@ -256,8 +277,11 @@ export async function computeMemberBillingSimulation(gymId: string, memberId: nu
       personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
     };
   }));
+}
 
-  return computeBillingSimulation({ assignments });
+/** Builds the engine's input for one Member and runs it. Read-only end to end. */
+export async function computeMemberBillingSimulation(gymId: string, memberId: number): Promise<BillingSimulationResult> {
+  return computeBillingSimulation({ assignments: await loadSimulationAssignments(gymId, { memberId }) });
 }
 
 // Mounted at /user-memberships/member/:memberId/billing-simulation (app.ts),

@@ -396,6 +396,7 @@ A member's card lives in `payment_methods` (one row per member and gym, `payment
 - `additional_services` — the Additional Periodic Services attached to the assignment (#631, below).
 - `billing_events` — the Billing Events view (below).
 - `example_timeline` — the **Membership Fee Simulation** (#924 stage 3, below).
+- `billing_event_simulation` — the **Billing Event Forecast** (#924 stage 4, below).
 
 `GET /user-memberships/:id/billing-events` exposes that last section on its own (a lighter, single-section fetch), computed by the same `computeBillingEventsView()` the `:id` response embeds it from.
 
@@ -426,6 +427,32 @@ Two rules are load-bearing:
 - **Rows start at the period containing today**, while the period *numbers* count from `starts_at`: an assignment three years old has three years of elapsed cycles and the section answers what will be charged from here on. An assignment with no billing frequency at all reports `available: false` with a reason, exactly as a Plan with no `billing_policies` row does.
 
 Admin: `[locale]/financials/assigned-plans/AssignedPlanExpandedRow.tsx` renders `MEMBERSHIP FEE SIMULATION` between the applied Promotions and the Additional Periodic Services (§11's order), through the shared `components/ExampleTimeline.tsx` — the same table the Plan and Promotion cards use. The formatting rules are shared too (`apps/admin/src/lib/exampleTimeline.ts`: the Billing cell and the three row tones, which `plans/planProfile.ts` now delegates to); the page contributes only labels, and unlike the Plan card's — which may only say *(benefit)* — these may say *(promotion)*, because an Assigned Plan really can be inside one.
+
+### Billing Event Forecast — the Assigned Plan's Billing Event Simulation (#924 stage 4 — no migration)
+
+`GET /user-memberships/:id/billing-event-simulation`, also embedded as `billing_event_simulation` on `GET /user-memberships/:id`, is the Membership Plan card's **Billing Event Simulation** (#915) for a contract that really exists: one group per billing *date*, listing every line that falls on it — the Membership Fee plus each Sellable Item and Additional Periodic Service the assignment carries — with a per-date total. Read-only, recomputed on every request, persisted nowhere, charges nothing.
+
+It answers a different question from the Membership Fee Simulation above it on the same card, and neither may grow into the other: that one is one row per billing **period** and is about the fee alone, this one is one group per billing **date** and lists every line.
+
+§8 forbids the shortcut — *"do not implement a separate simulation engine for Assigned Plans"* — so this is the **third adapter** over the shared projection, beside the Plan's and the Promotion's (#922):
+
+- `api/src/domain/billingEventSimulation.ts` — the result shape, the `SIMULATED_CYCLES = 2` horizon floor and the group-by-date re-grouping. Since stage 4 the grouping also takes an optional `from`, the earliest date a group may carry.
+- `api/src/domain/assignmentBillingEventSimulation.ts` — the assignment adapter. Unlike the other two it does not *invent* an assignment: it is handed the real one, the very `SimulationAssignment` the Member-level Billing Simulation (#629) is built from, so every snapshot rule (#635 §13–§17), every standing Promotion and every Additional Periodic Service is already in it and there is nothing here to disagree with billing about.
+- `api/src/api/assigned-plan-billing-forecast.ts` — the reads, which are only `loadSimulationAssignments()` scoped to one assignment (`SimulationScope`, extracted from `computeMemberBillingSimulation()` in `billing-simulation.ts`), so the two surfaces cannot read the configuration differently.
+
+The adapter adds exactly two things, both about *where the projection runs* and neither about what anything costs:
+
+- **The horizon is anchored on today** (`horizonFrom` on `BillingSimulationInput`). The engine's streams start at the contract's real `starts_at`, so without it both the two-cycle floor and the engine's 36-month safety cap would be measured from a 2023 signup and the forecast would be empty. The floor is counted from each stream's first occurrence at or after that anchor, which for a hypothetical assignment (every stream of a Plan or Promotion preview starts today) is the same date as before — the two existing adapters are unaffected.
+- **The dates already behind us are dropped** (`from`). They are what the assignment has been charged on, and the **Billing Events** section two sections below is the ledger of those. The engine still walks the contract from its own `starts_at`, because that is what decides which period a future date falls in and therefore what it costs.
+
+Everything else is the engine's: the dates, the amounts, which benefit applies and which period status a cycle has. Two consequences worth stating:
+
+- **The amounts are the ones billed.** Unlike the Plan and Promotion adapters, which gross a catalogue price up before handing it over, this projection is denominated in the assignment's own frozen figures — the Membership Fee `priceMembershipFeeOn()` prices each cycle from, and each benefit line's frozen `unit_price` — which is the same number the Membership Fee Simulation above quotes and the same one the nightly run charges. No tax arithmetic happens in the projection or in the page (#817).
+- **No line is flagged Mandatory.** That is a Membership Plan's question (#832/#893): the flag says a catalogue item must be part of every Plan benefit section. An assignment bills what it was agreed with, frozen, so a live flag is never claimed about a frozen line.
+
+An assignment that bills nothing (no fee, no cadence, no benefits), one whose every remaining date is behind us (an `ends_at` already passed), and one that is `cancelled`/`expired` all report `available: false` with a reason, so the card says so rather than rendering an empty table.
+
+Admin: `AssignedPlanExpandedRow.tsx` renders `BILLING EVENT FORECAST` below the Membership Fee Simulation and above the Additional Periodic Services, through the shared `components/BillingEventSimulation.tsx` — the same component the Plan and Promotion cards render. The page contributes only its labels (resolved in the `assigned_plans_page` namespace, where `simulation_example_note` reads *Billing events from {date}* rather than the Plan card's *Example: a member starting on…*) and its date formatter.
 
 ### Additional Periodic Services — *Additional Products* in the UI (#631, migration 164; #957)
 

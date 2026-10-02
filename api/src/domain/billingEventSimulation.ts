@@ -87,6 +87,18 @@ export interface BillingEventSimulationResult {
   total: number;
 }
 
+/** What a caller may bound the grouping by. */
+export interface GroupBillingEventsOptions {
+  /**
+   * The earliest billing date a group may carry, `YYYY-MM-DD`. Omitted by the
+   * two hypothetical-assignment adapters, whose projection starts today
+   * anyway; passed by an adapter projecting a contract that already exists
+   * (#924 stage 4), whose engine input is anchored on a real `starts_at` and
+   * therefore produces the dates it has already been charged on as well.
+   */
+  from?: string | null;
+}
+
 export const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /** Today, UTC, as the `YYYY-MM-DD` string every date in these projections is. */
@@ -120,10 +132,19 @@ export const emptyBillingEventSimulation = (
 export function groupBillingEventsByDate(
   simulation: BillingSimulationResult,
   mandatoryByCharge: Map<number, boolean>,
+  opts?: GroupBillingEventsOptions,
 ): { dates: BillingEventDate[]; total: number } {
+  const from = opts?.from ?? null;
   const byDate = new Map<string, BillingEventDate>();
   for (const section of simulation.sections) {
     for (const event of section.events) {
+      // #924 stage 4 — a billing date already behind us is history, and the
+      // Assigned Plan card has a Billing Events ledger of what was actually
+      // charged two sections below. Dropping it here rather than never
+      // generating it is deliberate: the engine must still walk the contract
+      // from its own `starts_at`, because that is what decides which period a
+      // future date falls in and therefore what it costs.
+      if (from != null && event.date < from) continue;
       let group = byDate.get(event.date);
       if (!group) {
         group = { date: event.date, lines: [], total: 0 };
