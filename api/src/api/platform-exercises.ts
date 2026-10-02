@@ -1,8 +1,23 @@
-import express, { Router } from 'express';
+import express, { Request, Router } from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
+import {
+  exerciseNameSearchSql,
+  exerciseTranslationsExpr,
+  localizedExerciseNameExpr,
+  localizedExerciseNameSql,
+  parseExerciseTranslations,
+  replaceExerciseTranslations,
+  withExerciseTranslations,
+} from '../domain/exerciseTranslations';
+import {
+  BASE_LOCALE,
+  SUPPORTED_LOCALES,
+  TRANSLATABLE_LOCALES,
+  getRequestLocale,
+} from '../infra/locale';
 import { logger } from '../lib/logger';
 import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
 import {
@@ -47,8 +62,16 @@ export const platformExercisesRouter = Router();
 
 const SETTABLE_STATUSES = ['active', 'inactive'];
 
-const SELECT = `
+/**
+ * #967: a Base Exercise carries the same two name fields a gym's own does —
+ * `name` is the base value the editor submits back, `display_name` the caller's
+ * language resolved from `exercise_translations`. One contract for both kinds of
+ * exercise (§8), so nothing downstream branches on where the row came from.
+ */
+const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
   SELECT e.*,
+    ${localizedExerciseNameExpr('e', locale, 'display_name')},
+    ${exerciseTranslationsExpr('e')},
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
      FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))
@@ -57,6 +80,8 @@ const SELECT = `
      WHERE eart.exercise_id = e.id ORDER BY rt.id) AS allowed_result_types
   FROM exercises e
 `;
+
+const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
 
 function parseMuscles(input: unknown): { key: string; role: 'principal' | 'secondary' }[] | string | undefined {
   if (input === undefined) return undefined;
@@ -89,14 +114,17 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
   if (status && !SETTABLE_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
+  const locale = getRequestLocale(req);
   const params: any[] = [];
-  let sql = `${SELECT} WHERE e.gym_id IS NULL AND e.status != 'deleted'`;
+  let sql = `${selectFor(locale)} WHERE e.gym_id IS NULL AND e.status != 'deleted'`;
   if (status) { sql += ' AND e.status = ?'; params.push(status); }
-  if (q) { sql += ' AND e.name LIKE ?'; params.push(`%${q}%`); }
-  sql += ' ORDER BY e.name ASC';
+  // #967 §7: matches the base name or any stored translation, and orders by what
+  // the page actually shows — the same rule the gym-facing list follows.
+  if (q) { sql += ` AND ${exerciseNameSearchSql('e')}`; params.push(`%${q}%`, `%${q}%`); }
+  sql += ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
   try {
     const { rows } = await db.query(sql, params);
-    res.json(rows);
+    res.json(rows.map(withExerciseTranslations));
   } catch (err) { next(err); }
 });
 
@@ -122,7 +150,18 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
 platformExercisesRouter.get('/lookups', requireSuperadmin, async (_req, res, next) => {
   try {
     const { rows } = await db.query('SELECT id, name, slug FROM result_types ORDER BY id ASC');
-    res.json({ muscles: MUSCLE_KEYS.map((key) => ({ key })), result_types: rows });
+    res.json({
+      muscles: MUSCLE_KEYS.map((key) => ({ key })),
+      result_types: rows,
+      // #967 §3: the shared editor renders one Name input per translatable
+      // locale, so the language list travels with the other two catalogues
+      // rather than being hardcoded in the page (the ticket's closing
+      // "Important"). The gym-facing page has no lookups endpoint and reads
+      // `GET /exercises/locales` for the same payload.
+      locales: SUPPORTED_LOCALES,
+      base_locale: BASE_LOCALE,
+      translatable: TRANSLATABLE_LOCALES,
+    });
   } catch (err) { next(err); }
 });
 
@@ -131,11 +170,11 @@ platformExercisesRouter.get('/lookups', requireSuperadmin, async (_req, res, nex
 platformExercisesRouter.get('/:id', requireSuperadmin, async (req, res, next) => {
   try {
     const { rows } = await db.query(
-      `${SELECT} WHERE e.id = ? AND e.gym_id IS NULL AND e.status != 'deleted'`,
+      `${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL AND e.status != 'deleted'`,
       [req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
-    res.json(rows[0]);
+    res.json(withExerciseTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -154,6 +193,10 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const allowedResultTypeIds: number[] | undefined =
     Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
+  // #967: the same `translations` contract the gym-facing router takes — one
+  // mechanism for both kinds of exercise (§8, §10).
+  const { translations, error: translationsError } = parseExerciseTranslations(req.body);
+  if (translationsError) return res.status(400).json({ error: translationsError });
   try {
     if (await nameTaken(name.trim())) {
       return res.status(409).json({ error: 'A base exercise with this name already exists.' });
@@ -184,11 +227,13 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
           );
         }
       }
+      if (translations) await replaceExerciseTranslations(tx, insertId, translations);
       return insertId;
     });
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ?`, [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [insertId]);
+    const created = withExerciseTranslations(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: created });
+    res.status(201).json(created);
   } catch (err) { next(err); }
 });
 
@@ -207,6 +252,11 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const allowedResultTypeIds: number[] | undefined =
     Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
+  // #967: replace-all when the field is sent, untouched when it is not — the
+  // gym-side rule, for the same reason (a client editing another field must not
+  // clear the catalogue's translations).
+  const { translations, error: translationsError } = parseExerciseTranslations(req.body);
+  if (translationsError) return res.status(400).json({ error: translationsError });
   try {
     const { rows: existing } = await db.query(
       "SELECT id FROM exercises WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
@@ -274,10 +324,12 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           );
         }
       }
+      if (translations) await replaceExerciseTranslations(tx, id, translations);
     });
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ?`, [id]);
-    recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: rows[0] });
-    res.json(rows[0]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [id]);
+    const updated = withExerciseTranslations(rows[0]);
+    recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: updated });
+    res.json(updated);
   } catch (err) { next(err); }
 });
 
@@ -513,8 +565,8 @@ platformExercisesRouter.post('/:id/image', requireSuperadmin, async (req, res, n
       previous: { image_url: exercise.image_url, image_thumbnail_url: exercise.image_thumbnail_url },
       next: { image_url: imageUrl, image_thumbnail_url: thumbnailUrl },
     });
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(rows[0]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
+    res.json(withExerciseTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -549,8 +601,8 @@ platformExercisesRouter.delete('/:id/image', requireSuperadmin, async (req, res,
       previous: { image_url: exercise.image_url, image_thumbnail_url: exercise.image_thumbnail_url },
       next: { image_url: null, image_thumbnail_url: null },
     });
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(rows[0]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
+    res.json(withExerciseTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -677,8 +729,8 @@ platformExercisesRouter.post('/:id/video', requireSuperadmin, async (req, res, n
       previous: { video_url: exercise.video_url, video_thumbnail_url: exercise.video_thumbnail_url },
       next: { video_url: videoUrl, video_thumbnail_url: posterUrl },
     });
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(rows[0]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
+    res.json(withExerciseTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -713,8 +765,8 @@ platformExercisesRouter.delete('/:id/video', requireSuperadmin, async (req, res,
       previous: { video_url: exercise.video_url, video_thumbnail_url: exercise.video_thumbnail_url },
       next: { video_url: null, video_thumbnail_url: null },
     });
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(rows[0]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
+    res.json(withExerciseTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 

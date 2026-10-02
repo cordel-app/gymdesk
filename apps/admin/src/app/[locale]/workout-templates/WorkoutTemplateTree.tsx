@@ -11,6 +11,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
 import { HierBlock, HierExercise } from './summaries';
+import { exerciseMatchesQuery, exerciseName } from '@/lib/exerciseNames';
 import {
   BLOCK_TYPES, BLOCK_TYPE_MAX_EXERCISES,
   blockConfigInput, blockConfigPatch, getBlockConfig,
@@ -49,6 +50,8 @@ export function TemplateDropTarget({ templateId, children }: { templateId: numbe
 /* ---- Exercise option (for the combobox) ---- */
 interface ExerciseOption {
   id: number; name: string;
+  /** #967: the name in the user's language, and the stored translations a search also matches. */
+  display_name?: string | null; translations?: Record<string, string> | null;
   min_reps_default: number | null; max_reps_default: number | null;
   sets_default: number | null; rest_default_seconds: number | null;
 }
@@ -67,7 +70,9 @@ function ExerciseCombobox({ value, options, placeholder, onChange }: {
 
   const selected = options.find((o) => o.id === value);
   const filtered = query
-    ? options.filter((o) => o.name.toLowerCase().includes(query.toLowerCase()))
+    // #967 §7: the same three things the API's `?q=` matches — the displayed
+    // name, the base name and every stored translation.
+    ? options.filter((o) => exerciseMatchesQuery(o, query))
     : options;
 
   useEffect(() => {
@@ -100,7 +105,7 @@ function ExerciseCombobox({ value, options, placeholder, onChange }: {
         onClick={handleOpen}
         style={comboTrigger}
       >
-        {selected ? selected.name : <span style={{ color: '#aaa' }}>{placeholder}</span>}
+        {selected ? exerciseName(selected) : <span style={{ color: '#aaa' }}>{placeholder}</span>}
         <span style={{ marginLeft: 4, fontSize: 10, color: '#888' }}>▾</span>
       </button>
       {open && (
@@ -126,7 +131,7 @@ function ExerciseCombobox({ value, options, placeholder, onChange }: {
                 onMouseDown={() => pick(opt)}
                 style={{ ...comboItem, background: opt.id === value ? '#f0eeff' : undefined }}
               >
-                {opt.name}
+                {exerciseName(opt)}
               </li>
             ))}
           </ul>

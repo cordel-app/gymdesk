@@ -8,7 +8,7 @@ import { getCenterContext } from '../infra/centerContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { bookMemberOnSession, cancelBooking } from './bookings';
 import { validateRequest as validateSharedRequest } from './shared-training-requests';
-import { PLAN_TREE_SELECT } from './training-plans';
+import { planTreeSelect } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { getPaymentProvider } from '../payments';
@@ -16,6 +16,7 @@ import { toMinorUnits } from '../payments/money';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
+import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
 import { themeLogoUrl } from '../domain/themeLogo';
 import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
@@ -993,7 +994,7 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
     let memberId: number;
     try { memberId = await resolveMemberId(gymId, ctx); } catch { return res.json([]); }
     const { rows } = await db.query(
-      `${PLAN_TREE_SELECT}
+      `${planTreeSelect(getRequestLocale(req))}
        JOIN member_training_plans mtp ON mtp.training_plan_id = tp.id
        WHERE tp.gym_id = ? AND tp.member_id = ? AND mtp.status = 'active' AND tp.status != 'deleted'
        ORDER BY mtp.created_at DESC`,
@@ -1223,7 +1224,8 @@ meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('tra
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const params: any[] = [gymId, memberId];
-    let sql = `SELECT el.*, e.name AS exercise_name,
+    // #967: the member reads an exercise's name in their own language.
+    let sql = `SELECT el.*, ${localizedExerciseNameExpr('e', getRequestLocale(req))},
                       (SELECT JSON_ARRAYAGG(item) FROM (
                          SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
                          FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number

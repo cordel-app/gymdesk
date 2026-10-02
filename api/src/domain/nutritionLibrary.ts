@@ -1,11 +1,14 @@
 import { db } from '../infra/db';
+import { BASE_LOCALE, SupportedLocale } from '../infra/locale';
 import {
-  BASE_LOCALE,
-  SUPPORTED_LOCALES,
-  SupportedLocale,
-  TRANSLATABLE_LOCALES,
-  isSupportedLocale,
-} from '../infra/locale';
+  TranslatedNameConfig,
+  loadTranslationsMapFor,
+  localeLiteral,
+  replaceTranslationsFor,
+  translatedNameExpr,
+  translatedNameSql,
+  validateTranslationsPayload,
+} from './nameTranslations';
 
 /**
  * Shared helpers for the Nutrition Library, used by both the platform
@@ -22,29 +25,21 @@ import {
  * so every read surface resolves a name through `localizedNameExpr`.
  */
 
-/* ── Translated names (#643) ─────────────────────────────────────────────── */
-
-const TRANSLATIONS_TABLE = 'nutrition_library_item_translations';
+/* ── Translated names (#643, shared since #967) ───────────────────────────── */
 
 /**
- * The SQL literal for `locale`, or null when it is the base locale (or, which
- * cannot happen through `getRequestLocale`, not a configured locale at all) and
- * the caller should read the base `name` column instead.
- *
- * The locale is interpolated rather than parameterised because the same
- * expression is embedded in ~30 queries that each carry their own positional
- * params — threading one more `?` through every call site is where the bugs
- * would be. What makes that safe is that the string returned here is always an
- * element of `SUPPORTED_LOCALES`, built at boot from the env var and filtered
- * through a strict BCP-47 pattern: the argument is only ever compared against
- * that list, never embedded, so no caller-supplied bytes reach the query — by
- * data flow, not by trusting that the check upstream was done right.
+ * The item-name junction `nutrition_library_item_translations` (migration 166),
+ * as `domain/nameTranslations.ts` configures it. #967 needed the same mechanism
+ * for exercises, so the rules moved into that module and this is the Nutrition
+ * Library's configuration of them — the exported helpers below keep their names
+ * and behaviour, which is what keeps the ~30 call sites untouched.
  */
-function localeLiteral(locale: SupportedLocale): string | null {
-  if (locale === BASE_LOCALE) return null;
-  const supported = SUPPORTED_LOCALES.find((candidate) => candidate === locale);
-  return supported ? `'${supported}'` : null;
-}
+const ITEM_TRANSLATIONS: TranslatedNameConfig = {
+  table: 'nutrition_library_item_translations',
+  entityColumn: 'item_id',
+  subqueryAlias: 'nlit',
+  maxNameLength: 255,
+};
 
 /**
  * SQL expression resolving an item's name in `locale`, falling back to the base
@@ -53,75 +48,31 @@ function localeLiteral(locale: SupportedLocale): string | null {
  * @param alias table alias of `nutrition_library_items` in the enclosing query
  */
 export function localizedNameSql(alias: string, locale: SupportedLocale): string {
-  const literal = localeLiteral(locale);
-  if (!literal) return `${alias}.name`;
-  return `COALESCE((SELECT nlit.name FROM ${TRANSLATIONS_TABLE} nlit
-            WHERE nlit.item_id = ${alias}.id AND nlit.locale = ${literal}), ${alias}.name)`;
+  return translatedNameSql(ITEM_TRANSLATIONS, alias, locale);
 }
 
 /** {@link localizedNameSql} with an output alias, for SELECT lists. */
 export function localizedNameExpr(alias: string, locale: SupportedLocale, as = 'item_name'): string {
-  return `${localizedNameSql(alias, locale)} AS ${as}`;
+  return translatedNameExpr(ITEM_TRANSLATIONS, alias, locale, as);
 }
 
 /** Return translations for a set of item IDs as a map: item_id → { locale: name } */
-export async function loadTranslationsMap(itemIds: number[]): Promise<Record<number, Record<string, string>>> {
-  if (itemIds.length === 0) return {};
-  const marks = itemIds.map(() => '?').join(',');
-  const { rows } = await db.query<{ item_id: number; locale: string; name: string }>(
-    `SELECT item_id, locale, name FROM ${TRANSLATIONS_TABLE}
-     WHERE item_id IN (${marks})
-     ORDER BY locale`,
-    itemIds,
-  );
-  const map: Record<number, Record<string, string>> = {};
-  for (const row of rows) {
-    if (!map[row.item_id]) map[row.item_id] = {};
-    map[row.item_id][row.locale] = row.name;
-  }
-  return map;
+export function loadTranslationsMap(itemIds: number[]): Promise<Record<number, Record<string, string>>> {
+  return loadTranslationsMapFor(ITEM_TRANSLATIONS, db, itemIds);
 }
 
 /**
- * Replace all translations for an item inside a transaction, mirroring
+ * Replace all translations for an item, mirroring
  * `replaceCategories`/`replaceQualities`: the payload is the complete set, so a
  * locale the caller omits (or sends blank) loses its row and falls back to the
- * base name.
+ * base name. Opens its own transaction, as its callers expect.
  */
 export async function replaceTranslations(
   itemId: number,
   translations: Record<string, string>,
 ): Promise<void> {
-  // Locale keys are matched case-insensitively (`validateTranslations` accepts
-  // `ES` as readily as `es`), so canonicalise them before the lookup below —
-  // otherwise a payload that validated fine would save nothing.
-  const byLocale = new Map<string, string>();
-  for (const [locale, name] of Object.entries(translations ?? {})) {
-    byLocale.set(locale.trim().toLowerCase(), typeof name === 'string' ? name.trim() : '');
-  }
-
-  const kept = TRANSLATABLE_LOCALES.filter((locale) => byLocale.get(locale));
-
   await db.transaction(async (conn) => {
-    // Clear the locales this payload drops, then upsert the rest: an edit keeps
-    // the row's original `created_at` and stamps `modified_at`, which a
-    // delete-then-insert would lose.
-    if (kept.length === 0) {
-      await conn.query(`DELETE FROM ${TRANSLATIONS_TABLE} WHERE item_id = ?`, [itemId]);
-    } else {
-      const marks = kept.map(() => '?').join(',');
-      await conn.query(
-        `DELETE FROM ${TRANSLATIONS_TABLE} WHERE item_id = ? AND locale NOT IN (${marks})`,
-        [itemId, ...kept],
-      );
-    }
-    for (const locale of kept) {
-      await conn.query(
-        `INSERT INTO ${TRANSLATIONS_TABLE} (item_id, locale, name) VALUES (?, ?, ?)
-         ON DUPLICATE KEY UPDATE name = VALUES(name), modified_at = UTC_TIMESTAMP()`,
-        [itemId, locale, byLocale.get(locale)],
-      );
-    }
+    await replaceTranslationsFor(ITEM_TRANSLATIONS, conn, itemId, translations);
   });
 }
 
@@ -132,24 +83,7 @@ export async function replaceTranslations(
  * silently dropped, so a typo'd key doesn't look like it saved.
  */
 export function validateTranslations(value: unknown): { error: string } | null {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    return { error: 'translations must be an object keyed by locale' };
-  }
-  for (const [locale, name] of Object.entries(value as Record<string, unknown>)) {
-    if (!isSupportedLocale(locale)) {
-      return { error: `translations contains an unsupported locale: ${locale}` };
-    }
-    if (locale === BASE_LOCALE) {
-      return { error: `translations must not contain the base locale '${BASE_LOCALE}' — use name` };
-    }
-    if (name !== null && typeof name !== 'string') {
-      return { error: `translations.${locale} must be a string` };
-    }
-    if (typeof name === 'string' && name.trim().length > 255) {
-      return { error: `translations.${locale} must be 255 characters or fewer` };
-    }
-  }
-  return null;
+  return validateTranslationsPayload(value, ITEM_TRANSLATIONS.maxNameLength);
 }
 
 /** Return categories assigned to a set of item IDs as a map: item_id → [{id, slug}] */
@@ -308,7 +242,7 @@ export function buildListWhere(
       params.push(`%${search}%`);
     } else {
       where.push(`(name LIKE ? OR id IN (
-        SELECT nlit.item_id FROM ${TRANSLATIONS_TABLE} nlit
+        SELECT nlit.item_id FROM ${ITEM_TRANSLATIONS.table} nlit
         WHERE nlit.locale = ${literal} AND nlit.name LIKE ?
       ))`);
       params.push(`%${search}%`, `%${search}%`);

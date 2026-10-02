@@ -6,10 +6,13 @@ import { useApiClient } from '@/lib/apiClient';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import { resultTypeLabel } from '@/components/exercises/exerciseForm';
+import { localeLabel } from '@/lib/localeLabels';
 
 interface ExerciseDetail {
   id: number;
   name: string;
+  /** #967: the stored per-locale names; `{}` for an exercise that has none. */
+  translations: Record<string, string>;
   description: string | null;
   video_url: string | null;
   /** #719 part 2: the poster, when the gym uploaded an MP4. */
@@ -39,6 +42,7 @@ export function ExerciseDetailModal({ exerciseId, exerciseName, onClose }: {
 }) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
+  const tCommon = useTranslations();
   const { apiFetch } = useApiClient();
   const [detail, setDetail] = useState<ExerciseDetail | null>(null);
 
@@ -73,6 +77,15 @@ export function ExerciseDetailModal({ exerciseId, exerciseName, onClose }: {
           <>
             <p style={sectionLabelSt}>{t('section_general')}</p>
             {field(t('label_name'), detail.name)}
+            {/* #967 §6: Details *is* the multilingual management view, so it lists
+                every stored translation — one row per language the exercise
+                actually has, which needs no locale list of its own. A list row
+                and a workout still show one name. */}
+            {Object.entries(detail.translations ?? {}).sort(([a], [b]) => a.localeCompare(b)).map(([loc, value]) => (
+              <div key={loc}>
+                {field(`${t('label_name')} — ${localeLabel(loc, (key) => tCommon(key as any))}`, value)}
+              </div>
+            ))}
             {field(t('label_description'), detail.description)}
             {field(t('label_status'), tStatus(detail.status as any))}
             {field(t('label_result_types'), resultTypes)}

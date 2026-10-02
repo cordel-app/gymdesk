@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
+import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
+import { getRequestLocale } from '../infra/locale';
 
 /**
  * #55: staff-side read visibility into a member's ExerciseLog/WorkoutBlockLog
@@ -19,8 +21,12 @@ exerciseLogsRouter.get('/', requireModuleWrite('TRAINING'), async (req, res, nex
     // MySQL's JSON_ARRAYAGG has no ORDER BY of its own — aggregate over a
     // derived table pre-sorted by set_number instead.
     const params: any[] = [memberId, gymId];
+    // #967: the exercise's name in the caller's language, falling back to its
+    // base name. A read-only surface takes the localized value in the field it
+    // already reads — only the exercises routers keep `name` separate, because
+    // their rows back an edit form.
     let sql = `
-      SELECT el.*, e.name AS exercise_name,
+      SELECT el.*, ${localizedExerciseNameExpr('e', getRequestLocale(req))},
         (SELECT JSON_ARRAYAGG(item) FROM (
           SELECT JSON_OBJECT('id', s.id, 'set_number', s.set_number, 'weight', s.weight, 'reps', s.reps, 'rpe', s.rpe) AS item
           FROM exercise_log_sets s WHERE s.exercise_log_id = el.id ORDER BY s.set_number

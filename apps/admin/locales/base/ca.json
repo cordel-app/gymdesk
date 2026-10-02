@@ -1585,7 +1585,8 @@
     "saving": "Desant…",
     "save_changes": "Desar canvis",
     "new_exercise": "Nou exercici",
-    "save": "Desar"
+    "save": "Desar",
+    "name_translations_hint": "Deixa un idioma en blanc per utilitzar el nom de dalt."
   },
   "muscles": {
     "chest": "Pit",
@@ -3873,5 +3874,10 @@
     "how_4": "Tota petició acceptada respon 202, tant si el correu ja era conegut com si no. Mostra al visitant un missatge de «revisa el teu correu».",
     "how_5": "Per provar la connexió, envia la mateixa petició amb el nom «test» i el correu buit. Respon 200 i no registra ningú.",
     "error_generic": "Alguna cosa ha anat malament."
+  },
+  "languages": {
+    "en": "Anglès",
+    "es": "Espanyol",
+    "ca": "Català"
   }
 }
