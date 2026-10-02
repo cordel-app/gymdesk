@@ -1021,7 +1021,7 @@ export default function PromotionsPage() {
     if (timelineError) {
       return (
         <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_timeline')}</p>
+          <p style={sectionLabelSt}>{t('section_fee_simulation')}</p>
           <p style={{ margin: 0, fontSize: 12, color: '#c0392b' }}>{timelineError}</p>
         </div>
       );
@@ -1029,7 +1029,7 @@ export default function PromotionsPage() {
     if (!timeline || timeline.periods.length === 0) {
       return (
         <div style={subSectionSt}>
-          <p style={sectionLabelSt}>{t('section_timeline')}</p>
+          <p style={sectionLabelSt}>{t('section_fee_simulation')}</p>
           <p style={hintSt}>{t('timeline_empty')}</p>
         </div>
       );
@@ -1042,7 +1042,7 @@ export default function PromotionsPage() {
     // stay here, where the Promotion's own Membership Fee Benefit lives.
     return (
       <div style={subSectionSt}>
-        <p style={sectionLabelSt}>{t('section_timeline')}</p>
+        <p style={sectionLabelSt}>{t('section_fee_simulation')}</p>
         <p style={{ margin: '0 0 8px', fontSize: 12, color: '#666' }}>{t('timeline_example_note', { date: enrollmentStr })}</p>
         <ExampleTimeline
           labels={{ period: t('col_period'), dates: t('col_dates'), status: t('col_status'), billing: t('col_billing') }}

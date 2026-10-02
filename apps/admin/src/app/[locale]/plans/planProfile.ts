@@ -54,6 +54,14 @@ export type PlanMemberLimit = (typeof MEMBER_LIMITS)[number];
  * last one: the Billing Events Forecast became the Example timeline, in the
  * same place.
  *
+ * #962 renamed what that section is *called* — it reads **Membership Fee
+ * Simulation** now, the same words the Promotion card and the Assigned Plan
+ * card use for the same projection (`assigned_plans_page.section_fee_simulation`),
+ * so the key is `section_fee_simulation` in all three namespaces. The
+ * projection itself is untouched: the domain module is still
+ * `planExampleTimeline.ts`, the API field is still `example_timeline`, and the
+ * shared table is still `components/ExampleTimeline.tsx`.
+ *
  * Price History is **not** in this list any more (#881). It used to trail the
  * Example timeline as a section of its own; it is now a collapsible card
  * rendered inside PRICING, which is where a plan's prices belong — see
@@ -67,10 +75,10 @@ export const PLAN_SECTION_ORDER = [
   'section_session_benefits',
   'section_plan_period_benefits',
   'section_centers',
-  'section_example_timeline',
-  // #915 — the Billing Event Simulation sits after the Example Timeline: the
-  // timeline answers "what does each billing *period* do to the Membership
-  // Fee", this answers "what is billed, in full, on each *date*".
+  'section_fee_simulation',
+  // #915 — the Billing Event Simulation sits after the Membership Fee
+  // Simulation: that one answers "what does each billing *period* do to the
+  // Membership Fee", this answers "what is billed, in full, on each *date*".
   'section_billing_event_simulation',
 ] as const;
 
