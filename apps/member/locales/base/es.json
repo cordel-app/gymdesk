@@ -176,7 +176,15 @@
     "occupancy_count": "{booked}/{capacity}",
     "waitlist_open": "Lista de espera abierta",
     "waitlist_closed": "Lista de espera cerrada",
-    "waitlist_count": "{count} personas en espera"
+    "waitlist_count": "{count} personas en espera",
+    "event_status_booked": "Reservado",
+    "event_status_booked_waiting": "Reservado · {waiting} en espera",
+    "event_status_completed": "Finalizado",
+    "event_status_cancelled": "Cancelado",
+    "event_status_waitlist": "Lista de espera",
+    "event_status_waitlist_waiting": "Lista de espera · {waiting} en espera",
+    "event_status_waitlist_position": "Lista de espera · Posición n.º {position}",
+    "event_status_waitlist_position_waiting": "Lista de espera · Posición n.º {position} · {waiting} en espera"
   },
   "notifications": {
     "title": "Alertas",

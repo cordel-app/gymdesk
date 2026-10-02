@@ -659,6 +659,16 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               ce.allows_shared_booking,
               at.name AS class_type_name, at.description AS class_type_description,
               at.is_shareable,
+              -- #976: the event's own colour, which is what the member
+              -- calendar paints the event box with now. calendar_events.color
+              -- is what the admin event form configures (pre-filled from the
+              -- Activity Type), and the Activity Type's own colour is the
+              -- fallback for an occurrence that never carried one -- a
+              -- schedule-rule materialized session, or one created before the
+              -- picker existed. NULL means no colour is configured, which the
+              -- member app renders as the theme's own Calendar event colour
+              -- rather than inventing one.
+              COALESCE(ce.color, at.color) AS color,
               ce.center_id, c.name AS center_name,
               sp.name AS space_name,
               tm.name AS trainer_name,
@@ -787,6 +797,10 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
         occupancy_status: computeOccupancyStatus(r.event_status, accessLocked, booked, cap),
         waitlist_status: r.effective_waitlist_mode,
         waitlist_count: Number(r.waitlist_count),
+        // #976: explicit rather than left to the spread, because `null` here
+        // is load-bearing — it is what tells the member app to fall back to
+        // the theme's Calendar event colour instead of painting an inline one.
+        color: r.color ?? null,
       };
     });
     res.json(shaped);
