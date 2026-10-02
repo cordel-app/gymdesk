@@ -525,6 +525,50 @@ whole card, which has had its own editing controls since long before the
 ticket.
 
 
+### When one of the fields is frozen for some rows (#974)
+
+The Sellable Items card is the same pattern one step further: both halves of a
+*multi-section* card render from one declaration, and some of its fields are
+not editable for some rows.
+
+1. **Sections are part of the declaration, not the JSX.**
+   `sellableItemProfile.ts` holds `SELLABLE_ITEM_SECTIONS` — the five sections
+   in order, each with its own field list — plus the option sets its selects
+   offer and the row → form mapping. `SellableItemLayout.tsx` renders them
+   over `CardSectionHeader` + `cardSectionStyle`/`cardSectionDividedStyle`, so
+   neither half spells a heading, a hairline or a grid.
+2. **One function decides what this row shows, and both halves call it.**
+   `visibleSellableItemSections({ isSystem, isSessionType })` drops the
+   session-only section for a non-session item and the fields a System row has
+   no use for, and returns `editable: false` for the columns that row freezes.
+   A section left with no visible field is dropped rather than rendered as an
+   empty heading.
+3. **A frozen field is a value in *both* modes** — the mechanism #927 added for
+   a calculated field, applied to a conditionally frozen one. `PUT
+   /sellable-items/:id` writes a System row's name, type and units only inside
+   its `is_system` guard, so the form must not offer a control the route would
+   ignore; the read-only card still reports them. The layout decides it once
+   (`editing && field.editable ? renderField(field) : renderValue(field)`), so
+   neither half can forget.
+4. **The editor's Save/Cancel is `inlineActionsRowStyle`** — left-aligned at the
+   fields' own content margin, no rule above it (#929, #968). A
+   `justifyContent: 'flex-end'` row with a grey Cancel of its own is what puts
+   one card's actions where no other card's are.
+5. **The read-only half of a "catalogue, selected ones highlighted" relation
+   renders spans wearing the editor's own selected chip** (#799), through one
+   exported style — never disabled checkboxes, and never collapsed into a
+   comma-joined sentence, which is a second representation of the same
+   selection.
+6. **The body's padding belongs to the card, not to each half.** Two different
+   paddings move the first section's heading the moment Edit opens.
+
+Reference implementation:
+`[locale]/financials/sellable-items/page.tsx` over
+`[locale]/financials/sellable-items/SellableItemLayout.tsx` +
+`sellableItemProfile.ts`. Regression test:
+`apps/admin/src/test/sellable-items-expanded-read-only.test.ts`.
+
+
 ### When expanding *was* the editor (#798)
 
 Staff had no read-only view at all: expanding a card seeded the form and

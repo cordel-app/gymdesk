@@ -14,9 +14,40 @@ import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { listNameBadgeAccentStyle, listNameBadgeStyle } from '@/components/listChrome';
-import { formHelpTextStyle } from '@/components/formChrome';
+// #974 §5: the list's own filter control (#724), so the search box and the Type
+// filter follow the Theme's input pair instead of a hardcoded `#ccc`.
+import { filterControlStyle } from '@/components/FilterBar';
+import {
+  cardMutedTextStyle,
+  formCheckboxLabelStyle,
+  formControlStyle,
+  formErrorStyle,
+  formFieldLabelStyle,
+  formHelpTextStyle,
+  inlineActionsRowStyle,
+  secondaryBtnSmall,
+} from '@/components/formChrome';
+import {
+  SellableItemLayout,
+  sellableItemCheckboxCellStyle,
+  sellableItemTextareaStyle,
+  sellableItemValueStyle,
+} from './SellableItemLayout';
+import {
+  EMPTY_VALUE,
+  SELLABLE_ITEM_ENROLLMENT_STATUSES,
+  SELLABLE_ITEM_STATUSES,
+  SELLABLE_ITEM_TYPES,
+  type SellableItemEnrollmentStatus,
+  type SellableItemFormValues,
+  type SellableItemStatus,
+  type SellableItemType,
+  type VisibleSellableItemField,
+  toSellableItemFormValues,
+  visibleSellableItemSections,
+} from './sellableItemProfile';
 import { Frequency, frequencyOptions, legacyFrequencyLabelKey } from './sellableItemFrequency';
 import {
   SESSION_ITEM_TYPE,
@@ -28,13 +59,16 @@ import {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-const TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
-const STATUSES = ['active', 'inactive'] as const;
-const ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
+// #974: the three option sets live beside the field set that renders them
+// (`sellableItemProfile.ts`), so the create card, the inline editor and the
+// read-only card cannot offer or display different ones.
+const TYPES = SELLABLE_ITEM_TYPES;
+const STATUSES = SELLABLE_ITEM_STATUSES;
+const ENROLLMENT_STATUSES = SELLABLE_ITEM_ENROLLMENT_STATUSES;
 
-type ItemType = typeof TYPES[number];
-type ItemStatus = typeof STATUSES[number];
-type EnrollmentStatus = typeof ENROLLMENT_STATUSES[number];
+type ItemType = SellableItemType;
+type ItemStatus = SellableItemStatus;
+type EnrollmentStatus = SellableItemEnrollmentStatus;
 
 // #546: Professional Services only apply to Session-type ('sessions') items.
 // #942: the literal itself lives in `sellableItemPriceNotes.ts`, which is what
@@ -137,22 +171,10 @@ interface SellableItem {
   modified_by_name: string | null;
 }
 
-type EditForm = {
-  name: string;
-  type: ItemType;
-  units: string;
-  description: string;
-  amount: string;
-  billing_frequency: string;
-  status: ItemStatus;
-  enrollment_status: EnrollmentStatus;
-  notes: string;
-  package_information: string;
-  validity_days: string;
-  tax_rate_id: string;
-  mandatory: boolean;
-  professionalServiceIds: number[];
-};
+// #974: the form's values and the row → values mapping are declared beside the
+// field set, so a field added to the card cannot be left out of the form the
+// context menu opens (#800).
+type EditForm = SellableItemFormValues;
 
 type InlineNew = {
   name: string;
@@ -179,25 +201,6 @@ interface ProfessionalService {
   name: string;
   is_system: number;
   status: 'active' | 'inactive';
-}
-
-function emptyEditForm(item: SellableItem): EditForm {
-  return {
-    name: item.name,
-    type: item.type,
-    units: item.units != null ? String(item.units) : '',
-    description: item.description ?? '',
-    amount: item.amount != null ? parseFloat(item.amount).toString() : '',
-    billing_frequency: item.billing_frequency ?? '',
-    status: item.status,
-    enrollment_status: item.enrollment_status,
-    notes: item.notes ?? '',
-    package_information: item.package_information ?? '',
-    validity_days: item.validity_days != null ? String(item.validity_days) : '',
-    tax_rate_id: item.tax_rate_id != null ? String(item.tax_rate_id) : '',
-    mandatory: Boolean(item.mandatory),
-    professionalServiceIds: item.professional_services?.map((s) => s.id) ?? [],
-  };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -310,13 +313,13 @@ export default function SellableItemsPage() {
   function renderProfessionalServiceCheckboxes(selected: number[], onChange: (ids: number[]) => void) {
     const options = professionalServiceOptions(selected);
     if (professionalServicesLoading) {
-      return <p style={{ margin: 0, fontSize: 13, color: '#888' }}>{t('loading')}</p>;
+      return <p style={cardMutedTextStyle}>{t('loading')}</p>;
     }
     if (options.length === 0) {
-      return <p style={{ margin: 0, fontSize: 13, color: '#888' }}>{t('professional_services_empty')}</p>;
+      return <p style={cardMutedTextStyle}>{t('professional_services_empty')}</p>;
     }
     return (
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      <div style={chipRowStyle}>
         {options.map((ps) => (
           <label key={ps.id} style={chipCheckboxLabel(selected.includes(ps.id))}>
             <input
@@ -414,7 +417,7 @@ export default function SellableItemsPage() {
 
   function openEdit(item: SellableItem) {
     setEditingId(item.id);
-    setEditForm(emptyEditForm(item));
+    setEditForm(toSellableItemFormValues(item));
     setEditError(null);
     setExpanded((prev) => new Set([...prev, item.id]));
   }
@@ -517,57 +520,57 @@ export default function SellableItemsPage() {
         <div style={{ padding: '16px 20px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div>
-              <label style={inlineLabelStyle}>{t('label_name')} *</label>
+              <label style={formFieldLabelStyle}>{t('label_name')} *</label>
               <input
                 ref={newNameRef}
                 value={inlineNew.name}
                 onChange={(e) => setInlineNew({ ...inlineNew, name: e.target.value })}
                 placeholder={t('placeholder_name')}
-                style={inlineInputStyle}
+                style={formControlStyle}
               />
             </div>
             <div>
-              <label style={inlineLabelStyle}>{t('label_type')} *</label>
+              <label style={formFieldLabelStyle}>{t('label_type')} *</label>
               <select
                 value={inlineNew.type}
                 onChange={(e) => setInlineNew({ ...inlineNew, type: e.target.value as ItemType })}
-                style={inlineSelectStyle}
+                style={formControlStyle}
               >
                 {TYPES.map((tp) => <option key={tp} value={tp}>{t(`type_${tp}`)}</option>)}
               </select>
             </div>
             <div>
-              <label style={inlineLabelStyle}>{t('label_units')}</label>
+              <label style={formFieldLabelStyle}>{t('label_units')}</label>
               <input
                 type="number" min="1" step="1"
                 value={inlineNew.units}
                 onChange={(e) => setInlineNew({ ...inlineNew, units: e.target.value })}
                 placeholder="—"
-                style={inlineInputStyle}
+                style={formControlStyle}
               />
             </div>
             <div>
-              <label style={inlineLabelStyle}>{t('label_price')}</label>
+              <label style={formFieldLabelStyle}>{t('label_price')}</label>
               <input
                 type="number" min="0" step="0.01"
                 value={inlineNew.amount}
                 onChange={(e) => setInlineNew({ ...inlineNew, amount: e.target.value })}
                 placeholder="0.00"
-                style={inlineInputStyle}
+                style={formControlStyle}
               />
               {/* #942: the person typing the figure is the one who most needs
                   to know it buys the whole package. */}
               {draftSessionNote && <p style={formHelpTextStyle}>{draftSessionNote}</p>}
             </div>
             <div>
-              <label style={inlineLabelStyle}>{t('label_frequency')}</label>
+              <label style={formFieldLabelStyle}>{t('label_frequency')}</label>
               {/* #821 / #945: four choices — neither 'week' nor 'per_session'
                   is one of them. A new item never holds a legacy value, so
                   this list is always the four. */}
               <select
                 value={inlineNew.billing_frequency}
                 onChange={(e) => setInlineNew({ ...inlineNew, billing_frequency: e.target.value })}
-                style={inlineSelectStyle}
+                style={formControlStyle}
               >
                 <option value="">—</option>
                 {frequencyOptions(inlineNew.billing_frequency).map((o) => (
@@ -576,11 +579,11 @@ export default function SellableItemsPage() {
               </select>
             </div>
             <div>
-              <label style={inlineLabelStyle}>{t('label_tax_rate')}</label>
+              <label style={formFieldLabelStyle}>{t('label_tax_rate')}</label>
               <select
                 value={inlineNew.tax_rate_id}
                 onChange={(e) => setInlineNew({ ...inlineNew, tax_rate_id: e.target.value })}
-                style={inlineSelectStyle}
+                style={formControlStyle}
               >
                 <option value="">{t('option_no_tax')}</option>
                 {taxRateOptions(inlineNew.tax_rate_id).map((tr) => (
@@ -593,7 +596,7 @@ export default function SellableItemsPage() {
               tracks above keep their widths. The inline editor below renders
               the same control, against the same `label_mandatory`. */}
           <div style={{ marginBottom: 12 }}>
-            <label style={checkboxLabelStyle}>
+            <label style={formCheckboxLabelStyle}>
               <input
                 type="checkbox"
                 checked={inlineNew.mandatory}
@@ -604,16 +607,18 @@ export default function SellableItemsPage() {
           </div>
           {inlineNew.type === SESSION_TYPE && (
             <div style={{ marginBottom: 12 }}>
-              <label style={inlineLabelStyle}>{t('label_professional_services')}</label>
+              <label style={formFieldLabelStyle}>{t('label_professional_services')}</label>
               {renderProfessionalServiceCheckboxes(
                 inlineNew.professionalServiceIds,
                 (ids) => setInlineNew({ ...inlineNew, professionalServiceIds: ids }),
               )}
             </div>
           )}
-          {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
+          {inlineNew.error && <p style={formErrorStyle}>{inlineNew.error}</p>}
+          {/* #974 §4: the same left-aligned pair the inline editor below uses,
+              so creating and editing an item do not put Save in two places. */}
+          <div style={inlineActionsRowStyle}>
+            <button onClick={cancelInlineNew} style={secondaryBtnSmall}>{t('cancel')}</button>
             <button onClick={saveInlineNew} disabled={inlineNew.saving} style={primaryBtnSmall()}>
               {inlineNew.saving ? t('saving') : t('save')}
             </button>
@@ -639,6 +644,264 @@ export default function SellableItemsPage() {
     // 'per_session', #945) — the editor is where such a value gets corrected,
     // so the notice that flags it belongs beside its select.
     const editLegacyFrequencyLabelKey = editForm ? legacyFrequencyLabelKey(editForm.billing_frequency) : null;
+
+    // #974: both halves ask the one declaration which sections this row shows
+    // and which of its fields it may edit. The Session-only Professional
+    // Services section follows the *draft's* Type while the editor is open, so
+    // choosing Sessions reveals it before the row is saved — and a System row's
+    // frozen name/type/units come back as `editable: false`, which is what
+    // renders them as values in the form instead of as controls `PUT
+    // /sellable-items/:id` would ignore.
+    const draftType = isEditing && editForm ? editForm.type : item.type;
+    const sections = visibleSellableItemSections({
+      isSystem,
+      isSessionType: draftType === SESSION_TYPE,
+    });
+
+    /** The persisted value of one field, in the box its control occupies. */
+    function renderReadOnlyValue(field: VisibleSellableItemField): React.ReactNode {
+      switch (field.key) {
+        case 'name':
+          return <div style={sellableItemValueStyle}>{item.name}</div>;
+        case 'type':
+          return <div style={sellableItemValueStyle}>{t(`type_${item.type}` as any)}</div>;
+        case 'description':
+          return <div style={sellableItemValueStyle}>{item.description ?? EMPTY_VALUE}</div>;
+        case 'units':
+          return (
+            <div style={sellableItemValueStyle}>
+              {item.units != null ? String(item.units) : EMPTY_VALUE}
+            </div>
+          );
+        case 'status':
+          return <div style={sellableItemValueStyle}>{tStatus(item.status)}</div>;
+        case 'enrollment_status':
+          return <div style={sellableItemValueStyle}>{tStatus(item.enrollment_status)}</div>;
+        case 'mandatory':
+          return <div style={sellableItemValueStyle}>{isMandatory ? t('yes') : t('no')}</div>;
+        case 'amount':
+          // #942: the figure, then the line that says what it covers. The note
+          // is the row's own (`sessionPackageNote`), so the collapsed cell and
+          // this one cannot disagree about whether the price is a package total.
+          return (
+            <div>
+              <div style={sellableItemValueStyle}>
+                {withTaxNote(fmtAmount(item.amount, item.currency), item)}
+              </div>
+              {sessionNote && <p style={valueHintStyle}>{sessionNote}</p>}
+            </div>
+          );
+        case 'billing_frequency':
+          // A retired frequency (#821 'week', #945 'per_session') still reads
+          // truthfully here; the notice that flags it for correction belongs
+          // beside the editor's select and nowhere else.
+          return (
+            <div style={sellableItemValueStyle}>
+              {item.billing_frequency ? t(`frequency_${item.billing_frequency}` as any) : EMPTY_VALUE}
+            </div>
+          );
+        case 'validity_days':
+          return (
+            <div style={sellableItemValueStyle}>
+              {item.validity_days != null ? String(item.validity_days) : EMPTY_VALUE}
+            </div>
+          );
+        case 'tax_rate_id':
+          return (
+            <div style={sellableItemValueStyle}>
+              {item.tax_rate_name
+                ? `${item.tax_rate_name} (${item.tax_rate_percent}%)`
+                : t('option_no_tax')}
+            </div>
+          );
+        case 'professional_services':
+          // Spans wearing the editor's own selected-chip style, never disabled
+          // checkboxes: the read-only half of a "catalogue, selected ones
+          // highlighted" section reuses the form's colours through one helper
+          // (#799) rather than collapsing the selection into a sentence.
+          return item.professional_services.length === 0 ? (
+            <p style={cardMutedTextStyle}>{t('professional_services_empty')}</p>
+          ) : (
+            <div style={chipRowStyle}>
+              {item.professional_services.map((ps) => (
+                <span key={ps.id} style={selectedChipStyle}>{ps.name}</span>
+              ))}
+            </div>
+          );
+        case 'package_information':
+          return <div style={sellableItemValueStyle}>{item.package_information ?? EMPTY_VALUE}</div>;
+        case 'notes':
+          return <div style={sellableItemValueStyle}>{item.notes ?? EMPTY_VALUE}</div>;
+      }
+    }
+
+    /** The control for one field, while `⋮ → Edit` is open on this row. */
+    function renderEditControl(field: VisibleSellableItemField): React.ReactNode {
+      if (!editForm) return null;
+      switch (field.key) {
+        case 'name':
+          return (
+            <input
+              value={editForm.name}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+              autoFocus
+              style={formControlStyle}
+            />
+          );
+        case 'type':
+          return (
+            <select
+              value={editForm.type}
+              onChange={(e) => setEditForm({ ...editForm, type: e.target.value as ItemType })}
+              style={formControlStyle}
+            >
+              {TYPES.map((tp) => <option key={tp} value={tp}>{t(`type_${tp}` as any)}</option>)}
+            </select>
+          );
+        case 'description':
+          return (
+            <textarea
+              value={editForm.description}
+              onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+              rows={2}
+              style={sellableItemTextareaStyle}
+            />
+          );
+        case 'units':
+          return (
+            <input
+              type="number" min="1" step="1"
+              value={editForm.units}
+              onChange={(e) => setEditForm({ ...editForm, units: e.target.value })}
+              placeholder={EMPTY_VALUE}
+              style={formControlStyle}
+            />
+          );
+        case 'status':
+          return (
+            <select
+              value={editForm.status}
+              onChange={(e) => setEditForm({ ...editForm, status: e.target.value as ItemStatus })}
+              style={formControlStyle}
+            >
+              {STATUSES.map((st) => <option key={st} value={st}>{tStatus(st)}</option>)}
+            </select>
+          );
+        case 'enrollment_status':
+          return (
+            <select
+              value={editForm.enrollment_status}
+              onChange={(e) => setEditForm({ ...editForm, enrollment_status: e.target.value as EnrollmentStatus })}
+              style={formControlStyle}
+            >
+              {ENROLLMENT_STATUSES.map((st) => <option key={st} value={st}>{tStatus(st)}</option>)}
+            </select>
+          );
+        case 'mandatory':
+          // #832: offered on a System item too — the flag is written outside
+          // `PUT /:id`'s `is_system` guard, unlike the three fields above it.
+          return (
+            <label style={sellableItemCheckboxCellStyle}>
+              <input
+                type="checkbox"
+                checked={editForm.mandatory}
+                onChange={(e) => setEditForm({ ...editForm, mandatory: e.target.checked })}
+              />
+              {editForm.mandatory ? t('yes') : t('no')}
+            </label>
+          );
+        case 'amount':
+          return (
+            <div>
+              <input
+                type="number" min="0" step="0.01"
+                value={editForm.amount}
+                onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
+                placeholder="0.00"
+                style={formControlStyle}
+              />
+              {/* #942, as in the create card — the same note from the same
+                  rule, off this form's live Type and Units. */}
+              {editSessionNote && <p style={formHelpTextStyle}>{editSessionNote}</p>}
+            </div>
+          );
+        case 'billing_frequency':
+          return (
+            <div>
+              {/* #821 / #945: an item stored on a retired frequency ('week',
+                  'per_session') still shows it — disabled, so it reads
+                  truthfully and submits back unchanged, but cannot be re-chosen
+                  once the user moves off it. */}
+              <select
+                value={editForm.billing_frequency}
+                onChange={(e) => setEditForm({ ...editForm, billing_frequency: e.target.value })}
+                style={formControlStyle}
+              >
+                <option value="">{EMPTY_VALUE}</option>
+                {frequencyOptions(editForm.billing_frequency).map((o) => (
+                  <option key={o.value} value={o.value} disabled={o.disabled}>{t(o.labelKey as any)}</option>
+                ))}
+              </select>
+              {/* #945: the notice names the frequency the row holds, since
+                  there are two retired values now. The label is resolved before
+                  `t()` is called and passed in as a value — next-intl has no
+                  `defaultValue` option and would print the key. */}
+              {editLegacyFrequencyLabelKey && (
+                <div style={legacyFrequencyNoticeStyle}>
+                  {t('frequency_legacy_notice', { frequency: t(editLegacyFrequencyLabelKey as any) })}
+                </div>
+              )}
+            </div>
+          );
+        case 'validity_days':
+          return (
+            <input
+              type="number" min="0" step="1"
+              value={editForm.validity_days}
+              onChange={(e) => setEditForm({ ...editForm, validity_days: e.target.value })}
+              placeholder={EMPTY_VALUE}
+              style={formControlStyle}
+            />
+          );
+        case 'tax_rate_id':
+          return (
+            <select
+              value={editForm.tax_rate_id}
+              onChange={(e) => setEditForm({ ...editForm, tax_rate_id: e.target.value })}
+              style={formControlStyle}
+            >
+              <option value="">{t('option_no_tax')}</option>
+              {taxRateOptions(editForm.tax_rate_id).map((tr) => (
+                <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
+              ))}
+            </select>
+          );
+        case 'professional_services':
+          return renderProfessionalServiceCheckboxes(
+            editForm.professionalServiceIds,
+            (ids) => setEditForm({ ...editForm, professionalServiceIds: ids }),
+          );
+        case 'package_information':
+          return (
+            <textarea
+              value={editForm.package_information}
+              onChange={(e) => setEditForm({ ...editForm, package_information: e.target.value })}
+              rows={3}
+              placeholder={t('placeholder_package_info')}
+              style={sellableItemTextareaStyle}
+            />
+          );
+        case 'notes':
+          return (
+            <textarea
+              value={editForm.notes}
+              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+              rows={3}
+              style={sellableItemTextareaStyle}
+            />
+          );
+      }
+    }
 
     const menuItems: ContextMenuItem[] = [
       { label: t('details'), onClick: () => setDetails(item) },
@@ -719,247 +982,38 @@ export default function SellableItemsPage() {
           </div>
         </div>
 
-        {/* Inline edit */}
-        {isEditing && editForm && (
-          <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-border, #eee)' }}>
-            <SectionHeader title={t('section_general')} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {!isSystem && (
-                <div>
-                  <label style={inlineLabelStyle}>{t('label_name')} *</label>
-                  <input
-                    value={editForm.name}
-                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                    autoFocus={!isSystem}
-                    style={inlineInputStyle}
-                  />
-                </div>
-              )}
-              {!isSystem && (
-                <div>
-                  <label style={inlineLabelStyle}>{t('label_type')}</label>
-                  <select
-                    value={editForm.type}
-                    onChange={(e) => setEditForm({ ...editForm, type: e.target.value as ItemType })}
-                    style={inlineSelectStyle}
-                  >
-                    {TYPES.map((tp) => <option key={tp} value={tp}>{t(`type_${tp}`)}</option>)}
-                  </select>
-                </div>
-              )}
-              <div style={{ gridColumn: isSystem ? '1 / -1' : undefined }}>
-                <label style={inlineLabelStyle}>{t('label_description')}</label>
-                <textarea
-                  value={editForm.description}
-                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                  rows={2}
-                  style={{ ...inlineInputStyle, resize: 'vertical' }}
-                />
-              </div>
-              {!isSystem && (
-                <div>
-                  <label style={inlineLabelStyle}>{t('label_units')}</label>
-                  <input
-                    type="number" min="1" step="1"
-                    value={editForm.units}
-                    onChange={(e) => setEditForm({ ...editForm, units: e.target.value })}
-                    placeholder="—"
-                    style={inlineInputStyle}
-                  />
-                </div>
-              )}
-              <div>
-                <label style={inlineLabelStyle}>{t('label_status')}</label>
-                <select
-                  value={editForm.status}
-                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value as ItemStatus })}
-                  style={inlineSelectStyle}
-                >
-                  {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
-                </select>
-              </div>
-              <div>
-                <label style={inlineLabelStyle}>{t('label_enrollment_status')}</label>
-                <select
-                  value={editForm.enrollment_status}
-                  onChange={(e) => setEditForm({ ...editForm, enrollment_status: e.target.value as EnrollmentStatus })}
-                  style={inlineSelectStyle}
-                >
-                  {ENROLLMENT_STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
-                </select>
-              </div>
-              {/* #832: deliberately not wrapped in `!isSystem` — a System
-                  item's Mandatory flag is editable, unlike the catalogue-shape
-                  fields (name/type/units) beside it, which is why `PUT /:id`
-                  writes this column outside its is_system guard. */}
-              <div style={{ display: 'flex', alignItems: 'flex-end', paddingBottom: 8 }}>
-                <label style={checkboxLabelStyle}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.mandatory}
-                    onChange={(e) => setEditForm({ ...editForm, mandatory: e.target.checked })}
-                  />
-                  {t('label_mandatory')}
-                </label>
-              </div>
-            </div>
-
-            <SectionHeader title={t('section_billing')} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <label style={inlineLabelStyle}>{t('label_price')}</label>
-                <input
-                  type="number" min="0" step="0.01"
-                  value={editForm.amount}
-                  onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
-                  placeholder="0.00"
-                  style={inlineInputStyle}
-                />
-                {/* #942, as in the create card — the same note from the same
-                    rule, off this form's live Type and Units. */}
-                {editSessionNote && <p style={formHelpTextStyle}>{editSessionNote}</p>}
-              </div>
-              <div>
-                <label style={inlineLabelStyle}>{t('label_frequency')}</label>
-                {/* #821 / #945: an item stored on a retired frequency
-                    ('week', 'per_session') still shows it — disabled, so it
-                    reads truthfully and submits back unchanged, but cannot be
-                    re-chosen once the user moves off it. */}
-                <select
-                  value={editForm.billing_frequency}
-                  onChange={(e) => setEditForm({ ...editForm, billing_frequency: e.target.value })}
-                  style={inlineSelectStyle}
-                >
-                  <option value="">—</option>
-                  {frequencyOptions(editForm.billing_frequency).map((o) => (
-                    <option key={o.value} value={o.value} disabled={o.disabled}>{t(o.labelKey as any)}</option>
-                  ))}
-                </select>
-                {/* #945: the notice names the frequency the row holds, since
-                    there are two retired values now ('week', 'per_session').
-                    The label is resolved before `t()` is called and passed in
-                    as a value — next-intl has no `defaultValue` option and
-                    would print the key. */}
-                {editLegacyFrequencyLabelKey && (
-                  <div style={{ fontSize: 11, color: '#8a6d1f', marginTop: 4 }}>
-                    {t('frequency_legacy_notice', { frequency: t(editLegacyFrequencyLabelKey as any) })}
-                  </div>
-                )}
-              </div>
-              {!isSystem && (
-                <div>
-                  <label style={inlineLabelStyle}>{t('label_validity_days')}</label>
-                  <input
-                    type="number" min="0" step="1"
-                    value={editForm.validity_days}
-                    onChange={(e) => setEditForm({ ...editForm, validity_days: e.target.value })}
-                    placeholder="—"
-                    style={inlineInputStyle}
-                  />
-                </div>
-              )}
-              <div>
-                <label style={inlineLabelStyle}>{t('label_tax_rate')}</label>
-                <select
-                  value={editForm.tax_rate_id}
-                  onChange={(e) => setEditForm({ ...editForm, tax_rate_id: e.target.value })}
-                  style={inlineSelectStyle}
-                >
-                  <option value="">{t('option_no_tax')}</option>
-                  {taxRateOptions(editForm.tax_rate_id).map((tr) => (
-                    <option key={tr.id} value={tr.id}>{tr.name} ({parseFloat(tr.rate_percent)}%)</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            {editForm.type === SESSION_TYPE && (
-              <>
-                <SectionHeader title={t('section_professional_services')} />
-                {renderProfessionalServiceCheckboxes(
-                  editForm.professionalServiceIds,
-                  (ids) => setEditForm({ ...editForm, professionalServiceIds: ids }),
-                )}
-              </>
-            )}
-
-            {!isSystem && (
-              <>
-                <SectionHeader title={t('section_package_info')} />
-                <textarea
-                  value={editForm.package_information}
-                  onChange={(e) => setEditForm({ ...editForm, package_information: e.target.value })}
-                  rows={3}
-                  placeholder={t('placeholder_package_info')}
-                  style={{ ...inlineInputStyle, resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
-                />
-              </>
-            )}
-
-            <SectionHeader title={t('section_notes')} />
-            <textarea
-              value={editForm.notes}
-              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-              rows={3}
-              style={{ ...inlineInputStyle, resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
+        {/* #974: one layout, two modes. Expanding the card reads and
+            `⋮ → Edit` writes (#797), and because both halves render
+            `SellableItemLayout` over the same declaration neither can lay the
+            item out differently from the other, or show a field the other does
+            not. */}
+        {(isExpanded || isEditing) && (
+          <div style={expandedBodyStyle}>
+            <SellableItemLayout
+              sections={sections}
+              editing={isEditing}
+              sectionTitle={(section) => t(section.titleKey as any)}
+              fieldLabel={(field) => t(field.labelKey as any)}
+              renderField={renderEditControl}
+              renderValue={renderReadOnlyValue}
             />
-
-            {editError && <p style={errorStyle}>{editError}</p>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
-              <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-              <button onClick={() => handleSave(item)} disabled={editSaving} style={primaryBtnSmall()}>
-                {editSaving ? t('saving') : t('save')}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Read-only expanded */}
-        {isExpanded && !isEditing && (
-          <div style={{ padding: '0 20px 16px', borderTop: '1px solid var(--gd-border, #eee)' }}>
-            <SectionHeader title={t('section_general')} />
-            <DetailRow label={t('label_description')} value={item.description ?? '—'} />
-            <DetailRow label={t('label_type')} value={t(`type_${item.type}`)} />
-            <DetailRow label={t('label_units')} value={item.units != null ? String(item.units) : '—'} />
-            <DetailRow label={t('label_status')} value={tStatus(item.status)} />
-            <DetailRow label={t('label_enrollment_status')} value={tStatus(item.enrollment_status)} />
-            <DetailRow label={t('label_mandatory')} value={item.mandatory ? t('yes') : t('no')} />
-
-            <SectionHeader title={t('section_billing')} />
-            <DetailRow
-              label={t('label_price')}
-              value={withTaxNote(fmtAmount(item.amount, item.currency), item)}
-              hint={sessionNote}
-            />
-            <DetailRow label={t('label_frequency')} value={item.billing_frequency ? t(`frequency_${item.billing_frequency}`) : '—'} />
-            {!isSystem && <DetailRow label={t('label_validity_days')} value={item.validity_days != null ? String(item.validity_days) : '—'} />}
-            <DetailRow
-              label={t('label_tax_rate')}
-              value={item.tax_rate_name ? `${item.tax_rate_name} (${item.tax_rate_percent}%)` : t('option_no_tax')}
-            />
-
-            {item.type === SESSION_TYPE && (
+            {isEditing && editForm && (
               <>
-                <SectionHeader title={t('section_professional_services')} />
-                <p style={{ margin: '4px 0 0', fontSize: 13, color: item.professional_services.length ? '#333' : '#aaa' }}>
-                  {item.professional_services.length
-                    ? item.professional_services.map((s) => s.name).join(', ')
-                    : t('professional_services_empty')}
-                </p>
+                {editError && <p style={formErrorStyle}>{editError}</p>}
+                {/* #974 §4: the editor's pair sits at the fields' own content
+                    margin, left-aligned and with no rule above it — where every
+                    other inline editor in the app puts it (#929's
+                    `inlineActionsRowStyle`, #968). It used to be a
+                    `justifyContent: 'flex-end'` row with a grey Cancel of its
+                    own, so this card's actions sat where no other card's do. */}
+                <div style={inlineActionsRowStyle}>
+                  <button onClick={cancelEdit} style={secondaryBtnSmall}>{t('cancel')}</button>
+                  <button onClick={() => handleSave(item)} disabled={editSaving} style={primaryBtnSmall()}>
+                    {editSaving ? t('saving') : t('save')}
+                  </button>
+                </div>
               </>
             )}
-
-            {!isSystem && item.package_information && (
-              <>
-                <SectionHeader title={t('section_package_info')} />
-                <p style={{ margin: '4px 0 0', fontSize: 13, whiteSpace: 'pre-wrap' }}>{item.package_information}</p>
-              </>
-            )}
-
-            <SectionHeader title={t('section_notes')} />
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: item.notes ? '#333' : '#aaa', whiteSpace: 'pre-wrap' }}>
-              {item.notes ?? '—'}
-            </p>
           </div>
         )}
       </div>
@@ -979,14 +1033,14 @@ export default function SellableItemsPage() {
               value={searchQ}
               onChange={(e) => setSearchQ(e.target.value)}
               placeholder={t('search_placeholder')}
-              style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, width: 180 }}
+              style={{ ...filterControlStyle, width: 180 }}
             />
             <button type="submit" style={primaryBtnSmall()}>{t('search')}</button>
           </form>
           <select
             value={typeFilter}
             onChange={(e) => setTypeFilter(e.target.value)}
-            style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, background: '#fff' }}
+            style={filterControlStyle}
           >
             <option value="">{t('filter_all_types')}</option>
             {TYPES.map((tp) => <option key={tp} value={tp}>{t(`type_${tp}`)}</option>)}
@@ -1129,30 +1183,6 @@ export default function SellableItemsPage() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div style={{ borderBottom: '1px solid var(--gd-border, #eee)', margin: '16px 0 8px', paddingBottom: 4 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
-    </div>
-  );
-}
-
-// `hint` (#942) is the sentence that explains the value rather than the field —
-// *Total price for 5 sessions* under a session package's Price. It sits under
-// the value, not under the label, because it qualifies the figure; a field's
-// own explanatory sentence belongs to the form behind `⋮ → Edit` (#797).
-function DetailRow({ label, value, hint }: { label: string; value: string; hint?: string | null }) {
-  return (
-    <div style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 13 }}>
-      <span style={{ width: 160, flexShrink: 0, color: '#666' }}>{label}</span>
-      <span style={{ color: '#111', flex: 1, whiteSpace: 'pre-wrap' }}>
-        {value}
-        {hint && <span style={detailHintStyle}>{hint}</span>}
-      </span>
-    </div>
-  );
-}
-
 function ModalSection({ title }: { title: string }) {
   return <div style={{ fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{title}</div>;
 }
@@ -1177,12 +1207,6 @@ const valueHintStyle: React.CSSProperties = {
   ...formHelpTextStyle, fontStyle: 'italic',
 };
 
-// Inside the read-only card's Price row, where the value is a flex item: the
-// hint has to claim a line of its own.
-const detailHintStyle: React.CSSProperties = {
-  ...valueHintStyle, display: 'block',
-};
-
 // Inside a collapsed row's Price cell, where the figure above it is 13px and the
 // row has no vertical room to spare.
 const listHintStyle: React.CSSProperties = {
@@ -1190,6 +1214,33 @@ const listHintStyle: React.CSSProperties = {
 };
 
 const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, overflow: 'hidden' };
+
+/**
+ * The expanded body, in both modes (#974 §1). One padding and one hairline, so
+ * the card does not change shape as `⋮ → Edit` opens: the read-only half used
+ * to sit at `'0 20px 16px'` and the editor at `'16px 20px'`, which moved the
+ * first section's heading up by 16px the moment you started editing.
+ */
+const expandedBodyStyle: React.CSSProperties = {
+  padding: '16px 20px',
+  borderTop: '1px solid var(--gd-border, #eee)',
+};
+
+/** The row the Professional Services chips wrap in, in both modes. */
+const chipRowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 8 };
+
+/**
+ * A linked Professional Service as the read-only card shows it: the editor's own
+ * selected chip, through the same helper, so the two halves cannot colour the
+ * same selection differently (#799). It is a `<span>` and not a disabled
+ * checkbox, and it loses only the pointer the editor's chip carries.
+ */
+const selectedChipStyle: React.CSSProperties = { ...chipCheckboxLabel(true), cursor: 'default' };
+
+/** #945: the line that flags a retired Billing Frequency for correction. */
+const legacyFrequencyNoticeStyle: React.CSSProperties = {
+  fontSize: 11, color: '#8a6d1f', marginTop: 4,
+};
 
 // The grid the column headers and every collapsed row are laid out on (#637).
 const listGridStyle: React.CSSProperties = {
@@ -1225,27 +1276,6 @@ const badgeCellStyle: React.CSSProperties = {
 
 const actionsCellStyle: React.CSSProperties = {
   minWidth: 0, display: 'flex', alignItems: 'center', gap: 6,
-};
-
-const inlineLabelStyle: React.CSSProperties = {
-  display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4,
-};
-
-const inlineInputStyle: React.CSSProperties = {
-  width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
-  fontSize: 14, boxSizing: 'border-box', background: '#fff',
-};
-
-const inlineSelectStyle: React.CSSProperties = {
-  width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
-  fontSize: 14, boxSizing: 'border-box', background: '#fff',
-};
-
-const errorStyle: React.CSSProperties = { margin: '8px 0 0', fontSize: 13, color: '#c0392b' };
-
-/** #832: matches the Promotion editor's flag checkboxes (`checkboxLabelSt`). */
-const checkboxLabelStyle: React.CSSProperties = {
-  display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer',
 };
 
 function chipCheckboxLabel(checked: boolean): React.CSSProperties {
