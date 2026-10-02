@@ -20,6 +20,12 @@ import {
 } from '../infra/locale';
 import { logger } from '../lib/logger';
 import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
+import {
+  exerciseFacetsSql,
+  exerciseListFilterSql,
+  groupExerciseFacets,
+  parseExerciseListFilter,
+} from '../domain/exerciseListFilters';
 import { actorSnapshot } from '../domain/nutritionLibrary';
 import {
   EXERCISE_IMAGE_MASTER_MAX_BYTES,
@@ -122,81 +128,60 @@ async function nameTaken(name: string, excludeId?: string | number): Promise<boo
 
 /* ── List ─────────────────────────────────────────────────────────────────── */
 
-/**
- * A repeatable, comma-separated filter value — `?muscle=chest,triceps` and
- * `?muscle=chest&muscle=triceps` mean the same thing, which is what lets #969's
- * checkbox groups send either shape.
- */
-function listParam(value: unknown): string[] | null {
-  const raw = Array.isArray(value) ? value : [value];
-  const values = raw
-    .filter((entry): entry is string => typeof entry === 'string')
-    .flatMap((entry) => entry.split(','))
-    .map((entry) => entry.trim().toLowerCase())
-    .filter(Boolean);
-  return values.length > 0 ? Array.from(new Set(values)) : null;
-}
+/** The rows this router owns: the platform's own, minus the soft-deleted. */
+const BASE_SCOPE_SQL = "e.gym_id IS NULL AND e.status != 'deleted'";
 
 /**
- * #964 §18: the Base Exercises catalogue is ~900 rows after the Free Exercise DB
- * import, so every filter the list offers is applied **here** rather than in the
- * browser — the rule `GET /exercises/base` already follows for the Import modal.
+ * #964 §18, extended by #969: the Base Exercises catalogue is ~900 rows after
+ * the Free Exercise DB import, so every filter the list offers is applied
+ * **here** rather than in the browser (§16/§17) — the rule `GET /exercises/base`
+ * already follows for the Import modal.
  *
- * `q` matches the name **or** the slug, and the five metadata filters read the
- * columns migration 209 added. Muscle filtering is multi-select and comes in
- * three flavours on purpose: `muscle` matches either role (the checkbox group),
- * while `primary_muscle` / `secondary_muscle` ask the question the dataset itself
- * distinguishes. The UI that renders them inline is #969's and the expanded
- * view's new fields are #965's; this ticket is the data and the query (§20).
+ * The vocabulary and the SQL are `domain/exerciseListFilters.ts`, which is what
+ * makes this screen, the Import modal and a gym's own Exercises page "the same
+ * filtering UX" (§19) rather than three readings of `?muscle=`. What this route
+ * adds is the scope — `gym_id IS NULL` — and the ordering, which follows the
+ * *displayed* name because that is what the page shows (#967, #643).
+ *
+ * There is deliberately **no pagination**: the thread's `Q3` answer is "do not
+ * paginate, display all", so §14's count is the whole of §14/§15 and the
+ * response shape stays the array every caller already reads.
  */
 platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
-  const status = req.query.status as string | undefined;
-  const q = req.query.q as string | undefined;
-  if (status && !SETTABLE_STATUSES.includes(status)) {
-    return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
-  }
+  const parsed = parseExerciseListFilter(req.query as Record<string, unknown>);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
   const locale = getRequestLocale(req);
-  const params: any[] = [];
-  let sql = `${selectFor(locale)} WHERE e.gym_id IS NULL AND e.status != 'deleted'`;
-  if (status) { sql += ' AND e.status = ?'; params.push(status); }
-  // #967 §7: matches the base name or any stored translation, and orders by what
-  // the page actually shows — the same rule the gym-facing list follows. The
-  // `slug` arm is #964's: a Free Exercise DB row is found by its source handle too.
-  if (q) {
-    sql += ` AND (${exerciseNameSearchSql('e')} OR e.slug LIKE ?)`;
-    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
-  }
-  for (const [column, value] of [
-    ['equipment', req.query.equipment],
-    ['category', req.query.category],
-    ['level', req.query.level],
-    ['mechanic', req.query.mechanic],
-    ['source', req.query.source],
-  ] as const) {
-    const values = listParam(value);
-    if (!values) continue;
-    // The column itself, not `LOWER(e.<column>)`: the table's collation is
-    // `utf8mb4_0900_ai_ci`, so the comparison is already case-insensitive, and
-    // wrapping the column in a function only makes any index on it unusable.
-    sql += ` AND e.${column} IN (${values.map(() => '?').join(', ')})`;
-    params.push(...values);
-  }
-  for (const [role, value] of [
-    [null, req.query.muscle],
-    ['principal', req.query.primary_muscle],
-    ['secondary', req.query.secondary_muscle],
-  ] as const) {
-    const values = listParam(value);
-    if (!values) continue;
-    sql += ` AND EXISTS (SELECT 1 FROM exercise_muscles em WHERE em.exercise_id = e.id
-               AND em.muscle IN (${values.map(() => '?').join(', ')})${role ? ' AND em.role = ?' : ''})`;
-    params.push(...values);
-    if (role) params.push(role);
-  }
-  sql += ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
+  const where = exerciseListFilterSql('e', parsed.filter);
+  const sql = `${selectFor(locale)} WHERE ${BASE_SCOPE_SQL}${where.sql}`
+    + ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
   try {
-    const { rows } = await db.query(sql, params);
+    const { rows } = await db.query(sql, where.params);
     res.json(rows.map(withExerciseTranslations));
+  } catch (err) { next(err); }
+});
+
+/**
+ * What the inline filter toolbar's dropdowns offer, plus the unfiltered total
+ * `Showing 42 of 612` counts against (#969 §8, §9, §14).
+ *
+ * The options are the values **present** in the catalogue, never a declared
+ * list: `equipment`, `category`, `level` and `mechanic` are free text preserved
+ * verbatim from the Free Exercise DB (#964 §7, §11), so declaring their values
+ * here would be inventing the taxonomy §8 forbids — and a facet that comes back
+ * empty is a control the page does not render at all (§9).
+ *
+ * Registered **before** `/:id`, or Express reads `facets` as an exercise id.
+ */
+platformExercisesRouter.get('/facets', requireSuperadmin, async (_req, res, next) => {
+  try {
+    const [facets, totals] = await Promise.all([
+      db.query(exerciseFacetsSql(BASE_SCOPE_SQL)),
+      db.query(`SELECT COUNT(*) AS total FROM exercises e WHERE ${BASE_SCOPE_SQL}`),
+    ]);
+    res.json({
+      total: Number(totals.rows[0]?.total ?? 0),
+      ...groupExerciseFacets(facets.rows as { facet: string; value: string }[]),
+    });
   } catch (err) { next(err); }
 });
 

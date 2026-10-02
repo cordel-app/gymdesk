@@ -35,10 +35,16 @@ export const filterButtonStyle: React.CSSProperties = {
   alignSelf: 'flex-end',
 };
 
-/** The row the fields sit in: horizontal on desktop, wrapping below it. */
-export function FilterBar({ children }: { children: React.ReactNode }) {
+/**
+ * The row the fields sit in: horizontal on desktop, wrapping below it.
+ *
+ * `style` is spread over it for a bar that owns what comes next — #969's
+ * exercise toolbar puts its active-filter chips and result count directly
+ * underneath and tightens the gap, rather than paying the default margin twice.
+ */
+export function FilterBar({ children, style }: { children: React.ReactNode; style?: React.CSSProperties }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16, alignItems: 'flex-end' }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 16, alignItems: 'flex-end', ...style }}>
       {children}
     </div>
   );
