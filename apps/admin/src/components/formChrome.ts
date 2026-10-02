@@ -258,10 +258,16 @@ export const secondaryBtnSmall: React.CSSProperties = {
   fontSize: 13,
 };
 
-/** An `+ Add …` affordance that opens a section-level editor below itself. */
+/**
+ * An `+ Add …` affordance that opens a section-level editor below itself.
+ *
+ * #971: its hairline is the Theme's input border rather than a grey of its own,
+ * so a gym that themes its controls themes this one too — the literal stays as
+ * the `var()` fallback, so nothing looks different until a gym changes it.
+ */
 export const dashedAddBtnStyle: React.CSSProperties = {
   background: 'none',
-  border: '1px dashed #c8c8d0',
+  border: '1px dashed var(--gd-input-border, #c8c8d0)',
   borderRadius: 6,
   padding: '6px 12px',
   fontSize: 13,

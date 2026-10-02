@@ -18,7 +18,12 @@ import {
   LIST_PADDING_X, listCellStyle, listExpandedStyle, listHeaderCellStyle,
   listHeaderRowStyle, listRowDividerStyle, listSurfaceStyle,
 } from '@/components/listChrome';
-import { btnStyle, readOnlyStyle } from '@/components/ui';
+import { cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import {
+  formActionsRowStyle, formControlStyle, formFieldErrorStyle, formFieldLabelStyle,
+  secondaryBtnStyle,
+} from '@/components/formChrome';
+import { weekdayChipStyle, weekdaySelectStyle } from '@/components/workoutChrome';
 import { NewTrainingPlanDialog } from './NewTrainingPlanDialog';
 import { WorkoutBlockBuilder } from '../workout-templates/WorkoutBlockBuilder';
 import { HierBlock } from '../workout-templates/summaries';
@@ -382,7 +387,7 @@ export default function TrainingPlansPage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24, gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>{t('training_plans.title')}</h1>
-        <button onClick={() => guardUnsaved(() => setNewOpen(true))} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)}>{t('training_plans.new_plan')}</button>
+        <button onClick={() => guardUnsaved(() => setNewOpen(true))} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>{t('training_plans.new_plan')}</button>
       </div>
 
       {/* Filters — the same labelled bar Assigned Plans uses (#724). Same five
@@ -590,32 +595,32 @@ function PlanCard({
         <div style={{ padding: '16px 16px 0' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
             <div style={{ gridColumn: '1 / -1' }}>
-              <label style={inlineLabelStyle}>{t('training_plans.label_name')} *</label>
+              <label style={formFieldLabelStyle}>{t('training_plans.label_name')} *</label>
               <input value={editForm.name} onChange={(e) => onEditFormChange({ ...editForm, name: e.target.value })}
-                autoFocus style={inlineInputStyle} />
-              {editError && <p style={{ color: '#c00', fontSize: 13, margin: '4px 0 0' }}>{editError}</p>}
+                autoFocus style={formControlStyle} />
+              {editError && <p style={formFieldErrorStyle}>{editError}</p>}
             </div>
             <div style={{ gridColumn: '1 / -1' }}>
-              <label style={inlineLabelStyle}>{t('training_plans.label_description')}</label>
+              <label style={formFieldLabelStyle}>{t('training_plans.label_description')}</label>
               <textarea value={editForm.description} onChange={(e) => onEditFormChange({ ...editForm, description: e.target.value })}
-                rows={2} style={{ ...inlineInputStyle, resize: 'vertical' }} />
+                rows={2} style={{ ...formControlStyle, resize: 'vertical' }} />
             </div>
             <div>
-              <label style={inlineLabelStyle}>{t('training_plans.label_status')}</label>
+              <label style={formFieldLabelStyle}>{t('training_plans.label_status')}</label>
               <select value={editForm.status} onChange={(e) => onEditFormChange({ ...editForm, status: e.target.value })}
-                style={{ ...inlineInputStyle, width: 'auto' }}>
+                style={{ ...formControlStyle, width: 'auto' }}>
                 {EDITABLE_STATUSES.map((s) => <option key={s} value={s}>{t(`status.${s}`)}</option>)}
               </select>
             </div>
             <div>
-              <label style={inlineLabelStyle}>{t('training_plans.label_start_date')}</label>
+              <label style={formFieldLabelStyle}>{t('training_plans.label_start_date')}</label>
               <input type="date" value={editForm.start_date} onChange={(e) => onEditFormChange({ ...editForm, start_date: e.target.value })}
-                style={inlineInputStyle} />
+                style={formControlStyle} />
             </div>
             <div>
-              <label style={inlineLabelStyle}>{t('training_plans.label_end_date')}</label>
+              <label style={formFieldLabelStyle}>{t('training_plans.label_end_date')}</label>
               <input type="date" value={editForm.end_date} onChange={(e) => onEditFormChange({ ...editForm, end_date: e.target.value })}
-                style={inlineInputStyle} />
+                style={formControlStyle} />
             </div>
           </div>
         </div>
@@ -662,7 +667,11 @@ function PlanCard({
           ) : (
             <PlanWorkoutTree
               plan={hierarchy}
-              canWrite={canWrite && !isCompleted}
+              /* #971 §4/§5: expanding reads, `⋮ → Edit` writes. The tree's own
+                 controls belong to Edit mode, exactly as a section-level editor
+                 does elsewhere in the app — so a reader sees the whole
+                 structure and none of the affordances that change it. */
+              canWrite={canWrite && editing && !isCompleted}
               apiFetch={apiFetch}
               toast={toast}
               onChanged={onChanged}
@@ -673,9 +682,9 @@ function PlanCard({
 
       {/* Save/cancel footer (edit mode only) */}
       {editing && (
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 16px 14px', borderTop: '1px solid #ececf0', marginTop: 12 }}>
-          <button onClick={onCancel} style={cancelBtnStyle}>{t('training_plans.cancel')}</button>
-          <button onClick={onSave} disabled={editSaving} style={btnStyle()}>
+        <div style={{ ...formActionsRowStyle, padding: '14px 16px', marginTop: 12 }}>
+          <button onClick={onCancel} style={secondaryBtnStyle}>{t('training_plans.cancel')}</button>
+          <button onClick={onSave} disabled={editSaving} style={primaryBtnStyle()}>
             {editSaving ? t('training_plans.saving') : t('training_plans.save_changes')}
           </button>
         </div>
@@ -778,15 +787,15 @@ function PlanWorkoutTree({
               placeholder={t('training_plans.editor_add_workout')}
               style={addWorkoutInput}
             />
-            <button onClick={addWorkout} disabled={addSaving || !newName.trim()} style={btnStyle()}>
+            <button onClick={addWorkout} disabled={addSaving || !newName.trim()} style={primaryBtnStyle()}>
               {addSaving ? t('training_plans.saving') : t('training_plans.save_changes')}
             </button>
-            <button onClick={() => { setShowAddForm(false); setNewName(''); }} style={cancelBtnStyle}>
+            <button onClick={() => { setShowAddForm(false); setNewName(''); }} style={secondaryBtnStyle}>
               {t('training_plans.cancel')}
             </button>
           </div>
         ) : (
-          <button onClick={() => setShowAddForm(true)} style={{ ...btnStyle(), marginBottom: 14 }}>
+          <button onClick={() => setShowAddForm(true)} style={{ ...primaryBtnStyle(), marginBottom: 14 }}>
             {t('training_plans.editor_add_workout')}
           </button>
         )
@@ -865,7 +874,7 @@ function WorkoutCard({
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform), transition, opacity: isDragging ? 0.6 : 1,
-    background: '#fff', border: '1px solid #ececf0', borderRadius: 8, padding: '10px 14px', marginBottom: 10,
+    ...cardSurfaceStyle, padding: '10px 14px', marginBottom: 10,
   };
 
   return (
@@ -880,15 +889,25 @@ function WorkoutCard({
             ⠿
           </span>
         )}
-        <select
-          value={w.scheduled_weekday != null ? String(w.scheduled_weekday) : ''}
-          onChange={(e) => canWrite && onChangeWeekday(e.target.value)}
-          disabled={!canWrite}
-          style={{ padding: '4px 8px', borderRadius: 999, background: '#eef0ff', color: '#4b45c6', border: 'none', fontSize: 12.5, fontWeight: 600 }}
-        >
-          <option value="">{t('training_plan_templates.tree_no_weekday')}</option>
-          {WEEKDAYS.map((d) => <option key={d} value={d}>{t(`workouts.weekday_${d}`)}</option>)}
-        </select>
+        {/* #971: the same chip in both modes — a `<select>` while editing, the
+            value itself while reading, so switching modes does not move the row
+            and neither half declares a colour of its own. */}
+        {canWrite ? (
+          <select
+            value={w.scheduled_weekday != null ? String(w.scheduled_weekday) : ''}
+            onChange={(e) => onChangeWeekday(e.target.value)}
+            style={weekdaySelectStyle}
+          >
+            <option value="">{t('training_plan_templates.tree_no_weekday')}</option>
+            {WEEKDAYS.map((d) => <option key={d} value={d}>{t(`workouts.weekday_${d}`)}</option>)}
+          </select>
+        ) : (
+          <span style={weekdayChipStyle}>
+            {w.scheduled_weekday != null
+              ? t(`workouts.weekday_${w.scheduled_weekday}`)
+              : t('training_plan_templates.tree_no_weekday')}
+          </span>
+        )}
         {canWrite ? (
           <input
             value={name}
@@ -983,11 +1002,19 @@ function formatDate(value: string, locale: string): string {
   return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-const modalInputStyle: React.CSSProperties = { width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, boxSizing: 'border-box', background: '#fff' };
-/** A column title: the header band's own type, brand-coloured while it sorts. */
+const modalInputStyle: React.CSSProperties = { ...formControlStyle, padding: '10px 12px', fontSize: 15 };
+/**
+ * A column title: the header band's own type, accented while it sorts.
+ *
+ * #971: that accent is the Theme's link colour rather than a lilac literal — a
+ * sorted title is a text link, and `--gd-link` is the token a text link reads
+ * (`formChrome`'s `cardTextLinkStyle`). The literal stays as the `var()`
+ * fallback for the frames before `applyTokens()` has run.
+ */
 const sortBtnStyle = (active: boolean): React.CSSProperties => ({
   background: 'none', border: 'none', padding: 0, cursor: 'pointer', textAlign: 'left',
-  fontFamily: 'inherit', fontSize: 15, fontWeight: 600, color: active ? '#4b45c6' : 'inherit',
+  fontFamily: 'inherit', fontSize: 15, fontWeight: 600,
+  color: active ? 'var(--gd-link, #4b45c6)' : 'inherit',
 });
 const pagerStyle = (disabled: boolean): React.CSSProperties => ({
   background: '#fff', border: '1px solid #ccc', borderRadius: 6, padding: '4px 12px',
@@ -1008,8 +1035,10 @@ const colHeaderStyle: React.CSSProperties = {
 const rowContainerStyle = (editing: boolean): React.CSSProperties => ({
   ...listRowDividerStyle,
   // Being edited used to widen the card's border, which would now shift every
-  // column by 1.5px; an inset accent leaves the grid where it is.
-  ...(editing ? { boxShadow: 'inset 3px 0 0 #4b45c6' } : {}),
+  // column by 1.5px; an inset accent leaves the grid where it is. #971: that
+  // accent follows the Theme (`--brand`, as the Nutrition Library's own tab
+  // underline does) instead of being a lilac no Theme setting reaches.
+  ...(editing ? { boxShadow: 'inset 3px 0 0 var(--brand, #4b45c6)' } : {}),
 });
 const headerRowStyle: React.CSSProperties = {
   ...listGridStyle, ...listCellStyle, cursor: 'pointer', userSelect: 'none',
@@ -1035,8 +1064,12 @@ const subCellStyle: React.CSSProperties = {
 const dateCellStyle: React.CSSProperties = {
   fontSize: 13, color: '#666', whiteSpace: 'nowrap',
 };
-const inlineLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 };
-const inlineInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', background: '#fff' };
-const cancelBtnStyle: React.CSSProperties = { background: '#f4f4f6', color: '#444', border: '1px solid #ddd', borderRadius: 6, padding: '9px 18px', cursor: 'pointer', fontSize: 15, fontWeight: 500 };
-const workoutNameInput: React.CSSProperties = { fontWeight: 600, fontSize: 15, padding: '3px 6px', borderRadius: 5, border: '1px solid #ddd', background: '#fafafa', minWidth: 120 };
-const addWorkoutInput: React.CSSProperties = { padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, minWidth: 200, background: '#fff' };
+// #971: the field label, the control box and the Cancel button this page used
+// to declare for itself are `formChrome`'s (`formFieldLabelStyle`,
+// `formControlStyle`, `secondaryBtnStyle`). What stays here are the two controls
+// with geometry of their own, now on the Theme's input colours.
+const workoutNameInput: React.CSSProperties = {
+  ...formControlStyle, width: 'auto', fontWeight: 600, fontSize: 15,
+  padding: '3px 6px', borderRadius: 5, minWidth: 120,
+};
+const addWorkoutInput: React.CSSProperties = { ...formControlStyle, width: 'auto', minWidth: 200 };

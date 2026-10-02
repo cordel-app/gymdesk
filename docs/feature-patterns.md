@@ -45,6 +45,23 @@ Reference implementation: `apps/admin/src/components/formChrome.ts` + `apps/admi
 
 ---
 
+## The workout hierarchy's chrome, and its read-only half (#971)
+
+One level further in again: the **Training Plan → Workout → Day → Block → Exercises** tree is rendered by three screens — the Assigned Training Plans card (`[locale]/training-plans`), the Training Plan Templates card and Workout Templates, the last two through the shared `WorkoutBlockBuilder` — and each of them had declared the tree's two controls for itself, in a lilac (`#eef0ff` / `#4b45c6` / `#b9b5ee` / `#6c63ff`) that followed no Theme setting.
+
+**`apps/admin/src/components/workoutChrome.ts` is the one declaration**, and it holds only those two:
+
+- `weekdayChipStyle` / `weekdaySelectStyle` — the training-day pill. **One object for both halves of the read-only/Edit split**, so the value a reader sees and the `<select>` an editor gets are the same box and switching modes does not move the row. It wears the Theme's input pair (`--gd-input-border` / `--gd-input-bg`) at a pill radius, because a weekday selector is a select.
+- `treeAddBtnStyle` — `+ Block` and `+ Exercise`. `formChrome`'s `dashedAddBtnStyle` at the tree's denser size: these are secondary actions and stay lightweight, where a filled `primaryBtnStyle()` is `+ Add Workout`, which opens the row's own editor.
+
+Everything else in the tree reads from the modules that already existed: a workout or block card is `cardSurfaceStyle`, the compact inputs share one `treeControlBox` built from the same input variables, and a filled action is `primaryBtnStyle()` — never a bare `btnStyle()`, whose `--brand` is `sidebarSelectedItemBackground`, the sidebar's colour and not an action's.
+
+**And the tree obeys the read-only rule like any other section.** Every control in it already keyed off the `canWrite` it was handed, so the gate is one expression on the card: `canWrite={canWrite && editing && !isCompleted}`. An expanded plan then shows the whole structure read-only — the weekday as the same chip, the workout name and each block as values, the exercise table with its sets, targets and media — and nothing that changes it; `⋮ → Edit`, which already expands the row, is the single entry point. Do not add a second weekday pill, a second add-button look, a second read-only rendering of a block beside the builder's own, or a control in the tree that is not behind that one expression.
+
+Reference implementation: `apps/admin/src/components/workoutChrome.ts` + `apps/admin/src/app/[locale]/training-plans/page.tsx`, pinned by `apps/admin/src/test/training-plan-editor-theme.test.ts`.
+
+---
+
 ## Standard Error Response
 
 All API errors must return JSON in this shape — never HTML, never a raw string:

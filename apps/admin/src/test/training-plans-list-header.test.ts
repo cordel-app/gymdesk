@@ -208,7 +208,10 @@ describe('Training Plans: filters and list header (#724)', () => {
   it('leaves the page title and the New Training Plan button where they were', () => {
     expect(pageHeaderSrc).toMatch(/<h1 style=\{\{ margin: 0 \}\}>\{t\('training_plans\.title'\)\}<\/h1>/);
     expect(pageHeaderSrc).toMatch(/\{t\('training_plans\.new_plan'\)\}/);
-    expect(pageHeaderSrc).toMatch(/style=\{readOnlyStyle\(btnStyle\(\), !canWrite\)\}/);
+    // #971 moved it onto the Theme's Primary Button pair (`btnStyle()`'s own
+    // default is `--brand`, the *sidebar's* colour); the read-only wrapper and
+    // everything else about the button are unchanged.
+    expect(pageHeaderSrc).toMatch(/style=\{readOnlyStyle\(primaryBtnStyle\(\), !canWrite\)\}/);
     expect(pageHeaderSrc).toMatch(/marginBottom: 24/);
   });
 
@@ -233,7 +236,9 @@ describe('Training Plans: filters and list header (#724)', () => {
     expect(pageSrc).toMatch(/onToggleExpand=\{\(\) => guardUnsaved\(\(\) => toggleExpand\(row\)\)\}/);
     // Inline edit still replaces the row, and still says it is being edited.
     expect(pageSrc).toMatch(/const rowContainerStyle = \(editing: boolean\)/);
-    expect(pageSrc).toMatch(/boxShadow: 'inset 3px 0 0 #4b45c6'/);
+    // #971: the same inset accent, now following the Theme rather than a lilac
+    // literal — the literal survives as the `var()` fallback.
+    expect(pageSrc).toMatch(/boxShadow: 'inset 3px 0 0 var\(--brand, #4b45c6\)'/);
     // The Details view still offers View Audit Log (CLAUDE.md).
     expect(pageSrc).toMatch(/<ViewAuditLogButton entityType="training_plan" entityId=\{plan\.id\}/);
   });
