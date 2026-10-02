@@ -1606,7 +1606,15 @@
     "hamstrings": "Isquiotibiales",
     "glutes": "Glúteos",
     "calves": "Gemelos",
-    "core": "Core"
+    "core": "Core",
+    "lats": "Dorsales",
+    "middle_back": "Espalda media",
+    "lower_back": "Lumbares",
+    "traps": "Trapecios",
+    "forearms": "Antebrazos",
+    "adductors": "Aductores",
+    "abductors": "Abductores",
+    "neck": "Cuello"
   },
   "result_types": {
     "repetitions": "Repeticiones",

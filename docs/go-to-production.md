@@ -247,6 +247,18 @@ Tick items off in the PR that completes them.
       sweeps the rest. Neither is reachable from the app, so this is bucket housekeeping, not correctness.
       If a CSP is ever put in front of the member app, its `img-src` needs the R2 endpoint for the same
       reason.
+- [ ] **Import the Base Exercise catalogue** (#964): `cd api && npm run exercises:import-free-db`
+      against the real database. It needs no `CLOUDFLARE_R2_*` credentials — the import stores no image
+      at all — but it does need outbound HTTPS to fetch the dataset, or a local copy passed with
+      `--from <file>` (set `FREE_EXERCISE_DB_URL` if you mirror it). Run `--dry-run` first: it prints the
+      same report without writing. The run is idempotent (a second pass reports every exercise
+      *unchanged*), never aborts on one record, and exits non-zero if anything failed. **Read the report**:
+      `Potential duplicates` are Base Exercises whose name or slug the dataset claims but which carry
+      another source id — nothing is merged, they are yours to reconcile — and `New muscles created` lists
+      any muscle key stored on a link that `MUSCLE_KEYS` does not offer yet, which needs a code change
+      (the list plus a `muscles.<key>` label in all three locales) before the picker shows it. Re-run it
+      after the dataset gains exercises; it will not touch a name or description an administrator edited,
+      nor re-create a Base Exercise somebody deleted.
 - [ ] **Populate the Base Nutrition Library images** (#715): `cd api && npm run nutrition:base-images`
       against the real database, with the `CLOUDFLARE_R2_*` variables set. The PR that landed
       the feature could not do it — a PR session has neither the platform's base library nor R2

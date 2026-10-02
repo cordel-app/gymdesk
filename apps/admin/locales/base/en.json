@@ -1620,7 +1620,15 @@
     "hamstrings": "Hamstrings",
     "glutes": "Glutes",
     "calves": "Calves",
-    "core": "Core"
+    "core": "Core",
+    "lats": "Lats",
+    "middle_back": "Middle Back",
+    "lower_back": "Lower Back",
+    "traps": "Traps",
+    "forearms": "Forearms",
+    "adductors": "Adductors",
+    "abductors": "Abductors",
+    "neck": "Neck"
   },
   "result_types": {
     "repetitions": "Repetitions",

@@ -1606,7 +1606,15 @@
     "hamstrings": "Isquiotibials",
     "glutes": "Glutis",
     "calves": "Bessons",
-    "core": "Core"
+    "core": "Core",
+    "lats": "Dorsals",
+    "middle_back": "Esquena mitjana",
+    "lower_back": "Lumbars",
+    "traps": "Trapezis",
+    "forearms": "Avantbraços",
+    "adductors": "Adductors",
+    "abductors": "Abductors",
+    "neck": "Coll"
   },
   "result_types": {
     "repetitions": "Repeticions",

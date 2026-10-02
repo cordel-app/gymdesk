@@ -1670,6 +1670,22 @@ Once the pair exists, a *third* button that needs it must not re-spell it. `apps
 
 ---
 
+## Importing a Third-Party Catalogue (#964)
+
+When a ticket says "import dataset X into catalogue Y", the deliverable is an **operator script over a pure mapping module**, writing into the catalogue that already exists. `api/src/scripts/import-free-exercise-db.ts` + `api/src/domain/freeExerciseDb.ts` is the reference:
+
+- **A script, never a migration and never an endpoint.** A Knex migration must stay deterministic offline SQL, so `npm run db:migrate` may not depend on a network round trip; and a platform catalogue has no gym request to hang a route off and no `tenantCtx` actor to record an audit row with. Add it to `api/package.json` beside `nutrition:base-images`, read the dataset from `--from <file>` / `--url` / an env var / a documented default (never a hardcoded URL in a code path), and support `--dry-run`, `--limit` and `--only`.
+- **Every rule in a pure module, the script only I/O.** Validation, slugs, the field mapping, the match precedence and *what a match does* are exported functions with no database in them, which is what lets the whole import be asserted in a unit test (and dry-run against the real dataset offline) in a repo whose integration tests need MySQL.
+- **Provenance is a column pair, not the display name.** `source` + `source_id` make the run idempotent; matching by name alone is what produces a second copy the first time somebody renames a row. Scope the uniqueness to the rows the import owns with a VIRTUAL generated column plus a UNIQUE index (migration 183's shape) — a plain `UNIQUE (source, source_id)` reaches rows the import never touches, and MySQL's NULL handling will not constrain the ones it does.
+- **Decide deliberately whether a deleted row is in or out of that key.** Keeping deleted rows inside it is what lets the importer see that somebody removed a row *on purpose* and skip it; leaving them out resurrects it on the next run.
+- **Match conservatively, and report instead of merging.** Provenance → stable slug → exact (trimmed, case-folded) name, with the two fallbacks adopting only a row that carries no provenance of its own. A row already claimed by a different source id is a potential duplicate for a human to reconcile, never an automatic merge.
+- **Never overwrite what a user can edit.** An update fills what is empty, keeps the source's own facts in step, and adds to a many-to-many without removing from it. Otherwise the second run undoes every correction the product's own editor made, and "idempotent" becomes "destructive on a schedule".
+- **A value the source has and the model does not is preserved verbatim, not coerced.** Where the ticket names a taxonomy that does not exist, add plain columns for the source's values and map only onto the vocabulary the product really has — then *report* the ambiguity. Inventing a taxonomy to make an import look complete is the expensive mistake; so is dropping the data.
+- **One bad record never ends the run.** One transaction per record, failures collected with their source id, name and problem, a report with the counters the ticket asks for, and a non-zero exit when anything failed so a cron or CI invocation surfaces it. A value that can be *added* (a new muscle key) is a reported note, not a failure.
+- **Filter the grown catalogue server-side.** A few hundred rows become a thousand; the list route gains the query params (multi-select as a comma-separated *or* repeated value), and the inline UI for them can be a separate ticket.
+
+---
+
 ## Scheduled Background Task (#647 stage 4)
 
 When a ticket asks for a "scheduled/background task", it means an **endpoint plus a cron**, not a timer inside the API process. `POST /billing/run` set the shape and `POST /recurring-bookings/run` follows it:

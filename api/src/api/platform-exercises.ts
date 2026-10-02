@@ -5,6 +5,7 @@ import { recordAudit } from '../infra/audit';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
 import { logger } from '../lib/logger';
 import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
+import { EXERCISE_TYPES } from '../domain/exerciseTypes';
 import { actorSnapshot } from '../domain/nutritionLibrary';
 import {
   EXERCISE_IMAGE_MASTER_MAX_BYTES,
@@ -97,16 +98,75 @@ async function nameTaken(name: string, excludeId?: string | number): Promise<boo
 
 /* ── List ─────────────────────────────────────────────────────────────────── */
 
+/**
+ * A repeatable, comma-separated filter value — `?muscle=chest,triceps` and
+ * `?muscle=chest&muscle=triceps` mean the same thing, which is what lets #969's
+ * checkbox groups send either shape.
+ */
+function listParam(value: unknown): string[] | null {
+  const raw = Array.isArray(value) ? value : [value];
+  const values = raw
+    .filter((entry): entry is string => typeof entry === 'string')
+    .flatMap((entry) => entry.split(','))
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+  return values.length > 0 ? Array.from(new Set(values)) : null;
+}
+
+/**
+ * #964 §18: the Base Exercises catalogue is ~900 rows after the Free Exercise DB
+ * import, so every filter the list offers is applied **here** rather than in the
+ * browser — the rule `GET /exercises/base` already follows for the Import modal.
+ *
+ * `q` matches the name **or** the slug, and the five metadata filters read the
+ * columns migration 209 added. Muscle filtering is multi-select and comes in
+ * three flavours on purpose: `muscle` matches either role (the checkbox group),
+ * while `primary_muscle` / `secondary_muscle` ask the question the dataset itself
+ * distinguishes. The UI that renders them inline is #969's and the expanded
+ * view's new fields are #965's; this ticket is the data and the query (§20).
+ */
 platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
   const status = req.query.status as string | undefined;
   const q = req.query.q as string | undefined;
   if (status && !SETTABLE_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
+  const exerciseType = req.query.exercise_type as string | undefined;
+  if (exerciseType && !(EXERCISE_TYPES as readonly string[]).includes(exerciseType)) {
+    return res.status(400).json({ error: `exercise_type must be one of: ${EXERCISE_TYPES.join(', ')}` });
+  }
   const params: any[] = [];
   let sql = `${SELECT} WHERE e.gym_id IS NULL AND e.status != 'deleted'`;
   if (status) { sql += ' AND e.status = ?'; params.push(status); }
-  if (q) { sql += ' AND e.name LIKE ?'; params.push(`%${q}%`); }
+  if (q) { sql += ' AND (e.name LIKE ? OR e.slug LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
+  if (exerciseType) { sql += ' AND e.exercise_type = ?'; params.push(exerciseType); }
+  for (const [column, value] of [
+    ['equipment', req.query.equipment],
+    ['category', req.query.category],
+    ['level', req.query.level],
+    ['mechanic', req.query.mechanic],
+    ['source', req.query.source],
+  ] as const) {
+    const values = listParam(value);
+    if (!values) continue;
+    // The column itself, not `LOWER(e.<column>)`: the table's collation is
+    // `utf8mb4_0900_ai_ci`, so the comparison is already case-insensitive, and
+    // wrapping the column in a function only makes any index on it unusable.
+    sql += ` AND e.${column} IN (${values.map(() => '?').join(', ')})`;
+    params.push(...values);
+  }
+  for (const [role, value] of [
+    [null, req.query.muscle],
+    ['principal', req.query.primary_muscle],
+    ['secondary', req.query.secondary_muscle],
+  ] as const) {
+    const values = listParam(value);
+    if (!values) continue;
+    sql += ` AND EXISTS (SELECT 1 FROM exercise_muscles em WHERE em.exercise_id = e.id
+               AND em.muscle IN (${values.map(() => '?').join(', ')})${role ? ' AND em.role = ?' : ''})`;
+    params.push(...values);
+    if (role) params.push(role);
+  }
   sql += ' ORDER BY e.name ASC';
   try {
     const { rows } = await db.query(sql, params);
