@@ -25,6 +25,10 @@ import { useExerciseEditorState, useMuscleLabel } from '@/components/exercises/u
 import { ExerciseReadOnlyView } from '@/components/exercises/ExerciseReadOnlyView';
 import { ExerciseMediaPreview } from '@/components/exercises/ExerciseMediaPreview';
 import { ExerciseDetailModal } from '@/components/exercises/ExerciseDetailModal';
+// #969: the one exercise filter toolbar, over the one filter-state declaration.
+// Both are shared with the gym Exercises page and the Import modal (§19).
+import { ExerciseFilterBar, type ExerciseFacetOptions } from '@/components/exercises/ExerciseFilterBar';
+import { EMPTY_EXERCISE_FILTER, exerciseFilterQuery, type ExerciseFilterState } from '@/lib/exerciseFilters';
 import {
   formatExerciseDate,
   exerciseDisplayValue,
@@ -91,7 +95,16 @@ export default function CordelExercisesPage() {
 
   const [rows, setRows] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  // #969: every filter the toolbar offers, applied server-side — ~900 Base
+  // Exercises after the Free Exercise DB import are never narrowed in the
+  // browser (§16/§17).
+  const [filter, setFilter] = useState<ExerciseFilterState>(EMPTY_EXERCISE_FILTER);
+  // What the Equipment and Category dropdowns offer, and the unfiltered total
+  // `Showing 42 of 612` counts against (§8, §9, §14). The options are the values
+  // present in the catalogue, so a facet that comes back empty renders no
+  // control at all.
+  const [facets, setFacets] = useState<ExerciseFacetOptions | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
 
   // #806: the two catalogues the shared editor renders. They come from this
   // router's own `GET /platform/exercises/lookups` rather than the gym-facing
@@ -132,12 +145,32 @@ export default function CordelExercisesPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const qs = search ? `?q=${encodeURIComponent(search)}` : '';
-      setRows(await apiFetch<Exercise[]>(`${API_BASE}${qs}`));
+      setRows(await apiFetch<Exercise[]>(`${API_BASE}${exerciseFilterQuery(filter)}`));
     } catch { /* ignore */ } finally { setLoading(false); }
-  }, [apiFetch, search]);
+  }, [apiFetch, filter]);
 
-  useEffect(() => { load(); }, [load]);
+  // A short debounce, because the toolbar's text fields change on every
+  // keystroke and this catalogue is ~900 rows (§17). The mutation paths call
+  // `load()` directly and are unaffected.
+  useEffect(() => {
+    const handle = setTimeout(load, 250);
+    return () => clearTimeout(handle);
+  }, [load]);
+
+  /**
+   * The facets and the total, re-read when the catalogue itself may have moved
+   * (a create, an edit or a delete) rather than on every keystroke — they
+   * describe the whole catalogue and do not depend on the current filter.
+   */
+  const loadFacets = useCallback(async () => {
+    try {
+      const res = await apiFetch<{ total: number; equipment: string[]; category: string[] }>(`${API_BASE}/facets`);
+      setFacets({ equipment: res.equipment ?? [], category: res.category ?? [] });
+      setTotal(res.total ?? null);
+    } catch { /* non-critical: the toolbar simply offers no metadata filter */ }
+  }, [apiFetch]);
+
+  useEffect(() => { loadFacets(); }, [loadFacets]);
 
   useEffect(() => {
     (async () => {
@@ -215,6 +248,7 @@ export default function CordelExercisesPage() {
     closeInlineNew();
     toast('Exercise created', 'success');
     load();
+    loadFacets();
   }
 
   // ─── Inline edit ─────────────────────────────────────────────────────────
@@ -244,6 +278,7 @@ export default function CordelExercisesPage() {
     setEditingId(null);
     toast('Exercise updated', 'success');
     load();
+    loadFacets();
   }
 
   async function handleDelete() {
@@ -253,6 +288,7 @@ export default function CordelExercisesPage() {
       setDeleting(null);
       toast('Exercise deleted', 'success');
       load();
+      loadFacets();
     } catch (e: any) {
       toast(e.message ?? 'Error');
     }
@@ -373,22 +409,29 @@ export default function CordelExercisesPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>Base Exercises</h1>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t('search_placeholder')}
-            style={searchInputStyle}
-          />
-          {/* #968: a primary action takes the Theme's Primary Button pair. `btnStyle()`
-              with no argument resolves to `--brand`, which `applyTokens` maps to
-              sidebarSelectedItemBackground — the sidebar's colour, not an action's —
-              so this button did not follow the Theme the gym Exercises page's
-              `+ Add Exercise` already followed. */}
-          <button style={primaryBtnStyle()} onClick={openInlineNew} disabled={creating}>+ New Exercise</button>
-        </div>
+        {/* #968: a primary action takes the Theme's Primary Button pair. `btnStyle()`
+            with no argument resolves to `--brand`, which `applyTokens` maps to
+            sidebarSelectedItemBackground — the sidebar's colour, not an action's —
+            so this button did not follow the Theme the gym Exercises page's
+            `+ Add Exercise` already followed. */}
+        <button style={primaryBtnStyle()} onClick={openInlineNew} disabled={creating}>+ New Exercise</button>
       </div>
+
+      {/* #969 §2: the search box that used to sit alone beside the title is now
+          one field of the shared toolbar, and the results start directly below
+          it. The Base Exercises catalogue is the one context that carries both a
+          slug (§4) and the source metadata facets (§8/§9). */}
+      <ExerciseFilterBar
+        value={filter}
+        onChange={setFilter}
+        muscleKeys={muscleKeys}
+        muscleLabel={muscleLabel}
+        facets={facets}
+        showSlug
+        showStatus
+        shown={rows.length}
+        total={total}
+      />
 
       {creating && (
         <div style={cardStyle}>
@@ -456,10 +499,6 @@ export default function CordelExercisesPage() {
     </div>
   );
 }
-
-const searchInputStyle: React.CSSProperties = {
-  padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, minWidth: 200,
-};
 
 const cardStyle: React.CSSProperties = {
   ...cardSurfaceStyle,
