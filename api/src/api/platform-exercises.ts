@@ -20,7 +20,6 @@ import {
 } from '../infra/locale';
 import { logger } from '../lib/logger';
 import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
-import { EXERCISE_TYPES } from '../domain/exerciseTypes';
 import { actorSnapshot } from '../domain/nutritionLibrary';
 import {
   EXERCISE_IMAGE_MASTER_MAX_BYTES,
@@ -157,10 +156,6 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
   const locale = getRequestLocale(req);
-  const exerciseType = req.query.exercise_type as string | undefined;
-  if (exerciseType && !(EXERCISE_TYPES as readonly string[]).includes(exerciseType)) {
-    return res.status(400).json({ error: `exercise_type must be one of: ${EXERCISE_TYPES.join(', ')}` });
-  }
   const params: any[] = [];
   let sql = `${selectFor(locale)} WHERE e.gym_id IS NULL AND e.status != 'deleted'`;
   if (status) { sql += ' AND e.status = ?'; params.push(status); }
@@ -171,7 +166,6 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
     sql += ` AND (${exerciseNameSearchSql('e')} OR e.slug LIKE ?)`;
     params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
-  if (exerciseType) { sql += ' AND e.exercise_type = ?'; params.push(exerciseType); }
   for (const [column, value] of [
     ['equipment', req.query.equipment],
     ['category', req.query.category],

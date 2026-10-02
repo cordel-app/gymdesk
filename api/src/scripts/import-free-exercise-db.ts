@@ -63,7 +63,6 @@ import {
   ImportPlan,
   MappedMuscle,
   SourceExercise,
-  classifyExerciseType,
   disambiguateSlug,
   mapSourceMuscles,
   matchExistingExercise,
@@ -122,8 +121,6 @@ interface Report {
   musclesMatched: number;
   musclesCreated: Set<string>;
   unmappedMuscles: Failure[];
-  unmappedTypes: Failure[];
-  inferredTypes: Failure[];
   potentialDuplicates: Failure[];
   skippedDeleted: Failure[];
   failures: Failure[];
@@ -142,8 +139,6 @@ function emptyReport(total: number): Report {
     musclesMatched: 0,
     musclesCreated: new Set(),
     unmappedMuscles: [],
-    unmappedTypes: [],
-    inferredTypes: [],
     potentialDuplicates: [],
     skippedDeleted: [],
     failures: [],
@@ -153,7 +148,7 @@ function emptyReport(total: number): Report {
 /** The base rows the matcher needs, plus the muscle keys each one already carries. */
 async function loadExistingBaseExercises(): Promise<ExistingBaseExercise[]> {
   const { rows } = await db.query(
-    `SELECT e.id, e.name, e.slug, e.source, e.source_id, e.status, e.description, e.exercise_type,
+    `SELECT e.id, e.name, e.slug, e.source, e.source_id, e.status, e.description,
             e.equipment, e.category, e.level, e.mechanic, e.force_type,
             (SELECT GROUP_CONCAT(em.muscle) FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscle_keys
        FROM exercises e
@@ -167,7 +162,6 @@ async function loadExistingBaseExercises(): Promise<ExistingBaseExercise[]> {
     source_id: row.source_id ?? null,
     status: row.status,
     description: row.description ?? null,
-    exercise_type: row.exercise_type ?? null,
     equipment: row.equipment ?? null,
     category: row.category ?? null,
     level: row.level ?? null,
@@ -244,11 +238,6 @@ function print(report: Report, options: Options) {
     lines.push('   `muscles` namespace of apps/admin/locales/base/{en,es,ca}.json to make it selectable)');
   }
   lines.push('');
-  lines.push('Exercise Types:');
-  lines.push(`Mapped: ${report.considered - report.failed - report.unmappedTypes.length}`);
-  lines.push(`Unmapped: ${report.unmappedTypes.length}`);
-  lines.push(`Inferred (ambiguous, review): ${report.inferredTypes.length}`);
-  lines.push('');
   lines.push(`Adopted existing exercises: ${report.adopted}`);
   lines.push(`Potential duplicates: ${report.potentialDuplicates.length}`);
   lines.push('');
@@ -264,8 +253,6 @@ function print(report: Report, options: Options) {
   };
   section('Failures', report.failures);
   section('Potential duplicates (not merged — review)', report.potentialDuplicates);
-  section('Unmapped Exercise Types', report.unmappedTypes);
-  section('Ambiguous Exercise Types (closest existing type used)', report.inferredTypes);
   section('Unmapped muscles', report.unmappedMuscles);
   section('Skipped (deleted in this catalogue)', report.skippedDeleted);
   if (options.dryRun) lines.push('Dry run: nothing was written.');
@@ -327,12 +314,6 @@ async function main() {
         continue;
       }
 
-      const type = classifyExerciseType(src);
-      if (!type.type) {
-        report.unmappedTypes.push({ sourceId: src.id, name: src.name, problem: 'no Exercise Type for this category', sourceValue: type.sourceValue });
-      } else if (!type.confident) {
-        report.inferredTypes.push({ sourceId: src.id, name: src.name, problem: `mapped to '${type.type}'`, sourceValue: type.sourceValue });
-      }
       const { mapped, unmapped } = mapSourceMuscles(src);
       recordMuscles(report, mapped, unmapped, src);
 
@@ -363,7 +344,6 @@ async function main() {
           source_id: src.id,
           status: 'active',
           description: plan.fields.description ?? null,
-          exercise_type: plan.fields.exercise_type ?? null,
           equipment: plan.fields.equipment ?? null,
           category: plan.fields.category ?? null,
           level: plan.fields.level ?? null,

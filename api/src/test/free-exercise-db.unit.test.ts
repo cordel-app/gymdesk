@@ -22,7 +22,6 @@ import {
   FREE_EXERCISE_DB_MUSCLE_ALIASES,
   FREE_EXERCISE_DB_SOURCE,
   SourceExercise,
-  classifyExerciseType,
   composeInstructions,
   disambiguateSlug,
   mapSourceMuscle,
@@ -34,7 +33,6 @@ import {
   slugifyExerciseName,
   sourceMetadata,
 } from '../domain/freeExerciseDb';
-import { EXERCISE_TYPES } from '../domain/exerciseTypes';
 import { MUSCLE_KEYS } from '../domain/muscles';
 
 /** One real dataset entry, verbatim from `dist/exercises.json`. */
@@ -71,10 +69,6 @@ function existing(overrides: Partial<ExistingBaseExercise> = {}): ExistingBaseEx
     source_id: null,
     status: 'active',
     description: null,
-    // `exercises.exercise_type` is NOT NULL with a `reps` default (migration
-    // 071), so this is what every real row carries — which is also why an update
-    // never moves it: a value somebody chose is not the importer's to overwrite.
-    exercise_type: 'reps',
     equipment: null,
     category: null,
     level: null,
@@ -214,32 +208,22 @@ describe('§8 — muscles', () => {
   });
 });
 
-describe('§7 — Exercise Type', () => {
-  it('maps a category onto the existing taxonomy and invents no value', () => {
-    expect(classifyExerciseType(parsed({ category: 'strength' }))).toMatchObject({ type: 'reps', confident: true });
-    expect(classifyExerciseType(parsed({ category: 'powerlifting' }))).toMatchObject({ type: 'reps' });
-    expect(classifyExerciseType(parsed({ category: 'olympic weightlifting' }))).toMatchObject({ type: 'reps' });
-    expect(classifyExerciseType(parsed({ category: 'strongman' }))).toMatchObject({ type: 'reps' });
-    expect(classifyExerciseType(parsed({ category: 'plyometrics' }))).toMatchObject({ type: 'reps' });
-    expect(classifyExerciseType(parsed({ category: 'stretching' }))).toMatchObject({ type: 'time', confident: true });
-    for (const value of EXERCISE_TYPES) expect(['reps', 'time', 'distance']).toContain(value);
+// §7's Exercise Type question is answered by storing nothing: `exercises`
+// has no exercise-level type column (migration 074 dropped the one migration 071
+// added), so the source's `category` is preserved verbatim and mapped onto
+// nothing. The assertion that matters is therefore the absence of a derived
+// value — `sourceMetadata` below covers what *is* stored.
+describe('§7 — no derived exercise type is written', () => {
+  it('a create writes the source metadata and no type column', () => {
+    const plan = planExerciseImport(parsed({ category: 'cardio' }), null, { slug: 'x' });
+    expect(plan.fields).toMatchObject({ category: 'cardio' });
+    expect(plan.fields).not.toHaveProperty('exercise_type');
   });
 
-  it('flags cardio as the closest existing type rather than guessing', () => {
-    expect(classifyExerciseType(parsed({ category: 'cardio' })))
-      .toEqual({ type: 'time', confident: false, sourceValue: 'cardio' });
-  });
-
-  it('leaves an unknown or missing category unset, and reports the source value', () => {
-    expect(classifyExerciseType(parsed({ category: 'mobility' })))
-      .toEqual({ type: null, confident: false, sourceValue: 'mobility' });
-    expect(classifyExerciseType(parsed({ category: null as any })))
-      .toEqual({ type: null, confident: false, sourceValue: null });
-  });
-
-  it('never takes the type from equipment — "barbell" says nothing about measurement', () => {
-    const noCategory = parsed({ category: null as any, equipment: 'barbell' });
-    expect(classifyExerciseType(noCategory).type).toBeNull();
+  it('an unmapped category is still preserved as given, never dropped or guessed', () => {
+    const plan = planExerciseImport(parsed({ category: 'mobility' }), null, { slug: 'y' });
+    expect(plan.fields.category).toBe('mobility');
+    expect(Object.keys(plan.fields)).not.toContain('exercise_type');
   });
 });
 
@@ -302,7 +286,6 @@ describe('§12 — matching, and what a match does', () => {
       slug: 'alternate-incline-dumbbell-curl',
       source: FREE_EXERCISE_DB_SOURCE,
       source_id: RAW_ENTRY.id,
-      exercise_type: 'reps',
       equipment: 'dumbbell',
       force_type: 'pull',
     });
@@ -320,7 +303,6 @@ describe('§12 — matching, and what a match does', () => {
       source: first.fields.source!,
       source_id: first.fields.source_id!,
       description: first.fields.description ?? null,
-      exercise_type: first.fields.exercise_type ?? null,
       equipment: first.fields.equipment ?? null,
       category: first.fields.category ?? null,
       level: first.fields.level ?? null,

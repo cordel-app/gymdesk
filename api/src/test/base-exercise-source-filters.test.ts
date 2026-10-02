@@ -59,7 +59,6 @@ interface SeedRow {
   level: string;
   mechanic: string | null;
   force_type: string | null;
-  exercise_type: string;
   muscles: { key: string; role: 'principal' | 'secondary' }[];
 }
 
@@ -67,19 +66,16 @@ const SEEDS: SeedRow[] = [
   {
     name: `Barbell Bench Press ${suffix}`, slug: `barbell-bench-press-${suffix}`,
     equipment: 'barbell', category: 'strength', level: 'beginner', mechanic: 'compound', force_type: 'push',
-    exercise_type: 'reps',
     muscles: [{ key: 'chest', role: 'principal' }, { key: 'triceps', role: 'secondary' }],
   },
   {
     name: `Dumbbell Row ${suffix}`, slug: `dumbbell-row-${suffix}`,
     equipment: 'dumbbell', category: 'strength', level: 'intermediate', mechanic: 'compound', force_type: 'pull',
-    exercise_type: 'reps',
     muscles: [{ key: 'middle_back', role: 'principal' }, { key: 'biceps', role: 'secondary' }],
   },
   {
     name: `Treadmill Interval ${suffix}`, slug: `treadmill-interval-${suffix}`,
     equipment: 'machine', category: 'cardio', level: 'beginner', mechanic: null, force_type: null,
-    exercise_type: 'time',
     muscles: [{ key: 'quads', role: 'principal' }],
   },
 ];
@@ -87,10 +83,10 @@ const SEEDS: SeedRow[] = [
 async function insertBaseExercise(row: SeedRow): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO exercises
-       (gym_id, name, slug, source, source_id, equipment, category, level, mechanic, force_type, exercise_type)
-     VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (gym_id, name, slug, source, source_id, equipment, category, level, mechanic, force_type)
+     VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [row.name, row.slug, FREE_EXERCISE_DB_SOURCE, `${row.slug}-source`, row.equipment, row.category,
-     row.level, row.mechanic, row.force_type, row.exercise_type],
+     row.level, row.mechanic, row.force_type],
   );
   for (const muscle of row.muscles) {
     await db.query(
@@ -106,8 +102,8 @@ beforeAll(async () => {
   // A gym's own exercise with the same metadata — it may never reach this list.
   gymId = await createTestGym(`Gym Exercises ${suffix}`);
   const { insertId } = await db.query(
-    `INSERT INTO exercises (gym_id, name, slug, equipment, category, level, exercise_type)
-     VALUES (?, ?, ?, 'barbell', 'strength', 'beginner', 'reps')`,
+    `INSERT INTO exercises (gym_id, name, slug, equipment, category, level)
+     VALUES (?, ?, ?, 'barbell', 'strength', 'beginner')`,
     [gymId, `Gym Barbell Bench Press ${suffix}`, `gym-barbell-bench-press-${suffix}`],
   );
   gymExerciseId = Number(insertId);
@@ -208,9 +204,13 @@ describe('§18 — search and filtering', () => {
     expect(names((await list(`?source=${FREE_EXERCISE_DB_SOURCE}`)).body).length).toBe(3);
   });
 
-  it('filters by Exercise Type, and refuses a value outside the taxonomy', async () => {
-    expect(names((await list('?exercise_type=time')).body)).toEqual([`Treadmill Interval ${suffix}`]);
-    expect((await list('?exercise_type=bodyweight')).status).toBe(400);
+  // There is no Exercise Type filter: `exercises` has no such column (migration
+  // 074 dropped migration 071's), so the source's measurement-ish axis is read
+  // through `?category=` above, which is the value the dataset actually supplies.
+  it('offers no Exercise Type filter, and ignores one rather than failing', async () => {
+    const res = await list('?exercise_type=time');
+    expect(res.status).toBe(200);
+    expect(names(res.body).length).toBe(3);
   });
 
   it('filters by muscle in either role, multi-select', async () => {
