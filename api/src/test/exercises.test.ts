@@ -632,6 +632,12 @@ describe('GET /exercises/base', () => {
     );
 
     inactiveBaseId = await createBaseExercise('Zz718 Retired Machine Press', 'inactive');
+    // #965 / migration 208: a base exercise carries the Cordel administrator who
+    // wrote it. The gym-facing router must not report that name — see below.
+    await db.query(
+      `UPDATE exercises SET created_by_name = ?, created_by_type = 'superadmin' WHERE id = ?`,
+      ['Cordel Operator', activeBaseId],
+    );
   });
 
   // Base exercises are platform rows (gym_id IS NULL), so cleanupTestGyms — which
@@ -656,6 +662,18 @@ describe('GET /exercises/base', () => {
   it('returns 403 for accountant role (TRAINING module NONE)', async () => {
     const res = await get('/exercises/base', gymNoAccess);
     expect(res.status).toBe(403);
+  });
+
+  it('never attributes a base exercise to its Cordel administrator (#965)', async () => {
+    // `GET /exercises/:id` deliberately serves base rows, and the shared
+    // catalogue's rows are not the reading gym's to attribute — the same rule
+    // `maskPlatformActors` applies to the Nutrition Library.
+    const res = await get(`/exercises/${activeBaseId}`);
+    expect(res.status).toBe(200);
+    expect(res.body.gym_id).toBeNull();
+    expect(res.body.created_by_name).toBeNull();
+    expect(res.body.created_by_type).toBeNull();
+    expect(res.body.modified_by_name).toBeNull();
   });
 
   it('lists active base exercises with their muscles', async () => {

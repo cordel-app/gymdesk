@@ -8,7 +8,6 @@ import { ImpersonationProvider } from '@/context/ImpersonationContext';
 import { FeatureFlagsProvider } from '@/context/FeatureFlagsContext';
 import { TopBar } from '@/components/TopBar';
 import { GymSwitcher } from '@/components/GymSwitcher';
-import { CenterSwitcher } from '@/components/CenterSwitcher';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { MembersBackground } from '@/components/MembersBackground';
 import { AdminBar } from '@/components/AdminBar';
@@ -52,7 +51,6 @@ export default async function LocaleLayout({
                     <AdminBar />
                     <TopBar />
                     <GymSwitcher />
-                    <CenterSwitcher />
                     {children}
                   </ThemeProvider>
                 </FeatureFlagsProvider>

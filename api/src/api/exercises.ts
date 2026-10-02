@@ -93,10 +93,29 @@ musclesRouter.get('/', (_req, res) => {
 });
 
 /* ---- Exercises ---- */
+// #965/migration 208 added `created_by_name` / `created_by_type` /
+// `modified_by_name` / `modified_by_type` to `exercises`, written **only** by the
+// platform router and therefore only ever on a Base Exercise — a superadmin has
+// no `gym_memberships` row for `created_by` to point at. A gym-owned exercise's
+// actor is still the membership this query joins.
+//
+// Which means the four aliases below do two jobs. They mask the platform actor
+// on a `gym_id IS NULL` row, because this router serves base rows too
+// (`GET /exercises/:id`) and a shared catalogue's rows are not the reading gym's
+// to attribute — their administrator is a Cordel employee, and the catalogue is
+// deliberately shared while their name is not (the rule
+// `itemDetailColumnsSql`'s `maskPlatformActors` already applies to the Nutrition
+// Library). And they shadow the raw columns `e.*` now expands to, which is why
+// they must stay **after** `e.*`: mysql2 builds the row object in field order, so
+// the last field of a duplicated name is the one that survives. Keep every use of
+// `${SELECT}` top-level for the same reason — wrapping it in a derived table or a
+// view would raise ER_DUP_FIELDNAME.
 const SELECT = `
   SELECT e.*,
-    gm_c.name AS created_by_name,
-    gm_m.name AS modified_by_name,
+    CASE WHEN e.gym_id IS NULL THEN NULL ELSE gm_c.name END           AS created_by_name,
+    CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.created_by_type END   AS created_by_type,
+    CASE WHEN e.gym_id IS NULL THEN NULL ELSE gm_m.name END           AS modified_by_name,
+    CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.modified_by_type END  AS modified_by_type,
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
      FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))

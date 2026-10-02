@@ -66,7 +66,7 @@ All API errors must return JSON in this shape — never HTML, never a raw string
 - Every route that does a DB write must wrap the query in `try/catch` and forward unexpected errors to Express via `next(err)`.
 - Catch MySQL duplicate-key errors (`err.code === 'ER_DUP_ENTRY'`, errno 1062) explicitly and return 409 before calling `next(err)`.
 - MySQL has no `RETURNING`: insert first, then `SELECT` the row via the `insertId` that `db.query` returns.
-- A global error handler in `index.ts` catches anything that falls through and returns `{ "error": "Internal server error" }` with status 500.
+- A global error handler in `app.ts` catches anything that falls through and returns `{ "error": "Internal server error" }` with status 500. **Since #966 that is literally true**: it used to forward `err.message`, so a mysql2 failure answered `Unknown column 'b.result_type' in 'field list'` to the browser. `api/src/domain/httpErrorResponse.ts` is the one place that decides it — an error carrying an explicit HTTP `status` keeps its message, anything else gets the generic 500 — so a route that needs a specific message for a specific failure **gives the error a status** (`throw Object.assign(new Error('…'), { status: 409 })`) or answers in the route; it must never rely on the handler forwarding a driver's words.
 
 Use the shared helpers in `api/src/infra/db-helpers.ts`:
 
@@ -118,6 +118,45 @@ try {
 ```
 
 ---
+
+## A lazily loaded expansion needs three states, not two (#966)
+
+An expandable list row that fetches its own detail on first expand has three
+outcomes, and a body written as `loading ? spinner : <Detail/>` can only render
+two of them — so a failed fetch renders the spinner for ever. That is how a
+Training Plan Template whose hierarchy request 500'd sat on `Loading…`
+indefinitely, with the only report a toast that had already faded.
+
+Keep the failure, per row, beside the cache:
+
+```tsx
+const [details, setDetails] = useState<Record<number, Detail>>({});
+const [detailLoading, setDetailLoading] = useState<Set<number>>(new Set());
+const [detailError, setDetailError] = useState<Record<number, string>>({});
+
+async function loadDetail(id: number, opts: { retry?: boolean } = {}) {
+  if (detailLoading.has(id)) return;
+  if (details[id] && !opts.retry) return;   // the retry has to get past the cache guard
+  setDetailError((prev) => { const next = { ...prev }; delete next[id]; return next; });
+  // …fetch, then setDetails on success and setDetailError in the catch
+}
+```
+
+…and render the three cases in order — the detail, then loading, then the
+error:
+
+```tsx
+{detail ? <Detail … /> : loading || !error ? <p>{t('loading')}</p> : (
+  <div><p style={errorStyle}>{t('detail_error')}</p>
+       <button onClick={onRetry}>{t('retry')}</button></div>
+)}
+```
+
+Two rules come with it. The retry must be able to bypass the "already cached"
+early return, or the button does nothing on a row that half-loaded; and the
+error line is an **application-level** sentence of the page's own
+(`<entity>.hierarchy_error`, in en/es/ca), not the API's message — what the API
+is allowed to say is the Standard Error Response rule above.
 
 ## Deployment
 
@@ -680,8 +719,24 @@ a Base Exercises page hanging off them would break when the superadmin's
 selected gym had exercises switched off (`GET /platform/exercises/lookups`,
 registered before `/:id` so Express does not read `lookups` as an id).
 
-Reference implementation: `components/exercises/` + both pages. Regression test:
-`apps/admin/src/test/exercise-editor-unification.test.ts`.
+**The read-only half moves up with it (#965).** A shared editor only fixes half
+the drift: the two pages still rendered two different *read-only* views of the
+same entity — the gym's a list of whichever sections happened to be non-empty,
+the platform's a flat `Label: Value` table — and neither matched the form. So the
+expanded body is the editor's **counterpart**, `ExerciseReadOnlyView`, rendering
+the same sections from the same declaration with the values in the box each input
+occupies (`formValueStyle`, #929), and the chrome both halves wear is a third
+module beside them (`exerciseFieldChrome.ts`) so neither can be restyled alone.
+Keep it free of controls — an allowed option is a span with a tick, never a
+disabled checkbox — and hand it anything with state as a node the page builds, the
+way the editor already takes its `media`: `ExerciseMediaPreview` owns the one
+control a read-only card may have (the poster doubles as the play button, a read),
+and *which* exercise is playing stays the page's, so a second clip cannot start
+over the first.
+
+Reference implementation: `components/exercises/` + both pages. Regression tests:
+`apps/admin/src/test/exercise-editor-unification.test.ts` and
+`exercise-read-only-expansion.test.ts`.
 
 ### When the card's sections have their own editors (#816)
 

@@ -19,6 +19,11 @@ import { join } from 'path';
 
 const PAGE_PATH = join(__dirname, '..', 'app', '[locale]', 'cordel', 'exercises', 'page.tsx');
 const FIELD_PATH = join(__dirname, '..', 'components', 'ExerciseImageField.tsx');
+// #965 moved the read-only preview itself out of the page: both Exercise screens
+// render one `ExerciseMediaPreview` inside the editor's read-only counterpart, so
+// what a card *shows* is now asserted there and what it *uploads* is still the
+// shared control's.
+const PREVIEW_PATH = join(__dirname, '..', 'components', 'exercises', 'ExerciseMediaPreview.tsx');
 
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '').replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
@@ -26,6 +31,7 @@ function stripComments(src: string): string {
 
 const pageSrc = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
 const fieldSrc = stripComments(readFileSync(FIELD_PATH, 'utf-8'));
+const previewSrc = stripComments(readFileSync(PREVIEW_PATH, 'utf-8'));
 
 const expandedStart = pageSrc.indexOf('renderExpanded={(row)');
 const columnsStart = pageSrc.indexOf('const columns: Column<Exercise>[]');
@@ -41,14 +47,14 @@ describe('Base Exercises images (#716)', () => {
   it('shows the image and the zoom on the expanded card only (§9)', () => {
     expect(expandedStart).toBeGreaterThan(-1);
     expect(readOnlyStart).toBeGreaterThan(-1);
-    expect(pageSrc.slice(readOnlyStart)).toContain('renderImageSection(exercise)');
+    expect(pageSrc.slice(readOnlyStart)).toContain('<ExerciseMediaPreview');
     expect(pageSrc.slice(expandedStart)).toContain('renderReadOnly(row)');
 
     // The collapsed row is the `columns` array, which must mention none of it.
     const columnsBlock = pageSrc.slice(columnsStart, expandedStart);
     expect(columnsBlock).not.toContain('image_url');
     expect(columnsBlock).not.toContain('image_thumbnail_url');
-    expect(columnsBlock).not.toContain('View full size');
+    expect(columnsBlock).not.toContain('image_view_full_size');
   });
 
   it('keeps every write out of that card — the editor owns them (#806 §11)', () => {
@@ -65,33 +71,35 @@ describe('Base Exercises images (#716)', () => {
   });
 
   it('draws the thumbnail, never the master, for normal rendering (§4)', () => {
-    expect(pageSrc).toMatch(/const thumbnail = exercise\.image_thumbnail_url \?\? exercise\.image_url;/);
+    expect(previewSrc).toMatch(/const thumbnail = exercise\.image_thumbnail_url \?\? exercise\.image_url;/);
     // The image block draws the thumbnail and nothing else; the other two
-    // `src`s on the page are #717's video block (its poster, and the clip
+    // `src`s in the preview are #717's video block (its poster, and the clip
     // itself once the player is asked for). The master is drawn by neither.
-    const srcs = [...pageSrc.matchAll(/src=\{`?\$?\{?([^}`]+)/g)].map((m) => m[1]);
+    const srcs = [...previewSrc.matchAll(/src=\{`?\$?\{?([^}`]+)/g)].map((m) => m[1]);
     expect(srcs).toEqual(['thumbnail', 'video', 'poster']);
     expect(srcs).not.toContain('master');
-    expect(pageSrc).toContain('loading="lazy"');
+    expect(previewSrc).toContain('loading="lazy"');
   });
 
   it('loads the 2048×2048 master only when the full size is opened (§10)', () => {
-    expect(pageSrc).toMatch(/href=\{`\$\{master\}\?v=\$\{version\}`\}/);
-    expect(pageSrc).toContain('target="_blank"');
-    expect(pageSrc).toContain('View full size');
+    expect(previewSrc).toMatch(/href=\{`\$\{master\}\?v=\$\{version\}`\}/);
+    expect(previewSrc).toContain('target="_blank"');
+    // #965: the wording is a locale key now, interpolating the master's size,
+    // rather than an English literal in the page.
+    expect(previewSrc).toContain("t('image_view_full_size', { size: EXERCISE_IMAGE_MASTER_SIZE })");
   });
 
   it('only hands a drawable reference to the DOM', () => {
-    expect(pageSrc).toMatch(/SAFE_IMAGE_SRC\.test\(thumbnail\)/);
-    expect(pageSrc).toMatch(/SAFE_IMAGE_SRC\.test\(master\)/);
+    expect(previewSrc).toMatch(/SAFE_IMAGE_SRC\.test\(thumbnail\)/);
+    expect(previewSrc).toMatch(/SAFE_IMAGE_SRC\.test\(master\)/);
   });
 
   it('keeps the image square and preserves its transparency', () => {
-    expect(pageSrc).toContain("objectFit: 'contain'");
-    expect(pageSrc).toMatch(/imageFrameStyle[\s\S]*?width: 160,[\s\S]*?height: 160,/);
+    expect(previewSrc).toContain("objectFit: 'contain'");
+    expect(previewSrc).toMatch(/imageFrameStyle[\s\S]*?width: 160,[\s\S]*?height: 160,/);
     // The checkerboard is what makes a transparent background read as
     // transparent rather than as white.
-    expect(pageSrc).toMatch(/backgroundImage:[\s\S]*?linear-gradient/);
+    expect(previewSrc).toMatch(/backgroundImage:[\s\S]*?linear-gradient/);
   });
 
   it('tells the administrator the required format (§11)', () => {
@@ -144,6 +152,12 @@ describe('Base Exercises images (#716)', () => {
   });
 
   it('offers View Audit Log from the Details view (#675)', () => {
-    expect(pageSrc).toMatch(/ViewAuditLogButton entityType="exercise" entityId=\{exercise\.id\} scope="platform"/);
+    // #965 §10: not from the expanded card any more — from `⋮ → Details`, which
+    // is the shared modal this page opens with the platform scope.
+    expect(pageSrc).not.toContain('ViewAuditLogButton');
+    expect(pageSrc).toContain('<ExerciseDetailModal exercise={detailFor} scope="platform"');
+    const modalSrc = stripComments(readFileSync(
+      join(__dirname, '..', 'components', 'exercises', 'ExerciseDetailModal.tsx'), 'utf-8'));
+    expect(modalSrc).toMatch(/ViewAuditLogButton entityType="exercise" entityId=\{exercise\.id\} scope=\{scope\}/);
   });
 });
