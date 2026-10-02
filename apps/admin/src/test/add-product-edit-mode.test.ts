@@ -65,7 +65,9 @@ const PRODUCT_WORDS = /product/i;
 describe('Add Product is only available in Edit mode (#957 §2)', () => {
   it('renders the add action only when the surface asks for it', () => {
     expect(editorSrc).toContain('canAdd');
-    expect(editorSrc).toContain('{!adding && canAttach && canAdd && (');
+    // #924 stage 5 added the card-level `editing` gate beside it: the add
+    // action needs both, and `canAdd` is still what this ticket decides.
+    expect(editorSrc).toContain('{!adding && canAttach && editing && canAdd && (');
   });
 
   it('defaults canAdd to true, so a surface with no edit mode keeps the action', () => {

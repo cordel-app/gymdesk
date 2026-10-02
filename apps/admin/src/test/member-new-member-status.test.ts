@@ -4,10 +4,9 @@ import { join } from 'path';
 import {
   MEMBER_EDITABLE_PROFILE_FIELDS,
   MEMBER_PROFILE_FIELDS,
-  NEW_MEMBER_CHECKED,
-  NEW_MEMBER_UNCHECKED,
   emptyMemberEditForm,
-  newMemberCheckbox,
+  newMemberAnnounceKey,
+  newMemberValueKey,
 } from '../app/[locale]/members/memberProfile';
 
 // Regression tests for #927 — the Member's calculated `New Member` status, in
@@ -51,7 +50,11 @@ describe('Members: New Member is part of the one Profile declaration (#927 §1)'
   });
 
   it('is laid out by the shared layout through its own callback', () => {
-    expect(layoutSrc).toContain('field.calculated ? renderCalculated(field)');
+    // #960 — the calculated cell is laid out inline, so the branch is a JSX
+    // block rather than one expression; what matters is that it is still the
+    // layout that chooses the callback, and that `renderField` is the other arm.
+    expect(layoutSrc).toContain('field.calculated ? (');
+    expect(layoutSrc).toContain('renderCalculated(field)');
     for (const [name, src] of [['expanded row', expandedSrc], ['Edit form', editFormSrc]] as const) {
       expect(src, `${name} does not render the calculated cell`).toContain('renderCalculated=');
       expect(src).toContain('<NewMemberValue');
@@ -106,14 +109,15 @@ describe('Members: one value in both places (#927 §2/§5)', () => {
 });
 
 describe('Members: the New Member value and its labels (#927)', () => {
-  it('is a ticked or unticked checkbox', () => {
-    expect(newMemberCheckbox(true)).toBe(NEW_MEMBER_CHECKED);
-    expect(newMemberCheckbox(false)).toBe(NEW_MEMBER_UNCHECKED);
-    expect(NEW_MEMBER_CHECKED).not.toBe(NEW_MEMBER_UNCHECKED);
+  it('reads Yes or No — #960 replaced the glyph with a chip', () => {
+    expect(newMemberValueKey(true)).toBe('yes');
+    expect(newMemberValueKey(false)).toBe('no');
+    expect(newMemberAnnounceKey(true)).toBe('new_member_yes');
+    expect(newMemberAnnounceKey(false)).toBe('new_member_no');
   });
 
   it('resolves every new label in en, es and ca', () => {
-    const keys = ['label_new_member', 'new_member_badge', 'new_member_yes', 'new_member_no'];
+    const keys = ['label_new_member', 'new_member_badge', 'new_member_yes', 'new_member_no', 'yes', 'no'];
     for (const code of LOCALE_CODES) {
       const members = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8')).members as Record<string, unknown>;
       for (const key of keys) {
@@ -122,9 +126,13 @@ describe('Members: the New Member value and its labels (#927)', () => {
     }
   });
 
-  it('announces the glyph rather than leaving it to a screen reader', () => {
-    expect(layoutSrc).toContain('aria-label={label}');
-    expect(expandedSrc).toContain("'members.new_member_yes'");
-    expect(editFormSrc).toContain("'new_member_yes'");
+  it('announces the value rather than leaving a bare "Yes" to a screen reader', () => {
+    // #960 — the chip's own text is one word, and the label beside it is not
+    // programmatically tied to it, so the full sentence is the accessible name.
+    expect(layoutSrc).toContain('aria-label={announce}');
+    for (const [name, src] of [['expanded row', expandedSrc], ['Edit form', editFormSrc]] as const) {
+      expect(src, `${name} does not announce the value`).toContain('newMemberAnnounceKey(');
+      expect(src).toContain('newMemberValueKey(');
+    }
   });
 });

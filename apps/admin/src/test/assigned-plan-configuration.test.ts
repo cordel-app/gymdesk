@@ -167,7 +167,10 @@ describe('Assigned Plan configuration: editing rules (#635 §10)', () => {
 
 describe('Assigned Plan configuration: locales', () => {
   const REQUIRED_KEYS = [
-    'section_configuration', 'section_billing_duration',
+    // #924 stage 5 removed the `MEMBERSHIP PLAN CONFIGURATION` heading these
+    // five sections used to nest under: they are the card's own sections now,
+    // and `section_configuration` is gone from the namespace with it.
+    'section_billing_duration',
     'label_pay_beforehand_periods',
     'label_free_periods', 'label_paid_periods', 'label_bonus_periods',
     'label_billing_interval', 'label_billing_unit', 'label_membership_fee',

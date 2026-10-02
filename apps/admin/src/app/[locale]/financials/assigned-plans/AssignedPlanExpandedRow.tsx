@@ -8,6 +8,13 @@ import { useModuleAccess } from '@/lib/useModuleAccess';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { CardDetailRow } from '@/components/CardDetailRow';
+import { CardSection } from '@/components/CardSection';
+import {
+  cardMutedTextStyle,
+  cardTextLinkStyle,
+  formErrorStyle,
+} from '@/components/formChrome';
 import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal';
 import { AdditionalPeriodicServices } from './AdditionalPeriodicServices';
 import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
@@ -22,11 +29,25 @@ import { ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS } from './types';
 import type { AssignedPlanDetail } from './types';
 
 // #786: an assignment is `active` from creation, so there is no pre-activation
-// status left to Submit from or to Edit in. The dates-and-discount Edit form
-// that only a `draft`/`awaiting_payment` assignment could open went with them;
-// the assignment's commercial configuration is edited section by section in
+// status left to Submit from. The dates-and-discount Edit form that only a
+// `draft`/`awaiting_payment` assignment could open went with them; the
+// assignment's commercial configuration is edited section by section in
 // `AssignedPlanConfiguration` below.
+//
+// #924 stage 5 puts that editing behind the #797/#897 split the Membership Plan
+// and Promotion cards already follow: expanding the row *reads* the assignment —
+// every section read-only, no input, no checkbox, no section `Edit` button — and
+// `⋮ → Edit` is the single entry point into Edit mode. The card-level flag below
+// is what every writable section asks, so a section's controls are **absent**
+// outside the mode rather than disabled, and leaving the mode closes every
+// section editor with it.
 const CLOSEABLE_STATUSES = ['active', 'paused'];
+
+// The statuses whose configuration can still be edited at all — a cancelled or
+// expired assignment bills nothing further, so Edit mode has nothing to offer
+// and the action is not shown. Mirrors SNAPSHOT_EDITABLE_STATUSES in
+// api/src/api/user-memberships.ts.
+const EDITABLE_STATUSES = ['active', 'paused'];
 
 function fmtDate(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : null;
@@ -62,6 +83,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
   const [error, setError] = useState<string | null>(null);
 
   const [showDetails, setShowDetails] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [closeStep, setCloseStep] = useState<'none' | 'confirm' | 'warn'>('none');
   const [closeWarnings, setCloseWarnings] = useState<string[]>([]);
@@ -143,9 +165,9 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
   if (error || !detail) {
     return (
       <div style={panel}>
-        <p style={{ color: '#c0392b', fontSize: 14, margin: 0 }}>
+        <p style={{ ...formErrorStyle, margin: 0 }}>
           {error}{' '}
-          <button onClick={loadDetail} style={retryBtn}>{t('retry')}</button>
+          <button onClick={loadDetail} style={cardTextLinkStyle}>{t('retry')}</button>
         </p>
       </div>
     );
@@ -154,10 +176,21 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
   const canPause = detail.status === 'active';
   const canReactivate = detail.status === 'paused';
   const canClose = CLOSEABLE_STATUSES.includes(detail.status);
+  const canEnterEdit = EDITABLE_STATUSES.includes(detail.status);
   const write = { disabled: !canWritePayments, title: readOnlyTitle };
   const adminOnly = { disabled: !isAdmin, title: isAdmin ? undefined : readOnlyTitle };
 
+  // #797: the context menu is the single entry point into Edit mode, and the
+  // same item leaves it again — the card has no main form whose Cancel could,
+  // since every one of an Assigned Plan's own fields is derived or frozen.
   const menuItems = [
+    ...(canEnterEdit
+      ? [{
+        label: isEditing ? t('action_done_editing') : t('action_edit'),
+        onClick: () => setIsEditing(!isEditing),
+        ...write,
+      }]
+      : []),
     { label: t('action_details'), onClick: () => setShowDetails(true) },
     ...(canPause ? [{ label: t('action_pause'), onClick: () => runAction('pause'), ...write }] : []),
     ...(canReactivate ? [{ label: t('action_reactivate'), onClick: () => runAction('reactivate'), ...write }] : []),
@@ -176,63 +209,70 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
         <ContextMenu ariaLabel={t('actions_for', { plan: detail.plan_name ?? '' })} items={menuItems} />
       </div>
 
-      <Section label={t('section_members')}>
+      {/* The sections below are ASSIGNED_PLAN_SECTION_ORDER, in that order
+          (assignedPlanProfile.ts) — the Membership Plan card's own order with
+          the three things only an assignment has. */}
+      <CardSection label={t('section_members')} first>
         {detail.members.map((m) => (
           <div key={m.member_id} style={{ fontSize: 14, marginBottom: 2 }}>
             {m.name} {m.is_owner ? <span style={{ color: '#888', fontSize: 12 }}>({t('label_owner')})</span> : null}
           </div>
         ))}
-      </Section>
+      </CardSection>
 
-      <Section label={t('section_pricing')}>
-        <Field label={t('detail_effective_price')}>{fmtMoney(detail.membership_fee)}</Field>
+      <CardSection label={t('section_pricing')}>
+        <CardDetailRow label={t('detail_effective_price')} value={fmtMoney(detail.membership_fee)} />
         {detail.billing_policy && (
-          <Field label={t('label_billing_frequency')}>
-            {detail.billing_policy.recurring_billing_interval} / {detail.billing_policy.recurring_billing_unit}
-          </Field>
+          <CardDetailRow
+            label={t('label_billing_frequency')}
+            value={`${detail.billing_policy.recurring_billing_interval} / ${detail.billing_policy.recurring_billing_unit}`}
+          />
         )}
-        <Field label={t('label_start_date')}>{fmtDate(detail.starts_at)}</Field>
-        <Field label={t('label_end_date')}>{detail.ends_at ? fmtDate(detail.ends_at) : t('open_ended')}</Field>
-        {detail.closed_at && <Field label={t('label_closure_date')}>{fmtDate(detail.closed_at)}</Field>}
-        {detail.next_billing_date && <Field label={t('label_next_billing_date')}>{fmtDate(detail.next_billing_date)}</Field>}
-        {detail.discount_reason && <Field label={t('label_discount_reason')}>{detail.discount_reason}</Field>}
-      </Section>
+        <CardDetailRow label={t('label_start_date')} value={fmtDate(detail.starts_at)} />
+        <CardDetailRow label={t('label_end_date')} value={detail.ends_at ? fmtDate(detail.ends_at) : t('open_ended')} />
+        {detail.closed_at && <CardDetailRow label={t('label_closure_date')} value={fmtDate(detail.closed_at)} />}
+        {detail.next_billing_date && (
+          <CardDetailRow label={t('label_next_billing_date')} value={fmtDate(detail.next_billing_date)} />
+        )}
+        {detail.discount_reason && (
+          <CardDetailRow label={t('label_discount_reason')} value={detail.discount_reason} />
+        )}
+      </CardSection>
 
-      {/* #635 stage 4: this section listed the Plan's Included Services
-          (`plan_allowances`) until the concept was retired (migration 177). It
-          now shows the assignment's own snapshot — the three benefit kinds as
-          they were captured at assignment time, which since stage 3 is also what
-          it bills. A later edit of the Plan or of a Sellable Item never moves
-          these lines (§13/§17).
+      {/* #635 stage 6: the five sections the assignment's own snapshot owns —
+          Billing & Duration, the Personal Membership Fee Benefit and the three
+          benefit kinds as they were captured at assignment time, which since
+          stage 3 is also what it bills. A later edit of the Plan or of a
+          Sellable Item never moves these lines (§13/§17).
 
-          Stage 6 (§9/§10/§15) gives it the Membership Plan's own structure —
-          Billing & Duration above the three benefit kinds — and makes every
-          section independently editable: editing one edits *this member's*
-          snapshot, never the Plan it came from. */}
-      <Section label={t('section_configuration')}>
-        <AssignedPlanConfiguration
-          assignedPlanId={assignedPlanId}
-          planStatus={detail.status}
-          snapshot={detail.snapshot}
-          canWrite={canWritePayments}
-          readOnlyTitle={readOnlyTitle}
-          onChanged={() => { loadDetail(); onChanged(); }}
-        />
-      </Section>
+          #924 stage 5: they are the card's own sections now, not a nested group
+          under a `MEMBERSHIP PLAN CONFIGURATION` heading the Plan card has no
+          counterpart for (§1) — the component renders the contiguous slice of
+          the order declaration named ASSIGNED_PLAN_CONFIGURATION_SECTIONS. */}
+      <AssignedPlanConfiguration
+        assignedPlanId={assignedPlanId}
+        planStatus={detail.status}
+        snapshot={detail.snapshot}
+        cardEditing={isEditing}
+        canWrite={canWritePayments}
+        readOnlyTitle={readOnlyTitle}
+        onChanged={() => { loadDetail(); onChanged(); }}
+      />
 
       {/* #635 stage 7 (§16): one expandable card per applied Promotion, each
           showing the configuration *that application* froze — never the
           Promotion's current definition, which may have been edited or
           deleted since. */}
-      <Section label={t('section_promotions')}>
+      <CardSection label={t('section_promotions')}>
         <AssignedPlanPromotions
           assignedPlanId={assignedPlanId}
           promotions={detail.promotions}
+          cardEditing={isEditing}
           canWrite={canWritePayments}
           readOnlyTitle={readOnlyTitle}
           onChanged={() => { loadDetail(); onChanged(); }}
         />
-      </Section>
+      </CardSection>
 
       {/* #924 stage 3 (§7) — the MEMBERSHIP FEE SIMULATION: the Membership Plan
           card's Example Timeline, for this contract. One row per billing period
@@ -243,11 +283,11 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
           Promotion and the Personal Membership Fee Benefit are already in those
           numbers. Read-only by nature: computed on every read, persisted
           nowhere, and it charges nothing. */}
-      <Section label={t('section_fee_simulation')}>
+      <CardSection label={t('section_fee_simulation')}>
         {detail.example_timeline?.available ? (
           <>
             {detail.example_timeline.anchorDate && (
-              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#666' }}>
+              <p style={{ ...cardMutedTextStyle, fontSize: 12, margin: '0 0 8px' }}>
                 {t('timeline_anchor_note', {
                   date: fmtTimelineDate(detail.example_timeline.anchorDate, locale),
                 })}
@@ -292,7 +332,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
           // rather than relayed in English.
           <p style={dim}>{t('timeline_unavailable')}</p>
         )}
-      </Section>
+      </CardSection>
 
       {/* #924 stage 4 (§8/§9/§10) — the BILLING EVENT FORECAST: one group per
           billing *date*, listing every line that falls on it — the Membership
@@ -308,29 +348,31 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
           Benefit are all in the server's numbers. The page formats, it never
           prices (#817). Read-only: computed on every read, persisted nowhere,
           and it charges nothing. */}
-      <Section label={t('section_billing_forecast')}>
+      <CardSection label={t('section_billing_forecast')}>
         <BillingEventSimulation
           simulation={detail.billing_event_simulation}
           t={(key, values) => t(key as any, values as any)}
           formatDate={(date) => fmtTimelineDate(date, locale)}
         />
-      </Section>
+      </CardSection>
 
-      {/* #631: Additional Periodic Services belong to the Assigned Plan itself —
-          not to the Membership Plan and not to the Promotions above it. */}
-      <Section label={t('section_additional_services')}>
+      {/* #631: Additional Products belong to the Assigned Plan itself — not to
+          the Membership Plan and not to the Promotions above it. #924 §11 keeps
+          the section and the thread's Q4 answer renames it. */}
+      <CardSection label={t('section_additional_services')}>
         <AdditionalPeriodicServices
           assignedPlanId={assignedPlanId}
           planStartsAt={detail.starts_at}
           planStatus={detail.status}
           services={detail.additional_services ?? []}
+          editing={isEditing}
           canWrite={canWritePayments}
           readOnlyTitle={readOnlyTitle}
           onChanged={() => { loadDetail(); onChanged(); }}
         />
-      </Section>
+      </CardSection>
 
-      <Section label={t('section_billing_events')}>
+      <CardSection label={t('section_billing_events')}>
         {!detail.billing_events.available ? (
           <p style={dim}>{detail.billing_events.reason}</p>
         ) : detail.billing_events.events.length === 0 ? (
@@ -338,17 +380,19 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
         ) : (
           <div>
             {detail.billing_events.events.map((ev, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderBottom: '1px solid #f5f5f5' }}>
+              <div key={i} style={ledgerRowStyle}>
                 <span>
                   {fmtDate(ev.date)}
-                  {ev.promotion_affected && <span style={{ marginLeft: 8, color: '#6c63ff', fontSize: 11 }}>({t('billing_event_promotion_affected')})</span>}
+                  {ev.promotion_affected && (
+                    <span style={ledgerPromotionTagStyle}>({t('billing_event_promotion_affected')})</span>
+                  )}
                 </span>
                 <span>{fmtMoney(ev.amount)}</span>
               </div>
             ))}
           </div>
         )}
-      </Section>
+      </CardSection>
 
       {showDetails && (
         <AssignedPlanDetailsModal detail={detail} onClose={() => setShowDetails(false)} />
@@ -379,31 +423,20 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
   );
 }
 
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 20 }}>
-      <div style={sectionLabelStyle}>{label}</div>
-      {children}
-    </div>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, marginBottom: 4 }}>
-      <span style={{ color: '#888', minWidth: 140, fontSize: 13 }}>{label}</span>
-      <span>{children}</span>
-    </div>
-  );
-}
-
 const panel: React.CSSProperties = { padding: '16px 24px' };
-const dim: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
-const sectionLabelStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase',
-  letterSpacing: '0.07em', marginBottom: 8,
+
+// #929/#924 stage 5: the card's chrome comes from `components/formChrome.ts`,
+// so nothing here restates a muted sentence, a text link or an error line.
+const dim = cardMutedTextStyle;
+
+// The ledger's own structure — a date on the left, the amount on the right —
+// which stays with the section (#929: what is shared is the chrome, not a
+// section's layout).
+const ledgerRowStyle: React.CSSProperties = {
+  display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0',
+  borderBottom: '1px solid var(--gd-card-border, #f4f4f6)',
 };
-const retryBtn: React.CSSProperties = {
-  background: 'none', border: 'none', color: '#6c63ff', cursor: 'pointer',
-  fontSize: 13, padding: 0, textDecoration: 'underline',
+
+const ledgerPromotionTagStyle: React.CSSProperties = {
+  marginLeft: 8, color: 'var(--gd-link, #6c63ff)', fontSize: 11,
 };
