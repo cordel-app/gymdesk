@@ -14,6 +14,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { secondaryBtnSmall } from '@/components/formChrome';
 import { TrainingPlanTree, Hierarchy } from './TrainingPlanTree';
 import { NewTrainingPlanDialog } from '../training-plans/NewTrainingPlanDialog';
 
@@ -95,6 +96,10 @@ export default function TrainingPlanTemplatesPage() {
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [hierarchies, setHierarchies] = useState<Record<number, Hierarchy>>({});
   const [hierLoading, setHierLoading] = useState<Set<number>>(new Set());
+  // #966: a failed expand used to leave the row on `Loading…` for ever, because
+  // the body renders the tree only once `hierarchy` arrives. The failure is kept
+  // per template so the row can say so and offer Retry.
+  const [hierError, setHierError] = useState<Record<number, string>>({});
 
   // #613: impersonation-aware; read-only roles see controls disabled.
   const { canRead, canWrite, readOnlyTitle } = useModuleAccess('TRAINING');
@@ -249,14 +254,20 @@ export default function TrainingPlanTemplatesPage() {
 
   // ─── Hierarchy ───────────────────────────────────────────────────────────────
 
-  async function loadHierarchy(id: number) {
-    if (hierarchies[id] || hierLoading.has(id)) return;
+  async function loadHierarchy(id: number, opts: { retry?: boolean } = {}) {
+    if (hierLoading.has(id)) return;
+    if (hierarchies[id] && !opts.retry) return;
+    setHierError((prev) => {
+      if (!(id in prev)) return prev;
+      const next = { ...prev }; delete next[id]; return next;
+    });
     setHierLoading((prev) => new Set(prev).add(id));
     try {
       const h = await apiFetch<Hierarchy>(`/training-plan-templates/${id}/hierarchy`);
       setHierarchies((prev) => ({ ...prev, [id]: h }));
     } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
+      setHierError((prev) => ({ ...prev, [id]: err.message ?? t('hierarchy_error') }));
+      toast(err.message ?? t('hierarchy_error'));
     } finally {
       setHierLoading((prev) => { const next = new Set(prev); next.delete(id); return next; });
     }
@@ -402,6 +413,8 @@ export default function TrainingPlanTemplatesPage() {
               editSaving={editSaving}
               hierarchy={hierarchies[row.id] ?? null}
               hierLoading={hierLoading.has(row.id)}
+              hierError={hierError[row.id] ?? null}
+              onRetryHierarchy={() => loadHierarchy(row.id, { retry: true })}
               canWrite={!!canWrite}
               locale={locale}
               t={t}
@@ -460,9 +473,9 @@ export default function TrainingPlanTemplatesPage() {
 
 function TemplateCard({
   template, expanded, editing, editForm, editError, editSaving,
-  hierarchy, hierLoading, canWrite, locale, t, tStatus, fmtDate,
+  hierarchy, hierLoading, hierError, canWrite, locale, t, tStatus, fmtDate,
   onToggleExpand, onEdit, onDetails, onDuplicate, onClone, onDelete, onAssign,
-  onEditFormChange, onSave, onCancel, onChanged,
+  onEditFormChange, onSave, onCancel, onChanged, onRetryHierarchy,
 }: {
   template: TrainingPlanTemplate;
   expanded: boolean;
@@ -472,6 +485,7 @@ function TemplateCard({
   editSaving: boolean;
   hierarchy: Hierarchy | null;
   hierLoading: boolean;
+  hierError: string | null;
   canWrite: boolean;
   locale: string;
   t: ReturnType<typeof useTranslations>;
@@ -488,6 +502,7 @@ function TemplateCard({
   onSave: () => void;
   onCancel: () => void;
   onChanged: () => void;
+  onRetryHierarchy: () => void;
 }) {
   const isBase = template.gym_id === null;
   const roTitle = useReadOnlyTitle(canWrite);
@@ -598,17 +613,24 @@ function TemplateCard({
       {/* Expanded workout tree — shown when expanded (editing or read-only) */}
       {expanded && (
         <div style={{ borderTop: '1px solid var(--gd-card-border, #ececf0)' }}>
-          {hierLoading || !hierarchy ? (
-            <p style={{ color: '#888', fontSize: 14, padding: '12px 20px 12px 44px', margin: 0 }}>
-              {t('loading')}
-            </p>
-          ) : (
+          {hierarchy ? (
             <TrainingPlanTree
               templateId={template.id}
               hierarchy={hierarchy}
               canWrite={canWrite}
               onChanged={onChanged}
             />
+          ) : hierLoading || !hierError ? (
+            <p style={{ color: '#888', fontSize: 14, padding: '12px 20px 12px 44px', margin: 0 }}>
+              {t('loading')}
+            </p>
+          ) : (
+            /* #966: an application-level failure with a way out, instead of a
+               row stuck on `Loading…` for ever. */
+            <div style={{ padding: '12px 20px 12px 44px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <p style={{ ...errorStyle, margin: 0 }}>{t('hierarchy_error')}</p>
+              <button onClick={onRetryHierarchy} style={secondaryBtnSmall}>{t('retry')}</button>
+            </div>
           )}
         </div>
       )}

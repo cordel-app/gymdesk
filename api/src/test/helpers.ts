@@ -91,6 +91,13 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM spaces WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM activity_type_eligible_plans WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM activity_types WHERE gym_id IN (${marks})`, ids);
+  // #966: `tptw_workout_template_id` is the one FK into `workout_templates` that
+  // is ON DELETE RESTRICT (migration 038), so a gym's plan-template → workout-
+  // template links have to go before the `workout_templates` delete below. The
+  // `training_plan_templates` line beside it is cascade-covered, listed for the
+  // same readable-order reason the benefit tables further down are.
+  await db.query(`DELETE FROM training_plan_template_workouts WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM training_plan_templates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM workout_template_exercises WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM workout_template_blocks WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM workout_templates WHERE gym_id IN (${marks})`, ids);

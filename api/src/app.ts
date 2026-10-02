@@ -105,6 +105,7 @@ import { websiteIntegrationRouter } from './api/website-integration';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
 import { internalRunRateLimitConfig, spendsInternalRunBudget } from './domain/internalRunRateLimit';
+import { httpErrorStatus, publicErrorMessage } from './domain/httpErrorResponse';
 
 export const app = express();
 
@@ -361,9 +362,12 @@ app.use('/system/themes',    requireAuth(), tenantContext, requireModuleAccess('
 app.use('/system/website-integration', requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.website_integration'), websiteIntegrationRouter);
 app.use('/recycle-bin',      requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.recycle_bin'), recycleBinRouter);
 
-// Global error handler — must be last, after all routes
+// Global error handler — must be last, after all routes.
+// #966: the real error is logged here and only here. What the client is told is
+// `domain/httpErrorResponse.ts`'s decision — a deliberate status keeps its own
+// message, anything else is a generic 500 — so a driver message such as
+// `Unknown column 'b.result_type' in 'field list'` never reaches a toast.
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   console.error(err);
-  const status = typeof err?.status === 'number' ? err.status : 500;
-  res.status(status).json({ error: err?.message || 'Internal server error' });
+  res.status(httpErrorStatus(err)).json({ error: publicErrorMessage(err) });
 });

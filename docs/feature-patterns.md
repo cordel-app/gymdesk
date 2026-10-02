@@ -66,7 +66,7 @@ All API errors must return JSON in this shape — never HTML, never a raw string
 - Every route that does a DB write must wrap the query in `try/catch` and forward unexpected errors to Express via `next(err)`.
 - Catch MySQL duplicate-key errors (`err.code === 'ER_DUP_ENTRY'`, errno 1062) explicitly and return 409 before calling `next(err)`.
 - MySQL has no `RETURNING`: insert first, then `SELECT` the row via the `insertId` that `db.query` returns.
-- A global error handler in `index.ts` catches anything that falls through and returns `{ "error": "Internal server error" }` with status 500.
+- A global error handler in `app.ts` catches anything that falls through and returns `{ "error": "Internal server error" }` with status 500. **Since #966 that is literally true**: it used to forward `err.message`, so a mysql2 failure answered `Unknown column 'b.result_type' in 'field list'` to the browser. `api/src/domain/httpErrorResponse.ts` is the one place that decides it — an error carrying an explicit HTTP `status` keeps its message, anything else gets the generic 500 — so a route that needs a specific message for a specific failure **gives the error a status** (`throw Object.assign(new Error('…'), { status: 409 })`) or answers in the route; it must never rely on the handler forwarding a driver's words.
 
 Use the shared helpers in `api/src/infra/db-helpers.ts`:
 
@@ -118,6 +118,45 @@ try {
 ```
 
 ---
+
+## A lazily loaded expansion needs three states, not two (#966)
+
+An expandable list row that fetches its own detail on first expand has three
+outcomes, and a body written as `loading ? spinner : <Detail/>` can only render
+two of them — so a failed fetch renders the spinner for ever. That is how a
+Training Plan Template whose hierarchy request 500'd sat on `Loading…`
+indefinitely, with the only report a toast that had already faded.
+
+Keep the failure, per row, beside the cache:
+
+```tsx
+const [details, setDetails] = useState<Record<number, Detail>>({});
+const [detailLoading, setDetailLoading] = useState<Set<number>>(new Set());
+const [detailError, setDetailError] = useState<Record<number, string>>({});
+
+async function loadDetail(id: number, opts: { retry?: boolean } = {}) {
+  if (detailLoading.has(id)) return;
+  if (details[id] && !opts.retry) return;   // the retry has to get past the cache guard
+  setDetailError((prev) => { const next = { ...prev }; delete next[id]; return next; });
+  // …fetch, then setDetails on success and setDetailError in the catch
+}
+```
+
+…and render the three cases in order — the detail, then loading, then the
+error:
+
+```tsx
+{detail ? <Detail … /> : loading || !error ? <p>{t('loading')}</p> : (
+  <div><p style={errorStyle}>{t('detail_error')}</p>
+       <button onClick={onRetry}>{t('retry')}</button></div>
+)}
+```
+
+Two rules come with it. The retry must be able to bypass the "already cached"
+early return, or the button does nothing on a row that half-loaded; and the
+error line is an **application-level** sentence of the page's own
+(`<entity>.hierarchy_error`, in en/es/ca), not the API's message — what the API
+is allowed to say is the Standard Error Response rule above.
 
 ## Deployment
 
