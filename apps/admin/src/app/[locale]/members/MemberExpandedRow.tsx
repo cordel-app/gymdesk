@@ -29,7 +29,12 @@ import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { MemberAdditionalServices } from './MemberAdditionalServices';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
-import { formatProfileDate, type MemberProfile } from './memberProfile';
+import {
+  formatProfileDate,
+  newMemberAnnounceKey,
+  newMemberValueKey,
+  type MemberProfile,
+} from './memberProfile';
 import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './MemberProfileLayout';
 
 interface Plan {
@@ -308,7 +313,8 @@ export function MemberExpandedRow({
               renderCalculated={() => (
                 <NewMemberValue
                   isNewMember={member.is_new_member}
-                  label={t(member.is_new_member ? 'members.new_member_yes' : 'members.new_member_no')}
+                  label={t(`members.${newMemberValueKey(member.is_new_member)}`)}
+                  announce={t(`members.${newMemberAnnounceKey(member.is_new_member)}`)}
                 />
               )}
               centers={{

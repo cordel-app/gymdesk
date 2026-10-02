@@ -242,6 +242,8 @@
     "new_member_badge": "New Member",
     "new_member_yes": "New Member: yes",
     "new_member_no": "New Member: no",
+    "yes": "Yes",
+    "no": "No",
     "label_document": "NIF/NIE/Passport",
     "col_document": "NIF/NIE/Passport",
     "placeholder_address": "Street, city, postcode",

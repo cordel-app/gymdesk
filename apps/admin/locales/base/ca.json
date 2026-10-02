@@ -154,6 +154,8 @@
     "new_member_badge": "Soci nou",
     "new_member_yes": "Soci nou: sí",
     "new_member_no": "Soci nou: no",
+    "yes": "Sí",
+    "no": "No",
     "label_document": "NIF/NIE/Passaport",
     "col_document": "NIF/NIE/Passaport",
     "placeholder_address": "Carrer, ciutat, codi postal",

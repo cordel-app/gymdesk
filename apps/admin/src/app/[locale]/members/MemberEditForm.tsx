@@ -16,7 +16,12 @@ import {
 } from '@/components/formChrome';
 import type { CenterOption } from '@/context/CenterContext';
 import { validateDocumentId } from '@/lib/documentId';
-import type { MemberEditableFieldSpec, MemberEditFormValues } from './memberProfile';
+import {
+  newMemberAnnounceKey,
+  newMemberValueKey,
+  type MemberEditableFieldSpec,
+  type MemberEditFormValues,
+} from './memberProfile';
 import { MemberProfileLayout, NewMemberValue } from './MemberProfileLayout';
 
 // #797: the field set itself lives in memberProfile.ts, shared with the
@@ -108,7 +113,8 @@ export function MemberEditForm({
           renderCalculated={() => (
             <NewMemberValue
               isNewMember={isNewMember}
-              label={t(isNewMember ? 'new_member_yes' : 'new_member_no')}
+              label={t(newMemberValueKey(isNewMember))}
+              announce={t(newMemberAnnounceKey(isNewMember))}
             />
           )}
           centers={
