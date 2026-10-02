@@ -8,12 +8,25 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';
-import { NutritionFoodItem } from '@/lib/nutritionFood';
+import { NutritionItemRow } from '@/components/NutritionItemRow';
+import {
+  NutritionFoodItem,
+  NutritionGoalItem,
+  NutritionRestrictionItem,
+  goalDetail,
+  goalLabel,
+} from '@/lib/nutritionFood';
 
 interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: NutritionFoodItem[] }
 interface NutritionDay { id: number; weekday: number; meals: Meal[] }
-interface NutritionGoal { id: number; item_name: string; quantity: number; unit: string; frequency: string }
-interface NutritionPlan { id: number; name: string; description: string | null; days: NutritionDay[]; goals: NutritionGoal[] }
+interface NutritionPlan {
+  id: number;
+  name: string;
+  description: string | null;
+  days: NutritionDay[];
+  goals: NutritionGoalItem[];
+  restrictions: NutritionRestrictionItem[];
+}
 
 const ALL_DAYS_WEEKDAY = 7;
 
@@ -66,6 +79,12 @@ export default function NutritionPage() {
     return <main style={styles.container}><p style={{ ...styles.hint, color: '#c0392b' }}>{error}</p></main>;
   }
 
+  // Defaulted rather than read straight off the payload: the Member app and the
+  // API deploy from two workflows, so a member app running briefly ahead of the
+  // API must render the page rather than throw on a missing key.
+  const goals = plan?.goals ?? [];
+  const restrictions = plan?.restrictions ?? [];
+
   return (
     <main style={styles.container}>
       <h1 style={styles.title}>{t('nutrition.title')}</h1>
@@ -77,19 +96,40 @@ export default function NutritionPage() {
         </div>
       ) : (
         <>
-          {plan.goals.length > 0 && (
-            <section style={styles.section}>
-              <h2 style={styles.h2}>{t('nutrition.goals')}</h2>
-              <div style={styles.card}>
-                {plan.goals.map((g) => (
-                  <div key={g.id} style={styles.goalRow}>
-                    <span style={styles.goalName}>{g.item_name}</span>
-                    <span style={styles.goalValue}>{g.quantity}{g.unit}</span>
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
+          {/* #932 §2 — the goal's name is a slug (`weight_loss`), translated
+              before it is shown, and its value and frequency read as
+              "1 l · daily". Both sections render through the same row, so they
+              cannot drift apart (§4), and each says so in words when it is
+              empty rather than disappearing (§5). */}
+          <section style={styles.section}>
+            <h2 style={styles.h2}>{t('nutrition.goals')}</h2>
+            <div style={styles.card}>
+              {goals.length === 0 ? (
+                <p style={styles.sectionEmpty}>{t('nutrition.goals_empty')}</p>
+              ) : (
+                goals.map((g) => (
+                  <NutritionItemRow
+                    key={g.id}
+                    name={goalLabel(t, g.item_name)}
+                    detail={goalDetail(t, g)}
+                  />
+                ))
+              )}
+            </div>
+          </section>
+
+          <section style={styles.section}>
+            <h2 style={styles.h2}>{t('nutrition.restrictions')}</h2>
+            <div style={styles.card}>
+              {restrictions.length === 0 ? (
+                <p style={styles.sectionEmpty}>{t('nutrition.restrictions_empty')}</p>
+              ) : (
+                restrictions.map((r) => (
+                  <NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url} />
+                ))
+              )}
+            </div>
+          </section>
 
           {plan.days.map((day) => (
             <section key={day.id} style={styles.section}>
@@ -133,9 +173,7 @@ const styles: Record<string, React.CSSProperties> = {
   mealName:   { margin: 0, fontSize: 15, fontWeight: 700, color: '#18181b' },
   mealType:   { fontSize: 12, fontWeight: 500, color: '#71717a', textTransform: 'none' },
   mealNotes:  { margin: '4px 0 0', fontSize: 12, color: '#a1a1aa', fontStyle: 'italic' },
-  goalRow:    { display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f0f0f0' },
-  goalName:   { fontSize: 14, fontWeight: 500, color: '#18181b' },
-  goalValue:  { fontSize: 14, fontWeight: 700, color: '#18181b' },
+  sectionEmpty: { color: '#a1a1aa', fontSize: 13, margin: '14px 0' },
   emptyCard:  { background: '#fff', borderRadius: 12, padding: '40px 24px', textAlign: 'center' },
   hint:       { color: '#71717a', fontSize: 14, textAlign: 'center', margin: '20px 0' },
 };

@@ -1534,6 +1534,21 @@ Reference implementation: `apps/admin/src/components/SellableItemBenefits.tsx` (
 
 ---
 
+## Two Member-App Sections, One Image Row (#932)
+
+The Member app's read-only equivalent of the rule above. When one page carries two sections of the *same shape* — an image beside a name, with an optional line under it (My Nutrition's Dietary Restrictions and Nutrition Goals) — the row is a component, not a style object copied twice.
+
+- **One component owns the whole look.** Thumbnail size, aspect ratio, border radius, alignment, spacing, typography and the missing-image fallback live in `components/NutritionItemRow.tsx` and nowhere else. Two sections styled separately drift the moment one of them is touched, and a ticket asking for "a consistent visual treatment" is asking for exactly this.
+- **The row resolves nothing.** It takes `name`, `imageUrl` and `detail` as strings and renders them, like `NutritionFoodCard` (#722). Which image a section has, how a value is formatted and what an empty section says stay with the page.
+- **The fallback is the app's existing one.** A missing or broken image falls back to the same `nutrition.no_image` placeholder the food card uses (`onError` included), so the information stays visible and no second placeholder asset is introduced. A section whose data has no image yet therefore reads honestly today and fills itself in when the link lands — no change in the row.
+- **An empty section says so.** Rendering a heading with a sentence under it beats hiding the section: a member cannot tell "no restrictions" from "this app does not show restrictions".
+- **Read-only means no control at all.** No `<input>`, `<button>`, `onChange` or mutating request reaches either section; the source of truth stays the plan staff configured. A test that greps the component and the page for those is cheap and catches the first well-meaning edit.
+- **A stored enum is not a label.** A goal's `item_name` is a slug (`weight_loss`); the label is resolved through a helper that decides its fallback *before* calling `t()` (see *Never `t(key, { defaultValue })`*), and every screen showing the same value calls that one helper — the Home card included, or the two screens word one goal differently.
+
+Reference implementation: `apps/member/src/components/NutritionItemRow.tsx` + `goalLabel()`/`goalDetail()` in `apps/member/src/lib/nutritionFood.ts`, rendered by `app/[locale]/nutrition/page.tsx` and (the label half) `app/[locale]/page.tsx`.
+
+---
+
 ## Two Screens, One Themed Action Button (#901)
 
 The control half of the same problem: when two cards carry the *same action* and it looks different on each (the subsection `Edit` button — a filled `btnSmall('#6c63ff')` on Promotions, a bare brand-coloured text link on Plans), extract the button, not a second stylesheet.

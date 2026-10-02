@@ -1066,12 +1066,27 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
       item.qualities = qualitiesMap[item.nutrition_library_item_id] ?? [];
     }
 
+    // #932 §1: a dietary restriction *is* a Nutrition Library food
+    // (`nutrition_library_item_id` is NOT NULL), so its name is resolved in the
+    // caller's locale and its image is the library item's own — the same
+    // `image_url` the meal foods above already carry. There is no second image
+    // source for My Nutrition (§3).
+    const { rows: restrictionRows } = await db.query(
+      `SELECT r.id, r.nutrition_library_item_id, ${localizedNameExpr('nli', getRequestLocale(req))},
+              nli.image_url, r.applies_all_days
+       FROM member_nutrition_plan_restrictions r
+       JOIN nutrition_library_items nli ON nli.id = r.nutrition_library_item_id
+       WHERE r.member_nutrition_plan_id = ? AND r.gym_id = ?
+       ORDER BY r.position ASC`,
+      [plan.id, gymId],
+    );
+
     const { rows: goalRows } = await db.query(
       'SELECT id, item_name, quantity, unit, frequency, applies_all_days FROM member_nutrition_plan_goals WHERE member_nutrition_plan_id = ? AND gym_id = ? ORDER BY position ASC',
       [plan.id, gymId],
     );
 
-    res.json({ plan: { ...plan, days, goals: goalRows } });
+    res.json({ plan: { ...plan, days, restrictions: restrictionRows, goals: goalRows } });
   } catch (err) { next(err); }
 });
 

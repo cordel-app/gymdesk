@@ -350,7 +350,10 @@
     "error": "Alguna cosa ha fallat.",
     "empty": "Encara no tens cap pla de nutrició assignat.",
     "all_days": "Tots els dies",
-    "goals": "Objectius",
+    "goals": "Objectius nutricionals",
+    "goals_empty": "Sense objectius nutricionals.",
+    "restrictions": "Restriccions alimentàries",
+    "restrictions_empty": "Sense restriccions alimentàries.",
     "food_image_alt": "Foto de {name}",
     "no_image": "Imatge no disponible",
     "carousel_label": "Aliments de {meal}",
@@ -383,6 +386,25 @@
       "two_three_hours_before_training": "2-3 hores abans de l'entrenament",
       "immediately_before_training": "Immediatament abans de l'entrenament",
       "immediately_after_training": "Immediatament després de l'entrenament"
+    },
+    "goal_name": {
+      "protein": "Proteïnes",
+      "water": "Aigua",
+      "calories": "Calories",
+      "carbohydrates": "Carbohidrats",
+      "fats": "Greixos",
+      "fiber": "Fibra",
+      "weight_loss": "Pèrdua de pes",
+      "weight_gain": "Augment de pes",
+      "muscle_gain": "Guany muscular",
+      "maintenance": "Manteniment",
+      "performance": "Rendiment",
+      "recovery": "Recuperació",
+      "energy": "Energia"
+    },
+    "goal_frequency": {
+      "daily": "diari",
+      "weekly": "setmanal"
     }
   },
   "exercise_media": {

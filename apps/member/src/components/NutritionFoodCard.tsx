@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { NutritionFoodItem, formatQuantity } from '@/lib/nutritionFood';
+import { NutritionFoodItem, formatQuantity, humanizeSlug, translatedLabel } from '@/lib/nutritionFood';
 
 /**
  * #722 — one food of a member's nutrition plan: its image on top, then the
@@ -29,7 +29,7 @@ export function NutritionFoodCard({ item, eager = false }: {
 
   const quantity = formatQuantity(item.quantity, item.unit);
   const role = item.component_type
-    ? translated(t, `nutrition.component_type.${item.component_type}`, humanize(item.component_type))
+    ? translatedLabel(t, `nutrition.component_type.${item.component_type}`, humanizeSlug(item.component_type))
     : null;
   const qualities = item.qualities ?? [];
   const imageSrc = imageBroken ? null : item.image_url ?? null;
@@ -59,7 +59,7 @@ export function NutritionFoodCard({ item, eager = false }: {
           <ul style={styles.chips}>
             {qualities.map((quality) => (
               <li key={quality.id} style={styles.chip}>
-                {translated(t, `nutrition.quality.${quality.slug}`, humanize(quality.slug))}
+                {translatedLabel(t, `nutrition.quality.${quality.slug}`, humanizeSlug(quality.slug))}
               </li>
             ))}
           </ul>
@@ -67,27 +67,6 @@ export function NutritionFoodCard({ item, eager = false }: {
       </div>
     </article>
   );
-}
-
-/**
- * A label for a value that comes from the database, not from the code: a
- * `component_type` the CHECK constraint gains later, or a nutritional quality
- * slug a migration adds (#644 added two). next-intl has no locale fallback, so
- * an unknown key would otherwise render its raw dotted path to the member —
- * the humanised slug is shown instead until a translation exists.
- */
-function translated(t: (key: any, values?: any) => string, key: string, fallback: string): string {
-  try {
-    const value = t(key as any);
-    return !value || value === key ? fallback : value;
-  } catch {
-    return fallback;
-  }
-}
-
-function humanize(slug: string): string {
-  const spaced = slug.replace(/[_-]+/g, ' ').trim();
-  return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : slug;
 }
 
 const styles: Record<string, React.CSSProperties> = {
