@@ -15,6 +15,9 @@ import { currentCycleDate } from './membership-fee-pricing';
 import { validatePromotionStacking } from '../domain/promotionStacking';
 import { canReapplyPromotion, promotionApplicationStatus } from '../domain/promotionApplicationStatus';
 import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
+import { PlanBenefitPrices } from '../domain/planBenefitPrices';
+import { toSellableItemBenefit } from '../domain/sellableItemBenefitActions';
+import { sellableItemBenefitPrices } from './sellable-item-benefit-pricing';
 import { ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import {
   isNewMember,
@@ -614,13 +617,26 @@ export async function applyPromotionToMembership(
 
 /* ── Stage 7: what an application granted, for the Assigned Plan card ────── */
 
-/** One Sellable Item an applied Promotion granted, at the price it was agreed at. */
-export interface AppliedPromotionGrant {
+/**
+ * One Sellable Item an applied Promotion granted, at the price it was agreed at.
+ *
+ * #924 stage 2 adds what the shared Sellable Item grid renders beside the name
+ * and the quantity: the grant's own `(action, value)` pair — what this
+ * application does to the line, as agreed (#896 §15/§16, read in the
+ * **Promotion**'s option set, which is where the grant came from) — and the
+ * Agreed / Final Price pair the Membership Plan (#916) and Promotion
+ * (#919/#920) cards already report, VAT included. The amounts are the frozen
+ * price's, through the one shared pricing module, so the card cannot quote a
+ * grant differently from what the assignment is billed for it.
+ */
+export interface AppliedPromotionGrant extends PlanBenefitPrices {
   gym_charge_id: number | null;
   item_name: string;
   quantity: number;
   item_billing_frequency: string | null;
   unit_price: number;
+  action: PromotionBenefitAction;
+  value: number | null;
 }
 
 export type AppliedPromotionGrants = Record<'session_grants' | 'oneoff_grants' | 'periodical_grants', AppliedPromotionGrant[]>;
@@ -633,6 +649,82 @@ const GRANT_FIELD: Record<SellableItemBenefitCategory, keyof AppliedPromotionGra
 
 function emptyGrants(): AppliedPromotionGrants {
   return { session_grants: [], oneoff_grants: [], periodical_grants: [] };
+}
+
+/**
+ * #924 stage 2 — the **tax treatment** of the Sellable Items a set of grants
+ * points at, keyed by `gym_charges.id`.
+ *
+ * It is the one live column a frozen grant line has to read, and for the reason
+ * stage 1 gives on the Plan side: a statutory VAT rate is not a term of this
+ * contract, the snapshot never captured one, and §4 asks the card to quote
+ * these lines tax-included. The frozen *price* is still the frozen price —
+ * nothing here reaches for `gym_charges.amount`, and an item deleted since is
+ * simply absent from the map, which leaves the frozen amount as the honest
+ * gross exactly as `grossBenefitUnitPrice()` falls back for a gym with no rate
+ * configured.
+ */
+interface ItemTaxTreatment {
+  tax_behavior: string | null;
+  tax_rate_percent: string | number | null;
+}
+
+async function loadGrantTaxTreatments(
+  gymId: string, chargeIds: number[],
+): Promise<Map<number, ItemTaxTreatment>> {
+  const byId = new Map<number, ItemTaxTreatment>();
+  const ids = [...new Set(chargeIds.filter((id) => Number.isFinite(id) && id > 0))];
+  if (ids.length === 0) return byId;
+  const { rows } = await db.query(
+    `SELECT gc.id, gc.tax_behavior, tr.rate_percent AS tax_rate_percent
+     FROM gym_charges gc
+     LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
+     WHERE gc.gym_id = ? AND gc.id IN (${ids.map(() => '?').join(',')})`,
+    [gymId, ...ids],
+  );
+  for (const row of rows as any[]) {
+    byId.set(Number(row.id), { tax_behavior: row.tax_behavior ?? null, tax_rate_percent: row.tax_rate_percent ?? null });
+  }
+  return byId;
+}
+
+/**
+ * One grant line as the card renders it: the frozen facts plus the two prices
+ * the shared grid shows.
+ *
+ * #924 stage 2: the amounts are `sellableItemBenefitPrices()`'s — the same
+ * single-row entry point the Membership Plan, Promotion and Assigned Plan
+ * snapshot sections price through, over the same `applyLineBenefit()` the
+ * billing engine applies — handed the **frozen** unit price and the grant's own
+ * pair. There is no second pricing implementation here and no arithmetic in the
+ * page (#817).
+ */
+function shapeGrant(grant: {
+  gymChargeId: number;
+  name: string;
+  billingFrequency: string | null;
+  unitPrice: number;
+  quantity: number;
+  benefit: { action: PromotionBenefitAction; value: number | null };
+}, tax?: ItemTaxTreatment): AppliedPromotionGrant {
+  return {
+    gym_charge_id: grant.gymChargeId || null,
+    item_name: grant.name,
+    quantity: grant.quantity,
+    item_billing_frequency: grant.billingFrequency,
+    unit_price: grant.unitPrice,
+    action: grant.benefit.action,
+    value: grant.benefit.value,
+    ...sellableItemBenefitPrices('promotion', {
+      gym_charge_id: grant.gymChargeId,
+      quantity: grant.quantity,
+      action: grant.benefit.action,
+      value: grant.benefit.value,
+      gym_charge_amount: grant.unitPrice,
+      gym_charge_tax_behavior: tax?.tax_behavior ?? null,
+      gym_charge_tax_rate_percent: tax?.tax_rate_percent ?? null,
+    }),
+  };
 }
 
 /**
@@ -657,16 +749,15 @@ async function loadAppliedPromotionGrants(
   if (applications.length === 0) return byApplication;
 
   const snapshots = await loadPromotionGrantSnapshots(gymId, applications.map((a) => a.id));
+  // One lookup for every grant of every application on this card, rather than
+  // one per line.
+  const taxes = await loadGrantTaxTreatments(
+    gymId, [...snapshots.values()].flatMap((grants) => grants.map((g) => g.gymChargeId)),
+  );
   for (const [applicationId, grants] of snapshots) {
     const shaped = emptyGrants();
     for (const g of grants) {
-      shaped[GRANT_FIELD[g.category]].push({
-        gym_charge_id: g.gymChargeId || null,
-        item_name: g.name,
-        quantity: g.quantity,
-        item_billing_frequency: g.billingFrequency,
-        unit_price: g.unitPrice,
-      });
+      shaped[GRANT_FIELD[g.category]].push(shapeGrant(g, taxes.get(Number(g.gymChargeId))));
     }
     byApplication.set(applicationId, shaped);
   }
@@ -680,23 +771,28 @@ async function loadAppliedPromotionGrants(
     PROMOTION_GRANT_SNAPSHOTS.map(({ category, source }) => `
       SELECT '${category}' AS category, b.promotion_id, b.gym_charge_id, b.quantity,
              COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id)) AS item_name,
-             gc.billing_frequency AS item_billing_frequency, COALESCE(gc.amount, 0) AS unit_price
+             gc.billing_frequency AS item_billing_frequency, COALESCE(gc.amount, 0) AS unit_price,
+             b.\`action\`, b.\`value\`, gc.tax_behavior, tr.rate_percent AS tax_rate_percent
       FROM ${source} b
       JOIN gym_charges gc ON gc.id = b.gym_charge_id
       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
+      LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
       WHERE b.gym_id = ? AND b.promotion_id IN (${marks})`).join(' UNION ALL '),
     PROMOTION_GRANT_SNAPSHOTS.flatMap(() => [gymId, ...promotionIds]),
   );
   const livePerPromotion = new Map<number, AppliedPromotionGrants>();
   for (const row of rows as any[]) {
     const shaped = livePerPromotion.get(row.promotion_id) ?? emptyGrants();
-    shaped[GRANT_FIELD[row.category as SellableItemBenefitCategory]].push({
-      gym_charge_id: row.gym_charge_id ?? null,
-      item_name: row.item_name,
+    shaped[GRANT_FIELD[row.category as SellableItemBenefitCategory]].push(shapeGrant({
+      gymChargeId: Number(row.gym_charge_id),
+      name: row.item_name,
+      billingFrequency: row.item_billing_frequency ?? null,
+      unitPrice: row.unit_price != null ? Number(row.unit_price) : 0,
       quantity: Number(row.quantity),
-      item_billing_frequency: row.item_billing_frequency ?? null,
-      unit_price: row.unit_price != null ? Number(row.unit_price) : 0,
-    });
+      // The live row is a Promotion's own benefit, so its pair is read in the
+      // Promotion's option set — all five (#896 §16).
+      benefit: toSellableItemBenefit('promotion', row.action, row.value),
+    }, { tax_behavior: row.tax_behavior ?? null, tax_rate_percent: row.tax_rate_percent ?? null }));
     livePerPromotion.set(row.promotion_id, shaped);
   }
   for (const application of legacy) {
