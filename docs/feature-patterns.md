@@ -1583,6 +1583,20 @@ The control half of the same problem: when two cards carry the *same action* and
 
 Reference implementation: `apps/admin/src/components/SectionEditButton.tsx` + the section headers of `apps/admin/src/app/[locale]/plans/page.tsx` and `.../promotions/page.tsx`.
 
+### Where that action goes: beside the section title (#963)
+
+#901 made the subsection action look the same on both cards; #963 decided *where* it sits. Both pages laid their header out with `justifyContent: 'space-between'`, so on a wide screen a card's width of empty space separated `BILLING & DURATION` from the `[ Edit ]` that opens it, and the action read as the card's rather than the section's. `apps/admin/src/components/CardSectionHeader.tsx` is the one header row now: **title first, actions immediately after it.**
+
+- **The title is a child, not a slot.** `CardSectionHeader` takes `title: string` and renders it itself, with `actions` after it, so no caller can produce `[ ACTION ]  SECTION TITLE`. A layout rule the component makes unexpressible needs no test on every page that follows it.
+- **`Edit` and `Save`/`Cancel` are two states of one slot.** A section editor's buttons belong in that section's header, where its `Edit` was a moment ago — otherwise the header reads as having no actions for as long as the editor is open, and the controls that commit the section sit at the far right under its fields. What stays in the body is the **error line**, under the fields it belongs to.
+- **A card's own form keeps its pair at the end.** The main configuration (Plans' GENERAL, the Promotion card's main fields) is the card's form, not a subsection with a contextual action, so its Save/Cancel stays under the fields it commits — the app's form convention (`formActionsRowStyle`). One pair per card; the rest are per section.
+- **Every action of a subsection moves, not just `Edit`.** Plans' *Apply new price to assigned plans* (a PRICING action) and the Promotion card's *Retry* for Suitable Membership Plans were the other two buttons at the far edge. If it acts on the section, it belongs beside the section's name.
+- **The row wraps; it does not scroll.** `flexWrap: 'wrap'` on both the row and the actions group is the whole responsive story — a two-button pair drops under the title at phone width instead of widening the card, which is what `space-between` on a narrow card did.
+- **The heading comes from `formChrome.ts`.** `cardSectionTitleStyle` is `cardSectionLabelStyle` with the row owning the spacing below it; a fourth spelling of 11px/700/uppercase is what #929 exists to prevent. The component carries no colour literal and resolves no locale key.
+- **Moving a control must not move its gates.** Each button keeps its handler, label, `disabled`, `title` and `saving` state exactly as it was — a pure placement change is reviewable only if nothing else is in the diff. See `apps/admin/src/test/section-action-placement.test.ts`, which also pins that the Assigned Plan card (explicitly out of scope) takes no part in it.
+
+Reference implementation: `apps/admin/src/components/CardSectionHeader.tsx` + the section headers of `apps/admin/src/app/[locale]/plans/page.tsx` and `.../promotions/page.tsx`.
+
 ### Styling any other primary action (#912)
 
 Once the pair exists, a *third* button that needs it must not re-spell it. `apps/admin/src/components/ui.tsx` declares `primaryActionColors` once and exposes `primaryBtnStyle()` (page-chrome geometry) and `primaryBtnSmall()` (in-card geometry); `sectionEditButtonStyle` is now just `primaryBtnSmall()`, so `SectionEditButton.tsx` holds no colour literal at all.

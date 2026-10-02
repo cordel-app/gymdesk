@@ -102,9 +102,13 @@ describe('Membership Plans and Promotions share it (#901 §1, §2, §7)', () => 
 describe('Read-only vs Edit mode is unchanged (#901 §6)', () => {
   it('Promotions still hand the section header a null action outside Edit mode', () => {
     // #897: the button must be absent, not disabled, on a read-only card.
-    expect(promotionsSrc).toContain('function renderSectionHeader(titleKey: string, onEdit: (() => void) | null)');
+    // #963 gave the shell a third parameter: the Save/Cancel pair of whichever
+    // section is open, which is the other state of the same action slot.
+    expect(promotionsSrc).toContain(
+      'function renderSectionHeader(titleKey: string, onEdit: (() => void) | null, actions?: React.ReactNode)',
+    );
     expect(promotionsSrc).toContain('isEditingCard(promo.id) && !editing ?');
-    expect(promotionsSrc).toContain('{onEdit && (');
+    expect(promotionsSrc).toMatch(/const slot = onEdit[\s\S]*?: actions \?\? null;/);
   });
 
   it('every Plan subsection Edit button stays behind the card Edit mode', () => {
