@@ -70,6 +70,11 @@ import { paymentsDashboardRouter } from './api/payments-dashboard';
 import { nutritionPlanTemplatesRouter } from './api/nutrition-plan-templates';
 import { nutritionLibraryRouter } from './api/nutrition-library';
 import { platformNutritionLibraryRouter } from './api/platform-nutrition-library';
+// #947: the Nutrition Library's two goal catalogues. One factory per side serves
+// both kinds — `api/src/domain/goalLibrary.ts` is what decides they are the same
+// shape — so each is mounted twice rather than written twice.
+import { nutritionGoalsRouter, personalGoalsRouter } from './api/goal-library';
+import { platformNutritionGoalsRouter, platformPersonalGoalsRouter } from './api/platform-goal-library';
 import { platformNutritionPlanTemplatesRouter } from './api/platform-nutrition-plan-templates';
 import {
   PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH, PLATFORM_EXERCISE_VIDEO_UPLOAD_PATH,
@@ -225,6 +230,8 @@ app.use('/gyms', requireAuth(), gymsRouter);
 // Platform superadmin routes
 app.use('/platform/themes', requireAuth(), themesRouter);
 app.use('/platform/nutrition-library', requireAuth(), platformNutritionLibraryRouter);
+app.use('/platform/personal-goals', requireAuth(), platformPersonalGoalsRouter);
+app.use('/platform/nutrition-goals', requireAuth(), platformNutritionGoalsRouter);
 app.use('/platform/nutrition-plan-templates', requireAuth(), platformNutritionPlanTemplatesRouter);
 app.use('/platform/exercises', requireAuth(), platformExercisesRouter);
 app.use('/platform/workout-templates', requireAuth(), platformWorkoutTemplatesRouter);
@@ -298,6 +305,10 @@ app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModule
 app.use('/member-nutrition-plans', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_plans'), memberNutritionPlansRouter);
 // Global read-only catalog — no gym_id required; only requireAuth + module gate
 app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), nutritionLibraryRouter);
+// #947: the Personal Goals and Nutrition Goals tabs of that same page, so they are
+// gated by the same module and the same feature flag as the Foods tab beside them.
+app.use('/personal-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), personalGoalsRouter);
+app.use('/nutrition-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), nutritionGoalsRouter);
 // #809: mounted on the Nutrition group flag, so turning the Nutrition Plans page off leaves the Dashboard readable.
 app.use('/nutrition/dashboard', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition'), nutritionDashboardRouter);
 

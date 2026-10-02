@@ -1505,6 +1505,25 @@ Reference implementation: `api/src/domain/newMemberEligibility.ts` + `api/src/ap
 
 ---
 
+## One Page, Several Catalogues as Tabs (#947)
+
+When a library page grows a second and third catalogue of the same *shape* — the Nutrition Library's Personal Goals and Nutrition Goals beside Foods — the tabs are presentation and the catalogues are not. Three rules keep that from becoming three half-identical pages:
+
+- **One declaration decides which tabs exist, and both pages import it.** `LIBRARY_TABS` in `apps/admin/src/components/goalLibrary/goalProfile.ts` holds the ids and their order, so a gym's library and Cordel's Base one cannot offer different tabs or order them differently. A tab id is either `'foods'` or a `GoalKind`, so a tab cannot name a catalogue that does not exist. Switching tabs is page state, not a route: the content and the available actions change in place and the list already loaded survives a round trip.
+- **The tab owns its own `+ Add`.** The page's header button belongs to the tab the page itself renders and is **absent** while another tab is open, rather than relabelled; each catalogue's section renders its own, so "+ Add Personal Goal" and "+ Add Nutrition Goal" are two sentences a translator writes rather than one with a noun interpolated into it.
+- **One section component, parameterised by kind and scope.** `GoalLibrarySection` serves all four screens (two catalogues × two libraries): it takes the kind (which decides its locale keys and its audit entity type), the scope (which decides the router root, looked up in `GOAL_API_ROOTS` — the one place the roots are written down) and the page's `canWrite`/label resolver. It names no endpoint and decides no permission, the #806 split, which is what keeps the gym's module permissions and `requireSuperadmin` out of shared UI.
+
+The same shape holds on the API side: two tables identical in shape get **one router factory per side**, mounted once per kind, over one domain declaration (`api/src/domain/goalLibrary.ts`) that owns the kinds, their tables, their audit entity types and their seeded rows. Two tables rather than one with a `kind` column, because a discriminator invites the single filtered list the ticket forbade and the two will diverge (one of them is getting a target value).
+
+Two schema devices are worth reusing:
+
+- **Uniqueness among live rows**, when the router's duplicate check says `status != 'deleted'`: a VIRTUAL generated column that is non-NULL only while the row is live, carrying the UNIQUE index (migration 183's `standing_promotion_key`, migration 206's `live_name_key`). A plain `UNIQUE(gym, name)` would reserve a deleted row's name for ever and surface the re-add as a 500 where the router means 409.
+- **A seeded row's `slug` as its label handle, and only a seeded row's.** The System rows carry a slug and are translated through `<namespace>.<kind>_goal_<slug>` with the row's own `name` as the fallback (the `result_types` rule — decide which applies *before* calling `t()`); a gym's own row, and a System row added later, carry no slug and show the single name that was typed. That is what lets a shared catalogue skip a per-locale junction table, and a CHECK (`slug IS NULL OR gym_id IS NULL`) is what stops a tenant from claiming a System label key.
+
+Reference implementation: `apps/admin/src/components/goalLibrary/` + `api/src/api/goal-library.ts` / `platform-goal-library.ts` over `api/src/domain/goalLibrary.ts` (migration 206).
+
+---
+
 ## Two Screens, One Read-Only Summary (#879)
 
 When a ticket asks that one card's section "look like" another card's — same information, two presentations — the answer is the **same component**, not a second stylesheet that happens to agree today:
@@ -1531,6 +1550,21 @@ When one card carries several sections listing the *same kind of row* — a Memb
 - **A card showing *frozen* rows hands the frozen amount to the same decider.** #924 stage 1 is the third caller, and its rows are an Assigned Plan's snapshot: the price and the `(action, value)` pair are the ones agreed at assignment time (#635 §17), so the loader passes the line's own `unit_price` as the row's amount instead of joining `gym_charges.amount`, and the shared module prices it exactly as it prices a catalogue row. The one live column such a loader may read is the **tax treatment** — a statutory rate the snapshot never captured, and the only way to answer "tax included" at all — LEFT JOINed so a deleted item leaves the frozen amount as the honest gross. Reading the frozen price from the catalogue instead is the defect: the card would quote today's price beside a billing event charging what was agreed. A read-only card can also report a column its *editor* does not configure (the Assigned Plan's section `PUT` takes quantity alone); what it must not do is render a control the save cannot carry.
 
 Reference implementation: `apps/admin/src/components/SellableItemBenefits.tsx` (`SELLABLE_ITEM_BENEFIT_COLUMNS`, `SellableItemBenefitView`) + `api/src/api/sellable-item-benefit-pricing.ts` over `api/src/domain/planBenefitPrices.ts`, called by `membership-plans.ts`, `promotion-details.ts`, `assigned-plan-snapshot.ts` and — since **#924 stage 2** — `membership-promotions.ts`, whose applied-Promotion grant sections price each line from its frozen `unit_price` and frozen pair in the `promotion` context.
+
+---
+
+## Two Member-App Sections, One Image Row (#932)
+
+The Member app's read-only equivalent of the rule above. When one page carries two sections of the *same shape* — an image beside a name, with an optional line under it (My Nutrition's Dietary Restrictions and Nutrition Goals) — the row is a component, not a style object copied twice.
+
+- **One component owns the whole look.** Thumbnail size, aspect ratio, border radius, alignment, spacing, typography and the missing-image fallback live in `components/NutritionItemRow.tsx` and nowhere else. Two sections styled separately drift the moment one of them is touched, and a ticket asking for "a consistent visual treatment" is asking for exactly this.
+- **The row resolves nothing.** It takes `name`, `imageUrl` and `detail` as strings and renders them, like `NutritionFoodCard` (#722). Which image a section has, how a value is formatted and what an empty section says stay with the page.
+- **The fallback is the app's existing one.** A missing or broken image falls back to the same `nutrition.no_image` placeholder the food card uses (`onError` included), so the information stays visible and no second placeholder asset is introduced. A section whose data has no image yet therefore reads honestly today and fills itself in when the link lands — no change in the row.
+- **An empty section says so.** Rendering a heading with a sentence under it beats hiding the section: a member cannot tell "no restrictions" from "this app does not show restrictions".
+- **Read-only means no control at all.** No `<input>`, `<button>`, `onChange` or mutating request reaches either section; the source of truth stays the plan staff configured. A test that greps the component and the page for those is cheap and catches the first well-meaning edit.
+- **A stored enum is not a label.** A goal's `item_name` is a slug (`weight_loss`); the label is resolved through a helper that decides its fallback *before* calling `t()` (see *Never `t(key, { defaultValue })`*), and every screen showing the same value calls that one helper — the Home card included, or the two screens word one goal differently.
+
+Reference implementation: `apps/member/src/components/NutritionItemRow.tsx` + `goalLabel()`/`goalDetail()` in `apps/member/src/lib/nutritionFood.ts`, rendered by `app/[locale]/nutrition/page.tsx` and (the label half) `app/[locale]/page.tsx`.
 
 ---
 

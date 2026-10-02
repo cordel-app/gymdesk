@@ -178,7 +178,8 @@ describe('My Nutrition page (#722 §15, §16)', () => {
   });
 
   it('types its meal items as the shared food shape', () => {
-    expect(src).toContain("import { NutritionFoodItem } from '@/lib/nutritionFood';");
+    // #932 grouped this import with the goal and restriction shapes.
+    expect(src).toMatch(/import \{[\s\S]*?NutritionFoodItem[\s\S]*?\} from '@\/lib\/nutritionFood';/);
     expect(src).toContain('items: NutritionFoodItem[]');
   });
 });

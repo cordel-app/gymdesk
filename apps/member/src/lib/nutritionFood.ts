@@ -47,3 +47,83 @@ export function formatQuantity(
   const suffix = unit?.trim();
   return suffix ? `${amount} ${suffix}` : amount;
 }
+
+/**
+ * #932 §1 — one dietary restriction of a member's nutrition plan.
+ *
+ * A restriction *is* a Nutrition Library food (`nutrition_library_item_id` is
+ * NOT NULL on `member_nutrition_plan_restrictions`), so it carries the same
+ * translated name and the same `image_url` a meal food does: there is no
+ * separate image source for My Nutrition (§3).
+ */
+export interface NutritionRestrictionItem {
+  id: number;
+  nutrition_library_item_id: number;
+  item_name: string;
+  image_url?: string | null;
+}
+
+/** #932 §2 — one nutrition goal of a member's plan, as `GET /me/nutrition-plan` returns it. */
+export interface NutritionGoalItem {
+  id: number;
+  /** A slug from the plan routers' closed vocabulary (`protein`, `water`, …). */
+  item_name: string;
+  quantity: number | string | null;
+  unit: string | null;
+  frequency: string | null;
+}
+
+/**
+ * A label for a value that comes from the database, not from the code: a
+ * `component_type` the CHECK constraint gains later, a nutritional quality slug
+ * a migration adds (#644 added two), or a goal the vocabulary grows.
+ *
+ * next-intl has **no** locale fallback and **no** `defaultValue` option — a
+ * missing key prints its own dotted path — so the fallback is decided here,
+ * before `t()` is given the result (CLAUDE.md).
+ */
+export function translatedLabel(
+  t: (key: any, values?: any) => string,
+  key: string,
+  fallback: string,
+): string {
+  try {
+    const value = t(key as any);
+    return !value || value === key ? fallback : value;
+  } catch {
+    return fallback;
+  }
+}
+
+/** `weight_loss` → `Weight loss`, for a slug no locale file knows yet. */
+export function humanizeSlug(slug: string): string {
+  const spaced = slug.replace(/[_-]+/g, ' ').trim();
+  return spaced ? spaced.charAt(0).toUpperCase() + spaced.slice(1) : slug;
+}
+
+/**
+ * What the member reads for a goal's name. The stored value is a slug
+ * (`weight_loss`), which the page rendered verbatim before #932.
+ */
+export function goalLabel(t: (key: any, values?: any) => string, itemName: string): string {
+  return translatedLabel(t, `nutrition.goal_name.${itemName}`, humanizeSlug(itemName));
+}
+
+/**
+ * "1 l · daily" — the goal's value and how often it applies (§2). `frequency`
+ * is free text with a `daily` default on the API side, so an unknown value is
+ * humanised rather than dropped, and a goal with neither value nor frequency
+ * yields `null` so the row omits the line instead of rendering an empty one.
+ */
+export function goalDetail(
+  t: (key: any, values?: any) => string,
+  goal: Pick<NutritionGoalItem, 'quantity' | 'unit' | 'frequency'>,
+): string | null {
+  const parts = [formatQuantity(goal.quantity, goal.unit)];
+  const frequency = goal.frequency?.trim();
+  if (frequency) {
+    parts.push(translatedLabel(t, `nutrition.goal_frequency.${frequency}`, humanizeSlug(frequency)));
+  }
+  const line = parts.filter(Boolean).join(' · ');
+  return line || null;
+}
