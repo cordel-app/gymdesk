@@ -14,7 +14,7 @@ import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
 
@@ -689,7 +689,7 @@ export default function ActivityTypesPage() {
         {ruleError && <p style={errorStyle}>{ruleError}</p>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
           <button onClick={onCancel} style={btnSmall('#888')}>{ts('cancel')}</button>
-          <button onClick={onSave} disabled={ruleSaving} style={btnSmall('#6c63ff')}>
+          <button onClick={onSave} disabled={ruleSaving} style={primaryBtnSmall()}>
             {ruleSaving ? ts('saving') : saveLabel}
           </button>
         </div>
@@ -945,7 +945,7 @@ export default function ActivityTypesPage() {
             {editError && <p style={errorStyle}>{editError}</p>}
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 16 }}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-              <button onClick={() => handleSave(row)} disabled={editSaving} style={btnSmall('#6c63ff')}>
+              <button onClick={() => handleSave(row)} disabled={editSaving} style={primaryBtnSmall()}>
                 {editSaving ? t('saving') : t('save_changes')}
               </button>
             </div>
@@ -1040,7 +1040,7 @@ export default function ActivityTypesPage() {
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={() => setInlineNew(null)} style={btnSmall('#888')}>{t('cancel')}</button>
-            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall('#6c63ff')}>
+            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={primaryBtnSmall()}>
               {inlineNew.saving ? t('saving') : t('save_changes')}
             </button>
           </div>
@@ -1058,7 +1058,7 @@ export default function ActivityTypesPage() {
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           <StatusFilter value={statusFilter} onChange={setStatusFilter} options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))} allLabel={tStatus('all')} />
-          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
+          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
         </div>
       </div>
 

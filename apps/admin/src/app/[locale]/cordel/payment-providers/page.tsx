@@ -13,7 +13,7 @@ import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnStyle, btnSmall, cardSurfaceStyle } from '@/components/ui';
+import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -324,7 +324,7 @@ export default function CordelPaymentProvidersPage() {
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={() => setInlineNew(null)} style={btnSmall('#888')}>{t('cancel')}</button>
-            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall('#6c63ff')}>
+            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={primaryBtnSmall()}>
               {inlineNew.saving ? t('saving') : t('save_changes')}
             </button>
           </div>
@@ -435,7 +435,7 @@ export default function CordelPaymentProvidersPage() {
             {editError && <p style={errorStyle}>{editError}</p>}
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-              <button onClick={() => handleSave(provider)} disabled={editSaving} style={btnSmall('#6c63ff')}>
+              <button onClick={() => handleSave(provider)} disabled={editSaving} style={primaryBtnSmall()}>
                 {editSaving ? t('saving') : t('save_changes')}
               </button>
             </div>
@@ -473,7 +473,7 @@ export default function CordelPaymentProvidersPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={openInlineNew} style={btnStyle('#6c63ff')} disabled={inlineNew !== null}>
+          <button onClick={openInlineNew} style={primaryBtnStyle()} disabled={inlineNew !== null}>
             {t('add')}
           </button>
         </div>

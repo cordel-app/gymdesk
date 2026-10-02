@@ -9,7 +9,7 @@ import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -300,7 +300,7 @@ export default function OperatingHoursPage() {
                         </div>
                       ))}
                       <div>
-                        <button onClick={() => addShift(weekday)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#6c63ff'), !canWrite)}>{t('add_shift')}</button>
+                        <button onClick={() => addShift(weekday)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(primaryBtnSmall(), !canWrite)}>{t('add_shift')}</button>
                       </div>
                     </div>
                   </div>
@@ -308,7 +308,7 @@ export default function OperatingHoursPage() {
               })}
               {weeklyError && <p style={errorStyle}>{weeklyError}</p>}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-                <button onClick={saveWeekly} disabled={!canWrite || weeklySaving} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)}>
+                <button onClick={saveWeekly} disabled={!canWrite || weeklySaving} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>
                   {weeklySaving ? t('saving') : t('save_weekly')}
                 </button>
               </div>
@@ -318,7 +318,7 @@ export default function OperatingHoursPage() {
           {/* Holidays */}
           <div style={{ marginTop: 28, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <SectionHeader title={t('section_holidays')} />
-            <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add_holiday')}</button>
+            <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add_holiday')}</button>
           </div>
 
           {inlineNew && (
@@ -328,7 +328,7 @@ export default function OperatingHoursPage() {
                 {inlineNewError && <p style={errorStyle}>{inlineNewError}</p>}
                 <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
                   <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
-                  <button onClick={saveInlineNew} disabled={inlineNewSaving} style={btnSmall('#6c63ff')}>
+                  <button onClick={saveInlineNew} disabled={inlineNewSaving} style={primaryBtnSmall()}>
                     {inlineNewSaving ? t('saving') : t('save_changes')}
                   </button>
                 </div>
@@ -357,7 +357,7 @@ export default function OperatingHoursPage() {
                       {editError && <p style={errorStyle}>{editError}</p>}
                       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
                         <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-                        <button onClick={() => saveEdit(h.id)} disabled={editSaving} style={btnSmall('#6c63ff')}>
+                        <button onClick={() => saveEdit(h.id)} disabled={editSaving} style={primaryBtnSmall()}>
                           {editSaving ? t('saving') : t('save_changes')}
                         </button>
                       </div>
@@ -371,7 +371,7 @@ export default function OperatingHoursPage() {
                       <div style={{ minWidth: 90, fontSize: 13, color: '#666' }}>{h.annual_renewal ? t('yes') : t('no')}</div>
                       <div style={{ flex: 2, minWidth: 140, fontSize: 13, color: '#666' }}>{h.label ?? '—'}</div>
                       <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-                        <button onClick={() => openEdit(h)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#6c63ff'), !canWrite)}>{t('edit_holiday')}</button>
+                        <button onClick={() => openEdit(h)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(primaryBtnSmall(), !canWrite)}>{t('edit_holiday')}</button>
                         <button onClick={() => setDeleting(h)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle(btnSmall('#c0392b'), !canWrite)}>{t('delete_holiday')}</button>
                       </div>
                     </div>

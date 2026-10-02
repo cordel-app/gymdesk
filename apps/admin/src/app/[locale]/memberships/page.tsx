@@ -11,7 +11,7 @@ import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnStyle, btnSmall } from '@/components/ui';
+import { btnSmall, primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
 import { MembershipLedgerModal } from './MembershipLedgerModal';
 import { PromotionApplyModal } from './PromotionApplyModal';
 import { MembershipMembersModal } from './MembershipMembersModal';
@@ -280,7 +280,7 @@ export default function MembershipsPage() {
       width: 320,
       render: (m) => (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button onClick={() => setLedgerFor(m)} style={btnSmall('#6c63ff')}>{t('memberships.ledger')}</button>
+          <button onClick={() => setLedgerFor(m)} style={primaryBtnSmall()}>{t('memberships.ledger')}</button>
           <button onClick={() => setMembersFor(m)} style={btnSmall('#2f8f6f')}>{t('memberships.members')}</button>
           {canWrite && <button onClick={() => setPromotionsFor(m)} style={btnSmall('#7d3cbd')}>{t('memberships.promotions')}</button>}
           {canWrite && <button onClick={() => openEdit(m)} style={btnSmall('#444')}>{t('memberships.edit')}</button>}
@@ -303,7 +303,7 @@ export default function MembershipsPage() {
             options={STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
             allLabel={t('status.all')}
           />
-          {canWrite && <button onClick={openAdd} style={btnStyle('#6c63ff')}>{t('memberships.add')}</button>}
+          {canWrite && <button onClick={openAdd} style={primaryBtnStyle()}>{t('memberships.add')}</button>}
         </div>
       </div>
 

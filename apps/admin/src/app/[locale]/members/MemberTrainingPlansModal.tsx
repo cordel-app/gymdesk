@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
-import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
+import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 import { TrainingPlanEditorModal } from './TrainingPlanEditorModal';
 
 interface TemplateOption { id: number; name: string; status: string }
@@ -134,7 +134,7 @@ export function MemberTrainingPlansModal({ memberId, memberName, onClose }: { me
           )}
 
           <div style={{ marginTop: 12 }}>
-            <button onClick={assign} style={btnStyle('#6c63ff')} disabled={saving}>
+            <button onClick={assign} style={primaryBtnStyle()} disabled={saving}>
               {saving ? t('member_training_plans.saving') : t('member_training_plans.assign')}
             </button>
           </div>

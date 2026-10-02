@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
+import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 import { PlanWorkoutBlocksModal } from './PlanWorkoutBlocksModal';
 
 interface Workout { id: number; position: number; name: string; description: string | null; scheduled_weekday: number | null }
@@ -131,7 +131,7 @@ export function TrainingPlanEditorModal({ memberId, planId, planName, onClose }:
               <option value="">—</option>
               {WEEKDAYS.map((d) => <option key={d} value={d}>{t(`workouts.weekday_${d}`)}</option>)}
             </select>
-            <button onClick={save} style={btnStyle('#6c63ff')} disabled={saving}>
+            <button onClick={save} style={primaryBtnStyle()} disabled={saving}>
               {saving ? t('training_plan_editor.saving') : editingId ? t('training_plan_editor.save_changes') : t('training_plan_editor.add')}
             </button>
             {editingId && <button onClick={resetForm} style={btnStyle('#aaa')} disabled={saving}>{t('training_plan_editor.cancel')}</button>}

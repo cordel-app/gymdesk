@@ -14,7 +14,7 @@ import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { listNameBadgeAccentStyle, listNameBadgeStyle } from '@/components/listChrome';
 import { formHelpTextStyle } from '@/components/formChrome';
 import { Frequency, frequencyOptions, legacyFrequencyLabelKey } from './sellableItemFrequency';
@@ -614,7 +614,7 @@ export default function SellableItemsPage() {
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
-            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall('#6c63ff')}>
+            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={primaryBtnSmall()}>
               {inlineNew.saving ? t('saving') : t('save')}
             </button>
           </div>
@@ -907,7 +907,7 @@ export default function SellableItemsPage() {
             {editError && <p style={errorStyle}>{editError}</p>}
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-              <button onClick={() => handleSave(item)} disabled={editSaving} style={btnSmall('#6c63ff')}>
+              <button onClick={() => handleSave(item)} disabled={editSaving} style={primaryBtnSmall()}>
                 {editSaving ? t('saving') : t('save')}
               </button>
             </div>
@@ -981,7 +981,7 @@ export default function SellableItemsPage() {
               placeholder={t('search_placeholder')}
               style={{ padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, width: 180 }}
             />
-            <button type="submit" style={btnSmall('#6c63ff')}>{t('search')}</button>
+            <button type="submit" style={primaryBtnSmall()}>{t('search')}</button>
           </form>
           <select
             value={typeFilter}
@@ -997,7 +997,7 @@ export default function SellableItemsPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
+          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
         </div>
       </div>
 

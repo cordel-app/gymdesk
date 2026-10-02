@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
+import { afterEach, describe, expect, it } from 'vitest';
+import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { primaryActionColors, primaryBtnSmall, primaryBtnStyle, btnSmall, btnStyle } from '@/components/ui';
-import { DEFAULT_TOKENS } from '@/lib/themeTokens';
+import { DEFAULT_TOKENS, applyTokens } from '@/lib/themeTokens';
 
 // #912 — the Theme editor's own primary actions (`+ Assign Centers…`, `Save
 // changes` on both Theme screens, `+ Add` on Base Themes) were rendered in the
@@ -120,6 +120,186 @@ describe('Both Theme screens render their primary actions themed (#912 §1, §2)
     // §4: Cancel stays grey, an upload stays neutral, a remove stays red.
     for (const src of [gymSrc, baseSrc]) {
       expect(src).toContain("btnSmall('#888')");
+    }
+  });
+});
+
+// ── #954 ────────────────────────────────────────────────────────────────────
+//
+// #912 themed the two Theme screens' own primary actions; the rest of the Admin
+// app was still spelling the legacy lilac out, so a gym that configured
+// Buttons → Primary Button saw it on `Save changes` in the Theme editor and
+// nowhere else. Every *filled* primary action across the app now takes the same
+// pair, through the same two helpers — no new token, no new helper, and no
+// geometry change.
+//
+// The scan below is the enforcement: `apps/admin` has no component-test infra
+// (docs/architecture.md's TL;DR), so a page's wiring is pinned by reading its
+// source, exactly as #912 and #901 do.
+
+const APP = join(SRC, 'app');
+const COMPONENTS = join(SRC, 'components');
+
+/**
+ * The three file-picker controls keep their own colour on purpose: a file picker
+ * is not its form's primary action (its Save is), and CLAUDE.md lists
+ * "secondary, file-picker and destructive buttons keep their own colours"
+ * beside the helpers this ticket is about. They are named here so removing one
+ * from the list is a deliberate edit rather than an oversight.
+ */
+const FILE_PICKERS = [
+  join(COMPONENTS, 'ImageUploadField.tsx'),
+  join(COMPONENTS, 'ExerciseImageField.tsx'),
+  join(COMPONENTS, 'ExerciseVideoField.tsx'),
+];
+
+function sourcesUnder(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === 'test' || entry.name === 'node_modules') continue;
+      out.push(...sourcesUnder(path));
+    } else if (entry.name.endsWith('.tsx') || entry.name.endsWith('.ts')) {
+      out.push(path);
+    }
+  }
+  return out;
+}
+
+const ADMIN_SOURCES = [...sourcesUnder(APP), ...sourcesUnder(COMPONENTS), ...sourcesUnder(join(SRC, 'lib'))];
+
+describe('No primary action in the Admin app is hardcoded lilac (#954 §1, §2)', () => {
+  it('scans a realistic share of the app, not a handful of files', () => {
+    // A guard on the guard: if the walk ever stops finding sources, every
+    // assertion below passes vacuously.
+    expect(ADMIN_SOURCES.length).toBeGreaterThan(100);
+    expect(ADMIN_SOURCES).toContain(join(COMPONENTS, 'ui.tsx'));
+  });
+
+  it('calls neither button helper with the lilac argument', () => {
+    const offenders = ADMIN_SOURCES.filter((path) => {
+      if (FILE_PICKERS.includes(path)) return false;
+      const src = read(path);
+      return src.includes("btnStyle('#6c63ff')") || src.includes("btnSmall('#6c63ff')");
+    });
+    expect(offenders.map((p) => p.slice(SRC.length + 1))).toEqual([]);
+  });
+
+  it('assigns the lilac as a flat background nowhere', () => {
+    // The inline primary actions in the two calendar detail panels carried their
+    // own geometry and spelled `background: '#6c63ff', color: '#fff'` out; they
+    // spread `primaryActionColors` now. A `var(--brand, #6c63ff)` or a ternary
+    // on a selected filter chip is a different question and is left alone (§5).
+    const offenders = ADMIN_SOURCES.filter((path) => read(path).includes("background: '#6c63ff'"));
+    expect(offenders.map((p) => p.slice(SRC.length + 1))).toEqual([]);
+  });
+
+  it('routes every themed primary action through the two existing helpers', () => {
+    // §2: no third helper, and no page spelling `var(--gd-primary-btn)` for
+    // itself — `ui.tsx` stays the only place the pair is *read*, beside
+    // `themeTokens.ts`, which is the `applyTokens` writer that puts it there.
+    const NAMES_THE_VARIABLE = [join(COMPONENTS, 'ui.tsx'), join(SRC, 'lib', 'themeTokens.ts')];
+    const spelled = ADMIN_SOURCES.filter(
+      (path) => !NAMES_THE_VARIABLE.includes(path) && read(path).includes('--gd-primary-btn'),
+    );
+    expect(spelled.map((p) => p.slice(SRC.length + 1))).toEqual([]);
+
+    const callers = ADMIN_SOURCES.filter(
+      (path) => path !== join(COMPONENTS, 'ui.tsx') && /\bprimaryBtn(Style|Small)\(\)/.test(read(path)),
+    );
+    expect(callers.length).toBeGreaterThan(30);
+    for (const path of callers) {
+      expect(read(path), `${path} calls a primary helper without importing it`)
+        .toMatch(/import \{[^}]*\bprimaryBtn(Style|Small)\b[^}]*\} from '(\.\/ui|@\/components\/ui)'/);
+    }
+  });
+
+  it('keeps the disabled / read-only affordance each converted button had', () => {
+    // §4: only the colours moved. A write control a read-only role may not use
+    // is still wrapped in `readOnlyStyle`, which dims the themed colours the
+    // same way it dimmed the lilac.
+    const wrapped = ADMIN_SOURCES.filter((path) => /readOnlyStyle\(primaryBtn(Style|Small)\(\)/.test(read(path)));
+    expect(wrapped.length).toBeGreaterThan(8);
+  });
+
+  it('leaves the file pickers, the secondaries and the destructive buttons alone', () => {
+    // §5: these are explicitly not primary actions. The pickers keep the colour
+    // they had — this assertion is what makes changing that a decision.
+    for (const path of FILE_PICKERS) {
+      const src = read(path);
+      expect(src, `${path} no longer renders its own picker colour`).toContain("btnSmall('#6c63ff')");
+      expect(src, `${path} lost its neutral Remove button`).toContain("btnSmall('#888')");
+    }
+    // A modal's Cancel is still grey, and a destructive action still red.
+    expect(read(join(COMPONENTS, 'CrudModal.tsx'))).toContain("btnStyle('#aaa')");
+    expect(read(join(APP, '[locale]', 'calendar', 'ClassSessionDetailPanel.tsx'))).toContain("background: '#dc2626'");
+  });
+});
+
+describe('The two calendar detail panels theme their own filled actions (#954 §1)', () => {
+  const eventPanel = read(join(APP, '[locale]', 'calendar', 'EventDetailsPanel.tsx'));
+  const sessionPanel = read(join(APP, '[locale]', 'calendar', 'ClassSessionDetailPanel.tsx'));
+
+  it('spreads the shared pair over each panel button\'s own geometry', () => {
+    // These buttons are full-width panel actions rather than `btnStyle`
+    // geometry, so they take `primaryActionColors` directly — the pair, not a
+    // fourth helper. The spread sits where the two colour properties were, so
+    // the `opacity`/`cursor` overrides after it still win.
+    expect(eventPanel.match(/\.\.\.primaryActionColors/g) ?? []).toHaveLength(1);
+    expect(sessionPanel.match(/\.\.\.primaryActionColors/g) ?? []).toHaveLength(4);
+    for (const src of [eventPanel, sessionPanel]) {
+      expect(src).toMatch(/import \{[^}]*\bprimaryActionColors\b[^}]*\} from '@\/components\/ui'/);
+      expect(src).not.toContain('#6c63ff');
+    }
+    expect(sessionPanel).toContain("...btnBase, ...primaryActionColors, flex: 1, opacity: adding ? 0.6 : 1");
+    expect(eventPanel).toContain("...primaryActionColors, fontSize: 14, fontWeight: 600");
+  });
+});
+
+describe('A Theme change moves every primary action (#954 §6, expected result)', () => {
+  /** Minimal `document` stand-in — these tests run in vitest's node environment. */
+  function stubDocument(): Record<string, string> {
+    const written: Record<string, string> = {};
+    (globalThis as any).document = {
+      documentElement: {
+        style: { setProperty: (name: string, value: string) => { written[name] = value; } },
+      },
+    };
+    return written;
+  }
+
+  afterEach(() => { delete (globalThis as any).document; });
+
+  it('writes the edited Buttons group into the variables the helpers read', () => {
+    const written = stubDocument();
+    applyTokens({
+      ...DEFAULT_TOKENS,
+      colors: { ...DEFAULT_TOKENS.colors, primaryButton: '#123456', primaryButtonText: '#ffffff' },
+    });
+    expect(written['--gd-primary-btn']).toBe('#123456');
+    expect(written['--gd-primary-btn-text']).toBe('#ffffff');
+
+    // The link from the edited token to the rendered button: the helpers name
+    // exactly the two variables `applyTokens` has just written, so the live
+    // preview needs no reload and no second code path.
+    for (const style of [primaryBtnStyle(), primaryBtnSmall(), primaryActionColors]) {
+      expect(style.background).toContain('var(--gd-primary-btn,');
+      expect(style.color).toContain('var(--gd-primary-btn-text,');
+    }
+  });
+
+  it('does not reach the sidebar\'s own colour on the way', () => {
+    // §3: `--brand` is `sidebarSelectedItemBackground`. A primary action that
+    // resolved through it would follow the wrong Theme setting.
+    const written = stubDocument();
+    applyTokens({
+      ...DEFAULT_TOKENS,
+      colors: { ...DEFAULT_TOKENS.colors, primaryButton: '#123456', sidebarSelectedItemBackground: '#abcdef' },
+    });
+    expect(written['--brand']).not.toBe('#123456');
+    for (const style of [primaryBtnStyle(), primaryBtnSmall()]) {
+      expect(style.background).not.toContain('--brand');
     }
   });
 });
