@@ -361,6 +361,35 @@ describe('POST /payment-requests', () => {
     expect(rows[0].amount).toBe('61.50');
   });
 
+  // #946 — a Pre-paid Duration is collected up front, so the first payment of a
+  // prepaid assignment asks for every period it covers. Before this ticket that
+  // cycle priced at 0 and the request below was refused with "owes nothing",
+  // which left a prepaid assignment with no stored card and unbillable for ever.
+  it('asks for the whole Pre-paid Duration on the cycle that collects it', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createMembershipPlan(gymId);
+    const umId = await createUserMembership(gymId, memberId, planId, '49.99');
+    // starts_at is today, so the current cycle is the first prepaid period.
+    await db.query(
+      `UPDATE user_memberships
+         SET membership_fee_price = 40, paid_periods = 12, pay_beforehand_periods = 3
+       WHERE id = ?`,
+      [umId],
+    );
+
+    const res = await request
+      .post('/payment-requests')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ user_membership_id: umId });
+    expect(res.status).toBe(201);
+
+    const { rows } = await db.query<{ amount: string }>(
+      'SELECT amount FROM payment_requests WHERE id = ?', [res.body.id],
+    );
+    expect(rows[0].amount).toBe('120.00'); // 3 x 40
+  });
+
   it('refuses to raise a request for a cycle the contract waives', async () => {
     const memberId = await createMember(gymId);
     const planId = await createMembershipPlan(gymId);

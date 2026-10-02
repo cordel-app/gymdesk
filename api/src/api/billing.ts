@@ -205,8 +205,9 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
       const orderId = `BILLING-${row.gym_id.slice(0, 8)}-${row.id}-${crypto.randomUUID().slice(0, 8)}`;
 
       if (priced.waived) {
-        // Nothing is owed for this cycle — a Free Period, a Bonus Duration or a
-        // Promotion's own free month. The provider is never called for €0, but
+        // Nothing is owed for this cycle — a Free Period, a Bonus Duration, a
+        // Promotion's own free month, or (#946) a period the assignment's
+        // Pre-paid Duration was already charged for on the first of its periods. The provider is never called for €0, but
         // the cycle is still recorded, so the ledger shows the waiver instead
         // of a gap, and `next_billing_date` moves on exactly as it would have.
         // `last_billed_at` deliberately does not: nothing was billed.

@@ -50,6 +50,11 @@ interface SimulationLine {
   benefits: SimulationBenefit[];
   actual_charge: number;
   price_may_change: boolean;
+  /**
+   * #946 — how many Pre-paid periods this charge covers, on the Membership Fee
+   * charge that collects a Plan's Pre-paid Duration up front; `null` otherwise.
+   */
+  prepaid_periods: number | null;
 }
 
 interface SimulationEvent {
@@ -207,6 +212,11 @@ export function MemberBillingSimulation({ memberId }: { memberId: number }) {
                     )}
                     <div style={{ fontSize: 12, color: '#888' }}>
                       {t('billing_simulation_regular')}: {fmtMoney(line.regular_price)}
+                      {/* #946 — the one charge that covers several periods says
+                          so, otherwise its ×3 reads as three lockers. */}
+                      {line.prepaid_periods != null && (
+                        <span> · {t('billing_simulation_prepaid_periods', { count: line.prepaid_periods })}</span>
+                      )}
                       {line.benefits.map((b, bi) => (
                         <span key={bi}> · {benefitLabel(b)}</span>
                       ))}

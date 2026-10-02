@@ -44,6 +44,7 @@ import {
   PlanDurationStatus,
   classifyPlanDurationPeriod,
   planDurationWaivesFee,
+  prepaidPeriodsDueOn,
   withDurationCadence,
 } from './planDuration';
 
@@ -88,11 +89,23 @@ export interface PlanExampleTimelinePeriod {
   /**
    * What this period charges: the price for a charged period, `null` for one
    * the Plan's own durations waive (Free / Bonus) or have already collected
-   * (Pre-paid), and `null` too when the Plan has no price configured.
+   * (a Pre-paid period after the first), and `null` too when the Plan has no
+   * price configured.
+   *
+   * #946 — the **first** Pre-paid period is not one of those: it is where the
+   * whole Pre-paid Duration is collected, so it carries the fee times the
+   * periods it pays for (`prepaidPeriods` below) and is not waived. Otherwise
+   * this table would read `No charge` for the very date the Billing Event
+   * Simulation beside it bills €210.
    */
   amount: number | null;
   /** Whether `amount: null` means "no charge" rather than "no price yet". */
   waived: boolean;
+  /**
+   * #946 — how many Pre-paid periods `amount` covers, on the one row that
+   * collects them; `null` on every other row.
+   */
+  prepaidPeriods: number | null;
 }
 
 export interface PlanExampleTimelineResult {
@@ -122,6 +135,8 @@ export const TRAILING_REGULAR_PERIODS = 2;
 export const MAX_TIMELINE_PERIODS = 60;
 
 const NO_CADENCE_REASON = 'Configure a billing frequency to preview an example timeline.';
+
+const round2 = (n: number): number => Math.round(n * 100) / 100;
 
 /**
  * Projects the Plan's own lifecycle one billing period per row:
@@ -156,15 +171,23 @@ export function computePlanExampleTimeline(input: PlanExampleTimelineInput): Pla
     const startsOn = cursor;
     const next = advanceBillingDate(startsOn, interval, cadence.unit);
     const status = classifyPlanDurationPeriod(duration, anchor, startsOn);
-    const waived = planDurationWaivesFee(status);
+    // #946 — the Pre-paid Duration is paid, not waived, and it is paid on the
+    // first of its periods. `prepaidPeriodsDueOn()` is the one place that says
+    // so; the row simply multiplies the price it was handed.
+    const prepaidPeriods = prepaidPeriodsDueOn(duration, anchor, startsOn) || null;
+    const waived = prepaidPeriods == null && planDurationWaivesFee(status);
+    const amount = prepaidPeriods != null && priceInclTax != null
+      ? round2(priceInclTax * prepaidPeriods)
+      : priceInclTax;
     const openEnded = i === count - 1 && status === 'pay_regular';
     periods.push({
       period: i + 1,
       status,
       startsOn,
       endsOn: openEnded ? null : advanceBillingDate(next, -1, 'day'),
-      amount: waived ? null : priceInclTax,
+      amount: waived ? null : amount,
       waived,
+      prepaidPeriods,
     });
     cursor = next;
   }

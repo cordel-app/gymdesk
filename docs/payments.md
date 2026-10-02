@@ -83,7 +83,12 @@ Both then do exactly the same thing:
 1. **Price the cycle.** `currentMembershipFee(gymId, umId)`
    (`api/src/api/membership-fee-pricing.ts`) → `priceMembershipFeeOn(row, currentCycleDate(row))`.
    A fee of `0` is refused with `400 This membership owes nothing for its current billing
-   cycle` — the provider is never called and no row is written.
+   cycle` — the provider is never called and no row is written. Since #946 this is also how a
+   **Pre-paid Duration** is collected: the first of its periods prices at
+   `regular x pay_beforehand_periods`, so a brand-new assignment on a Plan with 3 pre-paid
+   months asks for `€210` here. Before that ticket it priced at `0` and the request was
+   refused, which left a prepaid assignment with no stored card and therefore unbillable for
+   ever.
 2. **Look up the charge type** — `charge_types` where `code = 'membership_fee'` (a global
    lookup with no `gym_id`, seeded by migration 008). Missing ⇒ `500`.
 3. **Call the provider** — `createPaymentRequest()` with the amount in **minor units**
@@ -389,6 +394,17 @@ Per due assignment, exactly one of these:
 | **Provider error** (threw / never answered) | attempted | `failed_billing`, `notes 'provider_error'` | — | **nothing at all** |
 
 Counters returned: `{ processed, succeeded, failed, waived, paused, receipts_issued }`.
+
+**A Pre-paid Duration is charged, not waived (#946).** `resolveMembershipFee()` prices the
+first period of an assignment's Pre-paid Duration at `regular x pay_beforehand_periods` — the
+member pays those periods up front — and the periods it covers at 0 (`waived_billing`,
+`notes 'prepaid_plan'`, exactly as before). So a cycle landing in that first prepaid period
+takes the **Success** row of the table above with a multi-period amount
+(`€70/month` x 3 pre-paid = `€210`, `5998`-style minor units at the provider boundary), and
+every later prepaid cycle takes the **Waived** row. Nothing special-cases it in `billing.ts`:
+the rule is `prepaidPeriodsDueOn()` in `api/src/domain/planDuration.ts`, read through the one
+fee resolver, so a staff or member payment request, the Payments dashboard, My Membership and
+the two Plan-card projections quote the same €210 for that cycle.
 The first four are also written to `billing_run_log`; `paused` and `receipts_issued` are
 reported only — a pause is already explicable from its `status_changed` ledger row, and a
 receipt that failed to auto-issue is not a failed run.
@@ -941,6 +957,11 @@ its Assigned Plan.
 **13. Receipts.** `POST /payments/:id/receipt` on the settled event issues a number if the
 run did not; calling it twice must return the **same** number. `GET /me/receipts/:id` serves
 it to the member. A `waived_billing` event must be refused with a reason.
+
+**14a. A pre-paid cycle (#946).** Give the Plan a Pre-paid Duration of 2 and a Paid Duration
+of 3, assign it and pay the first request: it asks for twice the fee. Run the billing run on
+the next cycle — it is one of the periods that charge paid for, so expect `waived: 1` and a
+`waived_billing` event with `notes 'prepaid_plan'`.
 
 **14. A waived cycle.** Give the Plan a Free Period (or a Promotion whose Membership Fee
 Benefit covers the date), assign it, make the cycle due, and run step 9. Expect
