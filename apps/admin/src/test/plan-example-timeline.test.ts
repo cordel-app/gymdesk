@@ -43,13 +43,13 @@ const plansLocales = Object.fromEntries(
 
 describe('Plans: the Example timeline replaces the Billing Events Forecast', () => {
   it('takes the retired section’s place in the declared order', () => {
-    expect([...PLAN_SECTION_ORDER]).toContain('section_example_timeline');
+    expect([...PLAN_SECTION_ORDER]).toContain('section_fee_simulation');
     expect([...PLAN_SECTION_ORDER]).not.toContain('section_billing_forecast');
     // Still in the forecast's slot — the last of the Plan's own configuration
     // sections, since #881 moved Price History into PRICING and the timeline
     // inherited the end of the card. #915 appended the Billing Event Simulation
     // after it: a second read-only projection, not a replacement.
-    expect(PLAN_SECTION_ORDER.indexOf('section_example_timeline')).toBe(
+    expect(PLAN_SECTION_ORDER.indexOf('section_fee_simulation')).toBe(
       PLAN_SECTION_ORDER.indexOf('section_billing_event_simulation') - 1,
     );
     expect(PLAN_SECTION_ORDER.indexOf('section_billing_event_simulation')).toBe(
@@ -58,7 +58,7 @@ describe('Plans: the Example timeline replaces the Billing Events Forecast', () 
   });
 
   it('renders the periods the server projects, and no forecast events', () => {
-    expect(plansSrc).toContain('plans.section_example_timeline');
+    expect(plansSrc).toContain('plans.section_fee_simulation');
     expect(plansSrc).toContain('plan.example_timeline.periods.map(');
     for (const gone of ['billing_forecast', 'forecast_total', 'BillingForecast', 'ForecastEvent']) {
       expect(plansSrc, `the retired forecast symbol "${gone}" is still referenced`).not.toContain(gone);
@@ -125,7 +125,7 @@ describe('Example timeline: how a Plan’s row reads', () => {
 
   it('translates every key the section renders', () => {
     const keys = [
-      'section_example_timeline', 'col_period', 'col_dates', 'col_status', 'col_billing',
+      'section_fee_simulation', 'col_period', 'col_dates', 'col_status', 'col_billing',
       'timeline_example_note', 'timeline_dates_from', 'timeline_no_charge', 'timeline_disclaimer',
       'timeline_duration_disclaimer', 'timeline_promotions_disclaimer', 'timeline_unavailable',
       'tax_included_suffix',

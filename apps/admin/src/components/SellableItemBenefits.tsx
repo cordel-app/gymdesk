@@ -31,6 +31,13 @@ import {
   isPercentageBenefitAction,
 } from '@/lib/sellableItemBenefitActions';
 import {
+  DEFAULT_PROMOTION_ITEM_REQUIREMENT,
+  PROMOTION_ITEM_REQUIREMENTS,
+  PromotionItemRequirement,
+  promotionItemRequirementLabelKey,
+  toPromotionItemRequirement,
+} from '@/lib/promotionItemRequirement';
+import {
   SESSION_BENEFIT_FREQUENCIES,
   SessionBenefitFrequency,
   sessionFrequencyLabelKey,
@@ -86,6 +93,19 @@ export interface SellableItemBenefitRow {
    */
   frequency?: SessionBenefitFrequency | null;
   /**
+   * #959 — a **Promotion** line's Requirement: whether the member may decline
+   * this item when the Promotion is assigned. Optional, and the key's absence is
+   * load-bearing in the same way the two above are: the section `PUT`s are
+   * replace-all and the API reads "no requirement named" as *keep what is
+   * stored*, so a caller that does not configure it (every Membership Plan
+   * section, the Assigned Plan snapshot editor) must keep submitting payloads
+   * without the key rather than resetting an optional item to mandatory.
+   *
+   * Not `gym_charge_mandatory` above, which is the catalogue item's own #893
+   * flag and answers a different question on a different row.
+   */
+  requirement?: PromotionItemRequirement;
+  /**
    * #916 — what the row costs, VAT included, as the server computed it
    * (`domain/planBenefitPrices.ts` over `applyLineBenefit()`): the Sellable
    * Item's own unit price, the same price after this row's treatment, and the
@@ -137,8 +157,22 @@ export function benefitRowOptions(categoryItems: SellableItemOption[], row: Sell
   return opts;
 }
 
-/** Appends the first category item not already in the draft. No-ops when every item is taken. */
-export function addBenefitRow(setDraft: SetDraft, categoryItems: SellableItemOption[], draft: SellableItemBenefitRow[]) {
+/**
+ * Appends the first category item not already in the draft. No-ops when every
+ * item is taken.
+ *
+ * `seed` carries the defaults of the columns the *caller* configures — #959's
+ * Requirement, today. It is a parameter rather than something decided here
+ * because a key this draft row does not carry is a key `toBenefitItems()` does
+ * not submit, which is what keeps a section that configures no Requirement from
+ * sending one (see `requirement` on `SellableItemBenefitRow`).
+ */
+export function addBenefitRow(
+  setDraft: SetDraft,
+  categoryItems: SellableItemOption[],
+  draft: SellableItemBenefitRow[],
+  seed?: Partial<SellableItemBenefitRow>,
+) {
   const next = categoryItems.find((c) => !draft.some((d) => d.gym_charge_id === c.id));
   if (!next) return;
   setDraft((prev) => [
@@ -150,6 +184,7 @@ export function addBenefitRow(setDraft: SetDraft, categoryItems: SellableItemOpt
       // #896 §13: a new line starts neutral — it is included at the Sellable
       // Item's own price, and only an explicit choice can make it cheaper.
       action: DEFAULT_BENEFIT_ACTION, value: null,
+      ...seed,
     },
   ]);
 }
@@ -200,6 +235,10 @@ export const toBenefitItems = (draft: SellableItemBenefitRow[]) =>
     // configure it cannot clear what is stored.
     const line: Record<string, unknown> = { gym_charge_id: b.gym_charge_id, quantity: b.quantity };
     if ('frequency' in b) line.frequency = b.frequency ?? null;
+    // #959: and the Requirement, under the same rule — only when the draft row
+    // carries the key, so a section that does not configure it cannot reset what
+    // is stored.
+    if (b.requirement !== undefined) line.requirement = b.requirement;
     if (b.action === undefined) return line;
     return {
       ...line,
@@ -335,7 +374,7 @@ export const mandatoryTagStyle: React.CSSProperties = {
  * shifting everything after it.
  */
 export type SellableItemBenefitColumnKey =
-  'item' | 'quantity' | 'frequency' | 'action' | 'original_price' | 'final_price';
+  'item' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price' | 'final_price';
 
 export interface SellableItemBenefitColumn {
   key: SellableItemBenefitColumnKey;
@@ -355,6 +394,10 @@ export const SELLABLE_ITEM_BENEFIT_COLUMNS: readonly SellableItemBenefitColumn[]
   { key: 'quantity', labelKey: 'col_quantity', width: 90, align: 'right' },
   { key: 'frequency', labelKey: 'col_frequency', width: 120, align: 'left' },
   { key: 'action', labelKey: 'col_item_action', width: 170, align: 'left' },
+  // #959: Requirement comes after what the line *costs* and before the prices
+  // that quote it — it is a property of the line, not a second treatment, and
+  // Benefit stays between Frequency and the prices as #916 fixed it.
+  { key: 'requirement', labelKey: 'col_requirement', width: 120, align: 'left' },
   { key: 'original_price', labelKey: 'col_original_price', width: 130, align: 'right' },
   { key: 'final_price', labelKey: 'col_final_price', width: 130, align: 'right' },
 ];
@@ -381,10 +424,13 @@ export function sellableItemBenefitColumns(opts: {
   showFrequency: boolean;
   showAction: boolean;
   showPrices: boolean;
+  /** #959 — a Promotion's Requirement column. Absent means not rendered at all. */
+  showRequirement?: boolean;
 }): SellableItemBenefitColumn[] {
   return SELLABLE_ITEM_BENEFIT_COLUMNS.filter((col) => {
     if (col.key === 'frequency') return opts.showFrequency;
     if (col.key === 'action') return opts.showAction;
+    if (col.key === 'requirement') return opts.showRequirement === true;
     if (col.key === 'original_price' || col.key === 'final_price') return opts.showPrices;
     return true;
   });
@@ -408,7 +454,7 @@ export function formatBenefitPrice(amount: number): string {
 /** The editable grid: item picker + quantity (+ the item's own, read-only frequency). */
 export function SellableItemBenefitEditor({
   t, addKey, draft, setDraft, categoryItems, showFrequency, enforceMandatory = false,
-  benefitContext, frequencyColumn = 'item',
+  benefitContext, frequencyColumn = 'item', showRequirement = false,
 }: {
   t: Translate;
   addKey: string;
@@ -440,6 +486,15 @@ export function SellableItemBenefitEditor({
    * their existing behaviour unchanged (§9).
    */
   enforceMandatory?: boolean;
+  /**
+   * #959: a **Promotion** line's Requirement — Mandatory, or Optional for an
+   * item the member may decline when the Promotion is assigned. Promotions only,
+   * per the ticket thread (Membership Plans are excluded), and off by default so
+   * every other caller's grid is exactly what it was. The value is stored on the
+   * Promotion ↔ Sellable Item row and is not the catalogue item's own #893
+   * `mandatory` flag beside it.
+   */
+  showRequirement?: boolean;
 }) {
   const hasMoreToAdd = categoryItems.some((c) => !draft.some((d) => d.gym_charge_id === c.id));
   // #893 §3: the user must not have to guess why a row has no Remove control.
@@ -453,6 +508,7 @@ export function SellableItemBenefitEditor({
     '1.3fr', '80px',
     ...(showFrequency ? ['100px'] : []),
     ...(benefitContext ? ['130px', '110px'] : []),
+    ...(showRequirement ? ['130px'] : []),
     '28px',
   ].join(' ');
   return (
@@ -469,6 +525,7 @@ export function SellableItemBenefitEditor({
           {showFrequency && <span style={colHeaderSt}>{t('col_frequency')}</span>}
           {benefitContext && <span style={colHeaderSt}>{t('col_item_action')}</span>}
           {benefitContext && <span />}
+          {showRequirement && <span style={colHeaderSt}>{t('col_requirement')}</span>}
           <span />
           {draft.map((row, idx) => {
             const mandatory = enforceMandatory && isMandatoryBenefitRow(row);
@@ -554,6 +611,24 @@ export function SellableItemBenefitEditor({
                     </span>
                   ) : <span />
                 )}
+                {showRequirement && (
+                  // #959: the existing inline select, not a new control — the
+                  // ticket asks for the application's own patterns and no custom
+                  // visual pattern where one already serves. There is no `—`
+                  // option: the column is NOT NULL and `Mandatory` is what an
+                  // unconfigured line means.
+                  <select
+                    value={toPromotionItemRequirement(row.requirement)}
+                    onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, {
+                      requirement: toPromotionItemRequirement(e.target.value),
+                    })}
+                    style={inlineSelectSt}
+                  >
+                    {PROMOTION_ITEM_REQUIREMENTS.map((r) => (
+                      <option key={r} value={r}>{t(promotionItemRequirementLabelKey(r))}</option>
+                    ))}
+                  </select>
+                )}
                 {mandatory ? <span /> : (
                   <button
                     onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
@@ -572,8 +647,22 @@ export function SellableItemBenefitEditor({
       {frequencyColumn === 'benefit' && showFrequency && (
         <p style={{ ...hintSt, marginBottom: 8 }}>{t('session_frequency_hint')}</p>
       )}
+      {/* #959: what Mandatory and Optional mean for the member. A form's
+          explanatory sentence stays in the form (#797), so it is never rendered
+          beside the read-only values. */}
+      {showRequirement && draft.length > 0 && (
+        <p style={{ ...hintSt, marginBottom: 8 }}>{t('item_requirement_hint')}</p>
+      )}
       {hasMoreToAdd && (
-        <button onClick={() => addBenefitRow(setDraft, categoryItems, draft)} style={primaryBtnSmall()}>{t(addKey)}</button>
+        <button
+          onClick={() => addBenefitRow(
+            setDraft, categoryItems, draft,
+            // A new line carries the key only where the caller configures it, so
+            // a section that does not keeps submitting payloads without it.
+            showRequirement ? { requirement: DEFAULT_PROMOTION_ITEM_REQUIREMENT } : undefined,
+          )}
+          style={primaryBtnSmall()}
+        >{t(addKey)}</button>
       )}
     </>
   );
@@ -613,7 +702,7 @@ function BenefitPriceCell({
 /** Read-only counterpart — what a section shows until its own Edit button is pressed. */
 export function SellableItemBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
-  showPrices = false, frequencyColumn = 'item',
+  showPrices = false, frequencyColumn = 'item', showRequirement = false,
 }: {
   t: Translate;
   emptyKey: string;
@@ -637,13 +726,19 @@ export function SellableItemBenefitView({
    * the Assigned Plan snapshot sections quote their own frozen prices.
    */
   showPrices?: boolean;
+  /**
+   * #959: the read-only half of the Requirement column, so the card says exactly
+   * what the editor behind `⋮ → Edit` holds (#797 — the two halves are one field
+   * list). See `SellableItemBenefitEditor`'s own prop.
+   */
+  showRequirement?: boolean;
 }) {
   if (rows.length === 0) return <p style={hintSt}>{t(emptyKey)}</p>;
   // One grid for every section of this page, whatever each section has values
   // for: a column with nothing to say renders an empty cell rather than
   // vanishing and shifting the columns after it out of line (#916).
   const columns = sellableItemBenefitColumns({
-    showFrequency, showAction: benefitContext != null, showPrices,
+    showFrequency, showAction: benefitContext != null, showPrices, showRequirement,
   });
 
   const cell = (col: SellableItemBenefitColumn, row: SellableItemBenefitRow): React.ReactNode => {
@@ -669,6 +764,10 @@ export function SellableItemBenefitView({
           : '—';
       case 'action':
         return benefitContext ? benefitTreatmentLabel(t, benefitContext, row) : null;
+      case 'requirement':
+        // #959: the stored value, normalized — a line written before the column
+        // existed reads `Mandatory`, which is what it means, never an empty cell.
+        return t(promotionItemRequirementLabelKey(row.requirement));
       case 'original_price':
         return (
           <BenefitPriceCell

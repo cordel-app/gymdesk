@@ -110,10 +110,15 @@ describe('Plans: the expanded card is read-only (#816 §1, §12)', () => {
       'isEditing && durationEditForPlanId === plan.id ?',
       'isEditing && isEditingBenefit(plan.id, section) ?',
       'isEditing && centersForPlanId === plan.id ?',
-      'isEditing && plan.current_price != null &&',
     ]) {
       expect(expandedSrc, `missing guard: ${guard}`).toContain(guard);
     }
+    // #963 moved the apply-price action into the PRICING header, beside `Edit
+    // pricing`, so its own `isEditing` guard is now the header slot's — it is
+    // still offered only inside Edit mode, and only while PRICING is not open.
+    expect(expandedSrc).toMatch(
+      /isEditing && pricingForPlanId !== plan\.id \? \([\s\S]*?plan\.current_price != null && \([\s\S]*?apply_price_to_assigned/,
+    );
   });
 
   it('leaves Edit mode with every section editor closed rather than half-typed', () => {
@@ -161,7 +166,7 @@ describe('Plans: expanded section order (#816 §2)', () => {
       'section_session_benefits',
       'section_plan_period_benefits',
       'section_centers',
-      'section_example_timeline',
+      'section_fee_simulation',
       // #915 — a second read-only projection, appended after the timeline.
       'section_billing_event_simulation',
     ]);
@@ -177,7 +182,7 @@ describe('Plans: expanded section order (#816 §2)', () => {
       'plans.section_billing_duration',
       'BENEFIT_SECTIONS.map(',
       'plans.section_centers',
-      'plans.section_example_timeline',
+      'plans.section_fee_simulation',
     ];
     const positions = markers.map((m) => {
       const at = expandedSrc.indexOf(m);
@@ -246,8 +251,9 @@ describe('Plans: terminology is unchanged (#816 §6–§8, §14)', () => {
     expect(locales.en.section_session_benefits).toBe('Session Benefits');
     expect(locales.en.section_plan_period_benefits).toBe('Period Benefits');
     // #818 renamed this one section: the Billing Events Forecast became the
-    // Example Timeline, the name the Promotion card already uses.
-    expect(locales.en.section_example_timeline).toBe('Example Timeline');
+    // Example Timeline, the name the Promotion card already used — and #962
+    // renamed both of them to Membership Fee Simulation.
+    expect(locales.en.section_fee_simulation).toBe('Membership Fee Simulation');
   });
 
   it('introduces no BILLING PLAN section', () => {

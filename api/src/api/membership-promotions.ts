@@ -227,6 +227,11 @@ async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number
 // `assigned-plan-snapshot.ts` and migration 174 use — otherwise applying a
 // Promotion that grants a system item would fail on the insert.
 //
+// #959: the grant's **Requirement** travels with it for the same reason — the
+// screen that will offer the member the choice reads this snapshot, so a copy
+// that left the flag behind would tell them an item is mandatory that the
+// Promotion they were given made optional. Nothing prices or acts on it yet.
+//
 // #896 stage 1: the grant's `(action, value)` pricing treatment is copied with
 // everything else. It has to be: billing reads this snapshot and never the
 // live `promotion_*` row, so a copy that left the pair behind would record a
@@ -248,11 +253,13 @@ async function snapshotPromotionGrants(
     await tx.query(
       `INSERT INTO ${target}
          (gym_id, user_membership_promotion_id, gym_charge_id, gym_charge_name, quantity,
-          item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`)
+          item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`,
+          requirement)
        SELECT ?, ?, b.gym_charge_id,
               COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id)), b.quantity,
               COALESCE(gc.type, 'other'), gc.billing_frequency,
-              COALESCE(gc.amount, 0), gc.currency, b.\`action\`, b.\`value\`
+              COALESCE(gc.amount, 0), gc.currency, b.\`action\`, b.\`value\`,
+              b.requirement
        FROM ${source} b
        JOIN gym_charges gc ON gc.id = b.gym_charge_id
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id

@@ -14,6 +14,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { SectionEditButton } from '@/components/SectionEditButton';
+import { CardSectionHeader, cardSectionTitleStyle } from '@/components/CardSectionHeader';
 import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
@@ -732,6 +733,32 @@ export default function PlansPage() {
     );
   }
 
+  // #963 — a section-level editor's Save/Cancel pair, rendered in that section's
+  // own header beside its title, where its `Edit` button was a moment ago. The
+  // pair used to sit at `justifyContent: 'flex-end'` under the fields, so the
+  // controls that commit a section appeared at the far right of the card and a
+  // section header read as empty while its editor was open.
+  //
+  // The buttons themselves are unchanged — the same `btnSmall` pair, the same
+  // handlers, the same `disabled`-while-saving state and the same labels (PRICING
+  // says `Save`, every other section `Save changes`). Only the error line stays
+  // in the body, under the fields it belongs to.
+  function sectionSaveActions({ onCancel, onSave, saving, saveLabel }: {
+    onCancel: () => void;
+    onSave: () => void;
+    saving?: boolean;
+    saveLabel: string;
+  }) {
+    return (
+      <>
+        <button onClick={onCancel} style={btnSmall('#888')}>{t('plans.cancel')}</button>
+        <button onClick={onSave} disabled={saving} style={btnSmall()}>
+          {saving ? t('plans.saving') : saveLabel}
+        </button>
+      </>
+    );
+  }
+
   function renderGeneralControl(plan: Plan, field: PlanGeneralField) {
     const id = `plan-${plan.id}-${field.key}`;
     switch (field.key) {
@@ -1019,13 +1046,35 @@ export default function PlansPage() {
                     <SectionHeader
                       title={t('plans.section_pricing')}
                       action={isEditing && pricingForPlanId !== plan.id ? (
-                        <SectionEditButton
-                          label={t('plans.edit_pricing')}
-                          onClick={() => openPricing(plan)}
-                          disabled={!canWrite}
-                          title={readOnlyTitle}
-                        />
-                      ) : null}
+                        <>
+                          <SectionEditButton
+                            label={t('plans.edit_pricing')}
+                            onClick={() => openPricing(plan)}
+                            disabled={!canWrite}
+                            title={readOnlyTitle}
+                          />
+                          {/* #963: a PRICING action, so it belongs beside
+                              PRICING's own title rather than at the far right
+                              under the values. Pushing the price onto the plan's
+                              Assigned Plans changes what existing members pay —
+                              a write, so it stays inside Edit mode (#816). */}
+                          {plan.current_price != null && (
+                            <button
+                              onClick={() => setApplyPricingFor(plan)}
+                              disabled={!canWrite}
+                              title={readOnlyTitle}
+                              style={readOnlyStyle(btnSmall(), !canWrite)}
+                            >
+                              {t('plans.apply_price_to_assigned')}
+                            </button>
+                          )}
+                        </>
+                      ) : isEditing && pricingForPlanId === plan.id ? sectionSaveActions({
+                        onCancel: closePricingForm,
+                        onSave: () => handleSavePricing(plan.id),
+                        saving: pricingSaving,
+                        saveLabel: t('plans.save'),
+                      }) : null}
                     />
                     {isEditing && pricingForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
@@ -1081,13 +1130,8 @@ export default function PlansPage() {
                             </p>
                           );
                         })()}
+                        {/* #963: Save/Cancel moved up beside the PRICING title. */}
                         <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.pricing_save_hint')}</p>
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button onClick={closePricingForm} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={() => handleSavePricing(plan.id)} disabled={pricingSaving} style={btnSmall()}>
-                            {pricingSaving ? t('plans.saving') : t('plans.save')}
-                          </button>
-                        </div>
                       </div>
                     ) : (
                       <>
@@ -1103,20 +1147,6 @@ export default function PlansPage() {
                             (excl, incl) => t('plans.price_preview', { excl, incl }),
                           )}
                         />
-                        {/* Pushing the price onto the plan's Assigned Plans changes what
-                            existing members pay — a write, so it belongs to Edit mode. */}
-                        {isEditing && plan.current_price != null && (
-                          <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '6px 0 10px' }}>
-                            <button
-                              onClick={() => setApplyPricingFor(plan)}
-                              disabled={!canWrite}
-                              title={readOnlyTitle}
-                              style={readOnlyStyle(btnSmall(), !canWrite)}
-                            >
-                              {t('plans.apply_price_to_assigned')}
-                            </button>
-                          </div>
-                        )}
                       </>
                     )}
 
@@ -1175,7 +1205,12 @@ export default function PlansPage() {
                           disabled={!canWrite}
                           title={readOnlyTitle}
                         />
-                      ) : null}
+                      ) : isEditing && durationEditForPlanId === plan.id ? sectionSaveActions({
+                        onCancel: cancelDurationEdit,
+                        onSave: () => saveDurationEdit(plan.id),
+                        saving: durationSaving,
+                        saveLabel: t('plans.save_changes'),
+                      }) : null}
                     />
                     {isEditing && durationEditForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
@@ -1248,12 +1283,6 @@ export default function PlansPage() {
                           </div>
                           <div style={{ ...fieldDescStyle, marginLeft: 26 }}>{t('plans.desc_auto_renew')}</div>
                         </div>
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                          <button onClick={cancelDurationEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={() => saveDurationEdit(plan.id)} disabled={durationSaving} style={btnSmall()}>
-                            {durationSaving ? t('plans.saving') : t('plans.save_changes')}
-                          </button>
-                        </div>
                       </div>
                     ) : (
                       <>
@@ -1311,7 +1340,12 @@ export default function PlansPage() {
                               disabled={!canWrite}
                               title={readOnlyTitle}
                             />
-                          ) : null}
+                          ) : isEditing && isEditingBenefit(plan.id, section) ? sectionSaveActions({
+                            onCancel: cancelBenefitEdit,
+                            onSave: () => saveBenefitEdit(plan.id, endpoint),
+                            saving: benefitSaving,
+                            saveLabel: t('plans.save_changes'),
+                          }) : null}
                         />
                         {isEditing && isEditingBenefit(plan.id, section) ? (
                           <div style={{ margin: '6px 0 10px' }}>
@@ -1326,12 +1360,6 @@ export default function PlansPage() {
                               enforceMandatory
                               benefitContext="plan"
                             />
-                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-                              <button onClick={cancelBenefitEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                              <button onClick={() => saveBenefitEdit(plan.id, endpoint)} disabled={benefitSaving} style={btnSmall()}>
-                                {benefitSaving ? t('plans.saving') : t('plans.save_changes')}
-                              </button>
-                            </div>
                           </div>
                         ) : (
                           <SellableItemBenefitView
@@ -1361,7 +1389,11 @@ export default function PlansPage() {
                           disabled={!canWrite}
                           title={readOnlyTitle}
                         />
-                      ) : null}
+                      ) : isEditing && centersForPlanId === plan.id ? sectionSaveActions({
+                        onCancel: () => setCentersForPlanId(null),
+                        onSave: handleSaveCenters,
+                        saveLabel: t('plans.save_changes'),
+                      }) : null}
                     />
                     {isEditing && centersForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
@@ -1380,10 +1412,6 @@ export default function PlansPage() {
                             <label htmlFor={`center_${plan.id}_${c.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{c.name}</label>
                           </div>
                         ))}
-                        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-                          <button onClick={() => setCentersForPlanId(null)} style={btnSmall('#888')}>{t('plans.cancel')}</button>
-                          <button onClick={handleSaveCenters} style={btnSmall()}>{t('plans.save_changes')}</button>
-                        </div>
                       </div>
                     ) : (plan.centers ?? []).length === 0 ? (
                       <DetailRow label="" value={t('plans.all_centers')} />
@@ -1399,7 +1427,7 @@ export default function PlansPage() {
                         and never persisted, and a Membership Plan is not
                         assigned to anybody, so the dates are an illustration
                         from a hypothetical enrollment today. */}
-                    <SectionHeader title={t('plans.section_example_timeline')} />
+                    <SectionHeader title={t('plans.section_fee_simulation')} />
                     {plan.example_timeline?.available ? (
                       <>
                         {plan.example_timeline.anchorDate && (
@@ -1529,13 +1557,14 @@ export default function PlansPage() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-// Divider-above-label pattern, matching Promotions' subSectionSt + sectionLabelSt
-// (see apps/admin/src/app/[locale]/promotions/page.tsx).
+// Divider above the shared section header (#963): the hairline and the spacing
+// that separate one plan section from the next stay here, while the header row
+// itself — title first, its contextual actions immediately after it — is the one
+// `CardSectionHeader` the Promotion card renders too.
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
-    <div style={{ ...subSectionSt, display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-      <span style={sectionLabelSt}>{title}</span>
-      {action}
+    <div style={subSectionSt}>
+      <CardSectionHeader title={title} actions={action} />
     </div>
   );
 }
@@ -1661,7 +1690,9 @@ const inlineLabelStyle: React.CSSProperties = {
 
 // Section divider + label, matching Promotions' subSectionSt / sectionLabelSt.
 const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
-const sectionLabelSt: React.CSSProperties = { fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em' };
+// #963: the same heading `CardSectionHeader` renders, so the collapsible Price
+// History card inside PRICING and the section headers above it cannot drift.
+const sectionLabelSt: React.CSSProperties = cardSectionTitleStyle;
 const hintSt: React.CSSProperties = { color: '#aaa', fontSize: 13, margin: 0 };
 
 // #881: a card nested inside a section (Price History inside PRICING). It reuses
