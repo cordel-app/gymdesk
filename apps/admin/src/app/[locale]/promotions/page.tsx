@@ -11,7 +11,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
-import { btnSmall, btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { ExampleTimeline, ExampleTimelineTone } from '@/components/ExampleTimeline';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
@@ -1404,7 +1404,7 @@ export default function PromotionsPage() {
         {error && <p style={{ margin: '16px 0 0', fontSize: 13, color: '#c0392b' }}>{error}</p>}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
           <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
-          <button onClick={onSave} disabled={editSaving} style={btnSmall('#6c63ff')}>
+          <button onClick={onSave} disabled={editSaving} style={primaryBtnSmall()}>
             {editSaving ? t('saving') : t('save_changes')}
           </button>
         </div>
@@ -1688,7 +1688,7 @@ export default function PromotionsPage() {
             options={LIFECYCLE_FILTER_STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={handleNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#6c63ff'), !canWrite)} disabled={!canWrite || hasNewRow}>{t('add')}</button>
+          <button onClick={handleNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || hasNewRow}>{t('add')}</button>
         </div>
       </div>
 

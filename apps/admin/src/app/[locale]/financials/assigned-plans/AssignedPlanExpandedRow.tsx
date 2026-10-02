@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { useModuleAccess } from '@/lib/useModuleAccess';
@@ -12,6 +12,12 @@ import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal';
 import { AdditionalPeriodicServices } from './AdditionalPeriodicServices';
 import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
 import { AssignedPlanPromotions } from './AssignedPlanPromotions';
+import { ExampleTimeline } from '@/components/ExampleTimeline';
+import {
+  exampleTimelineRowTone,
+  formatExampleTimelineBilling,
+} from '@/lib/exampleTimeline';
+import { ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS } from './types';
 import type { AssignedPlanDetail } from './types';
 
 // #786: an assignment is `active` from creation, so there is no pre-activation
@@ -25,6 +31,16 @@ function fmtDate(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : null;
 }
 
+// The timeline's dates are plain `YYYY-MM-DD` strings, so they are formatted in
+// the viewer's locale without going through a Date that would shift them by a
+// timezone (the Plan card's `fmtTimelineDate` does the same).
+function fmtTimelineDate(ymd: string, locale: string) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(locale, {
+    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
+  });
+}
+
 function fmtMoney(v: string | number | null) {
   return v != null ? `€${parseFloat(String(v)).toFixed(2)}` : '—';
 }
@@ -35,6 +51,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
 }) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
+  const locale = useLocale();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const loadedRef = useRef(false);
@@ -214,6 +231,66 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
           readOnlyTitle={readOnlyTitle}
           onChanged={() => { loadDetail(); onChanged(); }}
         />
+      </Section>
+
+      {/* #924 stage 3 (§7) — the MEMBERSHIP FEE SIMULATION: the Membership Plan
+          card's Example Timeline, for this contract. One row per billing period
+          of the assignment's own cadence, from the period containing today,
+          each row's Status and Billing decided server-side by the very call the
+          nightly run prices a cycle with (`resolveMembershipFee()`), so the
+          table cannot advertise a charge the run does not make. An applied
+          Promotion and the Personal Membership Fee Benefit are already in those
+          numbers. Read-only by nature: computed on every read, persisted
+          nowhere, and it charges nothing. */}
+      <Section label={t('section_fee_simulation')}>
+        {detail.example_timeline?.available ? (
+          <>
+            {detail.example_timeline.anchorDate && (
+              <p style={{ margin: '0 0 8px', fontSize: 12, color: '#666' }}>
+                {t('timeline_anchor_note', {
+                  date: fmtTimelineDate(detail.example_timeline.anchorDate, locale),
+                })}
+              </p>
+            )}
+            <ExampleTimeline
+              labels={{
+                period: t('col_period'),
+                dates: t('col_dates'),
+                status: t('col_status'),
+                billing: t('col_billing'),
+              }}
+              rows={detail.example_timeline.periods.map((row) => ({
+                key: row.period,
+                period: row.endsOn ? String(row.period) : `${row.period}+`,
+                dates: row.endsOn
+                  ? `${fmtTimelineDate(row.startsOn, locale)} – ${fmtTimelineDate(row.endsOn, locale)}`
+                  : t('timeline_dates_from', { date: fmtTimelineDate(row.startsOn, locale) }),
+                status: t(ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS[row.status] as any),
+                billing: formatExampleTimelineBilling(
+                  row,
+                  t('timeline_no_charge'),
+                  t('tax_included_suffix'),
+                  // #946 — the first Pre-paid period collects the whole Pre-paid
+                  // Duration, so the cell says how many periods its amount covers.
+                  row.prepaidPeriods != null
+                    ? t('timeline_prepaid_periods', { count: row.prepaidPeriods })
+                    : null,
+                ),
+                tone: exampleTimelineRowTone(row),
+              }))}
+              footnotes={
+                <p style={{ margin: '8px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>
+                  {t('timeline_disclaimer')}
+                </p>
+              }
+            />
+          </>
+        ) : (
+          // The server's `reason` is a single, known condition (this assignment
+          // has no billing frequency), so it is said in the viewer's language
+          // rather than relayed in English.
+          <p style={dim}>{t('timeline_unavailable')}</p>
+        )}
       </Section>
 
       {/* #631: Additional Periodic Services belong to the Assigned Plan itself —

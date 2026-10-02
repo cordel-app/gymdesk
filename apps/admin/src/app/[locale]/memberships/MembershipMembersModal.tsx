@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
-import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
+import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 
 interface Membership {
   id: number;
@@ -143,7 +143,7 @@ export function MembershipMembersModal({
                         <option key={m.id} value={m.id}>{m.name} — {m.email}</option>
                       ))}
                     </select>
-                    <button onClick={handleAdd} disabled={!addingId || saving} style={btnStyle('#6c63ff')}>
+                    <button onClick={handleAdd} disabled={!addingId || saving} style={primaryBtnStyle()}>
                       {saving ? t('memberships.saving') : t('memberships.add_member')}
                     </button>
                   </div>

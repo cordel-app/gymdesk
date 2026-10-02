@@ -18,7 +18,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import { btnSmall, btnStyle, cardSurfaceStyle, primaryBtnSmall, readOnlyStyle } from '@/components/ui';
 import { WorkoutTemplateTree, WtHierarchy, TemplateDropTarget } from './WorkoutTemplateTree';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -434,7 +434,7 @@ export default function WorkoutTemplatesPage() {
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
-            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall('#6c63ff')}>
+            <button onClick={saveInlineNew} disabled={inlineNew.saving} style={primaryBtnSmall()}>
               {inlineNew.saving ? t('saving') : t('save_changes')}
             </button>
           </div>
@@ -559,7 +559,7 @@ export default function WorkoutTemplatesPage() {
             {editError && <p style={errorStyle}>{editError}</p>}
             <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-              <button onClick={() => handleSave(wt)} disabled={editSaving} style={btnSmall('#6c63ff')}>
+              <button onClick={() => handleSave(wt)} disabled={editSaving} style={primaryBtnSmall()}>
                 {editSaving ? t('saving') : t('save_changes')}
               </button>
             </div>

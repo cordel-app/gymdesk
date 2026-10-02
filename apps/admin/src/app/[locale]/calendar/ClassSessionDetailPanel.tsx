@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
-import { cardSurfaceStyle } from '@/components/ui';
+import { cardSurfaceStyle, primaryActionColors } from '@/components/ui';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
 
 interface ClassSession {
@@ -342,7 +342,7 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
         {canWrite && !isCancelled && addMode !== 'enroll' && (
           <button
             onClick={() => { setAddMode('enroll'); setSelectedMember(null); setAddConfirmMsg(null); setAddOverCapacity(false); }}
-            style={{ ...btnBase, background: '#6c63ff', color: '#fff', marginTop: 10, width: '100%' }}
+            style={{ ...btnBase, ...primaryActionColors, marginTop: 10, width: '100%' }}
           >
             + Add member
           </button>
@@ -368,7 +368,7 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
                     <button
                       onClick={confirmAdd}
                       disabled={adding}
-                      style={{ ...btnBase, background: '#6c63ff', color: '#fff', flex: 1, opacity: adding ? 0.6 : 1 }}
+                      style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: adding ? 0.6 : 1 }}
                     >
                       {adding ? 'Adding…' : addOverCapacity ? 'Add anyway' : 'Confirm'}
                     </button>
@@ -457,7 +457,7 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
                     <button
                       onClick={confirmAdd}
                       disabled={adding}
-                      style={{ ...btnBase, background: '#6c63ff', color: '#fff', flex: 1, opacity: adding ? 0.6 : 1 }}
+                      style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: adding ? 0.6 : 1 }}
                     >
                       {adding ? 'Adding…' : 'Add to waiting list'}
                     </button>
@@ -529,7 +529,7 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
                   <button
                     onClick={handleSaveTime}
                     disabled={savingTime}
-                    style={{ ...btnBase, background: '#6c63ff', color: '#fff', flex: 1, opacity: savingTime ? 0.6 : 1 }}
+                    style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: savingTime ? 0.6 : 1 }}
                   >
                     {savingTime ? 'Saving…' : 'Save'}
                   </button>

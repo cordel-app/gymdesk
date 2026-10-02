@@ -232,18 +232,29 @@ export async function priceMembershipFeesFor<T extends FeeAssignmentRow>(
   return out;
 }
 
-async function priceWithApplications(
-  row: FeeAssignmentRow, billingDate: string, applications: PromotionApplication[],
-): Promise<DueMembershipFee> {
-  const startsAt = toDateOnly(row.starts_at);
-  // A negotiated fee that has lapsed stops outranking the catalogue: skip the
-  // frozen number and resolve the Plan's price window, which is what the
-  // pre-stage-15 code did once `discount_expires_at` was past.
-  const lapsed = row.discount_reason != null && String(row.discount_reason).trim() !== ''
-    && row.discount_expires_at != null && toDateOnly(row.discount_expires_at) < billingDate;
-  const regular = (await regularMembershipFee(row.gym_id, row, startsAt, { ignoreFrozenFee: lapsed })) ?? 0;
+/**
+ * Has a negotiated fee on this assignment lapsed by `date`?
+ *
+ * A negotiated fee that has lapsed stops outranking the catalogue: the frozen
+ * number is skipped and the Plan's price window resolved instead, which is what
+ * the pre-stage-15 code did once `discount_expires_at` was past. Exported so
+ * the Membership Fee Simulation (#924 stage 3), which resolves both numbers up
+ * front rather than once per projected period, decides it by the same rule.
+ */
+export function negotiatedFeeLapsed(
+  row: Pick<FeeAssignmentRow, 'discount_reason' | 'discount_expires_at'>, date: string,
+): boolean {
+  return row.discount_reason != null && String(row.discount_reason).trim() !== ''
+    && row.discount_expires_at != null && toDateOnly(row.discount_expires_at) < date;
+}
 
-  const promotions: SimulationPromotion[] = applications
+/**
+ * The standing applications of an assignment, as the fee resolver takes them.
+ * Only `applied` ones are consulted: a revoked application's window has closed,
+ * and the cycles it governed while it stood are already in the ledger.
+ */
+export function standingFeePromotions(applications: PromotionApplication[]): SimulationPromotion[] {
+  return applications
     .filter((a) => a.status === 'applied')
     .map((a) => ({
       name: a.name,
@@ -258,13 +269,32 @@ async function priceWithApplications(
       // Items are the simulation's other streams and are charged by nothing here.
       grants: [],
     }));
+}
 
-  const context: MembershipFeeContext = {
-    startsAt,
+/**
+ * The assignment's own Billing & Duration and Personal Membership Fee Benefit,
+ * as `resolveMembershipFee()` takes them. Shared with the Membership Fee
+ * Simulation, which prices many dates against one context.
+ */
+export function membershipFeeContextFor(
+  row: FeeAssignmentRow, applications: PromotionApplication[],
+): MembershipFeeContext {
+  return {
+    startsAt: toDateOnly(row.starts_at),
     planDuration: durationForRow(row),
     personalFeeBenefit: toPersonalFeeBenefit(row.personal_fee_benefit_action, row.personal_fee_benefit_value),
-    promotions,
+    promotions: standingFeePromotions(applications),
   };
+}
+
+async function priceWithApplications(
+  row: FeeAssignmentRow, billingDate: string, applications: PromotionApplication[],
+): Promise<DueMembershipFee> {
+  const startsAt = toDateOnly(row.starts_at);
+  const lapsed = negotiatedFeeLapsed(row, billingDate);
+  const regular = (await regularMembershipFee(row.gym_id, row, startsAt, { ignoreFrozenFee: lapsed })) ?? 0;
+
+  const context: MembershipFeeContext = membershipFeeContextFor(row, applications);
 
   const resolved = resolveMembershipFee(regular, billingDate, context);
   const amount = round2(Math.max(0, resolved.amount));

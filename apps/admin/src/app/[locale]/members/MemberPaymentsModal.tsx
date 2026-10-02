@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { StatusBadge } from '@/components/StatusBadge';
-import { overlayStyle, modalStyle, btnStyle, btnSmall } from '@/components/ui';
+import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 
 interface PaymentRequest {
   id: number;
@@ -434,7 +434,7 @@ export function MemberPaymentsModal({
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               onClick={requestPayment}
-              style={btnStyle('#6c63ff')}
+              style={primaryBtnStyle()}
               disabled={requesting || !activeMembership}
             >
               {requesting ? t('member_payments.requesting') : t('member_payments.request_button')}
