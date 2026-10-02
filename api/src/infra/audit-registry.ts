@@ -64,6 +64,10 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   gym_charge:                     { kind: 'simple',   label: 'Sellable Items',           table: 'gym_charges',             nameColumn: 'name' },
   professional_service:           { kind: 'simple',   label: 'Professional Services',    table: 'professional_services',   nameColumn: 'name' },
   nutrition_library_item:         { kind: 'simple',   label: 'Nutrition Library',        table: 'nutrition_library_items', nameColumn: 'name' },
+  // #947: the Nutrition Library's two goal catalogues. Each has a Details view
+  // with a View Audit Log link, which filters on these two types.
+  personal_goal:                  { kind: 'simple',   label: 'Personal Goals',           table: 'personal_goals',          nameColumn: 'name' },
+  nutrition_goal:                 { kind: 'simple',   label: 'Nutrition Goals',          table: 'nutrition_goals',         nameColumn: 'name' },
   nutrition_plan_template:        { kind: 'simple',   label: 'Nutrition Plan Templates', table: 'nutrition_plan_templates', nameColumn: 'name' },
   member_nutrition_plan:          { kind: 'simple',   label: 'Nutrition Plans',          table: 'member_nutrition_plans',  nameColumn: 'name' },
 

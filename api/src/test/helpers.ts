@@ -101,6 +101,13 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM nutrition_plan_template_days WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM nutrition_plan_templates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM nutrition_library_items WHERE gym_id IN (${marks})`, ids);
+  // #947: both FKs are ON DELETE CASCADE, so the `gyms` delete would clear these
+  // anyway — listed for the same reason the Plan-side benefit tables below are,
+  // so a later ticket that points a non-cascading FK at them finds the order
+  // already written down. The System rows (`gym_id IS NULL`) are migration 206's
+  // seeds and are deliberately left alone.
+  await db.query(`DELETE FROM personal_goals WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM nutrition_goals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM calendar_events WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM sellable_item_professional_services WHERE gym_id IN (${marks})`, ids);
   // #635 stage 1: every FK on these is ON DELETE CASCADE, so the gym_charges
