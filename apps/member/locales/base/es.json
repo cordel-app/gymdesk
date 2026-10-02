@@ -71,14 +71,7 @@
     "block_type_emom": "EMOM",
     "block_type_amrap": "AMRAP",
     "block_type_tabata": "Tabata",
-    "result_type_none": "Ninguno",
-    "result_type_time": "Tiempo",
-    "result_type_rounds": "Rondas",
-    "result_type_repetitions": "Repeticiones",
-    "result_type_distance": "Distancia",
-    "result_type_calories": "Calorías",
-    "result_type_weight": "Peso",
-    "result_type_score": "Puntuación"
+    "block_result": "Resultado"
   },
   "profile": {
     "title": "Mi perfil",

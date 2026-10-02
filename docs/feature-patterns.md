@@ -2039,6 +2039,43 @@ Two rules come with it:
   alignment sweep cannot quietly restore "Details first" or drop a gate while reordering.
 
 
+## A recurring defect class gets a gate, not a fourth point fix (#1009)
+
+When the same kind of defect is found more than twice, one ticket at a time, the
+fix is a test that fails on the **class** — not a third correction of the same
+shape. Migration 074 (#154) dropped six columns, and three separate queries were
+later found still reading one of them (#966's Training Plan Template tree,
+`POST /me/workout-block-logs`, and the Members App's My Training page), each a
+500 or a render-time `TypeError` that no test caught, because nothing asserted
+the **absence** of a dropped column.
+
+`api/src/test/migration-074-dropped-columns.unit.test.ts` is that gate. Four
+properties are what make it worth trusting rather than weakening:
+
+* **The rule is true of the schema, not of a convention.** It forbids
+  `result_type`, `exercise_type`, `distance_value` and `distance_unit` because
+  `information_schema` reports **zero** tables with a column of any of those
+  names. `duration_seconds` is deliberately excluded: 074 dropped it from
+  `workout_template_exercises` only, and three tables still have it, so a
+  name-based rule cannot speak about it. Derive the set from what the schema
+  actually says, and leave out anything the name alone cannot decide.
+* **No per-file exemption** — in particular none for the files that shipped the
+  defect. Comment lines are stripped instead, so a file may document the column
+  it must not read. Only each root's own `test` directory is excluded, because a
+  test asserting absence has to name the thing.
+* **It asserts its own coverage.** A test checks that the two routers and the
+  page are inside the scan, so a refactor that moves a file cannot turn the gate
+  into a silent pass.
+* **It is verified to fail.** Reintroduce each real defect and watch the gate
+  name the exact file before trusting it. A guard nobody has seen fail is a
+  guard nobody should rely on.
+
+Note where it lives: **CI runs `npm test` in `api/` only** — the admin job
+type-checks and builds, so `apps/admin/src/test` and `apps/member/src/test` do
+not run there. A cross-app rule therefore belongs in the API suite, even though
+it scans another workspace; a copy in the app's own suite is documentation for
+local runs, not enforcement.
+
 ## Testing a payment-provider call (#773, #791)
 
 Any new code path that charges, tokenises or refunds through `PaymentProvider` is tested

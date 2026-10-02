@@ -21,8 +21,14 @@ interface BlockExercise {
   exercise_video_thumbnail_url?: string | null;
 }
 
+// #1009: a block carries no `result_type`. Migration 074 (#154) moved the result
+// type down to the exercise instance, and `PLAN_TREE_SELECT` stopped sending it
+// then — so `block.result_type` was `undefined` here, `undefined !== 'None'`
+// passed, and `undefined.toLowerCase()` threw while rendering any block. The
+// block's result is one optional free-text value; typed, per-set results are the
+// exercise's, logged through `/me/exercise-logs` below.
 interface Block {
-  id: number; position: number; name: string | null; type: string; result_type: string;
+  id: number; position: number; name: string | null; type: string;
   rounds: number | null; duration_seconds: number | null; work_seconds: number | null; rest_seconds: number | null;
   is_optional: boolean; notes: string | null;
   exercises: BlockExercise[] | null;
@@ -118,7 +124,7 @@ export default function TrainingPage() {
         body: JSON.stringify({
           workout_block_id: block.id,
           logged_date: todayDate(),
-          result_value: block.result_type !== 'None' ? (resultInputs[block.id] ?? null) : null,
+          result_value: resultInputs[block.id]?.trim() || null,
         }),
       });
       setMessage(t('training.block_logged'));
@@ -174,9 +180,6 @@ export default function TrainingPage() {
                       {block.name ?? t(`training.block_type_${block.type.toLowerCase()}`)}
                       <span style={styles.blockTypeBadge}>{t(`training.block_type_${block.type.toLowerCase()}`)}</span>
                     </div>
-                    {block.result_type !== 'None' && (
-                      <div style={styles.exerciseMeta}>{t(`training.result_type_${block.result_type.toLowerCase()}`)}</div>
-                    )}
                   </div>
                 </div>
 
@@ -233,14 +236,12 @@ export default function TrainingPage() {
                 ))}
 
                 <div style={styles.blockDoneRow}>
-                  {block.result_type !== 'None' && (
-                    <input
-                      placeholder={t(`training.result_type_${block.result_type.toLowerCase()}`)}
-                      value={resultInputs[block.id] ?? ''}
-                      onChange={(e) => setResultInputs({ ...resultInputs, [block.id]: e.target.value })}
-                      style={styles.miniInput}
-                    />
-                  )}
+                  <input
+                    placeholder={t('training.block_result')}
+                    value={resultInputs[block.id] ?? ''}
+                    onChange={(e) => setResultInputs({ ...resultInputs, [block.id]: e.target.value })}
+                    style={styles.miniInput}
+                  />
                   <button onClick={() => markBlockDone(block)} disabled={pending} style={styles.blockDoneBtn}>
                     {t('training.mark_done')}
                   </button>

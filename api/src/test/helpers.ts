@@ -85,6 +85,13 @@ export async function cleanupTestGyms() {
   // #647 stage 3 note: `member_recurring_slots` needs no line of its own —
   // every one of its FKs (gym, member, activity type, professional service,
   // center) is ON DELETE CASCADE, so the members delete below clears it.
+  // #1009: `workout_block_logs.workout_block_id` is ON DELETE RESTRICT (migration
+  // 042), and deleting a member cascades `training_plans` -> `workouts` ->
+  // `workout_blocks`. MySQL does not order the cascades a single DELETE fans out
+  // into, so the block can go while its log still points at it — which fails the
+  // members delete below rather than the gyms one. The log's own `member_id` and
+  // `gym_id` are both CASCADE, so this line is only about getting there first.
+  await db.query(`DELETE FROM workout_block_logs WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM members WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM staff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids).catch(() => {});

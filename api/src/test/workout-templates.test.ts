@@ -33,7 +33,7 @@ beforeAll(async () => {
     .post(`/workout-templates/${templateId}/blocks`)
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
-    .send({ type: 'Standard', result_type: 'None' });
+    .send({ type: 'Standard' });
   const blockId = blockRes.body.id;
 
   await request
@@ -85,7 +85,7 @@ describe('POST /workout-templates/:id/duplicate', () => {
       .post(`/workout-templates/${tplId}/blocks`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ type: 'Superset', result_type: 'None' });
+      .send({ type: 'Superset' });
     const blkId = blkRes.body.id;
 
     await request

@@ -717,6 +717,66 @@ app.use('/platform/nutrition-plan-templates', requireAuth(), platformNutritionPl
 
 Legacy `/fares` and `/subscriptions` routers are fully removed (migrations 004, 007, 009).
 
+### A workout block's result is untyped free text (#1009)
+
+Migration 074 (#154) moved the result type from the block down to the exercise
+instance. Migration **209** completes that move on the logging side: it drops
+`workout_block_logs.result_type` and its `wbl_result_type_check`, so the table is
+
+```
+workout_block_logs(id, gym_id, member_id, workout_block_id, logged_date,
+                   started_at, finished_at, result_value, notes,
+                   created_at, modified_at, modified_by_member_id)
+```
+
+`POST /me/workout-block-logs` read `wb.result_type` to snapshot into that column
+and therefore answered `500 Unknown column 'wb.result_type' in 'field list'` for
+every member who marked a block complete — the endpoint had no test. Its
+pre-insert `SELECT` is now `SELECT 1`, which is the ownership probe behind its
+403; the three other queries on the table are `SELECT *` and needed no edit.
+
+The column is **dropped rather than re-vocabularied** because nothing read it:
+every reader is a blanket projection (`SELECT *` here, `SELECT wbl.*` in
+`exercise-logs.ts`), there is no caller in `apps/admin` for
+`GET /members/:memberId/workout-block-logs`, none for `GET /me/workout-block-logs`,
+and no report. A block has no single result type after #154 — each of its
+exercises has its own — so keeping the column would have meant inventing what it
+means when they disagree, and backfilling the rows holding `Rounds`/`Score`
+(which have no member of the `result_types` slug vocabulary) with that
+invention: a guess written into a member's training history.
+
+So the contract is: **`result_value` is one optional, untyped free-text value**
+(varchar(60)) the member typed for the block — `21:04`, `7 rounds + 3` — and an
+empty input is `null`. Do not give it a type column, a derived type, a coerced
+legacy value, or a per-block "takes no result" flag. Typed, per-set results are
+the exercise instance's, in `exercise_logs` + `exercise_log_sets`.
+
+`cleanupTestGyms()` deletes `workout_block_logs` **before** `members`:
+`workout_block_id` is `ON DELETE RESTRICT` while deleting a member cascades
+`training_plans` → `workouts` → `workout_blocks`, and MySQL does not order the
+cascades one DELETE fans out into, so the block could go while its log still
+pointed at it.
+
+#### The gate on 074's dropped columns
+
+Three queries were found reading one of them, one ticket at a time: #966's
+Training Plan Template tree, this endpoint, and the Members App's My Training
+page — where `block.result_type` was `undefined` (the server stopped sending it
+at #154), so `undefined !== 'None'` passed and `undefined.toLowerCase()` threw
+**while rendering any block**, taking the page down ahead of the 500 that was
+reported. `api/src/test/migration-074-dropped-columns.unit.test.ts` is the gate:
+no production `.ts`/`.tsx` under `api/src` or `apps/member/src` may name
+`result_type`, `exercise_type`, `distance_value` or `distance_unit`, because
+after migration 209 **no table has a column with any of those names**. There is
+no per-file exemption — in particular none for the two routers and the page that
+shipped the defect — and a test asserts all three are inside the scan, so it
+cannot become a vacuous pass. `duration_seconds` is deliberately outside the
+set: 074 dropped it from `workout_template_exercises` only, and it is still a
+real column of `workout_blocks`, `workout_template_blocks` and `exercise_logs`.
+The gate scans the Members App from the API suite because **CI runs `npm test` in
+`api/` only** — the admin job type-checks and builds, so neither app's own
+`src/test` runs there.
+
 ### What the global error handler answers (#966)
 
 The handler at the bottom of `app.ts` logs the real error (`console.error`) and
@@ -1010,7 +1070,7 @@ The member PWA is built out (no longer just a stub). Member endpoints live under
 | `/calendar` | `GET /me/schedule`, `GET /me/trainers`, `POST /me/shared-training-requests`, `DELETE /me/shared-training-requests/:id` | (#324) FullCalendar v6 member calendar page at `[locale]/calendar/`. Defaults to `timeGridDay` (today) per #361. Activity-type filter chips. Per-session event color by `availability_state`; each event cell also shows an aggregate occupancy count (`booked/capacity`). **Since #503 stage 7**: a compact "Filter" button (kept collapsed to preserve mobile header space, per the issue thread) opens a dropdown panel with independent, combinable Center and Trainer selects (`GET /me/trainers` for the trainer options, `AppContext`'s existing `centers` for the center options) plus Apply/Clear — wiring up stage 6's `?center_id=`/`?trainer_membership_id=` params; a dot on the button indicates an active filter. The center filter defaults once to the member's default center (`AppContext.activeCenterId`, set from Profile; the top-of-page `CenterSwitcher` was removed) but, per the thread's explicit requirement, never writes back to it — changing it only affects this page's own query. The bottom-sheet detail panel shows the three-badge breakdown agreed on the issue thread — lifecycle `status`, `occupancy_status` (+ `booked/capacity`), and (only when not `disabled`) the `waitlist_status` badge with an aggregate `waitlist_count` (never identities) — alongside the existing action buttons, which still key off `availability_state` unchanged: Book (AVAILABLE), Join Waitlist (WAITLIST_AVAILABLE), Cancel Booking (BOOKED_BY_MEMBER), Leave Waitlist (WAITLISTED_BY_MEMBER), Request Shared Training (SHARED_REQUEST_AVAILABLE), Cancel Request (SHARED_REQUESTED_BY_MEMBER). `POST /me/shared-training-requests` validates `is_shareable + allows_shared_booking`, returns 409 on duplicate; `DELETE` cancels own pending request. Double-click day → Day view. Feature-flagged: `calendar.member_calendar`. |
 | `/notifications` ("Alerts" in the UI) | `GET /me/notifications`, `GET /me/notifications/count`, `PUT /me/notifications/:id/read`, `PUT /me/notifications/read-all` | In-app notification center (#194). Notifications are written fire-and-forget by booking/cancel/session-cancel/schedule-rule-cancel flows via `sendNotification`/`sendBulkNotification` in `infra/notifications.ts`. `GET /me/notifications` returns `{ items, unread }`. `AppContext` fetches `count` on mount and exposes `unreadNotifications`+`refreshUnreadCount`. Home's Alerts card shows the single most recent unread notification; **since #503 stage 8**, `TopBar.tsx` has its own bell button (any page) linking here with the unread-count badge — previously the badge sat on the Profile button, which links to `/profile`, not here. |
 | `/membership` ("My Membership" in the UI) | `GET /me/membership`, `GET /me/billing-events`, `GET /me/class-packages`, `GET /me/promotions` | Current membership, benefits, class packages, upcoming + historical payments/promotions all in one page — this is where Packages and Payments live post-#361 (no separate top-level nav item for either). |
-| `/training` | `GET /me/training-plans`, `GET /me/workout-logs`, `POST /me/workout-logs` | Assigned training plans + set logging. **#723:** each exercise row also shows the media the exercise carries — `exercise_image_url`/`exercise_video_url` already ride down the plan tree (`PLAN_TREE_SELECT`, #720), so there is no request per exercise. `components/ExerciseMedia.tsx` renders a lazy-loaded image tile and a video tile with a play indicator inside the exercise's own row (nothing at all when it has no media), and `components/ExerciseMediaViewer.tsx` opens the larger view as an overlay — never a route — so the member keeps their place in the plan: the image at full size, a YouTube video in a `youtube-nocookie` embed, an R2-stored video in a `<video controls>`, and a URL the app cannot embed in a new tab. Neither player autoplays and no `<video>` is mounted to draw a row. `lib/exerciseMedia.ts` holds the pure URL helpers (thumbnail-vs-master, YouTube id/poster/embed, video kind) and, like the Admin side, resolves nothing about where the media came from. |
+| `/training` | `GET /me/training-plans`, `POST /me/exercise-logs`, `POST /me/workout-block-logs` | Assigned training plans + set logging. **#1009:** a block's result is one optional, untyped free-text value — the typed caption and the `result_type`-gated input are gone, since migration 074 (#154) moved the result type to the exercise instance and the page was throwing `undefined.toLowerCase()` while rendering any block (see "A workout block's result is untyped free text"). **#723:** each exercise row also shows the media the exercise carries — `exercise_image_url`/`exercise_video_url` already ride down the plan tree (`PLAN_TREE_SELECT`, #720), so there is no request per exercise. `components/ExerciseMedia.tsx` renders a lazy-loaded image tile and a video tile with a play indicator inside the exercise's own row (nothing at all when it has no media), and `components/ExerciseMediaViewer.tsx` opens the larger view as an overlay — never a route — so the member keeps their place in the plan: the image at full size, a YouTube video in a `youtube-nocookie` embed, an R2-stored video in a `<video controls>`, and a URL the app cannot embed in a new tab. Neither player autoplays and no `<video>` is mounted to draw a row. `lib/exerciseMedia.ts` holds the pure URL helpers (thumbnail-vs-master, YouTube id/poster/embed, video kind) and, like the Admin side, resolves nothing about where the media came from. |
 | `/nutrition` ("My Nutrition" in the UI, #361) | `GET /me/nutrition-plan` | Read-only view of the caller's own active `member_nutrition_plans` row with full hierarchy (days → meals → items, goals) — mirrors the staff-facing `member-nutrition-plans.ts` `/:id/hierarchy` but resolves the member from `TenantContext` instead of an arbitrary `member_id`. Returns `{ plan: null }` when there is no active plan or the caller has no linked member row. Home's Today's Nutrition Plan card fetches the same endpoint and filters client-side to `weekday === today \|\| weekday === 7` (the "All Days" sentinel — see `nutrition-plan-templates.ts`). Feature-flagged: `nutrition.nutrition_plans`. No editing — building the plan is still done by staff via `member-nutrition-plans.ts`/`nutrition-plan-templates.ts`. **#722:** each meal item also carries the Nutrition Library item's `image_url` and its `qualities` (`[{id, slug}]`, from `nutrition_library_item_qualities`), read once for the whole plan rather than per item, and the page renders a meal's foods as a horizontal swipeable carousel of image cards (`components/NutritionFoodCarousel.tsx` + `NutritionFoodCard.tsx`) instead of one joined text line. Home's card is unchanged — it still reads names only. **#932:** the plan's **dietary restrictions** are returned too (`restrictions: [{id, nutrition_library_item_id, item_name, image_url, applies_all_days}]`, in `position` order) — a restriction *is* a Nutrition Library food, `member_nutrition_plan_restrictions.nutrition_library_item_id` being NOT NULL, so its name is resolved in the request locale and its image is the library item's own `image_url`, the same column the meal foods read: there is no second image source for My Nutrition. The page renders **Nutrition Goals** and **Dietary Restrictions** as two sections of image-plus-name rows through one shared `components/NutritionItemRow.tsx`, which owns the thumbnail size, aspect ratio, radius, spacing, typography and the `nutrition.no_image` fallback for both, and both sections state their own empty case in words rather than disappearing. A goal's stored `item_name` is a **slug** from the plan routers' closed vocabulary (`weight_loss`), not a label: `goalLabel()`/`goalDetail()` (`lib/nutritionFood.ts`) translate it and render its value and frequency as `1 l · daily`, deciding the fallback *before* calling `t()` (next-intl has no `defaultValue`). `member_nutrition_plan_goals` carries no link to a food, so a goal row shows that fallback until one exists. |
 | `/profile` | `GET /me/profile`, `GET /me/membership`, `GET /me/payment-requests` | Member profile, plus (#361) default gym/center switching (reusing `AppContext`'s `gyms`/`switchGym`/`centers`/`setActiveCenterId` — no new backend), enrollment status (derived from `/me/membership`'s `status`) and a payment status summary (derived from `/me/payment-requests`: any `failed` → failed, else any `pending` → pending, else "up to date"). |
 
