@@ -2,9 +2,9 @@
 
 import React from 'react';
 import { formFieldLabelStyle, formValueStyle } from '@/components/formChrome';
+import { listNameBadgeAccentStyle, listNameBadgeStyle } from '@/components/listChrome';
 import {
   MEMBER_PROFILE_FIELDS,
-  newMemberCheckbox,
   type MemberEditableFieldSpec,
   type MemberProfileFieldSpec,
 } from './memberProfile';
@@ -71,8 +71,22 @@ export function MemberProfileLayout({
       <div style={profileGridStyle}>
         {MEMBER_PROFILE_FIELDS.map((field) => (
           <div key={field.key} style={field.kind === 'multiline' ? fullWidthCellStyle : undefined}>
-            <label style={profileFieldLabelStyle}>{fieldLabel(field)}</label>
-            {field.calculated ? renderCalculated(field) : renderField(field as MemberEditableFieldSpec)}
+            {/* #960 — a calculated field is one word of output, so its label and
+                its value share a row: stacking them cost the Profile the full
+                height of a value box for a boolean. An editable field keeps the
+                stacked label-above-control shape, because that is the box its
+                `<input>` occupies in the other mode (#929). */}
+            {field.calculated ? (
+              <div style={profileInlineCellStyle}>
+                <label style={profileInlineFieldLabelStyle}>{fieldLabel(field)}</label>
+                {renderCalculated(field)}
+              </div>
+            ) : (
+              <>
+                <label style={profileFieldLabelStyle}>{fieldLabel(field)}</label>
+                {renderField(field as MemberEditableFieldSpec)}
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -99,15 +113,31 @@ export function MemberProfileLayout({
  * ways. It is a value, not a control: there is no `<input type="checkbox">` to
  * tick, because there is nothing a staff member could tick it to.
  *
- * The glyph carries the meaning, so it is announced by `aria-label` rather than
- * left to a screen reader to read out as "ballot box".
+ * #960 — and the value is a compact `Yes` / `No` chip beside the label rather
+ * than a ticked box on a row of its own. The chip wears the list's own pill
+ * (#724/#913) and declares no colour: `Yes` takes the accent voice the Members
+ * list already gives a new member's name, so the badge in the row above and the
+ * value in the Profile below read as the same statement, and `No` takes the
+ * neutral one. `announce` is what a screen reader hears — "New Member: yes"
+ * rather than a bare "Yes", since the label beside the chip is not tied to it.
+ * It keeps #927's `role="img"`, because an `aria-label` on a bare `<span>` is
+ * not reliably exposed — with the role, the sentence replaces the chip's word.
  */
-export function NewMemberValue({ isNewMember, label }: { isNewMember: boolean; label: string }) {
+export function NewMemberValue({
+  isNewMember, label, announce,
+}: { isNewMember: boolean; label: string; announce: string }) {
   return (
-    <p style={profileValueStyle}>
-      <span role="img" aria-label={label}>{newMemberCheckbox(isNewMember)}</span>
-    </p>
+    <span style={newMemberChipStyle(isNewMember)} role="img" aria-label={announce}>{label}</span>
   );
+}
+
+/**
+ * The chip's look, borrowed whole from the list's metadata pill so nothing here
+ * declares a size, a radius or a colour. The pill carries a left margin for the
+ * name cell it was written for; the inline row supplies its own gap instead.
+ */
+export function newMemberChipStyle(isNewMember: boolean): React.CSSProperties {
+  return { ...(isNewMember ? listNameBadgeAccentStyle : listNameBadgeStyle), marginLeft: 0 };
 }
 
 /** The vertical rhythm of the Profile: one gap, between rows and before the centers. */
@@ -137,3 +167,22 @@ export const profileFieldLabelStyle = formFieldLabelStyle;
  * the card sideways.
  */
 export const profileValueStyle = formValueStyle;
+
+/**
+ * #960 — a calculated field's row: the label and its chip on one line, centred
+ * on each other. The label keeps the Profile's own type and weight and loses
+ * only the margin that separates a stacked label from the control under it.
+ */
+export const profileInlineCellStyle: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 10,
+  flexWrap: 'wrap',
+  minHeight: 20,
+};
+
+export const profileInlineFieldLabelStyle: React.CSSProperties = {
+  ...formFieldLabelStyle,
+  display: 'inline',
+  marginBottom: 0,
+};

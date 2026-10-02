@@ -153,6 +153,8 @@
     "new_member_badge": "Socio nuevo",
     "new_member_yes": "Socio nuevo: sí",
     "new_member_no": "Socio nuevo: no",
+    "yes": "Sí",
+    "no": "No",
     "label_document": "NIF/NIE/Pasaporte",
     "col_document": "NIF/NIE/Pasaporte",
     "placeholder_address": "Calle, ciudad, código postal",

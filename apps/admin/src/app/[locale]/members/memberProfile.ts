@@ -172,13 +172,20 @@ export function formatProfileDate(value: string | null | undefined): string | nu
 }
 
 /**
- * #927 §1/§3 — the `New Member` status as the ticket draws it: a checkbox,
- * ticked or not, beside the Profile's other values. The glyph is the value, so
- * both halves of the card render it from here rather than each choosing one.
+ * #927 §1/§3 — the `New Member` status as a value beside the Profile's other
+ * values, never as a control: there is nothing a staff member could tick it to.
+ *
+ * #960 — and that value is a compact `Yes` / `No` chip on the label's own line
+ * rather than the ticked box #927 drew, which cost the Profile a whole row of
+ * height for one boolean. Both keys are resolved here so neither half of the
+ * card picks its own wording: `newMemberValueKey()` is what the chip reads, and
+ * `newMemberAnnounceKey()` is the sentence a screen reader hears instead of a
+ * bare "Yes" — the label beside the chip is not programmatically tied to it.
  */
-export const NEW_MEMBER_CHECKED = '\u2611';
-export const NEW_MEMBER_UNCHECKED = '\u2610';
+export function newMemberValueKey(isNewMember: boolean): 'yes' | 'no' {
+  return isNewMember ? 'yes' : 'no';
+}
 
-export function newMemberCheckbox(isNewMember: boolean): string {
-  return isNewMember ? NEW_MEMBER_CHECKED : NEW_MEMBER_UNCHECKED;
+export function newMemberAnnounceKey(isNewMember: boolean): 'new_member_yes' | 'new_member_no' {
+  return isNewMember ? 'new_member_yes' : 'new_member_no';
 }
