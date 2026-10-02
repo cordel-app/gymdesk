@@ -704,8 +704,12 @@ export function SellableItemBenefitView({
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.gym_charge_id}>
+          {/* #924 stage 2: the index rides along in the key because a caller may
+              render rows whose Sellable Item is gone — an applied Promotion's
+              grants keep the item's identity after it is deleted, and two such
+              lines would otherwise share one key. */}
+          {rows.map((r, idx) => (
+            <tr key={`${r.gym_charge_id}-${idx}`}>
               {columns.map((col) => (
                 <td key={col.key} style={{ ...tdSt, textAlign: col.align }}>{cell(col, r)}</td>
               ))}

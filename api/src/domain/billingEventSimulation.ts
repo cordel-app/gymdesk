@@ -52,6 +52,13 @@ export interface BillingEventLine {
   regular_price: number;
   /** After it. `0` for a waived line, which is still shown as a €0 event. */
   actual_charge: number;
+  /**
+   * #946 — how many Pre-paid periods this line covers. Set only on the
+   * Membership Fee charge that collects a Plan's Pre-paid Duration up front, so
+   * the card can say "3 periods prepaid" beside an amount that is the fee times
+   * that count; `null` on every other line.
+   */
+  prepaid_periods: number | null;
   /** Why `actual_charge` differs from `regular_price`; empty at the regular price. */
   benefits: SimulationBenefit[];
 }
@@ -132,6 +139,7 @@ export function groupBillingEventsByDate(
           unit_price: line.unit_price,
           regular_price: line.regular_price,
           actual_charge: line.actual_charge,
+          prepaid_periods: line.prepaid_periods,
           benefits: line.benefits,
         });
       }

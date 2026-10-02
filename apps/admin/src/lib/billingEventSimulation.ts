@@ -29,6 +29,13 @@ export interface BillingEventSimulationLine {
   unit_price: number;
   regular_price: number;
   actual_charge: number;
+  /**
+   * #946 — how many Pre-paid periods this line covers, on the one line that
+   * ever covers more than one: the Membership Fee charge that collects a Plan's
+   * Pre-paid Duration up front. `null` on every other line, including every
+   * ordinary fee cycle, so the note appears exactly where the server put it.
+   */
+  prepaid_periods: number | null;
   benefits: BillingEventSimulationBenefit[];
 }
 

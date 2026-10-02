@@ -103,6 +103,13 @@ export function BillingEventSimulation({ simulation, t, formatDate }: Props) {
                 </div>
                 <div style={{ fontSize: 12, color: '#888' }}>
                   {priceLabel(line, t)}
+                  {/* #946 — a Pre-paid Duration is collected in one charge on
+                      the first of its periods, so the line says how many
+                      periods that amount covers rather than leaving a ×3
+                      against the Plan's monthly price unexplained. */}
+                  {line.prepaid_periods != null && (
+                    <span> · {t('simulation_prepaid_periods', { count: line.prepaid_periods })}</span>
+                  )}
                   {/* A discounted or waived line still shows what it would
                       otherwise have cost, which is what makes the benefit legible. */}
                   {line.actual_charge !== line.regular_price && (

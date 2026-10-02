@@ -448,6 +448,11 @@ export interface PlanTimelinePeriod {
   /** The VAT-inclusive price this period charges, `null` for no charge. */
   amount: number | null;
   waived: boolean;
+  /**
+   * #946 — how many Pre-paid periods `amount` covers, on the single row that
+   * collects the Plan's Pre-paid Duration up front; `null` on every other row.
+   */
+  prepaidPeriods: number | null;
 }
 
 export interface PlanExampleTimeline {
@@ -464,6 +469,11 @@ export interface PlanExampleTimeline {
  * as the server computed it, VAT included — never recomputed here (#817). A
  * Plan with no price yet has nothing to quote, so it reads as the admin's empty
  * value rather than as €0.00, which would claim the member is charged nothing.
+ *
+ * #946 — the first Pre-paid period charges the fee for every period it pays
+ * for, so its cell quotes that amount (the server's, again) and names the count
+ * beside it: `€210.00 VAT included · 3 periods prepaid`. Without the note the
+ * row would read as a single period costing three times the Plan's price.
  */
 export function formatPlanTimelineBilling(
   row: Pick<PlanTimelinePeriod, 'amount' | 'waived'>,
@@ -471,20 +481,32 @@ export function formatPlanTimelineBilling(
   noChargeLabel: string,
   /** `plans.tax_included_suffix` — "VAT included". */
   taxIncludedSuffix: string,
+  /** `plans.timeline_prepaid_periods`, already pluralised by the page; `null` otherwise. */
+  prepaidNote?: string | null,
 ): string {
   if (row.waived) return noChargeLabel;
   if (row.amount == null) return EMPTY_VALUE;
-  return `€${row.amount.toFixed(2)} ${taxIncludedSuffix}`;
+  const price = `€${row.amount.toFixed(2)} ${taxIncludedSuffix}`;
+  return prepaidNote ? `${price} · ${prepaidNote}` : price;
 }
 
 /**
  * Row tinting, the Promotion table's own three tones: green for a period that
  * charges nothing, grey for the regular ones, amber for the Plan's paid
  * durations in between.
+ *
+ * It reads the row rather than its status alone since #946: the first Pre-paid
+ * period *charges* (it collects the whole Pre-paid Duration), and green is this
+ * table's "no charge" tone — so a charged period of a configured duration takes
+ * the amber one, exactly as a Pay period of the Paid Duration does.
  */
-export function planTimelineRowTone(status: PlanTimelineStatus): 'free' | 'regular' | 'benefit' {
-  if (status === 'free_plan' || status === 'bonus_plan' || status === 'prepaid_plan') return 'free';
+export function planTimelineRowTone(
+  row: Pick<PlanTimelinePeriod, 'status' | 'waived'>,
+): 'free' | 'regular' | 'benefit' {
+  const { status } = row;
   if (status === 'pay_regular') return 'regular';
+  if (!row.waived) return 'benefit';
+  if (status === 'free_plan' || status === 'bonus_plan' || status === 'prepaid_plan') return 'free';
   return 'benefit';
 }
 

@@ -198,14 +198,39 @@ describe('POST /billing/run — a waived cycle is recorded, not charged', () => 
     ]);
   });
 
-  // #635 stage 13 — a Pre-paid month is one of the Paid Duration's months that
-  // was already paid up front, so the run must charge nothing for it and must
-  // not call the provider, exactly as for a free or bonus cycle.
-  it('waives a cycle inside the Pre-paid Duration', async () => {
+  // #635 stage 13 made a Pre-paid period charge nothing; #946 says where the
+  // money for it comes from — the whole Pre-paid Duration is collected on the
+  // *first* of those periods, so that one cycle is a real charge and the ones
+  // it covers are the waived ones.
+  it('charges the whole Pre-paid Duration on the first of its periods (#946)', async () => {
     const memberId = await createMember();
     const planId = await createPlan();
+    // starts_at 2000-01-01, so the 15 Jan cycle sits in the first prepaid period.
     const umId = await createDueAssignment(memberId, planId, {
       snapshot: { free: 0, paid: 3, prepaid: 2 }, nextBillingDate: '2000-01-15',
+    });
+
+    const res = await runBilling();
+    expect(res.status).toBe(200);
+
+    // 2 x 29.99 — one charge for the two periods it pays for, as a real payment
+    // and not a waiver.
+    expect(await eventsFor(umId)).toEqual([
+      { event_type: 'recurring_payment', amount: '59.98', notes: null },
+    ]);
+    // Minor units at the provider boundary, as every charge is. The run bills
+    // every due assignment in the gym, including those the cases above left
+    // behind, so this looks for *this* charge rather than counting calls.
+    expect(executeRecurring.mock.calls.map((c) => c[0].amount)).toContain(5998);
+    expect(await scheduleFor(umId)).toMatchObject({ next_billing_date: '2000-02-15' });
+  });
+
+  it('waives the cycles that prepaid charge already covered', async () => {
+    const memberId = await createMember();
+    const planId = await createPlan();
+    // The 15 Feb cycle is the *second* prepaid period: already paid for.
+    const umId = await createDueAssignment(memberId, planId, {
+      snapshot: { free: 0, paid: 3, prepaid: 2 }, nextBillingDate: '2000-02-15',
     });
 
     await runBilling();
@@ -213,12 +238,14 @@ describe('POST /billing/run — a waived cycle is recorded, not charged', () => 
     expect(await eventsFor(umId)).toEqual([
       { event_type: 'waived_billing', amount: '0.00', notes: 'prepaid_plan' },
     ]);
+    // No charge for this assignment: a waived cycle writes no payment request
+    // and `last_billed_at` stays untouched, while the schedule still moves on.
     const { rows: txs } = await db.query(
       'SELECT id FROM payment_requests WHERE user_membership_id = ?', [umId],
     );
     expect(txs).toHaveLength(0);
     expect(await scheduleFor(umId)).toMatchObject({
-      next_billing_date: '2000-02-15', last_billed_at: null,
+      next_billing_date: '2000-03-15', last_billed_at: null,
     });
   });
 

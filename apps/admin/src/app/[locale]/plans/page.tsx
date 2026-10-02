@@ -1427,8 +1427,14 @@ export default function PlansPage() {
                               row,
                               t('plans.timeline_no_charge'),
                               t('plans.tax_included_suffix'),
+                              // #946 — the first Pre-paid period collects the whole
+                              // Pre-paid Duration, so the cell says how many periods
+                              // its amount covers.
+                              row.prepaidPeriods != null
+                                ? t('plans.timeline_prepaid_periods', { count: row.prepaidPeriods })
+                                : null,
                             ),
-                            tone: planTimelineRowTone(row.status),
+                            tone: planTimelineRowTone(row),
                           }))}
                           footnotes={
                             <>

@@ -70,6 +70,7 @@ import {
   PlanDurationStatus,
   classifyPlanDurationPeriod,
   planDurationWaivesFee,
+  prepaidPeriodsDueOn,
 } from './planDuration';
 import {
   PersonalFeeBenefit,
@@ -358,6 +359,14 @@ export interface SimulationLine {
    * being billed is marked, because an annual price revision could change it.
    */
   price_may_change: boolean;
+  /**
+   * #946 — how many Pre-paid periods this charge covers, for the one line that
+   * ever covers more than one: the Membership Fee collected up front on the
+   * first period of a Plan's Pre-paid Duration ("3 periods prepaid"). `null`
+   * everywhere else, which is every Sellable Item line and every ordinary
+   * Membership Fee cycle.
+   */
+  prepaid_periods: number | null;
 }
 
 export interface SimulationEvent {
@@ -533,9 +542,74 @@ function resolveAgreedMembershipFee(regular: number, date: string, a: Membership
     // Duration behind it still has to be shown.
     return a.planDuration.bonusPeriods > 0 ? { ...fromPromotions, promotional: true } : fromPromotions;
   }
+  if (status === 'prepaid_plan') return resolvePrepaidMembershipFee(regular, date, a, fromPromotions);
   return {
     amount: 0,
     benefits: [{ source: 'membership_plan', name: null, action: 'waive', value: null, period_status: status }],
+    promotional: true,
+    pending: fromPromotions.pending,
+  };
+}
+
+/**
+ * #946 — the Pre-paid Duration, which is the one period of a Plan's Billing &
+ * Duration that is **paid rather than waived**.
+ *
+ * "Pre-paid" says the member settles those periods up front, so the whole
+ * duration is owed on the first of them (`prepaidPeriodsDueOn()`) and the
+ * periods it covers charge nothing further. Before this ticket every prepaid
+ * period resolved to 0 with a `waive` benefit, which showed the gym
+ * `Waived · €0.00` where it had sold `€210`, and left a prepaid Plan unable to
+ * take a first payment at all (`POST /payment-requests` refuses a cycle that
+ * owes nothing, so no card was ever stored and the nightly run skipped the
+ * assignment for ever).
+ *
+ * Three properties are the rule here:
+ *
+ *   - The amount is `regular x periods`, and because
+ *     `withPersonalFeeBenefit()` is applied to whatever this returns, a
+ *     Personal Membership Fee Benefit discounts every period the lump covers
+ *     rather than one of them. An applied Promotion governing the date never
+ *     reaches here at all — it decides the fee alone (#635's Q2 answer), so the
+ *     prepaid lump is the un-promoted regular fee by construction.
+ *   - It carries **no benefit line**: it is a real payment at the regular price
+ *     for `periods` periods, and reporting a `waive` is what made the
+ *     simulation claim the member pays nothing. The line reports the count
+ *     instead (`prepaid_periods`), which is what lets the admin say
+ *     "3 periods prepaid" beside it.
+ *   - It stays `promotional` in the horizon's sense (#629 §6). The lump is not
+ *     this contract's recurring regular charge, so the projection keeps running
+ *     until the first ordinary one — otherwise a Plan with a Pre-paid Duration
+ *     would stop at its own first event and never show the fee resuming, which
+ *     is the ticket's own acceptance criterion.
+ *
+ * A covered period answers `quantity: 0`, which is `walkStream()`'s existing
+ * "this occurrence is not a billing event" (#918): no Membership Fee event is
+ * generated for a period the first charge already paid for. It keeps the
+ * `waive` benefit and its `prepaid_plan` period status, so every path that
+ * prices one date at a time — `priceMembershipFeeOn()`, and through it the
+ * nightly run's `waived_billing` branch and My Membership — behaves exactly as
+ * it did.
+ */
+function resolvePrepaidMembershipFee(
+  regular: number, date: string, a: MembershipFeeContext, fromPromotions: ResolvedCharge,
+): ResolvedCharge {
+  const periods = prepaidPeriodsDueOn(a.planDuration, a.startsAt, date);
+  if (periods > 0) {
+    return {
+      amount: round2(regular * periods),
+      benefits: [],
+      promotional: true,
+      pending: fromPromotions.pending,
+      prepaidPeriods: periods,
+    };
+  }
+  return {
+    amount: 0,
+    quantity: 0,
+    benefits: [{
+      source: 'membership_plan', name: null, action: 'waive', value: null, period_status: 'prepaid_plan',
+    }],
     promotional: true,
     pending: fromPromotions.pending,
   };
@@ -667,9 +741,18 @@ export interface ResolvedCharge {
    * Absent on every other stream, which bills the item's own quantity each
    * time. `0` means the cycle contains no renewal at all — `walkStream()`
    * emits no event for it, because an allowance of nothing is not a billing
-   * event.
+   * event. #946 is the Membership Fee's own use of that `0`: a prepaid period
+   * the first charge already covers generates no billing event.
    */
   quantity?: number;
+  /**
+   * #946 — how many Pre-paid periods this charge covers, set only on the one
+   * Membership Fee charge that collects a Plan's Pre-paid Duration up front.
+   * The line reports it so the simulation can say "3 periods prepaid" rather
+   * than leaving a ×3 unexplained; `applyLineBenefit()`-style arithmetic it is
+   * not, since the amount is already resolved.
+   */
+  prepaidPeriods?: number;
 }
 
 /**
@@ -736,19 +819,28 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
     start: a.startsAt,
     end: a.endsAt,
     resolve: (date) => resolveMembershipFee(regular, date, a),
-    line: (date, resolved) => ({
-      kind: 'membership_fee',
-      label: a.planName ?? 'Membership Fee',
-      user_membership_id: a.userMembershipId,
-      plan_name: a.planName,
-      gym_charge_id: null,
-      quantity: 1,
-      unit_price: regular,
-      regular_price: regular,
-      benefits: resolved.benefits,
-      actual_charge: resolved.amount,
-      price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
-    }),
+    line: (date, resolved) => {
+      // #946 — one Membership Fee charge covers more than one period exactly
+      // once: when it collects the Plan's Pre-paid Duration up front. The
+      // regular price of *that* event is the fee times the periods it pays
+      // for, so the line reads "Regular price · €210.00" rather than a €210
+      // charge against a €70 regular price.
+      const periods = resolved.prepaidPeriods ?? 1;
+      return {
+        kind: 'membership_fee',
+        label: a.planName ?? 'Membership Fee',
+        user_membership_id: a.userMembershipId,
+        plan_name: a.planName,
+        gym_charge_id: null,
+        quantity: periods,
+        unit_price: regular,
+        regular_price: round2(regular * periods),
+        benefits: resolved.benefits,
+        actual_charge: resolved.amount,
+        price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
+        prepaid_periods: resolved.prepaidPeriods ?? null,
+      };
+    },
   };
 }
 
@@ -936,6 +1028,7 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
       benefits: resolved.benefits,
       actual_charge: resolved.amount,
       price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
+      prepaid_periods: null,
     }),
   };
 }
@@ -985,6 +1078,7 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
       benefits: [],
       actual_charge: regular,
       price_may_change: date >= advanceBillingDate(start, 1, 'year'),
+      prepaid_periods: null,
     }),
   };
 }
@@ -1080,6 +1174,7 @@ function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): Sin
       benefits,
       actual_charge: amount,
       price_may_change: false,
+      prepaid_periods: null,
     },
   };
 }
@@ -1153,6 +1248,7 @@ function buildSessionAllowanceStream(a: SimulationAssignment, item: BillableItem
         benefits: resolved.benefits,
         actual_charge: resolved.amount,
         price_may_change: date >= advanceBillingDate(a.startsAt, 1, 'year'),
+        prepaid_periods: null,
       };
     },
   };

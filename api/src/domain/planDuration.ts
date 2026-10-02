@@ -177,10 +177,17 @@ export function withDurationCadence(duration: PlanDuration, cadence: PlanDuratio
 }
 
 /**
- * The periods in which the Plan itself charges no Membership Fee: the Free
- * Period and the Bonus Duration waive it, and a Pre-paid period has already
- * been paid — it bills nothing further, which is the "pre-paid - no charge"
- * line the simulation draws for it (stage 13).
+ * The periods in which the Plan itself charges no *recurring* Membership Fee:
+ * the Free Period and the Bonus Duration waive it, and a Pre-paid period has
+ * already been paid — it bills nothing further, which is the "pre-paid - no
+ * charge" line the simulation draws for it (stage 13).
+ *
+ * "Already been paid" is the whole of what a Pre-paid period means, and #946 is
+ * where the money that pays for it appears: the Pre-paid Duration is collected
+ * **up front, in one charge, on the first of those periods**
+ * (`prepaidPeriodsDueOn()`). So a prepaid period waives the recurring fee, but
+ * the first one is not a free period — ask `prepaidPeriodsDueOn()` before
+ * concluding that a prepaid period charges nothing at all.
  */
 export function planDurationWaivesFee(status: PlanDurationStatus): boolean {
   return status === 'free_plan' || status === 'bonus_plan' || status === 'prepaid_plan';
@@ -224,4 +231,45 @@ export function classifyPlanDurationPeriod(
   if (date < boundary(duration, startsAt, freePeriods + paidPeriods)) return 'pay_plan';
   if (date < boundary(duration, startsAt, freePeriods + paidPeriods + bonusPeriods)) return 'bonus_plan';
   return 'pay_regular';
+}
+
+/**
+ * #946 — how many Pre-paid periods the Membership Fee charged on `date` covers.
+ *
+ * The Pre-paid Duration is not a waiver. It says the member *has already paid*
+ * for the first N periods of the Paid Duration, and until this ticket nothing
+ * anywhere collected that money: every prepaid period priced at 0, so a Plan
+ * sold with "3 months pre-paid" showed `Waived · €0.00` in the Billing Event
+ * Simulation and — because `POST /payment-requests` refuses a cycle that owes
+ * nothing — could not even raise its first payment.
+ *
+ * So the whole Pre-paid Duration is owed **once, on the first of its periods**:
+ *
+ *     |<- prepaid 1 ->|<- prepaid 2 ->|<- prepaid 3 ->|<- pay ->|
+ *        3 x the fee       covered         covered      the fee
+ *
+ * which is the ticket's own example (`€70/month`, 3 pre-paid ⇒ `€210` in the
+ * first billing event, then no Membership Fee until the fourth period).
+ *
+ * The answer is a count rather than an amount because an amount would be a
+ * second implementation of what a cycle costs — the caller multiplies the
+ * regular fee it has already resolved (`resolveMembershipFee()`), so an applied
+ * Promotion's or a Personal Benefit's discount still reaches every period the
+ * lump covers.
+ *
+ * It is keyed on the *period*, not on the exact billing date: anywhere inside
+ * the first prepaid period the lump is what is owed. A date equality test would
+ * mean a first payment raised a day after the assignment was created priced the
+ * fee at 0 and was refused, which is the defect this ticket is fixing.
+ *
+ * `0` for every other date — no Pre-paid Duration, a date outside it, or one of
+ * the periods the first charge already covers.
+ */
+export function prepaidPeriodsDueOn(
+  duration: PlanDuration, startsAt: string, date: string,
+): number {
+  if (duration.prepaidPeriods < 1) return 0;
+  if (classifyPlanDurationPeriod(duration, startsAt, date) !== 'prepaid_plan') return 0;
+  const secondPrepaidPeriod = boundary(duration, startsAt, duration.freePeriods + 1);
+  return date < secondPrepaidPeriod ? duration.prepaidPeriods : 0;
 }

@@ -13,6 +13,13 @@
 // edit of one assignment stays on it (§15). The classification arithmetic is
 // unit-tested in `plan-duration.test.ts`, and what the nightly run does with a
 // prepaid cycle is in `billing-run-waived.test.ts`.
+//
+// #946 settles where the money for those periods comes from: the Pre-paid
+// Duration is **collected in one charge on the first of its periods**, and the
+// periods it pays for generate no Membership Fee event at all. "Pre-paid - no
+// charge" is still true of every period after the first — what changed is that
+// the first one is a real payment rather than a waiver, so the simulation stops
+// quoting €0 for a duration the gym sold for the fee times its length.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -96,6 +103,13 @@ function feeEvents(body: any): [string, number][] {
 
 function feeBenefits(body: any, index: number): any[] {
   return monthlySection(body).events[index].lines.find((l: any) => l.kind === 'membership_fee').benefits;
+}
+
+/** Every projected monthly event's Membership Fee line, in order. */
+function feeLines(body: any): any[] {
+  return (monthlySection(body)?.events ?? [])
+    .map((e: any) => e.lines.find((l: any) => l.kind === 'membership_fee'))
+    .filter(Boolean);
 }
 
 // ─── The Plan carries the field ──────────────────────────────────────────────
@@ -203,24 +217,26 @@ describe('Billing Simulation — a Pre-paid month charges nothing', () => {
     expect(Number(rows[0].pay_beforehand_periods)).toBe(2);
   });
 
-  it('charges the free month, then the two pre-paid ones, at 0', async () => {
+  it('charges the free month at 0, then the two pre-paid months in one payment (#946)', async () => {
     const res = await getSimulation(gymId, memberId);
     expect(res.status).toBe(200);
     expect(feeEvents(res.body)).toEqual([
       [MONTHS[0], 0],   // free
-      [MONTHS[1], 0],   // pre-paid
-      [MONTHS[2], 0],   // pre-paid
+      [MONTHS[1], 200], // both pre-paid months, collected up front
+      // MONTHS[2] is the second pre-paid month: already paid, so no event at all.
       [MONTHS[3], 100], // the remaining paid month — and the horizon
     ]);
   });
 
-  it('labels a pre-paid month as the Plan\'s own pre-paid period, not a waiver of the fee', async () => {
+  it('bills the pre-paid charge at the regular price, for the periods it covers', async () => {
     const { body } = await getSimulation(gymId, memberId);
-    expect(feeBenefits(body, 1)).toEqual([{
-      source: 'membership_plan', name: null, action: 'waive', value: null, period_status: 'prepaid_plan',
-    }]);
+    // Not a waiver: it is the fee times the two periods it pays for, so the line
+    // carries no benefit and says how many periods it covers.
+    expect(feeBenefits(body, 1)).toEqual([]);
+    const prepaid = feeLines(body)[1];
+    expect(prepaid).toMatchObject({ quantity: 2, regular_price: 200, actual_charge: 200, prepaid_periods: 2 });
     expect(feeBenefits(body, 0)[0]).toMatchObject({ period_status: 'free_plan' });
-    expect(feeBenefits(body, 3)).toEqual([]);
+    expect(feeBenefits(body, 2)).toEqual([]);
   });
 
   // §13 — the assignment reads its own frozen column, so the catalogue can move.
@@ -259,8 +275,10 @@ describe('PUT /user-memberships/:id/billing-duration — Pre-paid Duration', () 
     expect(res.status).toBe(200);
     expect(res.body.pay_beforehand_periods).toBe(2);
 
+    // #946 — the two months it now covers are collected on the first of them,
+    // and the second generates no event.
     expect(feeEvents((await getSimulation(gymId, memberA)).body)).toEqual([
-      [MONTHS[0], 0], [MONTHS[1], 0], [MONTHS[2], 100],
+      [MONTHS[0], 200], [MONTHS[2], 100],
     ]);
   });
 
