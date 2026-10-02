@@ -3,6 +3,8 @@ import { db, Tx } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
+import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
+import { getRequestLocale } from '../infra/locale';
 
 export const platformWorkoutTemplatesRouter = Router();
 
@@ -135,7 +137,7 @@ platformWorkoutTemplatesRouter.get('/:id', requireSuperadmin, async (req, res, n
               'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                 SELECT JSON_OBJECT(
                     'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,
-                    'exercise_name', e.name,
+                    'exercise_name', ${localizedExerciseNameSql('e', getRequestLocale(req))},
                     'exercise_image_url', e.image_url, 'exercise_image_thumbnail_url', e.image_thumbnail_url, 'exercise_video_url', e.video_url, 'exercise_video_thumbnail_url', e.video_thumbnail_url,
                     'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
                     'sets', wte.sets, 'rest_seconds', wte.rest_seconds, 'tempo', wte.tempo,
@@ -332,7 +334,7 @@ platformWorkoutTemplatesRouter.get('/:id/blocks/:blockId/exercises', requireSupe
   try {
     if (!(await blockExists(blockId, id))) return res.status(404).json({ error: 'Block not found' });
     const { rows } = await db.query(
-      `SELECT wte.*, e.name AS exercise_name,
+      `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte
        JOIN exercises e ON e.id = wte.exercise_id
@@ -383,7 +385,7 @@ platformWorkoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireSup
       [blockId, parsed.exercise_id, posRows[0].next_position, parsed.min_reps, parsed.max_reps,
        parsed.sets, parsed.rest_seconds, parsed.tempo,
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit],
-      `SELECT wte.*, e.name AS exercise_name,
+      `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?`,
       (exId) => [exId],
@@ -431,7 +433,7 @@ platformWorkoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requi
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
-      `SELECT wte.*, e.name AS exercise_name,
+      `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
               e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?`,
       [exId],

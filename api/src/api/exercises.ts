@@ -44,6 +44,17 @@ import {
   uploadStorageObject,
 } from '../infra/storage';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
+import {
+  copyExerciseTranslations,
+  exerciseNameSearchSql,
+  exerciseTranslationsExpr,
+  localizedExerciseNameExpr,
+  localizedExerciseNameSql,
+  parseExerciseTranslations,
+  replaceExerciseTranslations,
+  withExerciseTranslations,
+} from '../domain/exerciseTranslations';
+import { BASE_LOCALE, SUPPORTED_LOCALES, TRANSLATABLE_LOCALES, getRequestLocale } from '../infra/locale';
 import { logger } from '../lib/logger';
 
 /**
@@ -93,25 +104,35 @@ musclesRouter.get('/', (_req, res) => {
 });
 
 /* ---- Exercises ---- */
-// #965/migration 208 added `created_by_name` / `created_by_type` /
-// `modified_by_name` / `modified_by_type` to `exercises`, written **only** by the
-// platform router and therefore only ever on a Base Exercise — a superadmin has
-// no `gym_memberships` row for `created_by` to point at. A gym-owned exercise's
-// actor is still the membership this query joins.
-//
-// Which means the four aliases below do two jobs. They mask the platform actor
-// on a `gym_id IS NULL` row, because this router serves base rows too
-// (`GET /exercises/:id`) and a shared catalogue's rows are not the reading gym's
-// to attribute — their administrator is a Cordel employee, and the catalogue is
-// deliberately shared while their name is not (the rule
-// `itemDetailColumnsSql`'s `maskPlatformActors` already applies to the Nutrition
-// Library). And they shadow the raw columns `e.*` now expands to, which is why
-// they must stay **after** `e.*`: mysql2 builds the row object in field order, so
-// the last field of a duplicated name is the one that survives. Keep every use of
-// `${SELECT}` top-level for the same reason — wrapping it in a derived table or a
-// view would raise ER_DUP_FIELDNAME.
-const SELECT = `
+/**
+ * #967: `name` stays the base (English) value an edit form submits back, and the
+ * row carries the caller's language beside it as `display_name` — resolved in
+ * SQL from `exercise_translations`, falling back to `name`. Prefilling a form
+ * from a translation and saving would overwrite the English original, which is
+ * why the two are separate fields rather than one localized `name` (#643).
+ *
+ * #965/migration 208 added `created_by_name` / `created_by_type` /
+ * `modified_by_name` / `modified_by_type` to `exercises`, written **only** by the
+ * platform router and therefore only ever on a Base Exercise — a superadmin has
+ * no `gym_memberships` row for `created_by` to point at. A gym-owned exercise's
+ * actor is still the membership this query joins.
+ *
+ * Which means the four aliases below do two jobs. They mask the platform actor
+ * on a `gym_id IS NULL` row, because this router serves base rows too
+ * (`GET /exercises/:id`) and a shared catalogue's rows are not the reading gym's
+ * to attribute — their administrator is a Cordel employee, and the catalogue is
+ * deliberately shared while their name is not (the rule
+ * `itemDetailColumnsSql`'s `maskPlatformActors` already applies to the Nutrition
+ * Library). And they shadow the raw columns `e.*` now expands to, which is why
+ * they must stay **after** `e.*`: mysql2 builds the row object in field order, so
+ * the last field of a duplicated name is the one that survives. Keep every use of
+ * `selectFor()` top-level for the same reason — wrapping it in a derived table or
+ * a view would raise ER_DUP_FIELDNAME.
+ */
+const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
   SELECT e.*,
+    ${localizedExerciseNameExpr('e', locale, 'display_name')},
+    ${exerciseTranslationsExpr('e')},
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE gm_c.name END           AS created_by_name,
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.created_by_type END   AS created_by_type,
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE gm_m.name END           AS modified_by_name,
@@ -126,6 +147,13 @@ const SELECT = `
   LEFT JOIN gym_memberships gm_c ON gm_c.id = e.created_by
   LEFT JOIN gym_memberships gm_m ON gm_m.id = e.modified_by
 `;
+
+/**
+ * The row as the caller reads it. Every route builds its SELECT from the
+ * request's own locale so a write's response, a duplicate's and an import's
+ * carry the same `display_name` a list read would.
+ */
+const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
 
 async function getCallerMembershipId(req: Request): Promise<number | null> {
   const userId = req.auth?.userId;
@@ -207,13 +235,31 @@ exercisesRouter.get('/', async (req, res) => {
   if (status && !SETTABLE_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
+  const locale = getRequestLocale(req);
   const params: any[] = [gymId];
-  let sql = `${SELECT} WHERE e.gym_id = ? AND e.status != 'deleted'`;
+  let sql = `${selectFor(locale)} WHERE e.gym_id = ? AND e.status != 'deleted'`;
   if (status) { sql += ' AND e.status = ?'; params.push(status); }
-  if (q) { sql += ' AND e.name LIKE ?'; params.push(`%${q}%`); }
-  sql += ' ORDER BY e.name ASC';
+  // #967 §7: the search matches the base name *or* any stored translation, so a
+  // gym searching for `Press de Banca` finds the exercise whose base name is
+  // `Bench Press` — in any language, not only the one on screen. Ordering
+  // follows the *displayed* name for the same reason (#643).
+  if (q) { sql += ` AND ${exerciseNameSearchSql('e')}`; params.push(`%${q}%`, `%${q}%`); }
+  sql += ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
   const { rows } = await db.query(sql, params);
-  res.json(rows);
+  res.json(rows.map(withExerciseTranslations));
+});
+
+/**
+ * #967 §3: the languages an exercise name may be entered in, so the editor
+ * renders one input per translatable locale instead of hardcoding a second copy
+ * of the application's language list (the ticket's closing "Important"). Same
+ * contract as `GET /platform/nutrition-library/locales` (#643), served here
+ * because the gym-facing Exercises page reads its catalogues from this router.
+ *
+ * Registered **before** `/:id`, or Express reads `locales` as an exercise id.
+ */
+exercisesRouter.get('/locales', (_req, res) => {
+  res.json({ locales: SUPPORTED_LOCALES, base_locale: BASE_LOCALE, translatable: TRANSLATABLE_LOCALES });
 });
 
 /**
@@ -272,9 +318,11 @@ exercisesRouter.get('/base', async (req, res, next) => {
   }
   // The `?`s inside IMPORTED_COPY_ID and MEDIA_REFRESHABLE sit in the SELECT
   // list, so their gymIds bind before the WHERE-clause filters below, in order.
+  const locale = getRequestLocale(req);
   const params: any[] = [gymId, gymId];
   let sql = `
-    SELECT e.id, e.name, e.description, e.image_url, e.image_thumbnail_url,
+    SELECT e.id, e.name, ${localizedExerciseNameExpr('e', locale, 'display_name')},
+      e.description, e.image_url, e.image_thumbnail_url,
       e.video_url, e.video_thumbnail_url,
       (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
        FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
@@ -282,12 +330,12 @@ exercisesRouter.get('/base', async (req, res, next) => {
       ${MEDIA_REFRESHABLE} AS media_refreshable
     FROM exercises e
     WHERE e.gym_id IS NULL AND e.status = 'active'`;
-  if (q) { sql += ' AND e.name LIKE ?'; params.push(`%${q}%`); }
+  if (q) { sql += ` AND ${exerciseNameSearchSql('e')}`; params.push(`%${q}%`, `%${q}%`); }
   if (muscle) {
     sql += ' AND EXISTS (SELECT 1 FROM exercise_muscles em2 WHERE em2.exercise_id = e.id AND em2.muscle = ?)';
     params.push(muscle);
   }
-  sql += ' ORDER BY e.name ASC';
+  sql += ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
   try {
     const { rows } = await db.query(sql, params);
     // MySQL answers the CASE with 0/1; the contract is a boolean.
@@ -295,14 +343,21 @@ exercisesRouter.get('/base', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-exercisesRouter.get('/:id', async (req, res) => {
+/**
+ * #967: the single-row read carries `translations` ({ locale: name }) beside the
+ * base `name` and the resolved `display_name` — the editor seeds its per-locale
+ * inputs from it, and the list read deliberately does not pay for them.
+ */
+exercisesRouter.get('/:id', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(
-    `${SELECT} WHERE e.id = ? AND (e.gym_id = ? OR e.gym_id IS NULL) AND e.status != 'deleted'`,
-    [req.params.id, gymId],
-  );
-  if (rows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
-  res.json(rows[0]);
+  try {
+    const { rows } = await db.query(
+      `${selectForReq(req)} WHERE e.id = ? AND (e.gym_id = ? OR e.gym_id IS NULL) AND e.status != 'deleted'`,
+      [req.params.id, gymId],
+    );
+    if (rows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
+    res.json(withExerciseTranslations(rows[0]));
+  } catch (err) { next(err); }
 });
 
 /** #62: where this exercise is used (non-deleted workout templates). */
@@ -328,6 +383,11 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const allowedResultTypeIds: number[] | undefined =
     Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
+  // #967: the name in every other supported language. A request that omits the
+  // field creates an exercise with its base name alone — a translation is never
+  // invented for it (§5, §9).
+  const { translations, error: translationsError } = parseExerciseTranslations(req.body);
+  if (translationsError) return res.status(400).json({ error: translationsError });
   try {
     if (await nameTaken(gymId, name.trim())) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
@@ -345,11 +405,13 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
       );
       if (muscles) await replaceMuscles(tx, gymId, insertId, muscles);
       if (allowedResultTypeIds) await replaceAllowedResultTypes(tx, insertId, allowedResultTypeIds);
+      if (translations) await replaceExerciseTranslations(tx, insertId, translations);
       return insertId;
     });
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ?`, [insertId]);
-    recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [insertId]);
+    const created = withExerciseTranslations(rows[0]);
+    recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: created });
+    res.status(201).json(created);
   } catch (e: any) {
     handleDupEntry(e, res, next, 'Exercise with this name already exists.');
   }
@@ -375,6 +437,13 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
   const allowedResultTypeIds: number[] | undefined =
     Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
+  // #967: replace-all, like every other collection this PUT carries — the
+  // payload is the complete set, so a locale left blank loses its row and falls
+  // back to the base name. A request that does not mention `translations` at all
+  // leaves the stored rows alone, so a client written before this ticket (or one
+  // editing another field) cannot silently clear a gym's translations.
+  const { translations, error: translationsError } = parseExerciseTranslations(req.body);
+  if (translationsError) return res.status(400).json({ error: translationsError });
   try {
     if (name?.trim() && await nameTaken(gymId, name.trim(), id)) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
@@ -428,10 +497,12 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
       if (rowCount === 0) throw Object.assign(new Error('Exercise not found'), { status: 404 });
       if (muscles) await replaceMuscles(tx, gymId, id, muscles);
       if (allowedResultTypeIds) await replaceAllowedResultTypes(tx, id, allowedResultTypeIds);
+      if (translations) await replaceExerciseTranslations(tx, id, translations);
     });
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
-    recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: rows[0] });
-    res.json(rows[0]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
+    const updated = withExerciseTranslations(rows[0]);
+    recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: updated });
+    res.json(updated);
   } catch (e: any) {
     if (e.status) return res.status(e.status).json({ error: e.message });
     handleDupEntry(e, res, next, 'Exercise with this name already exists.');
@@ -460,7 +531,7 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
   const id = String(req.params.id);
   try {
     const { rows: orig } = await db.query(
-      `${SELECT} WHERE e.id = ? AND e.gym_id = ? AND e.status != 'deleted'`,
+      `${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ? AND e.status != 'deleted'`,
       [id, gymId],
     );
     if (orig.length === 0) return res.status(404).json({ error: 'Exercise not found' });
@@ -497,12 +568,16 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
           [insertId, rt.id],
         );
       }
+      // #967: a copy is a copy — the per-locale names travel with the name they
+      // translate, or the copy would read in English for every viewer the
+      // original served in their own language.
+      await copyExerciseTranslations(tx, id, insertId);
       return insertId;
     });
 
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    res.status(201).json(withExerciseTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -512,7 +587,7 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
   const id = String(req.params.id);
   try {
     const { rows: orig } = await db.query(
-      `${SELECT} WHERE e.id = ? AND e.gym_id IS NULL AND e.status != 'deleted'`,
+      `${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL AND e.status != 'deleted'`,
       [id],
     );
     if (orig.length === 0) return res.status(404).json({ error: 'Base exercise not found' });
@@ -548,12 +623,16 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
           [insertId, rt.id],
         );
       }
+      // #967: a copy is a copy — the per-locale names travel with the name they
+      // translate, or the copy would read in English for every viewer the
+      // original served in their own language.
+      await copyExerciseTranslations(tx, id, insertId);
       return insertId;
     });
 
-    const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
-    res.status(201).json(rows[0]);
+    res.status(201).json(withExerciseTranslations(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -606,7 +685,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
   try {
     const marks = ids.map(() => '?').join(',');
     const { rows: baseRows } = await db.query(
-      `${SELECT} WHERE e.id IN (${marks}) AND e.gym_id IS NULL AND e.status = 'active'`,
+      `${selectForReq(req)} WHERE e.id IN (${marks}) AND e.gym_id IS NULL AND e.status = 'active'`,
       ids,
     );
     const base = new Map<number, any>(baseRows.map((row: any) => [Number(row.id), row]));
@@ -685,6 +764,13 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         await replaceMuscles(tx, gymId, insertId, muscles);
         const rts: { id: number }[] = Array.isArray(src.allowed_result_types) ? src.allowed_result_types : [];
         await replaceAllowedResultTypes(tx, insertId, rts.map((rt) => rt.id));
+        // #967 §4: the import preserves the Base Exercise's per-locale names, so
+        // the gym's copy reads in the member's own language from the first day.
+        // Only on the **create** arm: a re-import refreshes media (#719 §12) and
+        // deliberately not translations — the gym may have corrected one, and
+        // overwriting that is what §4's "do not overwrite an existing
+        // translation" forbids.
+        await copyExerciseTranslations(tx, id, insertId);
         insertedIds.push(insertId);
       }
       return { insertedIds, refreshed, skipped };
@@ -694,10 +780,10 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
     if (insertedIds.length > 0) {
       const importedMarks = insertedIds.map(() => '?').join(',');
       const { rows } = await db.query(
-        `${SELECT} WHERE e.id IN (${importedMarks}) AND e.gym_id = ? ORDER BY e.name ASC`,
+        `${selectForReq(req)} WHERE e.id IN (${importedMarks}) AND e.gym_id = ? ORDER BY e.name ASC`,
         [...insertedIds, gymId],
       );
-      imported = rows;
+      imported = rows.map(withExerciseTranslations);
       for (const row of rows) {
         recordAudit(req, { action: 'create', entityType: 'exercise', entityId: row.id, next: row });
       }
@@ -909,8 +995,8 @@ async function loadExerciseForMedia(
 
 /** The exercise as every other route returns it, after its media changed. */
 async function respondWithExercise(req: Request, res: express.Response, gymId: string, id: number | string) {
-  const { rows } = await db.query(`${SELECT} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
-  res.json(rows[0]);
+  const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
+  res.json(withExerciseTranslations(rows[0]));
 }
 
 /**

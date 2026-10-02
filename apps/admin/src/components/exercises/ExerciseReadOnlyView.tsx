@@ -3,6 +3,7 @@
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/StatusBadge';
+import { localeLabel } from '@/lib/localeLabels';
 import {
   EXERCISE_EMPTY_VALUE,
   exerciseDisplayValue,
@@ -71,6 +72,8 @@ export function ExerciseReadOnlyView({
 }) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
+  // #967: the language names live in the root namespace, resolved by `localeLabel`.
+  const tRoot = useTranslations();
 
   const roleOf = new Map((exercise.muscles ?? []).map((m) => [m.key, m.role]));
   // The catalogue plus any legacy key already on the exercise, exactly as the
@@ -88,7 +91,24 @@ export function ExerciseReadOnlyView({
     <>
       <p style={exerciseSectionLabelStyle}>{t('section_general')}</p>
       <div style={exerciseFieldGridStyle}>
+        {/* #967 §6: the read-only half of the editor's NAME, which is one input
+            per supported language — so the card lists the base name and every
+            translation the exercise actually stores, in the same grid, under the
+            same label. It needs no locale list of its own: the row's own
+            `translations` map is the languages it has, and `⋮ → Details` stays
+            the technical metadata alone (#965 §12). A list row and a workout
+            still show one name. */}
         <Field wide label={t('label_name')} value={exercise.name} />
+        {Object.entries(exercise.translations ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([loc, value]) => (
+            <Field
+              key={loc}
+              wide
+              label={`${t('label_name')} — ${localeLabel(loc, (key) => tRoot(key as any))}`}
+              value={exerciseDisplayValue(value)}
+            />
+          ))}
         <Field wide label={t('label_description')} value={exerciseDisplayValue(exercise.description)} />
         <div>
           <p style={exerciseFieldLabelStyle}>{t('label_status')}</p>

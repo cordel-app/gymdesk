@@ -17,7 +17,7 @@ import type { PreparedExerciseVideo } from '@/lib/exerciseVideoUpload';
 // same ones the gym Exercises page renders. What this page supplies is the
 // platform context: the `/platform/exercises` routes and their superadmin
 // permissions, which are untouched (§6, AC4, AC5).
-import { ExerciseEditor, ExerciseMediaPair } from '@/components/exercises/ExerciseEditor';
+import { ExerciseEditor, ExerciseMediaPair, type ExerciseNameLocales } from '@/components/exercises/ExerciseEditor';
 import { useExerciseEditorState, useMuscleLabel } from '@/components/exercises/useExerciseEditorState';
 // #965: the expanded card is the editor's read-only counterpart, and `⋮ → Details`
 // is the one place the technical metadata lives. Both are shared with the gym
@@ -40,6 +40,10 @@ const API_BASE = '/platform/exercises';
 interface Exercise {
   id: number;
   name: string;
+  /** #967: the name in the administrator's language, resolved server-side. */
+  display_name: string;
+  /** #967: the stored per-locale names — what the editor seeds its inputs from. */
+  translations: Record<string, string>;
   description: string | null;
   status: 'active' | 'inactive';
   /**
@@ -95,6 +99,9 @@ export default function CordelExercisesPage() {
   // feature flags — a platform screen must not depend on those.
   const [muscleKeys, setMuscleKeys] = useState<string[]>([]);
   const [resultTypes, setResultTypes] = useState<ResultTypeRow[]>([]);
+  // #967 §3: and the languages a Base Exercise's name is entered in, which that
+  // same read carries — no language list in this page either.
+  const [nameLocales, setNameLocales] = useState<ExerciseNameLocales | null>(null);
   const muscleLabel = useMuscleLabel(muscleKeys);
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -135,9 +142,15 @@ export default function CordelExercisesPage() {
   useEffect(() => {
     (async () => {
       try {
-        const lookups = await apiFetch<{ muscles: { key: string }[]; result_types: ResultTypeRow[] }>(`${API_BASE}/lookups`);
+        const lookups = await apiFetch<{
+          muscles: { key: string }[];
+          result_types: ResultTypeRow[];
+          base_locale: string;
+          translatable: string[];
+        }>(`${API_BASE}/lookups`);
         setMuscleKeys(lookups.muscles.map((m) => m.key));
         setResultTypes(lookups.result_types);
+        setNameLocales({ base: lookups.base_locale, translatable: lookups.translatable });
       } catch { /* non-critical */ }
     })();
   }, [apiFetch]);
@@ -328,7 +341,8 @@ export default function CordelExercisesPage() {
   // metadata is in `⋮ → Details`. The column order is the gym Exercises list's, so
   // the same entity reads the same way on both screens.
   const columns: Column<Exercise>[] = [
-    { header: t('col_name'), render: (row) => <strong>{row.name}</strong> },
+    // #967 §6: the list shows the name in the application's language.
+    { header: t('col_name'), render: (row) => <strong>{row.display_name ?? row.name}</strong> },
     {
       header: t('col_description'),
       render: (row) => row.description
@@ -384,6 +398,7 @@ export default function CordelExercisesPage() {
               mode="create"
               idPrefix="base-exercise-new"
               state={createState}
+              nameLocales={nameLocales}
               muscleKeys={muscleKeys}
               muscleLabel={muscleLabel}
               resultTypes={resultTypes}
@@ -410,7 +425,8 @@ export default function CordelExercisesPage() {
                 mode="edit"
                 idPrefix={`base-exercise-${row.id}`}
                 state={editState}
-                muscleKeys={muscleKeys}
+                nameLocales={nameLocales}
+              muscleKeys={muscleKeys}
                 muscleLabel={muscleLabel}
                 resultTypes={resultTypes}
                 nameRef={nameInputRef}
@@ -431,7 +447,7 @@ export default function CordelExercisesPage() {
 
       <ConfirmDialog
         open={deleting !== null}
-        message={`Delete base exercise "${deleting?.name}"?`}
+        message={`Delete base exercise "${deleting?.display_name ?? deleting?.name}"?`}
         confirmLabel={t('delete')}
         cancelLabel={t('cancel')}
         onConfirm={handleDelete}

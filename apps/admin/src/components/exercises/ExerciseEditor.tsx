@@ -7,6 +7,7 @@ import { primaryBtnSmall } from '@/components/ui';
 // inline row, the themed primary and the neutral secondary — rather than a
 // right-aligned pair with a grey Cancel of this form's own.
 import { formErrorStyle, inlineActionsRowStyle, secondaryBtnSmall } from '@/components/formChrome';
+import { localeLabel } from '@/lib/localeLabels';
 import {
   EXERCISE_STATUSES,
   resultTypeLabel,
@@ -26,6 +27,16 @@ import {
   exerciseSectionLabelStyle,
   exerciseSubSectionStyle,
 } from './exerciseFieldChrome';
+
+/**
+ * The languages an exercise name is entered in (#967): the base locale
+ * `exercises.name` is written in, plus the ones that get a `translations` row.
+ * Exactly the API's own payload, so neither page reshapes it.
+ */
+export interface ExerciseNameLocales {
+  base: string;
+  translatable: string[];
+}
 
 /**
  * The one Exercise editor (#806).
@@ -67,6 +78,16 @@ export interface ExerciseEditorProps {
   idPrefix: string;
   /** The form state, from `useExerciseEditorState()`. */
   state: ExerciseEditorState;
+  /**
+   * #967 §3: the languages a name is entered in, as the context's own read
+   * returned them — `GET /exercises/locales` for a gym, `GET
+   * /platform/exercises/lookups` for the platform. Never a list declared in this
+   * component: the application's language configuration has one source (the
+   * ticket's closing "Important"), and until the read resolves — or where a
+   * deployment configures a single locale — this is `null` and the form renders
+   * the one Name field it always did.
+   */
+  nameLocales?: ExerciseNameLocales | null;
   /** The muscle catalogue, as the context's lookup endpoint returned it. */
   muscleKeys: string[];
   /** A muscle key's label — `useMuscleLabel()`. */
@@ -84,10 +105,11 @@ export interface ExerciseEditorProps {
 }
 
 export function ExerciseEditor({
-  mode, idPrefix, state, muscleKeys, muscleLabel, resultTypes, media, nameRef, saveLabel, onCancel, onSave,
+  mode, idPrefix, state, nameLocales, muscleKeys, muscleLabel, resultTypes, media, nameRef, saveLabel, onCancel, onSave,
 }: ExerciseEditorProps) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
+  const tCommon = useTranslations();
   const { form, setForm } = state;
   const id = (field: string) => `${idPrefix}-${field}`;
   // #717 Q6: the creation form owns `video_url`; the editor manages the video
@@ -97,15 +119,48 @@ export function ExerciseEditor({
   // The static catalog plus any legacy key already on the exercise being edited.
   const pickerKeys = [...muscleKeys, ...Array.from(state.muscles.keys()).filter((k) => !muscleKeys.includes(k))];
   const primaryLabel = saveLabel ?? (mode === 'create' ? t('save') : t('save_changes'));
+  // The base locale is the language `exercises.name` itself is written in, so the
+  // field that *is* the base name carries its label; the others are rows in
+  // `translations`. One source for both halves, hence one prop.
+  const translatableLocales = nameLocales?.translatable ?? [];
+  const localeName = (loc: string) => localeLabel(loc, (key) => tCommon(key as any));
 
   return (
     <>
       <p style={sectionLabelSt}>{t('section_general')}</p>
       <div style={exerciseFieldGridStyle}>
+        {/* #967 §3: NAME is one input per supported language. The base locale's
+            is the exercise's own `name` — required, uniqueness-checked, and the
+            value every other locale falls back to — and each translatable
+            locale's is optional, so an exercise with one name stays legal (§5).
+            The labels come from the API's locale list, never from a language
+            list declared here. */}
         <div style={exerciseFieldWideStyle}>
-          <label htmlFor={id('name')} style={inlineLabelSt}>{t('label_name')} *</label>
+          <label htmlFor={id('name')} style={inlineLabelSt}>
+            {translatableLocales.length > 0 && nameLocales
+              ? `${t('label_name')} — ${localeName(nameLocales.base)} *`
+              : `${t('label_name')} *`}
+          </label>
           <input id={id('name')} ref={nameRef} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} style={inlineInputSt} />
         </div>
+        {translatableLocales.map((loc) => (
+          <div key={loc} style={exerciseFieldWideStyle}>
+            <label htmlFor={id(`name-${loc}`)} style={inlineLabelSt}>
+              {`${t('label_name')} — ${localeName(loc)}`}
+            </label>
+            <input
+              id={id(`name-${loc}`)}
+              value={form.translations[loc] ?? ''}
+              onChange={(e) => setForm({ ...form, translations: { ...form.translations, [loc]: e.target.value } })}
+              style={inlineInputSt}
+            />
+          </div>
+        ))}
+        {translatableLocales.length > 0 && (
+          <p style={{ ...exerciseFieldWideStyle, margin: '-6px 0 12px', fontSize: 12, color: '#888' }}>
+            {t('name_translations_hint')}
+          </p>
+        )}
         <div style={exerciseFieldWideStyle}>
           <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
           <input id={id('description')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={inlineInputSt} />

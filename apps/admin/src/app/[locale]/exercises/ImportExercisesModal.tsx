@@ -21,6 +21,8 @@ interface BaseMuscle { key: string; role: 'principal' | 'secondary' }
 export interface BaseExercise {
   id: number;
   name: string;
+  /** #967: the Base Exercise's name in the gym admin's language (base name as the fallback). */
+  display_name?: string | null;
   description: string | null;
   image_url: string | null;
   image_thumbnail_url: string | null;
@@ -264,7 +266,9 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
                   disabled={!selectable || importing}
                   onChange={() => toggle(row.id)}
                 />
-                <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{row.name}</span>
+                {/* #967 §7: the library is searched across every translation and
+                    listed in the reader's own language. */}
+                <span style={{ flex: 1, fontSize: 14, fontWeight: 500 }}>{row.display_name ?? row.name}</span>
                 {principal && <span style={{ fontSize: 12, color: '#777' }}>{principal}</span>}
                 {mediaUpdate && (
                   <span

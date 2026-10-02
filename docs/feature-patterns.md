@@ -1721,6 +1721,54 @@ pattern used for categories and qualities.
 - **Authoring lives where the rows are owned** — system items on the Cordel page, one input per translatable locale (blank = fall back), with the locale list served by the API (`GET …/locales`) rather than hardcoded a second time in the frontend.
 - **Slug-keyed catalogues stay in the locale files.** Categories and nutritional qualities are rendered from `nutrition_library.category_*`/`quality_*` keys; there is no reason to move a fixed enum into the database to translate it.
 
+### The second adopter: one mechanism, a wrapper per entity (#967)
+
+Exercise names needed the same thing two years of migrations later, which is the
+moment a pattern either becomes a module or becomes two copies of a `COALESCE`.
+
+- **The rules move, the configuration stays with the entity.**
+  `api/src/domain/nameTranslations.ts` holds the SQL builders and the writes over
+  a `TranslatedNameConfig` (junction table, FK column, subquery alias, the base
+  column's length); `domain/nutritionLibrary.ts` and
+  `domain/exerciseTranslations.ts` are thin wrappers, so a query still reads
+  `localizedExerciseNameSql('e', locale)` and carries no configuration. The
+  Nutrition Library's exported helpers kept their names and behaviour, which is
+  what let ~30 call sites stay untouched.
+- **Project the stored map on every read, list reads included.**
+  `⋮ → Edit` seeds its form from the row the page already holds (#800). A form
+  seeded without the translations submits an empty replace-all set and clears
+  them on the first save — so the aggregate (`JSON_OBJECTAGG`) rides along with
+  the row rather than being a second read, and `NULL` is normalized to `{}`.
+- **Omitted is not empty.** A `PUT` that never mentions `translations` leaves the
+  rows alone; `{}` clears them. Without that distinction a client written before
+  the ticket — or one editing another field — wipes a gym's translations, the same
+  trap #896 and #918 document for their own replace-all sections.
+- **Search every language, order by the displayed one.** `?q=` matches the base
+  name *or* any stored translation (not only the locale on screen), because a gym
+  searching `Press de Banca` means the exercise whether or not its screen is in
+  Spanish. A picker that filters client-side matches the same three things
+  (`lib/exerciseNames.ts`), or the list and the combobox disagree.
+- **A copy copies them.** Duplicate, Clone and the Base Exercise import carry the
+  rows over; the *re-import* deliberately does not, because it exists to restore
+  System media and must not overwrite a translation the gym corrected.
+- **The language list is the API's, in the UI too.** The editor takes
+  `nameLocales` as a prop (`GET /exercises/locales`, or the platform page's
+  existing `/lookups`) and names no locale at all; `lib/localeLabels.ts` is the one
+  place a locale gets a *label*, resolved before `t()` so an unlabelled tag renders
+  `FR` rather than `languages.fr`.
+- **Seed nothing you cannot source.** There is no base-exercise catalogue in the
+  repo to translate, so migration 210 is pure DDL: an existing exercise keeps its
+  one name, and §9's "do not silently invent translations" is satisfied by doing
+  nothing rather than by guessing.
+
+Reference implementation: migration 210 + `api/src/domain/nameTranslations.ts` +
+`api/src/domain/exerciseTranslations.ts` +
+`apps/admin/src/components/exercises/ExerciseEditor.tsx`. Regression tests:
+`api/src/test/exercise-translations.unit.test.ts` (which also fails if a router
+projects a raw `e.name` as an exercise name),
+`api/src/test/exercise-translations.test.ts` and
+`apps/admin/src/test/exercise-name-translations.test.ts`.
+
 Reference implementation: migration 166 + `api/src/infra/locale.ts` + the
 translation helpers in `api/src/domain/nutritionLibrary.ts` +
 `apps/admin/src/app/[locale]/cordel/nutrition-library/page.tsx`.

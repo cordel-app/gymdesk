@@ -34,6 +34,19 @@ export type ExerciseFormSectionKey = (typeof EXERCISE_FORM_SECTIONS)[number]['ke
 /** GENERAL holds Name, Description and Status, in that order (#805 §5, AC2). */
 export const EXERCISE_GENERAL_FIELDS = ['name', 'description', 'status'] as const;
 
+/**
+ * #967: the Name field is one input per supported language, not one input. The
+ * base locale's is `name` — the value stored on the exercise itself, the one the
+ * duplicate check compares and the fallback every other locale resolves to —
+ * and each translatable locale's is an entry in `translations`, blank meaning
+ * "fall back to the base name" exactly as the Nutrition Library's does (#643).
+ *
+ * Which locales those are is **not** declared here: the page reads them from the
+ * API and hands them to the editor, so there is no second copy of the
+ * application's language configuration (the ticket's closing "Important").
+ */
+export type ExerciseNameTranslations = Record<string, string>;
+
 /** CONFIGURATION holds the per-exercise defaults. */
 export const EXERCISE_CONFIGURATION_FIELDS = [
   'min_reps_default',
@@ -76,7 +89,10 @@ export function resultTypeLabel(rt: ResultTypeRow, translate: (key: string) => s
 export type MuscleRole = 'principal' | 'secondary';
 
 export interface ExerciseFormValues {
+  /** The base-locale name (#967): what `exercises.name` stores. */
   name: string;
+  /** #967: `{ locale: name }` for the translatable locales; blank = fall back. */
+  translations: ExerciseNameTranslations;
   description: string;
   /** #717 Q6: offered by the creation form only — the editor manages the video through its upload control. */
   video_url: string;
@@ -90,7 +106,7 @@ export interface ExerciseFormValues {
 
 export function emptyExerciseForm(): ExerciseFormValues {
   return {
-    name: '', description: '', video_url: '',
+    name: '', translations: {}, description: '', video_url: '',
     min_reps_default: '', max_reps_default: '', sets_default: '', rest_default_seconds: '', notes_default: '',
     status: 'active',
   };
@@ -98,6 +114,14 @@ export function emptyExerciseForm(): ExerciseFormValues {
 
 export interface ExerciseRowValues {
   name: string;
+  /**
+   * #967: the stored per-locale names, as the single-row read returns them. A
+   * list row does not carry them, so the editor seeds an empty map and the first
+   * save of a form opened from a list would clear them — which is why both pages
+   * seed from `GET /exercises/:id` and why the routers leave `translations`
+   * untouched when a payload omits the field.
+   */
+  translations?: ExerciseNameTranslations | null;
   description: string | null;
   video_url: string | null;
   min_reps_default: number | null;
@@ -111,6 +135,7 @@ export interface ExerciseRowValues {
 export function exerciseFormFromRow(e: ExerciseRowValues): ExerciseFormValues {
   return {
     name: e.name,
+    translations: { ...(e.translations ?? {}) },
     description: e.description ?? '',
     video_url: e.video_url ?? '',
     min_reps_default: e.min_reps_default != null ? String(e.min_reps_default) : '',
@@ -134,9 +159,26 @@ interface PayloadExtras {
   resultTypeIds: Set<number>;
 }
 
+/**
+ * #967: only the languages the user actually typed are submitted, and a blank
+ * one is submitted as absent rather than as an empty string — the API's
+ * replace-all write then drops that locale's row and the name falls back to the
+ * base value. The object is always present, because omitting it entirely means
+ * "leave the stored translations alone".
+ */
+export function trimmedTranslations(translations: ExerciseNameTranslations): ExerciseNameTranslations {
+  const out: ExerciseNameTranslations = {};
+  for (const [locale, name] of Object.entries(translations ?? {})) {
+    const trimmed = (name ?? '').trim();
+    if (trimmed) out[locale] = trimmed;
+  }
+  return out;
+}
+
 function sharedPayload(form: ExerciseFormValues, { muscles, resultTypeIds }: PayloadExtras) {
   return {
     name: form.name.trim(),
+    translations: trimmedTranslations(form.translations),
     description: textOrNull(form.description),
     min_reps_default: intOrNull(form.min_reps_default),
     max_reps_default: intOrNull(form.max_reps_default),
@@ -210,6 +252,13 @@ export function formatExerciseDate(value: string | null | undefined): string {
  */
 export interface ExerciseMediaRow {
   name: string;
+  /**
+   * #967: the name in the caller's own language, resolved server-side with the
+   * base `name` as the fallback. Every surface that *shows* a name reads it —
+   * `exerciseName()` is what decides that — while `name` stays the base value an
+   * edit form submits back.
+   */
+  display_name?: string | null;
   image_url: string | null;
   image_thumbnail_url: string | null;
   video_url: string | null;
@@ -239,6 +288,8 @@ export interface ExerciseReadOnlyRow extends ExerciseRowValues, ExerciseMediaRow
 export interface ExerciseAuditRow {
   id: number;
   name: string;
+  /** #967: the resolved name, which is what the modal's subtitle reads. */
+  display_name?: string | null;
   created_at: string;
   created_by_name: string | null;
   modified_at: string | null;

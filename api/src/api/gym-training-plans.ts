@@ -3,7 +3,8 @@ import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { createTrainingPlanTx } from './training-plan-creation';
-import { PLAN_TREE_SELECT } from './training-plans';
+import { planTreeSelect } from './training-plans';
+import { getRequestLocale } from '../infra/locale';
 
 /**
  * #67: gym-level Training Plans module — the cross-member listing behind the
@@ -140,7 +141,7 @@ gymTrainingPlansRouter.get('/:id', async (req, res, next) => {
   const { id } = req.params as { id: string };
   try {
     const { rows } = await db.query(
-      `${PLAN_TREE_SELECT} WHERE tp.id = ? AND tp.gym_id = ? AND tp.status != 'deleted'`,
+      `${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ? AND tp.gym_id = ? AND tp.status != 'deleted'`,
       [id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
