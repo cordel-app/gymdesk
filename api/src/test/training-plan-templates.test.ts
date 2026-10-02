@@ -20,8 +20,17 @@ let gymBId: string;
 let exerciseId: number;
 let durationResultTypeId: number;
 
-/** One workout template with a single Standard block; returns both ids. */
-async function createWorkoutTemplate(name: string): Promise<{ templateId: number; blockId: number }> {
+/**
+ * One workout template with a single block; returns both ids.
+ *
+ * The block type matters because `BLOCK_TYPE_MAX_EXERCISES` caps how many
+ * exercise instances a block may hold — `Standard` allows exactly one, so a test
+ * that needs two in the same block asks for `Superset` (2) rather than being
+ * refused with a 422.
+ */
+async function createWorkoutTemplate(
+  name: string, blockType = 'Standard',
+): Promise<{ templateId: number; blockId: number }> {
   const tpl = await request
     .post('/workout-templates')
     .set('Authorization', TEST_AUTH_HEADER)
@@ -32,7 +41,7 @@ async function createWorkoutTemplate(name: string): Promise<{ templateId: number
     .post(`/workout-templates/${tpl.body.id}/blocks`)
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
-    .send({ type: 'Standard' })
+    .send({ type: blockType })
     .expect(201);
   return { templateId: tpl.body.id, blockId: block.body.id };
 }
@@ -126,7 +135,9 @@ describe('GET /training-plan-templates/:id/hierarchy', () => {
   });
 
   it('reports each exercise instance\'s own result type, from result_types', async () => {
-    const { templateId, blockId } = await createWorkoutTemplate('Result Types Day');
+    // A Superset block, because this case needs two exercise instances in one
+    // block and a Standard block holds exactly one.
+    const { templateId, blockId } = await createWorkoutTemplate('Result Types Day', 'Superset');
     await addExercise(templateId, blockId, {
       sets: 4, result_type_id: durationResultTypeId, target_value: 45, unit: 's',
     });
