@@ -148,7 +148,7 @@ function VideoPreview({ exercise, playing, onPlay }: {
           // still playable, so the frame offers the player rather than a dead
           // "No preview".
           <button type="button" onClick={onPlay} title={t('video_play')} style={posterButtonStyle(true)}>
-            <span style={{ ...playOverlayStyle, color: '#6c63ff', textShadow: 'none' }}>▶</span>
+            <span style={{ ...playOverlayStyle, color: 'var(--gd-link, #6c63ff)', textShadow: 'none' }}>▶</span>
           </button>
         ) : (
           <span style={emptyFrameTextStyle}>{hasVideo ? t('video_no_poster') : t('video_none')}</span>

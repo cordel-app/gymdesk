@@ -10,7 +10,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { DataTable, Column } from '@/components/DataTable';
 import { ExerciseImageField } from '@/components/ExerciseImageField';
 import { ExerciseVideoField } from '@/components/ExerciseVideoField';
-import { btnStyle, cardSurfaceStyle } from '@/components/ui';
+import { cardSurfaceStyle, primaryBtnStyle } from '@/components/ui';
 import type { PreparedExerciseImage } from '@/lib/exerciseImageUpload';
 import type { PreparedExerciseVideo } from '@/lib/exerciseVideoUpload';
 // #806: one Exercise editor, one form declaration, one form-state hook — the
@@ -367,7 +367,12 @@ export default function CordelExercisesPage() {
             placeholder={t('search_placeholder')}
             style={searchInputStyle}
           />
-          <button style={btnStyle()} onClick={openInlineNew} disabled={creating}>+ New Exercise</button>
+          {/* #968: a primary action takes the Theme's Primary Button pair. `btnStyle()`
+              with no argument resolves to `--brand`, which `applyTokens` maps to
+              sidebarSelectedItemBackground — the sidebar's colour, not an action's —
+              so this button did not follow the Theme the gym Exercises page's
+              `+ Add Exercise` already followed. */}
+          <button style={primaryBtnStyle()} onClick={openInlineNew} disabled={creating}>+ New Exercise</button>
         </div>
       </div>
 
