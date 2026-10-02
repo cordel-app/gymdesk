@@ -1505,6 +1505,25 @@ Reference implementation: `api/src/domain/newMemberEligibility.ts` + `api/src/ap
 
 ---
 
+## One Page, Several Catalogues as Tabs (#947)
+
+When a library page grows a second and third catalogue of the same *shape* — the Nutrition Library's Personal Goals and Nutrition Goals beside Foods — the tabs are presentation and the catalogues are not. Three rules keep that from becoming three half-identical pages:
+
+- **One declaration decides which tabs exist, and both pages import it.** `LIBRARY_TABS` in `apps/admin/src/components/goalLibrary/goalProfile.ts` holds the ids and their order, so a gym's library and Cordel's Base one cannot offer different tabs or order them differently. A tab id is either `'foods'` or a `GoalKind`, so a tab cannot name a catalogue that does not exist. Switching tabs is page state, not a route: the content and the available actions change in place and the list already loaded survives a round trip.
+- **The tab owns its own `+ Add`.** The page's header button belongs to the tab the page itself renders and is **absent** while another tab is open, rather than relabelled; each catalogue's section renders its own, so "+ Add Personal Goal" and "+ Add Nutrition Goal" are two sentences a translator writes rather than one with a noun interpolated into it.
+- **One section component, parameterised by kind and scope.** `GoalLibrarySection` serves all four screens (two catalogues × two libraries): it takes the kind (which decides its locale keys and its audit entity type), the scope (which decides the router root, looked up in `GOAL_API_ROOTS` — the one place the roots are written down) and the page's `canWrite`/label resolver. It names no endpoint and decides no permission, the #806 split, which is what keeps the gym's module permissions and `requireSuperadmin` out of shared UI.
+
+The same shape holds on the API side: two tables identical in shape get **one router factory per side**, mounted once per kind, over one domain declaration (`api/src/domain/goalLibrary.ts`) that owns the kinds, their tables, their audit entity types and their seeded rows. Two tables rather than one with a `kind` column, because a discriminator invites the single filtered list the ticket forbade and the two will diverge (one of them is getting a target value).
+
+Two schema devices are worth reusing:
+
+- **Uniqueness among live rows**, when the router's duplicate check says `status != 'deleted'`: a VIRTUAL generated column that is non-NULL only while the row is live, carrying the UNIQUE index (migration 183's `standing_promotion_key`, migration 206's `live_name_key`). A plain `UNIQUE(gym, name)` would reserve a deleted row's name for ever and surface the re-add as a 500 where the router means 409.
+- **A seeded row's `slug` as its label handle, and only a seeded row's.** The System rows carry a slug and are translated through `<namespace>.<kind>_goal_<slug>` with the row's own `name` as the fallback (the `result_types` rule — decide which applies *before* calling `t()`); a gym's own row, and a System row added later, carry no slug and show the single name that was typed. That is what lets a shared catalogue skip a per-locale junction table, and a CHECK (`slug IS NULL OR gym_id IS NULL`) is what stops a tenant from claiming a System label key.
+
+Reference implementation: `apps/admin/src/components/goalLibrary/` + `api/src/api/goal-library.ts` / `platform-goal-library.ts` over `api/src/domain/goalLibrary.ts` (migration 206).
+
+---
+
 ## Two Screens, One Read-Only Summary (#879)
 
 When a ticket asks that one card's section "look like" another card's — same information, two presentations — the answer is the **same component**, not a second stylesheet that happens to agree today:

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
@@ -18,6 +19,13 @@ import {
   toNutritionItemFormValues,
 } from '@/components/nutritionLibrary/nutritionItemProfile';
 import { btnStyle, btnSmall, cardSurfaceStyle } from '@/components/ui';
+// #947: the Base library is three tabs too, and they are the same three — the tab
+// declaration and the goal sections are shared with the gym-facing library, so the
+// pair cannot drift (§2). What this page supplies is the platform context: the
+// `/platform` router roots and their superadmin permissions.
+import { LibraryTabs } from '@/components/goalLibrary/LibraryTabs';
+import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
+import { LibraryTabId, isGoalTab } from '@/components/goalLibrary/goalProfile';
 
 interface Category { id: number; slug: string }
 interface NutritionalQuality { id: number; slug: string }
@@ -88,9 +96,17 @@ function qualityLabel(slug: string) {
 const LIMIT = 20;
 
 export default function CordelNutritionLibraryPage() {
+  // The goal tabs' labels live in their own namespace, shared with the gym-facing
+  // library. The Foods half of this page is still hardcoded English (it is a
+  // superadmin screen and was written that way); the new sections are not, because
+  // they are the very same component the gym's library renders.
+  const tGoals = useTranslations('goal_library');
   const { apiFetch } = useApiClient();
   const { getToken } = useAuth();
   const { toast } = useToast();
+
+  // Which library tab is open — page state, not a route (§6).
+  const [tab, setTab] = useState<LibraryTabId>('foods');
 
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -525,9 +541,29 @@ export default function CordelNutritionLibraryPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>Base Nutrition Library</h1>
-        <button style={btnStyle()} onClick={openInlineNew} disabled={creating}>+ New Item</button>
+        {/* The Foods tab's own `+ Add`; each goals tab renders its own (§7). */}
+        {tab === 'foods' && (
+          <button style={btnStyle()} onClick={openInlineNew} disabled={creating}>+ New Item</button>
+        )}
       </div>
 
+      <LibraryTabs active={tab} onChange={setTab} label={(key) => tGoals(key as any)} />
+
+      {isGoalTab(tab) && (
+        <GoalLibrarySection
+          kind={tab}
+          scope="platform"
+          /* Every row here is the platform's and this page is `requireSuperadmin`
+             on both sides, so there is no read-only role to gate against. */
+          canWrite
+          label={(key) => tGoals(key as any)}
+        />
+      )}
+
+      {/* The Foods tab — this page's own body, left at its original indentation so
+          the diff that wrapped it stays readable. */}
+      {tab === 'foods' && (
+      <>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <input
           value={searchInput}
@@ -617,6 +653,8 @@ export default function CordelNutritionLibraryPage() {
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
       />
+      </>
+      )}
     </div>
   );
 }
