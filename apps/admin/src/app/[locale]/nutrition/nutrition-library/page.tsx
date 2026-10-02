@@ -19,6 +19,14 @@ import {
   toNutritionItemFormValues,
 } from '@/components/nutritionLibrary/nutritionItemProfile';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+// #947: the library is three tabs now — Foods (this page's own body), Personal
+// Goals and Nutrition Goals. Which tabs exist and their order are declared once,
+// in `goalProfile.ts`, and shared with Cordel's Base library; the goal sections are
+// one component serving both pages, handed this page's API root and its own
+// namespace to resolve labels in.
+import { LibraryTabs } from '@/components/goalLibrary/LibraryTabs';
+import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
+import { LibraryTabId, isGoalTab } from '@/components/goalLibrary/goalProfile';
 
 interface Category { id: number; slug: string }
 interface NutritionalQuality { id: number; slug: string }
@@ -46,6 +54,10 @@ const LIMIT = 20;
 
 export default function NutritionLibraryPage() {
   const t = useTranslations();
+  // The goal tabs' labels live in their own namespace, shared with Cordel's Base
+  // library so the same section cannot read one way on one page and another on the
+  // other (#806).
+  const tGoals = useTranslations('goal_library');
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading } = useGym();
   const { toast } = useToast();
@@ -64,6 +76,11 @@ export default function NutritionLibraryPage() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string[]>([]);
   const [qualityFilter, setQualityFilter] = useState<string[]>([]);
+
+  // Which library tab is open. Deliberately page state rather than a route: §6
+  // asks for the content and actions to change without navigating away, and the
+  // Foods list this page has already loaded survives a round trip to a goals tab.
+  const [tab, setTab] = useState<LibraryTabId>('foods');
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
@@ -367,9 +384,30 @@ export default function NutritionLibraryPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>{t('nutrition_library.title')}</h1>
-        <button style={readOnlyStyle(btnStyle(), !canWrite)} onClick={openInlineNew} disabled={!canWrite || creating} title={readOnlyTitle}>{t('nutrition_library.add_new')}</button>
+        {/* The Foods tab's own `+ Add` (§7). Each goals tab renders its own, which
+            is why this one is absent rather than relabelled while one is open. */}
+        {tab === 'foods' && (
+          <button style={readOnlyStyle(btnStyle(), !canWrite)} onClick={openInlineNew} disabled={!canWrite || creating} title={readOnlyTitle}>{t('nutrition_library.add_new')}</button>
+        )}
       </div>
 
+      <LibraryTabs active={tab} onChange={setTab} label={(key) => tGoals(key as any)} />
+
+      {isGoalTab(tab) && (
+        <GoalLibrarySection
+          kind={tab}
+          scope="gym"
+          canWrite={canWrite}
+          readOnlyTitle={readOnlyTitle}
+          label={(key) => tGoals(key as any)}
+          ready={!!activeGymId}
+        />
+      )}
+
+      {/* The Foods tab — this page's own body, left at its original indentation so
+          the diff that wrapped it stays readable. */}
+      {tab === 'foods' && (
+      <>
       <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
         <input
           value={searchInput}
@@ -444,6 +482,8 @@ export default function NutritionLibraryPage() {
 
       {detailItem && (
         <NutritionItemDetailsModal item={detailItem} onClose={() => setDetailItem(null)} />
+      )}
+      </>
       )}
     </div>
   );
