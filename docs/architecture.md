@@ -924,7 +924,7 @@ The sidebar is **config-driven** from `config/navigationGroups.ts`. Groups are c
 |-------|--------------|-------|
 | Membership | — | Dashboard, Members (→ Deleted) |
 | Organization | `admin` | Dashboard, Team, Centers, Rooms, Resources, Trainers, Specialities, Class types, Class packages, Events |
-| Training | — | Dashboard, Exercises, Workout Templates, Training Plan Templates, ‹divider›, Training Plans (#67) |
+| Training | — | Dashboard, Exercises, Workout Templates, Training Plan Templates, ‹divider›, Assigned Training Plans (#67, renamed #970) |
 | Nutrition | — | Dashboard (placeholder) |
 | Payments | — | Transactions |
 | Financials | `admin` | Dashboard, Plans, Promotions, Sellable Items, Assigned Plans, Taxes |
