@@ -168,3 +168,79 @@ export function toExerciseCreatePayload(form: ExerciseFormValues, extras: Payloa
 export function toExerciseUpdatePayload(form: ExerciseFormValues, extras: PayloadExtras) {
   return sharedPayload(form, extras);
 }
+
+// ─── The read-only half (#965) ────────────────────────────────────────────────
+//
+// `⋮ → Edit` writes and an expanded card reads (#797–#800), and both halves of an
+// Exercise render from this one module: `ExerciseEditor` from the section order
+// and the field lists above, `ExerciseReadOnlyView` from the same two plus the row
+// shapes below. A field added to the form is therefore a field both halves show,
+// which is #965 §14's whole point.
+
+/** The em dash every read-only Exercise value falls back to. */
+export const EXERCISE_EMPTY_VALUE = '—';
+
+/** A value, or the em dash. Zero-length and whitespace-only read as empty. */
+export function exerciseDisplayValue(value: string | number | null | undefined): string {
+  if (typeof value === 'number') return String(value);
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : EXERCISE_EMPTY_VALUE;
+}
+
+/**
+ * A stored UTC timestamp as a local date and time, or the em dash. MySQL hands
+ * back `YYYY-MM-DD HH:MM:SS` for a DATETIME, which Safari refuses to parse — the
+ * `T` and the `Z` are what make it a string every browser reads as UTC.
+ */
+export function formatExerciseTimestamp(value: string | null | undefined): string {
+  if (!value) return EXERCISE_EMPTY_VALUE;
+  const parsed = new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
+  if (Number.isNaN(parsed.getTime())) return EXERCISE_EMPTY_VALUE;
+  return parsed.toLocaleString();
+}
+
+/** A stored UTC timestamp as a local date alone — what a list column shows. */
+export function formatExerciseDate(value: string | null | undefined): string {
+  return value ? value.slice(0, 10) : EXERCISE_EMPTY_VALUE;
+}
+
+/**
+ * The media columns a preview needs, plus the two timestamps that bust the
+ * browser's cache for a replaced object (#715). `name` is the image's `alt`.
+ */
+export interface ExerciseMediaRow {
+  name: string;
+  image_url: string | null;
+  image_thumbnail_url: string | null;
+  video_url: string | null;
+  video_thumbnail_url: string | null;
+  created_at: string;
+  modified_at: string | null;
+}
+
+/**
+ * What the read-only expanded view renders: the fields the editor writes, plus
+ * the two relations and the media it shows. It is the **list row** both halves
+ * already have — never a second read of the exercise (#797's rule), which is what
+ * keeps the read-only view and the form it seeds from unable to disagree.
+ */
+export interface ExerciseReadOnlyRow extends ExerciseRowValues, ExerciseMediaRow {
+  id: number;
+  muscles: { key: string; role: string }[] | null;
+  allowed_result_types: ResultTypeRow[] | null;
+}
+
+/**
+ * What `⋮ → Details` renders (#965 §12): the technical metadata the expanded card
+ * no longer carries. The actor names are the snapshot migration 207 added for a
+ * Base Exercise and the `gym_memberships` join for a gym's own, resolved by
+ * whichever router served the row — the modal only reports what it was handed.
+ */
+export interface ExerciseAuditRow {
+  id: number;
+  name: string;
+  created_at: string;
+  created_by_name: string | null;
+  modified_at: string | null;
+  modified_by_name: string | null;
+}

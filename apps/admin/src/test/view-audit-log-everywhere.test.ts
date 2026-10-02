@@ -51,7 +51,9 @@ const DETAILS_VIEWS: {
   { file: 'members/MemberDetailModal.tsx',                                entityType: 'member' },
   { file: 'plans/PlanDetailModal.tsx',                                    entityType: 'membership_plan' },
   { file: 'promotions/PromotionDetailModal.tsx',                          entityType: 'promotion' },
-  { file: 'exercises/ExerciseDetailModal.tsx',                            entityType: 'exercise' },
+  // #965: one Details modal for both Exercise screens, scoped by the page that
+  // opens it — the gym Exercises list and Cordel's Base Exercises list.
+  { file: 'components/exercises/ExerciseDetailModal.tsx',                  entityType: 'exercise', root: 'src', scopeFromProp: true },
   { file: 'financials/assigned-plans/AssignedPlanDetailsModal.tsx',       entityType: 'user_membership' },
   { file: 'financials/taxes/page.tsx',                                    entityType: 'tax_rate' },
   { file: 'financials/sellable-items/page.tsx',                           entityType: 'gym_charge' },
@@ -129,6 +131,16 @@ describe('View Audit Log on every Details view (#675)', () => {
     for (const { file, root } of DETAILS_VIEWS) {
       expect(read(file, root), `${file} must not build the audit deep link itself`).not.toContain('entity_type=');
     }
+  });
+
+  it('the shared Exercise Details modal is opened with the right scope by each page (#965)', () => {
+    // Same rule as the Nutrition Library's below: the modal is one
+    // implementation, and which Audit Log it opens is the page's decision.
+    const gym = read('exercises/page.tsx');
+    const cordel = read('cordel/exercises/page.tsx');
+    expect(gym).toContain('<ExerciseDetailModal exercise={detailFor} onClose=');
+    expect(gym).not.toContain('scope="platform"');
+    expect(cordel).toContain('scope="platform"');
   });
 
   it('the shared Nutrition Library Details modal is opened with the right scope by each library', () => {

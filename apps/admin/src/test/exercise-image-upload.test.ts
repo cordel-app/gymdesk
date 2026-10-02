@@ -23,7 +23,9 @@ const SRC = join(__dirname, '..');
 const LIB = join(SRC, 'lib', 'exerciseImageUpload.ts');
 const COMPONENT = join(SRC, 'components', 'ExerciseImageField.tsx');
 const PAGE = join(SRC, 'app', '[locale]', 'exercises', 'page.tsx');
-const DETAIL_MODAL = join(SRC, 'app', '[locale]', 'exercises', 'ExerciseDetailModal.tsx');
+// #965: the thumbnail-over-master rule moved out of both pages and out of the
+// Details modal into the one read-only media preview the two pages share.
+const MEDIA_PREVIEW = join(SRC, 'components', 'exercises', 'ExerciseMediaPreview.tsx');
 const LOCALES_DIR = join(SRC, '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
@@ -39,7 +41,7 @@ const read = (path: string) => stripComments(readFileSync(path, 'utf-8'));
 const libSrc = read(LIB);
 const componentSrc = read(COMPONENT);
 const pageSrc = read(PAGE);
-const detailSrc = read(DETAIL_MODAL);
+const mediaPreviewSrc = read(MEDIA_PREVIEW);
 
 describe('exerciseImageUpload — sizes', () => {
   it('states the two sizes #719 §5 fixes', () => {
@@ -199,10 +201,10 @@ describe('Exercises page', () => {
     expect(pageSrc).toMatch(/if \(stagedImage\) \{[\s\S]*?\/exercises\/\$\{created\.id\}\/image/);
   });
 
-  it('reads both references from the API and prefers the thumbnail in the list', () => {
+  it('reads both references from the API and prefers the thumbnail when drawing', () => {
     expect(pageSrc).toContain('image_url: string | null; image_thumbnail_url: string | null;');
-    expect(pageSrc).toContain('ex.image_thumbnail_url ?? ex.image_url');
-    expect(detailSrc).toContain('detail.image_thumbnail_url ?? detail.image_url');
+    // #965: one preview draws it for both pages, so the preference is stated once.
+    expect(mediaPreviewSrc).toContain('exercise.image_thumbnail_url ?? exercise.image_url');
   });
 });
 

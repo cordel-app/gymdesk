@@ -680,8 +680,24 @@ a Base Exercises page hanging off them would break when the superadmin's
 selected gym had exercises switched off (`GET /platform/exercises/lookups`,
 registered before `/:id` so Express does not read `lookups` as an id).
 
-Reference implementation: `components/exercises/` + both pages. Regression test:
-`apps/admin/src/test/exercise-editor-unification.test.ts`.
+**The read-only half moves up with it (#965).** A shared editor only fixes half
+the drift: the two pages still rendered two different *read-only* views of the
+same entity — the gym's a list of whichever sections happened to be non-empty,
+the platform's a flat `Label: Value` table — and neither matched the form. So the
+expanded body is the editor's **counterpart**, `ExerciseReadOnlyView`, rendering
+the same sections from the same declaration with the values in the box each input
+occupies (`formValueStyle`, #929), and the chrome both halves wear is a third
+module beside them (`exerciseFieldChrome.ts`) so neither can be restyled alone.
+Keep it free of controls — an allowed option is a span with a tick, never a
+disabled checkbox — and hand it anything with state as a node the page builds, the
+way the editor already takes its `media`: `ExerciseMediaPreview` owns the one
+control a read-only card may have (the poster doubles as the play button, a read),
+and *which* exercise is playing stays the page's, so a second clip cannot start
+over the first.
+
+Reference implementation: `components/exercises/` + both pages. Regression tests:
+`apps/admin/src/test/exercise-editor-unification.test.ts` and
+`exercise-read-only-expansion.test.ts`.
 
 ### When the card's sections have their own editors (#816)
 
