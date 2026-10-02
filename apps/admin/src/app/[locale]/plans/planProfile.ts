@@ -6,6 +6,10 @@ import {
   BillingEventSimulationLine,
   simulationPriceLabelKey,
 } from '@/lib/billingEventSimulation';
+import {
+  exampleTimelineRowTone,
+  formatExampleTimelineBilling,
+} from '@/lib/exampleTimeline';
 
 /**
  * #816 — the single declaration of the Membership Plan's expanded-card shape.
@@ -464,7 +468,12 @@ export interface PlanExampleTimeline {
 }
 
 /**
- * The Billing cell. A waived period (Free, Bonus, or a Pre-paid one already
+ * The Billing cell — the shared rule (`lib/exampleTimeline.ts`), under the name
+ * this page already used. Since #924 stage 3 the Assigned Plan card's
+ * Membership Fee Simulation renders the same table, so the formatting lives in
+ * one place; only the labels are the page's.
+ *
+ * A waived period (Free, Bonus, or a Pre-paid one already
  * collected) reads "No charge"; a charged one quotes the Plan's current price
  * as the server computed it, VAT included — never recomputed here (#817). A
  * Plan with no price yet has nothing to quote, so it reads as the admin's empty
@@ -484,10 +493,7 @@ export function formatPlanTimelineBilling(
   /** `plans.timeline_prepaid_periods`, already pluralised by the page; `null` otherwise. */
   prepaidNote?: string | null,
 ): string {
-  if (row.waived) return noChargeLabel;
-  if (row.amount == null) return EMPTY_VALUE;
-  const price = `€${row.amount.toFixed(2)} ${taxIncludedSuffix}`;
-  return prepaidNote ? `${price} · ${prepaidNote}` : price;
+  return formatExampleTimelineBilling(row, noChargeLabel, taxIncludedSuffix, prepaidNote);
 }
 
 /**
@@ -503,11 +509,7 @@ export function formatPlanTimelineBilling(
 export function planTimelineRowTone(
   row: Pick<PlanTimelinePeriod, 'status' | 'waived'>,
 ): 'free' | 'regular' | 'benefit' {
-  const { status } = row;
-  if (status === 'pay_regular') return 'regular';
-  if (!row.waived) return 'benefit';
-  if (status === 'free_plan' || status === 'bonus_plan' || status === 'prepaid_plan') return 'free';
-  return 'benefit';
+  return exampleTimelineRowTone(row);
 }
 
 /* ── Billing Event Simulation (#915) ──────────────────────────────────────── */
