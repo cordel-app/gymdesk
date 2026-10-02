@@ -86,7 +86,7 @@ export default function MemberCalendarPage() {
   const [filterAtId, setFilterAtId] = useState('');
 
   // #503 stage 7: calendar-local center/trainer filters, independent from the
-  // global CenterSwitcher (#478) — changing these must never affect Home,
+  // global active center (#478) — changing these must never affect Home,
   // Nutrition, Training Plans, My Bookings, or any other section. Default
   // center is initialized from the current global selection, if any; default
   // trainer is "all trainers". Kept in a compact panel behind a Filter button
@@ -122,7 +122,7 @@ export default function MemberCalendarPage() {
 
   // Apply the global center selection as this filter's default exactly once,
   // as soon as it becomes known — never again afterward, so a later change to
-  // the global CenterSwitcher doesn't silently override a member's own choice.
+  // the Profile default center doesn't silently override a member's own choice.
   useEffect(() => {
     if (!centerDefaultApplied && activeCenterId != null) {
       setFilterCenterId(String(activeCenterId));
