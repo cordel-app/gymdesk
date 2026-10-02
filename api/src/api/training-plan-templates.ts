@@ -141,6 +141,15 @@ trainingPlanTemplatesRouter.get('/:id', async (req, res, next) => {
 // single request — the client fetches this on first expand of a template row
 // and caches it. Extends the derived-table-per-level JSON_ARRAYAGG pattern used
 // by GET /:id here and by workout-templates.ts GET /:id one level deeper.
+//
+// #966: the result type is the **exercise instance's**, not the block's.
+// #154 (migration 074) moved it down a level — it dropped
+// workout_template_blocks.result_type and added result_type_id + target/min/max
+// + unit to workout_template_exercises — and this query kept selecting
+// `b.result_type`, so every expand answered `Unknown column 'b.result_type' in
+// 'field list'`. The exercise object below is workout-templates.ts GET /:id's
+// own projection, which is what `HierExercise`/`exerciseSummary()` (the shared
+// summaries.ts both trees render through) have expected all along.
 trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
@@ -154,7 +163,7 @@ trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
               'blocks', (SELECT JSON_ARRAYAGG(item) FROM (
                 SELECT JSON_OBJECT(
                     'id', b.id, 'position', b.position, 'name', b.name, 'description', b.description,
-                    'type', b.type, 'result_type', b.result_type, 'rounds', b.rounds,
+                    'type', b.type, 'rounds', b.rounds,
                     'duration_seconds', b.duration_seconds, 'work_seconds', b.work_seconds, 'rest_seconds', b.rest_seconds,
                     'is_optional', b.is_optional, 'notes', b.notes,
                     'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
@@ -163,8 +172,13 @@ trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
                           'exercise_name', e.name,
                           'exercise_image_url', e.image_url, 'exercise_image_thumbnail_url', e.image_thumbnail_url, 'exercise_video_url', e.video_url, 'exercise_video_thumbnail_url', e.video_thumbnail_url,
                           'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
-                          'sets', wte.sets, 'rest_seconds', wte.rest_seconds, 'tempo', wte.tempo) AS item
-                      FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id
+                          'sets', wte.sets, 'rest_seconds', wte.rest_seconds, 'tempo', wte.tempo,
+                          'result_type_id', wte.result_type_id, 'result_type_slug', rt.slug, 'result_type_name', rt.name,
+                          'target_value', wte.target_value, 'min_value', wte.min_value, 'max_value', wte.max_value,
+                          'unit', wte.unit) AS item
+                      FROM workout_template_exercises wte
+                      JOIN exercises e ON e.id = wte.exercise_id
+                      LEFT JOIN result_types rt ON rt.id = wte.result_type_id
                       WHERE wte.workout_template_block_id = b.id AND wte.deleted_at IS NULL
                       ORDER BY wte.position
                     ) t3)

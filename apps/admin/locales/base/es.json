@@ -1685,6 +1685,8 @@
     "title": "Plantillas de plan de entrenamiento",
     "add": "+ Nueva plantilla de plan de entrenamiento",
     "loading": "Cargando…",
+    "hierarchy_error": "No se han podido cargar los entrenamientos de esta plantilla.",
+    "retry": "Reintentar",
     "empty": "Aún no hay plantillas de plan de entrenamiento.",
     "col_name": "Nombre",
     "col_created_by": "Creado por",

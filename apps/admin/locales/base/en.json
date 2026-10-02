@@ -1699,6 +1699,8 @@
     "title": "Training Plan Templates",
     "add": "+ New Training Plan Template",
     "loading": "Loading…",
+    "hierarchy_error": "The workouts of this template could not be loaded.",
+    "retry": "Retry",
     "empty": "No training plan templates yet.",
     "col_name": "Name",
     "col_created_by": "Created By",
