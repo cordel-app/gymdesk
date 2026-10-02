@@ -350,7 +350,10 @@
     "error": "Something went wrong.",
     "empty": "No nutrition plan assigned yet.",
     "all_days": "Every day",
-    "goals": "Goals",
+    "goals": "Nutrition Goals",
+    "goals_empty": "No nutrition goals.",
+    "restrictions": "Dietary Restrictions",
+    "restrictions_empty": "No dietary restrictions.",
     "food_image_alt": "Photo of {name}",
     "no_image": "No image available",
     "carousel_label": "Foods for {meal}",
@@ -383,6 +386,25 @@
       "two_three_hours_before_training": "2–3 hours before training",
       "immediately_before_training": "Immediately before training",
       "immediately_after_training": "Immediately after training"
+    },
+    "goal_name": {
+      "protein": "Protein",
+      "water": "Water",
+      "calories": "Calories",
+      "carbohydrates": "Carbohydrates",
+      "fats": "Fats",
+      "fiber": "Fiber",
+      "weight_loss": "Weight loss",
+      "weight_gain": "Weight gain",
+      "muscle_gain": "Muscle gain",
+      "maintenance": "Maintenance",
+      "performance": "Performance",
+      "recovery": "Recovery",
+      "energy": "Energy"
+    },
+    "goal_frequency": {
+      "daily": "daily",
+      "weekly": "weekly"
     }
   },
   "exercise_media": {

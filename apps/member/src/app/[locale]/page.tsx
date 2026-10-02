@@ -10,6 +10,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { MembersSectionCard } from '@/components/MembersSectionCard';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
+import { goalDetail, goalLabel, type NutritionGoalItem } from '@/lib/nutritionFood';
 
 interface UpcomingBooking {
   id: number;
@@ -38,7 +39,7 @@ interface NotificationItem {
 interface MealItem { id: number; item_name: string; component_type: string; quantity: number | null; unit: string | null }
 interface Meal { id: number; meal_type: string | null; display_name: string; items: MealItem[] }
 interface NutritionDay { id: number; weekday: number; meals: Meal[] }
-interface NutritionGoal { id: number; item_name: string; quantity: number; unit: string; frequency: string }
+type NutritionGoal = NutritionGoalItem;
 interface NutritionPlan { id: number; name: string; days: NutritionDay[]; goals: NutritionGoal[] }
 
 const ALL_DAYS_WEEKDAY = 7;
@@ -263,7 +264,12 @@ export default function HomePage() {
               <div style={styles.goalsRow}>
                 <p style={styles.mealName}>{t('home.goals')}</p>
                 <p style={styles.bookingSub}>
-                  {nutritionPlan!.goals.map((g) => `${g.item_name} · ${g.quantity}${g.unit}`).join('   ')}
+                  {/* The same slug translation and the same "1 l · daily"
+                      wording as My Nutrition (#932): the stored value is
+                      `weight_loss`, not a label. */}
+                  {nutritionPlan!.goals
+                    .map((g) => [goalLabel(t, g.item_name), goalDetail(t, g)].filter(Boolean).join(' · '))
+                    .join('   ')}
                 </p>
               </div>
             )}

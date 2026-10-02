@@ -321,3 +321,133 @@ describe('GET /me/nutrition-plan — food image and nutritional qualities', () =
     expect(imaged.component_type).toBe('side');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Dietary restrictions on the member's own plan (#932 §1)
+// ---------------------------------------------------------------------------
+
+describe('GET /me/nutrition-plan — dietary restrictions', () => {
+  // Its own gym and member: this block asserts on *the* returned plan, and the
+  // shared member at the top of this file already owns several.
+  const clerkId = `restrictions-clerk-${Date.now()}`;
+  let restrictionsGymId: string;
+  let restrictionsMemberId: number;
+  let planId: number;
+  let breadItemId: number;
+  let nutsItemId: number;
+
+  beforeAll(async () => {
+    restrictionsGymId = await createTestGym('Nutrition Restrictions Gym');
+    await createTestMembership(restrictionsGymId, 'member', clerkId);
+    const { insertId: memberRow } = await db.query(
+      `INSERT INTO members (gym_id, name, email, clerk_user_id) VALUES (?, 'Restricted Member', ?, ?)`,
+      [restrictionsGymId, `restrictions-${Date.now()}@test.com`, clerkId],
+    );
+    restrictionsMemberId = memberRow;
+
+    const { insertId: bread } = await db.query(
+      `INSERT INTO nutrition_library_items (gym_id, name, status, image_url)
+       VALUES (NULL, ?, 'active', 'https://cdn.example.test/nutrition/bread.png')`,
+      [`Restriction Bread ${Date.now()}`],
+    );
+    breadItemId = bread;
+    extraLibraryItemIds.push(breadItemId);
+    // No image: the member app falls back to its placeholder (§3, §5).
+    const { insertId: nuts } = await db.query(
+      `INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (NULL, ?, 'active')`,
+      [`Restriction Nuts ${Date.now()}`],
+    );
+    nutsItemId = nuts;
+    extraLibraryItemIds.push(nutsItemId);
+    await db.query(
+      `INSERT INTO nutrition_library_item_translations (item_id, locale, name)
+       VALUES (?, 'ca', 'Pa'), (?, 'es', 'Pan')
+       ON DUPLICATE KEY UPDATE name = VALUES(name)`,
+      [breadItemId, breadItemId],
+    );
+
+    planId = await insertActivePlan(restrictionsGymId, restrictionsMemberId, 5);
+    // Inserted out of order on purpose: the read is ordered by `position`.
+    await db.query(
+      `INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, applies_all_days, position)
+       VALUES (?, ?, ?, 1, 2), (?, ?, ?, 1, 1)`,
+      [restrictionsGymId, planId, nutsItemId, restrictionsGymId, planId, breadItemId],
+    );
+  });
+
+  async function fetchPlan(locale?: string) {
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerkId } as any);
+    let req = request
+      .get('/me/nutrition-plan')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', restrictionsGymId);
+    if (locale) req = req.set('x-locale', locale);
+    const res = await req;
+    expect(res.status).toBe(200);
+    return res.body.plan;
+  }
+
+  it('returns the plan\'s restrictions in position order', async () => {
+    const plan = await fetchPlan();
+    expect(plan.restrictions.map((r: any) => r.nutrition_library_item_id)).toEqual([breadItemId, nutsItemId]);
+  });
+
+  it('exposes the library item\'s own image, and null when it has none', async () => {
+    const plan = await fetchPlan();
+    const [bread, nuts] = plan.restrictions;
+    expect(bread.image_url).toBe('https://cdn.example.test/nutrition/bread.png');
+    expect(nuts.image_url).toBeNull();
+  });
+
+  it('resolves the restriction name in the locale the member app requests', async () => {
+    const plan = await fetchPlan('es');
+    expect(plan.restrictions[0].item_name).toBe('Pan');
+    const catalan = await fetchPlan('ca');
+    expect(catalan.restrictions[0].item_name).toBe('Pa');
+  });
+
+  it('still returns the goals the page renders beside them', async () => {
+    const plan = await fetchPlan();
+    expect(plan.goals.length).toBeGreaterThan(0);
+    expect(plan.goals[0].frequency).toBe('daily');
+    expect(plan.goals[0].unit).toBe('g');
+  });
+
+  it('returns an empty array for a plan with no restrictions, never omits the key', async () => {
+    const emptyClerkId = `no-restrictions-clerk-${Date.now()}`;
+    const emptyGymId = await createTestGym('No Restrictions Gym');
+    await createTestMembership(emptyGymId, 'member', emptyClerkId);
+    const { insertId: emptyMemberId } = await db.query(
+      `INSERT INTO members (gym_id, name, email, clerk_user_id) VALUES (?, 'Unrestricted Member', ?, ?)`,
+      [emptyGymId, `no-restrictions-${Date.now()}@test.com`, emptyClerkId],
+    );
+    await insertActivePlan(emptyGymId, emptyMemberId, 6);
+
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: emptyClerkId } as any);
+    const res = await request
+      .get('/me/nutrition-plan')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', emptyGymId);
+    expect(res.status).toBe(200);
+    expect(res.body.plan.restrictions).toEqual([]);
+  });
+
+  it('does not leak another gym\'s restrictions', async () => {
+    // A plan in a second gym whose restriction row names the same library food.
+    const otherGymId = await createTestGym('Other Restrictions Gym');
+    const { insertId: otherMemberId } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'Other Restricted', ?)`,
+      [otherGymId, `other-restricted-${Date.now()}@test.com`],
+    );
+    const otherPlanId = await insertActivePlan(otherGymId, otherMemberId, 5);
+    await db.query(
+      `INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, applies_all_days, position)
+       VALUES (?, ?, ?, 1, 1)`,
+      [otherGymId, otherPlanId, breadItemId],
+    );
+
+    const plan = await fetchPlan();
+    expect(plan.id).toBe(planId);
+    expect(plan.restrictions).toHaveLength(2);
+  });
+});

@@ -350,7 +350,10 @@
     "error": "Algo salió mal.",
     "empty": "Aún no tienes un plan de nutrición asignado.",
     "all_days": "Todos los días",
-    "goals": "Objetivos",
+    "goals": "Objetivos nutricionales",
+    "goals_empty": "Sin objetivos nutricionales.",
+    "restrictions": "Restricciones alimentarias",
+    "restrictions_empty": "Sin restricciones alimentarias.",
     "food_image_alt": "Foto de {name}",
     "no_image": "Imagen no disponible",
     "carousel_label": "Alimentos de {meal}",
@@ -383,6 +386,25 @@
       "two_three_hours_before_training": "2-3 horas antes del entrenamiento",
       "immediately_before_training": "Inmediatamente antes del entrenamiento",
       "immediately_after_training": "Inmediatamente después del entrenamiento"
+    },
+    "goal_name": {
+      "protein": "Proteínas",
+      "water": "Agua",
+      "calories": "Calorías",
+      "carbohydrates": "Carbohidratos",
+      "fats": "Grasas",
+      "fiber": "Fibra",
+      "weight_loss": "Pérdida de peso",
+      "weight_gain": "Aumento de peso",
+      "muscle_gain": "Ganancia muscular",
+      "maintenance": "Mantenimiento",
+      "performance": "Rendimiento",
+      "recovery": "Recuperación",
+      "energy": "Energía"
+    },
+    "goal_frequency": {
+      "daily": "diario",
+      "weekly": "semanal"
     }
   },
   "exercise_media": {
