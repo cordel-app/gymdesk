@@ -8,7 +8,9 @@
 // snapshot (§16): the name, the window, the Billing & Duration and the granted
 // Sellable Items at the prices they were agreed at. Editing or deleting the
 // Promotion afterwards cannot move any of it — which is exactly why the grant
-// lines show their own `unit_price` rather than the catalogue's.
+// lines are priced from their own frozen `unit_price` and frozen treatment
+// rather than from the catalogue (#924 stage 2: the server does that pricing,
+// through the one module every Sellable Item section quotes from).
 //
 // A revoked application reads as `inactive`: its checkbox is cleared and its
 // card does not expand, because it is no longer part of what this member is
@@ -33,23 +35,45 @@ import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { cardSurfaceStyle } from '@/components/ui';
+import {
+  SellableItemBenefitRow,
+  SellableItemBenefitView,
+} from '@/components/SellableItemBenefits';
 import type { AppliedPromotion, AppliedPromotionGrant } from './types';
 
 const GRANT_SECTIONS: {
   key: 'oneoff_grants' | 'session_grants' | 'periodical_grants';
   titleKey: string;
   emptyKey: string;
-  showFrequency: boolean;
 }[] = [
   // #815 — these headers name the *Promotion*'s granted Sellable Items, so they
   // read "One-off / Session / Periodical Promotion". The assignment's own
   // benefit sections (AssignedPlanConfiguration) come from the Membership Plan
   // and keep the Plan's terminology, which is why the keys are promotion-scoped
   // rather than shared with that component.
-  { key: 'oneoff_grants', titleKey: 'promo_benefits_oneoff', emptyKey: 'promo_no_oneoff_benefits', showFrequency: false },
-  { key: 'session_grants', titleKey: 'promo_benefits_session', emptyKey: 'promo_no_session_benefits', showFrequency: false },
-  { key: 'periodical_grants', titleKey: 'promo_benefits_period', emptyKey: 'promo_no_period_benefits', showFrequency: true },
+  //
+  // #924 stage 2: there is no `showFrequency` per section any more. All three
+  // render the full shared grid, as the Promotion card's own sections do since
+  // #919/#920 — a One-off line keeps its Frequency cell with a "—" instead of
+  // dropping the column and shifting every column after it out of line (#916).
+  { key: 'oneoff_grants', titleKey: 'promo_benefits_oneoff', emptyKey: 'promo_no_oneoff_benefits' },
+  { key: 'session_grants', titleKey: 'promo_benefits_session', emptyKey: 'promo_no_session_benefits' },
+  { key: 'periodical_grants', titleKey: 'promo_benefits_period', emptyKey: 'promo_no_period_benefits' },
 ];
+
+/**
+ * #896 §3/§4 inside one namespace.
+ *
+ * The shared grid resolves the treatment under one key name and lets the
+ * calling page's messages decide the words — "Promotion" / "No promotion" where
+ * a Promotion configures the line, "Benefit" / "No benefit" where a Membership
+ * Plan does. Both halves live on *this* page: the sections above come from the
+ * Plan and keep `item_action_*`, so the applied-Promotion sections ask for the
+ * promotion-voiced `promo_*` keys beside them. Every other key the grid needs
+ * (the item, quantity, frequency and price columns) says the same thing in both
+ * sections and is shared as it stands.
+ */
+const PROMOTION_VOICED_KEYS = /^(col_item_action|item_action_)/;
 
 const DURATION_FIELDS = ['free_months', 'paid_months', 'bonus_months'] as const;
 
@@ -66,15 +90,15 @@ function fmtDate(iso: string | null) {
   return iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : '—';
 }
 
-function fmtMoney(v: number | null) {
-  return v != null ? `€${v.toFixed(2)}` : '—';
-}
-
 export function AssignedPlanPromotions({
   assignedPlanId, promotions, canWrite, readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
+  // The shared grid's own keys, in this card's two voices — see
+  // PROMOTION_VOICED_KEYS above.
+  const grantT = (key: string, values?: Record<string, unknown>) =>
+    t((PROMOTION_VOICED_KEYS.test(key) ? `promo_${key}` : key) as any, values as any);
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
@@ -201,13 +225,30 @@ export function AssignedPlanPromotions({
                   )}
                 </SubSection>
 
-                {GRANT_SECTIONS.map(({ key, titleKey, emptyKey, showFrequency }) => (
+                {GRANT_SECTIONS.map(({ key, titleKey, emptyKey }) => (
                   <SubSection key={key} title={t(titleKey as any)}>
-                    <GrantTable
-                      rows={p[key] ?? []}
-                      emptyLabel={t(emptyKey as any)}
-                      showFrequency={showFrequency}
-                      t={t}
+                    {/* #924 stage 2 — the one shared Sellable Item grid, as the
+                        Promotion card's own three sections render it since
+                        #919/#920: Sellable Item, Quantity, Frequency,
+                        Promotion, Agreed Price, Final Price, at the same
+                        horizontal positions as the assignment's Plan benefit
+                        sections above. What stays this card's own is where the
+                        numbers come from — each line's frozen price and frozen
+                        treatment (§16/§17), never the Promotion as it stands
+                        today.
+
+                        `benefitContext="promotion"` is the option set these
+                        grants were configured in (all five, #896 §16), and
+                        `frequencyColumn` stays the default `'item'`: #918's
+                        renewal Frequency is a Membership Plan Session
+                        Benefit's, and a Promotion grant has none. */}
+                    <SellableItemBenefitView
+                      t={grantT}
+                      emptyKey={emptyKey}
+                      rows={(p[key] ?? []).map(toGrantRow)}
+                      showFrequency
+                      benefitContext="promotion"
+                      showPrices
                     />
                   </SubSection>
                 ))}
@@ -244,44 +285,34 @@ export function AssignedPlanPromotions({
 }
 
 /**
- * The Sellable Items one section of the Promotion granted. Every column is the
- * frozen one — the price above all (§17), which is what makes this table
- * different from the Promotions page's own view of the same benefit.
+ * One frozen grant line as the shared grid's row.
+ *
+ * #924 stage 2: every column is the application's own — the name and Frequency
+ * as they were agreed, the treatment the grant was agreed with and the two
+ * prices the server computed from the frozen `unit_price` (§17), which is what
+ * makes this section different from the Promotions page's own view of the same
+ * benefit. `gym_charge_status` is 'active' because the snapshot does not carry
+ * the catalogue's current state and a frozen line is never "inactive" as far as
+ * this application goes; `gym_charge_type` likewise is not part of what the
+ * snapshot froze, and the grid does not render it.
  */
-function GrantTable({ rows, emptyLabel, showFrequency, t }: {
-  rows: AppliedPromotionGrant[];
-  emptyLabel: string;
-  showFrequency: boolean;
-  t: ReturnType<typeof useTranslations>;
-}) {
-  if (rows.length === 0) return <p style={dimSt}>{emptyLabel}</p>;
-  return (
-    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-      <thead>
-        <tr>
-          <th style={thSt}>{t('col_sellable_item')}</th>
-          <th style={thSt}>{t('col_quantity')}</th>
-          {showFrequency && <th style={thSt}>{t('col_frequency')}</th>}
-          <th style={thSt}>{t('col_snapshot_price')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={`${r.gym_charge_id ?? 'gone'}-${i}`}>
-            <td style={tdSt}>{r.item_name}</td>
-            <td style={tdSt}>{r.quantity}</td>
-            {showFrequency && (
-              <td style={tdSt}>
-                {r.item_billing_frequency ? t(`frequency_${r.item_billing_frequency}` as any) : '—'}
-              </td>
-            )}
-            <td style={tdSt}>{fmtMoney(r.unit_price)}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
+function toGrantRow(g: AppliedPromotionGrant): SellableItemBenefitRow {
+  return {
+    gym_charge_id: g.gym_charge_id ?? 0,
+    quantity: g.quantity,
+    gym_charge_name: g.item_name,
+    gym_charge_type: '',
+    gym_charge_billing_frequency: g.item_billing_frequency,
+    gym_charge_status: 'active',
+    action: g.action,
+    value: g.value,
+    original_price_incl_tax: g.original_price_incl_tax,
+    final_price_incl_tax: g.final_price_incl_tax,
+    original_line_price_incl_tax: g.original_line_price_incl_tax,
+    final_line_price_incl_tax: g.final_line_price_incl_tax,
+  };
 }
+
 
 function SubSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -316,8 +347,3 @@ const subLabelSt: React.CSSProperties = {
   fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase',
   letterSpacing: '0.07em', marginBottom: 6,
 };
-const thSt: React.CSSProperties = {
-  textAlign: 'left', padding: '4px 8px 4px 0', fontSize: 11, fontWeight: 600,
-  color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
-};
-const tdSt: React.CSSProperties = { padding: '4px 8px 4px 0', fontSize: 13 };

@@ -174,8 +174,7 @@ describe('Assigned Plan configuration: locales', () => {
     // #892 — a duration reads in the unit it is counted in.
     'months_value', 'periods_value_plain', 'duration_periods_hint',
     'not_configured', 'snapshot_edit_hint',
-    'col_sellable_item', 'col_quantity', 'col_frequency', 'col_snapshot_price',
-    'inactive_item_tag',
+    'col_sellable_item', 'col_quantity', 'col_frequency', 'inactive_item_tag',
     // #924 stage 1 — the three columns the shared grid added to these sections,
     // and the labels their cells resolve.
     'col_item_action', 'col_original_price', 'col_final_price', 'benefit_total_price',

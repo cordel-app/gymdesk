@@ -98,6 +98,22 @@ export interface AppliedPromotionGrant {
   quantity: number;
   item_billing_frequency: string | null;
   unit_price: number;
+  /**
+   * #924 stage 2 — what this grant does to the line, as the application agreed
+   * it (#896 §15). Read server-side in the **Promotion**'s option set, so all
+   * five actions can appear here where a Plan benefit has only three.
+   */
+  action: SellableItemBenefitAction;
+  value: number | null;
+  /**
+   * #924 stage 2 — the Agreed / Final Price pair, VAT included, computed by the
+   * server from the **frozen** unit price and the pair above (§17). The page
+   * formats them; it never prices (#817).
+   */
+  original_price_incl_tax: number | null;
+  final_price_incl_tax: number | null;
+  original_line_price_incl_tax: number | null;
+  final_line_price_incl_tax: number | null;
 }
 
 export interface AppliedPromotion {

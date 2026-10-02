@@ -92,8 +92,14 @@ describe('Assigned Plan promotions: expanding a card', () => {
   });
 
   it('prices each granted line from the snapshot, not the catalogue (§17)', () => {
-    expect(src).toContain('col_snapshot_price');
-    expect(src).toContain('r.unit_price');
+    // #924 stage 2: the single `Snapshot price` column became the shared
+    // grid's Agreed / Final pair, both computed server-side from the frozen
+    // `unit_price` and the grant's frozen treatment. The rule it was pinning is
+    // unchanged — the card reads the application, never the live catalogue or
+    // the live Promotion.
+    expect(src).toContain('original_price_incl_tax');
+    expect(src).toContain('final_price_incl_tax');
+    expect(src).toContain('function toGrantRow');
     expect(src, 'the card re-reads the live catalogue').not.toContain('/sellable-items');
     expect(src, 'the card re-reads the live Promotion').not.toContain("apiFetch('/promotions");
   });
