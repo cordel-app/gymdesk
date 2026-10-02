@@ -38,23 +38,36 @@ export interface ExampleTimelineLabels {
   billing: string;
 }
 
-const TONE_BACKGROUND: Record<ExampleTimelineTone, string> = {
+/**
+ * The three tones, and the table's own cells, are **exported** since #955: the
+ * Billing Event Simulation's detail table is the same visual language ("do not
+ * introduce a separate visual language for Billing Event Simulation", "do not
+ * introduce new colors specifically for this component"), so it renders from
+ * these objects rather than from a second copy of the numbers. They stay here
+ * because this is the table that defined them.
+ */
+export const TIMELINE_TONE_BACKGROUND: Record<ExampleTimelineTone, string> = {
   free: '#f0fdf4',
   benefit: '#fefce8',
   regular: '#f9fafb',
 };
 
-const TONE_BILLING_COLOUR: Record<ExampleTimelineTone, string> = {
+/** The colour the *amount* of a row in that tone reads in. */
+export const TIMELINE_TONE_TEXT: Record<ExampleTimelineTone, string> = {
   free: '#166534',
   benefit: '#854d0e',
   regular: '#666',
 };
 
-const thSt: CSSProperties = {
+/** A header cell of a timeline-language table. */
+export const timelineThStyle: CSSProperties = {
   textAlign: 'left', padding: '6px 8px', color: '#888', fontWeight: 600,
   borderBottom: '1px solid #eee', fontSize: 12,
 };
-const tdSt: CSSProperties = { padding: '6px 8px', borderBottom: '1px solid #f5f5f5', fontSize: 13 };
+/** A body cell of one — the row density every such table shares. */
+export const timelineTdStyle: CSSProperties = {
+  padding: '6px 8px', borderBottom: '1px solid #f5f5f5', fontSize: 13,
+};
 
 export function ExampleTimeline({
   rows, labels, footnotes,
@@ -70,19 +83,19 @@ export function ExampleTimeline({
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr>
-              <th style={thSt}>{labels.period}</th>
-              <th style={thSt}>{labels.dates}</th>
-              <th style={thSt}>{labels.status}</th>
-              <th style={thSt}>{labels.billing}</th>
+              <th style={timelineThStyle}>{labels.period}</th>
+              <th style={timelineThStyle}>{labels.dates}</th>
+              <th style={timelineThStyle}>{labels.status}</th>
+              <th style={timelineThStyle}>{labels.billing}</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((row) => (
-              <tr key={row.key} style={{ background: TONE_BACKGROUND[row.tone] }}>
-                <td style={tdSt}>{row.period}</td>
-                <td style={tdSt}>{row.dates}</td>
-                <td style={{ ...tdSt, fontWeight: 500 }}>{row.status}</td>
-                <td style={{ ...tdSt, color: TONE_BILLING_COLOUR[row.tone] }}>{row.billing}</td>
+              <tr key={row.key} style={{ background: TIMELINE_TONE_BACKGROUND[row.tone] }}>
+                <td style={timelineTdStyle}>{row.period}</td>
+                <td style={timelineTdStyle}>{row.dates}</td>
+                <td style={{ ...timelineTdStyle, fontWeight: 500 }}>{row.status}</td>
+                <td style={{ ...timelineTdStyle, color: TIMELINE_TONE_TEXT[row.tone] }}>{row.billing}</td>
               </tr>
             ))}
           </tbody>

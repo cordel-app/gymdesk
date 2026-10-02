@@ -74,7 +74,9 @@ describe('#924 §8: the section renders the shared Billing Event Simulation', ()
     ] as const;
     const priceKeys = new Set(
       actions.map((action) => simulationPriceLabelKey(
-        action === undefined ? undefined : { source: 'promotion', name: null, action, value: null },
+        action === undefined
+          ? undefined
+          : { source: 'promotion', name: null, action, value: null, period_status: null },
       )),
     );
     for (const code of LOCALE_CODES) {
@@ -84,6 +86,11 @@ describe('#924 §8: the section renders the shared Billing Event Simulation', ()
         'simulation_mandatory', 'simulation_total', 'simulation_regular_was',
         'simulation_prepaid_periods', 'simulation_disclaimer', 'simulation_truncated',
         'tax_included_suffix',
+        // #955's collapsible cards — the shared component resolves these in the
+        // calling page's own namespace too, so the forecast section needs them.
+        'simulation_col_date', 'simulation_col_event', 'simulation_col_status',
+        'simulation_col_amount', 'simulation_items_count',
+        'simulation_expand_all', 'simulation_collapse_all',
         ...priceKeys,
       ]) {
         expect(ns[key], `${code}.assigned_plans_page.${key}`).toBeTruthy();
