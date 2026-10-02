@@ -38,7 +38,7 @@
  * data or creating unnecessary taxonomy values*:
  *
  *   • the equipment axis is **preserved verbatim** in `exercises.equipment`
- *     (migration 207), beside `category`, `level`, `mechanic` and `force_type`,
+ *     (migration 209), beside `category`, `level`, `mechanic` and `force_type`,
  *     so nothing is lost and §18's Equipment filter has a column to read;
  *   • `exercise_type` is mapped on the axis it actually means, from `category`
  *     (`classifyExerciseType()`), which is the existing taxonomy and gains no new

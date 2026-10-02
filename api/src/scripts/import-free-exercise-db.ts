@@ -27,7 +27,7 @@
  *
  * ── Idempotent, and conservative about what it overwrites ───────────────────
  *
- * Matching is `(source, source_id)` first (migration 207's unique
+ * Matching is `(source, source_id)` first (migration 209's unique
  * `base_source_key`), then the stable slug, then an exact name — §12's order —
  * and `planExerciseImport()` is the one place that decides what each match does.
  * A second run therefore creates nothing, and it does not undo an administrator's
@@ -286,7 +286,7 @@ async function main() {
 
   const existing = await loadExistingBaseExercises();
   // Slugs already taken by a live base row, so a new exercise never collides with
-  // one (migration 207's `base_slug_key` is unique among live base rows).
+  // one (migration 209's `base_slug_key` is unique among live base rows).
   const takenSlugs = new Set(
     existing.filter((row) => row.slug && row.status !== 'deleted').map((row) => row.slug!.toLowerCase()),
   );

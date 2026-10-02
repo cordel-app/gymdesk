@@ -182,7 +182,7 @@ exports.down = async (knex) => {
     const stamped = Number(rows[0].cnt);
     if (stamped > 0) {
       throw new Error(
-        `[207] ${stamped} Base Exercise(s) carry imported provenance — refusing to drop it. `
+        `[209] ${stamped} Base Exercise(s) carry imported provenance — refusing to drop it. `
         + 'Re-applying this migration reinstates the columns empty, so the next '
         + '`npm run exercises:import-free-db` would no longer recognise an imported Base Exercise '
         + "at all (the slug and name passes both exclude status = 'deleted') and would re-create "

@@ -105,7 +105,7 @@ function listParam(value: unknown): string[] | null {
  * browser — the rule `GET /exercises/base` already follows for the Import modal.
  *
  * `q` matches the name **or** the slug, and the five metadata filters read the
- * columns migration 207 added. Muscle filtering is multi-select and comes in
+ * columns migration 209 added. Muscle filtering is multi-select and comes in
  * three flavours on purpose: `muscle` matches either role (the checkbox group),
  * while `primary_muscle` / `secondary_muscle` ask the question the dataset itself
  * distinguishes. The UI that renders them inline is #969's and the expanded

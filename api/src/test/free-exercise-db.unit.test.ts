@@ -5,7 +5,7 @@
  * and a second run changes nothing (§2, §17).
  *
  * Pure module, no DB (CLAUDE.md): `domain/freeExerciseDb.ts` is the one place
- * every rule lives, and the script around it only does I/O. Migration 207 is
+ * every rule lives, and the script around it only does I/O. Migration 209 is
  * read as text, the way `session-benefit-frequency.unit.test.ts` reads back
  * migration 205's CHECK.
  */
@@ -406,8 +406,8 @@ describe('§12 — matching, and what a match does', () => {
   });
 });
 
-describe('migration 207 mirrors what the importer writes', () => {
-  const path = join(__dirname, '../infra/migrations/207_exercise_source_provenance.js');
+describe('migration 209 mirrors what the importer writes', () => {
+  const path = join(__dirname, '../infra/migrations/209_exercise_source_provenance.js');
   const migration = readFileSync(path, 'utf8');
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const declared = require(path) as {

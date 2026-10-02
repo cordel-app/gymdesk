@@ -1,6 +1,6 @@
 /**
  * #964 §18 — the Base Exercises list, filtered server-side over the columns
- * migration 207 added: name **or** slug, the five source metadata values, and
+ * migration 209 added: name **or** slug, the five source metadata values, and
  * multi-select muscle filtering in all three flavours (either role, primary,
  * secondary).
  *
@@ -152,7 +152,7 @@ describe('the list carries the provenance and metadata columns', () => {
   });
 });
 
-describe('migration 207 — what the unique keys actually enforce', () => {
+describe('migration 209 — what the unique keys actually enforce', () => {
   it('refuses a second Base Exercise with the same (source, source_id)', async () => {
     await expect(db.query(
       `INSERT INTO exercises (gym_id, name, slug, source, source_id)
