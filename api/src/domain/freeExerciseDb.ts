@@ -28,10 +28,15 @@
  * `mechanic`/`force` "using the existing Exercise Type taxonomy", and lists
  * Bodyweight · Machine · Free Weight · Dumbbell · Barbell · Kettlebell · Cable ·
  * Resistance Band · Cardio · Assisted as examples. That list is the dataset's
- * **equipment** axis, and this product has no such taxonomy: the only column
- * ever named after an exercise type is `exercises.exercise_type` from migration
- * 071 (`reps` | `time` | `distance`), which is a *measurement* axis and which no
- * code path has read since the inline workout editor stopped using it.
+ * **equipment** axis, and this product has no such taxonomy — nor any other
+ * exercise-level type column to map onto. `exercises.exercise_type` existed
+ * under migration 071 and **migration 074 (#154) dropped it**, moving the
+ * measurement axis down to the exercise instance (`result_type_id` on
+ * `workout_template_exercises`/`workout_exercises`, over
+ * `exercise_allowed_result_types`), which is where it still lives. There is
+ * therefore nothing on `exercises` for a source type to be written to, and
+ * re-adding the column would reintroduce the exercise-level duplicate #154
+ * removed — see #1009's gate, `api/src/test/migration-074-dropped-columns.unit.test.ts`.
  *
  * So the ticket's own closing rule decides it — *preserve the source data → use
  * the existing application model → report the ambiguity rather than inventing
@@ -40,21 +45,19 @@
  *   • the equipment axis is **preserved verbatim** in `exercises.equipment`
  *     (migration 209), beside `category`, `level`, `mechanic` and `force_type`,
  *     so nothing is lost and §18's Equipment filter has a column to read;
- *   • `exercise_type` is mapped on the axis it actually means, from `category`
- *     (`classifyExerciseType()`), which is the existing taxonomy and gains no new
- *     value;
- *   • a category with no confident mapping is reported as an unmapped Exercise
- *     Type and left at the column's default rather than guessed.
+ *   • `category` is likewise preserved verbatim, and it is the source's own
+ *     measurement-ish axis (`strength`, `cardio`, `stretching`). It is stored as
+ *     the dataset gives it and **mapped onto nothing**: deriving a value for a
+ *     column the schema does not have is what #964 shipped and what this
+ *     corrects, and a derived vocabulary beside the preserved one is exactly the
+ *     "unnecessary taxonomy value" §7 forbids.
  *
  * Surfacing Equipment in the Base Exercises UI is #969's (filtering) and #965's
  * (the expanded view); this ticket is the data (§20).
  */
 
-import { EXERCISE_TYPES, ExerciseType } from './exerciseTypes';
 import { MUSCLE_KEYS, normalizeMuscleKey } from './muscles';
 
-export { EXERCISE_TYPES };
-export type { ExerciseType };
 
 /** The value stored in `exercises.source` for every row this dataset produces. */
 export const FREE_EXERCISE_DB_SOURCE = 'free-exercise-db';
@@ -251,47 +254,6 @@ export function mapSourceMuscles(src: SourceExercise): { links: MuscleLink[]; ma
   return { links, mapped, unmapped };
 }
 
-/* ── Exercise Type (§7) ───────────────────────────────────────────────────── */
-
-/**
- * The mapping onto `EXERCISE_TYPES` (`domain/exerciseTypes.ts`) — the only
- * Exercise Type taxonomy this product has. It is on `category`, which
- * is the one source field that says how an exercise is *measured*:
- *
- *   strength · powerlifting · olympic weightlifting · strongman · plyometrics → reps
- *   stretching                                                               → time
- *   cardio                                                                   → time, reported
- *
- * `cardio` is mapped but flagged: a treadmill run is as plausibly measured in
- * distance as in time, and §7 asks for the closest existing type with the
- * ambiguity reported rather than a new value. An unknown or missing category is
- * left unset (`null`) and reported, never guessed from `equipment` — "barbell"
- * says nothing about measurement.
- */
-const CATEGORY_TO_EXERCISE_TYPE: Record<string, { type: ExerciseType; confident: boolean }> = {
-  strength: { type: 'reps', confident: true },
-  powerlifting: { type: 'reps', confident: true },
-  'olympic weightlifting': { type: 'reps', confident: true },
-  strongman: { type: 'reps', confident: true },
-  plyometrics: { type: 'reps', confident: true },
-  stretching: { type: 'time', confident: true },
-  cardio: { type: 'time', confident: false },
-};
-
-export interface ClassifiedExerciseType {
-  type: ExerciseType | null;
-  confident: boolean;
-  /** The source value the decision was taken from, for the report. */
-  sourceValue: string | null;
-}
-
-export function classifyExerciseType(src: SourceExercise): ClassifiedExerciseType {
-  const category = src.category?.trim().toLowerCase() ?? null;
-  const mapping = category ? CATEGORY_TO_EXERCISE_TYPE[category] : undefined;
-  if (!mapping) return { type: null, confident: false, sourceValue: src.category ?? null };
-  return { type: mapping.type, confident: mapping.confident, sourceValue: src.category ?? null };
-}
-
 /* ── Instructions (§9) ────────────────────────────────────────────────────── */
 
 /**
@@ -343,7 +305,6 @@ export interface ExistingBaseExercise {
   source_id: string | null;
   status: string;
   description: string | null;
-  exercise_type: string | null;
   equipment: string | null;
   category: string | null;
   level: string | null;
@@ -407,7 +368,6 @@ export interface ExerciseWriteFields {
   source?: string;
   source_id?: string;
   description?: string | null;
-  exercise_type?: ExerciseType;
   equipment?: string | null;
   category?: string | null;
   level?: string | null;
@@ -456,7 +416,6 @@ export function planExerciseImport(
   options: { slug: string },
 ): ImportPlan {
   const metadata = sourceMetadata(src);
-  const type = classifyExerciseType(src);
   const description = composeInstructions(src.instructions);
   const { links } = mapSourceMuscles(src);
 
@@ -469,7 +428,6 @@ export function planExerciseImport(
       description,
       ...metadata,
     };
-    if (type.type) fields.exercise_type = type.type;
     return { action: 'create', fields, muscles: links, adopted: false, matchKind: null };
   }
 
@@ -487,7 +445,6 @@ export function planExerciseImport(
   if (!row.slug) fields.slug = options.slug;
   if (!row.name?.trim()) fields.name = src.name;
   if (!row.description?.trim() && description) fields.description = description;
-  if (type.type && !row.exercise_type) fields.exercise_type = type.type;
   for (const key of ['equipment', 'category', 'level', 'mechanic', 'force_type'] as const) {
     if ((row[key] ?? null) !== metadata[key]) fields[key] = metadata[key];
   }

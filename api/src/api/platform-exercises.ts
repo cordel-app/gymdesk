@@ -5,7 +5,6 @@ import { recordAudit } from '../infra/audit';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
 import { logger } from '../lib/logger';
 import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
-import { EXERCISE_TYPES } from '../domain/exerciseTypes';
 import { actorSnapshot } from '../domain/nutritionLibrary';
 import {
   EXERCISE_IMAGE_MASTER_MAX_BYTES,
@@ -131,15 +130,10 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
   if (status && !SETTABLE_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
-  const exerciseType = req.query.exercise_type as string | undefined;
-  if (exerciseType && !(EXERCISE_TYPES as readonly string[]).includes(exerciseType)) {
-    return res.status(400).json({ error: `exercise_type must be one of: ${EXERCISE_TYPES.join(', ')}` });
-  }
   const params: any[] = [];
   let sql = `${SELECT} WHERE e.gym_id IS NULL AND e.status != 'deleted'`;
   if (status) { sql += ' AND e.status = ?'; params.push(status); }
   if (q) { sql += ' AND (e.name LIKE ? OR e.slug LIKE ?)'; params.push(`%${q}%`, `%${q}%`); }
-  if (exerciseType) { sql += ' AND e.exercise_type = ?'; params.push(exerciseType); }
   for (const [column, value] of [
     ['equipment', req.query.equipment],
     ['category', req.query.category],
