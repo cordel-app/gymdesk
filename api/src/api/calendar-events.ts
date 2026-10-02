@@ -28,6 +28,7 @@ import { recordAudit } from '../infra/audit';
 import { sendBulkNotification } from '../infra/notifications';
 import { bookMemberOnSession } from './bookings';
 import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
+import { withEventExecutionStatus, type EventExecutionInput } from '../domain/eventExecutionStatus';
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -54,6 +55,19 @@ async function checkConflict(
   );
   return rows[0].cnt > 0;
 }
+
+/**
+ * #977: no admin-facing read of `calendar_events` leaves this router without
+ * its derived `execution_status`, on either of the two routers below. The
+ * value is the domain module's alone — a caller that re-derived "has it ended
+ * with nobody in it" would be the second place deciding what `Not used`
+ * means.
+ */
+function shapeRow<T extends EventExecutionInput>(row: T) {
+  return withEventExecutionStatus([row])[0];
+}
+
+const shapeRows = withEventExecutionStatus;
 
 // ─── classSessionsRouter ─────────────────────────────────────────────────────
 
@@ -104,6 +118,10 @@ const SESSION_SELECT = `
          etm.name AS effective_trainer_name,
          ps.name AS professional_service_name,
          (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked') AS booked_count,
+         -- #977 section 9: the waitlist of *this* session, never the
+         -- activity's -- the same aggregate GET /me/schedule already returns
+         -- to a member.
+         (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'waitlisted') AS waitlist_count,
          (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked' AND ceb.attendance_status = 'present')  AS attendance_present,
          (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked' AND ceb.attendance_status = 'absent')   AS attendance_absent,
          (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked' AND ceb.attendance_status = 'pending')  AS attendance_pending
@@ -133,7 +151,7 @@ classSessionsRouter.get('/', async (req, res) => {
     `${SESSION_SELECT} WHERE ${where.join(' AND ')} ORDER BY ce.starts_at ASC`,
     params,
   );
-  res.json(rows);
+  res.json(shapeRows(rows));
 });
 
 classSessionsRouter.get('/:id', async (req, res) => {
@@ -143,7 +161,7 @@ classSessionsRouter.get('/:id', async (req, res) => {
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Session not found' });
-  res.json(rows[0]);
+  res.json(shapeRow(rows[0]));
 });
 
 async function validateSessionRefs(gymId: string, body: any, centerId: number) {
@@ -308,7 +326,7 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
       });
 
       recordAudit(req, { action: 'create', entityType: 'class_session', entityId: row.id, next: row });
-      return res.status(201).json(row);
+      return res.status(201).json(shapeRow(row));
     }
 
     const row = await db.transaction(async (tx) => {
@@ -328,7 +346,7 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
       return rows[0];
     });
     recordAudit(req, { action: 'create', entityType: 'class_session', entityId: row.id, next: row });
-    res.status(201).json(row);
+    res.status(201).json(shapeRow(row));
   } catch (e: any) {
     if (e.status) return res.status(e.status).json({ error: e.message, code: e.code, host_session_id: e.host_session_id });
     next(e);
@@ -453,7 +471,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
         `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
         [req.params.id, gymId],
       );
-      return res.json(rows[0]);
+      return res.json(shapeRow(rows[0]));
     }
 
     const { rowCount } = await db.query(
@@ -487,7 +505,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
       `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
       [req.params.id, gymId],
     );
-    res.json(rows[0]);
+    res.json(shapeRow(rows[0]));
   } catch (e: any) {
     if (e.status) return res.status(e.status).json({ error: e.message, code: e.code, host_session_id: e.host_session_id });
     next(e);
@@ -536,7 +554,7 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('CALENDAR'
       `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
       [req.params.id, gymId],
     );
-    res.json(rows[0]);
+    res.json(shapeRow(rows[0]));
   } catch (e) { next(e); }
 });
 
@@ -546,7 +564,7 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (r
   if (!reason) return res.status(400).json({ error: 'cancellation_reason is required' });
 
   const { rows: sessionRows } = await db.query(
-    `SELECT ce.id, ce.starts_at, at.name AS title
+    `SELECT ce.id, ce.status, ce.starts_at, at.name AS title
      FROM calendar_events ce
      JOIN activity_types at ON at.id = ce.activity_type_id
      WHERE ce.id = ? AND ce.gym_id = ? AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL`,
@@ -572,7 +590,16 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (r
     reason,
   });
 
-  recordAudit(req, { action: 'cancel', entityType: 'class_session', entityId: req.params.id, next: { cancellation_reason: reason } });
+  // #977 §14: the audit row names the transition, not just its destination —
+  // `previous`/`next` are what make `Scheduled → Cancelled` readable in the
+  // Audit Log, and the actor and timestamp are `recordAudit`'s own.
+  recordAudit(req, {
+    action: 'cancel',
+    entityType: 'class_session',
+    entityId: req.params.id,
+    previous: { status: session.status },
+    next: { status: 'cancelled', cancellation_reason: reason },
+  });
   res.status(204).send();
 });
 
@@ -688,7 +715,7 @@ classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('CALENDAR')
     `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
     [req.params.id, gymId],
   );
-  res.json(rows[0]);
+  res.json(shapeRow(rows[0]));
 });
 
 classSessionsRouter.post('/:id/complete', requireModuleWrite('CALENDAR'), async (req, res) => {
@@ -725,12 +752,22 @@ classSessionsRouter.post('/:id/complete', requireModuleWrite('CALENDAR'), async 
     [gymMembershipId, req.params.id, gymId],
   );
 
-  recordAudit(req, { action: 'complete', entityType: 'class_session', entityId: req.params.id, next: { status: 'completed' } });
+  // #977 §11/§14: who confirmed the session and when are the audit row's
+  // (plus `modified_by_membership_id` above) — there is no second
+  // `completed_by` column, and `previous` is what makes the transition
+  // readable rather than only its destination.
+  recordAudit(req, {
+    action: 'complete',
+    entityType: 'class_session',
+    entityId: req.params.id,
+    previous: { status: session.status },
+    next: { status: 'completed' },
+  });
   const { rows } = await db.query(
     `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
     [req.params.id, gymId],
   );
-  res.json(rows[0]);
+  res.json(shapeRow(rows[0]));
 });
 
 // ─── calendarEventsRouter ─────────────────────────────────────────────────────
@@ -746,7 +783,13 @@ const EVENT_SELECT = `
     gm.name   AS trainer_name,
     gm2.name  AS created_by_name,
     gm3.name  AS modified_by_name,
-    gm4.name  AS deleted_by_name
+    gm4.name  AS deleted_by_name,
+    -- #977: a manual calendar entry is as bookable as a session (#503 stage 1
+    -- dropped the kind discriminator), so it has the same two booking
+    -- aggregates -- which is what lets execution_status classify an empty past
+    -- slot here too, and what section 9's waitlist line reads.
+    (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked')     AS booked_count,
+    (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'waitlisted') AS waitlist_count
   FROM calendar_events ce
   LEFT JOIN activity_types  at   ON at.id   = ce.activity_type_id
   LEFT JOIN professional_services ps ON ps.id = ce.professional_service_id
@@ -794,7 +837,7 @@ calendarEventsRouter.get('/', async (req, res) => {
 
   sql += ' ORDER BY ce.starts_at ASC';
   const { rows } = await db.query(sql, params);
-  res.json(rows);
+  res.json(shapeRows(rows));
 });
 
 calendarEventsRouter.get('/:id', async (req, res) => {
@@ -804,7 +847,7 @@ calendarEventsRouter.get('/:id', async (req, res) => {
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Calendar event not found' });
-  res.json(rows[0]);
+  res.json(shapeRow(rows[0]));
 });
 
 calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, next) => {
@@ -858,7 +901,7 @@ calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, 
     );
     const { rows } = await db.query(`${EVENT_SELECT} WHERE ce.id = ?`, [insertId]);
     recordAudit(req, { action: 'create', entityType: 'calendar_event', entityId: String(insertId), entityName: title.trim(), next: rows[0] });
-    res.status(201).json(rows[0]);
+    res.status(201).json(shapeRow(rows[0]));
   } catch (e: any) {
     next(e);
   }
@@ -948,7 +991,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
     );
     const { rows } = await db.query(`${EVENT_SELECT} WHERE ce.id = ?`, [req.params.id]);
     recordAudit(req, { action: 'update', entityType: 'calendar_event', entityId: req.params.id, entityName: rows[0].title, next: rows[0] });
-    res.json(rows[0]);
+    res.json(shapeRow(rows[0]));
   } catch (e: any) {
     next(e);
   }

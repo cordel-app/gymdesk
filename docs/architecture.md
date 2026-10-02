@@ -1144,6 +1144,25 @@ calendar_event_shared_training_requests               (replaces shared_training_
 
 **Event color (#541)**: the Calendar page colors both `calendar_events` and `class_sessions` blocks exclusively from the persisted `status` column, via the centralized `getCalendarEventStatusColor()` map in `apps/admin/src/lib/calendarEventColors.ts` — replacing the prior `activity_type.color`/per-event `color`-based fill. Reuse that map (don't hand-roll a new status→color lookup) for any future calendar-adjacent status display.
 
+**Event execution status (#977)** — what happened to the *event*, as distinct from what happened with its members. Four values, derived on every read by `eventExecutionStatus()` (`api/src/domain/eventExecutionStatus.ts`) and reported as `execution_status` on every admin-facing read of `calendar_events` (both routers, list and single-row, plus the rows the mutations return — `withEventExecutionStatus()` wraps them all):
+
+| Value | When |
+|---|---|
+| `scheduled` | the event has not finished, **or** it finished with bookings and nobody has confirmed it |
+| `not_used` | it finished with no `booked` bookings at all |
+| `completed` | a human confirmed it took place (`POST /class-sessions/:id/complete`) |
+| `cancelled` | a human cancelled it (`POST /class-sessions/:id/cancel`, or the status select on a manual event) |
+
+Three properties are the rule rather than the implementation. **Nothing is stored**: there is no `execution_status` column and no sweep — `not_used` is a function of the clock and the booking count, so a stored copy would need a nightly writer, and a night it missed would report yesterday's empty slots as still `Scheduled`. Only the two values a *person* chooses are persisted, in the `status` column that already carried them. **An explicit decision outranks the clock in both directions**, which is what keeps `Completed · 0 attendees` expressible (a teacher who held the session with nobody there) separate from a slot that simply passed unbooked. And **a `draft` manual event has no execution status at all** (`null`): it was never put on the calendar, so it neither ran nor went unused, and no fifth value is invented for it.
+
+It is reported, never re-derived: the admin Calendar page and `ClassSessionDetailPanel` read the field and the badge's `full` (a scheduled session at capacity, still derived in the UI) is gated on it, so the calendar, the panel and any later report cannot disagree about which slots went unused. `EVENT_SELECT` gained `booked_count`/`waitlist_count` so a manual entry — as bookable as a session since #503 stage 1 — is classified by the same rule; the waitlist count is also what §9's `Waitlist: N` line reads, per occurrence and never per activity type.
+
+It is deliberately **not** `computeCalendarEventStatus()` (`api/src/api/me.ts`, #503 stage 5), which answers the member-facing lifecycle (`scheduled`/`running`/`completed`/`cancelled`). `Not used` is an Admin operational state and members may not be shown that an unused slot existed (#977 §15, and #976 §2/§6/§7 for the member-side half) — which holds structurally, since both routers sit behind `requireModuleAccess('CALENDAR')` and a `member` has `NONE` of it. Two vocabularies for two audiences, each decided in one place.
+
+The status reaches the UI as text, never as a colour: #559 stage 3's `CalendarStatusBadge` carries it (`not_used` taking the palette's existing neutral tone, shared with `draft`) and the event box keeps the theme's Calendar event tokens. §8's "the execution status must never change the event's configured background color" is therefore satisfied without painting an event per-event — whether an admin event should take `COALESCE(calendar_events.color, activity_types.color)` instead of the theme token is #975's own open question.
+
+Both explicit transitions record **previous → new status** through `recordAudit` (`entity_type = 'class_session'`), which is also where "who marked it completed and when" lives — there is no `completed_by`/`completed_at` column beside it. `POST /:id/complete`'s pre-existing guards are unchanged: pending attendance or a session with no trainer answers `400` with `pending_count`/`missing_trainer`, which the panel renders as an actionable line rather than a generic toast.
+
 **Migration**: hard cutover, as decided (no dual-write/backfill — see decisions.md #10): stage 3 repointed every router at the new tables directly, with no data migration from `class_sessions`/`bookings`/`shared_training_requests` (there was no production data to preserve). Stage 5 (cleanup, not yet done) drops `class_sessions`, `bookings`, `shared_training_requests`, and `calendar_event_series`.
 
 ---
