@@ -68,6 +68,24 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   // with a View Audit Log link, which filters on these two types.
   personal_goal:                  { kind: 'simple',   label: 'Personal Goals',           table: 'personal_goals',          nameColumn: 'name' },
   nutrition_goal:                 { kind: 'simple',   label: 'Nutrition Goals',          table: 'nutrition_goals',         nameColumn: 'name' },
+
+  // #948 §4: an assignment has no name of its own — it is a member and the goal
+  // they hold, so the entry resolves the pair the way `user_membership` does.
+  member_personal_goal: {
+    kind: 'composed', label: 'Assigned Personal Goals',
+    resolve: async (id) => {
+      const { rows } = await db.query<{ member_name: string; goal_name: string }>(
+        `SELECT m.name AS member_name, pg.name AS goal_name
+         FROM member_personal_goals mpg
+         JOIN members m ON m.id = mpg.member_id
+         JOIN personal_goals pg ON pg.id = mpg.personal_goal_id
+         WHERE mpg.id = ?`,
+        [id],
+      );
+      if (!rows[0]) return null;
+      return `${rows[0].member_name} — ${rows[0].goal_name}`;
+    },
+  },
   nutrition_plan_template:        { kind: 'simple',   label: 'Nutrition Plan Templates', table: 'nutrition_plan_templates', nameColumn: 'name' },
   member_nutrition_plan:          { kind: 'simple',   label: 'Nutrition Plans',          table: 'member_nutrition_plans',  nameColumn: 'name' },
 

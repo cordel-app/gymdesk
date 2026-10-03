@@ -182,6 +182,15 @@ export const navigationGroups: NavGroup[] = [
         featureKey: 'nutrition.personal_goals',
         separatorAbove: true,
       },
+      {
+        // #948 §4/§9: the goals members actually hold, beside the library that
+        // offers them. Same feature key — a gym that hid Personal Goals hid the
+        // goals its members hold with them — and the href is outside `/nutrition/`
+        // for the reason the catalogue's is (§8).
+        href: '/{{locale}}/assigned-personal-goals',
+        labelKey: 'nav.assigned_personal_goals',
+        featureKey: 'nutrition.personal_goals',
+      },
     ],
   },
   {

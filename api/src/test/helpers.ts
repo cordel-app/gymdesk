@@ -92,6 +92,11 @@ export async function cleanupTestGyms() {
   // members delete below rather than the gyms one. The log's own `member_id` and
   // `gym_id` are both CASCADE, so this line is only about getting there first.
   await db.query(`DELETE FROM workout_block_logs WHERE gym_id IN (${marks})`, ids);
+  // #948 §4: every FK is ON DELETE CASCADE, so the `members` delete below would
+  // clear these anyway — listed first for the reason the goal catalogues below
+  // are, so a later ticket pointing a non-cascading FK at them finds the order
+  // already written down.
+  await db.query(`DELETE FROM member_personal_goals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM members WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM staff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids).catch(() => {});
