@@ -101,10 +101,11 @@ Both then do exactly the same thing:
 5. **Answer** `201 { id, checkoutUrl }`, where `checkoutUrl` is
    `${PAYMENT_PAGE_URL}/checkout?token=<page_token>`.
 
-The member route has one extra rule from #634 (a member may hold several active Plans):
-`user_membership_id` says which assignment is being paid for; without it the request is
-accepted only while exactly one candidate is `active`, otherwise
-`409 { error: 'multiple_active_memberships', user_membership_ids }`.
+`user_membership_id` is optional on the member route: since #956 (migration 213) a member
+holds **one** live Membership Plan, so there is only ever one candidate and the member is
+never asked which. The parameter is still accepted — it narrows the read to the row it
+names, which keeps a client written against #634 working — and #634's
+`409 multiple_active_memberships` is gone with the state that produced it.
 
 ### A4. The hosted page
 

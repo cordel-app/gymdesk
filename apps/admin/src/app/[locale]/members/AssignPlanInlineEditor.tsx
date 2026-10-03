@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
-import { useApiClient } from '@/lib/apiClient';
+import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import {
   cardHintStyle,
   cardSectionLabelStyle,
@@ -121,7 +121,7 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
       });
       onAssigned();
     } catch (err: any) {
-      setError(err.message ?? t('members.assign_new_plan_error_generic'));
+      setError(apiErrorMessage(err) ?? t('members.assign_new_plan_error_generic'));
     } finally {
       setSaving(false);
     }

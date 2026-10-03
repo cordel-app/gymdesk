@@ -1650,11 +1650,12 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
   try {
     const memberId = await resolveMemberId(gymId, ctx);
 
-    // #634 (migration 172): a Member may now hold several active Membership
-    // Plans at once, so "their active membership" is no longer a single row.
-    // `user_membership_id` says which one is being paid for; without it the
-    // request is only accepted while there is exactly one candidate, rather
-    // than silently charging whichever row MySQL happened to return first.
+    // #956 (migration 213): a Member holds at most one live Membership Plan
+    // again, so "their active membership" is a single row and the member never
+    // has to say which one they are paying for. `user_membership_id` is still
+    // accepted — a client written against #634 keeps working, and it narrows the
+    // read to the row it names rather than selecting one — but #634's
+    // `409 multiple_active_memberships` is gone with the state that produced it.
     const rawRequestedId = req.body?.user_membership_id;
     let requestedId: number | null = null;
     if (rawRequestedId !== undefined && rawRequestedId !== null) {
@@ -1672,13 +1673,6 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     sql += ' ORDER BY um.starts_at DESC, um.id DESC';
     const { rows: umRows } = await db.query<{ id: number; member_email: string }>(sql, params);
     if (!umRows[0]) return res.status(404).json({ error: 'No active membership found' });
-    if (umRows.length > 1) {
-      return res.status(409).json({
-        error: 'multiple_active_memberships',
-        message: 'This member has more than one active membership; specify user_membership_id.',
-        user_membership_ids: umRows.map((r) => r.id),
-      });
-    }
     const um = umRows[0];
 
     const { rows: ctRows } = await db.query<{ id: number }>(

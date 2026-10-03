@@ -444,12 +444,14 @@ describe('POST /user-memberships', () => {
     expect(res.status).toBe(409);
   });
 
-  // ── #634 §6/§14 — several Membership Plans active in parallel ──
-  // "A member might have several plans in parallel but only one of each type."
-  // Migration 172 is what allows the second row; the first must survive it
-  // untouched — adding a plan never closes, cancels, expires or replaces one.
+  // ── #956 — one member, one Membership Plan ──
+  // This reverses #634 §6/§14 ("several plans in parallel, but only one of each
+  // type", migration 172): a second plan now refuses with 409 unless the caller
+  // confirms the replacement, and confirming cancels the first. The rule itself
+  // and every path it guards are covered in one-active-membership-plan.test.ts;
+  // this is the case this file used to assert the other way round.
 
-  it('assigns a second, different plan while the first stays active', async () => {
+  it('refuses a second, different plan while the first is still live', async () => {
     const memberId = await createMember(gymId);
     const standardId = await createPlan(gymId);
     const premiumId = await createPlan(gymId);
@@ -466,16 +468,16 @@ describe('POST /user-memberships', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ member_id: memberId, membership_plan_id: premiumId, starts_at: '2026-01-15' });
-    expect(second.status).toBe(201);
+    expect(second.status).toBe(409);
+    expect(second.body.error).toBe('active_plan_exists');
 
     const { rows } = await db.query(
       `SELECT membership_plan_id, status FROM user_memberships
        WHERE gym_id = ? AND member_id = ? ORDER BY id ASC`,
       [gymId, memberId],
     );
-    expect(rows).toHaveLength(2);
-    expect(rows.every((r: any) => r.status === 'active')).toBe(true);
-    expect(rows.map((r: any) => r.membership_plan_id)).toEqual([standardId, premiumId]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ membership_plan_id: standardId, status: 'active' });
   });
 
   // ── #634 §2 — only Active + Public plans are assignable ──
@@ -1068,7 +1070,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(res.status).toBe(400);
   });
 
-  it('supersedes an active membership: old row expires, new row is active, and both appear newest-first', async () => {
+  it('supersedes an active membership: old row is cancelled, new row is active, and both appear newest-first', async () => {
     const memberId = await createMember(gymId, 'UM Assign Active Member');
     const oldPlanId = await createPlan(gymId);
     const newPlanId = await createPlan(gymId);
@@ -1085,8 +1087,9 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(res.body.status).toBe('active');
     expect(res.body.membership_plan_id).toBe(newPlanId);
 
+    // #956 Q3: a superseded row is cancelled with its dates stamped, not expired.
     const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
-    expect(oldRows[0].status).toBe('expired');
+    expect(oldRows[0].status).toBe('cancelled');
 
     // The new membership gets its own owner row in user_membership_members,
     // just like POST / does.
@@ -1108,10 +1111,10 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(list.body[0].id).toBe(res.body.id);
     expect(list.body[0].status).toBe('active');
     expect(list.body[1].id).toBe(oldUmId);
-    expect(list.body[1].status).toBe('expired');
+    expect(list.body[1].status).toBe('cancelled');
   });
 
-  it('supersedes a paused membership the same way (old row -> expired)', async () => {
+  it('supersedes a paused membership the same way (old row -> cancelled)', async () => {
     const memberId = await createMember(gymId, 'UM Assign Paused Member');
     const oldPlanId = await createPlan(gymId);
     const newPlanId = await createPlan(gymId);
@@ -1126,7 +1129,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(res.body.status).toBe('active');
 
     const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
-    expect(oldRows[0].status).toBe('expired');
+    expect(oldRows[0].status).toBe('cancelled');
   });
 
   it('leaves an already-terminal (cancelled) membership untouched while still creating a new active row', async () => {
