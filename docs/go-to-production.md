@@ -668,7 +668,7 @@ runbook is how.
 - [ ] **Migration 179 keeps only the membership-fee rows** (#635 stage 5): a Promotion's
       Membership Fee Benefit is migrated (from `promotion_period_benefits`, or from a
       pre-#626 `promotion_charge_benefits` row on a membership-fee item when there is no
-      other); a Charge Benefit on any *other* Sellable Item is dropped with no archive,
+      other); a Charge Benefit on any *other* Product is dropped with no archive,
       exactly as migration 176 did on the Plan side and for the same reason (no
       one-to-one mapping into the new structure, §18). `down()` restores the Membership
       Fee Benefits into a recreated `promotion_period_benefits` but cannot bring the rest

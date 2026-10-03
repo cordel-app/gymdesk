@@ -12,7 +12,7 @@ import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext
 type BenefitCategory = 'oneoff' | 'session' | 'periodical';
 
 /**
- * #635 stage 10 — one Sellable Item the member's Assigned Plan carries, at the
+ * #635 stage 10 — one Product the member's Assigned Plan carries, at the
  * quantity, frequency and price it was agreed at. The server resolves it from
  * the assignment's own snapshot, so editing the Membership Plan or repricing
  * the item afterwards never moves what is shown here (§13/§14/§17).

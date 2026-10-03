@@ -8,7 +8,7 @@ import { join } from 'path';
 // Until this stage the section rendered `membership_plan_benefits` rows through
 // a fixed `membership.benefit.<code>` label set (P1.4). Those rows were keyed to
 // the live Membership Plan and nothing had written one since 2025; the page now
-// renders the Sellable Items the member's own Assigned Plan carries, at the
+// renders the Products the member's own Assigned Plan carries, at the
 // quantity, frequency and price they were agreed at (§13/§14/§17).
 //
 // The Member app has no component-test infra (no testing-library, no jsdom —
