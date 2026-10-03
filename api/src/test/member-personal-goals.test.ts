@@ -268,8 +268,9 @@ describe('assigned personal goals — one live assignment per goal', () => {
   it('allows the same goal again once the first is achieved, and refuses reopening it', async () => {
     const first = await assign();
     expect((await put(first.id, { status: 'achieved' })).status).toBe(200);
-    const second = await post({ member_id: memberId, personal_goal_id: gymGoalId });
-    expect(second.status).toBe(201);
+    const secondRes = await post({ member_id: memberId, personal_goal_id: gymGoalId });
+    expect(secondRes.status).toBe(201);
+    const second = secondRes.body;
     // Reopening the achieved one would collide with the live replacement.
     expect((await put(first.id, { status: 'in_progress' })).status).toBe(409);
     await del(first.id);
@@ -278,10 +279,12 @@ describe('assigned personal goals — one live assignment per goal', () => {
 
   it('allows the same goal for a different member, and a different goal for the same member', async () => {
     const mine = await assign();
-    const theirs = await post({ member_id: otherMemberId, personal_goal_id: gymGoalId });
-    expect(theirs.status).toBe(201);
-    const second = await post({ member_id: memberId, personal_goal_id: secondGymGoalId });
-    expect(second.status).toBe(201);
+    const theirsRes = await post({ member_id: otherMemberId, personal_goal_id: gymGoalId });
+    expect(theirsRes.status).toBe(201);
+    const theirs = theirsRes.body;
+    const secondRes = await post({ member_id: memberId, personal_goal_id: secondGymGoalId });
+    expect(secondRes.status).toBe(201);
+    const second = secondRes.body;
     await del(mine.id);
     await del(theirs.id);
     await del(second.id);
@@ -290,9 +293,9 @@ describe('assigned personal goals — one live assignment per goal', () => {
   it('allows re-assigning a goal that was unassigned', async () => {
     const first = await assign();
     expect((await del(first.id)).status).toBe(204);
-    const again = await post({ member_id: memberId, personal_goal_id: gymGoalId });
-    expect(again.status).toBe(201);
-    await del(again.id);
+    const againRes = await post({ member_id: memberId, personal_goal_id: gymGoalId });
+    expect(againRes.status).toBe(201);
+    await del(againRes.body.id);
   });
 });
 
@@ -373,8 +376,9 @@ describe('assigned personal goals — unassign', () => {
 describe('assigned personal goals — list', () => {
   it('filters by member and by status, and searches member, goal and notes', async () => {
     const mine = await assign({ notes: `needle-${RUN}` });
-    const theirs = await post({ member_id: otherMemberId, personal_goal_id: secondGymGoalId });
-    expect(theirs.status).toBe(201);
+    const theirsRes = await post({ member_id: otherMemberId, personal_goal_id: secondGymGoalId });
+    expect(theirsRes.status).toBe(201);
+    const theirs = theirsRes.body;
     expect((await put(theirs.id, { status: 'abandoned' })).status).toBe(200);
 
     const byMember = await list(`?member_id=${memberId}`);
