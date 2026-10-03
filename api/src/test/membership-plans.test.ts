@@ -1586,12 +1586,13 @@ describe('POST /membership-plans/:id/assign', () => {
     expect(Number(partnerRow.is_owner)).toBe(0);
   });
 
-  // ── Duplicate active membership (409) ──
-  // #634 §6/§14 (migration 172): a Member may hold several active Membership
-  // Plans in parallel, but only one assignment per Plan. The 409 therefore
-  // fires on the *same* Plan twice, not on a second, different Plan.
+  // ── The member already has a Membership Plan (409) ──
+  // #956 (migration 213) reverses #634 §6/§14: a Member holds zero or one
+  // Membership Plan, so the 409 fires on *any* second live assignment and not
+  // only on a second assignment of the same Plan. The replacement path this
+  // route grew for it is covered in one-active-membership-plan.test.ts.
 
-  it('allows a second active membership on a different plan', async () => {
+  it('returns 409 for a second live membership on a different plan, and cancels nothing', async () => {
     const existingPlanId = await createPlan(gymId, { name: 'Assign Existing Active Plan', member_limit: '1' });
     const newPlanId = await createPlan(gymId, { name: 'Assign Parallel Target Plan', member_limit: '1' });
     const memberId = await createMember(gymId);
@@ -1602,10 +1603,10 @@ describe('POST /membership-plans/:id/assign', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
-    expect(res.status).toBe(201);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('active_plan_exists');
 
-    // §14: the plan that was already active is untouched — not closed,
-    // cancelled, expired or replaced.
+    // Nothing is cancelled until the admin confirms the replacement.
     const { rows } = await db.query(
       'SELECT status FROM user_memberships WHERE gym_id = ? AND member_id = ? AND membership_plan_id = ?',
       [gymId, memberId, existingPlanId],

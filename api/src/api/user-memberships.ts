@@ -45,6 +45,16 @@ import {
   PersonalFeeBenefitAction,
   isPersonalFeeBenefitAction,
 } from '../domain/personalFeeBenefit';
+import {
+  LiveAssignment,
+  activePlanConflictBody,
+  supersedeStartsAtError,
+} from '../domain/oneActivePlan';
+import {
+  findLiveAssignmentsForMembers,
+  membershipPlanName,
+  supersedeLiveAssignments,
+} from './one-active-plan';
 
 // An assignment is `active` from creation and its first payment is collected
 // afterwards (#786). #511 stage 1 added two pre-activation statuses, `draft`
@@ -497,10 +507,13 @@ async function planAssignabilityError(gymId: string, planId: number):
   return null;
 }
 
-// #634 §6/§14: several Membership Plans may be active for the same Member at
-// once, so a duplicate key here means the *same* Plan is already assigned and
-// active — never "this member already has a membership" (migration 172).
-const DUPLICATE_ASSIGNMENT_ERROR = 'This member already has an active assignment of this Membership Plan.';
+// #956 (migration 213): a Member holds at most one live Membership Plan, so a
+// duplicate key on `user_memberships_one_active` means a second active row was
+// inserted for the same Member concurrently — the application check below found
+// nothing to lock, and the index is what serialises that case. #634's
+// "several plans in parallel, but only one of each type" (migration 172) is
+// reversed, so this message no longer names the Plan.
+const DUPLICATE_ASSIGNMENT_ERROR = 'This member already has an active Membership Plan.';
 
 // Returns the price + plan_price_id that applies to `date` for a plan; falls
 // back to the plan's base_price (with plan_price_id NULL) if no window matches.
@@ -609,9 +622,25 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
 
   try {
     const { userId, role } = getTenantContext(req);
+    // #956: one Member, one Membership Plan. The member's live plan is found and
+    // locked in the same transaction as the insert — outside it there would be a
+    // window in which a second request assigns the same member — and replacing
+    // it takes an explicit `confirm: true`, so the warning the admin is shown
+    // cannot be bypassed by a client that simply posts again.
+    const confirm = req.body?.confirm === true;
     // Ledger row (P1.6): membership creation is a NULL -> active transition,
     // written in the same transaction as the insert.
-    const insertId = await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx) => {
+      const conflicts = await findLiveAssignmentsForMembers(tx, gymId, [Number(member_id)]);
+      if (conflicts.length > 0) {
+        if (!confirm) return { kind: 'conflict' as const, conflicts };
+        const dateError = supersedeStartsAtError(String(starts_at), conflicts);
+        if (dateError) return { kind: 'bad_date' as const, message: dateError };
+        await supersedeLiveAssignments(tx, {
+          gymId, conflicts, newStartsAt: String(starts_at),
+          source: sourceForRole(role), actorUserId: userId,
+        });
+      }
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, base_price, plan_price_id,
@@ -644,10 +673,18 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         // assignment's agreed regular price, and nothing else stores it (§15).
         membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
       });
-      return insertId;
+      return { kind: 'created' as const, insertId, superseded: conflicts.map((c) => c.id) };
     });
-    const created = await loadAssignmentRow(gymId, insertId, false);
-    recordAudit(req, { action: 'create', entityType: 'user_membership', entityId: insertId, next: created });
+    if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'conflict') {
+      return res.status(409).json(activePlanConflictBody(outcome.conflicts, await membershipPlanName(gymId, Number(membership_plan_id))));
+    }
+    const created = await loadAssignmentRow(gymId, outcome.insertId, false);
+    recordAudit(req, {
+      action: 'create', entityType: 'user_membership', entityId: outcome.insertId, next: created,
+      previous: outcome.superseded.length > 0
+        ? { superseded_user_membership_ids: outcome.superseded } : undefined,
+    });
     res.status(201).json(created);
   } catch (err: any) {
     handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
@@ -775,9 +812,19 @@ function parsePromotionIds(raw: unknown): number[] | null {
 }
 
 // Assign New Plan (#412): supersede the member's current plan atomically —
-// expire the old membership and create the new active one in a single
+// cancel the old membership and create the new active one in a single
 // transaction, so the one-active-membership-per-member unique index never
 // sees two active rows for this member at once.
+//
+// #956: replacement is this route's whole contract, so the row named in the URL
+// needs no `confirm` — but a member *additionally* covered by another live
+// assignment (a family plan someone else owns, the one overlap the restored
+// index cannot express) does: cancelling a plan the request never named, and
+// taking it away from the other members it covers, is not something a caller
+// asking to replace one assignment has agreed to. Since this ticket the
+// superseded row is `cancelled` with its dates stamped rather than `expired`
+// (Q3) — one rule, in `supersedeLiveAssignments()`, shared with the other two
+// assignment paths.
 //
 // #628: the caller may also pick the Promotions to apply to the new
 // assignment (`promotion_ids`). They are validated as a set *before* the
@@ -827,24 +874,33 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
   );
   if (promoError) return res.status(promoError.status).json({ error: promoError.error });
 
+  const confirm = req.body?.confirm === true;
+
   try {
-    const newId: number | null = await db.transaction(async (tx) => {
+    const outcome = await db.transaction(async (tx) => {
       const { rows: current } = await tx.query(
         'SELECT id, member_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
         [req.params.id, gymId],
       );
-      if (current.length === 0) return null;
+      if (current.length === 0) return { kind: 'not_found' as const };
       const prev = current[0];
 
-      // Only supersede a still-live plan; a row that's already cancelled/expired is left as-is.
-      if (prev.status === 'active' || prev.status === 'paused') {
-        await tx.query("UPDATE user_memberships SET status = 'expired' WHERE id = ? AND gym_id = ?", [prev.id, gymId]);
-        await recordStatusChange(tx, {
-          gymId, userMembershipId: prev.id, memberId: prev.member_id,
-          previousStatus: prev.status, newStatus: 'expired',
-          source: sourceForRole(role), actorUserId: userId,
-        });
-      }
+      // Everything live that has to stop for the new assignment to be the
+      // member's only one: the row named in the URL when it is still live (a
+      // row already cancelled or expired is left exactly as it is), plus
+      // whatever else covers that member.
+      const live = await findLiveAssignmentsForMembers(tx, gymId, [Number(prev.member_id)]);
+      const named = live.filter((a) => a.id === Number(prev.id));
+      const others = live.filter((a) => a.id !== Number(prev.id));
+      if (others.length > 0 && !confirm) return { kind: 'conflict' as const, conflicts: others };
+
+      const conflicts: LiveAssignment[] = [...named, ...others];
+      const dateError = supersedeStartsAtError(String(starts_at), conflicts);
+      if (dateError) return { kind: 'bad_date' as const, message: dateError };
+      await supersedeLiveAssignments(tx, {
+        gymId, conflicts, newStartsAt: String(starts_at),
+        source: sourceForRole(role), actorUserId: userId,
+      });
 
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
@@ -886,9 +942,16 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
         // assignment's agreed regular price, and nothing else stores it (§15).
         membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
       });
-      return insertId;
+      return { kind: 'created' as const, insertId, superseded: conflicts.map((c) => c.id) };
     });
-    if (newId === null) return res.status(404).json({ error: 'Membership not found' });
+    if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'conflict') {
+      return res.status(409).json(activePlanConflictBody(
+        outcome.conflicts, await membershipPlanName(gymId, Number(membership_plan_id)),
+      ));
+    }
+    const newId = outcome.insertId;
 
     // Applied after the assignment commits, one at a time, because each apply
     // runs its own transaction. The selection was
@@ -902,7 +965,11 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
     const created = await loadAssignmentRow(gymId, newId, false);
     recordAudit(req, {
       action: 'assign_new_plan', entityType: 'user_membership', entityId: newId,
-      next: created, previous: { supersedes_user_membership_id: Number(req.params.id) },
+      next: created,
+      previous: {
+        supersedes_user_membership_id: Number(req.params.id),
+        superseded_user_membership_ids: outcome.superseded,
+      },
     });
     res.status(201).json({ ...created, applied_promotion_ids: promotionIds });
   } catch (err: any) {

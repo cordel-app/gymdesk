@@ -254,25 +254,40 @@ describe('POST /me/payment-requests — a cycle that owes nothing', () => {
   });
 });
 
-describe('POST /me/payment-requests — more than one active membership', () => {
-  // #634 (migration 172): a member may hold several active Plans at once, so
-  // "their active membership" is no longer a single row. Without an explicit id
-  // the route refuses rather than charging whichever one MySQL returned first.
-  it('returns 409 naming the candidates, and 201 once one of them is named', async () => {
-    const { memberId } = await actAsNewMember('two');
-    const first = await createAssignment(memberId, '29.99');
-    const second = await createAssignment(memberId, '49.99');
+describe('POST /me/payment-requests — naming the assignment', () => {
+  // #634 (migration 172) let a member hold several active Plans at once, so the
+  // route answered `409 multiple_active_memberships` when asked to pay without
+  // saying which. #956 (migration 213) makes that state impossible, so the 409
+  // is gone with it. `user_membership_id` is still accepted — a client written
+  // against #634 keeps working — and it narrows the read to the row it names.
+  it('charges the member\'s one live assignment without being told which', async () => {
+    const { memberId } = await actAsNewMember('one');
+    const only = await createAssignment(memberId, '29.99');
 
-    const conflict = await post();
-    expect(conflict.status).toBe(409);
-    expect(conflict.body.error).toBe('multiple_active_memberships');
-    expect([...conflict.body.user_membership_ids].sort()).toEqual([first, second].sort());
-
-    const res = await post({ user_membership_id: second });
+    const res = await post();
     expect(res.status).toBe(201);
     const row = await readRequestRow(res.body.id);
-    expect(row.user_membership_id).toBe(second);
+    expect(row.user_membership_id).toBe(only);
+    expect(Number(row.amount)).toBe(29.99);
+  });
+
+  it('still honours an explicit user_membership_id', async () => {
+    const { memberId } = await actAsNewMember('named');
+    const only = await createAssignment(memberId, '49.99');
+
+    const res = await post({ user_membership_id: only });
+    expect(res.status).toBe(201);
+    const row = await readRequestRow(res.body.id);
+    expect(row.user_membership_id).toBe(only);
     expect(Number(row.amount)).toBe(49.99);
+  });
+
+  it('404s when the named assignment is not this member\'s live one', async () => {
+    const { memberId } = await actAsNewMember('other');
+    await createAssignment(memberId, '29.99');
+
+    const res = await post({ user_membership_id: 999999 });
+    expect(res.status).toBe(404);
   });
 });
 

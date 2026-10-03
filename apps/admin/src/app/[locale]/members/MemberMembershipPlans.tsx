@@ -15,7 +15,7 @@
 
 import React, { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
-import { useApiClient } from '@/lib/apiClient';
+import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import {
@@ -137,7 +137,7 @@ export function MemberMembershipPlans({
       setDraftPlanId(null);
       onChanged();
     } catch (err: any) {
-      setError(err.message ?? t('error_generic'));
+      setError(apiErrorMessage(err) ?? t('error_generic'));
     } finally {
       setSaving(false);
     }

@@ -517,9 +517,19 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
     expect(res.status).toBe(201);
   });
 
-  it('refuses a Member who already holds another Membership Plan', async () => {
-    const memberId = await createMember(gymId, 'NM Parallel');
-    await createAssignment(memberId, otherPlanId, { startsAt: 'CURDATE() - INTERVAL 2 MONTH' });
+  it('refuses a Member whose previous Membership Plan this one replaced', async () => {
+    // Until #956 this case was two *live* plans in parallel. A Member can hold
+    // only one now (migration 213), so the equivalent — and the shape a
+    // confirmed replacement leaves — is the predecessor cancelled on the very
+    // day the new plan starts: no gap at all, so nobody is a new member.
+    const memberId = await createMember(gymId, 'NM Replaced');
+    await createAssignment(memberId, otherPlanId, {
+      status: 'cancelled', startsAt: 'CURDATE() - INTERVAL 2 MONTH', endsAt: null,
+    });
+    await db.query(
+      "UPDATE user_memberships SET ends_at = CURDATE() WHERE member_id = ? AND status = 'cancelled'",
+      [memberId],
+    );
     const umId = await createAssignment(memberId, planId);
 
     const res = await apply(umId);
@@ -566,7 +576,9 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
     const openPromoId = await createPromo(gymId, 'NM Open Promo', true, false);
     await targetPlan(gymId, openPromoId, planId);
     const memberId = await createMember(gymId, 'NM Long Standing');
-    await createAssignment(memberId, otherPlanId, { startsAt: 'CURDATE() - INTERVAL 2 MONTH' });
+    await createAssignment(memberId, otherPlanId, {
+      status: 'cancelled', startsAt: 'CURDATE() - INTERVAL 2 MONTH', endsAt: null,
+    });
     const umId = await createAssignment(memberId, planId);
 
     const res = await request

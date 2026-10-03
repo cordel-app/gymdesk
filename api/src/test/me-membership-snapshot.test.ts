@@ -119,6 +119,17 @@ async function createCallingMember(gymId: string): Promise<number> {
   const { rows } = await db.query<{ id: number }>(
     'SELECT id FROM members WHERE clerk_user_id = ?', [TEST_USER_ID],
   );
+  // One `members` row is reused across every describe block (it is keyed on
+  // TEST_USER_ID so `GET /me/*` resolves to it), and each block moves it to a
+  // fresh gym and gives it a fresh assignment. Since #956 (migration 213) a
+  // Member may hold only one live assignment, so the previous block's has to be
+  // retired here — otherwise the second block's INSERT collides on
+  // `user_memberships_one_active`. Retiring it is also what the fixture means:
+  // the member belongs to the gym this block just created.
+  await db.query(
+    "UPDATE user_memberships SET status = 'cancelled' WHERE member_id = ? AND status IN ('active', 'paused')",
+    [rows[0].id],
+  );
   return rows[0].id;
 }
 

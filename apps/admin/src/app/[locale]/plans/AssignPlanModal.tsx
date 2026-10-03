@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useApiClient } from '@/lib/apiClient';
+import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 import { MemberSearchInput, MemberResult } from '../calendar/MemberSearchInput';
 
@@ -71,7 +71,7 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
       });
       onAssigned();
     } catch (err: any) {
-      setError(err.message ?? t('plans.error_generic'));
+      setError(apiErrorMessage(err) ?? t('plans.error_generic'));
     } finally {
       setSaving(false);
     }

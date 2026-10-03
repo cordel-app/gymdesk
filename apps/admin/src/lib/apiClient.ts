@@ -5,6 +5,22 @@ import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 
+/**
+ * The sentence to show for a failed `apiFetch`.
+ *
+ * `apiFetch` puts `body.error` in `err.message`, which is the whole answer for
+ * a route that replies with a sentence there. A route that replies with a
+ * machine *code* instead — `active_plan_exists` (#956), `unused_value_impacted`
+ * (#511) — carries its sentence in `body.message`, and showing the code would
+ * put `active_plan_exists` in front of a gym owner. Prefer the sentence when
+ * there is one; `undefined` means the caller's own generic fallback.
+ */
+export function apiErrorMessage(err: any): string | undefined {
+  const message = err?.body?.message;
+  if (typeof message === 'string' && message.trim() !== '') return message;
+  return typeof err?.message === 'string' ? err.message : undefined;
+}
+
 export function useApiClient() {
   const { getToken } = useAuth();
   const locale = useLocale();

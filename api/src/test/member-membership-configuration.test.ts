@@ -14,10 +14,10 @@
 // way to seed the cases the write routes refuse: a service or a promotion on a
 // cancelled Assigned Plan, and a revoked promotion row.
 //
-// The central invariant here is migration 172
-// (172_multiple_active_membership_plans.js): a Member may hold several active
-// Assigned Plans at once as long as they are on different Membership Plans, and
-// all of them must come back as live.
+// The central invariant here was migration 172
+// (172_multiple_active_membership_plans.js) until #956 reversed it: a Member
+// holds zero or one live Assigned Plan again (migration 213), so what has to
+// come back is the whole history with `is_live` true on at most one row.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -357,9 +357,16 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
   });
 });
 
-// ─── Two simultaneously active plans (#634 §6 / migration 172) ────────────────
+// ─── A replaced plan beside the current one (#956) ────────────────────────────
+//
+// This block asserted #634 §6's two *simultaneously active* plans until #956
+// made that state impossible (migration 213 restores the single-column UNIQUE
+// index on `active_member_key`). What it tests now is the shape #956 actually
+// produces — the plan a Member holds plus the one it replaced — because the
+// read's subject is unchanged: it reports a Member's whole plan history, with
+// `is_live` marking the one the Services section and the simulation act on.
 
-describe('GET /user-memberships/member/:memberId/configuration — parallel active plans', () => {
+describe('GET /user-memberships/member/:memberId/configuration — a replaced plan beside the current one', () => {
   let gymId: string;
   let memberId: number;
   let standardPlan: number;
@@ -379,10 +386,10 @@ describe('GET /user-memberships/member/:memberId/configuration — parallel acti
     standardPlan = await createPlan(gymId, 'Parallel Standard');
     premiumPlan = await createPlan(gymId, 'Parallel Premium');
 
-    // Both 'active' at the same time: only possible since migration 172 narrowed
-    // `user_memberships_one_active` to (active_member_key, membership_plan_id).
+    // The plan the Member used to hold, cancelled where the current one starts —
+    // the shape a confirmed replacement leaves behind (#956 Q3).
     standardUm = await createAssignment(gymId, memberId, standardPlan, {
-      status: 'active', startsAt: '2026-03-01', finalPrice: 75,
+      status: 'cancelled', startsAt: '2026-03-01', endsAt: '2026-05-01', finalPrice: 75,
     });
     premiumUm = await createAssignment(gymId, memberId, premiumPlan, {
       status: 'active', startsAt: '2026-05-01', finalPrice: 100,
@@ -399,21 +406,28 @@ describe('GET /user-memberships/member/:memberId/configuration — parallel acti
     premiumService = await attachService(gymId, premiumUm, locker, { startsAt: '2026-05-01' });
   });
 
-  it('keeps both active rows in the database (migration 172)', async () => {
+  it('keeps both rows in the database, with exactly one of them live', async () => {
     const { rows } = await db.query(
-      "SELECT id FROM user_memberships WHERE gym_id = ? AND member_id = ? AND status = 'active'",
+      `SELECT id, status FROM user_memberships WHERE gym_id = ? AND member_id = ?`,
       [gymId, memberId],
     );
     expect(rows.map((r: any) => r.id).sort(byNumber)).toEqual([standardUm, premiumUm].sort(byNumber));
+    // The replaced plan is not deleted — it is history (#956 "Historical plans").
+    expect(rows.filter((r: any) => r.status === 'active' || r.status === 'paused'))
+      .toHaveLength(1);
   });
 
-  it('still rejects a second active assignment on the same Membership Plan', async () => {
+  it('rejects a second active assignment for the Member, on any Plan (migration 213)', async () => {
     await expect(
       createAssignment(gymId, memberId, standardPlan, { status: 'active', startsAt: '2026-06-01' }),
     ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
+    const otherPlan = await createPlan(gymId, `Parallel Rejected ${uniq()}`);
+    await expect(
+      createAssignment(gymId, memberId, otherPlan, { status: 'active', startsAt: '2026-07-01' }),
+    ).rejects.toMatchObject({ code: 'ER_DUP_ENTRY' });
   });
 
-  it('returns both plans as live, newest starts_at first', async () => {
+  it('returns both plans newest starts_at first, with only the current one live', async () => {
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
     expect(res.body.plans).toHaveLength(2);
@@ -421,7 +435,8 @@ describe('GET /user-memberships/member/:memberId/configuration — parallel acti
     expect(res.body.plans.map((p: any) => p.plan_name)).toEqual([
       'Parallel Premium', 'Parallel Standard',
     ]);
-    expect(res.body.plans.map((p: any) => p.is_live)).toEqual([true, true]);
+    expect(res.body.plans.map((p: any) => p.is_live)).toEqual([true, false]);
+    // A fee is still resolved for the replaced plan: it is what that cycle cost.
     expect(res.body.plans.map((p: any) => Number(p.membership_fee))).toEqual([100, 75]);
   });
 
@@ -438,17 +453,16 @@ describe('GET /user-memberships/member/:memberId/configuration — parallel acti
       .toEqual([standardPromo, premiumPromo].sort(byNumber));
   });
 
-  it('lists the services of both plans, each carrying its Assigned Plan', async () => {
+  it('lists only the live plan\'s services, each carrying its Assigned Plan', async () => {
     const res = await getConfiguration(gymId, memberId);
-    expect(res.body.services).toHaveLength(2);
+    expect(res.body.services).toHaveLength(1);
 
     const byId = new Map(res.body.services.map((s: any) => [s.id, s]));
-    expect(byId.get(standardService)).toMatchObject({
-      user_membership_id: standardUm, plan_name: 'Parallel Standard',
-    });
     expect(byId.get(premiumService)).toMatchObject({
       user_membership_id: premiumUm, plan_name: 'Parallel Premium',
     });
+    // The replaced plan's service went with it.
+    expect(byId.has(standardService)).toBe(false);
   });
 });
 
@@ -629,11 +643,15 @@ describe('GET /user-memberships/member/:memberId/configuration — new_member_el
     expect(eligibilityById(res.body).get(umId)).toBe(true);
   });
 
-  it('is false for both of a Member\'s two parallel plans', async () => {
+  it('is false for both the plan a Member holds and the one it replaced', async () => {
     const memberId = await createMember(gymId);
-    const first = await createPlan(gymId, `NME Parallel A ${uniq()}`);
-    const second = await createPlan(gymId, `NME Parallel B ${uniq()}`);
-    const firstUm = await createAssignment(gymId, memberId, first, { startsAt: '2026-03-01' });
+    const first = await createPlan(gymId, `NME Replaced ${uniq()}`);
+    const second = await createPlan(gymId, `NME Current ${uniq()}`);
+    // Since #956 a Member cannot hold both at once; the replaced one is
+    // cancelled where the current one starts, which is still inside the window.
+    const firstUm = await createAssignment(gymId, memberId, first, {
+      status: 'cancelled', startsAt: '2026-03-01', endsAt: '2026-05-01',
+    });
     const secondUm = await createAssignment(gymId, memberId, second, { startsAt: '2026-05-01' });
 
     const eligibility = eligibilityById((await getConfiguration(gymId, memberId)).body);

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useApiClient } from '@/lib/apiClient';
+import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
@@ -248,7 +248,7 @@ export default function MembershipsPage() {
       closeModal();
       load();
     } catch (err: any) {
-      setError(err.message ?? t('memberships.error_generic'));
+      setError(apiErrorMessage(err) ?? t('memberships.error_generic'));
     } finally {
       setSaving(false);
     }
