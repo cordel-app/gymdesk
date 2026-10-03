@@ -1634,7 +1634,7 @@ Reference implementation: `api/src/domain/newMemberEligibility.ts` + `api/src/ap
 
 ---
 
-## One Page, Several Catalogues as Tabs (#947)
+## One Page, Several Catalogues as Tabs (#947, #948)
 
 When a library page grows a second and third catalogue of the same *shape* — the Nutrition Library's Personal Goals and Nutrition Goals beside Foods — the tabs are presentation and the catalogues are not. Three rules keep that from becoming three half-identical pages:
 
@@ -1649,7 +1649,13 @@ Two schema devices are worth reusing:
 - **Uniqueness among live rows**, when the router's duplicate check says `status != 'deleted'`: a VIRTUAL generated column that is non-NULL only while the row is live, carrying the UNIQUE index (migration 183's `standing_promotion_key`, migration 206's `live_name_key`). A plain `UNIQUE(gym, name)` would reserve a deleted row's name for ever and surface the re-add as a 500 where the router means 409.
 - **A seeded row's `slug` as its label handle, and only a seeded row's.** The System rows carry a slug and are translated through `<namespace>.<kind>_goal_<slug>` with the row's own `name` as the fallback (the `result_types` rule — decide which applies *before* calling `t()`); a gym's own row, and a System row added later, carry no slug and show the single name that was typed. That is what lets a shared catalogue skip a per-locale junction table, and a CHECK (`slug IS NULL OR gym_id IS NULL`) is what stops a tenant from claiming a System label key.
 
-Reference implementation: `apps/admin/src/components/goalLibrary/` + `api/src/api/goal-library.ts` / `platform-goal-library.ts` over `api/src/domain/goalLibrary.ts` (migration 206).
+**And the tabs being presentation is what makes a tab cheap to promote to a section** (#948 §3/§9): the Personal Goals tab became `/{locale}/personal-goals` and `/{locale}/cordel/personal-goals` a day later, and the whole of the move was two ~40-line pages, one id removed from `LIBRARY_TABS` and two nav entries. Three things follow for whoever does that next:
+
+- **The new page renders the same section component.** It supplies the scope, the permissions and the label resolver and nothing else (#806), so the catalogue's list, search, `+ Add`, inline create/edit, `⋮` menu, badge and Details modal cannot differ from the tab it used to be — which is the only way "move it, don't change it" is verifiable. A page that restates a control is the thing to catch; a source-scanning test that neither new page contains `<input`, `DataTable` or `ContextMenu` is what catches it.
+- **Narrow the predicate, don't widen the kinds.** `isGoalTab()` narrowed to `GoalKind` while every kind was a tab; once one of them is not, the honest type is `Exclude<LibraryTabId, 'foods'>` — TypeScript rejects a predicate promising a type the parameter can no longer hold, which is the compiler catching exactly the right thing. The *kinds* are unchanged, because the promoted section renders from the same declaration.
+- **A route mounted behind the page's flag needs its own flag now.** `/personal-goals` was gated on `nutrition.nutrition_library` purely because the tab lived on that page; once it is a section of a different domain, hiding Foods must not 403 it. Seed the new key from the old one's **current** value (migration 160's `financials.taxes` device, repeated by 190 and 211) rather than a flat `1`, so a platform that had the parent off keeps the child off, and remember that a key with no row counts as *enabled* — the row exists to make the flag listable and switchable on Cordel → Feature Flags, which is why a split-out needs a migration at all.
+
+Reference implementation: `apps/admin/src/components/goalLibrary/` + `api/src/api/goal-library.ts` / `platform-goal-library.ts` over `api/src/domain/goalLibrary.ts` (migration 206), with #948's two promoted pages at `app/[locale]/personal-goals/` and `app/[locale]/cordel/personal-goals/` (migration 211).
 
 ---
 

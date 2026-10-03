@@ -306,9 +306,14 @@ app.use('/nutrition-plan-templates', requireAuth(), tenantContext, requireModule
 app.use('/member-nutrition-plans', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_plans'), memberNutritionPlansRouter);
 // Global read-only catalog — no gym_id required; only requireAuth + module gate
 app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), nutritionLibraryRouter);
-// #947: the Personal Goals and Nutrition Goals tabs of that same page, so they are
-// gated by the same module and the same feature flag as the Foods tab beside them.
-app.use('/personal-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), personalGoalsRouter);
+// #947/#948: the two goal catalogues. **Nutrition Goals** is still a tab of the
+// Nutrition Library page, so it keeps that page's feature flag. **Personal Goals**
+// is its own section since #948 (§3, §8/§9) and therefore has its own flag,
+// `nutrition.personal_goals` (seeded by migration 211 from the Nutrition Library's
+// current value, so nothing changes on deploy): gated on the Library's key, hiding
+// Foods would 403 a section that is a different domain, and the nav item beside it
+// would be the only thing left pointing at it.
+app.use('/personal-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.personal_goals'), personalGoalsRouter);
 app.use('/nutrition-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), nutritionGoalsRouter);
 // #809: mounted on the Nutrition group flag, so turning the Nutrition Plans page off leaves the Dashboard readable.
 app.use('/nutrition/dashboard', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition'), nutritionDashboardRouter);

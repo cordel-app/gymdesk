@@ -29,7 +29,7 @@
       "calendar": "Calendar",
       "organization": "Organization",
       "training": "Training",
-      "nutrition": "Nutrition",
+      "nutrition": "Nutrition & Goals",
       "payments": "Payments",
       "financials": "Financials",
       "system": "Configuration",
@@ -45,6 +45,7 @@
     "nutrition_plan_templates": "Nutrition Plan Templates",
     "base_nutrition_library": "Base Nutrition Library",
     "base_nutrition_plan_templates": "Base Templates",
+    "base_personal_goals": "Base Personal Goals",
     "base_exercises": "Base Exercises",
     "base_workout_templates": "Base Workout Templates",
     "base_training_plan_templates": "Base Training Plan Templates",
@@ -55,6 +56,7 @@
     "taxes": "Taxes",
     "feature_flags": "Feature Flags",
     "nutrition_plans": "Assigned Nutrition Plans",
+    "personal_goals": "Personal Goals",
     "operating_hours": "Operating Hours",
     "website_integration": "Website Integration",
     "failed_payments_badge": "{count, plural, one {# failed payment awaiting action} other {# failed payments awaiting action}}"
@@ -3112,7 +3114,6 @@
   },
   "goal_library": {
     "tab_foods": "Foods",
-    "tab_personal_goals": "Personal Goals",
     "tab_nutrition_goals": "Nutrition Goals",
     "search": "Search",
     "search_placeholder": "Search by name…",
@@ -3162,7 +3163,9 @@
     "nutrition_goal_fats": "Fats",
     "nutrition_goal_fiber": "Fiber",
     "nutrition_goal_water": "Water",
-    "nutrition_goal_fasting": "Fasting"
+    "nutrition_goal_fasting": "Fasting",
+    "title_personal_goals": "Personal Goals",
+    "title_base_personal_goals": "Base Personal Goals"
   },
   "impersonation": {
     "impersonating_label": "You are impersonating:",

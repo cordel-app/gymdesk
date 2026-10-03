@@ -27,7 +27,7 @@
       "calendar": "Calendario",
       "organization": "Organización",
       "training": "Entrenamiento",
-      "nutrition": "Nutrición",
+      "nutrition": "Nutrición y Objetivos",
       "payments": "Pagos",
       "financials": "Finanzas",
       "system": "Configuración",
@@ -45,6 +45,7 @@
     "nutrition_plan_templates": "Plantillas de Plan Nutricional",
     "base_nutrition_library": "Biblioteca Nutricional Base",
     "base_nutrition_plan_templates": "Plantillas Base",
+    "base_personal_goals": "Objetivos Personales Base",
     "base_exercises": "Ejercicios Base",
     "base_workout_templates": "Entrenamientos Base",
     "base_training_plan_templates": "Plantillas base de plan de entrenamiento",
@@ -55,6 +56,7 @@
     "taxes": "Impuestos",
     "feature_flags": "Flags de características",
     "nutrition_plans": "Planes de nutrición asignados",
+    "personal_goals": "Objetivos Personales",
     "operating_hours": "Horario y Festivos",
     "website_integration": "Integración web",
     "failed_payments_badge": "{count, plural, one {# pago fallido pendiente de acción} other {# pagos fallidos pendientes de acción}}"
@@ -3098,7 +3100,6 @@
   },
   "goal_library": {
     "tab_foods": "Alimentos",
-    "tab_personal_goals": "Objetivos Personales",
     "tab_nutrition_goals": "Objetivos Nutricionales",
     "search": "Buscar",
     "search_placeholder": "Buscar por nombre…",
@@ -3148,7 +3149,9 @@
     "nutrition_goal_fats": "Grasas",
     "nutrition_goal_fiber": "Fibra",
     "nutrition_goal_water": "Agua",
-    "nutrition_goal_fasting": "Ayuno"
+    "nutrition_goal_fasting": "Ayuno",
+    "title_personal_goals": "Objetivos Personales",
+    "title_base_personal_goals": "Objetivos Personales Base"
   },
   "impersonation": {
     "impersonating_label": "Estás suplantando a:",

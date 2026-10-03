@@ -28,7 +28,7 @@
       "calendar": "Calendari",
       "organization": "Organització",
       "training": "Entrenament",
-      "nutrition": "Nutrició",
+      "nutrition": "Nutrició i Objectius",
       "payments": "Pagaments",
       "financials": "Finances",
       "system": "Configuració",
@@ -46,6 +46,7 @@
     "nutrition_plan_templates": "Plantilles de Pla Nutricional",
     "base_nutrition_library": "Biblioteca Nutricional Base",
     "base_nutrition_plan_templates": "Plantilles Base",
+    "base_personal_goals": "Objectius Personals Base",
     "base_exercises": "Exercicis Base",
     "base_workout_templates": "Entrenaments Base",
     "base_training_plan_templates": "Plantilles base de pla d'entrenament",
@@ -56,6 +57,7 @@
     "taxes": "Impostos",
     "feature_flags": "Flags de funcionalitats",
     "nutrition_plans": "Plans de nutrició assignats",
+    "personal_goals": "Objectius Personals",
     "operating_hours": "Horari i Festius",
     "website_integration": "Integració web",
     "failed_payments_badge": "{count, plural, one {# pagament fallit pendent d'acció} other {# pagaments fallits pendents d'acció}}"
@@ -3125,7 +3127,6 @@
   },
   "goal_library": {
     "tab_foods": "Aliments",
-    "tab_personal_goals": "Objectius Personals",
     "tab_nutrition_goals": "Objectius Nutricionals",
     "search": "Cerca",
     "search_placeholder": "Cerca per nom…",
@@ -3175,7 +3176,9 @@
     "nutrition_goal_fats": "Greixos",
     "nutrition_goal_fiber": "Fibra",
     "nutrition_goal_water": "Aigua",
-    "nutrition_goal_fasting": "Dejuni"
+    "nutrition_goal_fasting": "Dejuni",
+    "title_personal_goals": "Objectius Personals",
+    "title_base_personal_goals": "Objectius Personals Base"
   },
   "impersonation": {
     "impersonating_label": "Esteu suplantant:",

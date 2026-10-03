@@ -94,10 +94,11 @@ function qualityLabel(slug: string) {
 const LIMIT = 20;
 
 export default function CordelNutritionLibraryPage() {
-  // The goal tabs' labels live in their own namespace, shared with the gym-facing
-  // library. The Foods half of this page is still hardcoded English (it is a
-  // superadmin screen and was written that way); the new sections are not, because
-  // they are the very same component the gym's library renders.
+  // The goal tab's labels live in their own namespace, shared with the gym-facing
+  // library and with both Personal Goals sections (#948). The Foods half of this
+  // page is still hardcoded English (it is a superadmin screen and was written that
+  // way); the goal section is not, because it is the very same component the gym's
+  // library renders.
   const tGoals = useTranslations('goal_library');
   const tCommon = useTranslations();
   // #967: the language names come from `lib/localeLabels.ts`, translated, rather
@@ -543,7 +544,7 @@ export default function CordelNutritionLibraryPage() {
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
         <h1 style={{ margin: 0 }}>Base Nutrition Library</h1>
-        {/* The Foods tab's own `+ Add`; each goals tab renders its own (§7). */}
+        {/* The Foods tab's own `+ Add`; the goals tab renders its own (§7). */}
         {tab === 'foods' && (
           <button style={btnStyle()} onClick={openInlineNew} disabled={creating}>+ New Item</button>
         )}
@@ -551,6 +552,8 @@ export default function CordelNutritionLibraryPage() {
 
       <LibraryTabs active={tab} onChange={setTab} label={(key) => tGoals(key as any)} />
 
+      {/* The Base Nutrition Goals tab. Base Personal Goals is its own Cordel
+          section since #948 (§5), rendering this same component. */}
       {isGoalTab(tab) && (
         <GoalLibrarySection
           kind={tab}
