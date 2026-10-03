@@ -28,6 +28,12 @@
  *     shrink; resolving the ones that exist is the gym's call, which is what
  *     this half of the report is for.
  *
+ * It also reports the one thing that makes migration 213 **refuse to run**: a
+ * live assignment with no `gym_id`. That column is nullable on
+ * `user_memberships` and NOT NULL on `billing_events`, so the ledger row the
+ * sweep writes for such a row cannot be inserted. Better to see it here, with
+ * the ids, than as a driver-level null error at migrate time.
+ *
  * Why a script and not a route: it answers a question about every gym at once
  * and has no tenant context, exactly like the other operator scripts here.
  */
@@ -56,6 +62,8 @@ export interface MultiActiveReport {
   owned: Array<{ member_id: number; member_name: string | null; assignments: MultiActiveAssignment[] }>;
   /** Keyed by the covered member; what migration 213 deliberately leaves. */
   covered: Array<{ member_id: number; member_name: string | null; assignments: MultiActiveAssignment[] }>;
+  /** Live assignments with no `gym_id`: migration 213 refuses to run while any exists. */
+  orphans: Array<{ user_membership_id: number; owner_member_id: number; status: string }>;
 }
 
 const LIVE = LIVE_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(', ');
@@ -79,8 +87,16 @@ const LIVE_ASSIGNMENTS_SQL = `
 `;
 
 export async function buildMultiActiveReport(): Promise<MultiActiveReport> {
+  const { rows: orphans } = await db.query<{
+    user_membership_id: number; owner_member_id: number; status: string;
+  }>(
+    `SELECT id AS user_membership_id, member_id AS owner_member_id, status
+     FROM user_memberships
+     WHERE status IN (${LIVE}) AND gym_id IS NULL
+     ORDER BY id ASC`,
+  );
   const { rows: live } = await db.query<MultiActiveAssignment>(LIVE_ASSIGNMENTS_SQL);
-  if (live.length === 0) return { owned: [], covered: [] };
+  if (live.length === 0) return { owned: [], covered: [], orphans };
 
   const byId = new Map(live.map((row) => [Number(row.user_membership_id), row]));
 
@@ -136,7 +152,7 @@ export async function buildMultiActiveReport(): Promise<MultiActiveReport> {
 
   owned.sort((a, b) => a.member_id - b.member_id);
   covered.sort((a, b) => a.member_id - b.member_id);
-  return { owned, covered };
+  return { owned, covered, orphans };
 }
 
 function describe(row: MultiActiveAssignment): string {
@@ -160,6 +176,12 @@ async function main() {
   for (const group of report.covered) {
     console.log(`  member #${group.member_id} ${group.member_name ?? ''}`);
     for (const row of group.assignments) console.log(describe(row));
+  }
+  console.log('');
+  console.log('Live assignments with no gym_id (migration 213 refuses to run while any exists):');
+  if (report.orphans.length === 0) console.log('  none');
+  for (const row of report.orphans) {
+    console.log(`  #${row.user_membership_id}  ${row.status}  owner member #${row.owner_member_id}`);
   }
   await db.end();
 }

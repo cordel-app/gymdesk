@@ -1534,7 +1534,7 @@ export const MEMBERS_SELECT = `
 
 async function findMembershipWithPlanLimit(id: string | string[], gymId: string) {
   const { rows } = await db.query(
-    `SELECT um.id, p.member_limit FROM user_memberships um
+    `SELECT um.id, um.membership_plan_id, p.member_limit FROM user_memberships um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      WHERE um.id = ? AND um.gym_id = ?`,
     [id, gymId],
@@ -1573,6 +1573,30 @@ userMembershipsRouter.post('/:id/members', requireModuleWrite('PAYMENTS'), async
   }
 
   try {
+    // #956: covering a Member is the fourth way they come to hold a Membership
+    // Plan, so the rule applies here too — a Member who already has a live one
+    // cannot be added to a second. Unlike the three assignment paths this one
+    // offers **no** `confirm` replacement: the ticket settles the effective date
+    // of a replacement as the new plan's `starts_at` (Q3), and coverage added to
+    // a plan that started months ago has no such date to end their own plan on.
+    // So the staff action is the explicit one — close their plan, then add them —
+    // and the conflict payload names what is in the way.
+    const coverageConflict = await db.transaction(async (tx) => {
+      const conflicts = await findLiveAssignmentsForMembers(tx, gymId, [Number(member_id)], {
+        excludeUserMembershipId: Number(req.params.id),
+      });
+      return conflicts.length > 0 ? conflicts : null;
+    });
+    if (coverageConflict) {
+      const body = activePlanConflictBody(
+        coverageConflict, await membershipPlanName(gymId, Number(membership.membership_plan_id)),
+      );
+      return res.status(409).json({
+        ...body,
+        message: `${body.current_plan.blocked_member_name ?? 'This member'} already has an active `
+          + 'Membership Plan. Close it before adding them to this one.',
+      });
+    }
     await db.query(
       'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 0)',
       [gymId, req.params.id, member_id],

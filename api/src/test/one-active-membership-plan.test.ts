@@ -410,6 +410,41 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     }
   });
 
+  it('refuses to cover a member who already has a live plan, and offers no confirm', async () => {
+    const owner = await createMember(gymId, 'Cover Owner');
+    const joiner = await createMember(gymId, 'Cover Joiner');
+    const family = await createPlan(gymId, 'Cover Family', 'family');
+    const solo = await createPlan(gymId, 'Cover Solo');
+    const assigned = await post(`/membership-plans/${family}/assign`, {
+      member_ids: [owner], owner_member_id: owner, starts_at: '2026-01-01',
+    });
+    expect(assigned.status).toBe(201);
+    const joinersOwn = await post('/user-memberships', {
+      member_id: joiner, membership_plan_id: solo, starts_at: '2026-02-01',
+    });
+    expect(joinersOwn.status).toBe(201);
+
+    const refused = await post(`/user-memberships/${assigned.body.id}/members`, { member_id: joiner });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe(ACTIVE_PLAN_EXISTS);
+    expect(refused.body.message).toMatch(/Close it before adding them/);
+    // Even confirmed: this path deliberately has no replacement, because there
+    // is no new `starts_at` to end their own plan on.
+    const refusedAgain = await post(
+      `/user-memberships/${assigned.body.id}/members`, { member_id: joiner, confirm: true },
+    );
+    expect(refusedAgain.status).toBe(409);
+    const { rows } = await db.query(
+      'SELECT status FROM user_memberships WHERE id = ?', [joinersOwn.body.id],
+    );
+    expect(rows[0].status).toBe('active');
+
+    // Closing their own plan is what makes the add go through.
+    await post(`/user-memberships/${joinersOwn.body.id}/close`, { confirm: true });
+    const added = await post(`/user-memberships/${assigned.body.id}/members`, { member_id: joiner });
+    expect(added.status).toBe(201);
+  });
+
   it('a covered member of a family plan already has a plan (#956 Q4)', async () => {
     const owner = await createMember(gymId, 'Owner');
     const coMember = await createMember(gymId, 'Co-member');

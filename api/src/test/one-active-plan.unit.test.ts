@@ -3,6 +3,7 @@
 // (findLiveAssignmentsForMembers / supersedeLiveAssignments) is exercised
 // through the routes in one-active-membership-plan.test.ts.
 
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   ACTIVE_PLAN_EXISTS,
@@ -110,5 +111,36 @@ describe('supersedeStartsAtError', () => {
 
   it('is null with nothing to supersede', () => {
     expect(supersedeStartsAtError('2026-01-01', [])).toBeNull();
+  });
+});
+
+describe('migration 213 and the rule agree on what "live" means', () => {
+  // The migration is frozen SQL and cannot import this module, so it spells
+  // `('active', 'paused')` literally and the report script derives its clause
+  // from `LIVE_ASSIGNMENT_STATUSES`. The migration's sweep and the report's
+  // `keeper` have to describe the same set — the report is what an operator
+  // reads before letting the sweep cancel anything — so a change to the
+  // constant has to fail here rather than silently diverge from the one file
+  // that cannot follow it.
+  const source = readFileSync(
+    new URL('../infra/migrations/213_one_active_membership_plan.js', import.meta.url),
+    'utf8',
+  );
+
+  it('the migration hardcodes exactly the live statuses this module declares', () => {
+    const literal = `(${LIVE_ASSIGNMENT_STATUSES.map((s) => `'${s}'`).join(', ')})`;
+    expect(literal).toBe("('active', 'paused')");
+    // Both places the migration narrows to live rows: the orphan pre-check and
+    // the sweep's own read.
+    const occurrences = source.split(`status IN ${literal}`).length - 1;
+    expect(occurrences).toBe(2);
+  });
+
+  it('the migration names no other status in a WHERE clause', () => {
+    const inClauses = source.match(/status IN \([^)]*\)/g) ?? [];
+    expect(inClauses.length).toBeGreaterThan(0);
+    for (const clause of inClauses) {
+      expect(clause).toBe("status IN ('active', 'paused')");
+    }
   });
 });

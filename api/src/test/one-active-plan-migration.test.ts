@@ -131,7 +131,29 @@ describe('migration 213 — the sweep', () => {
     // Cancelling the active row and keeping the paused one would leave the
     // Member with no plan that bills — hence the status-first ordering.
     expect((await read(active)).status).toBe('active');
-    expect((await read(newerPaused)).status).toBe('cancelled');
+    const swept = await read(newerPaused);
+    expect(swept.status).toBe('cancelled');
+    // …and because the keeper is picked status-first, it can have started
+    // *before* the row being swept. `ends_at` is clamped to the swept row's own
+    // start rather than written as the keeper's: a range ending before it began
+    // is one `GET /user-memberships?start_date=` would hide from the very period
+    // the Member held it, and `down()` cannot put the original date back.
+    expect(swept.ends_at).toBe('2026-09-01');
+    expect(swept.ends_at >= '2026-09-01').toBe(true);
+  });
+
+  it('refuses to run while a live assignment carries no gym_id, and sweeps nothing', async () => {
+    const memberId = await createMember();
+    const older = await seedAssignment(memberId, await createPlan('M213 Orphan Old'), 'active', '2026-01-01');
+    const current = await seedAssignment(memberId, await createPlan('M213 Orphan New'), 'active', '2026-06-01');
+    await db.query('UPDATE user_memberships SET gym_id = NULL WHERE id = ?', [current]);
+
+    // `billing_events.gym_id` is NOT NULL while this one is nullable, so the
+    // ledger row would abort on a driver-level null error naming no row.
+    await expect(migration.up(knex)).rejects.toThrow(new RegExp(String(current)));
+    expect((await read(older)).status).toBe('active');
+
+    await db.query('UPDATE user_memberships SET gym_id = ? WHERE id = ?', [gymId, current]);
   });
 
   it('separates two rows that tie on status and start date by id, rather than at random', async () => {
@@ -153,11 +175,14 @@ describe('migration 213 — the sweep', () => {
     await migration.up(knex);
 
     const { rows } = await db.query(
-      `SELECT previous_status, new_status, source FROM billing_events
+      `SELECT previous_status, new_status, source, notes FROM billing_events
        WHERE user_membership_id = ? AND event_type = 'status_changed' ORDER BY id DESC LIMIT 1`,
       [swept],
     );
     expect(rows[0]).toMatchObject({ previous_status: 'paused', new_status: 'cancelled', source: 'system' });
+    // The marker is the only thing that tells a swept row from one an admin
+    // closed — `down()` leans on it to say which rows it could not restore.
+    expect(rows[0].notes).toMatch(/^Migration 213 \(#956\): superseded by assignment #\d+$/);
   });
 
   it('leaves a Member with one live plan, and their cancelled history, untouched', async () => {
@@ -184,6 +209,72 @@ describe('migration 213 — the sweep', () => {
     expect((await read(current)).status).toBe('active');
     expect(await indexExists(INDEX)).toBe(true);
     expect(await indexExists('user_memberships_one_active_per_plan')).toBe(false);
+  });
+
+  it('down() restores the wider index and leaves the swept rows cancelled', async () => {
+    const memberId = await createMember();
+    const swept = await seedAssignment(memberId, await createPlan('M213 Down Old'), 'active', '2026-01-01');
+    await seedAssignment(memberId, await createPlan('M213 Down New'), 'active', '2026-06-01');
+
+    await migration.up(knex);
+    expect((await read(swept)).status).toBe('cancelled');
+
+    await migration.down(knex);
+
+    expect(await indexExists(INDEX)).toBe(false);
+    expect(await indexExists('user_memberships_one_active_per_plan')).toBe(true);
+    // Nothing is un-cancelled: the `ends_at` it overwrote is gone, so a
+    // rollback that put a status back would be inventing one.
+    expect((await read(swept)).status).toBe('cancelled');
+
+    // Put the schema back the way `up()` leaves it for the rest of the file.
+    await migration.up(knex);
+    expect(await indexExists(INDEX)).toBe(true);
+  });
+
+  it('leaves the old index standing when the new one cannot be created', async () => {
+    // The ADD-before-DROP ordering. MySQL DDL is non-transactional, so a failed
+    // ADD in the other order would commit the DROP and leave the table with
+    // nothing enforcing one active plan per Member.
+    const memberId = await createMember();
+    await db.query(
+      `ALTER TABLE user_memberships
+       ADD UNIQUE KEY user_memberships_one_active_per_plan (active_member_key, membership_plan_id)`,
+    );
+    const planId = await createPlan('M213 Collide');
+    await seedAssignment(memberId, planId, 'active', '2026-01-01');
+    // Two active rows the sweep will not touch, because they have no owner in
+    // common — one each for two Members — and then one Member owning both.
+    await db.query(
+      'UPDATE user_memberships SET status = \'active\' WHERE member_id = ?', [memberId],
+    );
+
+    // Force the ADD to fail: a second active row for this Member, inserted
+    // *after* the sweep has read the set, is what a still-deployed pre-#956 API
+    // could do during the ALTER.
+    const original = knex.raw;
+    let injected = false;
+    (knex as any).raw = async (sql: string, params: any[] = []) => {
+      if (!injected && /ADD UNIQUE KEY user_memberships_one_active /.test(sql)) {
+        injected = true;
+        await original(
+          `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+           VALUES (?, ?, ?, 'active', '2026-03-01', 30)`,
+          [gymId, memberId, await createPlan('M213 Collide B')],
+        );
+      }
+      return original(sql, params);
+    };
+    try {
+      await expect(migration.up(knex)).rejects.toThrow();
+    } finally {
+      (knex as any).raw = original;
+    }
+
+    // The per-plan index is still there; the table was never left unguarded.
+    expect(await indexExists('user_memberships_one_active_per_plan')).toBe(true);
+    await db.query("DELETE FROM user_memberships WHERE member_id = ?", [memberId]);
+    await db.query('ALTER TABLE user_memberships DROP INDEX user_memberships_one_active_per_plan');
   });
 });
 
@@ -216,6 +307,18 @@ describe('buildMultiActiveReport', () => {
     const report = await buildMultiActiveReport();
     expect(report.owned.some((g) => g.member_id === memberId)).toBe(false);
     expect(report.covered.some((g) => g.member_id === memberId)).toBe(false);
+  });
+
+  it('reports a live assignment with no gym_id, which is what blocks the migration', async () => {
+    const memberId = await createMember();
+    const orphan = await seedAssignment(memberId, await createPlan('Report Orphan'), 'active', '2026-01-01');
+    await db.query('UPDATE user_memberships SET gym_id = NULL WHERE id = ?', [orphan]);
+    try {
+      const report = await buildMultiActiveReport();
+      expect(report.orphans.map((o) => o.user_membership_id)).toContain(orphan);
+    } finally {
+      await db.query('UPDATE user_memberships SET gym_id = ? WHERE id = ?', [gymId, orphan]);
+    }
   });
 
   it('reports a Member covered by two live plans separately, since the sweep leaves those', async () => {
