@@ -20,7 +20,7 @@
 │               ├── calendar.png                                           — tamaño definido por el diseño
 │               ├── bookings.png                                           — tamaño definido por el diseño
 │               ├── background.png                                         — tamaño definido por el diseño
-│               ├── personal_goals.png                                         — tamaño definido por el diseño
+│               ├── personal_goals.png                                      — tamaño definido por el diseño
 │               └── membership.png                                         — tamaño definido por el diseño
 │
 └── gyms/
@@ -48,4 +48,5 @@
                     ├── calendar.png                                       — tamaño definido por el diseño
                     ├── bookings.png                                       — tamaño definido por el diseño
                     ├── background.png                                     — tamaño definido por el diseño
+    │               ├── personal_goals.png                                 — tamaño definido por el diseño                    
                     └── membership.png                                     — tamaño definido por el diseño
