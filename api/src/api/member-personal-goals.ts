@@ -70,10 +70,19 @@ const COLUMNS = `
   pg.status AS goal_status
 `;
 
+/**
+ * Both joins carry the tenant predicate as well as the key. Nothing in SQL can
+ * tie `mpg.gym_id` to `members.gym_id` — `members` has no `(gym_id, id)` unique
+ * key for a composite FK to reference, which is true of every domain table here
+ * — so `POST /`'s two existence checks are the enforcement point. Repeating the
+ * predicate on the way out means a row that somehow named one gym and another
+ * gym's member or goal is *hidden* rather than served to the wrong tenant.
+ */
 const FROM = `
   FROM member_personal_goals mpg
-  JOIN members m ON m.id = mpg.member_id
+  JOIN members m ON m.id = mpg.member_id AND m.gym_id = mpg.gym_id
   JOIN personal_goals pg ON pg.id = mpg.personal_goal_id
+                        AND (pg.gym_id IS NULL OR pg.gym_id = mpg.gym_id)
 `;
 
 /**

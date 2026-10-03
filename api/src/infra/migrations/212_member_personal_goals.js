@@ -38,15 +38,22 @@
  *
  * ── One live, in-progress assignment per (member, goal) ─────────────────────
  *
- * "Many per member" is many *goals*, not the same goal twice over: two live
- * Weight Loss rows with different targets are a data-entry mistake with no
- * reading that makes them both true. The constraint is therefore on the
- * **live, in-progress** pair only — an achieved or abandoned goal may be
- * assigned again, which is what makes the status transitions useful — and it is
- * the migration-183/206 device: a VIRTUAL generated column that is non-NULL
- * only while the row is live and in progress, carrying the UNIQUE index, so the
- * index and the router's own 409 agree by construction rather than by
- * discipline. VIRTUAL rather than STORED because MySQL rejects a STORED
+ * "Many per member" is many *goals*, not the same goal pursued twice at once:
+ * two **in-progress** Weight Loss rows with different targets are a data-entry
+ * mistake with no reading that makes them both true. So the constraint is on the
+ * live, in-progress pair and deliberately on nothing wider — an achieved or
+ * abandoned goal may be assigned again, which is what makes the status
+ * transitions useful, and two *finished* records of the same goal are ordinary
+ * history (a member who hit a weight target in the spring and again in the
+ * autumn), not a duplicate. That is also why `POST` accepts a status: staff
+ * recording a goal that is already behind them is a real case, and it cannot
+ * open a hole, because moving such a row to `in_progress` later goes through the
+ * very same index and answers 409.
+ *
+ * It is the migration-183/206 device: a VIRTUAL generated column that is
+ * non-NULL only while the row is live and in progress, carrying the UNIQUE
+ * index, so the index and the router's own 409 agree by construction rather than
+ * by discipline. VIRTUAL rather than STORED because MySQL rejects a STORED
  * generated column over a foreign-key column.
  *
  * Every statement is guarded on its own: MySQL commits DDL implicitly, so a
@@ -99,14 +106,21 @@ exports.up = async (knex) => {
         modified_by_type VARCHAR(20)   NULL,
         deleted_by_name  VARCHAR(255)  NULL,
         deleted_by_type  VARCHAR(20)   NULL,
-        live_goal_key    VARCHAR(64)   GENERATED ALWAYS AS (
+        live_goal_key    VARCHAR(64)   COLLATE utf8mb4_bin GENERATED ALWAYS AS (
                            IF(deleted_at IS NULL AND status = 'in_progress',
                               CONCAT(member_id, ':', personal_goal_id), NULL)
                          ) VIRTUAL,
         PRIMARY KEY (id),
         UNIQUE KEY ${PREFIX}_live_goal_key (live_goal_key),
-        KEY ${PREFIX}_gym_member_index (gym_id, member_id, deleted_at),
-        KEY ${PREFIX}_gym_status_index (gym_id, status, deleted_at),
+        -- deleted_at sits second in both: the list the Assigned Personal Goals
+        -- page opens on constrains gym_id and deleted_at and nothing else, so a
+        -- third-position deleted_at would leave it filtering every row the gym
+        -- has ever had on the heap.
+        KEY ${PREFIX}_gym_live_index (gym_id, deleted_at, member_id),
+        KEY ${PREFIX}_gym_status_index (gym_id, deleted_at, status),
+        -- Declared rather than left to InnoDB, which would otherwise auto-create
+        -- one named after the constraint: the FK one column over has the same.
+        KEY ${PREFIX}_member_index (member_id),
         KEY ${PREFIX}_goal_index (personal_goal_id),
         CONSTRAINT ${PREFIX}_gym_fk FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE,
         CONSTRAINT ${PREFIX}_member_fk FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
@@ -114,7 +128,10 @@ exports.up = async (knex) => {
         CONSTRAINT chk_${PREFIX}_status CHECK (status IN (${statuses})),
         CONSTRAINT chk_${PREFIX}_target_value CHECK (target_value IS NULL OR target_value >= 0),
         -- A unit answers "5 of what"; with no value there is nothing for it to
-        -- qualify, so the pair is refused in SQL and not only by the router.
+        -- qualify, so the pair is refused in SQL and not only by the router. The
+        -- converse is deliberately allowed: a value with no unit ("lose 5") is
+        -- incomplete, not contradictory, and goalAssignmentFieldError() checks
+        -- the same one direction - do not "complete" either of them.
         CONSTRAINT chk_${PREFIX}_target_unit CHECK (target_unit IS NULL OR target_value IS NOT NULL),
         CONSTRAINT chk_${PREFIX}_dates
           CHECK (target_date IS NULL OR start_date IS NULL OR target_date >= start_date),
@@ -129,8 +146,18 @@ exports.up = async (knex) => {
   }
 
   // Defensive, for a database where an earlier partial run left the table
-  // without its unique index (the CREATE above is one statement, so this can
-  // only happen if someone built the table by hand).
+  // without its generated column or its unique index (the CREATE above is one
+  // statement, so this can only happen if someone built the table by hand).
+  // The column is repaired **first**: indexing one that is not there throws
+  // ER_BAD_FIELD_ERROR with the table already created, which is the partial
+  // state this guard exists to avoid.
+  if (!(await knex.schema.hasColumn(TABLE, 'live_goal_key'))) {
+    await knex.raw(
+      `ALTER TABLE ${TABLE} ADD COLUMN live_goal_key VARCHAR(64) COLLATE utf8mb4_bin `
+      + "GENERATED ALWAYS AS (IF(deleted_at IS NULL AND status = 'in_progress', "
+      + "CONCAT(member_id, ':', personal_goal_id), NULL)) VIRTUAL",
+    );
+  }
   if (!(await hasIndex(knex, TABLE, `${PREFIX}_live_goal_key`))) {
     await knex.raw(`CREATE UNIQUE INDEX ${PREFIX}_live_goal_key ON ${TABLE} (live_goal_key)`);
   }
