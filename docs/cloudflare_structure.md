@@ -1,7 +1,8 @@
 {bucket}/
 ├── cordel/
-│   ├── nutrition/
-│   │   └── {food_id}-{food_name}.png                                      — 512 × 512 px
+│   ├── nutrition & goals/
+│   │   ├── {food_id}-{food_name}.png                                      — 512 × 512 px
+│   │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 512 × 512 px
 │   │
 │   ├── exercises/
 │   │   └── images/
@@ -19,12 +20,15 @@
 │               ├── calendar.png                                           — tamaño definido por el diseño
 │               ├── bookings.png                                           — tamaño definido por el diseño
 │               ├── background.png                                         — tamaño definido por el diseño
+│               ├── personal_goals.png                                         — tamaño definido por el diseño
 │               └── membership.png                                         — tamaño definido por el diseño
 │
 └── gyms/
     └── {gym_id}-{sanitized_gym_name}/
-        ├── nutrition/
-        │
+        ├── nutrition & goals
+        │   ├── {food_id}-{food_name}.png                                      — 512 × 512 px
+        │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 512 × 512 px
+        │        
         ├── exercises/
         │   ├── images/
         │   │   ├── {exercise_id}-{exercise_name}.png                       — 2048 × 2048 px
