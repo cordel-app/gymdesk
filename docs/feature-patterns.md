@@ -809,6 +809,25 @@ Reference implementation: `components/exercises/` + both pages. Regression tests
 `apps/admin/src/test/exercise-editor-unification.test.ts` and
 `exercise-read-only-expansion.test.ts`.
 
+**A gym-wide section and a Member card section are two pages too (#948 §4).**
+Assigned Personal Goals is administered from `[locale]/assigned-personal-goals`
+and from the Member card's own PERSONAL GOALS section, which look nothing alike —
+a filtered `DataTable` on one side, a stack of small cards on the other — and that
+is no reason to write the editor twice. `components/personalGoals/` holds the
+declaration (row shape, status mirror, row → form mapping, both payload builders,
+the formatters) and **one form body** both surfaces render; what differs is passed
+in, never branched on: the member picker appears only where the surface does not
+already know whose goals these are, and the Member card hands the form its own
+Edit-mode flag so every control is *absent* outside that mode rather than disabled
+(#797/#957). Two consequences worth copying. A column the `PUT` refuses to move —
+here the member and the goal — is rendered as a **value in both modes** rather
+than as a control the route would ignore (#974), because re-pointing an assignment
+is a `DELETE` plus a `POST`. And the client-side validation answers **locale keys**
+rather than sentences, so the shared body stays i18n-free and each page keeps its
+own words (#901); the server's own copy of those rules stays the enforcement
+point. Regression test:
+`apps/admin/src/test/assigned-personal-goals.test.ts`.
+
 ### When the card's sections have their own editors (#816)
 
 Membership Plans is the fifth shape, and the one the rule above does not
