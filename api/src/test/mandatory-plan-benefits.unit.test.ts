@@ -1,4 +1,4 @@
-// #893 — Mandatory Sellable Items are always part of a Membership Plan.
+// #893 — Mandatory Products are always part of a Membership Plan.
 //
 // Unit tests: `domain/mandatoryPlanBenefits.ts` is pure (no DB, no HTTP), so per
 // CLAUDE.md it is exercised directly — no `createTestGym`, no `db.end()`. The
@@ -9,17 +9,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   MANDATORY_BENEFIT_QUANTITY,
-  MandatorySellableItem,
+  MandatoryProduct,
   PlanBenefitRow,
-  isMandatorySellableItem,
+  isMandatoryProduct,
   mandatoryItemsForCategory,
   mergeMandatoryBenefits,
   withMandatoryBenefits,
 } from '../domain/mandatoryPlanBenefits';
 
 function item(
-  over: Partial<MandatorySellableItem> & { id: number; name: string },
-): MandatorySellableItem {
+  over: Partial<MandatoryProduct> & { id: number; name: string },
+): MandatoryProduct {
   return {
     type: 'fee', billing_frequency: null, status: 'active', mandatory: 1, ...over,
   };
@@ -33,17 +33,17 @@ function row(over: Partial<PlanBenefitRow> & { gym_charge_id: number }): PlanBen
   };
 }
 
-describe('isMandatorySellableItem', () => {
+describe('isMandatoryProduct', () => {
   it('reads both a tinyint and a boolean', () => {
-    expect(isMandatorySellableItem({ mandatory: 1 })).toBe(true);
-    expect(isMandatorySellableItem({ mandatory: true })).toBe(true);
-    expect(isMandatorySellableItem({ mandatory: 0 })).toBe(false);
-    expect(isMandatorySellableItem({ mandatory: false })).toBe(false);
+    expect(isMandatoryProduct({ mandatory: 1 })).toBe(true);
+    expect(isMandatoryProduct({ mandatory: true })).toBe(true);
+    expect(isMandatoryProduct({ mandatory: 0 })).toBe(false);
+    expect(isMandatoryProduct({ mandatory: false })).toBe(false);
   });
 });
 
 describe('mandatoryItemsForCategory', () => {
-  // The classification is `classifySellableItem()` and nothing else (#550), so a
+  // The classification is `classifyProduct()` and nothing else (#550), so a
   // mandatory item can never be forced into a section it does not belong to.
   const candidates = [
     item({ id: 1, name: 'Insurance Fee', type: 'fee', billing_frequency: 'year' }),   // periodical

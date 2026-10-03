@@ -239,8 +239,8 @@ export const navigationGroups: NavGroup[] = [
         featureKey: 'financials.promotions',
       },
       {
-        href: '/{{locale}}/financials/sellable-items',
-        labelKey: 'nav.sellable_items',
+        href: '/{{locale}}/financials/products',
+        labelKey: 'nav.products',
         featureKey: 'financials.gym_charges',
       },
       {

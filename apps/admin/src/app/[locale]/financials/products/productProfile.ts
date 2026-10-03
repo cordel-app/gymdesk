@@ -1,5 +1,5 @@
 /**
- * #974 — one definition of a Sellable Item's own fields, and of the sections
+ * #974 — one definition of a Product's own fields, and of the sections
  * they sit in.
  *
  * The expanded card used to render the item as a dense `Label: value` list
@@ -12,45 +12,45 @@
  *
  * So the field set, its order, its labels, its placement and which of its
  * fields a System row freezes live here, and both halves render them through
- * `SellableItemLayout` (#882's rule for the Member Profile, applied to this
+ * `ProductLayout` (#882's rule for the Member Profile, applied to this
  * card). What each half still owns is the *contents* of a cell — a control on
  * one side, the persisted value on the other — which is what the layout's
  * `renderField` / `renderValue` callbacks are for.
  *
  * It is a pure module: no JSX, no `t()`, no endpoint and no permission
- * decision. A label is a key in the `sellable_items` namespace and the page
+ * decision. A label is a key in the `products` namespace and the page
  * resolves it.
  */
 
 /**
- * The three closed option sets a Sellable Item's selects offer, beside the
+ * The three closed option sets a Product's selects offer, beside the
  * field set that renders them: the create card, the inline editor and the
  * read-only card all take their options and their labels from here, so none of
  * them can offer a value the others do not know how to display. The accepted
- * sets themselves are the API's — `VALID_TYPES` in `api/src/api/sellable-items.ts`
+ * sets themselves are the API's — `VALID_TYPES` in `api/src/api/products.ts`
  * and the `gym_charges_*_check` CHECKs beside it.
  *
  * The Billing Frequency is deliberately **not** here: it has two retired values
- * and one place that decides what may be offered (`sellableItemFrequency.ts`,
+ * and one place that decides what may be offered (`productFrequency.ts`,
  * #821/#945).
  */
-export const SELLABLE_ITEM_TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
-export const SELLABLE_ITEM_STATUSES = ['active', 'inactive'] as const;
-export const SELLABLE_ITEM_ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
+export const PRODUCT_TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
+export const PRODUCT_STATUSES = ['active', 'inactive'] as const;
+export const PRODUCT_ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
 
-export type SellableItemType = typeof SELLABLE_ITEM_TYPES[number];
-export type SellableItemStatus = typeof SELLABLE_ITEM_STATUSES[number];
-export type SellableItemEnrollmentStatus = typeof SELLABLE_ITEM_ENROLLMENT_STATUSES[number];
+export type ProductType = typeof PRODUCT_TYPES[number];
+export type ProductStatus = typeof PRODUCT_STATUSES[number];
+export type ProductEnrollmentStatus = typeof PRODUCT_ENROLLMENT_STATUSES[number];
 
 /** The sections of the card, in the order both halves render them. */
-export type SellableItemSectionKey =
+export type ProductSectionKey =
   | 'general'
   | 'billing'
   | 'professional_services'
   | 'package_info'
   | 'notes';
 
-export type SellableItemFieldKey =
+export type ProductFieldKey =
   | 'name'
   | 'type'
   | 'description'
@@ -66,10 +66,10 @@ export type SellableItemFieldKey =
   | 'package_information'
   | 'notes';
 
-export interface SellableItemFieldSpec {
-  key: SellableItemFieldKey;
+export interface ProductFieldSpec {
+  key: ProductFieldKey;
   /**
-   * How the field reads, inside the `sellable_items` namespace. Absent where
+   * How the field reads, inside the `products` namespace. Absent where
    * the section header already names it — a lone Notes textarea under a
    * `NOTES` heading needs no second label, and the Professional Services chips
    * need none either.
@@ -102,11 +102,11 @@ export interface SellableItemFieldSpec {
   hiddenWhenSystem?: true;
 }
 
-export interface SellableItemSectionSpec {
-  key: SellableItemSectionKey;
-  /** The section heading, in the `sellable_items` namespace. */
+export interface ProductSectionSpec {
+  key: ProductSectionKey;
+  /** The section heading, in the `products` namespace. */
   titleKey: string;
-  fields: readonly SellableItemFieldSpec[];
+  fields: readonly ProductFieldSpec[];
   /** #546: Professional Services only apply to a Session-type item. */
   sessionOnly?: true;
   hiddenWhenSystem?: true;
@@ -121,7 +121,7 @@ export interface SellableItemSectionSpec {
  * Notes, for the same reason: a textarea in a half-width cell is unreadable in
  * the form and a wrapped paragraph stretches the card in the value.
  */
-export const SELLABLE_ITEM_SECTIONS: readonly SellableItemSectionSpec[] = [
+export const PRODUCT_SECTIONS: readonly ProductSectionSpec[] = [
   {
     key: 'general',
     titleKey: 'section_general',
@@ -168,11 +168,11 @@ export const SELLABLE_ITEM_SECTIONS: readonly SellableItemSectionSpec[] = [
 ];
 
 /** The section order, for the test that pins it and for a reader of this file. */
-export const SELLABLE_ITEM_SECTION_ORDER: readonly SellableItemSectionKey[] =
-  SELLABLE_ITEM_SECTIONS.map((s) => s.key);
+export const PRODUCT_SECTION_ORDER: readonly ProductSectionKey[] =
+  PRODUCT_SECTIONS.map((s) => s.key);
 
 /** A field as the layout renders it: the spec, plus whether this row may edit it. */
-export interface VisibleSellableItemField extends SellableItemFieldSpec {
+export interface VisibleProductField extends ProductFieldSpec {
   /**
    * False for a column this row freezes, which is what makes the Edit form
    * render it as a value rather than remembering to skip it.
@@ -180,8 +180,8 @@ export interface VisibleSellableItemField extends SellableItemFieldSpec {
   editable: boolean;
 }
 
-export interface VisibleSellableItemSection extends SellableItemSectionSpec {
-  fields: readonly VisibleSellableItemField[];
+export interface VisibleProductSection extends ProductSectionSpec {
+  fields: readonly VisibleProductField[];
 }
 
 /**
@@ -192,10 +192,10 @@ export interface VisibleSellableItemSection extends SellableItemSectionSpec {
  * of #974 §1/§3. A section left with no visible field is dropped rather than
  * rendered as an empty heading.
  */
-export function visibleSellableItemSections(
+export function visibleProductSections(
   { isSystem, isSessionType }: { isSystem: boolean; isSessionType: boolean },
-): readonly VisibleSellableItemSection[] {
-  return SELLABLE_ITEM_SECTIONS
+): readonly VisibleProductSection[] {
+  return PRODUCT_SECTIONS
     .filter((section) => !(section.sessionOnly && !isSessionType))
     .filter((section) => !(section.hiddenWhenSystem && isSystem))
     .map((section) => ({
@@ -211,15 +211,15 @@ export function visibleSellableItemSections(
 export const EMPTY_VALUE = '—';
 
 /** The persisted columns the form reads and writes back. */
-export interface SellableItemFormRow {
+export interface ProductFormRow {
   name: string;
-  type: SellableItemType;
+  type: ProductType;
   units: number | null;
   description: string | null;
   amount: string | null;
   billing_frequency: string | null;
-  status: SellableItemStatus;
-  enrollment_status: SellableItemEnrollmentStatus;
+  status: ProductStatus;
+  enrollment_status: ProductEnrollmentStatus;
   notes: string | null;
   package_information: string | null;
   validity_days: number | null;
@@ -229,15 +229,15 @@ export interface SellableItemFormRow {
 }
 
 /** The Edit form's values, keyed the way the controls bind to them. */
-export interface SellableItemFormValues {
+export interface ProductFormValues {
   name: string;
-  type: SellableItemType;
+  type: ProductType;
   units: string;
   description: string;
   amount: string;
   billing_frequency: string;
-  status: SellableItemStatus;
-  enrollment_status: SellableItemEnrollmentStatus;
+  status: ProductStatus;
+  enrollment_status: ProductEnrollmentStatus;
   notes: string;
   package_information: string;
   validity_days: string;
@@ -251,7 +251,7 @@ export interface SellableItemFormValues {
  * field added above cannot be left out of the form the context menu opens
  * (#800).
  */
-export function toSellableItemFormValues(item: SellableItemFormRow): SellableItemFormValues {
+export function toProductFormValues(item: ProductFormRow): ProductFormValues {
   return {
     name: item.name,
     type: item.type,

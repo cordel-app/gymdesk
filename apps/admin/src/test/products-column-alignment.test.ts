@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-// Regression test for #637 — Sellable Items column alignment.
+// Regression test for #637 — Products column alignment.
 //
 // The header row and every item row used to be independent flex rows whose
 // cells only carried a `minWidth`, so any value wider than its minimum (a long
@@ -15,7 +15,7 @@ import { join } from 'path';
 // structure down by scanning the page source and the locale files.
 
 const PAGE_PATH = join(
-  __dirname, '..', 'app', '[locale]', 'financials', 'sellable-items', 'page.tsx',
+  __dirname, '..', 'app', '[locale]', 'financials', 'products', 'page.tsx',
 );
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
@@ -52,7 +52,7 @@ const locales = Object.fromEntries(
   LOCALE_CODES.map((c) => [c, JSON.parse(readFileSync(join(LOCALES_DIR, `${c}.json`), 'utf-8'))]),
 ) as Record<(typeof LOCALE_CODES)[number], Record<string, Record<string, unknown>>>;
 
-describe('Sellable Items: column alignment (#637)', () => {
+describe('Products: column alignment (#637)', () => {
   it('extracts the collapsed row to scan', () => {
     expect(collapsedRowSrc, 'the collapsed row could not be located in the source').not.toBe('');
   });
@@ -115,10 +115,10 @@ describe('Sellable Items: column alignment (#637)', () => {
 
   it('translates every column header, Actions included, in all locales', () => {
     for (const code of LOCALE_CODES) {
-      const ns = locales[code].sellable_items;
-      expect(ns, `${code}.json has no sellable_items namespace`).toBeTruthy();
+      const ns = locales[code].products;
+      expect(ns, `${code}.json has no products namespace`).toBeTruthy();
       for (const key of EXPECTED_COLUMNS) {
-        expect(String(ns[key] ?? ''), `${code}.json is missing sellable_items.${key}`).not.toBe('');
+        expect(String(ns[key] ?? ''), `${code}.json is missing products.${key}`).not.toBe('');
       }
     }
   });

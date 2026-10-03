@@ -358,7 +358,7 @@ export function MemberExpandedRow({
           its own editing controls.
 
           #931 — there is no PROMOTIONS section here. A Promotion belongs to the
-          target it applies to (a Membership Plan or a Sellable Item), never to a
+          target it applies to (a Membership Plan or a Product), never to a
           Member, so it is configured from the Promotions page and applied with
           the Membership Plan the Member is assigned — which is what the Billing
           Simulation below already reflects. The applications an Assigned Plan
@@ -392,7 +392,7 @@ export function MemberExpandedRow({
         />
       </Section>
 
-      {/* 2. ADDITIONAL PRODUCTS — recurring Sellable Items, added and removed at
+      {/* 2. ADDITIONAL PRODUCTS — recurring Products, added and removed at
           any time, independent from plans and promotions (§4). #957: the
           section reads in both modes; its `+ Add Product` button is Edit
           mode's alone. */}

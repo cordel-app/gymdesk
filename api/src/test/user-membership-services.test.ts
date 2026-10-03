@@ -82,11 +82,11 @@ async function createAssignedPlan(
 }
 
 /**
- * A Sellable Item (`gym_charges`). Defaults to the recurring service shape that
+ * A Product (`gym_charges`). Defaults to the recurring service shape that
  * #631 allows: type 'service', billing_frequency 'month', status 'active'.
  * `charge_type_id` stays NULL — these are custom items, not system charges.
  */
-async function createSellableItem(
+async function createProduct(
   gymId: string,
   opts: {
     name?: string;
@@ -150,7 +150,7 @@ describe('/user-memberships/:id/services — auth', () => {
     gymId = await createTestGym('UMS Auth Gym');
     await createTestMembership(gymId, 'admin');
     umId = await createAssignedPlan(gymId);
-    itemId = await createSellableItem(gymId);
+    itemId = await createProduct(gymId);
   });
 
   it('returns 401 on GET without an Authorization header', async () => {
@@ -192,7 +192,7 @@ describe('/user-memberships/:id/services — PAYMENTS module permissions', () =>
     accountantGymId = await createTestGym('UMS Accountant Gym');
     await createTestMembership(accountantGymId, 'accountant');
     accountantUmId = await createAssignedPlan(accountantGymId);
-    accountantItemId = await createSellableItem(accountantGymId);
+    accountantItemId = await createProduct(accountantGymId);
     // Seeded directly: an accountant cannot create one through the API.
     const { insertId } = await db.query(
       `INSERT INTO user_membership_services (gym_id, user_membership_id, gym_charge_id, quantity, starts_at)
@@ -204,7 +204,7 @@ describe('/user-memberships/:id/services — PAYMENTS module permissions', () =>
     noAccessGymId = await createTestGym('UMS No Access Gym');
     await createTestMembership(noAccessGymId, 'trainer_performance');
     noAccessUmId = await createAssignedPlan(noAccessGymId);
-    noAccessItemId = await createSellableItem(noAccessGymId);
+    noAccessItemId = await createProduct(noAccessGymId);
   });
 
   it('lets a read-only role (accountant) list the services', async () => {
@@ -260,7 +260,7 @@ describe('/user-memberships/:id/services — tenant isolation', () => {
 
     umA = await createAssignedPlan(gymA);
     otherUmA = await createAssignedPlan(gymA);
-    itemA = await createSellableItem(gymA);
+    itemA = await createProduct(gymA);
 
     const created = await addService(gymA, umA, { gym_charge_id: itemA, starts_at: dayOffset(-5) });
     expect(created.status).toBe(201);
@@ -294,8 +294,8 @@ describe('/user-memberships/:id/services — tenant isolation', () => {
     expect(rows[0].ends_at).toBeNull();
   });
 
-  it('returns 404 for a Sellable Item belonging to another gym', async () => {
-    const itemB = await createSellableItem(gymB);
+  it('returns 404 for a Product belonging to another gym', async () => {
+    const itemB = await createProduct(gymB);
     const res = await addService(gymA, umA, { gym_charge_id: itemB });
     expect(res.status).toBe(404);
   });
@@ -321,9 +321,9 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
     await createTestMembership(gymId, 'admin');
   });
 
-  it('attaches a recurring Sellable Item and lists it with the item\'s live name, price and frequency', async () => {
+  it('attaches a recurring Product and lists it with the item\'s live name, price and frequency', async () => {
     const umId = await createAssignedPlan(gymId);
-    const itemId = await createSellableItem(gymId, { name: 'Locker Rental', amount: 12.5 });
+    const itemId = await createProduct(gymId, { name: 'Locker Rental', amount: 12.5 });
 
     const created = await addService(gymId, umId, { gym_charge_id: itemId, quantity: 2, starts_at: today() });
     expect(created.status).toBe(201);
@@ -355,9 +355,9 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
     });
   });
 
-  it('reads the name and price live from the Sellable Item after it is edited', async () => {
+  it('reads the name and price live from the Product after it is edited', async () => {
     const umId = await createAssignedPlan(gymId);
-    const itemId = await createSellableItem(gymId, { name: 'Towel Service', amount: 10 });
+    const itemId = await createProduct(gymId, { name: 'Towel Service', amount: 10 });
     const created = await addService(gymId, umId, { gym_charge_id: itemId });
     expect(created.status).toBe(201);
 
@@ -370,7 +370,7 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
 
   it('defaults quantity to 1 and starts_at to today for a plan that already started', async () => {
     const umId = await createAssignedPlan(gymId, { startsAt: dayOffset(-30) });
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const res = await addService(gymId, umId, { gym_charge_id: itemId });
     expect(res.status).toBe(201);
     expect(res.body.quantity).toBe(1);
@@ -380,7 +380,7 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
   it('defaults starts_at to the Assigned Plan\'s start date when the plan has not started yet', async () => {
     const futureStart = dayOffset(10);
     const umId = await createAssignedPlan(gymId, { startsAt: futureStart });
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const res = await addService(gymId, umId, { gym_charge_id: itemId });
     expect(res.status).toBe(201);
     expect(res.body.starts_at).toBe(futureStart);
@@ -396,8 +396,8 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
 
   it('lists several services oldest window first', async () => {
     const umId = await createAssignedPlan(gymId);
-    const first = await createSellableItem(gymId, { name: 'Older Service' });
-    const second = await createSellableItem(gymId, { name: 'Newer Service' });
+    const first = await createProduct(gymId, { name: 'Older Service' });
+    const second = await createProduct(gymId, { name: 'Newer Service' });
     // Posted newest-first on purpose — ordering must come from starts_at, not insert order.
     expect((await addService(gymId, umId, { gym_charge_id: second, starts_at: dayOffset(5) })).status).toBe(201);
     expect((await addService(gymId, umId, { gym_charge_id: first, starts_at: dayOffset(-10) })).status).toBe(201);
@@ -419,20 +419,20 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
     umId = await createAssignedPlan(gymId, { startsAt: dayOffset(-30) });
   });
 
-  it('rejects a non-recurring Sellable Item (billing_frequency \'once\') with 400', async () => {
-    const itemId = await createSellableItem(gymId, { billingFrequency: 'once' });
+  it('rejects a non-recurring Product (billing_frequency \'once\') with 400', async () => {
+    const itemId = await createProduct(gymId, { billingFrequency: 'once' });
     const res = await addService(gymId, umId, { gym_charge_id: itemId });
     expect(res.status).toBe(400);
   });
 
-  it('rejects a Sellable Item with no billing frequency with 400', async () => {
-    const itemId = await createSellableItem(gymId, { billingFrequency: null });
+  it('rejects a Product with no billing frequency with 400', async () => {
+    const itemId = await createProduct(gymId, { billingFrequency: null });
     const res = await addService(gymId, umId, { gym_charge_id: itemId });
     expect(res.status).toBe(400);
   });
 
-  it('rejects a sessions-type Sellable Item with 400 even when its frequency is recurring', async () => {
-    const itemId = await createSellableItem(gymId, { type: 'sessions', billingFrequency: 'month', units: 10 });
+  it('rejects a sessions-type Product with 400 even when its frequency is recurring', async () => {
+    const itemId = await createProduct(gymId, { type: 'sessions', billingFrequency: 'month', units: 10 });
     const res = await addService(gymId, umId, { gym_charge_id: itemId });
     expect(res.status).toBe(400);
   });
@@ -441,21 +441,21 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
     // 'four_weeks' is a valid gym_charges.billing_frequency since migration 123.
     for (const frequency of ['week', 'four_weeks', 'year']) {
       const target = await createAssignedPlan(gymId);
-      const itemId = await createSellableItem(gymId, { billingFrequency: frequency });
+      const itemId = await createProduct(gymId, { billingFrequency: frequency });
       const res = await addService(gymId, target, { gym_charge_id: itemId });
       expect(res.status).toBe(201);
       expect(res.body.billing_frequency).toBe(frequency);
     }
   });
 
-  it('rejects an inactive Sellable Item with 400', async () => {
-    const itemId = await createSellableItem(gymId, { status: 'inactive' });
+  it('rejects an inactive Product with 400', async () => {
+    const itemId = await createProduct(gymId, { status: 'inactive' });
     const res = await addService(gymId, umId, { gym_charge_id: itemId });
     expect(res.status).toBe(400);
   });
 
-  it('rejects a soft-deleted Sellable Item with 404', async () => {
-    const itemId = await createSellableItem(gymId);
+  it('rejects a soft-deleted Product with 404', async () => {
+    const itemId = await createProduct(gymId);
     await softDeleteItem(itemId);
     const res = await addService(gymId, umId, { gym_charge_id: itemId });
     expect(res.status).toBe(404);
@@ -469,7 +469,7 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
   });
 
   it('rejects a non-positive or fractional quantity with 400', async () => {
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     for (const quantity of [0, -1, 1.5, 'two']) {
       const res = await addService(gymId, umId, { gym_charge_id: itemId, quantity });
       expect(res.status).toBe(400);
@@ -479,7 +479,7 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
   it('rejects starts_at earlier than the Assigned Plan start date with 400', async () => {
     const planStart = dayOffset(-10);
     const target = await createAssignedPlan(gymId, { startsAt: planStart });
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const res = await addService(gymId, target, { gym_charge_id: itemId, starts_at: dayOffset(-11) });
     expect(res.status).toBe(400);
 
@@ -491,20 +491,20 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
 
   it('rejects starts_at later than the Assigned Plan end date with 400', async () => {
     const target = await createAssignedPlan(gymId, { startsAt: dayOffset(-10), endsAt: dayOffset(10) });
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const res = await addService(gymId, target, { gym_charge_id: itemId, starts_at: dayOffset(11) });
     expect(res.status).toBe(400);
   });
 
   it('rejects a malformed starts_at with 400', async () => {
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const res = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: '15-02-2026' });
     expect(res.status).toBe(400);
   });
 
-  it('returns 409 attaching the same Sellable Item while the first attachment is still open', async () => {
+  it('returns 409 attaching the same Product while the first attachment is still open', async () => {
     const target = await createAssignedPlan(gymId);
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const first = await addService(gymId, target, { gym_charge_id: itemId, starts_at: today() });
     expect(first.status).toBe(201);
 
@@ -519,18 +519,18 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
     expect(list.body).toHaveLength(1);
   });
 
-  it('allows a different Sellable Item on the same Assigned Plan', async () => {
+  it('allows a different Product on the same Assigned Plan', async () => {
     const target = await createAssignedPlan(gymId);
-    const itemA = await createSellableItem(gymId);
-    const itemB = await createSellableItem(gymId);
+    const itemA = await createProduct(gymId);
+    const itemB = await createProduct(gymId);
     expect((await addService(gymId, target, { gym_charge_id: itemA })).status).toBe(201);
     expect((await addService(gymId, target, { gym_charge_id: itemB })).status).toBe(201);
     const list = await listServices(gymId, target);
     expect(list.body).toHaveLength(2);
   });
 
-  it('allows the same Sellable Item on a different Assigned Plan', async () => {
-    const itemId = await createSellableItem(gymId);
+  it('allows the same Product on a different Assigned Plan', async () => {
+    const itemId = await createProduct(gymId);
     const planOne = await createAssignedPlan(gymId);
     const planTwo = await createAssignedPlan(gymId);
     expect((await addService(gymId, planOne, { gym_charge_id: itemId })).status).toBe(201);
@@ -540,7 +540,7 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
   it('returns 409 for a cancelled or expired Assigned Plan', async () => {
     for (const status of ['cancelled', 'expired'] as const) {
       const target = await createAssignedPlan(gymId, { status });
-      const itemId = await createSellableItem(gymId);
+      const itemId = await createProduct(gymId);
       const res = await addService(gymId, target, { gym_charge_id: itemId });
       expect(res.status).toBe(409);
     }
@@ -549,7 +549,7 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
   it('allows attaching to an active or paused Assigned Plan', async () => {
     for (const status of ['active', 'paused'] as const) {
       const target = await createAssignedPlan(gymId, { status });
-      const itemId = await createSellableItem(gymId);
+      const itemId = await createProduct(gymId);
       const res = await addService(gymId, target, { gym_charge_id: itemId });
       expect(res.status).toBe(201);
     }
@@ -568,7 +568,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
 
   it('deletes a service outright when its billing has not started yet', async () => {
     const umId = await createAssignedPlan(gymId);
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(7) });
     expect(created.status).toBe(201);
 
@@ -584,7 +584,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
 
   it('stamps ends_at = today for a service that is already being billed, keeping the row', async () => {
     const umId = await createAssignedPlan(gymId);
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(-5) });
     expect(created.status).toBe(201);
 
@@ -603,7 +603,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
 
   it('lists a service whose window has already closed as active: false', async () => {
     const umId = await createAssignedPlan(gymId);
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(-10) });
     expect(created.status).toBe(201);
     expect((await removeService(gymId, umId, created.body.id)).status).toBe(200);
@@ -617,9 +617,9 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect(list.body[0].active).toBe(false);
   });
 
-  it('allows re-attaching the same Sellable Item once the earlier window has closed', async () => {
+  it('allows re-attaching the same Product once the earlier window has closed', async () => {
     const umId = await createAssignedPlan(gymId);
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const first = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(-20) });
     expect(first.status).toBe(201);
     expect((await removeService(gymId, umId, first.body.id)).body.ends_at).toBe(today());
@@ -641,7 +641,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
 
   it('returns 409 removing the same service twice', async () => {
     const umId = await createAssignedPlan(gymId);
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(-3) });
     expect(created.status).toBe(201);
 
@@ -656,7 +656,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
 
   it('returns 404 removing a service that was already deleted outright', async () => {
     const umId = await createAssignedPlan(gymId);
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(7) });
     expect((await removeService(gymId, umId, created.body.id)).body.deleted).toBe(true);
 
@@ -670,9 +670,9 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect((await removeService(gymId, umId, 'abc')).status).toBe(400);
   });
 
-  it('removes a service whose Sellable Item was soft-deleted after it was attached', async () => {
+  it('removes a service whose Product was soft-deleted after it was attached', async () => {
     const umId = await createAssignedPlan(gymId);
-    const itemId = await createSellableItem(gymId);
+    const itemId = await createProduct(gymId);
     const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(-2) });
     expect(created.status).toBe(201);
     await softDeleteItem(itemId);

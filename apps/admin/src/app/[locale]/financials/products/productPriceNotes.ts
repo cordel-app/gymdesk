@@ -1,4 +1,4 @@
-// #942: what has to be said *beside* a Sellable Item's Price so the figure
+// #942: what has to be said *beside* a Product's Price so the figure
 // cannot be misread.
 //
 // Two different sentences, and they answer two different questions:
@@ -27,7 +27,7 @@
 
 /**
  * `gym_charges.type` for a session package. Mirrors the page's own
- * `SESSION_TYPE`, which is the value `classifySellableItem()` (#550) maps to
+ * `SESSION_TYPE`, which is the value `classifyProduct()` (#550) maps to
  * the `session` benefit category.
  */
 export const SESSION_ITEM_TYPE = 'sessions';

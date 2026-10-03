@@ -4,7 +4,7 @@
 // complete and frozen); this file proves what reads it. Every case sets an
 // assignment up through the real routers, edits the catalogue underneath it,
 // and asserts the *charges* do not move — §13's "must NOT change" table, plus
-// §16 (Promotions) and §17 (Sellable Item prices), plus the live fallback for
+// §16 (Promotions) and §17 (Product prices), plus the live fallback for
 // an assignment that captured no snapshot.
 //
 // Integration, not unit: the whole point is which row the loader reads, so
@@ -84,7 +84,7 @@ async function setBillingPolicy(
   );
 }
 
-async function createSellableItem(gymId: string, opts: {
+async function createProduct(gymId: string, opts: {
   type?: string; billingFrequency?: string | null; amount?: number; name?: string;
 } = {}): Promise<number> {
   const { type = 'service', billingFrequency = 'month', amount = 20, name = `APSB-Item-${uniq()}` } = opts;
@@ -144,9 +144,9 @@ describe('Billing Simulation — the Assigned Plan bills its frozen configuratio
     await setBillingPolicy(gymId, planId, 1, 'month');
 
     lockerName = `APSB-Locker-${uniq()}`;
-    lockerId = await createSellableItem(gymId, { amount: 20, billingFrequency: 'month', name: lockerName });
-    feeId = await createSellableItem(gymId, { type: 'fee', amount: 50, billingFrequency: 'once', name: `APSB-Fee-${uniq()}` });
-    sessionsId = await createSellableItem(gymId, { type: 'sessions', amount: 30, billingFrequency: 'per_session', name: `APSB-PT-${uniq()}` });
+    lockerId = await createProduct(gymId, { amount: 20, billingFrequency: 'month', name: lockerName });
+    feeId = await createProduct(gymId, { type: 'fee', amount: 50, billingFrequency: 'once', name: `APSB-Fee-${uniq()}` });
+    sessionsId = await createProduct(gymId, { type: 'sessions', amount: 30, billingFrequency: 'per_session', name: `APSB-PT-${uniq()}` });
     await addPlanBenefit(gymId, 'membership_plan_periodical', planId, lockerId, 1);
     await addPlanBenefit(gymId, 'membership_plan_oneoff', planId, feeId, 1);
     await addPlanBenefit(gymId, 'membership_plan_session', planId, sessionsId, 10);
@@ -178,7 +178,7 @@ describe('Billing Simulation — the Assigned Plan bills its frozen configuratio
 
   // §13, in one pass: every kind of catalogue edit, against a simulation that
   // must come back byte-identical.
-  it('does not move when the Plan, its price, its cadence or a Sellable Item is edited', async () => {
+  it('does not move when the Plan, its price, its cadence or a Product is edited', async () => {
     const before = (await getSimulation(gymId, memberId)).body;
 
     await db.query('UPDATE membership_plan_prices SET price = 500 WHERE membership_plan_id = ?', [planId]);
@@ -195,7 +195,7 @@ describe('Billing Simulation — the Assigned Plan bills its frozen configuratio
     expect(after).toEqual(before);
   });
 
-  it('keeps billing a Sellable Item that is retired afterwards', async () => {
+  it('keeps billing a Product that is retired afterwards', async () => {
     await db.query(
       "UPDATE gym_charges SET deleted_at = UTC_TIMESTAMP(), status = 'inactive' WHERE id = ?",
       [lockerId],
@@ -224,7 +224,7 @@ describe('Billing Simulation — an applied Promotion is frozen onto the assignm
     await setPlanPrice(gymId, planId, 100);
     await setBillingPolicy(gymId, planId, 1, 'month');
     lockerName = `APSB-PromoLocker-${uniq()}`;
-    lockerId = await createSellableItem(gymId, { amount: 20, billingFrequency: 'month', name: lockerName });
+    lockerId = await createProduct(gymId, { amount: 20, billingFrequency: 'month', name: lockerName });
     await addPlanBenefit(gymId, 'membership_plan_periodical', planId, lockerId, 1);
 
     const res = await assign(gymId, {
@@ -314,7 +314,7 @@ describe('Billing Simulation — an attached service keeps the price it was atta
     expect(res.status).toBe(201);
 
     serviceName = `APSB-Service-${uniq()}`;
-    serviceItemId = await createSellableItem(gymId, { amount: 40, billingFrequency: 'month', name: serviceName });
+    serviceItemId = await createProduct(gymId, { amount: 40, billingFrequency: 'month', name: serviceName });
     const attached = await request.post(`/user-memberships/${res.body.id}/services`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
       .send({ gym_charge_id: serviceItemId, quantity: 2, starts_at: dayOffset(0) });
@@ -326,7 +326,7 @@ describe('Billing Simulation — an attached service keeps the price it was atta
     expect(lines[serviceName]).toMatchObject({ quantity: 2, unit_price: 40, actual_charge: 80 });
   });
 
-  it('ignores a later reprice or rename of the Sellable Item', async () => {
+  it('ignores a later reprice or rename of the Product', async () => {
     await db.query('UPDATE gym_charges SET amount = 400, name = ? WHERE id = ?', ['Renamed Service', serviceItemId]);
     const lines = firstEventLines((await getSimulation(gymId, memberId)).body, 'month');
     expect(lines[serviceName]).toMatchObject({ unit_price: 40, actual_charge: 80 });
@@ -350,7 +350,7 @@ describe('Billing Simulation — an assignment with no snapshot still resolves l
     await setPlanPrice(gymId, planId, 45);
     await setBillingPolicy(gymId, planId, 1, 'month');
     lockerName = `APSB-LegacyLocker-${uniq()}`;
-    const lockerId = await createSellableItem(gymId, { amount: 15, billingFrequency: 'month', name: lockerName });
+    const lockerId = await createProduct(gymId, { amount: 15, billingFrequency: 'month', name: lockerName });
     await addPlanBenefit(gymId, 'membership_plan_periodical', planId, lockerId, 1);
 
     // The shape a row created before migration 174 has: no cadence, no regular
@@ -465,7 +465,7 @@ describe('tenant isolation', () => {
     const planId = await createPlan(gymA);
     await setPlanPrice(gymA, planId, 70);
     await setBillingPolicy(gymA, planId, 1, 'month');
-    const itemId = await createSellableItem(gymA, { amount: 25, billingFrequency: 'month' });
+    const itemId = await createProduct(gymA, { amount: 25, billingFrequency: 'month' });
     await addPlanBenefit(gymA, 'membership_plan_periodical', planId, itemId, 1);
     const res = await assign(gymA, {
       member_id: memberId, membership_plan_id: planId, starts_at: dayOffset(0),
@@ -474,7 +474,7 @@ describe('tenant isolation', () => {
 
     // Gym B's benefit row, pointed at gym A's assignment id: the loaders filter
     // on gym_id, so it must not reach the simulation.
-    const otherItemId = await createSellableItem(gymB, { amount: 999, billingFrequency: 'month' });
+    const otherItemId = await createProduct(gymB, { amount: 999, billingFrequency: 'month' });
     await db.query(
       `INSERT INTO user_membership_periodical
          (gym_id, user_membership_id, gym_charge_id, quantity, item_name, item_type,

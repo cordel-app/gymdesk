@@ -85,7 +85,7 @@ describe('Membership Plans and Promotions share it (#901 §1, §2, §7)', () => 
   });
 
   it('covers every Membership Plan subsection that had an Edit action', () => {
-    // PRICING, BILLING & DURATION, the three Sellable Item benefit sections
+    // PRICING, BILLING & DURATION, the three Product benefit sections
     // (one JSX site inside `BENEFIT_SECTIONS.map`) and CENTERS.
     expect(plansSrc.match(/<SectionEditButton/g) ?? []).toHaveLength(4);
     for (const label of ["label={t('plans.edit_pricing')}", "label={t('plans.edit')}"]) {

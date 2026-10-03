@@ -74,7 +74,7 @@ describe('audit entity registry (#675)', () => {
     // The routers behind the Details views above must not write an entity type
     // the registry has never heard of — that is exactly the gap #675 closed.
     const routerFiles = [
-      'activity-types.ts', 'taxes.ts', 'sellable-items.ts', 'professional-services.ts',
+      'activity-types.ts', 'taxes.ts', 'products.ts', 'professional-services.ts',
       'nutrition-library.ts', 'nutrition-plan-templates.ts', 'member-nutrition-plans.ts',
       'gym-themes.ts', 'themes.ts', 'staff.ts',
     ];

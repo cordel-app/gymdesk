@@ -21,19 +21,19 @@
 // benefits`) are deliberately NOT an input — they are being decommissioned by
 // a follow-up ticket.
 //
-// #631 adds Additional Periodic Services: recurring Sellable Items attached
+// #631 adds Additional Periodic Services: recurring Products attached
 // directly to an assignment. They are plain items on the assignment, not
 // Promotion benefits (#631 §7) — each is its own stream, billed at the
-// Sellable Item's own frequency and price over its own effective window, so
+// Product's own frequency and price over its own effective window, so
 // the horizon rule below covers them exactly as it covers everything else.
 //
 // #635 stage 3 adds the Assigned Plan's own benefit sections (One-off /
 // Session / Period Benefits, frozen onto the assignment at assignment time).
 // They are *charged* items, not free ones: the Plan says the member gets a
 // locker, the member pays the frozen price for it, and a Promotion granting
-// the same Sellable Item is what makes a period free. A Plan item and the
+// the same Product is what makes a period free. A Plan item and the
 // Promotion grants covering it are therefore merged into one stream per
-// Sellable Item — two independent streams would bill the locker twice.
+// Product — two independent streams would bill the locker twice.
 //
 // #635 stage 8 adds the assignment's own **Billing & Duration**: its Free
 // Period and Bonus Duration waive the Membership Fee (§7), and where an applied
@@ -54,7 +54,7 @@
 // Promotions and the Billing & Duration resolve, on every cycle for the whole
 // life of the assignment.
 //
-// #896 stage 3 makes the Sellable Item half of that explicit. A Plan benefit
+// #896 stage 3 makes the Product half of that explicit. A Plan benefit
 // and a Promotion grant each carry their own `(action, value)` pair now
 // (migration 203), so "the Plan charges for it and the Promotion makes it
 // free" stops being hard-coded and becomes the `no_benefit` / `waive` case of
@@ -79,10 +79,10 @@ import {
 } from './personalFeeBenefit';
 import { applyPeriodBenefit, PromotionBenefitAction } from './promotionBenefits';
 import {
-  NO_SELLABLE_ITEM_BENEFIT,
-  SellableItemBenefit,
+  NO_PRODUCT_BENEFIT,
+  ProductBenefit,
   applyLineBenefit,
-} from './sellableItemBenefitActions';
+} from './productBenefitActions';
 import {
   AppliedPromotionForBilling,
   MembershipFeeBenefit,
@@ -92,7 +92,7 @@ import {
   PromotionTimelineStatus,
   computePromotionTimeline,
 } from './promotionTimeline';
-import { SellableItemBenefitCategory } from './sellableItemClassification';
+import { ProductBenefitCategory } from './productClassification';
 import {
   SessionBenefitFrequency,
   isRenewingSessionFrequency,
@@ -102,7 +102,7 @@ import {
 export type BillingUnit = 'day' | 'week' | 'month' | 'year';
 
 /** `gym_charges.billing_frequency` (migrations 090/102/123). */
-export type SellableItemFrequency = 'once' | 'per_session' | 'week' | 'four_weeks' | 'month' | 'year';
+export type ProductFrequency = 'once' | 'per_session' | 'week' | 'four_weeks' | 'month' | 'year';
 
 /**
  * The simulation's groups, in the order #629 §3 fixes them: one-off charges
@@ -136,15 +136,15 @@ const MAX_OCCURRENCE_SCAN = 2000;
  */
 export interface SimulationPromotion extends AppliedPromotionForBilling {
   name: string | null;
-  /** Sellable Items granted by this Promotion (`promotion_session` / `_oneoff` / `_periodical`). */
+  /** Products granted by this Promotion (`promotion_session` / `_oneoff` / `_periodical`). */
   grants: SimulationGrant[];
 }
 
 export interface SimulationGrant {
   gymChargeId: number;
   name: string;
-  category: SellableItemBenefitCategory;
-  billingFrequency: SellableItemFrequency | null;
+  category: ProductBenefitCategory;
+  billingFrequency: ProductFrequency | null;
   unitPrice: number;
   /**
    * What the Promotion grants: for a `session` or `oneoff` item the number of
@@ -156,7 +156,7 @@ export interface SimulationGrant {
    * #896 stage 3 — what the grant *does* to the units it covers, which until
    * this stage was hard-coded: a grant made them free. It is now the
    * relationship's own `(action, value)` pair, read from the application's
-   * snapshot (§16) and normalized through `toSellableItemBenefit()`.
+   * snapshot (§16) and normalized through `toProductBenefit()`.
    *
    * Required rather than optional, for the reason `personalFeeBenefit` is: a
    * loader that forgot it would silently price a grant as `no_benefit` and
@@ -164,11 +164,11 @@ export interface SimulationGrant {
    * that predates the column reads `waive` (migration 203's backfill), so
    * nothing an existing member holds changes price here.
    */
-  benefit: SellableItemBenefit;
+  benefit: ProductBenefit;
 }
 
 /**
- * #631 — an Additional Periodic Service: a recurring Sellable Item attached to
+ * #631 — an Additional Periodic Service: a recurring Product attached to
  * the assignment itself. Billed at the item's own `billing_frequency` and
  * price, over the window it is attached for (`endsOn` is the effective removal
  * date, so removing a service only ever stops future charges).
@@ -177,7 +177,7 @@ export interface SimulationService {
   id: number;
   gymChargeId: number;
   name: string;
-  billingFrequency: SellableItemFrequency | null;
+  billingFrequency: ProductFrequency | null;
   unitPrice: number;
   quantity: number;
   startsOn: string;
@@ -185,7 +185,7 @@ export interface SimulationService {
 }
 
 /**
- * #635 — a Sellable Item the Assigned Plan itself carries: a One-off, Session
+ * #635 — a Product the Assigned Plan itself carries: a One-off, Session
  * or Period Benefit of the Membership Plan, copied onto the assignment when it
  * was created (`user_membership_oneoff` / `_session` / `_periodical`).
  *
@@ -195,8 +195,8 @@ export interface SimulationService {
 export interface SimulationPlanBenefit {
   gymChargeId: number;
   name: string;
-  category: SellableItemBenefitCategory;
-  billingFrequency: SellableItemFrequency | null;
+  category: ProductBenefitCategory;
+  billingFrequency: ProductFrequency | null;
   unitPrice: number;
   /** Units billed — per period for a Period Benefit, once for the other two. */
   quantity: number;
@@ -223,7 +223,7 @@ export interface SimulationPlanBenefit {
    * contract prices the item for its whole life, so it never makes a charge
    * `promotional` — see `buildItemStream`.
    */
-  benefit: SellableItemBenefit;
+  benefit: ProductBenefit;
 }
 
 export interface SimulationAssignment {
@@ -266,7 +266,7 @@ export interface MembershipFeeContext {
    * The applications still standing on the assignment. Typed as the shared
    * `AppliedPromotionForBilling` rather than `SimulationPromotion` since #635
    * stage 12, so a caller that prices only the fee (the nightly run, the Billing
-   * Events projection, promotion apply/revoke) needs no granted Sellable Items to
+   * Events projection, promotion apply/revoke) needs no granted Products to
    * ask the question.
    */
   promotions: AppliedPromotionForBilling[];
@@ -378,7 +378,7 @@ export interface SimulationLine {
    * #946 — how many Pre-paid periods this charge covers, for the one line that
    * ever covers more than one: the Membership Fee collected up front on the
    * first period of a Plan's Pre-paid Duration ("3 periods prepaid"). `null`
-   * everywhere else, which is every Sellable Item line and every ordinary
+   * everywhere else, which is every Product line and every ordinary
    * Membership Fee cycle.
    */
   prepaid_periods: number | null;
@@ -446,8 +446,8 @@ export function cadenceForBillingPolicy(interval: number, unit: BillingUnit): Ca
   return { section: 'other', ranged: false, advance };
 }
 
-/** A Sellable Item's own `billing_frequency` — the ticket's "existing billing rules" for services. */
-export function cadenceForSellableItem(frequency: SellableItemFrequency): Cadence | null {
+/** A Product's own `billing_frequency` — the ticket's "existing billing rules" for services. */
+export function cadenceForProduct(frequency: ProductFrequency): Cadence | null {
   switch (frequency) {
     case 'year': return { section: 'year', ranged: false, advance: (d) => advanceBillingDate(d, 1, 'year') };
     case 'month': return { section: 'month', ranged: false, advance: (d) => advanceBillingDate(d, 1, 'month') };
@@ -786,7 +786,7 @@ export interface ResolvedCharge {
    * itself would label a cycle `free_plan` that the governing Promotion is in
    * fact charging the regular price for — which is exactly how a projection
    * comes to advertise a charge the nightly run does not make. Set on every
-   * Membership Fee charge since #924 stage 3; absent on the Sellable Item
+   * Membership Fee charge since #924 stage 3; absent on the Product
    * streams, which have no period of their own.
    */
   periodStatus?: PlanDurationStatus | PromotionTimelineStatus;
@@ -802,7 +802,7 @@ export interface ResolvedCharge {
 
 /**
  * One billable item projected over time. Every item — the Membership Fee and
- * each granted Sellable Item alike — is a stream, so the horizon rule (#629
+ * each granted Product alike — is a stream, so the horizon rule (#629
  * §6: run until every item has shown one regular charge) is applied once.
  */
 interface Stream {
@@ -899,7 +899,7 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
   };
 }
 
-/* ── Billable Sellable Items ─────────────────────────────────────────────── */
+/* ── Billable Products ─────────────────────────────────────────────── */
 
 /** One Promotion grant, kept with the Promotion that granted it. */
 interface GrantCoverage {
@@ -908,7 +908,7 @@ interface GrantCoverage {
 }
 
 /**
- * One Sellable Item the assignment bills, with every Promotion grant that
+ * One Product the assignment bills, with every Promotion grant that
  * covers it. Merging on `gymChargeId` is what keeps a Plan's Period Benefit
  * and a Promotion granting the same item one charge — the Promotion covers
  * periods of it rather than adding a second locker.
@@ -916,8 +916,8 @@ interface GrantCoverage {
 interface BillableItem {
   gymChargeId: number;
   name: string;
-  category: SellableItemBenefitCategory;
-  billingFrequency: SellableItemFrequency | null;
+  category: ProductBenefitCategory;
+  billingFrequency: ProductFrequency | null;
   unitPrice: number;
   /** Units billed each occurrence (Period Benefit) or once (one-off/session). */
   quantity: number;
@@ -934,13 +934,13 @@ interface BillableItem {
    * only because a Promotion granted it (there is no Plan row to configure one
    * on — the grant's own pair is what prices those units).
    */
-  benefit: SellableItemBenefit;
+  benefit: ProductBenefit;
   coverage: GrantCoverage[];
 }
 
 /**
  * The Plan's own benefits plus everything the applied Promotions grant, keyed
- * by Sellable Item.
+ * by Product.
  *
  * An item the Plan does not carry behaves exactly as it did before #635 stage
  * 3: quantity 1 for a periodical grant (the grant covers periods, it does not
@@ -949,7 +949,7 @@ interface BillableItem {
  */
 function collectBillableItems(a: SimulationAssignment): BillableItem[] {
   const byCharge = new Map<string, BillableItem>();
-  // A snapshotted grant whose Sellable Item has since been deleted carries no
+  // A snapshotted grant whose Product has since been deleted carries no
   // id (0). Those never merge with each other — two forgotten items are still
   // two items — so each takes a key of its own.
   let orphan = 0;
@@ -992,7 +992,7 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
         // The item is the Promotion's alone — no Plan row configures it, so the
         // line prices at the catalogue price and the grant's own pair is what
         // changes it for the units/periods it covers.
-        benefit: NO_SELLABLE_ITEM_BENEFIT,
+        benefit: NO_PRODUCT_BENEFIT,
         coverage: [{ promo, grant }],
       });
     }
@@ -1002,7 +1002,7 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
 }
 
 /**
- * A recurring Sellable Item: billed at its own `billing_frequency` from the
+ * A recurring Product: billed at its own `billing_frequency` from the
  * assignment's start date, priced by the Plan's own treatment of the line, and
  * by a covering Promotion grant's treatment for the periods that grant covers
  * (#629 thread Q3, #635 §14, #896 §11).
@@ -1021,7 +1021,7 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
  * price to the cent.
  */
 function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | null {
-  const cadence = item.billingFrequency ? cadenceForSellableItem(item.billingFrequency) : null;
+  const cadence = item.billingFrequency ? cadenceForProduct(item.billingFrequency) : null;
   if (!cadence) return null;
   const unit = round2(item.unitPrice);
   const regular = round2(unit * item.quantity);
@@ -1091,7 +1091,7 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
 /**
  * #631 — an Additional Periodic Service.
  *
- * Billed at the Sellable Item's own cadence and price, from the later of the
+ * Billed at the Product's own cadence and price, from the later of the
  * assignment's start and the service's effective start date (#631 §5: a
  * service added after the plan started bills from its actual effective date),
  * and until the earlier of the assignment's end and the service's effective
@@ -1103,7 +1103,7 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
  * carries no benefit explanation.
  */
 function buildServiceStream(a: SimulationAssignment, service: SimulationService): Stream | null {
-  const cadence = service.billingFrequency ? cadenceForSellableItem(service.billingFrequency) : null;
+  const cadence = service.billingFrequency ? cadenceForProduct(service.billingFrequency) : null;
   if (!cadence) return null;
 
   const start = maxDate(a.startsAt, service.startsOn);

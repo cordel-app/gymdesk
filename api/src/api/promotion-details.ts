@@ -3,17 +3,17 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import {
   benefitTableForCategory,
-  classifySellableItem,
-  SellableItemBenefitCategory,
-} from '../domain/sellableItemClassification';
+  classifyProduct,
+  ProductBenefitCategory,
+} from '../domain/productClassification';
 import { promotionDurationMonths } from '../domain/promotionBenefits';
 import {
-  NO_SELLABLE_ITEM_BENEFIT,
-  SellableItemBenefit,
-  parseSellableItemBenefitInput,
-  shapeSellableItemBenefitRow,
-  toSellableItemBenefit,
-} from '../domain/sellableItemBenefitActions';
+  NO_PRODUCT_BENEFIT,
+  ProductBenefit,
+  parseProductBenefitInput,
+  shapeProductBenefitRow,
+  toProductBenefit,
+} from '../domain/productBenefitActions';
 import {
   DEFAULT_PROMOTION_ITEM_REQUIREMENT,
   PromotionItemRequirement,
@@ -22,9 +22,9 @@ import {
 } from '../domain/promotionItemRequirement';
 import {
   grossBenefitUnitPrice,
-  withSellableItemBenefitPrices,
-} from './sellable-item-benefit-pricing';
-import { SellableItemFrequency } from '../domain/billingSimulation';
+  withProductBenefitPrices,
+} from './product-benefit-pricing';
+import { ProductFrequency } from '../domain/billingSimulation';
 import {
   PromotionSimulationGrant,
   computePromotionBillingEventSimulation,
@@ -120,7 +120,7 @@ promotionDetailsRouter.put('/plans', requireRole('admin'), async (req, res, next
 // It replaces both of the places the benefit used to live: the
 // `promotion_period_benefits` row whose charge type was `membership_fee`
 // (#551) and, for Promotions configured before #626 removed the Promotion
-// Charge Benefits editor, a `promotion_charge_benefits` row on a Sellable
+// Charge Benefits editor, a `promotion_charge_benefits` row on a Product
 // Item of that charge type. Neither table exists any more, and there is no
 // item to point at: "which item" was never a choice here, which is why the
 // old endpoint resolved the charge type server-side and refused to take one
@@ -237,8 +237,8 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
 /* ---------- session / one-off / periodical benefits (#550 stage 3) ---------- */
 // Replaces the "quantity granted" half of the legacy Period/Included Benefits
 // (one-time-grant shape, same as the old Included Benefits) with three tables
-// keyed to a real Sellable Item (`gym_charges`, migration 155) instead of the
-// old `charge_types` pseudo-catalog, split by `classifySellableItem()` into
+// keyed to a real Product (`gym_charges`, migration 155) instead of the
+// old `charge_types` pseudo-catalog, split by `classifyProduct()` into
 // Session / One-off / Periodical. The legacy `/period-benefits` (excluding
 // Membership Fee, #551) and `/included-benefits` endpoints were retired in
 // #550 stage 3 once the admin frontend read/wrote these three instead, and
@@ -249,7 +249,7 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
 // completely these legacy structure" answer on #635; the one exception is the
 // Membership Fee Benefit, migrated into its own table above.
 
-function selectSellableItemBenefits(table: string): string {
+function selectProductBenefits(table: string): string {
   // #920: the price columns come from the benefit row's own join rather than
   // the active catalogue, since a Promotion may still carry (and still grant) an
   // item that has since been deactivated — the same reason #915 joins them on
@@ -267,7 +267,7 @@ function selectSellableItemBenefits(table: string): string {
 
 /**
  * One stored benefit row as the section's read selects it: the relationship's
- * own columns plus the Sellable Item's name, classification and — since #920 —
+ * own columns plus the Product's name, classification and — since #920 —
  * the three price columns the VAT-inclusive gross-up needs.
  */
 interface PromotionBenefitRow {
@@ -293,7 +293,7 @@ interface PromotionBenefitRow {
  * back as the neutral default.
  *
  * #920 adds the Regular / Final Price pair beside it, VAT included, computed by
- * the one module the Membership Plan sections use (`withSellableItemBenefitPrices`,
+ * the one module the Membership Plan sections use (`withProductBenefitPrices`,
  * over `applyLineBenefit()`): the ticket's requirement is that the Promotion UI
  * introduce no pricing logic of its own, so the amounts a Promotion section
  * quotes and the amounts the billing engine applies come from the same place.
@@ -301,21 +301,21 @@ interface PromotionBenefitRow {
  */
 async function loadPromotionBenefits(table: string, promotionId: unknown, gymId: string) {
   const { rows } = await db.query<PromotionBenefitRow>(
-    selectSellableItemBenefits(table), [promotionId, gymId],
+    selectProductBenefits(table), [promotionId, gymId],
   );
-  return withSellableItemBenefitPrices(
+  return withProductBenefitPrices(
     'promotion',
     // #959: `b.*` brings the column along raw; normalize it so the wire shape is
     // always one of the two accepted values, the way the pair beside it is
     // normalized rather than echoed.
     rows.map((row) => ({
-      ...shapeSellableItemBenefitRow('promotion', row),
+      ...shapeProductBenefitRow('promotion', row),
       requirement: toPromotionItemRequirement(row.requirement),
     })),
   );
 }
 
-const CATEGORY_BENEFIT_ROUTES: { path: string; category: SellableItemBenefitCategory }[] = [
+const CATEGORY_BENEFIT_ROUTES: { path: string; category: ProductBenefitCategory }[] = [
   { path: 'session-benefits', category: 'session' },
   { path: 'oneoff-benefits', category: 'oneoff' },
   { path: 'periodical-benefits', category: 'periodical' },
@@ -343,7 +343,7 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
     const submitted: {
       gym_charge_id: number;
       quantity: number;
-      benefit: SellableItemBenefit | null;
+      benefit: ProductBenefit | null;
       /** #959: absent means the request named none, which is *keep what is stored*. */
       requirement?: PromotionItemRequirement;
     }[] = [];
@@ -363,7 +363,7 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
       // #896 stage 2 §6 — the line's own pricing treatment. A Promotion may
       // configure all five actions; the CHECK beside the table is the backstop,
       // this is the 400.
-      const parsed = parseSellableItemBenefitInput('promotion', item);
+      const parsed = parseProductBenefitInput('promotion', item);
       if (parsed.error) return res.status(400).json({ error: parsed.error });
       // #959 — whether the member may decline this item when the Promotion is
       // assigned. An unknown value is a 400, never coerced: `optional` and
@@ -394,21 +394,21 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
       const existingIds = new Set<number>(existingAssoc.map((r: any) => r.gym_charge_id));
 
       const placeholders = gymChargeIds.map(() => '?').join(',');
-      const { rows: sellableItems } = await db.query(
+      const { rows: products } = await db.query(
         `SELECT id, type, billing_frequency, status FROM gym_charges
          WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
         [gymId, ...gymChargeIds],
       );
-      if (sellableItems.length !== gymChargeIds.length) {
-        return res.status(400).json({ error: 'One or more Sellable Items not found in this gym' });
+      if (products.length !== gymChargeIds.length) {
+        return res.status(400).json({ error: 'One or more Products not found in this gym' });
       }
-      const newlyInactive = sellableItems.find((si: any) => si.status !== 'active' && !existingIds.has(si.id));
+      const newlyInactive = products.find((si: any) => si.status !== 'active' && !existingIds.has(si.id));
       if (newlyInactive) {
-        return res.status(400).json({ error: `Sellable Item ${newlyInactive.id} is not active in this gym` });
+        return res.status(400).json({ error: `Product ${newlyInactive.id} is not active in this gym` });
       }
-      const mismatched = sellableItems.find((si: any) => classifySellableItem(si) !== category);
+      const mismatched = products.find((si: any) => classifyProduct(si) !== category);
       if (mismatched) {
-        return res.status(400).json({ error: `Sellable Item ${mismatched.id} does not belong in the '${category}' category` });
+        return res.status(400).json({ error: `Product ${mismatched.id} does not belong in the '${category}' category` });
       }
     }
 
@@ -425,8 +425,8 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
             WHERE promotion_id = ? AND gym_id = ? FOR UPDATE`,
           [promotionId, gymId],
         );
-        const kept = new Map<number, SellableItemBenefit>(
-          stored.map((r: any) => [Number(r.gym_charge_id), shapeSellableItemBenefitRow('promotion', r)]),
+        const kept = new Map<number, ProductBenefit>(
+          stored.map((r: any) => [Number(r.gym_charge_id), shapeProductBenefitRow('promotion', r)]),
         );
         // #959: and the Requirement it is stored with, for the same replace-all
         // reason — a quantity-only save must not reset an item the gym made
@@ -438,7 +438,7 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
         );
         await tx.query(`DELETE FROM ${table} WHERE promotion_id = ? AND gym_id = ?`, [promotionId, gymId]);
         for (const item of submitted) {
-          const benefit = item.benefit ?? kept.get(item.gym_charge_id) ?? NO_SELLABLE_ITEM_BENEFIT;
+          const benefit = item.benefit ?? kept.get(item.gym_charge_id) ?? NO_PRODUCT_BENEFIT;
           const requirement = item.requirement
             ?? keptRequirement.get(item.gym_charge_id)
             ?? DEFAULT_PROMOTION_ITEM_REQUIREMENT;
@@ -498,7 +498,7 @@ promotionDetailsRouter.get('/billing-event-simulation', async (req, res, next) =
     const grants: PromotionSimulationGrant[] = [];
     for (const { category } of CATEGORY_BENEFIT_ROUTES) {
       const { rows } = await db.query<PromotionBenefitRow>(
-        selectSellableItemBenefits(benefitTableForCategory(category)), [promotionId, gymId],
+        selectProductBenefits(benefitTableForCategory(category)), [promotionId, gymId],
       );
       for (const row of rows) {
         const gross = grossBenefitUnitPrice(row);
@@ -509,12 +509,12 @@ promotionDetailsRouter.get('/billing-event-simulation', async (req, res, next) =
           gymChargeId: Number(row.gym_charge_id),
           name: row.gym_charge_name,
           // The section the row is stored in, never a re-classification: #550's
-          // `classifySellableItem()` is what put it there.
+          // `classifyProduct()` is what put it there.
           category,
-          billingFrequency: (row.gym_charge_billing_frequency as SellableItemFrequency | null) ?? null,
+          billingFrequency: (row.gym_charge_billing_frequency as ProductFrequency | null) ?? null,
           unitPriceInclTax: gross,
           quantity: Number(row.quantity) || 1,
-          benefit: toSellableItemBenefit('promotion', row.action, row.value),
+          benefit: toProductBenefit('promotion', row.action, row.value),
         });
       }
     }

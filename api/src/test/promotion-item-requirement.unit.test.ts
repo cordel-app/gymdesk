@@ -1,5 +1,5 @@
 /**
- * #959 — a Promotion's Sellable Item line carries a **Requirement** (Mandatory /
+ * #959 — a Promotion's Product line carries a **Requirement** (Mandatory /
  * Optional): the option set, the replace-all input rule, and the "two places"
  * guard (the list in `domain/promotionItemRequirement.ts` and the CHECK migration
  * 207 writes have to say the same thing, or the dropdown could offer a value the
@@ -7,7 +7,7 @@
  *
  * Pure module, no DB (CLAUDE.md): the migration is read as a module and its
  * exported list compared, the way `session-benefit-frequency.unit.test.ts` reads
- * back migration 205's and `sellable-item-benefit-actions.unit.test.ts` 203's.
+ * back migration 205's and `product-benefit-actions.unit.test.ts` 203's.
  * The schema itself, the API and the snapshot copy are integration-tested in
  * `promotion-item-requirements.test.ts`.
  */

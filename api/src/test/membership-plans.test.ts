@@ -108,7 +108,7 @@ async function createPromoTargetingPlan(gymId: string, planId: number): Promise<
   return insertId;
 }
 
-// #409: a custom (non-system) sellable item, created the same way POST
+// #409: a custom (non-system) product, created the same way POST
 // /sellable-items does — no charge_type_id (only system items backed by a
 // charge_types row have one).
 async function createCustomGymCharge(gymId: string, name: string, status = 'active'): Promise<number> {
@@ -934,19 +934,19 @@ describe('PUT /membership-plans/:id/enrollment', () => {
   });
 });
 
-// ─── #409: sellable items catalog + charge benefits in plan enrichment ───────
+// ─── #409: products catalog + charge benefits in plan enrichment ───────
 
 describe('sellable_items in enriched plan response', () => {
   let gymId: string;
   let planId: number;
 
   beforeAll(async () => {
-    gymId = await createTestGym('Plans Sellable Items Gym');
+    gymId = await createTestGym('Plans Products Gym');
     await createTestMembership(gymId, 'admin');
-    planId = await createPlan(gymId, { name: 'Sellable Items Plan' });
+    planId = await createPlan(gymId, { name: 'Products Plan' });
   });
 
-  it('includes the full catalog of active sellable items for the gym', async () => {
+  it('includes the full catalog of active products for the gym', async () => {
     const activeId = await createCustomGymCharge(gymId, 'Active Custom Item');
     const res = await request
       .get(`/membership-plans/${planId}`)
@@ -958,7 +958,7 @@ describe('sellable_items in enriched plan response', () => {
     expect(ids).toContain(activeId);
   });
 
-  it('excludes inactive sellable items from the catalog', async () => {
+  it('excludes inactive products from the catalog', async () => {
     const inactiveId = await createCustomGymCharge(gymId, 'Inactive Custom Item', 'inactive');
     const res = await request
       .get(`/membership-plans/${planId}`)
@@ -970,7 +970,7 @@ describe('sellable_items in enriched plan response', () => {
   });
 
   it('is scoped to the requesting gym (tenant isolation)', async () => {
-    const otherGym = await createTestGym('Sellable Items Other Gym');
+    const otherGym = await createTestGym('Products Other Gym');
     const otherItemId = await createCustomGymCharge(otherGym, 'Other Gym Item');
     const res = await request
       .get(`/membership-plans/${planId}`)
@@ -982,7 +982,7 @@ describe('sellable_items in enriched plan response', () => {
   });
 });
 
-// #413: Plans align with Sellable Items' financial config — applicable tax
+// #413: Plans align with Products' financial config — applicable tax
 // (tax_rate_id + tax_behavior) and computed price-incl/excl-tax fields.
 describe('Applicable tax on membership plans', () => {
   let gymId: string;
@@ -2060,7 +2060,7 @@ describe('PUT /membership-plans/:id/billing-policy — the two accepted cadences
 // three Benefit sections and their prices actually reach it, and that reading it
 // bills nobody.
 
-async function createSellableItem(
+async function createProduct(
   gymId: string,
   name: string,
   type: string,
@@ -2116,12 +2116,12 @@ describe('GET /membership-plans/:id/billing-event-simulation', () => {
     expect(res.body.dates).toEqual([]);
   });
 
-  it('groups the fee and every configured Sellable Item by billing date, and charges nobody', async () => {
+  it('groups the fee and every configured Product by billing date, and charges nobody', async () => {
     await setPlanPrice(gymId, planId, 70);
     await setBillingPolicy(gymId, planId, 4, 'week');
 
-    const registration = await createSellableItem(gymId, `Registration ${Date.now()}`, 'fee', 'once', 100);
-    const locker = await createSellableItem(gymId, `Locker ${Date.now()}`, 'service', 'month', 15);
+    const registration = await createProduct(gymId, `Registration ${Date.now()}`, 'fee', 'once', 100);
+    const locker = await createProduct(gymId, `Locker ${Date.now()}`, 'service', 'month', 15);
     await request
       .put(`/membership-plans/${planId}/oneoff-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -2173,7 +2173,7 @@ describe('GET /membership-plans/:id/billing-event-simulation', () => {
   it('includes a Mandatory item the plan has no stored benefit row for', async () => {
     const mandatoryGymId = await createTestGym('Plans Simulation Mandatory Gym');
     await createTestMembership(mandatoryGymId, 'admin');
-    const insuranceId = await createSellableItem(
+    const insuranceId = await createProduct(
       mandatoryGymId, `Insurance ${Date.now()}`, 'fee', 'once', 20, { mandatory: true },
     );
     const mandatoryPlanId = await createPlan(mandatoryGymId, { name: 'Mandatory Simulation Plan' });

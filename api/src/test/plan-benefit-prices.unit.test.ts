@@ -11,16 +11,16 @@
 import { describe, expect, it } from 'vitest';
 import { planBenefitPrices } from '../domain/planBenefitPrices';
 import {
-  NO_SELLABLE_ITEM_BENEFIT,
-  SellableItemBenefit,
-} from '../domain/sellableItemBenefitActions';
+  NO_PRODUCT_BENEFIT,
+  ProductBenefit,
+} from '../domain/productBenefitActions';
 
-const waive: SellableItemBenefit = { action: 'waive', value: null };
-const percent = (value: number): SellableItemBenefit => ({ action: 'percentage_discount', value });
+const waive: ProductBenefit = { action: 'waive', value: null };
+const percent = (value: number): ProductBenefit => ({ action: 'percentage_discount', value });
 
 describe('planBenefitPrices()', () => {
   it('reports the item price unchanged when the Plan configures no benefit', () => {
-    expect(planBenefitPrices(100, 1, NO_SELLABLE_ITEM_BENEFIT)).toEqual({
+    expect(planBenefitPrices(100, 1, NO_PRODUCT_BENEFIT)).toEqual({
       original_price_incl_tax: 100,
       final_price_incl_tax: 100,
       original_line_price_incl_tax: 100,
@@ -41,7 +41,7 @@ describe('planBenefitPrices()', () => {
   });
 
   it('reports the line beside the unit, so the two cannot disagree', () => {
-    const prices = planBenefitPrices(25, 5, NO_SELLABLE_ITEM_BENEFIT);
+    const prices = planBenefitPrices(25, 5, NO_PRODUCT_BENEFIT);
     expect(prices.original_price_incl_tax).toBe(25);
     expect(prices.original_line_price_incl_tax).toBe(125);
     expect(prices.final_line_price_incl_tax).toBe(125);
@@ -66,20 +66,20 @@ describe('planBenefitPrices()', () => {
   });
 
   it('reports 0 for an item priced at 0 — which is not the same as having no price', () => {
-    const prices = planBenefitPrices(0, 1, NO_SELLABLE_ITEM_BENEFIT);
+    const prices = planBenefitPrices(0, 1, NO_PRODUCT_BENEFIT);
     expect(prices.original_price_incl_tax).toBe(0);
     expect(prices.final_price_incl_tax).toBe(0);
   });
 
   it('rounds to the cent', () => {
-    expect(planBenefitPrices(19.999, 1, NO_SELLABLE_ITEM_BENEFIT).original_price_incl_tax).toBe(20);
+    expect(planBenefitPrices(19.999, 1, NO_PRODUCT_BENEFIT).original_price_incl_tax).toBe(20);
     expect(planBenefitPrices(10, 3, percent(33.333)).final_line_price_incl_tax).toBe(20);
   });
 
   it('survives a quantity that is not a positive integer', () => {
     // The route refuses one, so this is only about never reporting NaN.
     for (const quantity of [0, -3, Number.NaN, 1.6]) {
-      const prices = planBenefitPrices(10, quantity, NO_SELLABLE_ITEM_BENEFIT);
+      const prices = planBenefitPrices(10, quantity, NO_PRODUCT_BENEFIT);
       expect(Number.isFinite(prices.original_line_price_incl_tax as number)).toBe(true);
       expect(Number.isFinite(prices.final_line_price_incl_tax as number)).toBe(true);
       // The unit price is the item's own and is unaffected by a bad quantity.

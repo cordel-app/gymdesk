@@ -88,7 +88,7 @@ const FROM = `
 /**
  * `target_value` is a DECIMAL, which mysql2 hands back as a string. Every other
  * number this API reports is a number (CLAUDE.md's rule for
- * `shapeSellableItemBenefitRow()`), so the conversion happens once, here, rather
+ * `shapeProductBenefitRow()`), so the conversion happens once, here, rather
  * than in whichever page renders it.
  */
 function shapeAssignment<T extends { target_value: unknown }>(row: T) {

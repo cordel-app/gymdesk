@@ -182,7 +182,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     expect(today.lines.map((l: any) => l.kind).sort()).toEqual(['membership_fee', 'sellable_item']);
   });
 
-  it('bills the assignment’s frozen benefit line, not a later Sellable Item reprice (§17)', async () => {
+  it('bills the assignment’s frozen benefit line, not a later Product reprice (§17)', async () => {
     const planId = await createPlan(gymId, { price: 70 });
     const lockerId = await createCharge(gymId, {
       name: `ABF Locker ${uniq()}`, type: 'fee', amount: 20, billingFrequency: 'month',

@@ -23,13 +23,13 @@ import React from 'react';
 import { primaryBtnSmall } from '@/components/ui';
 import {
   DEFAULT_BENEFIT_ACTION,
-  SellableItemBenefitAction,
-  SellableItemBenefitContext,
+  ProductBenefitAction,
+  ProductBenefitContext,
   benefitActionOf,
   benefitActionRequiresValue,
   benefitActionsFor,
   isPercentageBenefitAction,
-} from '@/lib/sellableItemBenefitActions';
+} from '@/lib/productBenefitActions';
 import {
   DEFAULT_PROMOTION_ITEM_REQUIREMENT,
   PROMOTION_ITEM_REQUIREMENTS,
@@ -46,7 +46,7 @@ import {
 
 /** One saved/drafted benefit row. `gym_charge_*` is joined server-side, so an
  *  item that has since gone inactive still renders with its real name. */
-export interface SellableItemBenefitRow {
+export interface ProductBenefitRow {
   gym_charge_id: number;
   quantity: number;
   gym_charge_name: string;
@@ -68,14 +68,14 @@ export interface SellableItemBenefitRow {
   implicit?: boolean;
   /**
    * #896 §15: the line's own pricing treatment, stored on *this* relationship
-   * and never on the Sellable Item — the same item may be waived by one Plan
+   * and never on the Product — the same item may be waived by one Plan
    * and discounted 20% by a Promotion. Optional because a caller that does not
    * configure it (the Assigned Plan snapshot sections, whose endpoint takes
    * quantity alone) must keep submitting quantity-only payloads: the six
    * replace-all `PUT`s keep a line's stored pair when the request does not
    * mention it, which is what stops an unrelated edit clearing a discount.
    */
-  action?: SellableItemBenefitAction;
+  action?: ProductBenefitAction;
   /**
    * The percentage or the amount the action asks for, `null` for the two that
    * ask for none. A string while the editor holds a half-typed number — the
@@ -107,7 +107,7 @@ export interface SellableItemBenefitRow {
   requirement?: PromotionItemRequirement;
   /**
    * #916 — what the row costs, VAT included, as the server computed it
-   * (`domain/planBenefitPrices.ts` over `applyLineBenefit()`): the Sellable
+   * (`domain/planBenefitPrices.ts` over `applyLineBenefit()`): the Product
    * Item's own unit price, the same price after this row's treatment, and the
    * two line totals (`unit × quantity`) beside them.
    *
@@ -123,13 +123,13 @@ export interface SellableItemBenefitRow {
 }
 
 /** #893: `tinyint(1)` from MySQL, `boolean` from a literal. */
-export function isMandatoryBenefitRow(row: SellableItemBenefitRow): boolean {
+export function isMandatoryBenefitRow(row: ProductBenefitRow): boolean {
   return row.gym_charge_mandatory === true || Number(row.gym_charge_mandatory) === 1;
 }
 
-/** A Sellable Item offered by the picker. `benefit_category` is computed
+/** A Product offered by the picker. `benefit_category` is computed
  *  server-side (#550) and is the only classification source of truth. */
-export interface SellableItemOption {
+export interface ProductOption {
   id: number;
   name: string;
   type: string;
@@ -142,14 +142,14 @@ export interface SellableItemOption {
 
 type Translate = (key: string, values?: Record<string, unknown>) => string;
 
-type SetDraft = (fn: (prev: SellableItemBenefitRow[]) => SellableItemBenefitRow[]) => void;
+type SetDraft = (fn: (prev: ProductBenefitRow[]) => ProductBenefitRow[]) => void;
 
 /**
  * A row's own saved item is always offered, even after it drops out of the
  * active-only `categoryItems` — otherwise editing an unrelated section would
  * silently swap a deactivated item for another one (#550).
  */
-export function benefitRowOptions(categoryItems: SellableItemOption[], row: SellableItemBenefitRow) {
+export function benefitRowOptions(categoryItems: ProductOption[], row: ProductBenefitRow) {
   const opts = categoryItems.map((c) => ({ id: c.id, name: c.name, inactive: false }));
   if (!opts.some((o) => o.id === row.gym_charge_id)) {
     opts.unshift({ id: row.gym_charge_id, name: row.gym_charge_name, inactive: true });
@@ -165,13 +165,13 @@ export function benefitRowOptions(categoryItems: SellableItemOption[], row: Sell
  * Requirement, today. It is a parameter rather than something decided here
  * because a key this draft row does not carry is a key `toBenefitItems()` does
  * not submit, which is what keeps a section that configures no Requirement from
- * sending one (see `requirement` on `SellableItemBenefitRow`).
+ * sending one (see `requirement` on `ProductBenefitRow`).
  */
 export function addBenefitRow(
   setDraft: SetDraft,
-  categoryItems: SellableItemOption[],
-  draft: SellableItemBenefitRow[],
-  seed?: Partial<SellableItemBenefitRow>,
+  categoryItems: ProductOption[],
+  draft: ProductBenefitRow[],
+  seed?: Partial<ProductBenefitRow>,
 ) {
   const next = categoryItems.find((c) => !draft.some((d) => d.gym_charge_id === c.id));
   if (!next) return;
@@ -181,7 +181,7 @@ export function addBenefitRow(
       gym_charge_id: next.id, quantity: 1, gym_charge_name: next.name,
       gym_charge_type: next.type, gym_charge_billing_frequency: next.billing_frequency,
       gym_charge_status: next.status, gym_charge_mandatory: next.mandatory ?? 0,
-      // #896 §13: a new line starts neutral — it is included at the Sellable
+      // #896 §13: a new line starts neutral — it is included at the Product
       // Item's own price, and only an explicit choice can make it cheaper.
       action: DEFAULT_BENEFIT_ACTION, value: null,
       ...seed,
@@ -192,9 +192,9 @@ export function addBenefitRow(
 /** Patches one draft row, re-deriving the joined item fields when the item itself changes. */
 export function updateBenefitRow(
   setDraft: SetDraft,
-  categoryItems: SellableItemOption[],
+  categoryItems: ProductOption[],
   idx: number,
-  patch: Partial<SellableItemBenefitRow>,
+  patch: Partial<ProductBenefitRow>,
 ) {
   setDraft((prev) => prev.map((r, i) => {
     if (i !== idx) return r;
@@ -217,7 +217,7 @@ export function updateBenefitRow(
  * Replace-all payload both the Promotion and the Plan benefit endpoints take.
  *
  * #896 stage 4: a line carries its `(action, value)` pair only when the draft
- * has one. That is not a formality — `parseSellableItemBenefitInput()` treats
+ * has one. That is not a formality — `parseProductBenefitInput()` treats
  * "the request named no action" as *keep what is stored*, so a caller that
  * never configures the pair (the Assigned Plan snapshot sections) must keep
  * sending quantity-only lines rather than a default that would overwrite a
@@ -228,7 +228,7 @@ export function updateBenefitRow(
  * switching back restores it, and this is where the one that no longer applies
  * is dropped.
  */
-export const toBenefitItems = (draft: SellableItemBenefitRow[]) =>
+export const toBenefitItems = (draft: ProductBenefitRow[]) =>
   draft.map((b) => {
     // #918: the Frequency travels under the same rule as the pair — only when
     // the draft row actually carries the key, so a section that does not
@@ -257,8 +257,8 @@ export const toBenefitItems = (draft: SellableItemBenefitRow[]) =>
  * two halves cannot disagree about what "has a value" means.
  */
 export function invalidBenefitValueRow(
-  draft: SellableItemBenefitRow[],
-): SellableItemBenefitRow | null {
+  draft: ProductBenefitRow[],
+): ProductBenefitRow | null {
   for (const row of draft) {
     if (row.action === undefined || !benefitActionRequiresValue(row.action)) continue;
     if (row.value === null || row.value === undefined || row.value === '') return row;
@@ -275,7 +275,7 @@ export function invalidBenefitValueRow(
  * 0..100 as it is typed, so the editor cannot hold a number the API would
  * refuse. Monetary amounts are left alone beyond their `min`.
  */
-export function clampBenefitValue(action: SellableItemBenefitAction, raw: string): string {
+export function clampBenefitValue(action: ProductBenefitAction, raw: string): string {
   if (raw === '') return raw;
   if (!isPercentageBenefitAction(action)) return raw;
   const n = Number(raw);
@@ -292,7 +292,7 @@ export function clampBenefitValue(action: SellableItemBenefitAction, raw: string
  * *No benefit* on the other (§3/§4).
  */
 export function benefitTreatmentLabel(
-  t: Translate, context: SellableItemBenefitContext, row: SellableItemBenefitRow,
+  t: Translate, context: ProductBenefitContext, row: ProductBenefitRow,
 ): string {
   const action = benefitActionOf(context, row.action);
   const label = t(`item_action_${action}`);
@@ -318,7 +318,7 @@ const tdSt: React.CSSProperties = {
 };
 /**
  * #916: `table-layout: fixed` is what makes the shared column declaration
- * actually hold — without it a long Sellable Item name widens its cell and the
+ * actually hold — without it a long Product name widens its cell and the
  * section stops lining up with the one above it, which is the defect the ticket
  * describes.
  */
@@ -345,7 +345,7 @@ const valueLabelSt: React.CSSProperties = {
 };
 /**
  * #893 §2/§3: the pill that says *why* a row has no Remove control. Same
- * compact grey badge the Sellable Items list uses for `System`, so the two
+ * compact grey badge the Products list uses for `System`, so the two
  * screens read as one visual language.
  */
 export const mandatoryTagStyle: React.CSSProperties = {
@@ -353,7 +353,7 @@ export const mandatoryTagStyle: React.CSSProperties = {
   borderRadius: 4, padding: '1px 5px', verticalAlign: 'middle', whiteSpace: 'nowrap',
 };
 
-/* ── #916: the one column grid every Sellable Item section shares ─────────── */
+/* ── #916: the one column grid every Product section shares ─────────── */
 
 /**
  * #916 — the read-only sections used to be three independent tables whose cells
@@ -363,21 +363,21 @@ export const mandatoryTagStyle: React.CSSProperties = {
  * section renders from the same declaration in the same order — which is the
  * ticket's central invariant:
  *
- *   > All Sellable Item sections must visually behave as one table with a shared
+ *   > All Product sections must visually behave as one table with a shared
  *   > column grid, while remaining grouped into their existing semantic
  *   > sections.
  *
  * Which columns a *page* shows is still the page's choice (a Promotion does not
  * quote Plan prices), but it is one choice for all of that page's sections —
- * `sellableItemBenefitColumns()` takes the flags, not the section — so a column
+ * `productBenefitColumns()` takes the flags, not the section — so a column
  * a section has no value for renders an empty cell rather than disappearing and
  * shifting everything after it.
  */
-export type SellableItemBenefitColumnKey =
+export type ProductBenefitColumnKey =
   'item' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price' | 'final_price';
 
-export interface SellableItemBenefitColumn {
-  key: SellableItemBenefitColumnKey;
+export interface ProductBenefitColumn {
+  key: ProductBenefitColumnKey;
   /** Resolved in the caller's namespace, so a Plan and a Promotion can label the same column differently. */
   labelKey: string;
   /** Fixed width in px, or `null` for the one column that takes the rest. */
@@ -389,8 +389,8 @@ export interface SellableItemBenefitColumn {
  * The column order the ticket fixes: Benefit sits **between** Frequency and the
  * two prices, never after them.
  */
-export const SELLABLE_ITEM_BENEFIT_COLUMNS: readonly SellableItemBenefitColumn[] = [
-  { key: 'item', labelKey: 'col_sellable_item', width: null, align: 'left' },
+export const PRODUCT_BENEFIT_COLUMNS: readonly ProductBenefitColumn[] = [
+  { key: 'item', labelKey: 'col_product', width: null, align: 'left' },
   { key: 'quantity', labelKey: 'col_quantity', width: 90, align: 'right' },
   { key: 'frequency', labelKey: 'col_frequency', width: 120, align: 'left' },
   { key: 'action', labelKey: 'col_item_action', width: 170, align: 'left' },
@@ -405,14 +405,14 @@ export const SELLABLE_ITEM_BENEFIT_COLUMNS: readonly SellableItemBenefitColumn[]
 /**
  * #918 — *which* Frequency the shared Frequency column shows.
  *
- *   `item`    — the Sellable Item's own `billing_frequency`, read-only. How
+ *   `item`    — the Product's own `billing_frequency`, read-only. How
  *               often the item is priced; the answer for every section but one.
  *   `benefit` — the benefit row's own renewal Frequency, editable in the
  *               editor. How often the allowance comes back, which only a
  *               Membership Plan's Session Benefits configure.
  *
  * It is one column either way — the ticket's "the Frequency column must align
- * with the Frequency column used by the other Sellable Item sections" is why a
+ * with the Frequency column used by the other Product sections" is why a
  * second column was not added beside it.
  */
 export type BenefitFrequencyColumn = 'item' | 'benefit';
@@ -420,14 +420,14 @@ export type BenefitFrequencyColumn = 'item' | 'benefit';
 /** How little the flexible name column may be squeezed to before the table scrolls. */
 export const BENEFIT_ITEM_COLUMN_MIN_WIDTH = 180;
 
-export function sellableItemBenefitColumns(opts: {
+export function productBenefitColumns(opts: {
   showFrequency: boolean;
   showAction: boolean;
   showPrices: boolean;
   /** #959 — a Promotion's Requirement column. Absent means not rendered at all. */
   showRequirement?: boolean;
-}): SellableItemBenefitColumn[] {
-  return SELLABLE_ITEM_BENEFIT_COLUMNS.filter((col) => {
+}): ProductBenefitColumn[] {
+  return PRODUCT_BENEFIT_COLUMNS.filter((col) => {
     if (col.key === 'frequency') return opts.showFrequency;
     if (col.key === 'action') return opts.showAction;
     if (col.key === 'requirement') return opts.showRequirement === true;
@@ -438,9 +438,9 @@ export function sellableItemBenefitColumns(opts: {
 
 /**
  * The width below which the table scrolls horizontally instead of squashing its
- * columns out of alignment — the same answer #637 gave the Sellable Items list.
+ * columns out of alignment — the same answer #637 gave the Products list.
  */
-export function benefitTableMinWidth(columns: SellableItemBenefitColumn[]): number {
+export function benefitTableMinWidth(columns: ProductBenefitColumn[]): number {
   return columns.reduce(
     (total, col) => total + (col.width ?? BENEFIT_ITEM_COLUMN_MIN_WIDTH), 0,
   );
@@ -452,15 +452,15 @@ export function formatBenefitPrice(amount: number): string {
 }
 
 /** The editable grid: item picker + quantity (+ the item's own, read-only frequency). */
-export function SellableItemBenefitEditor({
+export function ProductBenefitEditor({
   t, addKey, draft, setDraft, categoryItems, showFrequency, enforceMandatory = false,
   benefitContext, frequencyColumn = 'item', showRequirement = false,
 }: {
   t: Translate;
   addKey: string;
-  draft: SellableItemBenefitRow[];
+  draft: ProductBenefitRow[];
   setDraft: SetDraft;
-  categoryItems: SellableItemOption[];
+  categoryItems: ProductOption[];
   showFrequency: boolean;
   /**
    * #918: `'benefit'` turns the Frequency column into the row's own renewal
@@ -476,7 +476,7 @@ export function SellableItemBenefitEditor({
    * endpoint takes quantity alone, so offering a dropdown there would be a
    * control that silently changes nothing.
    */
-  benefitContext?: SellableItemBenefitContext;
+  benefitContext?: ProductBenefitContext;
   /**
    * #893: Membership Plan sections only. A mandatory row then renders its item
    * as a labelled value instead of a picker and has no Remove control — the
@@ -491,7 +491,7 @@ export function SellableItemBenefitEditor({
    * item the member may decline when the Promotion is assigned. Promotions only,
    * per the ticket thread (Membership Plans are excluded), and off by default so
    * every other caller's grid is exactly what it was. The value is stored on the
-   * Promotion ↔ Sellable Item row and is not the catalogue item's own #893
+   * Promotion ↔ Product row and is not the catalogue item's own #893
    * `mandatory` flag beside it.
    */
   showRequirement?: boolean;
@@ -520,7 +520,7 @@ export function SellableItemBenefitEditor({
             gap: '3px 8px', alignItems: 'center', marginBottom: 8,
           }}
         >
-          <span style={colHeaderSt}>{t('col_sellable_item')}</span>
+          <span style={colHeaderSt}>{t('col_product')}</span>
           <span style={colHeaderSt}>{t('col_quantity')}</span>
           {showFrequency && <span style={colHeaderSt}>{t('col_frequency')}</span>}
           {benefitContext && <span style={colHeaderSt}>{t('col_item_action')}</span>}
@@ -582,7 +582,7 @@ export function SellableItemBenefitEditor({
                     // number being charged is `toBenefitItems()`, which submits
                     // only the value the selected action takes.
                     onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, {
-                      action: e.target.value as SellableItemBenefitAction,
+                      action: e.target.value as ProductBenefitAction,
                     })}
                     style={inlineSelectSt}
                   >
@@ -669,7 +669,7 @@ export function SellableItemBenefitEditor({
 }
 
 /**
- * One read-only price cell: the Sellable Item's own price (or the same price
+ * One read-only price cell: the Product's own price (or the same price
  * after the row's treatment), plus the line total whenever the quantity makes
  * the two differ.
  *
@@ -700,13 +700,13 @@ function BenefitPriceCell({
 }
 
 /** Read-only counterpart — what a section shows until its own Edit button is pressed. */
-export function SellableItemBenefitView({
+export function ProductBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
   showPrices = false, frequencyColumn = 'item', showRequirement = false,
 }: {
   t: Translate;
   emptyKey: string;
-  rows: SellableItemBenefitRow[];
+  rows: ProductBenefitRow[];
   showFrequency: boolean;
   /** #918 — see `BenefitFrequencyColumn`. The read-only half of the same column. */
   frequencyColumn?: BenefitFrequencyColumn;
@@ -715,7 +715,7 @@ export function SellableItemBenefitView({
    * own, so the read-only half of the card says exactly what the editor behind
    * `⋮ → Edit` holds (#797 — the two halves are one field list).
    */
-  benefitContext?: SellableItemBenefitContext;
+  benefitContext?: ProductBenefitContext;
   /** #893: tags a mandatory item here too, so the read-only half of the card
    *  says the same thing the editor does. */
   enforceMandatory?: boolean;
@@ -729,7 +729,7 @@ export function SellableItemBenefitView({
   /**
    * #959: the read-only half of the Requirement column, so the card says exactly
    * what the editor behind `⋮ → Edit` holds (#797 — the two halves are one field
-   * list). See `SellableItemBenefitEditor`'s own prop.
+   * list). See `ProductBenefitEditor`'s own prop.
    */
   showRequirement?: boolean;
 }) {
@@ -737,11 +737,11 @@ export function SellableItemBenefitView({
   // One grid for every section of this page, whatever each section has values
   // for: a column with nothing to say renders an empty cell rather than
   // vanishing and shifting the columns after it out of line (#916).
-  const columns = sellableItemBenefitColumns({
+  const columns = productBenefitColumns({
     showFrequency, showAction: benefitContext != null, showPrices, showRequirement,
   });
 
-  const cell = (col: SellableItemBenefitColumn, row: SellableItemBenefitRow): React.ReactNode => {
+  const cell = (col: ProductBenefitColumn, row: ProductBenefitRow): React.ReactNode => {
     switch (col.key) {
       case 'item':
         return (
@@ -804,7 +804,7 @@ export function SellableItemBenefitView({
         </thead>
         <tbody>
           {/* #924 stage 2: the index rides along in the key because a caller may
-              render rows whose Sellable Item is gone — an applied Promotion's
+              render rows whose Product is gone — an applied Promotion's
               grants keep the item's identity after it is deleted, and two such
               lines would otherwise share one key. */}
           {rows.map((r, idx) => (

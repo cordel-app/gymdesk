@@ -2,19 +2,19 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  SELLABLE_ITEM_BENEFIT_COLUMNS,
-  SellableItemBenefitColumnKey,
-  sellableItemBenefitColumns,
-} from '@/components/SellableItemBenefits';
+  PRODUCT_BENEFIT_COLUMNS,
+  ProductBenefitColumnKey,
+  productBenefitColumns,
+} from '@/components/ProductBenefits';
 
-// #919/#920 — the Promotion card's three Sellable Item sections must read as one
+// #919/#920 — the Promotion card's three Product sections must read as one
 // table, each row must show the Regular Price and the Final Price, and the
 // Membership Fee Promotion's duration must stop claiming to be a count of
 // months.
 //
 // The first half is #916's invariant one screen over, so the assertions are
 // about *wiring*, not a second declaration: the Promotion sections render from
-// the same `SELLABLE_ITEM_BENEFIT_COLUMNS`, which is what makes the horizontal
+// the same `PRODUCT_BENEFIT_COLUMNS`, which is what makes the horizontal
 // boundaries identical. #920's own words:
 //
 //   > Session Promotion, One-off Promotion and Periodical Promotion must
@@ -37,12 +37,12 @@ const promotionsSrc = stripComments(
   readFileSync(join(SRC, 'app', '[locale]', 'promotions', 'page.tsx'), 'utf-8'),
 );
 
-const keysOf = (cols: { key: SellableItemBenefitColumnKey }[]) => cols.map((c) => c.key);
+const keysOf = (cols: { key: ProductBenefitColumnKey }[]) => cols.map((c) => c.key);
 
 describe('#919/#920: one grid for the three Promotion sections', () => {
   it('asks for the Frequency column in every section, not only the Periodical one', () => {
     // The flag is the page's, not the section's: called with the same flags for
-    // each section, `sellableItemBenefitColumns()` can only answer the same
+    // each section, `productBenefitColumns()` can only answer the same
     // grid — which is what puts QUANTITY, FREQUENCY and PROMOTION at the same
     // horizontal position in all three.
     expect(promotionsSrc.match(/showFrequency: true/g) ?? []).toHaveLength(3);
@@ -54,19 +54,19 @@ describe('#919/#920: one grid for the three Promotion sections', () => {
   });
 
   it('renders the sections through the shared view, never a second table', () => {
-    expect(promotionsSrc).toContain('<SellableItemBenefitView');
+    expect(promotionsSrc).toContain('<ProductBenefitView');
     expect(promotionsSrc).toContain('benefitContext="promotion"');
   });
 
   it('gets the ticket\'s column order from the shared declaration', () => {
-    expect(keysOf(sellableItemBenefitColumns({
+    expect(keysOf(productBenefitColumns({
       showFrequency: true, showAction: true, showPrices: true,
     }))).toEqual(['item', 'quantity', 'frequency', 'action', 'original_price', 'final_price']);
   });
 
   it('keeps Promotion between Frequency and Regular Price (#920 §1)', () => {
-    const at = (key: SellableItemBenefitColumnKey) =>
-      SELLABLE_ITEM_BENEFIT_COLUMNS.findIndex((c) => c.key === key);
+    const at = (key: ProductBenefitColumnKey) =>
+      PRODUCT_BENEFIT_COLUMNS.findIndex((c) => c.key === key);
     expect(at('action')).toBeGreaterThan(at('frequency'));
     expect(at('action')).toBeLessThan(at('original_price'));
   });

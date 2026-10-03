@@ -55,7 +55,7 @@ describe('Promotions: component Edit actions live inside Edit mode (#897)', () =
     // Both section shells gate their Edit callback on the card's Edit mode and
     // pass `null` otherwise, which is what removes the button from the DOM
     // rather than only disabling it.
-    expect(fn('renderSellableBenefitSection')).toMatch(
+    expect(fn('renderProductBenefitSection')).toMatch(
       /isEditingCard\(promo\.id\) && !editing \? \(\) => enterSectionEdit\(promo, cfg\.section\) : null/,
     );
     expect(fn('renderMembershipFeeSection')).toMatch(
@@ -141,14 +141,14 @@ describe('Promotions: component Edit actions live inside Edit mode (#897)', () =
     // views, in the same order, through the same renderers.
     for (const renderer of [
       'renderMainView',
-      'renderSellableItemBenefitView',
+      'renderProductBenefitView',
       'renderMembershipFeeView',
       'renderTimeline',
     ]) {
       expect(pageSrc, `${renderer} is gone — the read-only card changed shape`).toContain(`function ${renderer}`);
     }
     const expanded = fn('renderExpandedSection');
-    for (const section of ['renderSellableBenefitSection', 'renderMembershipFeeSection', 'renderTimeline']) {
+    for (const section of ['renderProductBenefitSection', 'renderMembershipFeeSection', 'renderTimeline']) {
       expect(expanded, `${section} no longer renders inside the expanded card`).toContain(section);
     }
     for (const section of BENEFIT_SECTIONS) {

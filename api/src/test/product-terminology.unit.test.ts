@@ -1,13 +1,18 @@
-// #949 stage 1 — **Product** is the canonical term on screen.
+// #949 — **Product** is the canonical term on screen, and since stage 2 in the
+// locale keys too.
 //
 // The entity was called *Sellable Item* and is now called *Product* (Q1 C on
 // the thread, which also settled Q3: the renamed type axis is `gym_charges.type`
 // and the global `charge_types` lookup keeps its own name). Stage 1 moved the
-// copy a gym owner reads; the identifiers, the `/sellable-items` API root and
-// the DB names follow in stages 2 and 3, so this gate deliberately speaks about
-// locale **values** and nothing else — a key still spelled `col_sellable_item`
-// is correct until stage 2 renames it, and failing on one here would make the
-// stages unlandable in order.
+// copy a gym owner reads and deliberately judged locale **values** alone, so a
+// key still spelled `col_sellable_item` stayed correct until stage 2 renamed it.
+// Stage 2 has renamed it, so this gate now judges the **key** as well.
+//
+// What it still cannot see is stage 3's: the `/sellable-items` API root, the
+// `gym_charges` table with its FK column and its eight CHECKs, the
+// `financials.gym_charges` feature flag and the `gym_charge` audit entity type.
+// None of those is a locale key, so none can reach this gate — the code-side
+// half of that line is `product-identifiers.unit.test.ts` beside this file.
 //
 // It lives in the API suite rather than beside the admin tests because CI runs
 // `npm test` in `api/` only (the admin job type-checks and builds), which is the
@@ -40,6 +45,12 @@ const RETIRED = [
   /articles?\s+(venibles?|vendibles?|de\s+venda|a\s+la\s+venda)/i,
 ];
 
+/**
+ * A key is an English identifier, so only the English term can appear in one —
+ * `sellable` in any casing, anywhere in the dotted path.
+ */
+const RETIRED_KEY = /sellable/i;
+
 /** Every leaf string of a locale file, as `namespace.key` → value. */
 function values(path: string): [string, string][] {
   const out: [string, string][] = [];
@@ -59,6 +70,11 @@ const offenders = (path: string, label: string) =>
     .filter(([, value]) => RETIRED.some((re) => re.test(value)))
     .map(([at, value]) => `${label}: ${at} = ${JSON.stringify(value)}`);
 
+const keyOffenders = (path: string, label: string) =>
+  values(path)
+    .filter(([at]) => RETIRED_KEY.test(at))
+    .map(([at]) => `${label}: ${at}`);
+
 describe('Product is the canonical term in user-facing copy (#949)', () => {
   for (const { label, path } of LOCALE_FILES) {
     it(`${label} says Product, not Sellable Item`, () => {
@@ -74,15 +90,30 @@ describe('Product is the canonical term in user-facing copy (#949)', () => {
       expect(all.length, `${label} produced no strings`).toBeGreaterThan(100);
     }
     const admin = new Map(values(LOCALE_FILES[0].path));
-    expect(admin.get('nav.sellable_items')).toBe('Products');
-    expect(admin.get('sellable_items.add')).toBe('+ Add Product');
+    expect(admin.get('nav.products')).toBe('Products');
+    expect(admin.get('products.add')).toBe('+ Add Product');
   });
 
-  it('judges values, not keys — the identifiers are stage 2', () => {
-    const retiredKeyCleanValue = { sellable_items: { col_sellable_item: 'Product' } };
-    const hit = Object.entries(retiredKeyCleanValue.sellable_items)
-      .filter(([, value]) => RETIRED.some((re) => re.test(value)));
-    expect(hit).toEqual([]);
+  it('judges the keys too, since stage 2 renamed them', () => {
+    for (const { label, path } of LOCALE_FILES) {
+      expect(keyOffenders(path, label)).toEqual([]);
+    }
+  });
+
+  it('would catch a key the rename missed', () => {
+    // The shapes stage 2 moved: the namespace, the three shared column labels
+    // and the Promotion target's own label key.
+    for (const key of [
+      'sellable_items.add',
+      'plans.col_sellable_item',
+      'promotions.applies_to_sellable_item',
+      'taxes.impact_sellable_items',
+    ]) {
+      expect(RETIRED_KEY.test(key), `missed ${key}`).toBe(true);
+    }
+    for (const key of ['products.add', 'plans.col_product', 'promotions.applies_to_product']) {
+      expect(RETIRED_KEY.test(key), `false positive on ${key}`).toBe(false);
+    }
   });
 
   it('would catch each wording stage 1 removed', () => {

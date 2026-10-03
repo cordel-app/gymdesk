@@ -1,13 +1,13 @@
 /**
  * #896 stage 1 — the (action, value) pair on the twelve Promotion/Plan ↔
- * Sellable Item relationship tables (migration 203).
+ * Product relationship tables (migration 203).
  *
  * Integration, because the thing under test *is* the schema: the columns, the
  * two CHECK sets and the default are only real against MySQL, so the action
  * here is a direct `db.query` rather than an HTTP call.
  *
  * The per-context option sets and the value rules themselves are pure and
- * covered by `sellable-item-benefit-actions.unit.test.ts`; this file is the
+ * covered by `product-benefit-actions.unit.test.ts`; this file is the
  * half that proves the database agrees with them. Stage 2's API — the six
  * replace-all `PUT`s that validate and persist the pair — is covered where
  * those routes already are, in `membership-plan-benefits.test.ts` and
@@ -113,7 +113,7 @@ describe('#896 — the pair reaches all twelve relationship tables', () => {
     expect(await checkClause(table, `chk_${table}_value`)).not.toBeNull();
   });
 
-  it('adds nothing to the global Sellable Item (§12)', async () => {
+  it('adds nothing to the global Product (§12)', async () => {
     // The configuration belongs to the relationship; the same item may be
     // waived by one Plan and discounted by a Promotion.
     expect(await columnInfo('gym_charges', 'action')).toBeUndefined();

@@ -6,7 +6,7 @@ import { join } from 'path';
 //
 // The section is inline row CRUD with no modal (#631 §1/§2, acceptance
 // criteria "Add/remove uses inline editing" and "No modal is introduced"), only
-// recurring Sellable Items are offered, and add/remove must re-run the Member's
+// recurring Products are offered, and add/remove must re-run the Member's
 // Billing Simulation immediately (#631 §6). This repo has no component-test
 // infra for apps/admin (see docs/architecture.md's TL;DR), so — like
 // assign-plan-inline.test.ts (#628) — this pins the structure down by scanning
@@ -78,7 +78,7 @@ describe('Additional Periodic Services (#631)', () => {
     expect(sectionSrc).toContain('<tr>');
   });
 
-  it('offers only recurring Sellable Items, classified server-side', () => {
+  it('offers only recurring Products, classified server-side', () => {
     expect(sectionSrc).toContain('/sellable-items');
     expect(sectionSrc).toContain("benefit_category === 'periodical'");
     expect(sectionSrc).toContain("i.status === 'active'");
@@ -91,7 +91,7 @@ describe('Additional Periodic Services (#631)', () => {
   });
 
   it('never re-derives the price or the billing frequency locally', () => {
-    // Both come from the Sellable Item the API returns (#631 §2) — the section
+    // Both come from the Product the API returns (#631 §2) — the section
     // formats them, it never computes a charge (CLAUDE.md: no business logic
     // duplicated in the frontend).
     expect(sectionSrc).not.toMatch(/unit_price\s*\*/);

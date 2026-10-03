@@ -7,10 +7,10 @@ import {
   toSessionBenefitFrequency,
 } from '@/lib/sessionBenefitFrequency';
 import {
-  SELLABLE_ITEM_BENEFIT_COLUMNS,
-  SellableItemBenefitRow,
+  PRODUCT_BENEFIT_COLUMNS,
+  ProductBenefitRow,
   toBenefitItems,
-} from '@/components/SellableItemBenefits';
+} from '@/components/ProductBenefits';
 
 // #918 — a Session Benefit carries a renewal **Frequency** ("2 Personal
 // Training Classes per week"), configured in the Membership Plan's Session
@@ -24,8 +24,8 @@ import {
 //   * the list this app renders still agrees with the API's (the third place of
 //     the "two places" rule the API module's header states);
 //   * the Frequency stays **one** column — the ticket's "must align with the
-//     Frequency column used by the other Sellable Item sections" — so it is the
-//     same `SELLABLE_ITEM_BENEFIT_COLUMNS` entry, switched by a prop, and the
+//     Frequency column used by the other Product sections" — so it is the
+//     same `PRODUCT_BENEFIT_COLUMNS` entry, switched by a prop, and the
 //     Session section is the only caller that switches it;
 //   * a section that does not configure it keeps submitting payloads without
 //     the key, because the API reads "no frequency named" as *keep what is
@@ -34,12 +34,12 @@ import {
 //     prints a missing key verbatim.
 //
 // apps/admin has no component-test infra (docs/architecture.md's TL;DR), so the
-// structure is scanned from source the way sellable-item-benefit-actions-ui.test.ts
+// structure is scanned from source the way product-benefit-actions-ui.test.ts
 // does, while the shared module's pure parts are exercised directly.
 
 const ROOT = join(__dirname, '..', '..', '..', '..');
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const COMPONENT = join(__dirname, '..', 'components', 'SellableItemBenefits.tsx');
+const COMPONENT = join(__dirname, '..', 'components', 'ProductBenefits.tsx');
 const PLANS_PAGE = join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx');
 const PROMOTIONS_PAGE = join(__dirname, '..', 'app', '[locale]', 'promotions', 'page.tsx');
 const API_DECLARATION = join(ROOT, 'api', 'src', 'domain', 'sessionBenefitFrequency.ts');
@@ -53,7 +53,7 @@ const componentSrc = stripComments(readFileSync(COMPONENT, 'utf-8'));
 const plansSrc = stripComments(readFileSync(PLANS_PAGE, 'utf-8'));
 const promotionsSrc = stripComments(readFileSync(PROMOTIONS_PAGE, 'utf-8'));
 
-function row(over: Partial<SellableItemBenefitRow> = {}): SellableItemBenefitRow {
+function row(over: Partial<ProductBenefitRow> = {}): ProductBenefitRow {
   return {
     gym_charge_id: 1, quantity: 2, gym_charge_name: 'Personal Training Class',
     gym_charge_type: 'sessions', gym_charge_billing_frequency: null,
@@ -70,7 +70,7 @@ describe('the option set mirrors the API declaration', () => {
     expect([...SESSION_BENEFIT_FREQUENCIES]).toEqual(apiList);
   });
 
-  it('offers Weekly, which the Sellable Item frequency dropdown does not (#821)', () => {
+  it('offers Weekly, which the Product frequency dropdown does not (#821)', () => {
     expect(SESSION_BENEFIT_FREQUENCIES).toContain('week');
     expect(SESSION_BENEFIT_FREQUENCIES).not.toContain('per_session');
   });
@@ -84,7 +84,7 @@ describe('the option set mirrors the API declaration', () => {
 
 describe('the Frequency column stays one column', () => {
   it('is the same shared column declaration, between Quantity and Benefit', () => {
-    expect(SELLABLE_ITEM_BENEFIT_COLUMNS.map((c) => c.key)).toEqual([
+    expect(PRODUCT_BENEFIT_COLUMNS.map((c) => c.key)).toEqual([
       // #959 appended Requirement after Benefit; Frequency's position is unmoved.
       'item', 'quantity', 'frequency', 'action', 'requirement',
       'original_price', 'final_price',
@@ -106,7 +106,7 @@ describe('the Frequency column stays one column', () => {
     }
   });
 
-  it('leaves the Promotions page on the Sellable Item\'s own frequency', () => {
+  it('leaves the Promotions page on the Product\'s own frequency', () => {
     // #918 is a Membership Plan field. A Promotion's session grant has no
     // renewal Frequency, so its sections must not render the selector.
     expect(promotionsSrc).not.toContain('frequencyColumn');

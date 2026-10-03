@@ -5,14 +5,14 @@ import { join } from 'path';
 // #931 — Promotions are removed from Members.
 //
 // "A Promotion applies to a target entity, specifically: Membership Plan, or
-// Sellable Item. A Member can therefore benefit from a Promotion indirectly
-// through the Membership Plan or Sellable Item they purchase, but the Promotion
+// Product. A Member can therefore benefit from a Promotion indirectly
+// through the Membership Plan or Product they purchase, but the Promotion
 // itself should not be configured or assigned directly to a Member."
 //
 // So the Member card carries no PROMOTIONS section, no "No promotions applied"
 // message and no "+ Add Promotion" button, and the Member-level configuration
 // read reports no promotions. Nothing about the Promotion itself changes: it is
-// still configured on the Promotions page (Suitable Membership Plans, Sellable
+// still configured on the Promotions page (Suitable Membership Plans, Product
 // Item grants), still applied with the Membership Plan the Member is assigned,
 // and the applications an Assigned Plan was agreed with are still displayed on
 // the Assigned Plans card from each application's own snapshot (#635 §16).
@@ -116,7 +116,7 @@ describe('Members: Promotions removed (#931)', () => {
 
   it('still configures Promotions on their own page', () => {
     const promotions = sourcesIn(PROMOTIONS_DIR).map((s) => s.src).join('\n');
-    // Suitable Membership Plans and the Sellable Item grants — the two targets.
+    // Suitable Membership Plans and the Product grants — the two targets.
     expect(promotions).toContain('membership-plans');
     expect(promotions).toContain('applies_to');
   });

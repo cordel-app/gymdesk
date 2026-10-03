@@ -1,8 +1,8 @@
-// #916 — what one Sellable Item row of a Membership Plan Benefit section costs,
+// #916 — what one Product row of a Membership Plan Benefit section costs,
 // before and after the Plan's own treatment of it.
 //
 // The ticket asks the card to show two amounts per row: the **Original Price**
-// ("the normal price of the Sellable Item before applying the Membership Plan
+// ("the normal price of the Product before applying the Membership Plan
 // benefit") and the **Final Price** ("after applying all relevant Membership
 // Plan pricing rules"), both VAT-inclusive. Its load-bearing requirement is
 // that neither may be a second pricing implementation:
@@ -20,27 +20,27 @@
 // left is which amounts to report, and that is the whole of this file.
 //
 // **Unit and line are both reported, and they are not the same question.** The
-// ticket defines the Original Price as the Sellable Item's own price, which is
+// ticket defines the Original Price as the Product's own price, which is
 // the *unit* price, and the row already shows the Quantity beside it; but the
 // amount that reaches a billing event is the *line* (`unit × quantity`), which
 // is what #915's `regular_price` / `actual_charge` are. Reporting only the unit
 // pair would let a quantity-5 row quote €25 next to a simulation charging €125,
-// and reporting only the line pair would stop calling the Sellable Item's price
+// and reporting only the line pair would stop calling the Product's price
 // by its name. Both come from the same `applyLineBenefit()`, so they cannot
 // disagree: the unit pair is that function at quantity 1.
 //
 // Pure — no DB, no HTTP (CLAUDE.md).
 
-import { SellableItemBenefit, applyLineBenefit } from './sellableItemBenefitActions';
+import { ProductBenefit, applyLineBenefit } from './productBenefitActions';
 
 /**
  * The four amounts one benefit row reports, all VAT-inclusive euros and all
- * `null` for an item that carries no price at all (a Sellable Item's `amount` is
+ * `null` for an item that carries no price at all (a Product's `amount` is
  * nullable, and the honest answer then is "—", never €0.00 — the same choice
  * `formatPlanCurrentPrice()` makes for a Plan with no price).
  */
 export interface PlanBenefitPrices {
-  /** The Sellable Item's own price, per unit — the ticket's *Original Price*. */
+  /** The Product's own price, per unit — the ticket's *Original Price*. */
   original_price_incl_tax: number | null;
   /** That unit price after this row's `(action, value)` pair — its *Final Price*. */
   final_price_incl_tax: number | null;
@@ -69,12 +69,12 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
  * approximation of the line, and why the gross-up before this call is exact too
  * (a percentage of the gross is the gross of the percentage, #915's tax note).
  * A pair outside that set has already been normalized away by
- * `toSellableItemBenefit('plan', …)`, so nothing here has to second-guess it.
+ * `toProductBenefit('plan', …)`, so nothing here has to second-guess it.
  */
 export function planBenefitPrices(
   unitPriceInclTax: number | null | undefined,
   quantity: number,
-  benefit: SellableItemBenefit,
+  benefit: ProductBenefit,
 ): PlanBenefitPrices {
   if (unitPriceInclTax == null || !Number.isFinite(unitPriceInclTax)) {
     return { ...NO_PLAN_BENEFIT_PRICES };

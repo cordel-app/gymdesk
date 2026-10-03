@@ -15,7 +15,7 @@ import {
   computePlanBillingEventSimulation,
 } from '../domain/planBillingEventSimulation';
 import { toPlanDuration } from '../domain/planDuration';
-import { NO_SELLABLE_ITEM_BENEFIT } from '../domain/sellableItemBenefitActions';
+import { NO_PRODUCT_BENEFIT } from '../domain/productBenefitActions';
 
 const MONTHLY = { interval: 1, unit: 'month' as const };
 const FOUR_WEEKLY = { interval: 4, unit: 'week' as const };
@@ -31,7 +31,7 @@ function item(over: Partial<PlanSimulationItem> = {}): PlanSimulationItem {
     quantity: 1,
     // #918 — no renewal Frequency unless a case configures one.
     sessionFrequency: null,
-    benefit: NO_SELLABLE_ITEM_BENEFIT,
+    benefit: NO_PRODUCT_BENEFIT,
     mandatory: false,
     ...over,
   };

@@ -1,6 +1,6 @@
 /**
  * #896 stage 1 — the per-context option sets and the value rules, plus the
- * "two places" guard: the lists in `domain/sellableItemBenefitActions.ts` and
+ * "two places" guard: the lists in `domain/productBenefitActions.ts` and
  * the CHECK sets migration 203 writes have to say the same thing, or a Plan
  * could be offered an action its own table refuses.
  *
@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_BENEFIT_ACTION,
   MAX_BENEFIT_AMOUNT,
-  NO_SELLABLE_ITEM_BENEFIT,
+  NO_PRODUCT_BENEFIT,
   PLAN_BENEFIT_ACTIONS,
   PROMOTION_ITEM_ACTIONS,
   applyLineBenefit,
@@ -23,10 +23,10 @@ import {
   benefitActionsFor,
   benefitConfigError,
   isBenefitActionAllowed,
-  parseSellableItemBenefitInput,
-  shapeSellableItemBenefitRow,
-  toSellableItemBenefit,
-} from '../domain/sellableItemBenefitActions';
+  parseProductBenefitInput,
+  shapeProductBenefitRow,
+  toProductBenefit,
+} from '../domain/productBenefitActions';
 import {
   MANDATORY_BENEFIT_QUANTITY,
   mergeMandatoryBenefits,
@@ -77,7 +77,7 @@ describe('#896 — the two option sets', () => {
 
   it('starts neutral — §13, so nothing becomes discounted by the column existing', () => {
     expect(DEFAULT_BENEFIT_ACTION).toBe('no_benefit');
-    expect(NO_SELLABLE_ITEM_BENEFIT).toEqual({ action: 'no_benefit', value: null });
+    expect(NO_PRODUCT_BENEFIT).toEqual({ action: 'no_benefit', value: null });
   });
 });
 
@@ -134,29 +134,29 @@ describe('#896 — benefitConfigError (the backend half of §6)', () => {
 
 describe('#896 — reading a stored pair back', () => {
   it('normalizes a valid pair', () => {
-    expect(toSellableItemBenefit('promotion', 'percentage_discount', '20')).toEqual({
+    expect(toProductBenefit('promotion', 'percentage_discount', '20')).toEqual({
       action: 'percentage_discount', value: 20,
     });
-    expect(toSellableItemBenefit('promotion', 'waive', 5)).toEqual({ action: 'waive', value: null });
+    expect(toProductBenefit('promotion', 'waive', 5)).toEqual({ action: 'waive', value: null });
   });
 
   it('falls back to the neutral default rather than inventing a discount', () => {
     // A row written between migration 203's two statements, a value that went
     // missing, or an action a later ticket removed: none of them may price to
     // less than the normal price.
-    expect(toSellableItemBenefit('promotion', null, null)).toEqual(NO_SELLABLE_ITEM_BENEFIT);
-    expect(toSellableItemBenefit('promotion', 'percentage_discount', null)).toEqual(NO_SELLABLE_ITEM_BENEFIT);
-    expect(toSellableItemBenefit('promotion', 'fixed_price', 'abc')).toEqual(NO_SELLABLE_ITEM_BENEFIT);
-    expect(toSellableItemBenefit('promotion', 'percentage_discount', -5)).toEqual(NO_SELLABLE_ITEM_BENEFIT);
+    expect(toProductBenefit('promotion', null, null)).toEqual(NO_PRODUCT_BENEFIT);
+    expect(toProductBenefit('promotion', 'percentage_discount', null)).toEqual(NO_PRODUCT_BENEFIT);
+    expect(toProductBenefit('promotion', 'fixed_price', 'abc')).toEqual(NO_PRODUCT_BENEFIT);
+    expect(toProductBenefit('promotion', 'percentage_discount', -5)).toEqual(NO_PRODUCT_BENEFIT);
   });
 
   it('clamps rather than trusts, and respects the context', () => {
-    expect(toSellableItemBenefit('promotion', 'percentage_discount', 150)).toEqual({
+    expect(toProductBenefit('promotion', 'percentage_discount', 150)).toEqual({
       action: 'percentage_discount', value: 100,
     });
     // A `fixed_price` somehow stored on a Plan row reads as neutral, whatever
     // the column says — the context decides, not the data.
-    expect(toSellableItemBenefit('plan', 'fixed_price', 20)).toEqual(NO_SELLABLE_ITEM_BENEFIT);
+    expect(toProductBenefit('plan', 'fixed_price', 20)).toEqual(NO_PRODUCT_BENEFIT);
   });
 });
 
@@ -224,7 +224,7 @@ describe('#896 — migration 203 says the same thing as the module', () => {
       'user_membership_oneoff',
       'user_membership_periodical',
     ]);
-    // §12: the global Sellable Item is not one of them.
+    // §12: the global Product is not one of them.
     for (const table of [...migration.PROMOTION_TABLES, ...migration.PLAN_TABLES]) {
       expect(table).not.toBe('gym_charges');
     }
@@ -265,63 +265,63 @@ describe('#896 stage 2 — reading one submitted line', () => {
   it('reports "not mentioned" rather than the default when no action is sent', () => {
     // The distinction is the whole point: the six `PUT`s are replace-all, and
     // a client that knows nothing about the pair must not silently rewrite it.
-    expect(parseSellableItemBenefitInput('promotion', { quantity: 3 } as any))
+    expect(parseProductBenefitInput('promotion', { quantity: 3 } as any))
       .toEqual({ error: null, benefit: null });
-    expect(parseSellableItemBenefitInput('plan', {})).toEqual({ error: null, benefit: null });
-    expect(parseSellableItemBenefitInput('plan', { action: null, value: null }))
+    expect(parseProductBenefitInput('plan', {})).toEqual({ error: null, benefit: null });
+    expect(parseProductBenefitInput('plan', { action: null, value: null }))
       .toEqual({ error: null, benefit: null });
   });
 
   it('refuses a value with no action', () => {
     // The one shape that reads as a configured discount the server would drop.
-    const parsed = parseSellableItemBenefitInput('promotion', { value: 20 });
+    const parsed = parseProductBenefitInput('promotion', { value: 20 });
     expect(parsed.error).toBe('value requires an action');
     expect(parsed.benefit).toBeNull();
   });
 
   it('accepts the five a Promotion may configure and normalizes the value', () => {
-    expect(parseSellableItemBenefitInput('promotion', { action: 'waive' }))
+    expect(parseProductBenefitInput('promotion', { action: 'waive' }))
       .toEqual({ error: null, benefit: { action: 'waive', value: null } });
     // A string from a form body is a number by the time it is stored.
-    expect(parseSellableItemBenefitInput('promotion', { action: 'percentage_discount', value: '20' }))
+    expect(parseProductBenefitInput('promotion', { action: 'percentage_discount', value: '20' }))
       .toEqual({ error: null, benefit: { action: 'percentage_discount', value: 20 } });
-    expect(parseSellableItemBenefitInput('promotion', { action: 'fixed_price', value: 20 }))
+    expect(parseProductBenefitInput('promotion', { action: 'fixed_price', value: 20 }))
       .toEqual({ error: null, benefit: { action: 'fixed_price', value: 20 } });
   });
 
   it('refuses the two a Membership Plan may not (§16)', () => {
     for (const action of ['fixed_discount', 'fixed_price']) {
-      const parsed = parseSellableItemBenefitInput('plan', { action, value: 10 });
+      const parsed = parseProductBenefitInput('plan', { action, value: 10 });
       expect(parsed.error).toContain('action must be one of');
       expect(parsed.benefit).toBeNull();
     }
     // …while a Promotion takes both.
-    expect(parseSellableItemBenefitInput('promotion', { action: 'fixed_discount', value: 10 }).error)
+    expect(parseProductBenefitInput('promotion', { action: 'fixed_discount', value: 10 }).error)
       .toBeNull();
   });
 
   it('refuses a value the action does not take, and a missing one it does', () => {
-    expect(parseSellableItemBenefitInput('plan', { action: 'waive', value: 5 }).error)
+    expect(parseProductBenefitInput('plan', { action: 'waive', value: 5 }).error)
       .toBe('waive takes no value');
-    expect(parseSellableItemBenefitInput('plan', { action: 'percentage_discount' }).error)
+    expect(parseProductBenefitInput('plan', { action: 'percentage_discount' }).error)
       .toBe('percentage_discount requires a value');
-    expect(parseSellableItemBenefitInput('plan', { action: 'percentage_discount', value: 120 }).error)
+    expect(parseProductBenefitInput('plan', { action: 'percentage_discount', value: 120 }).error)
       .toBe('percentage_discount value must be between 0 and 100');
   });
 });
 
 describe('#896 stage 2 — reporting one stored row', () => {
   it('turns the DECIMAL string mysql2 hands back into a number', () => {
-    expect(shapeSellableItemBenefitRow('promotion', { gym_charge_id: 7, action: 'percentage_discount', value: '20.00' }))
+    expect(shapeProductBenefitRow('promotion', { gym_charge_id: 7, action: 'percentage_discount', value: '20.00' }))
       .toEqual({ gym_charge_id: 7, action: 'percentage_discount', value: 20 });
   });
 
   it('reports an action the context may not configure as the neutral default', () => {
     // Nothing can put a `fixed_price` on a Plan row — the CHECK refuses it —
     // but a read must never hand the Plan editor an option it cannot offer.
-    expect(shapeSellableItemBenefitRow('plan', { action: 'fixed_price', value: '20.00' }))
+    expect(shapeProductBenefitRow('plan', { action: 'fixed_price', value: '20.00' }))
       .toEqual({ action: 'no_benefit', value: null });
-    expect(shapeSellableItemBenefitRow('plan', { action: 'waive', value: null }))
+    expect(shapeProductBenefitRow('plan', { action: 'waive', value: null }))
       .toEqual({ action: 'waive', value: null });
   });
 });

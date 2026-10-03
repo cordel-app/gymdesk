@@ -15,7 +15,7 @@ import {
   PromotionSimulationGrant,
   computePromotionBillingEventSimulation,
 } from '../domain/promotionBillingEventSimulation';
-import { NO_SELLABLE_ITEM_BENEFIT } from '../domain/sellableItemBenefitActions';
+import { NO_PRODUCT_BENEFIT } from '../domain/productBenefitActions';
 
 const ANCHOR = '2026-09-30';
 const WAIVE = { action: 'waive' as const, value: null };
@@ -66,7 +66,7 @@ describe('computePromotionBillingEventSimulation', () => {
   });
 
   it('is unavailable when no grant has a billable frequency', () => {
-    // A periodical grant whose Sellable Item carries no frequency has no
+    // A periodical grant whose Product carries no frequency has no
     // schedule to project, so there is nothing to show.
     const result = simulate([grant({ billingFrequency: null })]);
     expect(result.available).toBe(false);
@@ -203,7 +203,7 @@ describe('computePromotionBillingEventSimulation', () => {
   });
 
   it('prices an item with no treatment configured at its regular price', () => {
-    const result = simulate([grant({ benefit: NO_SELLABLE_ITEM_BENEFIT })]);
+    const result = simulate([grant({ benefit: NO_PRODUCT_BENEFIT })]);
     const [line] = group(result, ANCHOR).lines;
     expect(line.actual_charge).toBe(20);
     expect(line.regular_price).toBe(20);

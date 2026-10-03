@@ -95,7 +95,7 @@ async function chargeTypeIds(n: number): Promise<number[]> {
   return ids;
 }
 
-/** Inserts a gym_charges (Sellable Item) row referencing the given tax rate. */
+/** Inserts a gym_charges (Product) row referencing the given tax rate. */
 async function createGymCharge(gymId: string, chargeTypeId: number, taxRateId: number): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO gym_charges (gym_id, charge_type_id, tax_rate_id) VALUES (?, ?, ?)`,
@@ -548,7 +548,7 @@ describe('PUT /taxes/:id — impact confirmation', () => {
     await createTestMembership(gymId, 'admin');
   });
 
-  it('succeeds directly when no sellable items or membership plans reference the tax rate', async () => {
+  it('succeeds directly when no products or membership plans reference the tax rate', async () => {
     const taxId = await createTaxRate(gymId, { name: 'Zero Impact Tax', rate_percent: 5 });
     const res = await request
       .put(`/taxes/${taxId}`)
@@ -559,8 +559,8 @@ describe('PUT /taxes/:id — impact confirmation', () => {
     expect(res.body.name).toBe('Zero Impact Tax Renamed');
   });
 
-  it('returns 409 with impact counts when sellable items reference the tax rate and confirmImpact is not sent', async () => {
-    const taxId = await createTaxRate(gymId, { name: 'Sellable Impact Tax', rate_percent: 5 });
+  it('returns 409 with impact counts when products reference the tax rate and confirmImpact is not sent', async () => {
+    const taxId = await createTaxRate(gymId, { name: 'Product Impact Tax', rate_percent: 5 });
     const [chargeTypeId] = await chargeTypeIds(1);
     await createGymCharge(gymId, chargeTypeId, taxId);
 
@@ -580,7 +580,7 @@ describe('PUT /taxes/:id — impact confirmation', () => {
       .get(`/taxes/${taxId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    expect(unchanged.body.name).toBe('Sellable Impact Tax');
+    expect(unchanged.body.name).toBe('Product Impact Tax');
   });
 
   it('returns 409 with impact counts when membership plans reference the tax rate and confirmImpact is not sent', async () => {
@@ -599,7 +599,7 @@ describe('PUT /taxes/:id — impact confirmation', () => {
     });
   });
 
-  it('returns 409 with combined counts when both sellable items and membership plans reference the tax rate', async () => {
+  it('returns 409 with combined counts when both products and membership plans reference the tax rate', async () => {
     const taxId = await createTaxRate(gymId, { name: 'Combined Impact Tax', rate_percent: 5 });
     const [ct1, ct2] = await chargeTypeIds(2);
     await createGymCharge(gymId, ct1, taxId);
@@ -635,7 +635,7 @@ describe('PUT /taxes/:id — impact confirmation', () => {
     expect(check.body.name).toBe('Confirmed Impact Tax Renamed');
   });
 
-  it('does not count a soft-deleted sellable item towards the impact', async () => {
+  it('does not count a soft-deleted product towards the impact', async () => {
     const taxId = await createTaxRate(gymId, { name: 'Deleted Charge Impact Tax', rate_percent: 5 });
     const [chargeTypeId] = await chargeTypeIds(1);
     const chargeId = await createGymCharge(gymId, chargeTypeId, taxId);

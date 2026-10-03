@@ -7,10 +7,10 @@ import {
   frequencyOptions,
   isLegacyFrequency,
   legacyFrequencyLabelKey,
-} from '@/app/[locale]/financials/sellable-items/sellableItemFrequency';
-import { EMPTY_VALUE } from '@/app/[locale]/financials/sellable-items/sellableItemProfile';
+} from '@/app/[locale]/financials/products/productFrequency';
+import { EMPTY_VALUE } from '@/app/[locale]/financials/products/productProfile';
 
-// #821 / #945 — a Sellable Item's Billing Frequency dropdown offers four choices.
+// #821 / #945 — a Product's Billing Frequency dropdown offers four choices.
 //
 //   Before #821:  — / Once / Per Session / 4 Weeks / Week / Month / Year
 //   After  #821:  — / Once / Per Session / 4 Weeks / Month / Year
@@ -19,7 +19,7 @@ import { EMPTY_VALUE } from '@/app/[locale]/financials/sellable-items/sellableIt
 // Neither retired value is deleted from the data: an item configured before the
 // ticket that retired it still stores it, still bills on it and still
 // classifies into the same benefit section. The API is what enforces the rule
-// (`api/src/domain/sellableItemFrequency.ts`, exercised by `gym-charges.test.ts`);
+// (`api/src/domain/productFrequency.ts`, exercised by `gym-charges.test.ts`);
 // this file covers the declaration and the two places the page renders it — the
 // inline create card and the inline editor, which must render the same list (#805).
 //
@@ -28,7 +28,7 @@ import { EMPTY_VALUE } from '@/app/[locale]/financials/sellable-items/sellableIt
 // does, while the declaration's pure parts are exercised directly.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const PAGE = join(__dirname, '..', 'app', '[locale]', 'financials', 'sellable-items', 'page.tsx');
+const PAGE = join(__dirname, '..', 'app', '[locale]', 'financials', 'products', 'page.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 function stripComments(src: string): string {
@@ -37,9 +37,9 @@ function stripComments(src: string): string {
 
 const pageSrc = stripComments(readFileSync(PAGE, 'utf-8'));
 
-function sellableItemsNamespace(code: string): Record<string, string> {
+function productsNamespace(code: string): Record<string, string> {
   const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
-  return (messages.sellable_items ?? {}) as Record<string, string>;
+  return (messages.products ?? {}) as Record<string, string>;
 }
 
 describe('the declaration', () => {
@@ -127,14 +127,14 @@ describe('the page renders the declaration, not its own list', () => {
   });
 });
 
-// #945 §2: "Configuring a Sellable Item within other entities, where the same
+// #945 §2: "Configuring a Product within other entities, where the same
 // Billing Frequency selector is used." There is no such other entity — the
 // offered list has exactly one consumer, and every other surface *displays* a
 // stored frequency (`t(`frequency_${value}`)`, legacy values included) rather
 // than offering it. This pins that, so a second selector cannot appear
 // somewhere that keeps offering Per Session.
 describe('the offered list has one consumer', () => {
-  it('is imported by the sellable-items page and nothing else', () => {
+  it('is imported by the products page and nothing else', () => {
     const roots = [join(__dirname, '..', 'app'), join(__dirname, '..', 'components'), join(__dirname, '..', 'lib')];
     const importers: string[] = [];
     const walk = (dir: string) => {
@@ -142,16 +142,16 @@ describe('the offered list has one consumer', () => {
         const full = join(dir, entry.name);
         if (entry.isDirectory()) { walk(full); continue; }
         if (!/\.tsx?$/.test(entry.name)) continue;
-        if (entry.name === 'sellableItemFrequency.ts') continue; // the declaration itself
-        if (readFileSync(full, 'utf-8').includes("from './sellableItemFrequency'")
-          || readFileSync(full, 'utf-8').includes('financials/sellable-items/sellableItemFrequency')) {
+        if (entry.name === 'productFrequency.ts') continue; // the declaration itself
+        if (readFileSync(full, 'utf-8').includes("from './productFrequency'")
+          || readFileSync(full, 'utf-8').includes('financials/products/productFrequency')) {
           importers.push(full);
         }
       }
     };
     for (const root of roots) walk(root);
     expect(importers.map((f) => f.replace(join(__dirname, '..'), ''))).toEqual([
-      join('/app', '[locale]', 'financials', 'sellable-items', 'page.tsx'),
+      join('/app', '[locale]', 'financials', 'products', 'page.tsx'),
     ]);
   });
 });
@@ -159,16 +159,16 @@ describe('the offered list has one consumer', () => {
 describe('translations', () => {
   it('keeps a label for every option, the retired ones included', () => {
     for (const code of LOCALE_CODES) {
-      const ns = sellableItemsNamespace(code);
+      const ns = productsNamespace(code);
       for (const f of [...OFFERED_FREQUENCIES, ...LEGACY_FREQUENCIES]) {
-        expect(ns[`frequency_${f}`], `${code}.sellable_items.frequency_${f}`).toBeTruthy();
+        expect(ns[`frequency_${f}`], `${code}.products.frequency_${f}`).toBeTruthy();
       }
     }
   });
 
   it('has the legacy notice in all three languages, interpolating the frequency', () => {
     for (const code of LOCALE_CODES) {
-      const notice = sellableItemsNamespace(code).frequency_legacy_notice;
+      const notice = productsNamespace(code).frequency_legacy_notice;
       expect(notice, code).toBeTruthy();
       // #945: two retired values now, so the sentence can no longer name one
       // of them itself — it takes the label as a value.

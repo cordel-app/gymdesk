@@ -21,12 +21,12 @@ import {
   BillingEventSimulationData,
 } from '@/components/BillingEventSimulation';
 import {
-  SellableItemBenefitEditor,
-  SellableItemBenefitRow,
-  SellableItemBenefitView,
+  ProductBenefitEditor,
+  ProductBenefitRow,
+  ProductBenefitView,
   invalidBenefitValueRow,
   toBenefitItems,
-} from '@/components/SellableItemBenefits';
+} from '@/components/ProductBenefits';
 import { PromotionDetailModal } from './PromotionDetailModal';
 import { mfDurationOptions, promotionTimelineMonths } from './membershipFeeDuration';
 import { isAllSelected, isIndeterminate, toggleSelectAll } from '@/lib/suitablePlansSelection';
@@ -86,8 +86,8 @@ interface GymCharge {
   type: string;
   billing_frequency: string | null;
   status: string;
-  // #550: server-computed via classifySellableItem() — the single source of
-  // truth for which Promotion benefit section a Sellable Item belongs to.
+  // #550: server-computed via classifyProduct() — the single source of
+  // truth for which Promotion benefit section a Product belongs to.
   benefit_category: 'session' | 'oneoff' | 'periodical';
 }
 interface ChargeType { id: number; code: string; name: string; is_gym_charge: number }
@@ -112,18 +112,18 @@ interface MembershipFeeBenefit {
 
 // #550 stage 3: Session / One-off / Periodical Benefits — replaces the old
 // Included Benefits + generic Period Benefits sections, keyed to a real
-// Sellable Item (`gym_charges`) instead of the old `charge_types`
+// Product (`gym_charges`) instead of the old `charge_types`
 // pseudo-catalog. `gym_charge_*` fields come straight off GET
 // /promotions/:id/{session,oneoff,periodical}-benefits (joined server-side),
 // which is why an item that has since gone inactive still resolves to its
 // real name/status here instead of falling back to "#<id>" — same pattern as
 // Suitable Membership Plans (#554) and Suitable Membership Plans' `cachedPlans`.
 // #896 stage 4: the row shape is the shared component's, not a second copy of
-// it. The three sections are rendered by `SellableItemBenefitEditor` /
-// `SellableItemBenefitView` now — the markup was duplicated here from the day
+// it. The three sections are rendered by `ProductBenefitEditor` /
+// `ProductBenefitView` now — the markup was duplicated here from the day
 // Plans got the same sections (#635 stage 1), and the (action, value) pair this
 // ticket adds is exactly the kind of field the two copies would have drifted on.
-type SellableItemBenefit = SellableItemBenefitRow;
+type ProductBenefit = ProductBenefitRow;
 
 // #627: Promotion editing is split by section — the main Promotion
 // configuration (General, Suitable Membership Plans, Billing & Duration) and
@@ -137,18 +137,18 @@ type SellableItemBenefit = SellableItemBenefitRow;
 // `openSection` is which Benefit section's editor is open inside that mode —
 // at most one, which is what keeps the single set of drafts below unambiguous.
 type BenefitSection = 'session' | 'oneoff' | 'periodical' | 'membership_fee';
-type SellableBenefitSection = Exclude<BenefitSection, 'membership_fee'>;
+type ProductBenefitSection = Exclude<BenefitSection, 'membership_fee'>;
 
-const SELLABLE_BENEFIT_ENDPOINT: Record<SellableBenefitSection, string> = {
+const PRODUCT_BENEFIT_ENDPOINT: Record<ProductBenefitSection, string> = {
   session: 'session-benefits',
   oneoff: 'oneoff-benefits',
   periodical: 'periodical-benefits',
 };
 
-// The three Sellable-Item-keyed Benefit sections (#550), each rendered — and
+// The three Product-keyed Benefit sections (#550), each rendered — and
 // since #627 edited and saved — independently of the others.
-const SELLABLE_BENEFIT_SECTIONS: {
-  section: SellableBenefitSection;
+const PRODUCT_BENEFIT_SECTIONS: {
+  section: ProductBenefitSection;
   titleKey: string;
   emptyKey: string;
   addKey: string;
@@ -157,7 +157,7 @@ const SELLABLE_BENEFIT_SECTIONS: {
   // #919/#920: `showFrequency` is true for all three, not only the Periodical
   // section. The flag is the *page's* now rather than the section's — one grid
   // for the three, so `QUANTITY`, `FREQUENCY` and `PROMOTION` sit at the same
-  // horizontal position in each, and a Session or One-off item whose Sellable
+  // horizontal position in each, and a Session or One-off item whose Product
   // Item carries no frequency keeps its cell with a "—" instead of letting the
   // columns after it shift. Same answer #916 gave the Membership Plan card.
   { section: 'session', titleKey: 'section_session_benefits', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', showFrequency: true },
@@ -291,9 +291,9 @@ export default function PromotionsPage() {
   // to its name instead of falling back to "#<id>" (#554).
   const [cachedPlans, setCachedPlans] = useState<Record<number, AssociatedPlan[]>>({});
   const [cachedMf, setCachedMf] = useState<Record<number, MembershipFeeBenefit | null>>({});
-  const [cachedSessionB, setCachedSessionB] = useState<Record<number, SellableItemBenefit[]>>({});
-  const [cachedOneoffB, setCachedOneoffB] = useState<Record<number, SellableItemBenefit[]>>({});
-  const [cachedPeriodicalB, setCachedPeriodicalB] = useState<Record<number, SellableItemBenefit[]>>({});
+  const [cachedSessionB, setCachedSessionB] = useState<Record<number, ProductBenefit[]>>({});
+  const [cachedOneoffB, setCachedOneoffB] = useState<Record<number, ProductBenefit[]>>({});
+  const [cachedPeriodicalB, setCachedPeriodicalB] = useState<Record<number, ProductBenefit[]>>({});
   // #922 — the Billing Event Simulation, computed by the server on every read
   // (GET /promotions/:id/billing-event-simulation) and persisted nowhere. Cached
   // per Promotion like the sections above it, and reloaded with them whenever a
@@ -305,9 +305,9 @@ export default function PromotionsPage() {
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm());
   const [plansDraft, setPlansDraft] = useState<number[]>([]);
   const [mfDraft, setMfDraft] = useState<MembershipFeeBenefit | null>(null);
-  const [sessionDraft, setSessionDraft] = useState<SellableItemBenefit[]>([]);
-  const [oneoffDraft, setOneoffDraft] = useState<SellableItemBenefit[]>([]);
-  const [periodicalDraft, setPeriodicalDraft] = useState<SellableItemBenefit[]>([]);
+  const [sessionDraft, setSessionDraft] = useState<ProductBenefit[]>([]);
+  const [oneoffDraft, setOneoffDraft] = useState<ProductBenefit[]>([]);
+  const [periodicalDraft, setPeriodicalDraft] = useState<ProductBenefit[]>([]);
 
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
@@ -324,7 +324,7 @@ export default function PromotionsPage() {
 
   const membershipFeeName = chargeTypes.find((c) => c.code === 'membership_fee')?.name ?? 'Membership Fee';
 
-  // #550: active, tenant-scoped Sellable Items, grouped by the server-computed
+  // #550: active, tenant-scoped Products, grouped by the server-computed
   // `benefit_category` — the only classification source of truth (never
   // re-derived from name/type/frequency here). New selections only ever come
   // from these three lists; an item already associated with a promotion but
@@ -504,9 +504,9 @@ export default function PromotionsPage() {
       const [ap, mf, sessionB, oneoffB, periodicalB, simulation] = await Promise.all([
         apiFetch<AssociatedPlan[]>(`/promotions/${promoId}/plans`),
         apiFetch<MembershipFeeBenefit | null>(`/promotions/${promoId}/membership-fee-benefit`),
-        apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/session-benefits`),
-        apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/oneoff-benefits`),
-        apiFetch<SellableItemBenefit[]>(`/promotions/${promoId}/periodical-benefits`),
+        apiFetch<ProductBenefit[]>(`/promotions/${promoId}/session-benefits`),
+        apiFetch<ProductBenefit[]>(`/promotions/${promoId}/oneoff-benefits`),
+        apiFetch<ProductBenefit[]>(`/promotions/${promoId}/periodical-benefits`),
         // Its own failure handling: a projection that cannot be loaded leaves
         // that one section saying so, rather than blanking the card's five
         // configured sections with it.
@@ -523,7 +523,7 @@ export default function PromotionsPage() {
     } catch {
       return {
         ap: [] as AssociatedPlan[], mf: null as MembershipFeeBenefit | null,
-        sessionB: [] as SellableItemBenefit[], oneoffB: [] as SellableItemBenefit[], periodicalB: [] as SellableItemBenefit[],
+        sessionB: [] as ProductBenefit[], oneoffB: [] as ProductBenefit[], periodicalB: [] as ProductBenefit[],
       };
     }
   }
@@ -684,7 +684,7 @@ export default function PromotionsPage() {
       }
 
       // #550: Session / One-off / Periodical Benefits, keyed to a real
-      // Sellable Item — server-side classification (classifySellableItem())
+      // Product — server-side classification (classifyProduct())
       // is the enforcement backstop, this is just the replace-all payload shape.
       await apiFetch(`/promotions/${id}/session-benefits`, {
         method: 'PUT',
@@ -725,7 +725,7 @@ export default function PromotionsPage() {
     setEditError(null);
     try {
       await apiFetch(`/promotions/${promoId}`, { method: 'PUT', body: JSON.stringify(mainBody()) });
-      // #926: while the target is a Sellable Item neither Membership-Plan-specific
+      // #926: while the target is a Product neither Membership-Plan-specific
       // sub-resource is written. The Suitable Membership Plans `PUT` is
       // replace-all, so sending the (hidden, unedited) draft would be the
       // silent migration §4 forbids — switching the target back has to show the
@@ -786,13 +786,13 @@ export default function PromotionsPage() {
         // #896 §6: an action that asks for a value must carry one. The API
         // refuses the same shape; catching it here names the item instead of
         // reporting a bare field error.
-        const draft = sellableSectionDraft(section);
+        const draft = productSectionDraft(section);
         const incomplete = invalidBenefitValueRow(draft);
         if (incomplete) {
           setSectionError(t('benefit_value_required', { item: incomplete.gym_charge_name }));
           return;
         }
-        await apiFetch(`/promotions/${promoId}/${SELLABLE_BENEFIT_ENDPOINT[section]}`, {
+        await apiFetch(`/promotions/${promoId}/${PRODUCT_BENEFIT_ENDPOINT[section]}`, {
           method: 'PUT',
           body: JSON.stringify({ items: toBenefitItems(draft) }),
         });
@@ -864,25 +864,25 @@ export default function PromotionsPage() {
   // silently discard the unsaved draft it shares state with.
   const sectionEditBusy = openSection !== null;
 
-  function sellableSectionDraft(section: SellableBenefitSection): SellableItemBenefit[] {
+  function productSectionDraft(section: ProductBenefitSection): ProductBenefit[] {
     if (section === 'session') return sessionDraft;
     if (section === 'oneoff') return oneoffDraft;
     return periodicalDraft;
   }
 
-  function sellableSectionSetDraft(section: SellableBenefitSection) {
+  function productSectionSetDraft(section: ProductBenefitSection) {
     if (section === 'session') return setSessionDraft;
     if (section === 'oneoff') return setOneoffDraft;
     return setPeriodicalDraft;
   }
 
-  function sellableSectionItems(section: SellableBenefitSection): GymCharge[] {
+  function productSectionItems(section: ProductBenefitSection): GymCharge[] {
     if (section === 'session') return activeSessionItems;
     if (section === 'oneoff') return activeOneoffItems;
     return activePeriodicalItems;
   }
 
-  function sellableSectionSaved(promoId: number, section: SellableBenefitSection): SellableItemBenefit[] {
+  function productSectionSaved(promoId: number, section: ProductBenefitSection): ProductBenefit[] {
     if (section === 'session') return cachedSessionB[promoId] ?? [];
     if (section === 'oneoff') return cachedOneoffB[promoId] ?? [];
     return cachedPeriodicalB[promoId] ?? [];
@@ -970,21 +970,21 @@ export default function PromotionsPage() {
 
   // #550/#635: the Session / One-off / Periodical Promotion sections are the
   // same grid the Membership Plan card renders, so since #896 stage 4 there is
-  // one implementation of it — `SellableItemBenefitEditor`. These two wrappers
+  // one implementation of it — `ProductBenefitEditor`. These two wrappers
   // stay because the sections are picked by name elsewhere on the page (#627's
   // one-section-at-a-time shell) and because this is where the Promotion's own
   // context is named: five options, and every label out of the `promotions`
   // namespace, which is what makes the very same stored `no_benefit` read as
   // *No promotion* here and *No benefit* on the Plans page (§3).
-  function renderSellableItemBenefitEditor(opts: {
+  function renderProductBenefitEditor(opts: {
     addKey: string;
-    draft: SellableItemBenefit[];
-    setDraft: (fn: (prev: SellableItemBenefit[]) => SellableItemBenefit[]) => void;
+    draft: ProductBenefit[];
+    setDraft: (fn: (prev: ProductBenefit[]) => ProductBenefit[]) => void;
     categoryItems: GymCharge[];
     showFrequency: boolean;
   }) {
     return (
-      <SellableItemBenefitEditor
+      <ProductBenefitEditor
         t={(key, values) => t(key as any, values as any)}
         addKey={opts.addKey}
         draft={opts.draft}
@@ -1001,13 +1001,13 @@ export default function PromotionsPage() {
     );
   }
 
-  // Read-only counterpart of renderSellableItemBenefitEditor — what a section
+  // Read-only counterpart of renderProductBenefitEditor — what a section
   // shows until its own Edit button is pressed (#627).
-  function renderSellableItemBenefitView(
-    emptyKey: string, rows: SellableItemBenefit[], showFrequency: boolean,
+  function renderProductBenefitView(
+    emptyKey: string, rows: ProductBenefit[], showFrequency: boolean,
   ) {
     return (
-      <SellableItemBenefitView
+      <ProductBenefitView
         t={(key, values) => t(key as any, values as any)}
         emptyKey={emptyKey}
         rows={rows}
@@ -1017,7 +1017,7 @@ export default function PromotionsPage() {
         // editor holds.
         showRequirement
         // #920: Regular Price and Final Price, both VAT-inclusive and both the
-        // server's (`withSellableItemBenefitPrices`) — the page does no
+        // server's (`withProductBenefitPrices`) — the page does no
         // arithmetic of its own (#817). The two columns are labelled from the
         // `promotions` namespace, which is why the shared `col_original_price`
         // reads *Regular Price* here and *Original price* on the Plans card.
@@ -1169,7 +1169,7 @@ export default function PromotionsPage() {
 
         {/* Applies To (#926) — the two targets are mutually exclusive, so this
             is a radio group and not two checkboxes. It decides which
-            configuration below is relevant: a Promotion on a Sellable Item has
+            configuration below is relevant: a Promotion on a Product has
             no membership fee and no Plan eligibility, so the Membership Fee
             Promotion and Suitable Membership Plans sections are not shown for
             it. Switching back shows them again with what was stored — nothing
@@ -1199,7 +1199,7 @@ export default function PromotionsPage() {
             is enforced server-side both here (active-plan validation on save)
             and at apply-time (membership-promotions.ts checks this same table).
             #926: Membership-Plan-specific, so it is not shown while the target
-            is a Sellable Item. */}
+            is a Product. */}
         {targetsMembershipPlan(editForm.applies_to) && (
         <div style={subSectionSt}>
           {/* #963: Retry sits beside the section title like every other
@@ -1447,7 +1447,7 @@ export default function PromotionsPage() {
     );
   }
 
-  function renderSellableBenefitSection(promo: Promo, cfg: (typeof SELLABLE_BENEFIT_SECTIONS)[number]) {
+  function renderProductBenefitSection(promo: Promo, cfg: (typeof PRODUCT_BENEFIT_SECTIONS)[number]) {
     const editing = isEditingSection(promo.id, cfg.section);
     return (
       <div key={cfg.section} style={subSectionSt}>
@@ -1460,16 +1460,16 @@ export default function PromotionsPage() {
         )}
         {editing ? (
           <>
-            {renderSellableItemBenefitEditor({
+            {renderProductBenefitEditor({
               addKey: cfg.addKey,
-              draft: sellableSectionDraft(cfg.section),
-              setDraft: sellableSectionSetDraft(cfg.section),
-              categoryItems: sellableSectionItems(cfg.section),
+              draft: productSectionDraft(cfg.section),
+              setDraft: productSectionSetDraft(cfg.section),
+              categoryItems: productSectionItems(cfg.section),
               showFrequency: cfg.showFrequency,
             })}
             {renderSectionError(sectionError)}
           </>
-        ) : renderSellableItemBenefitView(cfg.emptyKey, sellableSectionSaved(promo.id, cfg.section), cfg.showFrequency)}
+        ) : renderProductBenefitView(cfg.emptyKey, productSectionSaved(promo.id, cfg.section), cfg.showFrequency)}
       </div>
     );
   }
@@ -1511,9 +1511,9 @@ export default function PromotionsPage() {
         {/* #626: the Charge Benefits section was removed from the Promotion
             editor. Promotion benefits are configured only through the
             Session / One-off / Periodical and Membership Fee sections below. */}
-        {SELLABLE_BENEFIT_SECTIONS.map((cfg) => renderSellableBenefitSection(promo, cfg))}
+        {PRODUCT_BENEFIT_SECTIONS.map((cfg) => renderProductBenefitSection(promo, cfg))}
         {/* #926: the membership fee belongs to a Membership Plan, so this
-            section is absent — not disabled — for a Sellable Item Promotion.
+            section is absent — not disabled — for a Product Promotion.
             The stored benefit row is untouched and comes back with the section
             if the target is switched back. */}
         {cardTargetsMembershipPlan(promo) && renderMembershipFeeSection(promo)}
@@ -1522,7 +1522,7 @@ export default function PromotionsPage() {
             different questions: the Example Timeline is one row per period of
             the Promotion's own Free / Paid / Bonus timeline (the Membership Fee
             Promotion's own span), while the Billing Event Simulation below it
-            is one group per billing *date* over the Sellable Items the
+            is one group per billing *date* over the Products the
             Promotion affects. Neither replaces the other (#922). */}
         {renderTimeline()}
         {renderBillingEventSimulation(promo)}
@@ -1536,14 +1536,14 @@ export default function PromotionsPage() {
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
         {renderMainFields()}
-        {SELLABLE_BENEFIT_SECTIONS.map((cfg) => (
+        {PRODUCT_BENEFIT_SECTIONS.map((cfg) => (
           <div key={cfg.section} style={subSectionSt}>
             {renderSectionHeader(cfg.titleKey, null)}
-            {renderSellableItemBenefitEditor({
+            {renderProductBenefitEditor({
               addKey: cfg.addKey,
-              draft: sellableSectionDraft(cfg.section),
-              setDraft: sellableSectionSetDraft(cfg.section),
-              categoryItems: sellableSectionItems(cfg.section),
+              draft: productSectionDraft(cfg.section),
+              setDraft: productSectionSetDraft(cfg.section),
+              categoryItems: productSectionItems(cfg.section),
               showFrequency: cfg.showFrequency,
             })}
           </div>
@@ -1600,7 +1600,7 @@ export default function PromotionsPage() {
           </div>
         )}
 
-        {/* #926: Membership-Plan-specific, so absent for a Sellable Item
+        {/* #926: Membership-Plan-specific, so absent for a Product
             Promotion exactly as it is in the form above. */}
         {targetsMembershipPlan(target) && (
         <div style={subSectionSt}>

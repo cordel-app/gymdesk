@@ -2427,7 +2427,7 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
 // The engine itself is unit-tested in billing-simulation.test.ts — these cover
 // the routing, the guards, and what the loader actually reads out of the DB.
 
-async function createSellableItem(
+async function createProduct(
   gymId: string, name: string, type: string, billingFrequency: string, amount: number,
 ): Promise<number> {
   const { insertId } = await db.query(
@@ -2599,13 +2599,13 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     expect(res.body.horizon_date).toBe('2026-05-01');
   });
 
-  it('projects a Sellable Item granted by a promotion at its own billing frequency', async () => {
+  it('projects a Product granted by a promotion at its own billing frequency', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     await setBillingPolicy(gymId, planId, 1, 'month');
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
     const promoId = await createPromotion(gymId, planId, `Sim Locker ${Date.now()}`);
-    const itemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'four_weeks', 20);
+    const itemId = await createProduct(gymId, 'Locker Rental', 'service', 'four_weeks', 20);
     await grantPeriodicalItem(gymId, promoId, itemId, 1);
     await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
 
@@ -2620,14 +2620,14 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
   });
 
   // #631 — Additional Periodic Services are plain items on the assignment, so
-  // the simulation must bill them alongside everything else, at the Sellable
+  // the simulation must bill them alongside everything else, at the Product
   // Item's own frequency and price, and stop at their effective removal date.
   it('bills an Additional Periodic Service attached to the assignment', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     await setBillingPolicy(gymId, planId, 1, 'month');
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
-    const itemId = await createSellableItem(gymId, 'Personal Training', 'service', 'month', 30);
+    const itemId = await createProduct(gymId, 'Personal Training', 'service', 'month', 30);
     await db.query(
       `INSERT INTO user_membership_services (gym_id, user_membership_id, gym_charge_id, quantity, starts_at)
        VALUES (?, ?, ?, 2, '2026-04-01')`,
@@ -2654,7 +2654,7 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     const planId = await createPlan(gymId);
     await setBillingPolicy(gymId, planId, 1, 'month');
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
-    const itemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'month', 20);
+    const itemId = await createProduct(gymId, 'Locker Rental', 'service', 'month', 20);
     const promoId = await createPromotion(gymId, planId, `Sim Service Free ${Date.now()}`);
     await setPromotionDuration(promoId, { free: 3 });
     await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
@@ -2745,8 +2745,8 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     await setBillingPolicy(gymId, planId, 1, 'month');
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
     const promoId = await createPromotion(gymId, planId, `Sim Grants ${Date.now()}`);
-    const feeItem = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once', 50);
-    const sessionItem = await createSellableItem(gymId, 'Personal Training Class', 'sessions', 'per_session', 30);
+    const feeItem = await createProduct(gymId, 'Registration Fee', 'fee', 'once', 50);
+    const sessionItem = await createProduct(gymId, 'Personal Training Class', 'sessions', 'per_session', 30);
     // #896 — `waive` is the treatment that makes a granted item free; the
     // column's own default charges the normal price.
     await db.query(

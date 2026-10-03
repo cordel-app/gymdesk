@@ -4,7 +4,7 @@
 // Member's MEMBERSHIP PLANS / ADDITIONAL SERVICES sections read in one call.
 //
 // #931 removed the Member-level PROMOTIONS section: a Promotion applies to a
-// Membership Plan or a Sellable Item, never to a Member, so this payload reports
+// Membership Plan or a Product, never to a Member, so this payload reports
 // no promotions at all. The fixtures still *apply* promotions — that is what
 // makes the absence a regression test rather than a coincidence of empty data. Mounted in app.ts behind requireAuth + tenantContext +
 // requireModuleAccess('PAYMENTS') + requireFeatureEnabled('payments.transactions').
@@ -107,8 +107,8 @@ async function createAssignment(
   return insertId;
 }
 
-/** A recurring Sellable Item — the shape #631 allows as a periodic service. */
-async function createSellableItem(
+/** A recurring Product — the shape #631 allows as a periodic service. */
+async function createProduct(
   gymId: string, name: string, amount = 20, billingFrequency = 'month',
 ): Promise<number> {
   const { insertId } = await db.query(
@@ -290,7 +290,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
     const promoId = await createPromotion(gymId, planId, `Shape Spring ${uniq()}`);
     await applyPromotion(gymId, umId, promoId);
 
-    const itemId = await createSellableItem(gymId, `Locker Rental ${uniq()}`, 12.5);
+    const itemId = await createProduct(gymId, `Locker Rental ${uniq()}`, 12.5);
     const serviceId = await attachService(gymId, umId, itemId, { quantity: 2, startsAt: '2026-03-01' });
 
     const res = await getConfiguration(gymId, memberId);
@@ -348,7 +348,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
     const planId = await createPlan(gymId, 'Shape Shared Plan');
 
     const theirUm = await createAssignment(gymId, theirs, planId);
-    const itemId = await createSellableItem(gymId, `Shape Other Item ${uniq()}`);
+    const itemId = await createProduct(gymId, `Shape Other Item ${uniq()}`);
     await attachService(gymId, theirUm, itemId);
 
     const res = await getConfiguration(gymId, mine);
@@ -393,8 +393,8 @@ describe('GET /user-memberships/member/:memberId/configuration — parallel acti
     await applyPromotion(gymId, standardUm, standardPromo, { appliedAt: '2026-03-01 09:00:00' });
     await applyPromotion(gymId, premiumUm, premiumPromo, { appliedAt: '2026-05-01 09:00:00' });
 
-    const towels = await createSellableItem(gymId, `Parallel Towels ${uniq()}`, 10);
-    const locker = await createSellableItem(gymId, `Parallel Locker ${uniq()}`, 15);
+    const towels = await createProduct(gymId, `Parallel Towels ${uniq()}`, 10);
+    const locker = await createProduct(gymId, `Parallel Locker ${uniq()}`, 15);
     standardService = await attachService(gymId, standardUm, towels, { startsAt: '2026-03-01' });
     premiumService = await attachService(gymId, premiumUm, locker, { startsAt: '2026-05-01' });
   });
@@ -521,8 +521,8 @@ describe('GET /user-memberships/member/:memberId/configuration — is_live', () 
     await applyPromotion(gymId, liveUm, livePromo);
     await applyPromotion(gymId, deadUm, deadPromo);
 
-    const liveItem = await createSellableItem(gymId, `Excluded Live Item ${uniq()}`);
-    const deadItem = await createSellableItem(gymId, `Excluded Dead Item ${uniq()}`);
+    const liveItem = await createProduct(gymId, `Excluded Live Item ${uniq()}`);
+    const deadItem = await createProduct(gymId, `Excluded Dead Item ${uniq()}`);
     const liveService = await attachService(gymId, liveUm, liveItem, { startsAt: '2026-06-01' });
     await attachService(gymId, deadUm, deadItem, { startsAt: '2026-01-01', endsAt: '2026-05-31' });
 

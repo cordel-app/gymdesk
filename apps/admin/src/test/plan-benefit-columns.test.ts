@@ -3,19 +3,19 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   BENEFIT_ITEM_COLUMN_MIN_WIDTH,
-  SELLABLE_ITEM_BENEFIT_COLUMNS,
-  SellableItemBenefitColumnKey,
+  PRODUCT_BENEFIT_COLUMNS,
+  ProductBenefitColumnKey,
   benefitTableMinWidth,
   formatBenefitPrice,
-  sellableItemBenefitColumns,
-} from '@/components/SellableItemBenefits';
+  productBenefitColumns,
+} from '@/components/ProductBenefits';
 
-// #916 — the Membership Plan card's three Sellable Item sections must read as
+// #916 — the Membership Plan card's three Product sections must read as
 // one table, and each row must show what the item normally costs and what it
 // costs inside the Plan.
 //
 // The ticket's central invariant is that the sections no longer have
-// independent column layouts: `SELLABLE_ITEM_BENEFIT_COLUMNS` is the one
+// independent column layouts: `PRODUCT_BENEFIT_COLUMNS` is the one
 // declaration and every section renders from it, so a column a section has no
 // value for keeps its place with a "—" instead of vanishing and shifting the
 // columns after it.
@@ -33,7 +33,7 @@ function stripComments(src: string): string {
 }
 
 const componentSrc = stripComments(
-  readFileSync(join(SRC, 'components', 'SellableItemBenefits.tsx'), 'utf-8'),
+  readFileSync(join(SRC, 'components', 'ProductBenefits.tsx'), 'utf-8'),
 );
 const plansSrc = stripComments(
   readFileSync(join(SRC, 'app', '[locale]', 'plans', 'page.tsx'), 'utf-8'),
@@ -42,7 +42,7 @@ const promotionsSrc = stripComments(
   readFileSync(join(SRC, 'app', '[locale]', 'promotions', 'page.tsx'), 'utf-8'),
 );
 
-const keysOf = (cols: { key: SellableItemBenefitColumnKey }[]) => cols.map((c) => c.key);
+const keysOf = (cols: { key: ProductBenefitColumnKey }[]) => cols.map((c) => c.key);
 
 describe('#916: one shared column declaration', () => {
   it('fixes the column order the ticket asks for', () => {
@@ -50,22 +50,22 @@ describe('#916: one shared column declaration', () => {
     // between Benefit and the prices. It is off for every Plan section
     // (`showRequirement` defaults to false), so the Plan grid below is unchanged;
     // what the declaration pins is the order, not the length.
-    expect(keysOf([...SELLABLE_ITEM_BENEFIT_COLUMNS])).toEqual([
+    expect(keysOf([...PRODUCT_BENEFIT_COLUMNS])).toEqual([
       'item', 'quantity', 'frequency', 'action', 'requirement',
       'original_price', 'final_price',
     ]);
   });
 
   it('keeps Benefit between Frequency and the prices, never after them', () => {
-    const at = (key: SellableItemBenefitColumnKey) =>
-      SELLABLE_ITEM_BENEFIT_COLUMNS.findIndex((c) => c.key === key);
+    const at = (key: ProductBenefitColumnKey) =>
+      PRODUCT_BENEFIT_COLUMNS.findIndex((c) => c.key === key);
     expect(at('action')).toBeGreaterThan(at('frequency'));
     expect(at('action')).toBeLessThan(at('original_price'));
     expect(at('final_price')).toBeGreaterThan(at('original_price'));
   });
 
   it('right-aligns the numbers and left-aligns the words', () => {
-    const align = Object.fromEntries(SELLABLE_ITEM_BENEFIT_COLUMNS.map((c) => [c.key, c.align]));
+    const align = Object.fromEntries(PRODUCT_BENEFIT_COLUMNS.map((c) => [c.key, c.align]));
     expect(align).toMatchObject({
       item: 'left', quantity: 'right', frequency: 'left', action: 'left',
       requirement: 'left', original_price: 'right', final_price: 'right',
@@ -73,19 +73,19 @@ describe('#916: one shared column declaration', () => {
   });
 
   it('sizes every column but the name, which takes the rest', () => {
-    const flexible = SELLABLE_ITEM_BENEFIT_COLUMNS.filter((c) => c.width == null);
+    const flexible = PRODUCT_BENEFIT_COLUMNS.filter((c) => c.width == null);
     expect(keysOf(flexible)).toEqual(['item']);
-    for (const col of SELLABLE_ITEM_BENEFIT_COLUMNS) {
+    for (const col of PRODUCT_BENEFIT_COLUMNS) {
       if (col.width != null) expect(col.width).toBeGreaterThan(0);
     }
   });
 });
 
-describe('#916: sellableItemBenefitColumns()', () => {
+describe('#916: productBenefitColumns()', () => {
   const full = { showFrequency: true, showAction: true, showPrices: true };
 
   it('is the whole grid for the Membership Plan sections', () => {
-    expect(keysOf(sellableItemBenefitColumns(full))).toEqual([
+    expect(keysOf(productBenefitColumns(full))).toEqual([
       'item', 'quantity', 'frequency', 'action', 'original_price', 'final_price',
     ]);
   });
@@ -93,20 +93,20 @@ describe('#916: sellableItemBenefitColumns()', () => {
   it('gives every section of one page the same columns — the flags are the page\'s, not the section\'s', () => {
     // Called once per section with the same flags, it can only answer the same
     // grid, which is what makes the horizontal positions identical.
-    const oneoff = sellableItemBenefitColumns(full);
-    const periodical = sellableItemBenefitColumns(full);
+    const oneoff = productBenefitColumns(full);
+    const periodical = productBenefitColumns(full);
     expect(keysOf(oneoff)).toEqual(keysOf(periodical));
     expect(oneoff.map((c) => c.width)).toEqual(periodical.map((c) => c.width));
   });
 
   it('drops the two price columns for a caller that does not price its rows', () => {
-    expect(keysOf(sellableItemBenefitColumns({ ...full, showPrices: false }))).toEqual([
+    expect(keysOf(productBenefitColumns({ ...full, showPrices: false }))).toEqual([
       'item', 'quantity', 'frequency', 'action',
     ]);
   });
 
   it('drops the treatment column for a caller that named no context', () => {
-    expect(keysOf(sellableItemBenefitColumns({ ...full, showAction: false }))).toEqual([
+    expect(keysOf(productBenefitColumns({ ...full, showAction: false }))).toEqual([
       'item', 'quantity', 'frequency', 'original_price', 'final_price',
     ]);
   });
@@ -115,8 +115,8 @@ describe('#916: sellableItemBenefitColumns()', () => {
     for (const showFrequency of [true, false]) {
       for (const showAction of [true, false]) {
         for (const showPrices of [true, false]) {
-          const kept = keysOf(sellableItemBenefitColumns({ showFrequency, showAction, showPrices }));
-          const expected = keysOf([...SELLABLE_ITEM_BENEFIT_COLUMNS]).filter((k) => kept.includes(k));
+          const kept = keysOf(productBenefitColumns({ showFrequency, showAction, showPrices }));
+          const expected = keysOf([...PRODUCT_BENEFIT_COLUMNS]).filter((k) => kept.includes(k));
           expect(kept).toEqual(expected);
         }
       }
@@ -126,7 +126,7 @@ describe('#916: sellableItemBenefitColumns()', () => {
 
 describe('#916: the table scrolls rather than squashing', () => {
   it('adds up the fixed widths plus a floor for the name column', () => {
-    const columns = sellableItemBenefitColumns({
+    const columns = productBenefitColumns({
       showFrequency: true, showAction: true, showPrices: true,
     });
     const fixed = columns.reduce((sum, c) => sum + (c.width ?? 0), 0);
@@ -134,10 +134,10 @@ describe('#916: the table scrolls rather than squashing', () => {
   });
 
   it('asks for less room when a page shows fewer columns', () => {
-    const withPrices = sellableItemBenefitColumns({
+    const withPrices = productBenefitColumns({
       showFrequency: true, showAction: true, showPrices: true,
     });
-    const without = sellableItemBenefitColumns({
+    const without = productBenefitColumns({
       showFrequency: true, showAction: true, showPrices: false,
     });
     expect(benefitTableMinWidth(without)).toBeLessThan(benefitTableMinWidth(withPrices));
@@ -146,7 +146,7 @@ describe('#916: the table scrolls rather than squashing', () => {
 
 describe('#916: the read-only view renders from the declaration', () => {
   it('builds one grid for the section and renders every cell through it', () => {
-    expect(componentSrc).toContain('const columns = sellableItemBenefitColumns({');
+    expect(componentSrc).toContain('const columns = productBenefitColumns({');
     expect(componentSrc).toContain('<col key={col.key}');
     expect(componentSrc).toContain("<th key={col.key} style={{ ...thSt, textAlign: col.align }}>{t(col.labelKey)}</th>");
     expect(componentSrc).toContain('<td key={col.key} style={{ ...tdSt, textAlign: col.align }}>{cell(col, r)}</td>');
@@ -160,7 +160,7 @@ describe('#916: the read-only view renders from the declaration', () => {
 
   it('no longer spells the columns out one <th> at a time', () => {
     // The four inline headers the view carried before the shared declaration.
-    for (const key of ['col_sellable_item', 'col_quantity', 'col_frequency', 'col_item_action']) {
+    for (const key of ['col_product', 'col_quantity', 'col_frequency', 'col_item_action']) {
       expect(componentSrc, `${key} is still restated in the view's JSX`)
         .not.toContain(`<th style={thSt}>{t('${key}')}</th>`);
     }
@@ -189,7 +189,7 @@ describe('#916: the read-only view renders from the declaration', () => {
   });
 
   it('stays read-only — the price columns add no control (#797)', () => {
-    const start = componentSrc.indexOf('export function SellableItemBenefitView');
+    const start = componentSrc.indexOf('export function ProductBenefitView');
     expect(start).toBeGreaterThan(-1);
     const view = componentSrc.slice(start);
     for (const control of ['<input', '<select', '<textarea', '<button', 'onChange']) {
@@ -219,7 +219,7 @@ describe('#919/#920: the Promotions card shares the same declaration', () => {
   // #916 left the Promotion sections alone and said so here, because their
   // columns were this pair of tickets' question. They answered it: the three
   // Promotion sections read as one table too, with a Regular / Final Price pair
-  // of their own — the same `SELLABLE_ITEM_BENEFIT_COLUMNS` above, labelled from
+  // of their own — the same `PRODUCT_BENEFIT_COLUMNS` above, labelled from
   // the `promotions` namespace. See promotion-benefit-columns.test.ts for the
   // rest of it.
   it('asks for the price columns', () => {

@@ -6,9 +6,9 @@ import {
   sessionPackageNote,
   sessionPackageNoteForForm,
   taxNoteKey,
-} from '@/app/[locale]/financials/sellable-items/sellableItemPriceNotes';
+} from '@/app/[locale]/financials/products/productPriceNotes';
 
-// #942 — a Sellable Item of Type `Sessions` quotes the total price of the
+// #942 — a Product of Type `Sessions` quotes the total price of the
 // package, not the price of one session. `Units: 5` beside `Price: €50.00` reads
 // as €50.00 each, and the ticket is that the UI never says otherwise.
 //
@@ -18,12 +18,12 @@ import {
 // belongs beside a price, and the five places the page has to render it.
 //
 // apps/admin has no component-test infra (docs/architecture.md's TL;DR), so the
-// page is pinned by scanning its source the way sellable-item-frequency.test.ts
-// and sellable-items-price-label.test.ts do, while the declaration's pure parts
+// page is pinned by scanning its source the way product-frequency.test.ts
+// and products-price-label.test.ts do, while the declaration's pure parts
 // are exercised directly.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const PAGE = join(__dirname, '..', 'app', '[locale]', 'financials', 'sellable-items', 'page.tsx');
+const PAGE = join(__dirname, '..', 'app', '[locale]', 'financials', 'products', 'page.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 type Messages = Record<string, unknown>;
@@ -36,7 +36,7 @@ const locales = Object.fromEntries(
 ) as Record<(typeof LOCALE_CODES)[number], Messages>;
 
 function key(code: (typeof LOCALE_CODES)[number], k: string): string | undefined {
-  const ns = locales[code]['sellable_items'];
+  const ns = locales[code]['products'];
   if (ns == null || typeof ns !== 'object') return undefined;
   const value = (ns as Record<string, unknown>)[k];
   return typeof value === 'string' ? value : undefined;
@@ -172,7 +172,7 @@ describe('#942 the page renders the note everywhere a price surfaces', () => {
   it('asks the shared rule rather than testing the type itself', () => {
     // One rule, five call sites. A page spelling out `type === 'sessions'` beside
     // a price is a second rule that can drift from this one.
-    expect(source).toContain("from './sellableItemPriceNotes'");
+    expect(source).toContain("from './productPriceNotes'");
     expect(source).not.toMatch(/'sessions'\s*(?:===|!==)|(?:===|!==)\s*'sessions'/);
   });
 

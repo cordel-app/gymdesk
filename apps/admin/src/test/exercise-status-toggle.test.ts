@@ -11,7 +11,7 @@ import { join } from 'path';
 // the status, and the write gate and the base-exercise menu are unchanged.
 //
 // This repo has no component-test infra for apps/admin (see docs/architecture.md's
-// TL;DR), so — like sellable-items-price-label.test.ts (#670) — this scans the
+// TL;DR), so — like products-price-label.test.ts (#670) — this scans the
 // page source and the locale files.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');

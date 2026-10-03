@@ -35,7 +35,7 @@ import './api/plan-center-access';
 import { classPackagesRouter } from './api/class-packages';
 import { userClassPackagesRouter } from './api/user-class-packages';
 import { actionTypesRouter } from './api/action-types';
-import { sellableItemsRouter } from './api/sellable-items';
+import { productsRouter } from './api/products';
 import { taxesRouter } from './api/taxes';
 import { promotionsRouter } from './api/promotions';
 import { promotionDetailsRouter } from './api/promotion-details';
@@ -333,8 +333,8 @@ app.use('/financials/dashboard', requireAuth(), tenantContext, requireModuleAcce
 app.use('/benefit-types',    requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), benefitTypesRouter);
 app.use('/charge-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), chargeTypesRouter);
 app.use('/action-types',     requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), actionTypesRouter);
-app.use('/sellable-items',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.gym_charges'), sellableItemsRouter);
-// Reads depend only on the Financials group flag: Plans and Sellable Items load /taxes for
+app.use('/sellable-items',   requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.gym_charges'), productsRouter);
+// Reads depend only on the Financials group flag: Plans and Products load /taxes for
 // their tax dropdown. The Taxes page's own flag (financials.taxes) gates writes in the router (#610).
 app.use('/taxes',            requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials'), taxesRouter);
 app.use('/promotions',       requireAuth(), tenantContext, requireModuleAccess('FINANCIALS'), requireFeatureEnabled('financials.promotions'), promotionsRouter);

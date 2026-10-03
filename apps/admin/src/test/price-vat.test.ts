@@ -3,7 +3,7 @@ import { computeGrossFromPreservedNet, computeVatPreview } from '../lib/priceVat
 
 // #547 — Membership Plans Pricing section live VAT recalculation.
 // computeVatPreview mirrors the backend's computePriceFields()
-// (api/src/api/sellable-items.ts) exactly, so unit-testing it here also
+// (api/src/api/products.ts) exactly, so unit-testing it here also
 // pins the shared net/gross rounding contract between the two.
 
 describe('computeVatPreview', () => {

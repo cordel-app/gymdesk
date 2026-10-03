@@ -29,7 +29,7 @@ import {
   PlanSimulationItem,
   computePlanBillingEventSimulation,
 } from '../domain/planBillingEventSimulation';
-import { NO_SELLABLE_ITEM_BENEFIT } from '../domain/sellableItemBenefitActions';
+import { NO_PRODUCT_BENEFIT } from '../domain/productBenefitActions';
 
 const MONTH: PlanDurationCadence = { interval: 1, unit: 'month' };
 const FOUR_WEEKS: PlanDurationCadence = { interval: 4, unit: 'week' };
@@ -178,7 +178,7 @@ const item = (over: Partial<PlanSimulationItem> = {}): PlanSimulationItem => ({
   unitPriceInclTax: 15,
   quantity: 1,
   sessionFrequency: null,
-  benefit: NO_SELLABLE_ITEM_BENEFIT,
+  benefit: NO_PRODUCT_BENEFIT,
   mandatory: false,
   ...over,
 });

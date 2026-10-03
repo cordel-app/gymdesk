@@ -11,12 +11,12 @@ import {
   formValueStyle,
 } from '@/components/formChrome';
 import type {
-  VisibleSellableItemField,
-  VisibleSellableItemSection,
-} from './sellableItemProfile';
+  VisibleProductField,
+  VisibleProductSection,
+} from './productProfile';
 
 /**
- * #974 — the one layout of a Sellable Item's card.
+ * #974 — the one layout of a Product's card.
  *
  * Expanding the card reads and `⋮ → Edit` writes (#797), and until this
  * component the two drew the same five sections two different ways: the
@@ -30,9 +30,9 @@ import type {
  *
  * * **The layout cannot make a read-only field editable.** It renders whatever
  *   `renderField` / `renderValue` hand it; it holds no state, no control and no
- *   knowledge of a Sellable Item.
+ *   knowledge of a Product.
  * * **A field this row freezes is a value in both modes** (`editable: false`,
- *   which `visibleSellableItemSections()` decides). A System row's name, type
+ *   which `visibleProductSections()` decides). A System row's name, type
  *   and units are outside `PUT /sellable-items/:id`'s `is_system` guard, so the
  *   form has no business offering a control for them — and the read-only card
  *   still reports them.
@@ -45,7 +45,7 @@ import type {
  * `fieldLabel` and `sectionActions` are the page's, which is what keeps the
  * module's permission gate (`FINANCIALS`) out of the shared UI (#806).
  */
-export function SellableItemLayout({
+export function ProductLayout({
   sections,
   editing,
   sectionTitle,
@@ -54,25 +54,25 @@ export function SellableItemLayout({
   renderValue,
   sectionActions,
 }: {
-  sections: readonly VisibleSellableItemSection[];
+  sections: readonly VisibleProductSection[];
   /** True while `⋮ → Edit` is open on this row. */
   editing: boolean;
-  sectionTitle: (section: VisibleSellableItemSection) => string;
+  sectionTitle: (section: VisibleProductSection) => string;
   /** The field's label, already translated. The required marker is added here. */
-  fieldLabel: (field: VisibleSellableItemField) => string;
+  fieldLabel: (field: VisibleProductField) => string;
   /** The control under that label. Called only while editing an editable field. */
-  renderField: (field: VisibleSellableItemField) => React.ReactNode;
+  renderField: (field: VisibleProductField) => React.ReactNode;
   /** The persisted value, in the box the control occupies. */
-  renderValue: (field: VisibleSellableItemField) => React.ReactNode;
+  renderValue: (field: VisibleProductField) => React.ReactNode;
   /** A section's contextual actions, beside its title. */
-  sectionActions?: (section: VisibleSellableItemSection) => React.ReactNode;
+  sectionActions?: (section: VisibleProductSection) => React.ReactNode;
 }) {
   return (
     <>
       {sections.map((section, index) => (
         <div key={section.key} style={index === 0 ? cardSectionStyle : cardSectionDividedStyle}>
           <CardSectionHeader title={sectionTitle(section)} actions={sectionActions?.(section)} />
-          <div style={sellableItemGridStyle}>
+          <div style={productGridStyle}>
             {section.fields.map((field) => (
               <div key={field.key} style={field.fullWidth ? fullWidthCellStyle : undefined}>
                 {field.labelKey && (
@@ -97,7 +97,7 @@ export function SellableItemLayout({
  * put two half-width controls on a 360px screen, and the read-only list had no
  * grid at all.
  */
-export const sellableItemGridStyle: React.CSSProperties = {
+export const productGridStyle: React.CSSProperties = {
   display: 'grid',
   gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
   columnGap: 16,
@@ -112,10 +112,10 @@ export const fullWidthCellStyle: React.CSSProperties = { gridColumn: '1 / -1' };
  * the same border width and the same type, so nothing moves sideways when Edit
  * opens, and free text keeps its line breaks instead of stretching the card.
  */
-export const sellableItemValueStyle = formValueStyle;
+export const productValueStyle = formValueStyle;
 
 /** A `<textarea>` in that same box: free text, and the only control that grows. */
-export const sellableItemTextareaStyle: React.CSSProperties = {
+export const productTextareaStyle: React.CSSProperties = {
   ...formControlStyle,
   resize: 'vertical',
 };
@@ -125,7 +125,7 @@ export const sellableItemTextareaStyle: React.CSSProperties = {
  * both modes, so the control carries only the answer — and it occupies the
  * value's own box, which is what keeps the cell the same height either way.
  */
-export const sellableItemCheckboxCellStyle: React.CSSProperties = {
+export const productCheckboxCellStyle: React.CSSProperties = {
   ...formCheckboxLabelStyle,
   padding: formValueStyle.padding,
   border: formValueStyle.border,

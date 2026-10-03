@@ -1,5 +1,5 @@
 /**
- * #926: what a Promotion **applies to** — a Membership Plan, or a Sellable Item
+ * #926: what a Promotion **applies to** — a Membership Plan, or a Product
  * bought on its own.
  *
  * `promotions.applies_to` (migration 204) is configuration and nothing else in

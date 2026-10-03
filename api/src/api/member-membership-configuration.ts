@@ -21,7 +21,7 @@ import { currentMembershipFees } from './membership-fee-pricing';
  * nothing and persists nothing.
  *
  * #931 — it reports **no** Promotions. A Promotion applies to a Membership Plan
- * or a Sellable Item, never to a Member, so there is no Member-level Promotions
+ * or a Product, never to a Member, so there is no Member-level Promotions
  * section to feed: the applications an Assigned Plan was agreed with are read
  * from that assignment's own routes (GET /user-memberships/:id/promotions) and
  * displayed on the Assigned Plans card, from each application's own snapshot

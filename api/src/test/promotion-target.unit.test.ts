@@ -1,4 +1,4 @@
-// #926: what a Promotion applies to — a Membership Plan or a Sellable Item.
+// #926: what a Promotion applies to — a Membership Plan or a Product.
 // Pure module, no DB and no HTTP.
 //
 // The value crosses the wire four ways, so this file asserts all four agree:
@@ -62,7 +62,7 @@ describe('migration 204\'s CHECK', () => {
 });
 
 describe('targetsMembershipPlan', () => {
-  it('is true for the Plan target and false for the Sellable Item one', () => {
+  it('is true for the Plan target and false for the Product one', () => {
     expect(targetsMembershipPlan('membership_plan')).toBe(true);
     expect(targetsMembershipPlan('sellable_item')).toBe(false);
   });

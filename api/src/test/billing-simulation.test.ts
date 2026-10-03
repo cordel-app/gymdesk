@@ -14,7 +14,7 @@ import {
   computeBillingSimulation,
 } from '../domain/billingSimulation';
 import { NO_PERSONAL_FEE_BENEFIT } from '../domain/personalFeeBenefit';
-import { NO_SELLABLE_ITEM_BENEFIT } from '../domain/sellableItemBenefitActions';
+import { NO_PRODUCT_BENEFIT } from '../domain/productBenefitActions';
 import { NO_PLAN_DURATION, toPlanDuration } from '../domain/planDuration';
 
 // #892 — a duration is a count of Billing Frequency periods; these cases are
@@ -106,7 +106,7 @@ function planBenefit(over: Partial<SimulationPlanBenefit> = {}): SimulationPlanB
     sessionFrequency: null,
     // #896 stage 3 — a Plan benefit is charged at its own price unless someone
     // configures a treatment, which is the column's default.
-    benefit: NO_SELLABLE_ITEM_BENEFIT,
+    benefit: NO_PRODUCT_BENEFIT,
     ...over,
   };
 }
@@ -228,7 +228,7 @@ describe('computeBillingSimulation — promotion periods (#629 §5)', () => {
   });
 });
 
-describe('computeBillingSimulation — sellable items granted by a promotion', () => {
+describe('computeBillingSimulation — products granted by a promotion', () => {
   it('projects a 4-week item with concrete period dates, free for the granted periods', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({ promotions: [promotion({ grants: [grant()] })] })],
@@ -510,7 +510,7 @@ describe('computeBillingSimulation — additional periodic services (#631)', () 
     expect(section(result, 'month')!.events[0].lines).toHaveLength(1);
   });
 
-  it('ignores a service whose Sellable Item has no recurring frequency', () => {
+  it('ignores a service whose Product has no recurring frequency', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({ services: [service({ billingFrequency: 'once' }), service({ id: 2, billingFrequency: null })] })],
     });
@@ -607,11 +607,11 @@ describe('computeBillingSimulation — Membership Plan benefits (#635)', () => {
   });
 });
 
-// #896 stage 3 — a Sellable Item configured in a Plan or granted by a
+// #896 stage 3 — a Product configured in a Plan or granted by a
 // Promotion carries its own (action, value) pair, and these are the cases that
 // pair changes. Everything above this block is the `waive` / `no_benefit`
 // configuration every existing row holds, which is why none of it moved.
-describe('computeBillingSimulation — Sellable Item benefit actions (#896)', () => {
+describe('computeBillingSimulation — Product benefit actions (#896)', () => {
   it('waives a Plan benefit for the life of the assignment', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({

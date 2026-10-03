@@ -1,6 +1,6 @@
 # Gymdesk
 
-Multi-tenant Gym Management SaaS — an admin app for managing members, staff, membership plans (billing policies, center restrictions) and their assignments, promotions, sellable items and taxes, the calendar (classes, events, spaces, operating hours, recurring personal-training bookings), class packages, training (exercises, workout and training-plan templates, member training plans and logs), nutrition (library, plan templates, member nutrition plans), billing and payments (MONEI), financial dashboards, per-gym theming and website self-registration — plus a member-facing app and a hosted payment page.
+Multi-tenant Gym Management SaaS — an admin app for managing members, staff, membership plans (billing policies, center restrictions) and their assignments, promotions, products and taxes, the calendar (classes, events, spaces, operating hours, recurring personal-training bookings), class packages, training (exercises, workout and training-plan templates, member training plans and logs), nutrition (library, plan templates, member nutrition plans), billing and payments (MONEI), financial dashboards, per-gym theming and website self-registration — plus a member-facing app and a hosted payment page.
 
 ## Requirements
 

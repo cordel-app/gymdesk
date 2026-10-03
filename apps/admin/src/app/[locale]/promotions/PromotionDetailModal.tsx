@@ -15,7 +15,7 @@ interface PromoDetail {
   ends_at: string;
   stackable: number;
   only_applicable_for_new_members: number;
-  // #926: a Promotion applies to a Membership Plan or to a Sellable Item.
+  // #926: a Promotion applies to a Membership Plan or to a Product.
   applies_to: string | null;
   lifecycle_status: string;
   created_at: string;

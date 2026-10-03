@@ -191,7 +191,7 @@ describe('POST /platform/gyms', () => {
     });
   });
 
-  // #543: the charge-type-based system Sellable Items (Registration Fee,
+  // #543: the charge-type-based system Products (Registration Fee,
   // Insurance Fee, etc.) must get name/type populated from charge_types at
   // seed time — previously left NULL, rendering as a blank name + "type_null".
   it('seeds charge-type-based system items with name/type populated from charge_types', async () => {

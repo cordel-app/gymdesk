@@ -17,7 +17,7 @@ export type PromotionTarget = 'membership_plan' | 'sellable_item';
 
 export const PROMOTION_TARGET_OPTIONS: readonly { value: PromotionTarget; labelKey: string }[] = [
   { value: 'membership_plan', labelKey: 'applies_to_membership_plan' },
-  { value: 'sellable_item', labelKey: 'applies_to_sellable_item' },
+  { value: 'sellable_item', labelKey: 'applies_to_product' },
 ];
 
 /**
