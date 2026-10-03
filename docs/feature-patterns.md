@@ -8,7 +8,7 @@ Always build pages from the shared components in `apps/admin/src/components/`: `
 
 Two list/edit shapes are both in active use — pick per-module, don't mix within one page:
 - **Modal CRUD** (`CrudModal` for Create/Edit/Details) — Class Types (`apps/admin/src/app/[locale]/class-types/`); use for simpler entities with few fields.
-- **Inline row CRUD** (Plans `apps/admin/src/app/[locale]/plans/`, Products `apps/admin/src/app/[locale]/financials/sellable-items/page.tsx`, Taxes `.../financials/taxes/page.tsx`) — no modal for Create or Edit: a "+ Add" button opens an inline creation row at the top of the list (`inlineNew` state, `renderInlineNewRow()`), each row expands/collapses in place (`expanded: Set<id>`, click header to toggle) showing read-only detail below the header when collapsed-detail is needed, and `Edit` from the row's `ContextMenu` swaps the row into an inline form (`editingId`/`editForm`) with Save/Cancel. `Details` from the `ContextMenu` just expands the same row read-only (no separate modal) — keep Details and Edit on one expanded component per row rather than building separate read-only and edit surfaces. **Exception:** Spaces and Activity Types (`activity-types/page.tsx`, #476) use a real `Details` modal instead, reserved for full audit metadata (`Created`/`Modified`/`Deleted At`/`By`) — the expanded row itself only shows operational information plus `Created At`/`By` and `Status` in the header, so a reader identifying/managing the entity never has to open the modal. Sub-resources of a row (Plans' Billing Policy, Centers, Allowances, Prices) follow the same rule: an inline "Edit"/"+ Add" toggle within the expanded section, not a nested modal. Prefer this shape when the entity benefits from at-a-glance scanning of many rows, has a truncatable long-text field (e.g. `description`) that should show a preview inline, or the module already has a sibling page using it (keep a module's pages visually consistent with each other). **Column layout (#637, Products):** the column headers and the collapsed rows must be laid out from **one** definition, not written twice. Products declares a `LIST_COLUMNS` array (label key + fixed px width, with `grow` on the single flexible column) and derives from it both the shared `gridTemplateColumns` string that `colHeaderStyle` and `rowStyle` spread, and a `LIST_MIN_WIDTH` used by an `overflow-x: auto` wrapper around the header *and* the rows, so a narrow viewport scrolls instead of dropping columns. Cells carry `minWidth: 0` + ellipsis rather than their own `minWidth: <px>`: with per-cell minimums on a flex row (the older shape, still used by most list pages) any value wider than its minimum widens that cell and pushes every column after it out of line with the header. The header also needs a `1px solid transparent` border to match the card border the rows sit inside. Follow this whenever a list grows past a handful of columns, and when touching an older flex-row list for alignment reasons.
+- **Inline row CRUD** (Plans `apps/admin/src/app/[locale]/plans/`, Products `apps/admin/src/app/[locale]/financials/products/page.tsx`, Taxes `.../financials/taxes/page.tsx`) — no modal for Create or Edit: a "+ Add" button opens an inline creation row at the top of the list (`inlineNew` state, `renderInlineNewRow()`), each row expands/collapses in place (`expanded: Set<id>`, click header to toggle) showing read-only detail below the header when collapsed-detail is needed, and `Edit` from the row's `ContextMenu` swaps the row into an inline form (`editingId`/`editForm`) with Save/Cancel. `Details` from the `ContextMenu` just expands the same row read-only (no separate modal) — keep Details and Edit on one expanded component per row rather than building separate read-only and edit surfaces. **Exception:** Spaces and Activity Types (`activity-types/page.tsx`, #476) use a real `Details` modal instead, reserved for full audit metadata (`Created`/`Modified`/`Deleted At`/`By`) — the expanded row itself only shows operational information plus `Created At`/`By` and `Status` in the header, so a reader identifying/managing the entity never has to open the modal. Sub-resources of a row (Plans' Billing Policy, Centers, Allowances, Prices) follow the same rule: an inline "Edit"/"+ Add" toggle within the expanded section, not a nested modal. Prefer this shape when the entity benefits from at-a-glance scanning of many rows, has a truncatable long-text field (e.g. `description`) that should show a preview inline, or the module already has a sibling page using it (keep a module's pages visually consistent with each other). **Column layout (#637, Products):** the column headers and the collapsed rows must be laid out from **one** definition, not written twice. Products declares a `LIST_COLUMNS` array (label key + fixed px width, with `grow` on the single flexible column) and derives from it both the shared `gridTemplateColumns` string that `colHeaderStyle` and `rowStyle` spread, and a `LIST_MIN_WIDTH` used by an `overflow-x: auto` wrapper around the header *and* the rows, so a narrow viewport scrolls instead of dropping columns. Cells carry `minWidth: 0` + ellipsis rather than their own `minWidth: <px>`: with per-cell minimums on a flex row (the older shape, still used by most list pages) any value wider than its minimum widens that cell and pushes every column after it out of line with the header. The header also needs a `1px solid transparent` border to match the card border the rows sit inside. Follow this whenever a list grows past a handful of columns, and when touching an older flex-row list for alignment reasons.
 
 Neither shape applies to a **read-only metric page** — a dashboard that only counts what other modules own. Finance → Dashboard (`apps/admin/src/app/[locale]/financials/page.tsx` + `api/src/api/financials-dashboard.ts`, #638) is the reference: a CSS-grid card wall (`repeat(auto-fill, minmax(220px, 1fr))`) of `var(--gd-card-bg)` cards — name, `StatusBadge`, then the number at 36px with its label under it — fed by one aggregating `GET` in a router of its own. Keep such a router free of writes, mount it on its module's **group** feature flag rather than a sibling page's flag (the Dashboard must survive that page being switched off), and aggregate with a `LEFT JOIN` + `GROUP BY` in SQL rather than counting in the page, so tenant scoping stays in the one `WHERE ... gym_id = ?`. Payments → Dashboard (`apps/admin/src/app/[locale]/payments/dashboard/page.tsx` + `api/src/api/payments-dashboard.ts`, #674) is the second instance and adds three refinements worth copying. **When the ticket asks for the Dashboard to be switchable on its own**, give it its own key (`payments.dashboard`, seeded by a migration — a missing key counts as enabled, so the row must exist for Cordel → Feature Flags to show it) rather than reusing the group flag; that still satisfies the "not a sibling page's flag" rule. **Mount a nested path before its prefix**: `app.use('/payments/dashboard', …)` has to be registered *above* `app.use('/payments', …)`, or the parent mount matches first and applies *its* flag and gates to the child. **Don't re-spell a derived value in SQL**: where a status is computed by a shared pure function (`domain/billingEventStatus.ts`), `GROUP BY` that function's *inputs* and map the groups through it in the router, so the card can't drift from the page that shows the same rows. Finally, when a card is scoped to a time window, compute the window once in UTC, use it for both the SQL range and any JS-side projection, and **return it in the response** so the page labels the period it actually counted instead of re-deriving a month in the browser's time zone. Nutrition → Dashboard (`apps/admin/src/app/[locale]/nutrition/page.tsx` + `api/src/api/nutrition-dashboard.ts`, #809) is the third instance and adds two more. **Drive the aggregate from the child side when the ticket says "no empty cards"**: grouping the *assignments* by their parent (rather than `LEFT JOIN`ing assignments onto every parent row) means a card exists only where a counted row exists, so "hide a parent with zero" needs no `HAVING`, and a parent the assignment cannot legitimately resolve to — another gym's row — collapses into the null group instead of leaking its name. **A null-parent bucket card is one row with null columns, labelled in the page**: the server answers `template_id: null, name: null, status: null` and the frontend renders its locale key and a `—` where the badge would go, so the bucket's name stays a translated UI label (`apps/*/locales/base/*.json`) rather than a string invented in SQL. **Reuse the derivation a list page already filters on**: the count of "active members" here is the Members list's own `enrollment_status`, so the SQL for it moved into `api/src/domain/memberEnrollment.ts` and both readers call it — a dashboard number that disagrees with the filter a user applies next is the defect that pattern prevents.
 
@@ -542,13 +542,13 @@ The Products card is the same pattern one step further: both halves of a
 not editable for some rows.
 
 1. **Sections are part of the declaration, not the JSX.**
-   `sellableItemProfile.ts` holds `SELLABLE_ITEM_SECTIONS` — the five sections
+   `productProfile.ts` holds `PRODUCT_SECTIONS` — the five sections
    in order, each with its own field list — plus the option sets its selects
-   offer and the row → form mapping. `SellableItemLayout.tsx` renders them
+   offer and the row → form mapping. `ProductLayout.tsx` renders them
    over `CardSectionHeader` + `cardSectionStyle`/`cardSectionDividedStyle`, so
    neither half spells a heading, a hairline or a grid.
 2. **One function decides what this row shows, and both halves call it.**
-   `visibleSellableItemSections({ isSystem, isSessionType })` drops the
+   `visibleProductSections({ isSystem, isSessionType })` drops the
    session-only section for a non-session item and the fields a System row has
    no use for, and returns `editable: false` for the columns that row freezes.
    A section left with no visible field is dropped rather than rendered as an
@@ -573,10 +573,10 @@ not editable for some rows.
    paddings move the first section's heading the moment Edit opens.
 
 Reference implementation:
-`[locale]/financials/sellable-items/page.tsx` over
-`[locale]/financials/sellable-items/SellableItemLayout.tsx` +
-`sellableItemProfile.ts`. Regression test:
-`apps/admin/src/test/sellable-items-expanded-read-only.test.ts`.
+`[locale]/financials/products/page.tsx` over
+`[locale]/financials/products/ProductLayout.tsx` +
+`productProfile.ts`. Regression test:
+`apps/admin/src/test/products-expanded-read-only.test.ts`.
 
 
 ### When expanding *was* the editor (#798)
@@ -967,9 +967,9 @@ presentation; do not re-decide anything.
    Divergence here is what makes the two sets of rows impossible to reason
    about together later.
 2. **Reuse the classifier, don't add a second one.**
-   `domain/sellableItemClassification.ts` gained
+   `domain/productClassification.ts` gained
    `planBenefitTableForCategory()` next to `benefitTableForCategory()`, but
-   `classifySellableItem()` stayed single. Two classifiers would let the same
+   `classifyProduct()` stayed single. Two classifiers would let the same
    Product land in a different section depending on what it is attached
    to.
 3. **Copy the endpoint contract verbatim**, including its rejections and its
@@ -977,13 +977,13 @@ presentation; do not re-decide anything.
    and the rule that only a *newly* selected item must be `active`. A shared
    frontend editor can only be shared if both endpoints answer the same way.
 4. **Extract the renderers, not the state.**
-   `components/SellableItemBenefits.tsx` holds the editor, the view and the
+   `components/ProductBenefits.tsx` holds the editor, the view and the
    row helpers; each page keeps its own drafts and decides what is editable.
    That is what lets one component serve two different editing models (#627's
    single `editingSection` on Promotions, a `{planId, section}` pair on Plans)
    without either page's state leaking into the other's. Promotions kept a
    private copy of the grid until #896 stage 4 and the two had already drifted;
-   its `renderSellableItemBenefitEditor` / `…View` are wrappers over the shared
+   its `renderProductBenefitEditor` / `…View` are wrappers over the shared
    component now. What *does* differ between the two screens is passed in:
    `benefitContext` picks the option set for a line's pricing treatment
    (`'promotion'` → five, `'plan'` → three, omitted → no column at all, which is
@@ -1133,13 +1133,13 @@ A plain many-to-many link between two already-existing gym-scoped catalog entiti
 
 1. **Join table** — `<a>_<b>`: `gym_id`, `<a>_id FK→a(id) ON DELETE CASCADE`, `<b>_id FK→b(id) ON DELETE CASCADE`, `UNIQUE (<a>_id, <b>_id)`, optional `created_at`/`created_by_membership_id`. No `status`/soft-delete column — presence of the row *is* the relationship; see migration 153 (`sellable_item_professional_services`) or 142 (`nutrition_library_item_categories`). Carries its own `gym_id` even though it's derivable from `<a>_id`, per the hard constraint that every domain table has one and every query filters by it.
 
-2. **Domain helpers**, not inlined in the router — `load<B>Map(aIds): Record<aId, B[]>` (batched `IN (...)` read, used by list/detail GETs), `validate<B>Ids(gymId, ids)` (400 if any id doesn't belong to this gym or the global/system pool), `replace<B>s(tx, gymId, aId, bIds, actorMembershipId)` (`DELETE` then re-`INSERT`, takes the caller's `Tx` so it always runs inside the same transaction as entity A's own insert/update — never a separate round trip). Reference: `domain/sellableItemProfessionalServices.ts`, `domain/nutritionLibrary.ts`.
+2. **Domain helpers**, not inlined in the router — `load<B>Map(aIds): Record<aId, B[]>` (batched `IN (...)` read, used by list/detail GETs), `validate<B>Ids(gymId, ids)` (400 if any id doesn't belong to this gym or the global/system pool), `replace<B>s(tx, gymId, aId, bIds, actorMembershipId)` (`DELETE` then re-`INSERT`, takes the caller's `Tx` so it always runs inside the same transaction as entity A's own insert/update — never a separate round trip). Reference: `domain/productProfessionalServices.ts`, `domain/nutritionLibrary.ts`.
 
 3. **Type-gating on the write side** — compute entity A's *effective* type after the write (the request's new type if changeable, otherwise its current one — some entities, like Products' system rows, can never change type). If the effective type doesn't match the gating value, **clear the relationship unconditionally** on that save (simplest safe default when no existing confirm-before-destructive-change pattern applies to the *relationship itself* — check whether one does before assuming this; it did not for #546, since the join table is only a catalog association, never a booking/purchase/billing record). If it does match and the request didn't touch the ids field, leave the existing selection untouched (ordinary partial-update semantics) rather than treating an omitted field as "clear". Never invent an "at least one required" rule unless the domain already has one.
 
 4. **Duplicate/copy actions** — copy the relationship only when the source entity's type matches the gate; no extra validation needed at copy time, since a duplicate always stays within the same gym the source's links were already validated against.
 
-5. **Frontend** — a chip-style checkbox multi-select (`chipCheckboxLabel` styling — blue-tinted when checked), rendered only when the gating field's current form value matches, in both the inline create row and the inline edit form; show it in read-only expanded/Details views too when applicable. Reference: `[locale]/nutrition/nutrition-library/page.tsx`'s category checkboxes, `[locale]/financials/sellable-items/page.tsx`'s Professional Services field. This is a smaller sibling of the "Config-Driven Conditional Form Fields" pattern above — the gating logic here is a single field/value check rather than a type→fields map, so it's written inline rather than factored into its own config module.
+5. **Frontend** — a chip-style checkbox multi-select (`chipCheckboxLabel` styling — blue-tinted when checked), rendered only when the gating field's current form value matches, in both the inline create row and the inline edit form; show it in read-only expanded/Details views too when applicable. Reference: `[locale]/nutrition/nutrition-library/page.tsx`'s category checkboxes, `[locale]/financials/products/page.tsx`'s Professional Services field. This is a smaller sibling of the "Config-Driven Conditional Form Fields" pattern above — the gating logic here is a single field/value check rather than a type→fields map, so it's written inline rather than factored into its own config module.
 
 ---
 
@@ -1633,7 +1633,7 @@ When a catalogue attribute means "every parent must carry this child" — a Mand
 - **The frontend is told, not trusted.** The shared editor takes an explicit opt-in prop (`enforceMandatory`) and the row carries the joined flag; it renders the row without a Remove control **and without a picker that could swap the item away**, plus the sentence saying why — in the form only (#797). Inferring the behaviour from "the field is present in the payload" would silently change the other page that shares the component the day its endpoint starts returning the column.
 - **A flag with one consumer is documented as having one.** The catalogue-side constraint in `CLAUDE.md` said "nothing reads it yet"; a ticket that reads it says which half it read and leaves the rest out of scope, so the next ticket still knows what has not been decided.
 
-Reference implementation: `api/src/domain/mandatoryPlanBenefits.ts` + the `PLAN_BENEFIT_ROUTES` loop in `api/src/api/membership-plans.ts` + `apps/admin/src/components/SellableItemBenefits.tsx`.
+Reference implementation: `api/src/domain/mandatoryPlanBenefits.ts` + the `PLAN_BENEFIT_ROUTES` loop in `api/src/api/membership-plans.ts` + `apps/admin/src/components/ProductBenefits.tsx`.
 
 ---
 
@@ -1683,7 +1683,7 @@ Reference implementation: `apps/admin/src/components/goalLibrary/` + `api/src/ap
 When a ticket asks that one card's section "look like" another card's — same information, two presentations — the answer is the **same component**, not a second stylesheet that happens to agree today:
 
 - **Extract the look, not the content.** `apps/admin/src/components/BillingDurationSummary.tsx` owns the `Label: Value` pairing, the typography, the horizontal spacing and the responsive wrap, and nothing else. Which items exist, how each value is formatted and what an unset value reads as stay with the page — a Promotion omits a zero month count, a Membership Plan spells out *Not configured* — so aligning the two screens visually never quietly changes what either one says.
-- **Labels arrive resolved.** The component takes no `useTranslations()`, because the two pages namespace their keys differently (`promotions.*` vs `plans.*`) — the same reason `SellableItemBenefits` and `ExampleTimeline` take theirs ready (#806's split).
+- **Labels arrive resolved.** The component takes no `useTranslations()`, because the two pages namespace their keys differently (`promotions.*` vs `plans.*`) — the same reason `ProductBenefits` and `ExampleTimeline` take theirs ready (#806's split).
 - **A read-only summary holds no control and no prose.** The section's Edit button stays in the page's own section header behind `⋮ → Edit` (#797), and a field's explanatory sentence belongs to the editor that sentence explains, not to the summary.
 - **A source-scanning test pins the reuse, not the markup.** `apps/admin` has no component-test infra, so the guard is: both pages import and render the shared component, *and* neither page restates the style literal. An assertion that pins JSX around a call (`value={f(…)}`) breaks the moment the call moves into an object — pin the call.
 
@@ -1695,17 +1695,17 @@ Reference implementation: `apps/admin/src/components/BillingDurationSummary.tsx`
 
 When one card carries several sections listing the *same kind of row* — a Membership Plan's One-off / Session / Period Benefits, or a Promotion's three Product sections — they are one data set split by meaning, not three tables. Three independently laid-out tables put `QUANTITY` at a different horizontal position in each section, which is what makes them unreadable together.
 
-- **Declare the columns once, and take the flags from the page.** `SELLABLE_ITEM_BENEFIT_COLUMNS` in `apps/admin/src/components/SellableItemBenefits.tsx` is the whole grid — key, label key, width, alignment, in the order a ticket fixes — and `sellableItemBenefitColumns({ showFrequency, showAction, showPrices })` is called with the *page's* flags rather than the section's. Called the same way three times it can only answer the same grid, which is what makes the positions identical; a per-section flag is how they drift apart again.
+- **Declare the columns once, and take the flags from the page.** `PRODUCT_BENEFIT_COLUMNS` in `apps/admin/src/components/ProductBenefits.tsx` is the whole grid — key, label key, width, alignment, in the order a ticket fixes — and `productBenefitColumns({ showFrequency, showAction, showPrices })` is called with the *page's* flags rather than the section's. Called the same way three times it can only answer the same grid, which is what makes the positions identical; a per-section flag is how they drift apart again.
 - **A column a section has no value for keeps its cell.** Render `—`, never `showFrequency: false` for the two sections whose items have no frequency: dropping the column shifts every column after it and the sections stop lining up. Adding the column also means adding the locale keys the newly visible values need (`frequency_once`, `frequency_per_session`) — next-intl prints a missing key verbatim.
 - **`table-layout: fixed` is what makes the declaration hold.** Without it a long name widens its own cell and the section falls out of line with the one above it. One `<colgroup>` from the declaration, `minWidth` from the sum of the fixed widths, and an `overflow-x: auto` wrapper so a narrow viewport scrolls instead of squashing (#637's answer for a list page).
 - **Money in such a table is the server's.** Two amounts per row — what the item normally costs and what it costs here — are computed once, server-side, over the *existing* pricing function (`applyLineBenefit()` through `api/src/domain/planBenefitPrices.ts`), so the table cannot quote a line differently from the simulation beside it; the page formats and does no arithmetic, tax least of all (#817). An item with no price reads `—`; €0.00 would claim it is free.
-- **A second card showing the same kind of row calls the same loader.** #920 gave the Promotion sections the pair #916 gave the Plan sections, and the way to do that is one more caller of `withSellableItemBenefitPrices()` (`api/src/api/sellable-item-benefit-pricing.ts`) with its own `context`, never a copy of the gross-up: two cards quoting one item two ways is the same defect one level up. The *labels* still differ per namespace — the shared `col_original_price` reads *Regular Price* on the Promotion card and *Original price* on the Plan card — which is what the per-namespace label keys are for.
+- **A second card showing the same kind of row calls the same loader.** #920 gave the Promotion sections the pair #916 gave the Plan sections, and the way to do that is one more caller of `withProductBenefitPrices()` (`api/src/api/product-benefit-pricing.ts`) with its own `context`, never a copy of the gross-up: two cards quoting one item two ways is the same defect one level up. The *labels* still differ per namespace — the shared `col_original_price` reads *Regular Price* on the Promotion card and *Original price* on the Plan card — which is what the per-namespace label keys are for.
 - **Report the unit and the line, when a quantity can make them differ.** "The item's price" and "what the line bills" are two questions. Quote the item's own price as the column figure and the line total under it only when the quantity makes the two differ, so a quantity-5 row can never quote €25 next to a billing event charging €125.
 - **A card showing *frozen* rows hands the frozen amount to the same decider.** #924 stage 1 is the third caller, and its rows are an Assigned Plan's snapshot: the price and the `(action, value)` pair are the ones agreed at assignment time (#635 §17), so the loader passes the line's own `unit_price` as the row's amount instead of joining `gym_charges.amount`, and the shared module prices it exactly as it prices a catalogue row. The one live column such a loader may read is the **tax treatment** — a statutory rate the snapshot never captured, and the only way to answer "tax included" at all — LEFT JOINed so a deleted item leaves the frozen amount as the honest gross. Reading the frozen price from the catalogue instead is the defect: the card would quote today's price beside a billing event charging what was agreed. A read-only card can also report a column its *editor* does not configure (the Assigned Plan's section `PUT` takes quantity alone); what it must not do is render a control the save cannot carry.
 
-- **A column only one page configures is still part of the one declaration.** #959 adds the Promotion line's *Requirement* (Mandatory / Optional), which no Membership Plan or Assigned Plan section has — so it is one more entry in `SELLABLE_ITEM_BENEFIT_COLUMNS` behind a `showRequirement` flag that **defaults to off**, passed by the Promotions page in both halves of its card through the same wrapper that names its benefit context. A flag defaulting to off is what keeps every other caller's grid byte-identical while the order stays fixed in one place; a second declaration, or a column inferred from the context prop, is how two cards start disagreeing about where a cell is. Two things come with it: the editor writes the new key into a draft row **only** where the flag is on (`addBenefitRow`'s `seed`), because `toBenefitItems()` submits a key only when the draft carries it and the replace-all `PUT` reads "not mentioned" as *keep what is stored*; and the value's own locale keys go in the owning page's namespace, so the shared cell resolves a label neither the component nor another page decides.
+- **A column only one page configures is still part of the one declaration.** #959 adds the Promotion line's *Requirement* (Mandatory / Optional), which no Membership Plan or Assigned Plan section has — so it is one more entry in `PRODUCT_BENEFIT_COLUMNS` behind a `showRequirement` flag that **defaults to off**, passed by the Promotions page in both halves of its card through the same wrapper that names its benefit context. A flag defaulting to off is what keeps every other caller's grid byte-identical while the order stays fixed in one place; a second declaration, or a column inferred from the context prop, is how two cards start disagreeing about where a cell is. Two things come with it: the editor writes the new key into a draft row **only** where the flag is on (`addBenefitRow`'s `seed`), because `toBenefitItems()` submits a key only when the draft carries it and the replace-all `PUT` reads "not mentioned" as *keep what is stored*; and the value's own locale keys go in the owning page's namespace, so the shared cell resolves a label neither the component nor another page decides.
 
-Reference implementation: `apps/admin/src/components/SellableItemBenefits.tsx` (`SELLABLE_ITEM_BENEFIT_COLUMNS`, `SellableItemBenefitView`) + `api/src/api/sellable-item-benefit-pricing.ts` over `api/src/domain/planBenefitPrices.ts`, called by `membership-plans.ts`, `promotion-details.ts`, `assigned-plan-snapshot.ts` and — since **#924 stage 2** — `membership-promotions.ts`, whose applied-Promotion grant sections price each line from its frozen `unit_price` and frozen pair in the `promotion` context.
+Reference implementation: `apps/admin/src/components/ProductBenefits.tsx` (`PRODUCT_BENEFIT_COLUMNS`, `ProductBenefitView`) + `api/src/api/product-benefit-pricing.ts` over `api/src/domain/planBenefitPrices.ts`, called by `membership-plans.ts`, `promotion-details.ts`, `assigned-plan-snapshot.ts` and — since **#924 stage 2** — `membership-promotions.ts`, whose applied-Promotion grant sections price each line from its frozen `unit_price` and frozen pair in the `promotion` context.
 
 ---
 
@@ -1917,12 +1917,12 @@ store it, and for a *price* — a Product billed weekly — there is no safe
 coercion: neither `month` nor `four_weeks` is the same period, so a backfill
 would change what a gym charges. The pattern is to split one set into two.
 
-- **Offered vs stored.** `api/src/domain/sellableItemFrequency.ts` declares
+- **Offered vs stored.** `api/src/domain/productFrequency.ts` declares
   `OFFERED_…` (what a write may *configure*, in dropdown order) and `LEGACY_…`
   (what the column may still *hold*). The CHECK is **not** narrowed — migration
   123 keeps permitting all six — so every existing row stays valid and no
   migration ships.
-- **One write rule, taking the row's current value.** `sellableItemFrequencyWriteError(next, current)`
+- **One write rule, taking the row's current value.** `productFrequencyWriteError(next, current)`
   returns the 400 message or `null`: `POST` passes `current = null` so a retired
   value is refused outright, `PUT` passes the stored value so the same value may
   be carried through **unchanged** and nothing may be moved onto it. Without that
@@ -1952,7 +1952,7 @@ one will need:
   resolved by `legacyFrequencyLabelKey(current)` **before** `t()` is called —
   next-intl has no `defaultValue` option and would print the key.
 - **"Bills identically" is still not a reason to backfill.** `per_session` and
-  `once` produce the same charges today (`cadenceForSellableItem()` gives neither
+  `once` produce the same charges today (`cadenceForProduct()` gives neither
   a schedule), so a coercion would have been behaviour-preserving — and #945 §3
   invites one "where the intended behaviour is known". It was declined anyway:
   what a gym *meant* by configuring Per Session is not knowable from the row, and
@@ -1965,9 +1965,9 @@ one will need:
   different questions. Retiring from one set must not touch the other's
   declaration or CHECK.
 
-Reference implementation: `api/src/domain/sellableItemFrequency.ts` +
-`apps/admin/src/app/[locale]/financials/sellable-items/sellableItemFrequency.ts`
-+ `api/src/test/sellable-item-frequency.unit.test.ts`.
+Reference implementation: `api/src/domain/productFrequency.ts` +
+`apps/admin/src/app/[locale]/financials/products/productFrequency.ts`
++ `api/src/test/product-frequency.unit.test.ts`.
 
 ### Renaming a label two entities share (#815)
 
@@ -2059,7 +2059,7 @@ For a single-row catalog entity (not a hierarchy — see "Duplicate at every lev
 - **Frontend**: a plain `ContextMenu` item → `apiFetch(POST .../duplicate)` → reload the list. No confirmation dialog, no intermediate form — the duplicate is simply an new editable row the user can then Edit like any other.
 - Child/related rows (prices, allowances, benefits…) are copied alongside the parent only if the entity actually has them — a flat entity like `gym_charges` has none, so its duplicate is a single `INSERT`; an entity with child tables copies them in the same `db.transaction()`.
 
-Reference implementations: `membership-plans.ts` `POST /:id/duplicate` (multi-table, transaction, resets lifecycle/enrollment) and `sellable-items.ts` `POST /:id/duplicate` (single-table, preserves status/enrollment, #545).
+Reference implementations: `membership-plans.ts` `POST /:id/duplicate` (multi-table, transaction, resets lifecycle/enrollment) and `products.ts` `POST /:id/duplicate` (single-table, preserves status/enrollment, #545).
 
 ---
 

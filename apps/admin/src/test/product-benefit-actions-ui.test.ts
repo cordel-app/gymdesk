@@ -8,20 +8,20 @@ import {
   benefitActionOf,
   benefitActionRequiresValue,
   benefitActionsFor,
-} from '@/lib/sellableItemBenefitActions';
+} from '@/lib/productBenefitActions';
 import {
-  SellableItemBenefitRow,
+  ProductBenefitRow,
   addBenefitRow,
   benefitTreatmentLabel,
   clampBenefitValue,
   invalidBenefitValueRow,
   toBenefitItems,
-} from '@/components/SellableItemBenefits';
+} from '@/components/ProductBenefits';
 
-// #896 stage 4 — the Sellable Item configured inside a Promotion or a
+// #896 stage 4 — the Product configured inside a Promotion or a
 // Membership Plan gains a pricing treatment beside its Quantity.
 //
-// The rule itself is the API's: `domain/sellableItemBenefitActions.ts` declares
+// The rule itself is the API's: `domain/productBenefitActions.ts` declares
 // the two option sets, `benefitConfigError()` is the 400 and the CHECK beside
 // each of the twelve tables is the backstop (stage 1/2, with their own tests).
 // Nothing here is enforcement. What is pinned is the part only the UI can get
@@ -43,13 +43,13 @@ import {
 
 const ROOT = join(__dirname, '..', '..', '..', '..');
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const COMPONENT = join(__dirname, '..', 'components', 'SellableItemBenefits.tsx');
+const COMPONENT = join(__dirname, '..', 'components', 'ProductBenefits.tsx');
 const PLANS_PAGE = join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx');
 const PROMOTIONS_PAGE = join(__dirname, '..', 'app', '[locale]', 'promotions', 'page.tsx');
 const ASSIGNED_PLAN = join(
   __dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans', 'AssignedPlanConfiguration.tsx',
 );
-const API_DECLARATION = join(ROOT, 'api', 'src', 'domain', 'sellableItemBenefitActions.ts');
+const API_DECLARATION = join(ROOT, 'api', 'src', 'domain', 'productBenefitActions.ts');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 function stripComments(src: string): string {
@@ -61,7 +61,7 @@ const plansSrc = stripComments(readFileSync(PLANS_PAGE, 'utf-8'));
 const promotionsSrc = stripComments(readFileSync(PROMOTIONS_PAGE, 'utf-8'));
 const assignedPlanSrc = stripComments(readFileSync(ASSIGNED_PLAN, 'utf-8'));
 
-function row(over: Partial<SellableItemBenefitRow> = {}): SellableItemBenefitRow {
+function row(over: Partial<ProductBenefitRow> = {}): ProductBenefitRow {
   return {
     gym_charge_id: 1, quantity: 1, gym_charge_name: 'Personal Training', gym_charge_type: 'fee',
     gym_charge_billing_frequency: null, gym_charge_status: 'active', ...over,
@@ -111,8 +111,8 @@ describe('the option sets mirror the API declaration', () => {
 
 describe('addBenefitRow seeds the neutral treatment', () => {
   it('adds a line that charges the item\'s own price until someone says otherwise', () => {
-    let draft: SellableItemBenefitRow[] = [];
-    const setDraft = (fn: (prev: SellableItemBenefitRow[]) => SellableItemBenefitRow[]) => {
+    let draft: ProductBenefitRow[] = [];
+    const setDraft = (fn: (prev: ProductBenefitRow[]) => ProductBenefitRow[]) => {
       draft = fn(draft);
     };
     addBenefitRow(setDraft, [{
@@ -127,7 +127,7 @@ describe('addBenefitRow seeds the neutral treatment', () => {
 describe('toBenefitItems', () => {
   it('sends quantity alone for a caller that configures no treatment', () => {
     // The Assigned Plan snapshot sections: their endpoint takes quantity only,
-    // and `parseSellableItemBenefitInput()` reads an unnamed action as "keep
+    // and `parseProductBenefitInput()` reads an unnamed action as "keep
     // what is stored" — sending a default here would clear a real discount.
     expect(toBenefitItems([row()])).toEqual([{ gym_charge_id: 1, quantity: 1 }]);
   });
@@ -210,7 +210,7 @@ describe('benefitTreatmentLabel', () => {
 
 describe('the shared editor renders the treatment', () => {
   it('gates the whole column on an explicit context', () => {
-    expect(componentSrc).toContain('benefitContext?: SellableItemBenefitContext;');
+    expect(componentSrc).toContain('benefitContext?: ProductBenefitContext;');
     expect(componentSrc).toContain("...(benefitContext ? ['130px', '110px'] : []),");
     expect(componentSrc).toContain("{benefitContext && <span style={colHeaderSt}>{t('col_item_action')}</span>}");
   });
@@ -234,7 +234,7 @@ describe('the shared editor renders the treatment', () => {
     // Only `action` is patched — the value survives, and toBenefitItems() is
     // what drops it from the payload while it does not apply.
     expect(componentSrc).toMatch(
-      /updateBenefitRow\(setDraft, categoryItems, idx, \{\s*action: e\.target\.value as SellableItemBenefitAction,\s*\}\)/,
+      /updateBenefitRow\(setDraft, categoryItems, idx, \{\s*action: e\.target\.value as ProductBenefitAction,\s*\}\)/,
     );
   });
 
@@ -255,7 +255,7 @@ describe('who names a context', () => {
   it('Promotions do, for both halves of every section', () => {
     expect(promotionsSrc.match(/benefitContext="promotion"/g) ?? []).toHaveLength(2);
     // …and render through the shared component rather than a second copy of it.
-    expect(promotionsSrc).toContain("from '@/components/SellableItemBenefits'");
+    expect(promotionsSrc).toContain("from '@/components/ProductBenefits'");
     expect(promotionsSrc).not.toContain('function addBenefitRow');
     expect(promotionsSrc).not.toContain('function updateBenefitRow');
   });
@@ -267,7 +267,7 @@ describe('who names a context', () => {
   it('the Assigned Plan snapshot editor does not', () => {
     // Its `PUT` takes quantity alone (#635 stage 6), so a dropdown there would
     // be a control that silently changes nothing.
-    const editor = (assignedPlanSrc.match(/<SellableItemBenefitEditor[\s\S]*?\/>/) ?? [''])[0];
+    const editor = (assignedPlanSrc.match(/<ProductBenefitEditor[\s\S]*?\/>/) ?? [''])[0];
     expect(editor, 'the Assigned Plan editor offers an action dropdown').not.toContain('benefitContext');
   });
 
@@ -276,7 +276,7 @@ describe('who names a context', () => {
     // stage 2), so the card has a real treatment to report — as a column of the
     // shared grid, in the Plan's own option set, which is where the line came
     // from. Reading it is not configuring it.
-    const view = (assignedPlanSrc.match(/<SellableItemBenefitView[\s\S]*?\/>/) ?? [''])[0];
+    const view = (assignedPlanSrc.match(/<ProductBenefitView[\s\S]*?\/>/) ?? [''])[0];
     expect(view).toContain('benefitContext="plan"');
   });
 

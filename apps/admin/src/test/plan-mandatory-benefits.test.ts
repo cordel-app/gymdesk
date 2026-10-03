@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  SellableItemBenefitRow,
+  ProductBenefitRow,
   addBenefitRow,
   isMandatoryBenefitRow,
-} from '@/components/SellableItemBenefits';
+} from '@/components/ProductBenefits';
 
-// #893 — a Mandatory Sellable Item is always part of a Membership Plan and the
+// #893 — a Mandatory Product is always part of a Membership Plan and the
 // editor must not allow it to be removed.
 //
 // The rule itself is the API's (`api/src/domain/mandatoryPlanBenefits.ts`, with
@@ -23,7 +23,7 @@ import {
 // does, while the shared module's pure parts are exercised directly.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const COMPONENT = join(__dirname, '..', 'components', 'SellableItemBenefits.tsx');
+const COMPONENT = join(__dirname, '..', 'components', 'ProductBenefits.tsx');
 const PLANS_PAGE = join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx');
 const PROMOTIONS_PAGE = join(__dirname, '..', 'app', '[locale]', 'promotions', 'page.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
@@ -38,7 +38,7 @@ const componentSrc = stripComments(readFileSync(COMPONENT, 'utf-8'));
 const plansSrc = stripComments(readFileSync(PLANS_PAGE, 'utf-8'));
 const promotionsSrc = stripComments(readFileSync(PROMOTIONS_PAGE, 'utf-8'));
 
-function row(over: Partial<SellableItemBenefitRow> = {}): SellableItemBenefitRow {
+function row(over: Partial<ProductBenefitRow> = {}): ProductBenefitRow {
   return {
     gym_charge_id: 1, quantity: 1, gym_charge_name: 'Insurance Fee', gym_charge_type: 'fee',
     gym_charge_billing_frequency: 'year', gym_charge_status: 'active', ...over,
@@ -58,8 +58,8 @@ describe('isMandatoryBenefitRow', () => {
 
 describe('addBenefitRow carries the mandatory flag', () => {
   it('seeds a hand-picked mandatory item as mandatory straight away', () => {
-    let draft: SellableItemBenefitRow[] = [];
-    const setDraft = (fn: (prev: SellableItemBenefitRow[]) => SellableItemBenefitRow[]) => {
+    let draft: ProductBenefitRow[] = [];
+    const setDraft = (fn: (prev: ProductBenefitRow[]) => ProductBenefitRow[]) => {
       draft = fn(draft);
     };
     addBenefitRow(setDraft, [{
@@ -71,8 +71,8 @@ describe('addBenefitRow carries the mandatory flag', () => {
   });
 
   it('defaults to non-mandatory for an item the catalogue does not flag', () => {
-    let draft: SellableItemBenefitRow[] = [];
-    const setDraft = (fn: (prev: SellableItemBenefitRow[]) => SellableItemBenefitRow[]) => {
+    let draft: ProductBenefitRow[] = [];
+    const setDraft = (fn: (prev: ProductBenefitRow[]) => ProductBenefitRow[]) => {
       draft = fn(draft);
     };
     addBenefitRow(setDraft, [{

@@ -22,14 +22,14 @@ import { ExampleTimeline } from '@/components/ExampleTimeline';
 import { BillingEventSimulation } from '@/components/BillingEventSimulation';
 import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import {
-  SellableItemBenefitEditor,
-  SellableItemBenefitView,
-  SellableItemBenefitRow,
+  ProductBenefitEditor,
+  ProductBenefitView,
+  ProductBenefitRow,
   BenefitFrequencyColumn,
-  SellableItemOption,
+  ProductOption,
   invalidBenefitValueRow,
   toBenefitItems,
-} from '@/components/SellableItemBenefits';
+} from '@/components/ProductBenefits';
 import {
   DEFAULT_PLAN_BILLING_FREQUENCY,
   EMPTY_PLAN_GENERAL_FORM,
@@ -93,7 +93,7 @@ interface PriceRow {
 // `type` / `billing_frequency` / `status` / `benefit_category` back the #635
 // Benefit pickers; `benefit_category` is computed server-side (#550) and is the
 // only classification source of truth — never re-derived here.
-interface GymCharge extends SellableItemOption {
+interface GymCharge extends ProductOption {
   charge_type_name: string | null;
   charge_type_code: string | null;
   amount: string | null;
@@ -116,11 +116,11 @@ interface Plan extends PlanGeneralRow {
   modified_at: string | null;
   modified_by_name: string | null;
   deleted_at: string | null;
-  // #635 stage 1: the three Sellable-Item-keyed Benefit sections, served with
+  // #635 stage 1: the three Product-keyed Benefit sections, served with
   // the plan so a card renders them without three extra round trips.
-  session_benefits: SellableItemBenefitRow[];
-  oneoff_benefits: SellableItemBenefitRow[];
-  periodical_benefits: SellableItemBenefitRow[];
+  session_benefits: ProductBenefitRow[];
+  oneoff_benefits: ProductBenefitRow[];
+  periodical_benefits: ProductBenefitRow[];
   // #635 §7: Billing & Duration. null = never configured, which reads
   // differently from an explicit 0. #892: each one is a count of this Plan's
   // own Billing Frequency periods, not of calendar months.
@@ -174,10 +174,10 @@ const EMPTY_DURATION_FORM: DurationForm = {
   auto_renew: DEFAULT_BILLING_POLICY.auto_renew,
 };
 
-// #635 §3–§5: the three Sellable-Item-keyed Benefit sections a Plan now has,
+// #635 §3–§5: the three Product-keyed Benefit sections a Plan now has,
 // same shape and same endpoints' contract as the Promotion ones (#550). Each is
 // edited and saved on its own (§10) — `showFrequency` is read-only either way,
-// since a periodical item's period is the Sellable Item's own billing frequency.
+// since a periodical item's period is the Product's own billing frequency.
 type BenefitSection = 'session' | 'oneoff' | 'periodical';
 const BENEFIT_SECTIONS: {
   section: BenefitSection;
@@ -189,7 +189,7 @@ const BENEFIT_SECTIONS: {
   /**
    * #918: the Session Benefits section's Frequency column is the *benefit's*
    * own renewal Frequency ("2 sessions per week") and is editable; the other two
-   * keep showing the Sellable Item's read-only billing frequency. One column
+   * keep showing the Product's read-only billing frequency. One column
    * either way, so the three sections stay the one table #916 made them.
    */
   frequencyColumn: BenefitFrequencyColumn;
@@ -204,7 +204,7 @@ const BENEFIT_SECTIONS: {
   { section: 'periodical', endpoint: 'periodical-benefits', titleKey: 'section_plan_period_benefits', emptyKey: 'no_plan_period_benefits', addKey: 'add_period_benefit', showFrequency: true, frequencyColumn: 'item' },
 ];
 
-function savedBenefits(plan: Plan, section: BenefitSection): SellableItemBenefitRow[] {
+function savedBenefits(plan: Plan, section: BenefitSection): ProductBenefitRow[] {
   if (section === 'session') return plan.session_benefits ?? [];
   if (section === 'oneoff') return plan.oneoff_benefits ?? [];
   return plan.periodical_benefits ?? [];
@@ -324,7 +324,7 @@ export default function PlansPage() {
   // one plan is editable at a time, which is what keeps a single draft
   // unambiguous — same rule Promotions adopted in #627.
   const [benefitEditFor, setBenefitEditFor] = useState<{ planId: number; section: BenefitSection } | null>(null);
-  const [benefitDraft, setBenefitDraft] = useState<SellableItemBenefitRow[]>([]);
+  const [benefitDraft, setBenefitDraft] = useState<ProductBenefitRow[]>([]);
   const [benefitSaving, setBenefitSaving] = useState(false);
 
   // Tax rates (#413)
@@ -1325,7 +1325,7 @@ export default function PlansPage() {
                     )}
 
                     {/* #635 §3–§5: One-off / Session / Period Benefits, the same
-                        three Sellable-Item-keyed sections a Promotion has, each with
+                        three Product-keyed sections a Promotion has, each with
                         its own independent Save/Cancel (§10) and no modal (§15).
                         #816 §6–§8: the Plan keeps these names — never the
                         Promotion's, which #815 renamed. */}
@@ -1349,7 +1349,7 @@ export default function PlansPage() {
                         />
                         {isEditing && isEditingBenefit(plan.id, section) ? (
                           <div style={{ margin: '6px 0 10px' }}>
-                            <SellableItemBenefitEditor
+                            <ProductBenefitEditor
                               t={(key, values) => t(`plans.${key}` as any, values as any)}
                               addKey={addKey}
                               draft={benefitDraft}
@@ -1362,7 +1362,7 @@ export default function PlansPage() {
                             />
                           </div>
                         ) : (
-                          <SellableItemBenefitView
+                          <ProductBenefitView
                             t={(key, values) => t(`plans.${key}` as any, values as any)}
                             emptyKey={emptyKey}
                             rows={savedBenefits(plan, section)}
@@ -1488,7 +1488,7 @@ export default function PlansPage() {
 
                     {/* BILLING EVENT SIMULATION (#915) — the billing events a
                         member enrolling today would actually be charged, grouped
-                        by date: the Membership Fee plus every Sellable Item the
+                        by date: the Membership Fee plus every Product the
                         Plan carries, each at the price the Plan's own treatment
                         gives it. A projection over the same engine the nightly
                         run prices a cycle with, so it cannot advertise a charge

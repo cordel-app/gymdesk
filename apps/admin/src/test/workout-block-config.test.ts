@@ -16,7 +16,7 @@ import {
 // The map and its conversions are pure, so they are unit-tested directly. The
 // three editors that render the field (Workouts, Workout Templates, and the
 // member Training Plan blocks modal) have no component-test infra in this repo
-// (see docs/architecture.md's TL;DR), so — like sellable-items-price-label.test.ts
+// (see docs/architecture.md's TL;DR), so — like products-price-label.test.ts
 // (#670) — they are covered by scanning their source and the locale files.
 
 const APP_DIR = join(__dirname, '..', 'app', '[locale]');

@@ -1,4 +1,4 @@
-import type { SellableItemBenefitAction } from '@/lib/sellableItemBenefitActions';
+import type { ProductBenefitAction } from '@/lib/productBenefitActions';
 import type { SessionBenefitFrequency } from '@/lib/sessionBenefitFrequency';
 import type {
   ExampleTimelineProjection,
@@ -21,7 +21,7 @@ export interface BillingPolicy {
 }
 
 /**
- * One benefit line of the assignment's own #635 snapshot — the Sellable Item as
+ * One benefit line of the assignment's own #635 snapshot — the Product as
  * it was priced and named when the plan was assigned, never the live catalogue.
  */
 export interface AssignedPlanSnapshotBenefit {
@@ -38,7 +38,7 @@ export interface AssignedPlanSnapshotBenefit {
    * price. Read in the Membership Plan's option set, which is where the line
    * came from: `no_benefit`, `waive` or `percentage_discount` (§16).
    */
-  action: SellableItemBenefitAction;
+  action: ProductBenefitAction;
   value: number | null;
   /**
    * #918 — a Session line's agreed renewal Frequency ("2 sessions every week").
@@ -93,7 +93,7 @@ export interface PersonalFeeBenefit {
 }
 
 /**
- * One Sellable Item an applied Promotion granted, frozen at the price and
+ * One Product an applied Promotion granted, frozen at the price and
  * frequency it was agreed at (#635 §16/§17) — never the catalogue's current
  * ones, which is why the card shows `unit_price` from the line itself.
  */
@@ -108,7 +108,7 @@ export interface AppliedPromotionGrant {
    * it (#896 §15). Read server-side in the **Promotion**'s option set, so all
    * five actions can appear here where a Plan benefit has only three.
    */
-  action: SellableItemBenefitAction;
+  action: ProductBenefitAction;
   value: number | null;
   /**
    * #924 stage 2 — the Agreed / Final Price pair, VAT included, computed by the
@@ -161,7 +161,7 @@ export interface AppliedPromotion {
   membership_fee_benefits: Array<{
     enabled: boolean; action: string | null; value: number | null; duration_months: number | null;
   }>;
-  // #635 stage 7 — the Sellable Items the application granted, read from its
+  // #635 stage 7 — the Products the application granted, read from its
   // own snapshot (§16), so editing or deleting the Promotion never moves them.
   session_grants: AppliedPromotionGrant[];
   oneoff_grants: AppliedPromotionGrant[];
@@ -170,7 +170,7 @@ export interface AppliedPromotion {
 
 /**
  * #631 — an Additional Periodic Service attached to the Assigned Plan. The
- * name, price and frequency are the Sellable Item's own, read live by the API;
+ * name, price and frequency are the Product's own, read live by the API;
  * `ends_at` is the effective removal date (removal is future-only), `active`
  * is false once it has passed, and `sellable_item_retired` marks an item that
  * was soft-deleted or deactivated after being attached (it still bills).

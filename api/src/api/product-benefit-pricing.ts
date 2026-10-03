@@ -1,4 +1,4 @@
-// #920 — the Original/Regular and Final Price a configured Sellable Item line
+// #920 — the Original/Regular and Final Price a configured Product line
 // reports, for **both** places a line can be configured.
 //
 // #916 gave the Membership Plan's three Benefit sections that pair and put the
@@ -15,10 +15,10 @@
 // So the wiring moves here rather than being copied: one gross-up, one amount
 // decider, three callers (`membership-plans.ts`, `promotion-details.ts` and —
 // since #924 stage 1 — `assigned-plan-snapshot.ts`, which prices an
-// assignment's frozen lines through `sellableItemBenefitPrices()` below). The
+// assignment's frozen lines through `productBenefitPrices()` below). The
 // only thing a caller supplies beyond its rows is its **context** — a Plan may
 // configure three of the five actions and a Promotion all five (#896 §16) — and
-// `toSellableItemBenefit()` is what keeps a pair from being read in the wrong
+// `toProductBenefit()` is what keeps a pair from being read in the wrong
 // one.
 //
 // **What "tax included" means for the two amount-taking actions.** The three a
@@ -32,16 +32,16 @@
 // agnostic). It is deliberately not grossed up a second time, which would quote
 // a price nobody configured.
 
-import { computePriceFields } from './sellable-items';
+import { computePriceFields } from './products';
 import { PlanBenefitPrices, planBenefitPrices } from '../domain/planBenefitPrices';
 import {
-  SellableItemBenefitContext,
-  toSellableItemBenefit,
-} from '../domain/sellableItemBenefitActions';
+  ProductBenefitContext,
+  toProductBenefit,
+} from '../domain/productBenefitActions';
 
 /**
  * One benefit row as the pricing needs it: the quantity and `(action, value)`
- * pair it stores, plus the Sellable Item's price columns from its own join.
+ * pair it stores, plus the Product's price columns from its own join.
  *
  * The price columns are optional because a row may have none to join — a
  * Mandatory item a Plan has no stored row for yet (#893 §5) is priced from the
@@ -95,21 +95,21 @@ export function grossBenefitUnitPrice(
  * #924 stage 1 is why it is exported: an Assigned Plan's benefit sections are
  * not a section-shaped list of catalogue joins but a *snapshot*, whose price is
  * the one frozen on the line (`user_membership_{session,oneoff,periodical}`.
- * `unit_price`) rather than the Sellable Item's current `amount`. It passes that
+ * `unit_price`) rather than the Product's current `amount`. It passes that
  * frozen figure as the row's own amount and gets the same pair of prices every
  * other surface quotes, which is the ticket's requirement — "the same shared
  * grid/layout should be reused rather than implementing an Assigned Plan-specific
  * version", and no third pricing implementation.
  */
-export function sellableItemBenefitPrices(
-  context: SellableItemBenefitContext,
+export function productBenefitPrices(
+  context: ProductBenefitContext,
   row: BenefitPricingRow,
   fallback?: BenefitPricingFallback,
 ): PlanBenefitPrices {
   return planBenefitPrices(
     grossBenefitUnitPrice(row, fallback),
     Number(row.quantity) || 1,
-    toSellableItemBenefit(context, row.action, row.value),
+    toProductBenefit(context, row.action, row.value),
   );
 }
 
@@ -124,14 +124,14 @@ export function sellableItemBenefitPrices(
  * `example_timeline` and `billing_event_simulation`, these are computed on
  * every read.
  */
-export function withSellableItemBenefitPrices<T extends BenefitPricingRow>(
-  context: SellableItemBenefitContext,
+export function withProductBenefitPrices<T extends BenefitPricingRow>(
+  context: ProductBenefitContext,
   rows: T[],
   catalogue?: BenefitPricingFallback[],
 ): (T & PlanBenefitPrices)[] {
   const byId = new Map((catalogue ?? []).map((item) => [Number(item.id), item]));
   return rows.map((row) => ({
     ...row,
-    ...sellableItemBenefitPrices(context, row, byId.get(Number(row.gym_charge_id))),
+    ...productBenefitPrices(context, row, byId.get(Number(row.gym_charge_id))),
   }));
 }

@@ -5,16 +5,16 @@ import { loadPromotionApplications, regularMembershipFee } from './user-membersh
 import {
   BillingSimulationResult,
   BillingUnit,
-  SellableItemFrequency,
+  ProductFrequency,
   SimulationAssignment,
   SimulationGrant,
   SimulationPromotion,
   computeBillingSimulation,
 } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
-import { toSellableItemBenefit } from '../domain/sellableItemBenefitActions';
+import { toProductBenefit } from '../domain/productBenefitActions';
 import { PlanDuration, toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
-import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
+import { ProductBenefitCategory } from '../domain/productClassification';
 import { loadServicesForSimulation } from './user-membership-services';
 import {
   ASSIGNMENT_CADENCE,
@@ -40,7 +40,7 @@ import {
  * (§14 — "do not resolve the current Membership Plan or Promotion dynamically
  * when calculating billing for an existing assignment"). The live catalogue is
  * consulted only for an assignment that captured no snapshot, so repricing a
- * Plan, editing a Promotion or repricing a Sellable Item changes nothing here
+ * Plan, editing a Promotion or repricing a Product changes nothing here
  * for anyone already holding it.
  *
  * #635 stage 8: the assignment's frozen Billing & Duration joins those inputs
@@ -120,7 +120,7 @@ function assignmentPlanDuration(row: AssignmentRow): PlanDuration {
 }
 
 /**
- * Sellable Items granted by the given Promotions, from the three #550 benefit
+ * Products granted by the given Promotions, from the three #550 benefit
  * tables, joined live to their catalogue row for the name, price and billing
  * frequency.
  *
@@ -137,7 +137,7 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
   if (promotionIds.length === 0) return byPromotion;
 
   const marks = promotionIds.map(() => '?').join(',');
-  const select = (table: string, category: SellableItemBenefitCategory) => `
+  const select = (table: string, category: ProductBenefitCategory) => `
     SELECT '${category}' AS category, b.promotion_id, b.gym_charge_id, b.quantity,
            b.\`action\`, b.\`value\`,
            gc.name, gc.amount, gc.billing_frequency
@@ -158,15 +158,15 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
   for (const row of rows as any[]) {
     const grant: SimulationGrant = {
       gymChargeId: row.gym_charge_id,
-      name: row.name ?? 'Sellable Item',
-      category: row.category as SellableItemBenefitCategory,
-      billingFrequency: (row.billing_frequency ?? null) as SellableItemFrequency | null,
+      name: row.name ?? 'Product',
+      category: row.category as ProductBenefitCategory,
+      billingFrequency: (row.billing_frequency ?? null) as ProductFrequency | null,
       unitPrice: row.amount != null ? Number(row.amount) : 0,
       quantity: Math.max(1, Number(row.quantity) || 1),
       // #896 stage 3 — the treatment the Promotion configures for this item.
       // Every row that predates migration 203 reads `waive`, which is the free
       // coverage this fallback used to hard-code.
-      benefit: toSellableItemBenefit('promotion', row.action, row.value),
+      benefit: toProductBenefit('promotion', row.action, row.value),
     };
     const list = byPromotion.get(row.promotion_id) ?? [];
     list.push(grant);

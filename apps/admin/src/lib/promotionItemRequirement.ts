@@ -1,11 +1,11 @@
-// #959 — a Sellable Item configured inside a **Promotion** carries a
+// #959 — a Product configured inside a **Promotion** carries a
 // **Requirement**: `Mandatory` (the member takes it with the Promotion) or
 // `Optional` (the member may decline it when the Promotion is assigned).
 //
 // Mirrored from `api/src/domain/promotionItemRequirement.ts`, which is what
 // actually enforces it (a frontend-only list is not a rule) and what the
 // `chk_<table>_requirement` CHECK of migration 207 backs up. This copy exists
-// for the same reason `lib/sellableItemBenefitActions.ts` and
+// for the same reason `lib/productBenefitActions.ts` and
 // `lib/sessionBenefitFrequency.ts` do: the editor has to render the options and
 // must not spell the list out inline. A new value therefore goes in the API
 // module, its CHECK, *and* here — `promotion-item-requirement-ui.test.ts` fails

@@ -2,24 +2,24 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-// #832 — the Mandatory checkbox on Sellable Items.
+// #832 — the Mandatory checkbox on Products.
 //
 // The ticket adds the attribute and its UI only: no Billing Plan behaviour is
 // attached to it yet. Both kinds of row the page holds are covered by one
 // control — the per-gym System items seeded from `charge_types` (the ticket's
-// "Base Sellable Items") and the gym's own ("Custom") — so what is easy to
+// "Base Products") and the gym's own ("Custom") — so what is easy to
 // regress is narrow and pinned here: the checkbox exists in both halves of the
 // form, it is *not* hidden for a System item the way the catalogue-shape fields
 // are, both forms submit it, and the read-only surfaces show it.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const PAGE = join(__dirname, '..', 'app', '[locale]', 'financials', 'sellable-items', 'page.tsx');
+const PAGE = join(__dirname, '..', 'app', '[locale]', 'financials', 'products', 'page.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 const KEYS = ['label_mandatory', 'yes', 'no'] as const;
 
-function sellableItemsKey(code: string, key: string): string | undefined {
+function productsKey(code: string, key: string): string | undefined {
   const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8')) as Record<string, unknown>;
-  const ns = messages['sellable_items'];
+  const ns = messages['products'];
   if (ns == null || typeof ns !== 'object') return undefined;
   const value = (ns as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : undefined;
@@ -31,17 +31,17 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
-describe('Sellable Items: Mandatory attribute (#832)', () => {
+describe('Products: Mandatory attribute (#832)', () => {
   const page = stripComments(readFileSync(PAGE, 'utf-8'));
   // #974: the field set and the row → form mapping live beside the page.
   const profile = stripComments(readFileSync(
-    join(__dirname, '..', 'app', '[locale]', 'financials', 'sellable-items', 'sellableItemProfile.ts'),
+    join(__dirname, '..', 'app', '[locale]', 'financials', 'products', 'productProfile.ts'),
     'utf-8',
   ));
 
   it.each(LOCALE_CODES)('translates the label and the read-only values in %s.json', (code) => {
     for (const key of KEYS) {
-      expect(sellableItemsKey(code, key), `${code}.json is missing sellable_items.${key}`).toBeTypeOf('string');
+      expect(productsKey(code, key), `${code}.json is missing products.${key}`).toBeTypeOf('string');
     }
   });
 

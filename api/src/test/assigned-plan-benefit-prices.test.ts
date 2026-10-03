@@ -1,5 +1,5 @@
 // #924 stage 1 — the Agreed / Final Price pair an **Assigned Plan's** three
-// Sellable Item sections report.
+// Product sections report.
 //
 // The ticket asks the Assigned Plan card to stop maintaining a visual system of
 // its own and render the sections from the shared column grid the Membership
@@ -11,7 +11,7 @@
 //   > essentially provide the Membership Plan data plus the assigned-person
 //   > context [...].
 //
-// So the amounts come from the one shared module (`api/sellable-item-benefit-
+// So the amounts come from the one shared module (`api/product-benefit-
 // pricing.ts`, over `applyLineBenefit()` and `computePriceFields()`). What is
 // specific to this side — and what every case below is really about — is *which*
 // numbers it is handed: an assignment quotes the price and the treatment frozen
@@ -216,7 +216,7 @@ describe('Assigned Plan Benefit prices (#924 stage 1)', () => {
     expect(row.final_price_incl_tax).toBe(0);
   });
 
-  it('quotes the frozen price after the Sellable Item is repriced (#635 §17)', async () => {
+  it('quotes the frozen price after the Product is repriced (#635 §17)', async () => {
     const planId = await createPlan();
     const feeId = await createPricedItem({
       name: `ABP Frozen Fee ${uniq()}`, type: 'fee', frequency: 'once', amount: '100.00',
@@ -307,7 +307,7 @@ describe('Assigned Plan Benefit prices (#924 stage 1)', () => {
     });
   });
 
-  it('keeps pricing a line whose Sellable Item has since been retired', async () => {
+  it('keeps pricing a line whose Product has since been retired', async () => {
     const planId = await createPlan();
     const itemId = await createPricedItem({
       name: `ABP Retired Service ${uniq()}`, type: 'service', frequency: 'month', amount: '30.00',

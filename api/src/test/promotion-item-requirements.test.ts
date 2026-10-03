@@ -1,5 +1,5 @@
 /**
- * #959 — a Sellable Item configured inside a **Promotion** carries a
+ * #959 — a Product configured inside a **Promotion** carries a
  * **Requirement**: `mandatory` (the member takes it with the Promotion) or
  * `optional` (the member may decline it when the Promotion is assigned).
  *

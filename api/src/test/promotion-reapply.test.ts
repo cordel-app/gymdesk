@@ -298,7 +298,7 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     expect(await finalPrice(gymId, umId)).toBeCloseTo(90, 2);
   });
 
-  it('grants the Sellable Items again, snapshotted onto the new application', async () => {
+  it('grants the Products again, snapshotted onto the new application', async () => {
     const umId = await createAssignment(gymId, planId, 100);
     const promotionId = await createPromotion(gymId, `Grants-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);

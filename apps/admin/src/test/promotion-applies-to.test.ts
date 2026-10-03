@@ -8,7 +8,7 @@ import {
   targetsMembershipPlan,
 } from '@/lib/promotionTargets';
 
-// #926 — `APPLIES TO` on a Promotion: Membership Plan or Sellable Item, and the
+// #926 — `APPLIES TO` on a Promotion: Membership Plan or Product, and the
 // two Membership-Plan-specific sections are hidden for the latter.
 //
 // apps/admin has no component-test infra (docs/architecture.md's TL;DR), so the

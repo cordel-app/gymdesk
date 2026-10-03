@@ -11,7 +11,7 @@ import { join } from 'path';
 // test infrastructure, so this is a source scan — the same shape as
 // `promotions-charge-benefits-removed.test.ts` (#626).
 //
-// What must survive is pinned down too: the three Sellable-Item-keyed Benefit
+// What must survive is pinned down too: the three Product-keyed Benefit
 // sections that replace it (stage 1). Included Services went in part 2 of the
 // same stage — see `included-services-removed.test.ts`.
 

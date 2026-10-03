@@ -31,9 +31,9 @@ import {
   writeAssignedPlanBenefitSection,
 } from './assigned-plan-snapshot';
 import {
-  SellableItemBenefitCategory,
-  classifySellableItem,
-} from '../domain/sellableItemClassification';
+  ProductBenefitCategory,
+  classifyProduct,
+} from '../domain/productClassification';
 import {
   AppliedPromotionForBilling,
   MembershipFeeBenefit,
@@ -417,7 +417,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     example_timeline: exampleTimeline,
     // #924 stage 4 (§8/§9/§10) — the Billing Event Forecast: one group per
     // billing *date*, listing every line that falls on it (the Membership Fee
-    // plus each Sellable Item and Additional Periodic Service this contract
+    // plus each Product and Additional Periodic Service this contract
     // carries), where the Membership Fee Simulation above is one row per
     // billing *period* about the fee alone. Neither replaces the other.
     // Read-only, computed on every read, persisted nowhere.
@@ -1057,7 +1057,7 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
 // Membership Plan it came from — Billing & Duration plus One-off / Session /
 // Period Benefits — and each section is edited on its own. Editing one edits
 // *this member's* snapshot: the source Plan, its other assignments and the
-// Sellable Items are untouched, which is exactly what makes the ticket's
+// Products are untouched, which is exactly what makes the ticket's
 // "Assigned Plan A → €90, Assigned Plan B → €100, Membership Plan → €100"
 // example hold.
 //
@@ -1338,10 +1338,10 @@ userMembershipsRouter.put('/:id/fee-benefit', requireModuleWrite('PAYMENTS'), as
 // One route per benefit kind, with the replace-all `{ items: [{ gym_charge_id,
 // quantity }] }` payload the Plan and Promotion sections already take — the
 // admin editors are shared, so the contract has to be the same one. What
-// differs is what a row means: on a Plan it points at the live Sellable Item,
+// differs is what a row means: on a Plan it points at the live Product,
 // here it *is* the agreed line, so the write freezes the item's commercial
 // facts (`writeAssignedPlanBenefitSection`).
-const ASSIGNED_BENEFIT_ROUTES: { path: string; category: SellableItemBenefitCategory }[] = [
+const ASSIGNED_BENEFIT_ROUTES: { path: string; category: ProductBenefitCategory }[] = [
   { path: 'session-benefits', category: 'session' },
   { path: 'oneoff-benefits', category: 'oneoff' },
   { path: 'periodical-benefits', category: 'periodical' },
@@ -1385,7 +1385,7 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
     }
 
     // A line already in this section is part of what was agreed, so it stays
-    // saveable whatever has since happened to the Sellable Item — retired,
+    // saveable whatever has since happened to the Product — retired,
     // deactivated or reclassified. Only a *newly* added item is held to the
     // catalogue's current state, and to the section's own category.
     const current = await loadAssignedPlanBenefitSection(gymId, Number(um.id), category);
@@ -1393,21 +1393,21 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
     const added = parsed.filter((item) => !alreadyAttached.has(item.gym_charge_id)).map((i) => i.gym_charge_id);
     if (added.length > 0) {
       const marks = added.map(() => '?').join(',');
-      const { rows: sellableItems } = await db.query(
+      const { rows: products } = await db.query(
         `SELECT id, type, billing_frequency, status FROM gym_charges
          WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${marks})`,
         [gymId, ...added],
       );
-      if (sellableItems.length !== added.length) {
-        return res.status(400).json({ error: 'One or more Sellable Items not found in this gym' });
+      if (products.length !== added.length) {
+        return res.status(400).json({ error: 'One or more Products not found in this gym' });
       }
-      const inactive = sellableItems.find((si: any) => si.status !== 'active');
+      const inactive = products.find((si: any) => si.status !== 'active');
       if (inactive) {
-        return res.status(400).json({ error: `Sellable Item ${inactive.id} is not active in this gym` });
+        return res.status(400).json({ error: `Product ${inactive.id} is not active in this gym` });
       }
-      const mismatched = sellableItems.find((si: any) => classifySellableItem(si) !== category);
+      const mismatched = products.find((si: any) => classifyProduct(si) !== category);
       if (mismatched) {
-        return res.status(400).json({ error: `Sellable Item ${mismatched.id} does not belong in the '${category}' category` });
+        return res.status(400).json({ error: `Product ${mismatched.id} does not belong in the '${category}' category` });
       }
     }
 

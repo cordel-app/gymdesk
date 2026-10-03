@@ -8,13 +8,13 @@ import {
   toPromotionItemRequirement,
 } from '@/lib/promotionItemRequirement';
 import {
-  SELLABLE_ITEM_BENEFIT_COLUMNS,
-  SellableItemBenefitRow,
-  sellableItemBenefitColumns,
+  PRODUCT_BENEFIT_COLUMNS,
+  ProductBenefitRow,
+  productBenefitColumns,
   toBenefitItems,
-} from '@/components/SellableItemBenefits';
+} from '@/components/ProductBenefits';
 
-// #959 — a Sellable Item configured inside a **Promotion** carries a
+// #959 — a Product configured inside a **Promotion** carries a
 // **Requirement**: Mandatory, or Optional for an item the member may decline when
 // the Promotion is assigned.
 //
@@ -34,7 +34,7 @@ import {
 //   * both options have a label in all three locales — next-intl prints a
 //     missing key verbatim;
 //   * and the labels obey #896 §3: nothing in the Promotions namespace says
-//     "Benefit", which the shared `sellable-item-benefit-actions-ui.test.ts`
+//     "Benefit", which the shared `product-benefit-actions-ui.test.ts`
 //     already asserts namespace-wide and these keys must not be the exception.
 //
 // apps/admin has no component-test infra (docs/architecture.md's TL;DR), so the
@@ -43,7 +43,7 @@ import {
 
 const ROOT = join(__dirname, '..', '..', '..', '..');
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const COMPONENT = join(__dirname, '..', 'components', 'SellableItemBenefits.tsx');
+const COMPONENT = join(__dirname, '..', 'components', 'ProductBenefits.tsx');
 const PROMOTIONS_PAGE = join(__dirname, '..', 'app', '[locale]', 'promotions', 'page.tsx');
 const PLANS_PAGE = join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx');
 const API_DECLARATION = join(ROOT, 'api', 'src', 'domain', 'promotionItemRequirement.ts');
@@ -57,7 +57,7 @@ const componentSrc = stripComments(readFileSync(COMPONENT, 'utf-8'));
 const promotionsSrc = stripComments(readFileSync(PROMOTIONS_PAGE, 'utf-8'));
 const plansSrc = stripComments(readFileSync(PLANS_PAGE, 'utf-8'));
 
-function row(over: Partial<SellableItemBenefitRow> = {}): SellableItemBenefitRow {
+function row(over: Partial<ProductBenefitRow> = {}): ProductBenefitRow {
   return {
     gym_charge_id: 1, quantity: 2, gym_charge_name: 'Locker Fee',
     gym_charge_type: 'service', gym_charge_billing_frequency: 'month',
@@ -90,14 +90,14 @@ describe('the option set mirrors the API declaration', () => {
 
 describe('it is one more column of the shared grid, not a grid of its own', () => {
   it('sits after Benefit and before the two prices', () => {
-    const at = (key: string) => SELLABLE_ITEM_BENEFIT_COLUMNS.findIndex((c) => c.key === key);
+    const at = (key: string) => PRODUCT_BENEFIT_COLUMNS.findIndex((c) => c.key === key);
     expect(at('requirement')).toBeGreaterThan(at('action'));
     expect(at('requirement')).toBeLessThan(at('original_price'));
   });
 
   it('renders only where the page opts in', () => {
-    const keys = (opts: Parameters<typeof sellableItemBenefitColumns>[0]) =>
-      sellableItemBenefitColumns(opts).map((c) => c.key);
+    const keys = (opts: Parameters<typeof productBenefitColumns>[0]) =>
+      productBenefitColumns(opts).map((c) => c.key);
     const base = { showFrequency: true, showAction: true, showPrices: true };
     expect(keys(base)).not.toContain('requirement');
     expect(keys({ ...base, showRequirement: true })).toContain('requirement');

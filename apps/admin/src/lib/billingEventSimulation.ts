@@ -23,7 +23,7 @@ export interface BillingEventSimulationLine {
   kind: 'membership_fee' | 'sellable_item';
   label: string;
   gym_charge_id: number | null;
-  /** #832 — the line exists because the Sellable Item is Mandatory. */
+  /** #832 — the line exists because the Product is Mandatory. */
   mandatory: boolean;
   quantity: number;
   unit_price: number;

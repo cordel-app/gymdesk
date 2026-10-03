@@ -10,7 +10,7 @@
 // effective end date), so there is no destructive confirmation to put behind a
 // dialog — a service removed by mistake is re-attached with a new start date.
 //
-// The Sellable Item is the source of truth for the price and the billing
+// The Product is the source of truth for the price and the billing
 // frequency (#631 §2): the frequency column is what the catalogue says, never a
 // per-assignment override, and only items the API classifies as recurring can
 // be picked. Nothing is computed here — the amounts the Billing Simulation
@@ -54,7 +54,7 @@ import {
 } from '@/components/formChrome';
 import type { AssignedPlanService } from './types';
 
-interface SellableItem {
+interface Product {
   id: number;
   name: string;
   status: string;
@@ -113,7 +113,7 @@ export function AdditionalPeriodicServices({
   const { toast } = useToast();
   const itemsLoadedRef = useRef(false);
 
-  const [items, setItems] = useState<SellableItem[]>([]);
+  const [items, setItems] = useState<Product[]>([]);
   const [adding, setAdding] = useState(false);
   const [draftItemId, setDraftItemId] = useState('');
   const [draftQuantity, setDraftQuantity] = useState('1');
@@ -131,7 +131,7 @@ export function AdditionalPeriodicServices({
       try {
         // benefit_category is computed server-side (#550) — the recurring items
         // are exactly the ones the API accepts here.
-        const rows = await apiFetch<SellableItem[]>('/sellable-items');
+        const rows = await apiFetch<Product[]>('/sellable-items');
         setItems(rows.filter((i) => i.benefit_category === 'periodical' && i.status === 'active'));
       } catch {
         setError(t('services_items_error'));

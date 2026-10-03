@@ -7,14 +7,14 @@ import { effectivePrice, snapshotFeeForAssignment, LIST_SELECT as MEMBERSHIP_LIS
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
 import { materialiseAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
-import { computePriceFields, validateTaxRateId } from './sellable-items';
+import { computePriceFields, validateTaxRateId } from './products';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { computePlanExampleTimeline } from '../domain/planExampleTimeline';
 import {
   PlanSimulationItem,
   computePlanBillingEventSimulation,
 } from '../domain/planBillingEventSimulation';
-import { SellableItemFrequency } from '../domain/billingSimulation';
+import { ProductFrequency } from '../domain/billingSimulation';
 import { BillingDateUnit } from '../domain/billingDate';
 import { DEFAULT_PLAN_DURATION_CADENCE, toPlanDuration } from '../domain/planDuration';
 import {
@@ -22,12 +22,12 @@ import {
   isAcceptedPlanCadence,
 } from '../domain/planBillingFrequency';
 import {
-  classifySellableItem,
+  classifyProduct,
   planBenefitTableForCategory,
-  SellableItemBenefitCategory,
-} from '../domain/sellableItemClassification';
+  ProductBenefitCategory,
+} from '../domain/productClassification';
 import {
-  MandatorySellableItem,
+  MandatoryProduct,
   PlanBenefitRow,
   PlanBenefitWrite,
   mandatoryItemsForCategory,
@@ -35,12 +35,12 @@ import {
   withMandatoryBenefits,
 } from '../domain/mandatoryPlanBenefits';
 import {
-  NO_SELLABLE_ITEM_BENEFIT,
-  SellableItemBenefit,
-  parseSellableItemBenefitInput,
-  shapeSellableItemBenefitRow,
-  toSellableItemBenefit,
-} from '../domain/sellableItemBenefitActions';
+  NO_PRODUCT_BENEFIT,
+  ProductBenefit,
+  parseProductBenefitInput,
+  shapeProductBenefitRow,
+  toProductBenefit,
+} from '../domain/productBenefitActions';
 import {
   SessionBenefitFrequency,
   parseSessionBenefitFrequencyInput,
@@ -49,8 +49,8 @@ import {
 import { PlanBenefitPrices } from '../domain/planBenefitPrices';
 import {
   grossBenefitUnitPrice,
-  withSellableItemBenefitPrices,
-} from './sellable-item-benefit-pricing';
+  withProductBenefitPrices,
+} from './product-benefit-pricing';
 
 interface PlanRow {
   id: number;
@@ -116,7 +116,7 @@ interface BillingPolicyRow {
 // (migration 173). `gym_charge_*` comes from the join, so an item that has
 // since gone inactive still resolves to its real name and status instead of a
 // bare id — same shape the Promotion benefit endpoints return.
-interface PlanSellableItemBenefitRow extends PlanBenefitRow {
+interface PlanProductBenefitRow extends PlanBenefitRow {
   id: number;
   gym_id: string;
   membership_plan_id: number;
@@ -139,7 +139,7 @@ interface PlanSellableItemBenefitRow extends PlanBenefitRow {
   value: number | null;
 }
 
-interface SellableItemRow {
+interface ProductRow {
   id: number;
   gym_id: string;
   name: string;
@@ -176,15 +176,15 @@ interface BenefitPricingRow extends PlanBenefitRow {
  * #916 — the section as the card renders it: every row plus the Original and
  * Final Price it must show, VAT included.
  *
- * Since #920 the wiring is `api/sellable-item-benefit-pricing.ts`'s, because the
+ * Since #920 the wiring is `api/product-benefit-pricing.ts`'s, because the
  * Promotion card's three sections now report the same pair and a second copy of
  * the gross-up is exactly what would let the two screens price one item two
  * ways. This wrapper is only the Plan's `context`.
  */
 function withPlanBenefitPrices<T extends PlanBenefitRow>(
-  rows: (T | PlanBenefitRow)[], catalogue?: SellableItemRow[],
+  rows: (T | PlanBenefitRow)[], catalogue?: ProductRow[],
 ): ((T | PlanBenefitRow) & PlanBenefitPrices)[] {
-  return withSellableItemBenefitPrices('plan', rows as BenefitPricingRow[], catalogue) as
+  return withProductBenefitPrices('plan', rows as BenefitPricingRow[], catalogue) as
     ((T | PlanBenefitRow) & PlanBenefitPrices)[];
 }
 
@@ -199,12 +199,12 @@ function withPlanBenefitPrices<T extends PlanBenefitRow>(
  * only honest answer when there is no tax to include.
  *
  * The category is the section the row is in, never a re-classification: #550's
- * `classifySellableItem()` is what put it there, and asking twice is how a row
+ * `classifyProduct()` is what put it there, and asking twice is how a row
  * ends up billed as a different kind of benefit than it is stored as.
  */
 function planSimulationItems(
-  sections: { category: SellableItemBenefitCategory; rows: (PlanBenefitRow | BenefitPricingRow)[] }[],
-  catalogue: SellableItemRow[],
+  sections: { category: ProductBenefitCategory; rows: (PlanBenefitRow | BenefitPricingRow)[] }[],
+  catalogue: ProductRow[],
 ): PlanSimulationItem[] {
   const byId = new Map(catalogue.map((item) => [Number(item.id), item]));
   const items: PlanSimulationItem[] = [];
@@ -218,7 +218,7 @@ function planSimulationItems(
         gymChargeId: Number(row.gym_charge_id),
         name: row.gym_charge_name,
         category,
-        billingFrequency: (row.gym_charge_billing_frequency as SellableItemFrequency | null) ?? null,
+        billingFrequency: (row.gym_charge_billing_frequency as ProductFrequency | null) ?? null,
         unitPriceInclTax: gross,
         quantity: Number(row.quantity) || 1,
         // #918 — the Session Benefit's own renewal Frequency. The column only
@@ -226,7 +226,7 @@ function planSimulationItems(
         // keeps the single charge it has always had.
         sessionFrequency: category === 'session'
           ? toSessionBenefitFrequency(row.frequency) : null,
-        benefit: toSellableItemBenefit('plan', row.action, row.value),
+        benefit: toProductBenefit('plan', row.action, row.value),
         mandatory: row.gym_charge_mandatory === true || Number(row.gym_charge_mandatory) === 1,
       });
     }
@@ -276,7 +276,7 @@ async function getCallerMembershipId(req: Request): Promise<number | null> {
 }
 
 async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
-  const [prices, bpRows, centers, memberCount, sellableItems, taxRateRows, promotionCount,
+  const [prices, bpRows, centers, memberCount, products, taxRateRows, promotionCount,
          sessionBenefits, oneoffBenefits, periodicalBenefits] = await Promise.all([
     db.query<PriceRow>(
       'SELECT * FROM membership_plan_prices WHERE membership_plan_id = ? AND gym_id = ? ORDER BY valid_from ASC',
@@ -298,14 +298,14 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
        WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
       [plan.id, gymId],
     ).then(r => Number(r.rows[0].n)),
-    // Full catalog of active sellable items for this gym, so the admin UI can
+    // Full catalog of active products for this gym, so the admin UI can
     // populate the Benefit selectors without a separate round trip.
     // #915 also reads `tax_behavior` + the joined rate from here: a Mandatory
     // item this Plan has no stored benefit row for yet (#893's `implicit: true`)
     // has no row to carry its price, so the Billing Event Simulation grosses it
     // up from the catalogue entry. Every implicit item is by definition active
     // and non-deleted, which is exactly what this query already selects.
-    db.query<SellableItemRow>(
+    db.query<ProductRow>(
       `SELECT gc.id, gc.gym_id, gc.name, gc.type, gc.amount, gc.currency, gc.billing_frequency,
               gc.status, gc.availability, gc.enrollment_status, gc.is_system, gc.mandatory,
               gc.tax_behavior, tr.rate_percent AS tax_rate_percent,
@@ -339,10 +339,10 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
        WHERE pmp.membership_plan_id = ? AND pmp.gym_id = ? AND p.deleted_at IS NULL`,
       [plan.id, gymId],
     ).then(r => Number(r.rows[0].n)),
-    // #635 stage 1: the three Sellable-Item-keyed Benefit sections (migration
+    // #635 stage 1: the three Product-keyed Benefit sections (migration
     // 173), served with the plan so the Plans page renders them without three
     // extra round trips per card — same reason `sellable_items` is inlined above.
-    ...(['session', 'oneoff', 'periodical'] as SellableItemBenefitCategory[]).map(category =>
+    ...(['session', 'oneoff', 'periodical'] as ProductBenefitCategory[]).map(category =>
       loadPlanBenefits(planBenefitTableForCategory(category), plan.id, gymId),
     ),
   ]);
@@ -423,19 +423,19 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
       : 'inactive',
   }));
 
-  // #893: a Mandatory Sellable Item is part of every Plan, so each section is
+  // #893: a Mandatory Product is part of every Plan, so each section is
   // the stored rows plus the mandatory items this Plan has no row for yet.
-  // `sellableItems` above is already the gym's active, non-deleted catalogue —
+  // `products` above is already the gym's active, non-deleted catalogue —
   // exactly the candidate set the rule takes — so no extra round trip.
   // #916: and each row carries the Original / Final Price the card shows — one
   // pricing pass over the merged section, so a Mandatory item the Plan has no
   // stored row for yet is quoted exactly like a configured one.
   const sessionSection = withPlanBenefitPrices(
-    mergeMandatoryBenefits(sessionBenefits, mandatoryItemsForCategory(sellableItems, 'session')), sellableItems);
+    mergeMandatoryBenefits(sessionBenefits, mandatoryItemsForCategory(products, 'session')), products);
   const oneoffSection = withPlanBenefitPrices(
-    mergeMandatoryBenefits(oneoffBenefits, mandatoryItemsForCategory(sellableItems, 'oneoff')), sellableItems);
+    mergeMandatoryBenefits(oneoffBenefits, mandatoryItemsForCategory(products, 'oneoff')), products);
   const periodicalSection = withPlanBenefitPrices(
-    mergeMandatoryBenefits(periodicalBenefits, mandatoryItemsForCategory(sellableItems, 'periodical')), sellableItems);
+    mergeMandatoryBenefits(periodicalBenefits, mandatoryItemsForCategory(products, 'periodical')), products);
 
   // #915: the Billing Event Simulation — the same three sections the card
   // renders, projected into the billing events a member enrolling today would
@@ -453,7 +453,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
       { category: 'oneoff', rows: oneoffSection },
       { category: 'session', rows: sessionSection },
       { category: 'periodical', rows: periodicalSection },
-    ], sellableItems),
+    ], products),
   });
 
   return {
@@ -467,7 +467,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     session_benefits: sessionSection,
     oneoff_benefits: oneoffSection,
     periodical_benefits: periodicalSection,
-    sellable_items: sellableItems,
+    sellable_items: products,
     tax_rate_name: taxRate ? taxRate.name : null,
     tax_rate_percent: taxRate ? taxRate.rate_percent : null,
     ...priceFields,
@@ -890,7 +890,7 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
 
       // #635 stage 1: Session / One-off / Period Benefits. `created_by_membership_id`
       // records who made the copy, not who configured the original.
-      for (const category of ['session', 'oneoff', 'periodical'] as SellableItemBenefitCategory[]) {
+      for (const category of ['session', 'oneoff', 'periodical'] as ProductBenefitCategory[]) {
         const table = planBenefitTableForCategory(category);
         // #896 stage 2: the `(action, value)` pricing treatment travels with the
         // quantity — Duplicate is a copy, not a re-configuration. #918: so does
@@ -1423,7 +1423,7 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
 });
 
 // ─── Session / One-off / Period Benefits (#635 stage 1) ───────────────────────
-// The same three Sellable-Item-keyed sections a Promotion has had since #550,
+// The same three Product-keyed sections a Promotion has had since #550,
 // now on the Membership Plan itself (migration 173). Deliberately a copy of the
 // Promotion contract in `promotion-details.ts` rather than a new one — the
 // ticket asks for sections that "behave like the existing ... Benefits in
@@ -1438,7 +1438,7 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
 // it expressed belongs to the Activity Type (`activity_type_eligible_plans`)
 // rather than to the Plan — see the note in that migration's header.
 
-function selectPlanSellableItemBenefits(table: string): string {
+function selectPlanProductBenefits(table: string): string {
   // #915: the price columns are here so the Billing Event Simulation can gross
   // up a configured line without a second round trip — and from the benefit
   // row's own join rather than the active catalogue, since a Plan may still
@@ -1463,12 +1463,12 @@ function selectPlanSellableItemBenefits(table: string): string {
  */
 async function loadPlanBenefits(
   table: string, planId: unknown, gymId: string,
-): Promise<PlanSellableItemBenefitRow[]> {
-  const { rows } = await db.query<PlanSellableItemBenefitRow>(
-    selectPlanSellableItemBenefits(table), [planId, gymId],
+): Promise<PlanProductBenefitRow[]> {
+  const { rows } = await db.query<PlanProductBenefitRow>(
+    selectPlanProductBenefits(table), [planId, gymId],
   );
   return rows.map((row) => {
-    const shaped = shapeSellableItemBenefitRow('plan', row) as PlanSellableItemBenefitRow;
+    const shaped = shapeProductBenefitRow('plan', row) as PlanProductBenefitRow;
     // #918: `b.*` brings the column along raw; normalize it so the wire shape is
     // a known frequency or `null`, exactly as the snapshot's reader does.
     if ('frequency' in row) shaped.frequency = toSessionBenefitFrequency(row.frequency);
@@ -1477,15 +1477,15 @@ async function loadPlanBenefits(
 }
 
 /**
- * #893: the gym's mandatory Sellable Items, as candidates for the rule in
+ * #893: the gym's mandatory Products, as candidates for the rule in
  * `domain/mandatoryPlanBenefits.ts`. Active and non-deleted only — a mandatory
  * item that has been deactivated or deleted is not something a Plan can be
  * forced to carry, and the benefit `PUT` already refuses a newly selected
  * inactive item. `enrichPlan` does not call this: it already has the same
  * catalogue in hand for the Benefit pickers.
  */
-async function loadMandatorySellableItems(gymId: string): Promise<MandatorySellableItem[]> {
-  const { rows } = await db.query<MandatorySellableItem>(
+async function loadMandatoryProducts(gymId: string): Promise<MandatoryProduct[]> {
+  const { rows } = await db.query<MandatoryProduct>(
     // #916: the price columns come along, so an implicit row quotes its
     // Original and Final Price like a stored one instead of reading "—".
     `SELECT gc.id, gc.name, gc.type, gc.billing_frequency, gc.status, gc.mandatory,
@@ -1499,7 +1499,7 @@ async function loadMandatorySellableItems(gymId: string): Promise<MandatorySella
   return rows;
 }
 
-const PLAN_BENEFIT_ROUTES: { path: string; category: SellableItemBenefitCategory }[] = [
+const PLAN_BENEFIT_ROUTES: { path: string; category: ProductBenefitCategory }[] = [
   { path: 'session-benefits', category: 'session' },
   { path: 'oneoff-benefits', category: 'oneoff' },
   { path: 'periodical-benefits', category: 'periodical' },
@@ -1517,7 +1517,7 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       const rows = await loadPlanBenefits(table, req.params.id, gymId);
       // #893 §1/§5: a mandatory item is part of the section whether or not this
       // Plan has a row for it — the editor and the read-only view both read this.
-      const mandatory = mandatoryItemsForCategory(await loadMandatorySellableItems(gymId), category);
+      const mandatory = mandatoryItemsForCategory(await loadMandatoryProducts(gymId), category);
       // #916: the section's own endpoint reports the same Original / Final
       // Price pair `enrichPlan` embeds, so the card and a refetch of one
       // section cannot disagree about what a line costs.
@@ -1550,7 +1550,7 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       // #896 stage 2 §5/§16 — a Plan may configure three of the five actions;
       // `Fixed discount` and `Fixed Price` are a 400 here and a CHECK violation
       // in SQL, so the dropdown is never what enforces it.
-      const parsed = parseSellableItemBenefitInput('plan', item);
+      const parsed = parseProductBenefitInput('plan', item);
       if (parsed.error) return res.status(400).json({ error: parsed.error });
       // #918 — the Session Benefit's renewal Frequency, on the one section that
       // has the column. A value sent to the other two is ignored rather than
@@ -1583,21 +1583,21 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       const existingIds = new Set<number>(existingAssoc.map((r: any) => r.gym_charge_id));
 
       const placeholders = gymChargeIds.map(() => '?').join(',');
-      const { rows: sellableItems } = await db.query(
+      const { rows: products } = await db.query(
         `SELECT id, type, billing_frequency, status FROM gym_charges
          WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
         [gymId, ...gymChargeIds],
       );
-      if (sellableItems.length !== gymChargeIds.length) {
-        return res.status(400).json({ error: 'One or more Sellable Items not found in this gym' });
+      if (products.length !== gymChargeIds.length) {
+        return res.status(400).json({ error: 'One or more Products not found in this gym' });
       }
-      const newlyInactive = sellableItems.find((si: any) => si.status !== 'active' && !existingIds.has(si.id));
+      const newlyInactive = products.find((si: any) => si.status !== 'active' && !existingIds.has(si.id));
       if (newlyInactive) {
-        return res.status(400).json({ error: `Sellable Item ${newlyInactive.id} is not active in this gym` });
+        return res.status(400).json({ error: `Product ${newlyInactive.id} is not active in this gym` });
       }
-      const mismatched = sellableItems.find((si: any) => classifySellableItem(si) !== category);
+      const mismatched = products.find((si: any) => classifyProduct(si) !== category);
       if (mismatched) {
-        return res.status(400).json({ error: `Sellable Item ${mismatched.id} does not belong in the '${category}' category` });
+        return res.status(400).json({ error: `Product ${mismatched.id} does not belong in the '${category}' category` });
       }
     }
 
@@ -1607,7 +1607,7 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
     // Plan picks up an item that became mandatory after it was configured.
     // A mandatory item the client *did* send passes through untouched, quantity
     // included (§4), and §8's no-duplicates rule is the merge's `has` check.
-    const mandatory = mandatoryItemsForCategory(await loadMandatorySellableItems(gymId), category);
+    const mandatory = mandatoryItemsForCategory(await loadMandatoryProducts(gymId), category);
     const toWrite = withMandatoryBenefits(submitted, mandatory);
 
     const callerMemberId = await getCallerMembershipId(req);
@@ -1623,8 +1623,8 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
             WHERE membership_plan_id = ? AND gym_id = ? FOR UPDATE`,
           [planId, gymId],
         );
-        const kept = new Map<number, SellableItemBenefit>(
-          stored.map((r: any) => [Number(r.gym_charge_id), shapeSellableItemBenefitRow('plan', r)]),
+        const kept = new Map<number, ProductBenefit>(
+          stored.map((r: any) => [Number(r.gym_charge_id), shapeProductBenefitRow('plan', r)]),
         );
         // #918: and the Frequency it is stored with, for the same replace-all
         // reason — a save that never mentions it must not clear it.
@@ -1633,7 +1633,7 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
         );
         await tx.query(`DELETE FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`, [planId, gymId]);
         for (const item of toWrite) {
-          const benefit = item.benefit ?? kept.get(item.gym_charge_id) ?? NO_SELLABLE_ITEM_BENEFIT;
+          const benefit = item.benefit ?? kept.get(item.gym_charge_id) ?? NO_PRODUCT_BENEFIT;
           const frequency = item.frequency !== undefined
             ? item.frequency
             : (keptFrequency.get(item.gym_charge_id) ?? null);

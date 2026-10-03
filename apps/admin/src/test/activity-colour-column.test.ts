@@ -10,7 +10,7 @@ import { join } from 'path';
 // "created by" — the same column order the Plans page uses.
 //
 // This repo has no component-test infra for apps/admin (see docs/architecture.md's
-// TL;DR), so — like sellable-items-column-alignment.test.ts (#637) — this pins
+// TL;DR), so — like products-column-alignment.test.ts (#637) — this pins
 // the structure down by scanning the page source and the locale files.
 
 const PAGE_PATH = join(__dirname, '..', 'app', '[locale]', 'activity-types', 'page.tsx');

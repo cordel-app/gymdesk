@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { PROMOTION_ITEM_ACTIONS } from '@/lib/sellableItemBenefitActions';
+import { PROMOTION_ITEM_ACTIONS } from '@/lib/productBenefitActions';
 
 // #924 stage 2 — the applied-Promotion grant sections of the Assigned Plan card
 // join the same shared column grid stage 1 put the Plan Benefit sections on.
 //
 // §1 is the rule ("do not create a separate visual system for Assigned Plans")
-// and §6 is where it points next: the Sellable Items an applied Promotion
+// and §6 is where it points next: the Products an applied Promotion
 // granted were the card's last hand-rolled `<table>`, with its own columns, its
 // own widths and one money column. They now render from
-// `SELLABLE_ITEM_BENEFIT_COLUMNS` (#916, #919/#920) in the Promotion's own
+// `PRODUCT_BENEFIT_COLUMNS` (#916, #919/#920) in the Promotion's own
 // option set, while the numbers stay the application's own snapshot (#635 §16).
 //
 // apps/admin has no component-test infra (docs/architecture.md's TL;DR), so the
@@ -38,8 +38,8 @@ function assignedPlansMessages(code: string): Record<string, string> {
 
 describe('#924 §1/§6: the grant sections render from the shared grid', () => {
   it('renders the shared read-only view, not a table of its own', () => {
-    expect(promotionsSrc).toContain('SellableItemBenefitView');
-    expect(promotionsSrc).toContain("from '@/components/SellableItemBenefits'");
+    expect(promotionsSrc).toContain('ProductBenefitView');
+    expect(promotionsSrc).toContain("from '@/components/ProductBenefits'");
     // The replaced table's markup and its own header/cell styles went with it.
     expect(promotionsSrc).not.toContain('<table');
     expect(promotionsSrc).not.toContain('<thead');
@@ -65,7 +65,7 @@ describe('#924 §1/§6: the grant sections render from the shared grid', () => {
 
   it('leaves the renewal Frequency to the Plan\'s Session Benefits (#918)', () => {
     // A Promotion grant has no `frequency` column at all, so the shared cell
-    // stays on its default `'item'` — the Sellable Item's own billing frequency.
+    // stays on its default `'item'` — the Product's own billing frequency.
     expect(promotionsSrc).not.toContain('frequencyColumn');
   });
 

@@ -1,4 +1,4 @@
-// #893: a **Mandatory** Sellable Item is always part of every Membership Plan.
+// #893: a **Mandatory** Product is always part of every Membership Plan.
 //
 // #832 (migration 200) added `gym_charges.mandatory` and deliberately left it
 // unread: "automatic inclusion in a Billing Plan, refusing its removal from
@@ -6,12 +6,12 @@
 // special case were all declared out of scope, so a path that acts on the flag
 // is deciding that behaviour and needs a ticket" (CLAUDE.md). This is that
 // ticket, for the Membership Plan Benefits half of it and nothing else: §9
-// scopes out Promotion benefits, billing logic and Sellable Item pricing, so
+// scopes out Promotion benefits, billing logic and Product pricing, so
 // this module is only consulted by the three Plan benefit sections.
 //
 // The rule, from the ticket's Core rule:
 //
-//   > If a Sellable Item is marked `Mandatory`, every Membership Plan must
+//   > If a Product is marked `Mandatory`, every Membership Plan must
 //   > contain it, and the Membership Plan editor must not allow it to be
 //   > removed.
 //
@@ -38,8 +38,8 @@
 // Plan's own configuration, so a mandatory item already in a Plan keeps the
 // quantity it was given and only a *missing* one is defaulted.
 
-import { SellableItemBenefitCategory, classifySellableItem } from './sellableItemClassification';
-import { DEFAULT_BENEFIT_ACTION, SellableItemBenefit } from './sellableItemBenefitActions';
+import { ProductBenefitCategory, classifyProduct } from './productClassification';
+import { DEFAULT_BENEFIT_ACTION, ProductBenefit } from './productBenefitActions';
 import { SessionBenefitFrequency } from './sessionBenefitFrequency';
 
 /**
@@ -51,14 +51,14 @@ import { SessionBenefitFrequency } from './sessionBenefitFrequency';
 export const MANDATORY_BENEFIT_QUANTITY = 1;
 
 /**
- * A Sellable Item as the mandatory rule needs to see it. The caller supplies
+ * A Product as the mandatory rule needs to see it. The caller supplies
  * only *candidates* — active, non-deleted items of this gym — because an
  * inactive or soft-deleted item is not something a Plan can be forced to
  * carry: the benefit `PUT` already refuses a newly selected inactive item, and
  * forcing one in would make every Plan save fail on a catalogue change nobody
  * asked for.
  */
-export interface MandatorySellableItem {
+export interface MandatoryProduct {
   id: number;
   name: string;
   type: string;
@@ -78,20 +78,20 @@ export interface MandatorySellableItem {
 }
 
 /** `tinyint(1)` from MySQL, `boolean` from a literal — one place to read it. */
-export function isMandatorySellableItem(item: { mandatory: boolean | number }): boolean {
+export function isMandatoryProduct(item: { mandatory: boolean | number }): boolean {
   return item.mandatory === true || Number(item.mandatory) === 1;
 }
 
 /**
  * The mandatory items that belong in one section. Classification is
- * `classifySellableItem()` and nothing else (#550), so an item can never be
+ * `classifyProduct()` and nothing else (#550), so an item can never be
  * mandatory in a section it would not otherwise belong to.
  */
 export function mandatoryItemsForCategory(
-  candidates: MandatorySellableItem[], category: SellableItemBenefitCategory,
-): MandatorySellableItem[] {
+  candidates: MandatoryProduct[], category: ProductBenefitCategory,
+): MandatoryProduct[] {
   return candidates.filter(
-    (item) => isMandatorySellableItem(item) && classifySellableItem(item) === category,
+    (item) => isMandatoryProduct(item) && classifyProduct(item) === category,
   );
 }
 
@@ -128,7 +128,7 @@ export interface PlanBenefitRow {
  * is what the `has` check enforces.
  */
 export function mergeMandatoryBenefits<T extends PlanBenefitRow>(
-  stored: T[], mandatory: MandatorySellableItem[],
+  stored: T[], mandatory: MandatoryProduct[],
 ): (T | PlanBenefitRow)[] {
   const present = new Set(stored.map((row) => Number(row.gym_charge_id)));
   const missing = mandatory
@@ -168,11 +168,11 @@ export interface PlanBenefitWrite {
    * Absent (or `null`) means it named none, which is not `no_benefit`: the
    * route resolves it against what the line is already stored with, so a save
    * that never mentions the pair cannot rewrite it (see
-   * `parseSellableItemBenefitInput`). A mandatory item re-added below carries
+   * `parseProductBenefitInput`). A mandatory item re-added below carries
    * none for exactly that reason — Mandatory says the item must be there, never
    * what it costs, so preserving it can never change what it was agreed at.
    */
-  benefit?: SellableItemBenefit | null;
+  benefit?: ProductBenefit | null;
   /**
    * #918 — the Session Benefit's renewal Frequency the request named, with the
    * same three-way encoding as `benefit`: absent means the request named none
@@ -192,7 +192,7 @@ export interface PlanBenefitWrite {
  * that dropped a mandatory item sees it return rather than silently losing it.
  */
 export function withMandatoryBenefits(
-  submitted: PlanBenefitWrite[], mandatory: MandatorySellableItem[],
+  submitted: PlanBenefitWrite[], mandatory: MandatoryProduct[],
 ): PlanBenefitWrite[] {
   const present = new Set(submitted.map((item) => Number(item.gym_charge_id)));
   return [

@@ -30,7 +30,7 @@ interface PlanSummary {
   paid_periods: number | null;
   pay_beforehand_periods: number | null;
   bonus_periods: number | null;
-  // #635 stage 4: the Benefits count is the three Sellable-Item-keyed
+  // #635 stage 4: the Benefits count is the three Product-keyed
   // sections, now that Charge Benefits are gone.
   session_benefits: unknown[];
   oneoff_benefits: unknown[];

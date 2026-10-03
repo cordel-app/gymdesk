@@ -6,11 +6,11 @@
 // its created at / created by / status, and inside it "the same parameters and
 // fields of the promotion". Everything rendered here is the application's own
 // snapshot (§16): the name, the window, the Billing & Duration and the granted
-// Sellable Items at the prices they were agreed at. Editing or deleting the
+// Products at the prices they were agreed at. Editing or deleting the
 // Promotion afterwards cannot move any of it — which is exactly why the grant
 // lines are priced from their own frozen `unit_price` and frozen treatment
 // rather than from the catalogue (#924 stage 2: the server does that pricing,
-// through the one module every Sellable Item section quotes from).
+// through the one module every Product section quotes from).
 //
 // A revoked application reads as `inactive`: its checkbox is cleared and its
 // card does not expand, because it is no longer part of what this member is
@@ -48,9 +48,9 @@ import {
   innerCardStyle,
 } from '@/components/formChrome';
 import {
-  SellableItemBenefitRow,
-  SellableItemBenefitView,
-} from '@/components/SellableItemBenefits';
+  ProductBenefitRow,
+  ProductBenefitView,
+} from '@/components/ProductBenefits';
 import type { AppliedPromotion, AppliedPromotionGrant } from './types';
 
 const GRANT_SECTIONS: {
@@ -58,7 +58,7 @@ const GRANT_SECTIONS: {
   titleKey: string;
   emptyKey: string;
 }[] = [
-  // #815 — these headers name the *Promotion*'s granted Sellable Items, so they
+  // #815 — these headers name the *Promotion*'s granted Products, so they
   // read "One-off / Session / Periodical Promotion". The assignment's own
   // benefit sections (AssignedPlanConfiguration) come from the Membership Plan
   // and keep the Plan's terminology, which is why the keys are promotion-scoped
@@ -246,9 +246,9 @@ export function AssignedPlanPromotions({
 
                 {GRANT_SECTIONS.map(({ key, titleKey, emptyKey }) => (
                   <SubSection key={key} title={t(titleKey as any)}>
-                    {/* #924 stage 2 — the one shared Sellable Item grid, as the
+                    {/* #924 stage 2 — the one shared Product grid, as the
                         Promotion card's own three sections render it since
-                        #919/#920: Sellable Item, Quantity, Frequency,
+                        #919/#920: Product, Quantity, Frequency,
                         Promotion, Agreed Price, Final Price, at the same
                         horizontal positions as the assignment's Plan benefit
                         sections above. What stays this card's own is where the
@@ -261,7 +261,7 @@ export function AssignedPlanPromotions({
                         `frequencyColumn` stays the default `'item'`: #918's
                         renewal Frequency is a Membership Plan Session
                         Benefit's, and a Promotion grant has none. */}
-                    <SellableItemBenefitView
+                    <ProductBenefitView
                       t={grantT}
                       emptyKey={emptyKey}
                       rows={(p[key] ?? []).map(toGrantRow)}
@@ -315,7 +315,7 @@ export function AssignedPlanPromotions({
  * this application goes; `gym_charge_type` likewise is not part of what the
  * snapshot froze, and the grid does not render it.
  */
-function toGrantRow(g: AppliedPromotionGrant): SellableItemBenefitRow {
+function toGrantRow(g: AppliedPromotionGrant): ProductBenefitRow {
   return {
     gym_charge_id: g.gym_charge_id ?? 0,
     quantity: g.quantity,

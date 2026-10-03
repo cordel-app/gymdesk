@@ -1,37 +1,37 @@
-// Unit tests for classifySellableItem/isRecurringFrequency — pure functions,
+// Unit tests for classifyProduct/isRecurringFrequency — pure functions,
 // no DB dependency. #550 stage 1.
 
 import { describe, expect, it } from 'vitest';
 import {
   benefitTableForCategory,
-  classifySellableItem,
+  classifyProduct,
   isRecurringFrequency,
-} from '../domain/sellableItemClassification';
+} from '../domain/productClassification';
 
-describe('classifySellableItem', () => {
+describe('classifyProduct', () => {
   it('classifies a sessions-type item as session regardless of frequency', () => {
-    expect(classifySellableItem({ type: 'sessions', billing_frequency: null })).toBe('session');
-    expect(classifySellableItem({ type: 'sessions', billing_frequency: 'month' })).toBe('session');
+    expect(classifyProduct({ type: 'sessions', billing_frequency: null })).toBe('session');
+    expect(classifyProduct({ type: 'sessions', billing_frequency: 'month' })).toBe('session');
   });
 
   it('classifies a non-sessions item with a recurring frequency as periodical', () => {
-    expect(classifySellableItem({ type: 'service', billing_frequency: 'month' })).toBe('periodical');
-    expect(classifySellableItem({ type: 'service', billing_frequency: 'week' })).toBe('periodical');
-    expect(classifySellableItem({ type: 'service', billing_frequency: 'four_weeks' })).toBe('periodical');
-    expect(classifySellableItem({ type: 'fee', billing_frequency: 'year' })).toBe('periodical');
+    expect(classifyProduct({ type: 'service', billing_frequency: 'month' })).toBe('periodical');
+    expect(classifyProduct({ type: 'service', billing_frequency: 'week' })).toBe('periodical');
+    expect(classifyProduct({ type: 'service', billing_frequency: 'four_weeks' })).toBe('periodical');
+    expect(classifyProduct({ type: 'fee', billing_frequency: 'year' })).toBe('periodical');
   });
 
   it('classifies a non-sessions item with a non-recurring frequency as oneoff', () => {
-    expect(classifySellableItem({ type: 'service', billing_frequency: 'once' })).toBe('oneoff');
-    expect(classifySellableItem({ type: 'service', billing_frequency: 'per_session' })).toBe('oneoff');
+    expect(classifyProduct({ type: 'service', billing_frequency: 'once' })).toBe('oneoff');
+    expect(classifyProduct({ type: 'service', billing_frequency: 'per_session' })).toBe('oneoff');
   });
 
   it('classifies a non-sessions item with no frequency as oneoff', () => {
-    expect(classifySellableItem({ type: 'fee', billing_frequency: null })).toBe('oneoff');
+    expect(classifyProduct({ type: 'fee', billing_frequency: null })).toBe('oneoff');
   });
 
   it('classifies Locker Rental (service, monthly) as periodical, never oneoff', () => {
-    expect(classifySellableItem({ type: 'service', billing_frequency: 'month' })).toBe('periodical');
+    expect(classifyProduct({ type: 'service', billing_frequency: 'month' })).toBe('periodical');
   });
 });
 

@@ -13,8 +13,8 @@ import { db } from '../infra/db';
  * set of selectable services.
  *
  * This deliberately does not reuse `validateProfessionalServiceIds()` from
- * `sellableItemProfessionalServices.ts`: that one validates a *set* of links
- * on a Sellable Item and, by design (#546 requirement 14), accepts services
+ * `productProfessionalServices.ts`: that one validates a *set* of links
+ * on a Product and, by design (#546 requirement 14), accepts services
  * that are merely visible, including ones the gym has switched off. An
  * Activity Type or calendar event whose service is disabled would silently
  * stop matching any Member entitlement, so the stricter rule belongs here.

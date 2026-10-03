@@ -75,13 +75,13 @@ describe('Promotions: editing split by section (#627)', () => {
 
   it('gives every Benefit section its own Edit button', () => {
     expect(pageSrc).toContain('function renderSectionHeader');
-    // The three Sellable-Item-keyed sections are driven off one config list…
+    // The three Product-keyed sections are driven off one config list…
     for (const section of ['session', 'oneoff', 'periodical']) {
-      expect(pageSrc, `SELLABLE_BENEFIT_SECTIONS is missing '${section}'`).toMatch(
-        new RegExp(`SELLABLE_BENEFIT_SECTIONS[\\s\\S]*?section: '${section}'`),
+      expect(pageSrc, `PRODUCT_BENEFIT_SECTIONS is missing '${section}'`).toMatch(
+        new RegExp(`PRODUCT_BENEFIT_SECTIONS[\\s\\S]*?section: '${section}'`),
       );
     }
-    expect(pageSrc).toMatch(/renderSellableBenefitSection[\s\S]*?enterSectionEdit\(promo, cfg\.section\)/);
+    expect(pageSrc).toMatch(/renderProductBenefitSection[\s\S]*?enterSectionEdit\(promo, cfg\.section\)/);
     // …and Membership Fee Benefits, the singleton, has its own.
     expect(pageSrc).toMatch(/renderMembershipFeeSection[\s\S]*?enterSectionEdit\(promo, 'membership_fee'\)/);
   });
@@ -108,15 +108,15 @@ describe('Promotions: editing split by section (#627)', () => {
 
   it('keeps every Benefit section read-only until its own Edit button is used', () => {
     for (const renderer of [
-      'renderSellableItemBenefitEditor',
-      'renderSellableItemBenefitView',
+      'renderProductBenefitEditor',
+      'renderProductBenefitView',
       'renderMembershipFeeEditor',
       'renderMembershipFeeView',
     ]) {
       expect(pageSrc, `${renderer} is missing — a section cannot render both states`).toContain(`function ${renderer}`);
     }
     // Each section picks its renderer off its own editing state.
-    expect(pageSrc).toMatch(/renderSellableBenefitSection[\s\S]*?isEditingSection\(promo\.id, cfg\.section\)/);
+    expect(pageSrc).toMatch(/renderProductBenefitSection[\s\S]*?isEditingSection\(promo\.id, cfg\.section\)/);
     expect(pageSrc).toMatch(/renderMembershipFeeSection[\s\S]*?isEditingSection\(promo\.id, 'membership_fee'\)/);
     // …and the main configuration off the card's own Edit mode (#897).
     expect(pageSrc).toMatch(/renderExpandedSection[\s\S]*?isEditingCard\(promo\.id\)/);

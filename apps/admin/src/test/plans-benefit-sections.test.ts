@@ -5,7 +5,7 @@ import { join } from 'path';
 // #635 stage 1 — Membership Plans aligned with the Promotion benefit structure.
 //
 // The Plans card must gain a Billing & Duration section (Free Period / Paid
-// Duration / Bonus Duration) and the three Sellable-Item-keyed Benefit sections
+// Duration / Bonus Duration) and the three Product-keyed Benefit sections
 // (One-off / Session / Period), each independently editable (§10) and with no
 // modal (§15). Membership Fee Benefits must NOT appear (§6), and the legacy
 // Included Services / Charge Benefits sections must survive stage 1 untouched —
@@ -18,7 +18,7 @@ import { join } from 'path';
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const PLANS_PAGE = join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx');
-const SHARED_COMPONENT = join(__dirname, '..', 'components', 'SellableItemBenefits.tsx');
+const SHARED_COMPONENT = join(__dirname, '..', 'components', 'ProductBenefits.tsx');
 // #892: the four duration fields are declared beside the Billing Frequency.
 const PLAN_PROFILE = join(__dirname, '..', 'app', '[locale]', 'plans', 'planProfile.ts');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
@@ -119,10 +119,10 @@ describe('Plans: One-off / Session / Period Benefits (#635 §3–§5)', () => {
   });
 
   it('reuses the shared editor rather than a second copy of the markup', () => {
-    expect(pageSrc).toContain('SellableItemBenefitEditor');
-    expect(pageSrc).toContain('SellableItemBenefitView');
-    expect(componentSrc).toContain('export function SellableItemBenefitEditor');
-    expect(componentSrc).toContain('export function SellableItemBenefitView');
+    expect(pageSrc).toContain('ProductBenefitEditor');
+    expect(pageSrc).toContain('ProductBenefitView');
+    expect(componentSrc).toContain('export function ProductBenefitEditor');
+    expect(componentSrc).toContain('export function ProductBenefitView');
   });
 
   it('classifies items only by the server-computed benefit_category (#550)', () => {
@@ -180,7 +180,7 @@ describe('Plans: locale coverage', () => {
     'section_plan_period_benefits',
     'no_plan_period_benefits',
     'add_period_benefit',
-    'col_sellable_item',
+    'col_product',
     'col_quantity',
     'col_frequency',
     'inactive_item_tag',

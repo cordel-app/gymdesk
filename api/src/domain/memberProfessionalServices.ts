@@ -8,13 +8,13 @@ import { db } from '../infra/db';
  * Service (migration 168) with the Member's side of the same link. There is
  * no Member↔Professional Service table and no "wallet" — per the answers on
  * the issue thread, a Member reaches a Professional Service *through the
- * Sellable Items they hold*, and the counts add up across sources:
+ * Products they hold*, and the counts add up across sources:
  *
  *   > user purchases a 10 class package (personal training) and the
  *   > membership plan contains also 4 personal training sessions […] member
  *   > will have 14 sessions of personal training
  *
- * Three sources hold session-type Sellable Items today, and each resolves to
+ * Three sources hold session-type Products today, and each resolves to
  * Professional Services through `sellable_item_professional_services` (#546,
  * migration 153):
  *
@@ -29,7 +29,7 @@ import { db } from '../infra/db';
  *      still not written by anything.
  *   3. `user_membership_services` — Additional Services attached directly to
  *      an assignment (#631), counted only while their window is open and
- *      only when the attached Sellable Item is itself a session package.
+ *      only when the attached Product is itself a session package.
  *
  * A fourth source lands with #635, which moves Session Benefits onto the
  * Membership Plan itself; `loadMemberProfessionalServiceGrants` is where it
@@ -129,7 +129,7 @@ export function aggregateProfessionalServiceGrants(
 }
 
 /**
- * Every session-type Sellable Item the Member currently holds, expanded to
+ * Every session-type Product the Member currently holds, expanded to
  * the Professional Services that deliver it.
  *
  * Only services that are visible to the gym and *enabled* for it
@@ -145,7 +145,7 @@ export async function loadMemberProfessionalServiceGrants(
   gymId: string,
   memberId: number,
 ): Promise<ProfessionalServiceGrantRow[]> {
-  // Resolving the Sellable Item behind a purchased package through
+  // Resolving the Product behind a purchased package through
   // MIN(gc.id) rather than a plain join: `gym_charges.class_package_id` (the
   // traceability FK added by migration 103) carries no uniqueness
   // constraint, so a join could return the same package once per

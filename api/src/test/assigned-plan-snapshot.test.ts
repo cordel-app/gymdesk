@@ -80,7 +80,7 @@ async function createMember(gymId: string): Promise<number> {
   return insertId;
 }
 
-async function createSellableItem(gymId: string, opts: {
+async function createProduct(gymId: string, opts: {
   type?: string; billingFrequency?: string | null; amount?: number; name?: string;
 } = {}): Promise<number> {
   const { type = 'service', billingFrequency = 'month', amount = 20, name = `APS-Item-${uniq()}` } = opts;
@@ -121,9 +121,9 @@ async function createFullyConfiguredPlan(gymId: string) {
   const planId = await createPlan(gymId);
   await setPlanPrice(gymId, planId, 75);
   await setBillingPolicy(gymId, planId, 1, 'month');
-  const sessionItem = await createSellableItem(gymId, { type: 'sessions', billingFrequency: 'per_session', amount: 30, name: `APS-Sessions-${uniq()}` });
-  const oneoffItem = await createSellableItem(gymId, { type: 'fee', billingFrequency: 'once', amount: 50, name: `APS-Fee-${uniq()}` });
-  const periodicalItem = await createSellableItem(gymId, { type: 'service', billingFrequency: 'month', amount: 20, name: `APS-Locker-${uniq()}` });
+  const sessionItem = await createProduct(gymId, { type: 'sessions', billingFrequency: 'per_session', amount: 30, name: `APS-Sessions-${uniq()}` });
+  const oneoffItem = await createProduct(gymId, { type: 'fee', billingFrequency: 'once', amount: 50, name: `APS-Fee-${uniq()}` });
+  const periodicalItem = await createProduct(gymId, { type: 'service', billingFrequency: 'month', amount: 20, name: `APS-Locker-${uniq()}` });
   await addPlanBenefit(gymId, 'membership_plan_session', planId, sessionItem, 10);
   await addPlanBenefit(gymId, 'membership_plan_oneoff', planId, oneoffItem, 1);
   await addPlanBenefit(gymId, 'membership_plan_periodical', planId, periodicalItem, 2);
@@ -131,12 +131,12 @@ async function createFullyConfiguredPlan(gymId: string) {
 }
 
 /**
- * A system Sellable Item: `gym_charges` rows created from a `charge_types` row
+ * A system Product: `gym_charges` rows created from a `charge_types` row
  * carry neither their own `name` nor `type` (both columns are nullable and the
  * display name comes from the charge type), which is the shape that would
  * otherwise write a NULL into the snapshot's NOT NULL columns.
  */
-async function createSystemSellableItem(gymId: string): Promise<{ id: number; chargeTypeName: string }> {
+async function createSystemProduct(gymId: string): Promise<{ id: number; chargeTypeName: string }> {
   const { rows } = await db.query(
     `SELECT ct.id, ct.name FROM charge_types ct
      WHERE ct.is_gym_charge = 1
@@ -198,7 +198,7 @@ describe('POST /user-memberships — captures the Plan configuration', () => {
   });
 
   // §13 — every row of the ticket's "must NOT change" table, in one pass.
-  it('does not move when the Plan, its price or a Sellable Item is edited afterwards', async () => {
+  it('does not move when the Plan, its price or a Product is edited afterwards', async () => {
     await db.query(
       'UPDATE membership_plans SET free_periods = 6, paid_periods = 24, bonus_periods = 0 WHERE id = ?',
       [planId],
@@ -219,7 +219,7 @@ describe('POST /user-memberships — captures the Plan configuration', () => {
     expect(body.snapshot.periodical_benefits[0].item_name).not.toBe('Renamed Locker');
   });
 
-  it('survives the Sellable Item being retired', async () => {
+  it('survives the Product being retired', async () => {
     await db.query('UPDATE gym_charges SET deleted_at = UTC_TIMESTAMP(), status = ? WHERE id = ?', ['inactive', periodicalItem]);
     const { body } = await getAssignment(gymId, umId);
     expect(body.snapshot.periodical_benefits).toHaveLength(1);
@@ -295,9 +295,9 @@ describe('the other assignment entry points snapshot too', () => {
   });
 });
 
-// A system Sellable Item has no `name` and no `type` of its own, and the
+// A system Product has no `name` and no `type` of its own, and the
 // snapshot columns are NOT NULL — copying them raw would 500 the assignment.
-describe('a Plan carrying a system Sellable Item still assigns', () => {
+describe('a Plan carrying a system Product still assigns', () => {
   let gymId: string;
 
   beforeAll(async () => {
@@ -308,7 +308,7 @@ describe('a Plan carrying a system Sellable Item still assigns', () => {
   it('resolves the charge type name and falls back to type "other"', async () => {
     const planId = await createPlan(gymId);
     await setPlanPrice(gymId, planId, 60);
-    const system = await createSystemSellableItem(gymId);
+    const system = await createSystemProduct(gymId);
     await addPlanBenefit(gymId, 'membership_plan_oneoff', planId, system.id, 1);
 
     const res = await assign(gymId, {
@@ -438,7 +438,7 @@ describe('applying a Promotion snapshots what it grants', () => {
       'INSERT INTO promotion_membership_plans (gym_id, promotion_id, membership_plan_id) VALUES (?, ?, ?)',
       [gymId, promotionId, planId],
     );
-    grantedItem = await createSellableItem(gymId, { type: 'service', billingFrequency: 'month', amount: 15, name: `APS-Granted-${uniq()}` });
+    grantedItem = await createProduct(gymId, { type: 'service', billingFrequency: 'month', amount: 15, name: `APS-Granted-${uniq()}` });
     await db.query(
       'INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)',
       [gymId, promotionId, grantedItem, 3],
@@ -499,7 +499,7 @@ describe('attaching an Additional Periodic Service snapshots its price', () => {
       member_id: await createMember(gymId), membership_plan_id: planId, starts_at: dayOffset(-5),
     });
     umId = created.body.id;
-    itemId = await createSellableItem(gymId, { type: 'service', billingFrequency: 'month', amount: 40, name: `APS-PT-${uniq()}` });
+    itemId = await createProduct(gymId, { type: 'service', billingFrequency: 'month', amount: 40, name: `APS-PT-${uniq()}` });
     const res = await request
       .post(`/user-memberships/${umId}/services`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -527,7 +527,7 @@ describe('attaching an Additional Periodic Service snapshots its price', () => {
     const { insertId } = await db.query(
       `INSERT INTO user_membership_services (gym_id, user_membership_id, gym_charge_id, quantity, starts_at)
        VALUES (?, ?, ?, 1, ?)`,
-      [gymId, umId, await createSellableItem(gymId), dayOffset(-1)],
+      [gymId, umId, await createProduct(gymId), dayOffset(-1)],
     );
     const res = await request
       .get(`/user-memberships/${umId}/services`)
@@ -558,7 +558,7 @@ describe('POST /user-memberships — freezes the Session Benefit Frequency (#918
     planId = await createPlan(gymId);
     await setPlanPrice(gymId, planId, 75);
     await setBillingPolicy(gymId, planId, 4, 'week');
-    sessionItem = await createSellableItem(gymId, {
+    sessionItem = await createProduct(gymId, {
       type: 'sessions', billingFrequency: 'per_session', amount: 50,
       name: `APS-PT-${uniq()}`,
     });

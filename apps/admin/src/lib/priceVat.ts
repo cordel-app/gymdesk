@@ -1,5 +1,5 @@
 // #547 — live VAT recalculation for the Membership Plans Pricing section.
-// Mirrors the backend's computePriceFields() (api/src/api/sellable-items.ts)
+// Mirrors the backend's computePriceFields() (api/src/api/products.ts)
 // rounding/semantics exactly, so the admin sees the same net/gross split
 // live, before saving, that the API will compute on read.
 

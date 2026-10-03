@@ -1,5 +1,5 @@
 // #635 stage 1 — Membership Plan Billing & Duration + the three
-// Sellable-Item-keyed Benefit sections (One-off / Session / Period).
+// Product-keyed Benefit sections (One-off / Session / Period).
 //
 // Integration tests: these exercise the full Express + MySQL stack, so every
 // rule below (tenant isolation, role gating, the classification and
@@ -31,7 +31,7 @@ async function createPlan(gymId: string, name?: string): Promise<number> {
   return insertId;
 }
 
-async function createSellableItem(
+async function createProduct(
   gymId: string,
   name: string,
   type: 'sessions' | 'service' | 'fee' | 'merchandise' | 'other',
@@ -192,16 +192,16 @@ describe.each([
     planId = await createPlan(gymId, `MPB ${category} Plan`);
 
     if (category === 'session') {
-      matchingItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
-      mismatchedItemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'month');
+      matchingItemId = await createProduct(gymId, 'Group Class', 'sessions', null);
+      mismatchedItemId = await createProduct(gymId, 'Locker Rental', 'service', 'month');
     } else if (category === 'oneoff') {
-      matchingItemId = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once');
-      mismatchedItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
+      matchingItemId = await createProduct(gymId, 'Registration Fee', 'fee', 'once');
+      mismatchedItemId = await createProduct(gymId, 'Group Class', 'sessions', null);
     } else {
-      matchingItemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'month');
-      mismatchedItemId = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once');
+      matchingItemId = await createProduct(gymId, 'Locker Rental', 'service', 'month');
+      mismatchedItemId = await createProduct(gymId, 'Registration Fee', 'fee', 'once');
     }
-    inactiveItemId = await createSellableItem(gymId, 'Retired Item', 'other', null, 'inactive');
+    inactiveItemId = await createProduct(gymId, 'Retired Item', 'other', null, 'inactive');
   });
 
   it('GET returns empty initially', async () => {
@@ -213,7 +213,7 @@ describe.each([
     expect(res.body).toEqual([]);
   });
 
-  it('PUT replaces all items for a matching Sellable Item', async () => {
+  it('PUT replaces all items for a matching Product', async () => {
     const res = await request
       .put(`/membership-plans/${planId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -248,7 +248,7 @@ describe.each([
     expect(res.body[field][0].gym_charge_id).toBe(matchingItemId);
   });
 
-  it('PUT rejects a Sellable Item that classifies into a different category', async () => {
+  it('PUT rejects a Product that classifies into a different category', async () => {
     const res = await request
       .put(`/membership-plans/${planId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -257,7 +257,7 @@ describe.each([
     expect(res.status).toBe(400);
   });
 
-  it('PUT rejects an inactive Sellable Item', async () => {
+  it('PUT rejects an inactive Product', async () => {
     const res = await request
       .put(`/membership-plans/${planId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -266,8 +266,8 @@ describe.each([
     expect(res.status).toBe(400);
   });
 
-  it('PUT rejects a Sellable Item belonging to another gym', async () => {
-    const foreignItem = await createSellableItem(
+  it('PUT rejects a Product belonging to another gym', async () => {
+    const foreignItem = await createProduct(
       gymB, `Foreign ${category} Item`,
       category === 'session' ? 'sessions' : category === 'periodical' ? 'service' : 'fee',
       category === 'periodical' ? 'month' : category === 'session' ? null : 'once',
@@ -283,9 +283,9 @@ describe.each([
   // Same rule as the Promotion sections (#550): only a *new* inactive item is
   // rejected — an already-attached one must survive a resave, or deactivating
   // an item elsewhere would silently drop it from every plan that uses it.
-  it('PUT keeps an already-selected Sellable Item that has since gone inactive', async () => {
+  it('PUT keeps an already-selected Product that has since gone inactive', async () => {
     const otherPlanId = await createPlan(gymId, `MPB ${category} Deactivation Plan`);
-    const itemId = await createSellableItem(
+    const itemId = await createProduct(
       gymId,
       `${category} Later Inactive Item`,
       category === 'session' ? 'sessions' : category === 'periodical' ? 'service' : 'fee',
@@ -401,7 +401,7 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
     gymId = await createTestGym('MPB Duplicate Gym');
     await createTestMembership(gymId, 'admin');
     planId = await createPlan(gymId, 'MPB Duplicate Plan');
-    sessionItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
+    sessionItemId = await createProduct(gymId, 'Group Class', 'sessions', null);
 
     await request
       .put(`/membership-plans/${planId}`)
@@ -483,9 +483,9 @@ describe('Membership Plan legacy sections (stage 1 is additive)', () => {
   });
 });
 
-// ─── #893: Mandatory Sellable Items are always part of the Plan ───────────────
+// ─── #893: Mandatory Products are always part of the Plan ───────────────
 
-describe('Membership Plan mandatory Sellable Items (#893)', () => {
+describe('Membership Plan mandatory Products (#893)', () => {
   let gymId: string;
   let gymB: string;
   let planId: number;
@@ -511,9 +511,9 @@ describe('Membership Plan mandatory Sellable Items (#893)', () => {
     await createTestMembership(gymId, 'admin');
     await createTestMembership(gymB, 'admin');
     planId = await createPlan(gymId, 'MPB Mandatory Plan');
-    insuranceId = await createSellableItem(gymId, 'Insurance Fee', 'fee', 'year');
-    lockerId = await createSellableItem(gymId, 'Locker Rental', 'fee', 'month');
-    registrationId = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once');
+    insuranceId = await createProduct(gymId, 'Insurance Fee', 'fee', 'year');
+    lockerId = await createProduct(gymId, 'Locker Rental', 'fee', 'month');
+    registrationId = await createProduct(gymId, 'Registration Fee', 'fee', 'once');
     await setMandatory(insuranceId, 1);
     await setMandatory(registrationId, 1);
   });
@@ -635,9 +635,9 @@ describe('Membership Plan mandatory Sellable Items (#893)', () => {
 
   it('ignores a mandatory item that is inactive or soft-deleted', async () => {
     const plan = await createPlan(gymId, 'MPB Mandatory Inactive Plan');
-    const inactive = await createSellableItem(gymId, 'Inactive Mandatory', 'fee', 'month', 'inactive');
+    const inactive = await createProduct(gymId, 'Inactive Mandatory', 'fee', 'month', 'inactive');
     await setMandatory(inactive, 1);
-    const deleted = await createSellableItem(gymId, 'Deleted Mandatory', 'fee', 'month');
+    const deleted = await createProduct(gymId, 'Deleted Mandatory', 'fee', 'month');
     await setMandatory(deleted, 1);
     await db.query('UPDATE gym_charges SET deleted_at = NOW() WHERE id = ?', [deleted]);
 
@@ -678,7 +678,7 @@ describe('Membership Plan benefit actions', () => {
     gymId = await createTestGym('MPB Action Gym');
     await createTestMembership(gymId, 'admin');
     planId = await createPlan(gymId, 'MPB Action Plan');
-    itemId = await createSellableItem(gymId, 'Action Group Class', 'sessions', null);
+    itemId = await createProduct(gymId, 'Action Group Class', 'sessions', null);
   });
 
   it('defaults a brand new line to the neutral action', async () => {
@@ -750,7 +750,7 @@ describe('Membership Plan benefit actions', () => {
   it('reports a mandatory item the Plan has no row for at the neutral action', async () => {
     // #893: the item is part of the section whether or not it is stored, and
     // Mandatory says nothing about what it costs.
-    const mandatoryId = await createSellableItem(gymId, 'Action Mandatory Class', 'sessions', null);
+    const mandatoryId = await createProduct(gymId, 'Action Mandatory Class', 'sessions', null);
     await db.query('UPDATE gym_charges SET mandatory = 1 WHERE id = ?', [mandatoryId]);
 
     const get = await request
@@ -762,7 +762,7 @@ describe('Membership Plan benefit actions', () => {
   });
 
   it('preserves a dropped mandatory item without repricing it', async () => {
-    const mandatoryId = await createSellableItem(gymId, 'Action Waived Class', 'sessions', null);
+    const mandatoryId = await createProduct(gymId, 'Action Waived Class', 'sessions', null);
     await db.query('UPDATE gym_charges SET mandatory = 1 WHERE id = ?', [mandatoryId]);
     await putSession([{ gym_charge_id: mandatoryId, quantity: 2, action: 'waive' }]);
 
@@ -777,7 +777,7 @@ describe('Membership Plan benefit actions', () => {
 
 // ─── #916: the Original / Final Price a Benefit row reports ───────────────────
 //
-// The card must show what a Sellable Item normally costs and what it costs
+// The card must show what a Product normally costs and what it costs
 // inside this Plan, both VAT-inclusive, and the ticket forbids a second pricing
 // implementation for the UI: "the Membership Plan details page cannot show a
 // different amount from the amount that would actually be billed". These
@@ -1002,9 +1002,9 @@ describe('Membership Plan Session Benefit Frequency (#918)', () => {
     gymId = await createTestGym('MPB Session Frequency Gym');
     await createTestMembership(gymId, 'admin');
     planId = await createPlan(gymId, 'MPB Session Frequency Plan');
-    sessionItemId = await createSellableItem(gymId, 'Personal Training Class', 'sessions', null);
-    secondSessionItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
-    periodicalItemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'month');
+    sessionItemId = await createProduct(gymId, 'Personal Training Class', 'sessions', null);
+    secondSessionItemId = await createProduct(gymId, 'Group Class', 'sessions', null);
+    periodicalItemId = await createProduct(gymId, 'Locker Rental', 'service', 'month');
   });
 
   const putSession = (items: unknown[]) => request

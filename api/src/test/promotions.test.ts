@@ -1105,10 +1105,10 @@ describe('Suitable Membership Plans', () => {
 
 // ─── Session / One-off / Periodical benefits (#550 stage 2) ───────────────────
 // Replaces the "quantity granted" half of Period/Included Benefits with three
-// tables keyed to a real Sellable Item (`gym_charges`) instead of the old
-// `charge_types` pseudo-catalog, classified via `classifySellableItem()`.
+// tables keyed to a real Product (`gym_charges`) instead of the old
+// `charge_types` pseudo-catalog, classified via `classifyProduct()`.
 
-async function createSellableItem(
+async function createProduct(
   gymId: string,
   name: string,
   type: 'sessions' | 'service' | 'fee' | 'merchandise' | 'other',
@@ -1143,16 +1143,16 @@ describe.each([
     promoId = await createPromo(gymId, `SIB ${category} Promo`);
 
     if (category === 'session') {
-      matchingItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
-      mismatchedItemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'month');
+      matchingItemId = await createProduct(gymId, 'Group Class', 'sessions', null);
+      mismatchedItemId = await createProduct(gymId, 'Locker Rental', 'service', 'month');
     } else if (category === 'oneoff') {
-      matchingItemId = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once');
-      mismatchedItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
+      matchingItemId = await createProduct(gymId, 'Registration Fee', 'fee', 'once');
+      mismatchedItemId = await createProduct(gymId, 'Group Class', 'sessions', null);
     } else {
-      matchingItemId = await createSellableItem(gymId, 'Locker Rental', 'service', 'month');
-      mismatchedItemId = await createSellableItem(gymId, 'Registration Fee', 'fee', 'once');
+      matchingItemId = await createProduct(gymId, 'Locker Rental', 'service', 'month');
+      mismatchedItemId = await createProduct(gymId, 'Registration Fee', 'fee', 'once');
     }
-    inactiveItemId = await createSellableItem(gymId, 'Retired Item', 'other', null, 'inactive');
+    inactiveItemId = await createProduct(gymId, 'Retired Item', 'other', null, 'inactive');
   });
 
   it(`GET /${path} returns empty initially`, async () => {
@@ -1164,7 +1164,7 @@ describe.each([
     expect(res.body).toEqual([]);
   });
 
-  it(`PUT /${path} replaces all items for a matching Sellable Item`, async () => {
+  it(`PUT /${path} replaces all items for a matching Product`, async () => {
     const res = await request
       .put(`/promotions/${promoId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -1186,7 +1186,7 @@ describe.each([
     expect(res.body).toHaveLength(1);
   });
 
-  it(`PUT /${path} rejects a Sellable Item that classifies into a different category`, async () => {
+  it(`PUT /${path} rejects a Product that classifies into a different category`, async () => {
     const res = await request
       .put(`/promotions/${promoId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -1195,7 +1195,7 @@ describe.each([
     expect(res.status).toBe(400);
   });
 
-  it(`PUT /${path} rejects an inactive Sellable Item`, async () => {
+  it(`PUT /${path} rejects an inactive Product`, async () => {
     const res = await request
       .put(`/promotions/${promoId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -1208,9 +1208,9 @@ describe.each([
   // promotion, even if they are now inactive" — a resubmit of an already-
   // saved selection must not 400 just because the item went inactive after
   // it was selected; only a *new* (not-yet-associated) inactive item is rejected.
-  it(`PUT /${path} keeps an already-selected Sellable Item that has since gone inactive`, async () => {
+  it(`PUT /${path} keeps an already-selected Product that has since gone inactive`, async () => {
     const goesInactivePromo = await createPromo(gymId, `SIB ${category} Deactivation Promo`);
-    const itemId = await createSellableItem(
+    const itemId = await createProduct(
       gymId,
       `${category} Later Inactive Item`,
       category === 'session' ? 'sessions' : category === 'periodical' ? 'service' : 'fee',
@@ -1300,7 +1300,7 @@ describe('Session / One-off / Periodical benefits — duplicate', () => {
     gymId = await createTestGym('SIB Duplicate Gym');
     await createTestMembership(gymId, 'admin');
     promoId = await createPromo(gymId, 'SIB Duplicate Promo');
-    sessionItemId = await createSellableItem(gymId, 'Group Class', 'sessions', null);
+    sessionItemId = await createProduct(gymId, 'Group Class', 'sessions', null);
     await request
       .put(`/promotions/${promoId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -1422,7 +1422,7 @@ describe('Promotion benefit actions', () => {
     gymId = await createTestGym('SIB Action Gym');
     await createTestMembership(gymId, 'admin');
     promoId = await createPromo(gymId, 'SIB Action Promo');
-    itemId = await createSellableItem(gymId, 'Action Group Class', 'sessions', null);
+    itemId = await createProduct(gymId, 'Action Group Class', 'sessions', null);
   });
 
   it('defaults a brand new grant to the neutral action', async () => {

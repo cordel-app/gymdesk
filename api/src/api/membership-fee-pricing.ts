@@ -265,7 +265,7 @@ export function standingFeePromotions(applications: PromotionApplication[]): Sim
       payBeforehandMonths: a.payBeforehandMonths,
       bonusMonths: a.bonusMonths,
       membershipFeeBenefits: a.membershipFeeBenefits,
-      // Only the Membership Fee is priced here; a Promotion's granted Sellable
+      // Only the Membership Fee is priced here; a Promotion's granted Product
       // Items are the simulation's other streams and are charged by nothing here.
       grants: [],
     }));

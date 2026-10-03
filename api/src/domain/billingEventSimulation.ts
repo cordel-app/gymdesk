@@ -15,9 +15,9 @@
 // that expresses its entity as the hypothetical assignment the engine prices:
 //
 //   * `planBillingEventSimulation.ts` — the Plan a member enrolls on today:
-//     its Membership Fee plus every Sellable Item it carries.
+//     its Membership Fee plus every Product it carries.
 //   * `promotionBillingEventSimulation.ts` — the Promotion applied to that
-//     member today: the Sellable Items it grants, at the price its own
+//     member today: the Products it grants, at the price its own
 //     `(action, value)` pair gives them.
 //
 // Nothing here decides a date, an amount or a period status: that is the
@@ -44,7 +44,7 @@ export interface BillingEventLine {
   kind: 'membership_fee' | 'sellable_item';
   label: string;
   gym_charge_id: number | null;
-  /** True when this line exists because the Sellable Item is Mandatory (#832). */
+  /** True when this line exists because the Product is Mandatory (#832). */
   mandatory: boolean;
   quantity: number;
   unit_price: number;

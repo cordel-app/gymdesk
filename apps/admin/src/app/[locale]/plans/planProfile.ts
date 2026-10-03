@@ -174,7 +174,7 @@ export interface PlanCurrentPriceRow {
  * Both numbers come from the server (`amount_incl_tax` / `amount_excl_tax`,
  * `computePriceFields()` over the rate the Plan actually bills at — its own, or
  * the gym's system rate when it is on "Default"), so the split shown here cannot
- * drift from the one the Pricing editor previews or the one Sellable Items
+ * drift from the one the Pricing editor previews or the one Products
  * report. Nothing is recomputed in the frontend.
  *
  * A Plan whose gym has no tax rate at all has no split to show: it falls back to

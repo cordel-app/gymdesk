@@ -1,4 +1,4 @@
-// #821 / #945: a Sellable Item's **Billing Frequency** is one of four choices.
+// #821 / #945: a Product's **Billing Frequency** is one of four choices.
 //
 // `gym_charges.billing_frequency` has carried six values since migration 123
 // (`once`, `per_session`, `four_weeks`, `week`, `month`, `year`). Two of them
@@ -9,8 +9,8 @@
 //   `per_session` — #945. A session package's size is its **Units** and its
 //                   Billing Frequency is when the whole package is billed
 //                   (`10 units / €500 / Once` = €500 for the ten). "Per
-//                   Session" implies usage-based billing, which the Sellable
-//                   Item model does not have: `cadenceForSellableItem()`
+//                   Session" implies usage-based billing, which the Product
+//                   Item model does not have: `cadenceForProduct()`
 //                   already gives it no schedule, so it has always billed
 //                   exactly like `once`.
 //
@@ -18,7 +18,7 @@
 // is, and that split is the whole point of this module — the same shape #820
 // gave a Membership Plan's cadence:
 //
-//   OFFERED — what a Sellable Item may be *configured* with, in the order the
+//   OFFERED — what a Product may be *configured* with, in the order the
 //             dropdown lists them. `POST /sellable-items` accepts only these.
 //   LEGACY  — stored, read, classified (`isRecurringFrequency()`), displayed
 //             and billed exactly as before, but never selectable. A `PUT` may
@@ -40,11 +40,11 @@
 //     applies: flag the value for correction rather than guessing. The editor
 //     renders it disabled with `frequency_legacy_notice` beside it, which is
 //     that flag, and correcting it never moves the item between benefit
-//     sections (`classifySellableItem()` counts both `once` and `per_session`
+//     sections (`classifyProduct()` counts both `once` and `per_session`
 //     as non-recurring).
 
-/** What a Sellable Item may be configured with, in dropdown order. */
-export const OFFERED_SELLABLE_ITEM_FREQUENCIES = [
+/** What a Product may be configured with, in dropdown order. */
+export const OFFERED_PRODUCT_FREQUENCIES = [
   'once',
   'four_weeks',
   'month',
@@ -55,36 +55,36 @@ export const OFFERED_SELLABLE_ITEM_FREQUENCIES = [
  * Stored by rows written before the ticket that retired them; readable and
  * billable, never selectable. `week` left with #821, `per_session` with #945.
  */
-export const LEGACY_SELLABLE_ITEM_FREQUENCIES = ['per_session', 'week'] as const;
+export const LEGACY_PRODUCT_FREQUENCIES = ['per_session', 'week'] as const;
 
-export type OfferedSellableItemFrequency = (typeof OFFERED_SELLABLE_ITEM_FREQUENCIES)[number];
-export type LegacySellableItemFrequency = (typeof LEGACY_SELLABLE_ITEM_FREQUENCIES)[number];
-export type SellableItemFrequency = OfferedSellableItemFrequency | LegacySellableItemFrequency;
+export type OfferedProductFrequency = (typeof OFFERED_PRODUCT_FREQUENCIES)[number];
+export type LegacyProductFrequency = (typeof LEGACY_PRODUCT_FREQUENCIES)[number];
+export type ProductFrequency = OfferedProductFrequency | LegacyProductFrequency;
 
 /** Everything the column may hold — what the CHECK permits and reads answer with. */
-export const STORED_SELLABLE_ITEM_FREQUENCIES: readonly SellableItemFrequency[] = [
-  ...OFFERED_SELLABLE_ITEM_FREQUENCIES,
-  ...LEGACY_SELLABLE_ITEM_FREQUENCIES,
+export const STORED_PRODUCT_FREQUENCIES: readonly ProductFrequency[] = [
+  ...OFFERED_PRODUCT_FREQUENCIES,
+  ...LEGACY_PRODUCT_FREQUENCIES,
 ];
 
-export function isOfferedSellableItemFrequency(value: unknown): value is OfferedSellableItemFrequency {
+export function isOfferedProductFrequency(value: unknown): value is OfferedProductFrequency {
   return typeof value === 'string'
-    && (OFFERED_SELLABLE_ITEM_FREQUENCIES as readonly string[]).includes(value);
+    && (OFFERED_PRODUCT_FREQUENCIES as readonly string[]).includes(value);
 }
 
-export function isLegacySellableItemFrequency(value: unknown): value is LegacySellableItemFrequency {
+export function isLegacyProductFrequency(value: unknown): value is LegacyProductFrequency {
   return typeof value === 'string'
-    && (LEGACY_SELLABLE_ITEM_FREQUENCIES as readonly string[]).includes(value);
+    && (LEGACY_PRODUCT_FREQUENCIES as readonly string[]).includes(value);
 }
 
 /** Whether a stored value is one this codebase knows (offered or legacy). */
-export function isStoredSellableItemFrequency(value: unknown): value is SellableItemFrequency {
-  return isOfferedSellableItemFrequency(value) || isLegacySellableItemFrequency(value);
+export function isStoredProductFrequency(value: unknown): value is ProductFrequency {
+  return isOfferedProductFrequency(value) || isLegacyProductFrequency(value);
 }
 
 /** `once, four_weeks, month, year` — for the routes' 400 message. */
 export function describeOfferedFrequencies(): string {
-  return OFFERED_SELLABLE_ITEM_FREQUENCIES.join(', ');
+  return OFFERED_PRODUCT_FREQUENCIES.join(', ');
 }
 
 /**
@@ -100,11 +100,11 @@ export function describeOfferedFrequencies(): string {
  * the stored value back untouched — while a new one can never be created and
  * an item on another frequency can never be moved onto it.
  */
-export function sellableItemFrequencyWriteError(next: unknown, current: unknown): string | null {
+export function productFrequencyWriteError(next: unknown, current: unknown): string | null {
   if (next === undefined || next === null || next === '') return null;
-  if (isOfferedSellableItemFrequency(next)) return null;
-  if (isLegacySellableItemFrequency(next) && next === current) return null;
-  if (isLegacySellableItemFrequency(next)) {
+  if (isOfferedProductFrequency(next)) return null;
+  if (isLegacyProductFrequency(next) && next === current) return null;
+  if (isLegacyProductFrequency(next)) {
     return `billing_frequency '${next}' is no longer offered and can only be kept on an item that already stores it; `
       + `choose one of: ${describeOfferedFrequencies()}`;
   }

@@ -312,7 +312,7 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         // Keyed on the value rather than on `'applies_to' in req.body` like its
         // siblings, deliberately: the column is NOT NULL, so an explicit
         // `applies_to: null` can only mean "not supplied" — reading it as
-        // "supplied" would write the default and silently re-target a Sellable
+        // "supplied" would write the default and silently re-target a Product
         // Item Promotion as a Membership Plan one.
         applies_to != null ? 1 : 0, applies_to ?? DEFAULT_PROMOTION_TARGET,
         lifecycle_status ?? null,
@@ -419,7 +419,7 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
         );
       }
 
-      // #550 stage 2: the three Sellable-Item-keyed tables (migration 155)
+      // #550 stage 2: the three Product-keyed tables (migration 155)
       // that replace the "quantity granted" half of Period/Included Benefits
       // above — copied the same way so duplicating a promotion never drops
       // benefits configured through the new session/one-off/periodical

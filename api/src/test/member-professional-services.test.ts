@@ -91,7 +91,7 @@ async function createProfessionalService(
 }
 
 /**
- * A Session-type Sellable Item (`gym_charges`, type='sessions'). `units` is the
+ * A Session-type Product (`gym_charges`, type='sessions'). `units` is the
  * number of sessions the item bundles — migration 103 copies
  * class_packages.number_of_sessions into it. charge_type_id stays NULL: these
  * are custom catalogue items, not system charges.
@@ -116,7 +116,7 @@ async function createSessionItem(
   return insertId;
 }
 
-/** Links a Sellable Item to a Professional Service (#546, migration 153). */
+/** Links a Product to a Professional Service (#546, migration 153). */
 async function linkItemToService(gymId: string, itemId: number, serviceId: number): Promise<void> {
   await db.query(
     `INSERT INTO sellable_item_professional_services (gym_id, sellable_item_id, professional_service_id)
@@ -126,7 +126,7 @@ async function linkItemToService(gymId: string, itemId: number, serviceId: numbe
 }
 
 /**
- * A class_packages catalogue row plus the gym_charges Sellable Item that
+ * A class_packages catalogue row plus the gym_charges Product that
  * traces back to it (the migration-103 shape the package loader relies on),
  * already linked to `serviceId`.
  */
@@ -134,20 +134,20 @@ async function createPackageCatalogue(
   gymId: string,
   serviceId: number,
   opts: { name?: string; sessions?: number } = {},
-): Promise<{ classPackageId: number; sellableItemId: number; name: string }> {
+): Promise<{ classPackageId: number; productId: number; name: string }> {
   const { name = `MPS-Package-${uniq()}`, sessions = 10 } = opts;
   const { insertId: classPackageId } = await db.query(
     `INSERT INTO class_packages (gym_id, name, number_of_sessions, price, validity_days, status)
      VALUES (?, ?, ?, 100.00, 365, 'active')`,
     [gymId, name, sessions],
   );
-  const sellableItemId = await createSessionItem(gymId, {
+  const productId = await createSessionItem(gymId, {
     name,
     units: sessions,
     classPackageId,
   });
-  await linkItemToService(gymId, sellableItemId, serviceId);
-  return { classPackageId, sellableItemId, name };
+  await linkItemToService(gymId, productId, serviceId);
+  return { classPackageId, productId, name };
 }
 
 /** A purchased package instance (`user_class_packages`). */
@@ -202,14 +202,14 @@ async function createAssignedPlan(
 
 /**
  * A Promotion carrying one Session benefit (`promotion_session`, migration
- * 155) on `sellableItemId`, applied to `userMembershipId`.
+ * 155) on `productId`, applied to `userMembershipId`.
  * Returns the user_membership_promotions row id — the loader's reference_id.
  */
 async function applyPromotionWithSessionBenefit(
   gymId: string,
   planId: number,
   userMembershipId: number,
-  sellableItemId: number,
+  productId: number,
   quantity: number,
   status: 'applied' | 'consumed' | 'revoked' = 'applied',
 ): Promise<number> {
@@ -225,7 +225,7 @@ async function applyPromotionWithSessionBenefit(
   );
   await db.query(
     'INSERT INTO promotion_session (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)',
-    [gymId, promotionId, sellableItemId, quantity],
+    [gymId, promotionId, productId, quantity],
   );
   const { insertId } = await db.query(
     `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, status)
@@ -239,7 +239,7 @@ async function applyPromotionWithSessionBenefit(
 async function attachMembershipService(
   gymId: string,
   userMembershipId: number,
-  sellableItemId: number,
+  productId: number,
   opts: { quantity?: number; startsAt?: string; endsAt?: string | null } = {},
 ): Promise<number> {
   const { quantity = 1, startsAt = dayOffset(-10), endsAt = null } = opts;
@@ -247,7 +247,7 @@ async function attachMembershipService(
     `INSERT INTO user_membership_services
        (gym_id, user_membership_id, gym_charge_id, quantity, starts_at, ends_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
-    [gymId, userMembershipId, sellableItemId, quantity, startsAt, endsAt],
+    [gymId, userMembershipId, productId, quantity, startsAt, endsAt],
   );
   return insertId;
 }
@@ -378,7 +378,7 @@ describe('GET /members/:memberId/professional-services — happy path', () => {
   let gymId: string;
   let memberId: number;
   let service: { id: number; name: string };
-  let pkg: { classPackageId: number; sellableItemId: number; name: string };
+  let pkg: { classPackageId: number; productId: number; name: string };
   let userClassPackageId: number;
 
   beforeAll(async () => {
@@ -415,7 +415,7 @@ describe('GET /members/:memberId/professional-services — happy path', () => {
     expect(res.body[0].sources[0]).toMatchObject({
       kind: 'class_package',
       reference_id: userClassPackageId,
-      sellable_item_id: pkg.sellableItemId,
+      sellable_item_id: pkg.productId,
       sellable_item_name: pkg.name,
       sessions: 10,
     });
@@ -445,7 +445,7 @@ describe('Counts add up across grant sources', () => {
   let gymId: string;
   let memberId: number;
   let service: { id: number; name: string };
-  let pkg: { classPackageId: number; sellableItemId: number; name: string };
+  let pkg: { classPackageId: number; productId: number; name: string };
   let promotionItemId: number;
   let userClassPackageId: number;
   let umpId: number;
@@ -497,7 +497,7 @@ describe('Counts add up across grant sources', () => {
     const fromPackage = sources.find((s: any) => s.kind === 'class_package');
     expect(fromPackage).toMatchObject({
       reference_id: userClassPackageId,
-      sellable_item_id: pkg.sellableItemId,
+      sellable_item_id: pkg.productId,
       sessions: 10,
     });
 
@@ -818,7 +818,7 @@ describe('Professional Service availability', () => {
     expect(res.body[0]).toMatchObject({ professional_service_id: enabled.id, sessions: 8 });
   });
 
-  it('excludes a package whose Sellable Item is linked to no Professional Service', async () => {
+  it('excludes a package whose Product is linked to no Professional Service', async () => {
     const memberId = await createMember(gymId, 'MPS Unlinked Item Member');
     const { insertId: classPackageId } = await db.query(
       `INSERT INTO class_packages (gym_id, name, number_of_sessions, price, validity_days, status)

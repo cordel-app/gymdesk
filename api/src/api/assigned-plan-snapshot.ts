@@ -1,21 +1,21 @@
 import { db, Tx } from '../infra/db';
 import { PersonalFeeBenefit, toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { PlanBenefitPrices } from '../domain/planBenefitPrices';
-import { sellableItemBenefitPrices } from './sellable-item-benefit-pricing';
-import { SellableItemBenefit, toSellableItemBenefit } from '../domain/sellableItemBenefitActions';
+import { productBenefitPrices } from './product-benefit-pricing';
+import { ProductBenefit, toProductBenefit } from '../domain/productBenefitActions';
 import {
   SessionBenefitFrequency,
   toSessionBenefitFrequency,
 } from '../domain/sessionBenefitFrequency';
 import {
-  SellableItemBenefitCategory,
+  ProductBenefitCategory,
   planBenefitTableForCategory,
-} from '../domain/sellableItemClassification';
+} from '../domain/productClassification';
 // Type-only: `domain/billingSimulation` imports `advanceBillingDate` from
 // `api/billing`, which imports ASSIGNMENT_CADENCE from here — an `import type`
 // is erased, so the three modules never form a runtime cycle.
 import type {
-  SellableItemFrequency,
+  ProductFrequency,
   SimulationGrant,
   SimulationPlanBenefit,
 } from '../domain/billingSimulation';
@@ -36,7 +36,7 @@ import type {
  *                                           frequency, price and currency
  *
  * so a later edit to the Plan, its billing policy, its price windows or a
- * Sellable Item cannot reach an assignment that already exists (§13, §17).
+ * Product cannot reach an assignment that already exists (§13, §17).
  *
  * #635 stage 3 makes billing *read* it. Everything that prices an existing
  * assignment now resolves the snapshot first and only falls back to the live
@@ -60,10 +60,10 @@ import type {
  * both are resolved here and in migration 174's backfill with the identical
  * fallback.
  */
-const ITEM_NAME_EXPR = "COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id))";
+const ITEM_NAME_EXPR = "COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id))";
 const ITEM_TYPE_EXPR = "COALESCE(gc.type, 'other')";
 
-export const BENEFIT_TABLE_BY_CATEGORY: Record<SellableItemBenefitCategory, string> = {
+export const BENEFIT_TABLE_BY_CATEGORY: Record<ProductBenefitCategory, string> = {
   session: 'user_membership_session',
   oneoff: 'user_membership_oneoff',
   periodical: 'user_membership_periodical',
@@ -95,7 +95,7 @@ export interface AssignedPlanBenefitRow extends PlanBenefitPrices {
    * Read from the snapshot for the same reason the price is: the Plan's own
    * row may have been re-configured since.
    */
-  action: SellableItemBenefit['action'];
+  action: ProductBenefit['action'];
   value: number | null;
   /**
    * #918 — a **Session** Benefit's renewal Frequency, as it was agreed. `null`
@@ -143,14 +143,14 @@ export interface AssignedPlanSnapshot extends AssignedPlanBillingSnapshot {
   snapshot_captured: boolean;
 }
 
-const CATEGORIES: SellableItemBenefitCategory[] = ['session', 'oneoff', 'periodical'];
+const CATEGORIES: ProductBenefitCategory[] = ['session', 'oneoff', 'periodical'];
 
 /**
  * The three snapshot sections' own read.
  *
  * `b.*` is the agreement: every commercial fact of the line was frozen onto it
  * at assignment time (§17). The two joined columns are the one thing the
- * snapshot never captured and never could — the Sellable Item's **tax
+ * snapshot never captured and never could — the Product's **tax
  * treatment**, which is a statutory rate rather than a term of this contract.
  * #924 §4 asks the card to quote these lines tax-included, so the rate is read
  * live (LEFT JOIN: an item deleted since leaves the frozen amount as the honest
@@ -172,7 +172,7 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
   const unitPrice = row.unit_price != null ? Number(row.unit_price) : 0;
   // A snapshot row came from a Membership Plan section, so it is read with
   // the Plan's option set — the three of §16 and no more.
-  const benefit = toSellableItemBenefit('plan', row.action, row.value);
+  const benefit = toProductBenefit('plan', row.action, row.value);
   return {
     id: row.id,
     user_membership_id: row.user_membership_id,
@@ -190,12 +190,12 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
     /**
      * #924 stage 1 — what this line costs before and after its own treatment,
      * VAT included, from the one module the Plan and Promotion sections price
-     * through. The amount handed over is the **frozen** one, so a Sellable Item
+     * through. The amount handed over is the **frozen** one, so a Product
      * repriced since cannot move what this member was agreed (§17), and the
      * figures cannot disagree with what the assignment bills: both end at
      * `applyLineBenefit()`.
      */
-    ...sellableItemBenefitPrices('plan', {
+    ...productBenefitPrices('plan', {
       gym_charge_id: row.gym_charge_id,
       quantity: row.quantity,
       action: benefit.action,
@@ -220,7 +220,7 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
  * stored price any more, so a staff-agreed number is this column's value and the
  * assignment's Promotions are resolved on top of it, per cycle.
  *
- * Benefit rows carry the Sellable Item's price as it is now: the item itself
+ * Benefit rows carry the Product's price as it is now: the item itself
  * may be repriced, renamed or retired later without touching what was agreed
  * (§17). `INSERT ... SELECT` keeps each section a single statement, and
  * `gym_charges` is not filtered on `deleted_at` — an item already attached to
@@ -383,7 +383,7 @@ export async function loadAssignedPlanSnapshot(
 
 /** One section of the snapshot, for the editor's own refetch (#635 stage 6). */
 export async function loadAssignedPlanBenefitSection(
-  gymId: string, umId: number, category: SellableItemBenefitCategory,
+  gymId: string, umId: number, category: ProductBenefitCategory,
 ): Promise<AssignedPlanBenefitRow[]> {
   const { rows } = await db.query(
     selectSnapshotSection(BENEFIT_TABLE_BY_CATEGORY[category]), [umId, gymId],
@@ -394,7 +394,7 @@ export async function loadAssignedPlanBenefitSection(
 /**
  * #635 stage 6 §15 — replaces one benefit section of *this assignment's*
  * snapshot. Nothing else is touched: not the Membership Plan the assignment
- * came from, not another assignment of the same Plan, not the Sellable Item.
+ * came from, not another assignment of the same Plan, not the Product.
  *
  * A line whose item was already in the section keeps the commercial facts it
  * was captured with and only changes quantity — editing one line must never
@@ -406,7 +406,7 @@ export async function loadAssignedPlanBenefitSection(
 export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
   gymId: string;
   userMembershipId: number;
-  category: SellableItemBenefitCategory;
+  category: ProductBenefitCategory;
   items: { gym_charge_id: number; quantity: number }[];
 }): Promise<void> {
   const { gymId, userMembershipId, category, items } = params;
@@ -447,7 +447,7 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
       );
       continue;
     }
-    // A newly added line freezes the Sellable Item as it is now. `gym_charges`
+    // A newly added line freezes the Product as it is now. `gym_charges`
     // is not filtered on `deleted_at` for the same reason as at assignment
     // time: the route has already decided the item may be attached. Its
     // `(action, value)` pair is the column's own neutral default (#896): the
@@ -486,8 +486,8 @@ export const ASSIGNMENT_CADENCE = {
   unit: (um = 'um', bp = 'bp') => `COALESCE(${um}.recurring_billing_unit, ${bp}.recurring_billing_unit)`,
 };
 
-function toFrequency(v: unknown): SellableItemFrequency | null {
-  return (v ?? null) as SellableItemFrequency | null;
+function toFrequency(v: unknown): ProductFrequency | null {
+  return (v ?? null) as ProductFrequency | null;
 }
 
 function positiveQuantity(v: unknown): number {
@@ -528,7 +528,7 @@ export async function loadPlanBenefitsForSimulation(
     list.push({
       gymChargeId: row.gym_charge_id,
       name: row.item_name,
-      category: row.category as SellableItemBenefitCategory,
+      category: row.category as ProductBenefitCategory,
       billingFrequency: toFrequency(row.item_billing_frequency),
       unitPrice: row.unit_price != null ? Number(row.unit_price) : 0,
       quantity: positiveQuantity(row.quantity),
@@ -536,10 +536,10 @@ export async function loadPlanBenefitsForSimulation(
       // the projection report "8 sessions every 4 weeks" rather than 2 once.
       sessionFrequency: toSessionBenefitFrequency(row.session_frequency),
       // #896 stage 3 — the Plan's own treatment of this line, as frozen with
-      // it. Read through `toSellableItemBenefit('plan', …)`, so a value stored
+      // it. Read through `toProductBenefit('plan', …)`, so a value stored
       // as mysql2's DECIMAL string arrives as a number and an action a Plan may
       // not configure reads as the neutral default rather than pricing.
-      benefit: toSellableItemBenefit('plan', row.action, row.value),
+      benefit: toProductBenefit('plan', row.action, row.value),
     });
     byAssignment.set(row.user_membership_id, list);
   }
@@ -569,12 +569,12 @@ export async function loadPlanBenefitsForSimulation(
     list.push({
       gymChargeId: row.gym_charge_id,
       name: row.item_name,
-      category: row.category as SellableItemBenefitCategory,
+      category: row.category as ProductBenefitCategory,
       billingFrequency: toFrequency(row.billing_frequency),
       unitPrice: row.amount != null ? Number(row.amount) : 0,
       quantity: positiveQuantity(row.quantity),
       sessionFrequency: toSessionBenefitFrequency(row.session_frequency),
-      benefit: toSellableItemBenefit('plan', row.action, row.value),
+      benefit: toProductBenefit('plan', row.action, row.value),
     });
     livePerPlan.set(row.membership_plan_id, list);
   }
@@ -585,7 +585,7 @@ export async function loadPlanBenefitsForSimulation(
   return byAssignment;
 }
 
-const PROMOTION_GRANT_SNAPSHOT_TABLE: Record<SellableItemBenefitCategory, string> = {
+const PROMOTION_GRANT_SNAPSHOT_TABLE: Record<ProductBenefitCategory, string> = {
   session: 'user_membership_promotion_session_snapshot',
   oneoff: 'user_membership_promotion_oneoff_snapshot',
   periodical: 'user_membership_promotion_periodical_snapshot',
@@ -600,7 +600,7 @@ const PROMOTION_GRANT_SNAPSHOT_TABLE: Record<SellableItemBenefitCategory, string
  * signal to read the Promotion's live benefits instead — editing or deleting a
  * Promotion must not move an assignment that has a snapshot (§16), but an
  * application that predates the snapshot flow still has to simulate something.
- * A snapshot row whose `unit_price` is NULL (its Sellable Item was already
+ * A snapshot row whose `unit_price` is NULL (its Product was already
  * gone when migration 174 backfilled) prices at 0 rather than reaching for a
  * live row that no longer exists.
  */
@@ -627,8 +627,8 @@ export async function loadPromotionGrantSnapshots(
       // (`gym_charge_id` is ON DELETE SET NULL there); 0 groups those under a
       // line that no longer points at a catalogue row.
       gymChargeId: row.gym_charge_id ?? 0,
-      name: row.gym_charge_name ?? 'Sellable Item',
-      category: row.category as SellableItemBenefitCategory,
+      name: row.gym_charge_name ?? 'Product',
+      category: row.category as ProductBenefitCategory,
       billingFrequency: toFrequency(row.item_billing_frequency),
       unitPrice: row.unit_price != null ? Number(row.unit_price) : 0,
       quantity: positiveQuantity(row.quantity),
@@ -636,7 +636,7 @@ export async function loadPromotionGrantSnapshots(
       // agreed when the Promotion was applied (§16). A row snapshotted before
       // migration 203 carries the `waive` its backfill wrote, which is what a
       // grant meant when the column did not exist.
-      benefit: toSellableItemBenefit('promotion', row.action, row.value),
+      benefit: toProductBenefit('promotion', row.action, row.value),
     });
     byApplication.set(row.user_membership_promotion_id, list);
   }

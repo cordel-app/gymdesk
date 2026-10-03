@@ -243,7 +243,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
           Billing & Duration, the Personal Membership Fee Benefit and the three
           benefit kinds as they were captured at assignment time, which since
           stage 3 is also what it bills. A later edit of the Plan or of a
-          Sellable Item never moves these lines (§13/§17).
+          Product never moves these lines (§13/§17).
 
           #924 stage 5: they are the card's own sections now, not a nested group
           under a `MEMBERSHIP PLAN CONFIGURATION` heading the Plan card has no
@@ -336,7 +336,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
 
       {/* #924 stage 4 (§8/§9/§10) — the BILLING EVENT FORECAST: one group per
           billing *date*, listing every line that falls on it — the Membership
-          Fee plus each Sellable Item and Additional Periodic Service this
+          Fee plus each Product and Additional Periodic Service this
           contract carries — where the Membership Fee Simulation above is one
           row per billing *period* about the fee alone. Neither replaces the
           other and neither may grow into the other.

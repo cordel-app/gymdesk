@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-// #894 — the Mandatory status is visible in a Sellable Item's card header.
+// #894 — the Mandatory status is visible in a Product's card header.
 //
 // #832 gave the flag a checkbox in both forms and a row in the two read-only
 // surfaces, which meant a gym owner had to open a card (or its Edit form) to
@@ -10,14 +10,14 @@ import { join } from 'path';
 // the name, next to the `System` one, for items where `mandatory = true`.
 //
 // This repo has no component-test infra for apps/admin (see docs/architecture.md's
-// TL;DR), so — like sellable-items-column-alignment.test.ts (#637) — the
+// TL;DR), so — like products-column-alignment.test.ts (#637) — the
 // structure is pinned by scanning the page source and the locale files.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
-const SELLABLE_ITEMS_PAGE = join(
-  __dirname, '..', 'app', '[locale]', 'financials', 'sellable-items', 'page.tsx',
+const PRODUCTS_PAGE = join(
+  __dirname, '..', 'app', '[locale]', 'financials', 'products', 'page.tsx',
 );
 const LIST_CHROME = join(__dirname, '..', 'components', 'listChrome.ts');
 // The other two pages drawing a name-cell badge, which #894 moved onto the
@@ -32,22 +32,22 @@ function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 }
 
-const page = stripComments(readFileSync(SELLABLE_ITEMS_PAGE, 'utf-8'));
+const page = stripComments(readFileSync(PRODUCTS_PAGE, 'utf-8'));
 
 /** The collapsed header only: everything before the inline editor. */
 const header = page.match(/<div style={rowStyle}[\s\S]*?\n {8}<\/div>\n/)?.[0] ?? '';
 /** The name cell inside it, which is where both badges belong. */
 const nameCell = header.match(/<div style=\{\{ \.\.\.cellStyle, fontWeight: 600[\s\S]*?\n {10}<\/div>/)?.[0] ?? '';
 
-function sellableItemsKey(code: string, key: string): string | undefined {
+function productsKey(code: string, key: string): string | undefined {
   const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8')) as Record<string, unknown>;
-  const ns = messages['sellable_items'];
+  const ns = messages['products'];
   if (ns == null || typeof ns !== 'object') return undefined;
   const value = (ns as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : undefined;
 }
 
-describe('Sellable Items: Mandatory badge in the card header (#894)', () => {
+describe('Products: Mandatory badge in the card header (#894)', () => {
   it('locates the collapsed header and its name cell', () => {
     expect(header, 'the collapsed header could not be located').not.toBe('');
     expect(nameCell, 'the name cell could not be located').not.toBe('');
@@ -92,7 +92,7 @@ describe('Sellable Items: Mandatory badge in the card header (#894)', () => {
     const chrome = readFileSync(LIST_CHROME, 'utf-8');
     expect(chrome).toContain('export const listNameBadgeStyle');
     expect(chrome).toContain('export const listNameBadgeAccentStyle');
-    for (const file of [SELLABLE_ITEMS_PAGE, ...OTHER_BADGE_PAGES]) {
+    for (const file of [PRODUCTS_PAGE, ...OTHER_BADGE_PAGES]) {
       const src = readFileSync(file, 'utf-8');
       expect(src, `${file} does not import the shared badge style`)
         .toMatch(/import \{[^}]*\blistNameBadgeStyle\b[^}]*\} from '@\/components\/listChrome';/);
@@ -102,10 +102,10 @@ describe('Sellable Items: Mandatory badge in the card header (#894)', () => {
   });
 
   it.each(LOCALE_CODES)('translates the badge label in %s.json', (code) => {
-    expect(sellableItemsKey(code, 'mandatory_badge'), `${code}.json is missing sellable_items.mandatory_badge`)
+    expect(productsKey(code, 'mandatory_badge'), `${code}.json is missing products.mandatory_badge`)
       .toBeTypeOf('string');
     // The System badge keeps its own key: the two are not one label.
-    expect(sellableItemsKey(code, 'system_badge')).toBeTypeOf('string');
+    expect(productsKey(code, 'system_badge')).toBeTypeOf('string');
   });
 });
 
@@ -118,7 +118,7 @@ describe('Sellable Items: Mandatory badge in the card header (#894)', () => {
 // untouched. So what is pinned here is that the accent style is *derived* from
 // the neutral one rather than written out again, and that it changes exactly
 // the two colour properties.
-describe('Sellable Items: the Mandatory pill is visually distinct (#913)', () => {
+describe('Products: the Mandatory pill is visually distinct (#913)', () => {
   const chrome = readFileSync(LIST_CHROME, 'utf-8');
   const accent = chrome.match(/export const listNameBadgeAccentStyle: React\.CSSProperties = \{[\s\S]*?\n\};/)?.[0] ?? '';
   const neutral = chrome.match(/export const listNameBadgeStyle: React\.CSSProperties = \{[\s\S]*?\n\};/)?.[0] ?? '';

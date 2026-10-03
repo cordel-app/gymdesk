@@ -208,7 +208,7 @@ describe('GET /me/membership — benefits come from the assignment snapshot', ()
       .toEqual([NEXT_BILLING, '2099-04-10']);
   });
 
-  it('keeps the frozen price when the Sellable Item is repriced (§17)', async () => {
+  it('keeps the frozen price when the Product is repriced (§17)', async () => {
     await db.query('UPDATE gym_charges SET amount = 99 WHERE id = ?', [lockerId]);
     const { body } = await getMembership(gymId);
     const locker = body.membership.benefits.find((b: any) => b.gym_charge_id === lockerId);
