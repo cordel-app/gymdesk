@@ -10,7 +10,7 @@
 //
 // Independent from Membership Plans, Promotions and Promotion Benefits (§4):
 // services can be added and removed at any time without touching any of them.
-// They are recurring Sellable Items and use those items' existing billing
+// They are recurring Products and use those items' existing billing
 // configuration — there is no second product model.
 //
 // A service is attached to one Assigned Plan (#631, migration 164), which is

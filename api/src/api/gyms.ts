@@ -49,7 +49,7 @@ const PLATFORM_GYM_SELECT = `
     pp.is_default AS payment_provider_is_default
 `;
 
-// #371: system Sellable Item seeded for every gym (existing gyms backfilled
+// #371: system Product seeded for every gym (existing gyms backfilled
 // by migration 124; this keeps gyms created afterwards in sync).
 const SYSTEM_PT_PACKAGE_NAME = 'Personal Training Class Package (10 Sessions)';
 
@@ -298,7 +298,7 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
       [id, name],
     );
     // #543: name/type must be seeded from charge_types here too — they're
-    // the Sellable Items catalogue columns (added by migration 102 as a
+    // the Products catalogue columns (added by migration 102 as a
     // one-time backfill), not generated from charge_type_id at read time.
     await db.query(
       `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, name, type, is_system, created_at)

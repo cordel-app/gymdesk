@@ -107,7 +107,7 @@ taxesRouter.post('/', requireRole('admin'), requireFeatureEnabled('financials.ta
 
 // ─── PUT /:id ─────────────────────────────────────────────────────────────────
 
-// Sellable Items and Membership Plans currently referencing this tax rate. Taxes are never
+// Products and Membership Plans currently referencing this tax rate. Taxes are never
 // snapshotted onto a Membership at instantiation time, so this is the full set of entities an
 // edit can affect — Membership instances are deliberately not counted (see #388).
 async function getTaxImpact(gymId: string, taxRateId: string) {

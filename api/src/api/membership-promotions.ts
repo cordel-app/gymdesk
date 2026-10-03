@@ -14,10 +14,10 @@ import { regularMembershipFee } from './user-memberships';
 import { currentCycleDate } from './membership-fee-pricing';
 import { validatePromotionStacking } from '../domain/promotionStacking';
 import { canReapplyPromotion, promotionApplicationStatus } from '../domain/promotionApplicationStatus';
-import { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
+import { ProductBenefitCategory } from '../domain/productClassification';
 import { PlanBenefitPrices } from '../domain/planBenefitPrices';
-import { toSellableItemBenefit } from '../domain/sellableItemBenefitActions';
-import { sellableItemBenefitPrices } from './sellable-item-benefit-pricing';
+import { toProductBenefit } from '../domain/productBenefitActions';
+import { productBenefitPrices } from './product-benefit-pricing';
 import { ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import {
   isNewMember,
@@ -209,14 +209,14 @@ async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number
   };
 }
 
-// #635 stage 2 — the Sellable Items a Promotion grants, frozen onto the
+// #635 stage 2 — the Products a Promotion grants, frozen onto the
 // application the moment it is applied.
 //
 // Migration 156 created these three tables for exactly this and left them
 // unwritten ("the assignment flow that populates these is out of scope for
 // this ticket"), with only the item's name and quantity. Migration 174 adds
 // the pricing columns, because a name and a quantity cannot reproduce a
-// charge: §16/§17 require that repricing a Sellable Item, or editing the
+// charge: §16/§17 require that repricing a Product, or editing the
 // Promotion's benefits, leave an already-applied Promotion alone.
 //
 // `gym_charges` is joined without a `deleted_at` filter (as everywhere else a
@@ -239,7 +239,7 @@ async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number
 // would read back as "charge the normal price" the moment stage 3 starts
 // pricing from the column.
 const PROMOTION_GRANT_SNAPSHOTS: {
-  category: SellableItemBenefitCategory; source: string; target: string;
+  category: ProductBenefitCategory; source: string; target: string;
 }[] = [
   { category: 'session', source: 'promotion_session', target: 'user_membership_promotion_session_snapshot' },
   { category: 'oneoff', source: 'promotion_oneoff', target: 'user_membership_promotion_oneoff_snapshot' },
@@ -256,7 +256,7 @@ async function snapshotPromotionGrants(
           item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`,
           requirement)
        SELECT ?, ?, b.gym_charge_id,
-              COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id)), b.quantity,
+              COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id)), b.quantity,
               COALESCE(gc.type, 'other'), gc.billing_frequency,
               COALESCE(gc.amount, 0), gc.currency, b.\`action\`, b.\`value\`,
               b.requirement
@@ -625,9 +625,9 @@ export async function applyPromotionToMembership(
 /* ── Stage 7: what an application granted, for the Assigned Plan card ────── */
 
 /**
- * One Sellable Item an applied Promotion granted, at the price it was agreed at.
+ * One Product an applied Promotion granted, at the price it was agreed at.
  *
- * #924 stage 2 adds what the shared Sellable Item grid renders beside the name
+ * #924 stage 2 adds what the shared Product grid renders beside the name
  * and the quantity: the grant's own `(action, value)` pair — what this
  * application does to the line, as agreed (#896 §15/§16, read in the
  * **Promotion**'s option set, which is where the grant came from) — and the
@@ -648,7 +648,7 @@ export interface AppliedPromotionGrant extends PlanBenefitPrices {
 
 export type AppliedPromotionGrants = Record<'session_grants' | 'oneoff_grants' | 'periodical_grants', AppliedPromotionGrant[]>;
 
-const GRANT_FIELD: Record<SellableItemBenefitCategory, keyof AppliedPromotionGrants> = {
+const GRANT_FIELD: Record<ProductBenefitCategory, keyof AppliedPromotionGrants> = {
   session: 'session_grants',
   oneoff: 'oneoff_grants',
   periodical: 'periodical_grants',
@@ -659,7 +659,7 @@ function emptyGrants(): AppliedPromotionGrants {
 }
 
 /**
- * #924 stage 2 — the **tax treatment** of the Sellable Items a set of grants
+ * #924 stage 2 — the **tax treatment** of the Products a set of grants
  * points at, keyed by `gym_charges.id`.
  *
  * It is the one live column a frozen grant line has to read, and for the reason
@@ -699,7 +699,7 @@ async function loadGrantTaxTreatments(
  * One grant line as the card renders it: the frozen facts plus the two prices
  * the shared grid shows.
  *
- * #924 stage 2: the amounts are `sellableItemBenefitPrices()`'s — the same
+ * #924 stage 2: the amounts are `productBenefitPrices()`'s — the same
  * single-row entry point the Membership Plan, Promotion and Assigned Plan
  * snapshot sections price through, over the same `applyLineBenefit()` the
  * billing engine applies — handed the **frozen** unit price and the grant's own
@@ -722,7 +722,7 @@ function shapeGrant(grant: {
     unit_price: grant.unitPrice,
     action: grant.benefit.action,
     value: grant.benefit.value,
-    ...sellableItemBenefitPrices('promotion', {
+    ...productBenefitPrices('promotion', {
       gym_charge_id: grant.gymChargeId,
       quantity: grant.quantity,
       action: grant.benefit.action,
@@ -735,12 +735,12 @@ function shapeGrant(grant: {
 }
 
 /**
- * #635 stage 7 — the Sellable Items each application granted, keyed by
+ * #635 stage 7 — the Products each application granted, keyed by
  * `user_membership_promotions.id`.
  *
  * The rows come from the application's own snapshot
  * (`snapshotPromotionGrants()` above), which is why a later rename, reprice or
- * deletion of the Sellable Item — or an edit to the Promotion's own benefits —
+ * deletion of the Product — or an edit to the Promotion's own benefits —
  * leaves them where they were (§16/§17). Reusing
  * `loadPromotionGrantSnapshots()` keeps the card and the Billing Simulation
  * reading one loader, so they can never disagree about what was granted.
@@ -777,7 +777,7 @@ async function loadAppliedPromotionGrants(
   const { rows } = await db.query(
     PROMOTION_GRANT_SNAPSHOTS.map(({ category, source }) => `
       SELECT '${category}' AS category, b.promotion_id, b.gym_charge_id, b.quantity,
-             COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id)) AS item_name,
+             COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id)) AS item_name,
              gc.billing_frequency AS item_billing_frequency, COALESCE(gc.amount, 0) AS unit_price,
              b.\`action\`, b.\`value\`, gc.tax_behavior, tr.rate_percent AS tax_rate_percent
       FROM ${source} b
@@ -790,7 +790,7 @@ async function loadAppliedPromotionGrants(
   const livePerPromotion = new Map<number, AppliedPromotionGrants>();
   for (const row of rows as any[]) {
     const shaped = livePerPromotion.get(row.promotion_id) ?? emptyGrants();
-    shaped[GRANT_FIELD[row.category as SellableItemBenefitCategory]].push(shapeGrant({
+    shaped[GRANT_FIELD[row.category as ProductBenefitCategory]].push(shapeGrant({
       gymChargeId: Number(row.gym_charge_id),
       name: row.item_name,
       billingFrequency: row.item_billing_frequency ?? null,
@@ -798,7 +798,7 @@ async function loadAppliedPromotionGrants(
       quantity: Number(row.quantity),
       // The live row is a Promotion's own benefit, so its pair is read in the
       // Promotion's option set — all five (#896 §16).
-      benefit: toSellableItemBenefit('promotion', row.action, row.value),
+      benefit: toProductBenefit('promotion', row.action, row.value),
     }, { tax_behavior: row.tax_behavior ?? null, tax_rate_percent: row.tax_rate_percent ?? null }));
     livePerPromotion.set(row.promotion_id, shaped);
   }
@@ -813,7 +813,7 @@ async function loadAppliedPromotionGrants(
 // exactly the same applied-promotions data instead of duplicating the query.
 //
 // #635 stage 7 adds what the Assigned Plan's expandable Promotion card shows:
-// who applied it, how it reads today (`display_status`), and the Sellable
+// who applied it, how it reads today (`display_status`), and the Product
 // Items it granted at their agreed prices — all of it from the application's
 // own snapshot, so the Promotion may be edited or deleted without moving it.
 //

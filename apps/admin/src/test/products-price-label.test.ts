@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-// Regression test for #670 — the Sellable Item field labelled "Amount" is
+// Regression test for #670 — the Product field labelled "Amount" is
 // displayed as "Price".
 //
 // The rename is terminology-only. The value behind the label is still the
@@ -17,14 +17,14 @@ import { join } from 'path';
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const PAGE_PATH = join(
-  __dirname, '..', 'app', '[locale]', 'financials', 'sellable-items', 'page.tsx',
+  __dirname, '..', 'app', '[locale]', 'financials', 'products', 'page.tsx',
 );
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 type Messages = Record<string, unknown>;
 
-function sellableItemsKey(messages: Messages, key: string): string | undefined {
-  const ns = messages['sellable_items'];
+function productsKey(messages: Messages, key: string): string | undefined {
+  const ns = messages['products'];
   if (ns == null || typeof ns !== 'object') return undefined;
   const value = (ns as Record<string, unknown>)[key];
   return typeof value === 'string' ? value : undefined;
@@ -49,28 +49,28 @@ const EXPECTED_LABEL: Record<(typeof LOCALE_CODES)[number], string> = {
   ca: 'Preu',
 };
 
-describe('Sellable Items: "Amount" renamed to "Price" (#670)', () => {
+describe('Products: "Amount" renamed to "Price" (#670)', () => {
   const source = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
 const PROFILE_PATH = join(
-  __dirname, '..', 'app', '[locale]', 'financials', 'sellable-items', 'sellableItemProfile.ts',
+  __dirname, '..', 'app', '[locale]', 'financials', 'products', 'productProfile.ts',
 );
 const profileSource = readFileSync(PROFILE_PATH, 'utf-8');
 
   it.each(LOCALE_CODES)('labels the list column and the field "Price" in %s.json', (code) => {
-    expect(sellableItemsKey(locales[code], 'col_price')).toBe(EXPECTED_LABEL[code]);
-    expect(sellableItemsKey(locales[code], 'label_price')).toBe(EXPECTED_LABEL[code]);
+    expect(productsKey(locales[code], 'col_price')).toBe(EXPECTED_LABEL[code]);
+    expect(productsKey(locales[code], 'label_price')).toBe(EXPECTED_LABEL[code]);
   });
 
   it('drops the old keys so no caller can fall back to the previous wording', () => {
     for (const code of LOCALE_CODES) {
       for (const key of ['col_amount', 'label_amount']) {
         expect(
-          sellableItemsKey(locales[code], key),
-          `${code}.json still defines sellable_items.${key}`,
+          productsKey(locales[code], key),
+          `${code}.json still defines products.${key}`,
         ).toBeUndefined();
       }
     }
-    expect(source, 'the page still reads a sellable_items *_amount label').not.toMatch(
+    expect(source, 'the page still reads a products *_amount label').not.toMatch(
       /t\('(?:col|label)_amount'\)|labelKey: 'col_amount'/,
     );
   });
@@ -84,10 +84,10 @@ const profileSource = readFileSync(PROFILE_PATH, 'utf-8');
       ca: /\bimport\b/i,
     };
     for (const code of LOCALE_CODES) {
-      const ns = locales[code]['sellable_items'] as Record<string, unknown>;
+      const ns = locales[code]['products'] as Record<string, unknown>;
       for (const [key, value] of Object.entries(ns)) {
         if (typeof value !== 'string') continue;
-        expect(value, `${code}.json still says the old term in sellable_items.${key}`)
+        expect(value, `${code}.json still says the old term in products.${key}`)
           .not.toMatch(banned[code]);
       }
     }
@@ -121,7 +121,7 @@ const profileSource = readFileSync(PROFILE_PATH, 'utf-8');
 
   it('keeps unrelated "Amount" labels, which mean a different thing, unchanged', () => {
     // Payments, billing events and the membership ledger all show a transaction
-    // amount, not a catalog price — the ticket scopes the rename to Sellable Items.
+    // amount, not a catalog price — the ticket scopes the rename to Products.
     for (const [namespace, key] of [
       ['member_payments', 'col_amount'],
       ['billing_events_page', 'col_amount'],

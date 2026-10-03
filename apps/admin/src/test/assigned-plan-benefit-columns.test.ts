@@ -2,18 +2,18 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  SELLABLE_ITEM_BENEFIT_COLUMNS,
-  sellableItemBenefitColumns,
-} from '@/components/SellableItemBenefits';
+  PRODUCT_BENEFIT_COLUMNS,
+  productBenefitColumns,
+} from '@/components/ProductBenefits';
 
-// #924 stage 1 — the Assigned Plan's three Sellable Item sections join the one
+// #924 stage 1 — the Assigned Plan's three Product sections join the one
 // shared column grid.
 //
 // The ticket's §1 is the rule the whole stage serves:
 //
 //   > Do not create a separate visual system for Assigned Plans.
 //
-// and §4 says what that means here: the same `SELLABLE ITEM | QUANTITY |
+// and §4 says what that means here: the same `PRODUCT | QUANTITY |
 // FREQUENCY | BENEFIT | REGULAR PRICE | FINAL PRICE` grid the Membership Plan
 // (#916) and Promotion (#919/#920) cards already render from, tax included,
 // reusing the shared component rather than "implementing an Assigned Plan-
@@ -45,8 +45,8 @@ function assignedPlansKeys(code: string): Set<string> {
 
 describe('#924 §1/§4: the snapshot sections render from the shared grid', () => {
   it('renders the shared read-only view, not a table of its own', () => {
-    expect(configSrc).toContain('SellableItemBenefitView');
-    expect(configSrc).toContain("from '@/components/SellableItemBenefits'");
+    expect(configSrc).toContain('ProductBenefitView');
+    expect(configSrc).toContain("from '@/components/ProductBenefits'");
     // The replaced table's own header/cell styles went with it; a page that
     // restates them is the separate visual system §1 forbids.
     expect(configSrc).not.toContain('<table');
@@ -63,10 +63,10 @@ describe('#924 §1/§4: the snapshot sections render from the shared grid', () =
     // snapshot sections do not opt in and their grid is the six columns it was.
     expect(configSrc).not.toContain('showRequirement');
     expect(
-      sellableItemBenefitColumns({ showFrequency: true, showAction: true, showPrices: true })
+      productBenefitColumns({ showFrequency: true, showAction: true, showPrices: true })
         .map((c) => c.key),
     ).toEqual(
-      SELLABLE_ITEM_BENEFIT_COLUMNS.map((c) => c.key).filter((k) => k !== 'requirement'),
+      PRODUCT_BENEFIT_COLUMNS.map((c) => c.key).filter((k) => k !== 'requirement'),
     );
   });
 
@@ -95,7 +95,7 @@ describe('#924 §1/§4: the snapshot sections render from the shared grid', () =
     // control the save cannot carry would be one that silently changes nothing,
     // so the editor renders neither — which is also why the read-only mapping
     // is the one place the extra fields are added.
-    const editor = (configSrc.match(/<SellableItemBenefitEditor[\s\S]*?\/>/) ?? [''])[0];
+    const editor = (configSrc.match(/<ProductBenefitEditor[\s\S]*?\/>/) ?? [''])[0];
     expect(editor, 'the editor now offers a Benefit column').not.toContain('benefitContext');
     expect(editor, 'the editor now offers a Frequency control').not.toContain('frequencyColumn');
     expect(configSrc).toContain('toBenefitItems(benefitDraft)');

@@ -26,7 +26,7 @@ export const ASSIGNED_PLAN_SECTION_ORDER = [
   // The agreed fee, the window and the cadence — the Plan card's PRICING.
   'section_pricing',
   // ↓ The five the assignment's own snapshot owns (§9/§15), in the Plan card's
-  // order: Billing & Duration, then the three Sellable Item benefit sections.
+  // order: Billing & Duration, then the three Product benefit sections.
   // The Personal Membership Fee Benefit (#772) sits directly under the fee it
   // discounts, which is the only one of the five a Membership Plan has not got.
   'section_billing_duration',

@@ -1,5 +1,5 @@
-// #821 / #945: the Billing Frequency choices a Sellable Item form offers,
-// mirrored from `api/src/domain/sellableItemFrequency.ts` — the API is what
+// #821 / #945: the Billing Frequency choices a Product form offers,
+// mirrored from `api/src/domain/productFrequency.ts` — the API is what
 // enforces them (a frontend-only list is not a rule), this file is what the two
 // halves of the page render.
 //
@@ -29,7 +29,7 @@ export function isLegacyFrequency(value: unknown): value is LegacyFrequency {
 
 export interface FrequencyOption {
   value: Frequency;
-  /** Key in the `sellable_items` namespace. */
+  /** Key in the `products` namespace. */
   labelKey: string;
   /** A legacy frequency is shown (so the row reads truthfully) but not selectable. */
   disabled: boolean;

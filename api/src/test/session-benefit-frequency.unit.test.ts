@@ -6,7 +6,7 @@
  * to say the same thing, or the dropdown could offer a value the table refuses).
  *
  * Pure module, no DB (CLAUDE.md): the migration is read as a module and its
- * exported list compared, the way `sellable-item-benefit-actions.unit.test.ts`
+ * exported list compared, the way `product-benefit-actions.unit.test.ts`
  * reads back migration 203's.
  */
 
@@ -23,7 +23,7 @@ import {
   renewalsInPeriod,
   toSessionBenefitFrequency,
 } from '../domain/sessionBenefitFrequency';
-import { OFFERED_SELLABLE_ITEM_FREQUENCIES } from '../domain/sellableItemFrequency';
+import { OFFERED_PRODUCT_FREQUENCIES } from '../domain/productFrequency';
 
 const require = createRequire(__filename);
 const migration = require('../infra/migrations/205_session_benefit_frequency.js') as {
@@ -36,9 +36,9 @@ describe('#918 — the option set', () => {
     expect(SESSION_BENEFIT_FREQUENCIES).toEqual(['once', 'week', 'four_weeks', 'month', 'year']);
   });
 
-  it('offers Weekly, which the Sellable Item surface deliberately does not (#821)', () => {
+  it('offers Weekly, which the Product surface deliberately does not (#821)', () => {
     expect(SESSION_BENEFIT_FREQUENCIES).toContain('week');
-    expect(OFFERED_SELLABLE_ITEM_FREQUENCIES).not.toContain('week');
+    expect(OFFERED_PRODUCT_FREQUENCIES).not.toContain('week');
   });
 
   it('does not offer per_session — not a period, and retired by #945', () => {

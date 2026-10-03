@@ -9,7 +9,7 @@
 //
 // What is shown is the assignment's *snapshot* (§11–§14), never the live
 // catalogue: the prices are the ones frozen when the plan was assigned, which
-// is why each benefit line shows its own unit price rather than the Sellable
+// is why each benefit line shows its own unit price rather than the Product
 // Item's current one. Saving a section edits this member's snapshot alone
 // (§15) — the source Plan and every other assignment of it are untouched — and
 // since stage 3 that is also what the assignment bills, so the Billing
@@ -44,12 +44,12 @@ import {
 } from '@/components/formChrome';
 import {
   BenefitFrequencyColumn,
-  SellableItemBenefitEditor,
-  SellableItemBenefitRow,
-  SellableItemBenefitView,
-  SellableItemOption,
+  ProductBenefitEditor,
+  ProductBenefitRow,
+  ProductBenefitView,
+  ProductOption,
   toBenefitItems,
-} from '@/components/SellableItemBenefits';
+} from '@/components/ProductBenefits';
 import type {
   AssignedPlanSnapshot,
   AssignedPlanSnapshotBenefit,
@@ -92,7 +92,7 @@ const BENEFIT_SECTIONS: {
    * #918/#924 §5 — *which* Frequency the read-only column shows. The Session
    * section shows the renewal Frequency this assignment was agreed
    * ("2 sessions every week"), which the snapshot carries; the other two show
-   * the Sellable Item's own billing frequency, as frozen on the line.
+   * the Product's own billing frequency, as frozen on the line.
    *
    * The **editor** stays on the item frequency (the prop's default) whichever
    * section is open: the assignment's section `PUT` takes `gym_charge_id` +
@@ -146,11 +146,11 @@ const numField = (v: number | null) => (v != null ? String(v) : '');
 /**
  * A frozen benefit line as the shared editor's draft row. The snapshot keeps
  * the item's name and frequency as they were agreed, so the picker shows what
- * was agreed even after the Sellable Item is renamed or retired; `status` is
+ * was agreed even after the Product is renamed or retired; `status` is
  * 'active' because the snapshot does not carry the catalogue's current state
  * and a frozen line is never "inactive" as far as this assignment goes.
  */
-function toDraftRow(b: AssignedPlanSnapshotBenefit): SellableItemBenefitRow {
+function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
   return {
     gym_charge_id: b.gym_charge_id,
     quantity: b.quantity,
@@ -172,7 +172,7 @@ function toDraftRow(b: AssignedPlanSnapshotBenefit): SellableItemBenefitRow {
  * payload is the point: `toBenefitItems()` sends only the keys a draft row
  * carries, and the assignment's `PUT` takes quantity alone.
  */
-function toViewRow(b: AssignedPlanSnapshotBenefit): SellableItemBenefitRow {
+function toViewRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
   return {
     ...toDraftRow(b),
     action: b.action,
@@ -196,8 +196,8 @@ export function AssignedPlanConfiguration({
   const [editing, setEditing] = useState<'billing' | 'fee_benefit' | BenefitSection | null>(null);
   const [durationForm, setDurationForm] = useState<DurationForm | null>(null);
   const [feeBenefitForm, setFeeBenefitForm] = useState<FeeBenefitForm | null>(null);
-  const [benefitDraft, setBenefitDraft] = useState<SellableItemBenefitRow[]>([]);
-  const [items, setItems] = useState<SellableItemOption[]>([]);
+  const [benefitDraft, setBenefitDraft] = useState<ProductBenefitRow[]>([]);
+  const [items, setItems] = useState<ProductOption[]>([]);
   const [saving, setSaving] = useState(false);
 
   const editable = cardEditing && canWrite && EDITABLE_STATUSES.includes(planStatus);
@@ -219,14 +219,14 @@ export function AssignedPlanConfiguration({
     try {
       // benefit_category is computed server-side (#550) — the same
       // classification the API validates a new line against.
-      setItems(await apiFetch<SellableItemOption[]>('/sellable-items'));
+      setItems(await apiFetch<ProductOption[]>('/sellable-items'));
     } catch {
       itemsLoadedRef.current = false;
       toast(t('services_items_error'));
     }
   }
 
-  function categoryItems(section: BenefitSection): SellableItemOption[] {
+  function categoryItems(section: BenefitSection): ProductOption[] {
     return items.filter((i) => i.benefit_category === section && i.status === 'active');
   }
 
@@ -495,7 +495,7 @@ export function AssignedPlanConfiguration({
       )}
       </CardSection>
 
-      {/* §3–§5/§9 — the three Sellable-Item-keyed sections, in the order the
+      {/* §3–§5/§9 — the three Product-keyed sections, in the order the
           Plans page lists them so both surfaces read the same way. */}
       {BENEFIT_SECTIONS.map(({
         section, endpoint, titleKey, emptyKey, addKey, snapshotKey, showFrequency, viewFrequencyColumn,
@@ -509,7 +509,7 @@ export function AssignedPlanConfiguration({
           >
             {editing === section ? (
               <div style={{ margin: '6px 0 4px' }}>
-                <SellableItemBenefitEditor
+                <ProductBenefitEditor
                   t={(key, values) => t(key as any, values as any)}
                   addKey={addKey}
                   draft={benefitDraft}
@@ -521,8 +521,8 @@ export function AssignedPlanConfiguration({
                 <SaveCancel saving={saving} onSave={() => saveBenefits(endpoint)} onCancel={cancelEdit} t={t} />
               </div>
             ) : (
-              /* #924 stage 1 — the one shared grid every Sellable Item section
-                 of every card renders from (#916/#919): Sellable Item,
+              /* #924 stage 1 — the one shared grid every Product section
+                 of every card renders from (#916/#919): Product,
                  Quantity, Frequency, Benefit, Agreed Price, Final Price, in
                  that order and at the same horizontal positions as the
                  Membership Plan it came from. The hand-rolled table this
@@ -533,7 +533,7 @@ export function AssignedPlanConfiguration({
                  where these lines came from — it renders the agreed treatment
                  as a column here and stays absent from the editor, whose
                  endpoint takes quantity alone (#896 stage 4). */
-              <SellableItemBenefitView
+              <ProductBenefitView
                 t={(key, values) => t(key as any, values as any)}
                 emptyKey={emptyKey}
                 rows={rows.map(toViewRow)}

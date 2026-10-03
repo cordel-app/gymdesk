@@ -7,11 +7,11 @@ import {
   loadProfessionalServicesMap,
   replaceProfessionalServices,
   validateProfessionalServiceIds,
-} from '../domain/sellableItemProfessionalServices';
-import { classifySellableItem } from '../domain/sellableItemClassification';
-import { sellableItemFrequencyWriteError } from '../domain/sellableItemFrequency';
+} from '../domain/productProfessionalServices';
+import { classifyProduct } from '../domain/productClassification';
+import { productFrequencyWriteError } from '../domain/productFrequency';
 
-export const sellableItemsRouter = Router();
+export const productsRouter = Router();
 
 const SELECT = `
   SELECT
@@ -60,7 +60,7 @@ const SELECT = `
 const VALID_TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
 const VALID_STATUSES = ['active', 'inactive'] as const;
 const VALID_ENROLLMENT_STATUSES = ['public', 'staff_only'] as const;
-// #821: the accepted set is no longer a list here — `domain/sellableItemFrequency.ts`
+// #821: the accepted set is no longer a list here — `domain/productFrequency.ts`
 // owns it, because "what may be configured" and "what may be stored" are now two
 // different answers ('week' is read and billed but never selectable).
 const VALID_TAX_BEHAVIORS = ['inclusive', 'exclusive'] as const;
@@ -118,11 +118,11 @@ function attachPriceFields(row: any) {
   return { ...row, ...computePriceFields(row) };
 }
 
-// #550: exposes the single source of truth for how a Sellable Item classifies
+// #550: exposes the single source of truth for how a Product classifies
 // into a Promotion benefit section, so Promotions can filter/group by this
 // server-computed field instead of re-deriving the type/frequency rules.
 function attachBenefitCategory(row: any) {
-  return { ...row, benefit_category: classifySellableItem(row) };
+  return { ...row, benefit_category: classifyProduct(row) };
 }
 
 // #546: Professional Services can only be linked to Session-type ('sessions') items.
@@ -134,7 +134,7 @@ function attachProfessionalServices(row: any, map: Record<number, { id: number; 
 
 // ─── GET / ────────────────────────────────────────────────────────────────────
 
-sellableItemsRouter.get('/', async (req, res, next) => {
+productsRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const type = typeof req.query.type === 'string' ? req.query.type : null;
   const status = typeof req.query.status === 'string' ? req.query.status : null;
@@ -173,7 +173,7 @@ sellableItemsRouter.get('/', async (req, res, next) => {
 
 // ─── GET /:id ─────────────────────────────────────────────────────────────────
 
-sellableItemsRouter.get('/:id', async (req, res, next) => {
+productsRouter.get('/:id', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
@@ -186,9 +186,9 @@ sellableItemsRouter.get('/:id', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── POST / — create custom sellable item ─────────────────────────────────────
+// ─── POST / — create custom product ─────────────────────────────────────
 
-sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
+productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const {
     name, type, units, description, amount, billing_frequency, status, enrollment_status, notes,
@@ -200,7 +200,7 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
   if (!type || !VALID_TYPES.includes(type)) return res.status(400).json({ error: `type must be one of: ${VALID_TYPES.join(', ')}` });
   // #821: a new item has no stored frequency to carry through, so a legacy
   // value ('week') is refused here as flatly as an unknown one.
-  const freqErr = sellableItemFrequencyWriteError(billing_frequency, null);
+  const freqErr = productFrequencyWriteError(billing_frequency, null);
   if (freqErr) return res.status(400).json({ error: freqErr });
   if (enrollment_status && !VALID_ENROLLMENT_STATUSES.includes(enrollment_status)) {
     return res.status(400).json({ error: `enrollment_status must be one of: ${VALID_ENROLLMENT_STATUSES.join(', ')}` });
@@ -272,13 +272,13 @@ sellableItemsRouter.post('/', requireRole('admin'), async (req, res, next) => {
     });
     res.status(201).json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err: any) {
-    handleDupEntry(err, res, next, 'A sellable item with this name already exists.');
+    handleDupEntry(err, res, next, 'A product with this name already exists.');
   }
 });
 
-// ─── POST /:id/duplicate — duplicate an existing sellable item ────────────────
+// ─── POST /:id/duplicate — duplicate an existing product ────────────────
 
-sellableItemsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
+productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   try {
     const { rows: origRows } = await db.query(
@@ -351,13 +351,13 @@ sellableItemsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
     });
     res.status(201).json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err: any) {
-    handleDupEntry(err, res, next, 'A sellable item with this name already exists.');
+    handleDupEntry(err, res, next, 'A product with this name already exists.');
   }
 });
 
 // ─── PUT /:id ─────────────────────────────────────────────────────────────────
 
-sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
+productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const {
     description, amount, billing_frequency, notes, name, type, units, status, enrollment_status,
@@ -401,7 +401,7 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     // #821: checked against the row rather than a bare list, because an item
     // stored as 'week' must stay editable — its form submits that value back
     // untouched — while nothing may be moved onto it.
-    const freqErr = sellableItemFrequencyWriteError(billing_frequency, existing[0].current_billing_frequency);
+    const freqErr = productFrequencyWriteError(billing_frequency, existing[0].current_billing_frequency);
     if (freqErr) return res.status(400).json({ error: freqErr });
     const isSystem = existing[0].is_system;
     // System items can never change type (the UPDATE below no-ops `type` when
@@ -416,7 +416,7 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     // a stale relationship attached. This is a safe clear: the join table
     // only records a catalog association, never a booking/purchase/billing
     // record, so nothing downstream references it — no confirmation step
-    // is needed (see docs/architecture.md Sellable Items entry for the
+    // is needed (see docs/architecture.md Products entry for the
     // rationale, matching the issue's "pick the simplest safe option"
     // guidance since no existing confirm-before-destructive-change pattern
     // applies to this relationship).
@@ -498,13 +498,13 @@ sellableItemsRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     });
     res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err: any) {
-    handleDupEntry(err, res, next, 'A sellable item with this name already exists.');
+    handleDupEntry(err, res, next, 'A product with this name already exists.');
   }
 });
 
 // ─── POST /:id/activate ───────────────────────────────────────────────────────
 
-sellableItemsRouter.post('/:id/activate', requireRole('admin'), async (req, res, next) => {
+productsRouter.post('/:id/activate', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   try {
     const { rowCount } = await db.query(
@@ -524,7 +524,7 @@ sellableItemsRouter.post('/:id/activate', requireRole('admin'), async (req, res,
 
 // ─── POST /:id/deactivate ─────────────────────────────────────────────────────
 
-sellableItemsRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, next) => {
+productsRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   try {
     const { rowCount } = await db.query(
@@ -544,7 +544,7 @@ sellableItemsRouter.post('/:id/deactivate', requireRole('admin'), async (req, re
 
 // ─── DELETE /:id — soft-delete custom items only ──────────────────────────────
 
-sellableItemsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
+productsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   try {
     const { rows: existing } = await db.query(
@@ -552,7 +552,7 @@ sellableItemsRouter.delete('/:id', requireRole('admin'), async (req, res, next) 
       [req.params.id, gymId],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Not found' });
-    if (existing[0].is_system) return res.status(403).json({ error: 'System sellable items cannot be deleted.' });
+    if (existing[0].is_system) return res.status(403).json({ error: 'System products cannot be deleted.' });
 
     await db.query(
       `UPDATE gym_charges

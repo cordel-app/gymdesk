@@ -4,12 +4,12 @@
 // Mirrored from `api/src/domain/sessionBenefitFrequency.ts`, which is what
 // actually enforces it (a frontend-only list is not a rule) and what the
 // `chk_<table>_frequency` CHECK of migration 205 backs up. This copy exists for
-// the same reason `lib/sellableItemBenefitActions.ts` does: the editor has to
+// the same reason `lib/productBenefitActions.ts` does: the editor has to
 // render the options, and it must not spell the list out inline. A new value
 // therefore goes in the API module, its CHECK, *and* here —
 // `session-benefit-frequency-ui.test.ts` fails if this copy drifts.
 //
-// Deliberately **not** the Sellable Item's own `billing_frequency` list: that
+// Deliberately **not** the Product's own `billing_frequency` list: that
 // one answers how often an item is *priced* and #821 retired `week` from it,
 // while this one answers how often an allowance *renews* and weekly is the case
 // the field exists for. `per_session` is not a period and is not offered.

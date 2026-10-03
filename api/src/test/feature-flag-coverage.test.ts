@@ -56,7 +56,7 @@ describe('feature flag coverage (#609, #610)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('disabling Sellable Items (financials.gym_charges) no longer breaks the Tax dropdown other forms use', async () => {
+  it('disabling Products (financials.gym_charges) no longer breaks the Tax dropdown other forms use', async () => {
     await setFlag('financials.gym_charges', false);
     expect((await get('/sellable-items')).status).toBe(403);
     expect((await get('/taxes')).status).toBe(200);

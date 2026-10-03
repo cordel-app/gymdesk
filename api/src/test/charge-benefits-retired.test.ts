@@ -39,7 +39,7 @@ async function createMember(gymId: string, name: string): Promise<number> {
   return insertId;
 }
 
-async function createSellableItem(gymId: string, name: string): Promise<number> {
+async function createProduct(gymId: string, name: string): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO gym_charges (gym_id, name, type, billing_frequency, amount, status, is_system, currency)
      VALUES (?, ?, 'service', 'month', 20.00, 'active', 0, 'EUR')`,
@@ -163,7 +163,7 @@ describe('Charge Benefits are retired (#635 stage 4)', () => {
 
   it('assigns a Plan without the charge-benefit snapshot, and still captures the #635 snapshot', async () => {
     const memberId = await createMember(gymId, 'CB Retired Assignee');
-    const itemId = await createSellableItem(gymId, 'CB Retired Locker');
+    const itemId = await createProduct(gymId, 'CB Retired Locker');
     // A Period Benefit on the Plan — the replacement concept, which the
     // assignment must still freeze (stage 2/3).
     await request

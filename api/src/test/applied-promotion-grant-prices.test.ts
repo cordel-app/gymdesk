@@ -3,12 +3,12 @@
 // Assigned Plan card.
 //
 // Stage 1 moved the assignment's three Membership Plan Benefit sections onto the
-// shared Sellable Item grid. The ticket's §6 asks the same of the sections below
-// them — the Sellable Items each applied Promotion granted — with §1's rule
+// shared Product grid. The ticket's §6 asks the same of the sections below
+// them — the Products each applied Promotion granted — with §1's rule
 // unchanged ("do not create a separate visual system for Assigned Plans") and
 // §4's "prices always tax included". The load-bearing clause is the one #916 and
 // #919/#920 share: no second pricing implementation, so the amounts come from
-// `api/sellable-item-benefit-pricing.ts` over `applyLineBenefit()`.
+// `api/product-benefit-pricing.ts` over `applyLineBenefit()`.
 //
 // What is specific to this side, and what every case below is really about, is
 // *which* numbers that module is handed: an application quotes the price and the
@@ -261,7 +261,7 @@ describe('Applied Promotion grant prices (#924 stage 2)', () => {
     expect(row.final_price_incl_tax).toBe(0);
   });
 
-  it('keeps pricing a grant whose Sellable Item has since been deleted', async () => {
+  it('keeps pricing a grant whose Product has since been deleted', async () => {
     const umId = await createAssignment();
     const promotionId = await createPromotion(`APGP-Deleted-${uniq()}`);
     const locker = await createItem({

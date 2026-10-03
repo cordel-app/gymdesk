@@ -35,7 +35,7 @@ import {
   loadStoredCard,
   resolveCardUpdateMembership,
 } from './card-updates';
-import type { SellableItemBenefitCategory } from '../domain/sellableItemClassification';
+import type { ProductBenefitCategory } from '../domain/productClassification';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -1370,7 +1370,7 @@ meRouter.get('/promotions', requireRole('member'), requireFeatureEnabled('member
 /**
  * The Member's own view of their Assigned Plan's benefits (#635 stage 10).
  *
- * One line per Sellable Item the assignment carries, at the quantity, frequency
+ * One line per Product the assignment carries, at the quantity, frequency
  * and **price it was agreed at** — `loadPlanBenefitsForSimulation` resolves the
  * assignment's own `user_membership_{oneoff,session,periodical}` rows and only
  * falls back to the Plan's live sections for an assignment that captured no
@@ -1378,12 +1378,12 @@ meRouter.get('/promotions', requireRole('member'), requireFeatureEnabled('member
  * the nightly run follow. Ordered one-off → session → period, then by name, so
  * the Member reads the sections in the order every staff surface lists them.
  */
-const MEMBER_BENEFIT_ORDER: Record<SellableItemBenefitCategory, number> = {
+const MEMBER_BENEFIT_ORDER: Record<ProductBenefitCategory, number> = {
   oneoff: 0, session: 1, periodical: 2,
 };
 
 export interface MemberMembershipBenefit {
-  category: SellableItemBenefitCategory;
+  category: ProductBenefitCategory;
   gym_charge_id: number;
   name: string;
   quantity: number;

@@ -54,7 +54,7 @@ export const listExpandedStyle: React.CSSProperties = {
  *
  * Smaller and quieter than `StatusBadge`, which carries a row's *state* in its
  * own column; these sit on the name itself and only say what kind of row it is.
- * #894 added the second one, so the three pages that draw them (Sellable Items,
+ * #894 added the second one, so the three pages that draw them (Products,
  * Taxes, Professional Services) read the look from here rather than each
  * restating it — a fourth badge in a fourth page cannot drift from the rest.
  */

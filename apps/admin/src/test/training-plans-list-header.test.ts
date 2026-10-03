@@ -13,11 +13,11 @@ import { join } from 'path';
 // The fix reuses what Assigned Plans already has: `FilterBar`/`FilterField` for
 // "label above the control", and `listChrome` — the surface, header band, cell
 // insets and dividers `DataTable` itself is built from — for the list. Header and
-// rows then share one grid derived from LIST_COLUMNS, as Sellable Items does
+// rows then share one grid derived from LIST_COLUMNS, as Products does
 // (#637), and scroll together when the viewport is too narrow.
 //
 // This repo has no component-test infra for apps/admin (see docs/architecture.md's
-// TL;DR), so — like sellable-items-column-alignment.test.ts (#637) — this pins the
+// TL;DR), so — like products-column-alignment.test.ts (#637) — this pins the
 // structure down by scanning the sources and the locale files.
 
 const SRC = join(__dirname, '..');

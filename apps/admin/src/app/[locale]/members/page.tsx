@@ -468,7 +468,7 @@ export default function MembersPage() {
    *
    * #928: the row is one cell per LIST_COLUMNS entry, in the same order, so a
    * title always sits over its own values. The whole row is the expand control
-   * (as on Sellable Items and Training Plans), with the ⋮ menu stopping the
+   * (as on Products and Training Plans), with the ⋮ menu stopping the
    * click so acting on a member never also expands it.
    */
   function renderRow(m: Member) {

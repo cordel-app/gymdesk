@@ -6,7 +6,7 @@ import { join } from 'path';
 // independent sections.
 //
 // #931 removed the PROMOTIONS section: a Promotion applies to a Membership Plan
-// or a Sellable Item, never to a Member. What is left of §13 is three siblings,
+// or a Product, never to a Member. What is left of §13 is three siblings,
 // and member-promotions-removed.test.ts is what pins the removal down.
 //
 // This repo has no component-test infra for apps/admin (see

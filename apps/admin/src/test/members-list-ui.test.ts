@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-// #928 — the Members list wears the same list as Sellable Items.
+// #928 — the Members list wears the same list as Products.
 //
 // Members was the one staff list still rendered by `DataTable`: its column
 // widths were per-cell hints with nothing underneath them, and its five filters
-// sat unlabelled in a page-level toolbar above the table. Sellable Items and
+// sat unlabelled in a page-level toolbar above the table. Products and
 // Training Plans had already moved to the shared shape — one `LIST_COLUMNS`
 // grid for the header band and the rows, both inside one `overflow-x: auto`
 // wrapper (#637), with the surface, band, cell insets and dividers coming from
@@ -19,13 +19,13 @@ import { join } from 'path';
 // have changed with it.
 //
 // This repo has no component-test infra for apps/admin (see docs/architecture.md's
-// TL;DR), so — like sellable-items-column-alignment.test.ts (#637) and
+// TL;DR), so — like products-column-alignment.test.ts (#637) and
 // training-plans-list-header.test.ts (#724) — this reads the sources and the
 // locale files.
 
 const SRC = join(__dirname, '..');
 const PAGE_PATH = join(SRC, 'app', '[locale]', 'members', 'page.tsx');
-const SELLABLE_ITEMS_PATH = join(SRC, 'app', '[locale]', 'financials', 'sellable-items', 'page.tsx');
+const PRODUCTS_PATH = join(SRC, 'app', '[locale]', 'financials', 'products', 'page.tsx');
 const FILTER_BAR_PATH = join(SRC, 'components', 'FilterBar.tsx');
 const LIST_CHROME_PATH = join(SRC, 'components', 'listChrome.ts');
 const DATA_TABLE_PATH = join(SRC, 'components', 'DataTable.tsx');
@@ -69,7 +69,7 @@ function stripComments(src: string): string {
 }
 
 const pageSrc = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
-const sellableItemsSrc = stripComments(readFileSync(SELLABLE_ITEMS_PATH, 'utf-8'));
+const productsSrc = stripComments(readFileSync(PRODUCTS_PATH, 'utf-8'));
 const filterBarSrc = stripComments(readFileSync(FILTER_BAR_PATH, 'utf-8'));
 const listChromeSrc = stripComments(readFileSync(LIST_CHROME_PATH, 'utf-8'));
 const dataTableSrc = stripComments(readFileSync(DATA_TABLE_PATH, 'utf-8'));
@@ -91,7 +91,7 @@ const locales = Object.fromEntries(
   LOCALE_CODES.map((c) => [c, JSON.parse(readFileSync(join(LOCALES_DIR, `${c}.json`), 'utf-8'))]),
 ) as Record<(typeof LOCALE_CODES)[number], Record<string, Record<string, unknown>>>;
 
-describe('Members list: one list with Sellable Items (#928)', () => {
+describe('Members list: one list with Products (#928)', () => {
   it('locates the three blocks it scans', () => {
     expect(pageHeaderSrc, 'the page header could not be located').not.toBe('');
     expect(filterBarUsageSrc, 'the filter bar could not be located').not.toBe('');
@@ -134,7 +134,7 @@ describe('Members list: one list with Sellable Items (#928)', () => {
       /style=\{(?:cellStyle|nameCellStyle|mutedCellStyle|badgeCellStyle|actionsCellStyle)\}/g,
     )];
     expect(cells).toHaveLength(EXPECTED_COLUMNS.length);
-    // The chevron and the ⋮ menu share the Actions cell, as on Sellable Items,
+    // The chevron and the ⋮ menu share the Actions cell, as on Products,
     // rather than sitting in tracks of their own.
     expect(collapsedRowSrc).toMatch(/style=\{actionsCellStyle\}[\s\S]*?<ContextMenu/);
   });
@@ -179,7 +179,7 @@ describe('Members list: one list with Sellable Items (#928)', () => {
     expect(pageSrc).toMatch(/<div style=\{listExpandedStyle\}>/);
   });
 
-  it('is laid out the way the Sellable Items list is', () => {
+  it('is laid out the way the Products list is', () => {
     // Same three structural pieces, in the same shape, on both pages.
     for (const [label, pattern] of [
       ['a LIST_COLUMNS declaration', /const LIST_COLUMNS: ListColumn\[\] = \[/],
@@ -188,13 +188,13 @@ describe('Members list: one list with Sellable Items (#928)', () => {
       ['one shared grid style', /const listGridStyle: React\.CSSProperties = \{/],
       ['a scrolling wrapper', /overflowX: 'auto'/],
     ] as const) {
-      expect(sellableItemsSrc, `Sellable Items no longer has ${label}`).toMatch(pattern);
+      expect(productsSrc, `Products no longer has ${label}`).toMatch(pattern);
       expect(pageSrc, `the Members list has no ${label}`).toMatch(pattern);
     }
     // And the same `+ Add` button: the shared helper, at the same colour —
     // which since #954 is the Theme's Primary Button rather than the lilac both
     // pages used to spell out, so the assertion moves with it.
-    expect(sellableItemsSrc).toMatch(/from '@\/components\/ui'/);
+    expect(productsSrc).toMatch(/from '@\/components\/ui'/);
     expect(pageSrc).toMatch(/import \{[^}]*\bprimaryBtnStyle\b[^}]*\} from '@\/components\/ui'/);
     expect(pageSrc, 'the page still carries its own copy of btnStyle').not.toMatch(/function btnStyle\(/);
     expect(pageHeaderSrc).toMatch(/style=\{primaryBtnStyle\(\)\}/);
@@ -274,7 +274,7 @@ describe('Members list: one list with Sellable Items (#928)', () => {
   });
 
   it('keeps expand/collapse, the unsaved-changes guard and the actions', () => {
-    // The whole row expands (Sellable Items' interaction), and it stays
+    // The whole row expands (Products' interaction), and it stays
     // keyboard-operable the way the chevron button it replaces was.
     expect(collapsedRowSrc).toMatch(/onClick=\{toggle\}/);
     expect(collapsedRowSrc).toMatch(/role="button"/);

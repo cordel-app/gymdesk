@@ -2,20 +2,20 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
-import { classifySellableItem } from '../domain/sellableItemClassification';
-import { SimulationService, SellableItemFrequency } from '../domain/billingSimulation';
+import { classifyProduct } from '../domain/productClassification';
+import { SimulationService, ProductFrequency } from '../domain/billingSimulation';
 
 /**
  * #631 — Additional Periodic Services on an Assigned Plan.
  *
- * Recurring Sellable Items attached directly to a `user_memberships` row
+ * Recurring Products attached directly to a `user_memberships` row
  * (migration 164). They belong to the Assigned Plan, never to the Membership
  * Plan and never to a Promotion (#631 §4/§7): adding one changes nothing about
  * the Plan itself, and nothing here touches `promotion_*` or the Plan's
  * included benefits.
  *
- * The Sellable Item stays the source of truth for the price and the billing
- * frequency (#631 §2 — "use the existing Sellable Item definitions ... rather
+ * The Product stays the source of truth for the price and the billing
+ * frequency (#631 §2 — "use the existing Product definitions ... rather
  * than creating a new product/service model"), so those are read live from
  * `gym_charges` on every request instead of being copied onto the attachment.
  * Only the assignment-specific facts are stored: which item, how many, and the
@@ -77,20 +77,20 @@ export interface AssignedPlanServiceRow {
   starts_at: string;
   ends_at: string | null;
   sellable_item_name: string;
-  billing_frequency: SellableItemFrequency | null;
+  billing_frequency: ProductFrequency | null;
   unit_price: number;
   currency: string | null;
   /** False once the effective removal date has passed — kept for the billing history. */
   active: boolean;
   /**
-   * The underlying Sellable Item has been retired (soft-deleted or made
+   * The underlying Product has been retired (soft-deleted or made
    * inactive) since it was attached. It still bills — the attachment owns the
    * window, not the catalogue — but POST would no longer accept it, so the UI
    * flags it rather than presenting it as an ordinary item.
    */
   sellable_item_retired: boolean;
   /**
-   * #635 — what the Sellable Item cost when the service was attached
+   * #635 — what the Product cost when the service was attached
    * (migration 174). `null` for an attachment made before that migration, which
    * is the caller's signal to keep using the live values above. Since stage 3
    * the Billing Simulation bills from this; the live values are served beside
@@ -98,7 +98,7 @@ export interface AssignedPlanServiceRow {
    */
   snapshot: {
     item_name: string;
-    billing_frequency: SellableItemFrequency | null;
+    billing_frequency: ProductFrequency | null;
     unit_price: number;
     currency: string | null;
   } | null;
@@ -114,14 +114,14 @@ function shape(row: any): AssignedPlanServiceRow {
     starts_at: toDateOnly(row.starts_at),
     ends_at: endsAt,
     sellable_item_name: row.sellable_item_name,
-    billing_frequency: (row.billing_frequency ?? null) as SellableItemFrequency | null,
+    billing_frequency: (row.billing_frequency ?? null) as ProductFrequency | null,
     unit_price: row.unit_price != null ? Number(row.unit_price) : 0,
     currency: row.currency ?? null,
     active: endsAt == null || endsAt >= todayISO(),
     sellable_item_retired: row.sellable_item_deleted_at != null || row.sellable_item_status !== 'active',
     snapshot: row.snapshot_unit_price != null ? {
       item_name: row.snapshot_item_name,
-      billing_frequency: (row.snapshot_billing_frequency ?? null) as SellableItemFrequency | null,
+      billing_frequency: (row.snapshot_billing_frequency ?? null) as ProductFrequency | null,
       unit_price: Number(row.snapshot_unit_price),
       currency: row.snapshot_currency ?? null,
     } : null,
@@ -161,7 +161,7 @@ export async function loadServicesForAssignments(
  * covers, rather than one per assignment.
  *
  * #635 stage 3: the name, price and billing frequency come from the snapshot
- * taken when the service was attached (§11, §17), so repricing the Sellable
+ * taken when the service was attached (§11, §17), so repricing the Product
  * Item leaves every assignment already paying for it alone. A row attached
  * before migration 174 has no snapshot and keeps resolving live — which is
  * what it has always done. The rows the *UI* renders still show both (`snapshot`
@@ -272,22 +272,22 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   // name — so it is resolved here the way every other reader resolves it,
   // rather than snapshotting a NULL below.
   const { rows: itemRows } = await db.query(
-    `SELECT gc.id, COALESCE(gc.name, ct.name, CONCAT('Sellable Item #', gc.id)) AS name,
+    `SELECT gc.id, COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id)) AS name,
             gc.type, gc.status, gc.billing_frequency, gc.amount, gc.currency
      FROM gym_charges gc
      LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
      WHERE gc.id = ? AND gc.gym_id = ? AND gc.deleted_at IS NULL`,
     [chargeId, gymId],
   );
-  if (itemRows.length === 0) return res.status(404).json({ error: 'Sellable Item not found' });
+  if (itemRows.length === 0) return res.status(404).json({ error: 'Product not found' });
   const item = itemRows[0];
   if (item.status !== 'active') {
-    return res.status(400).json({ error: 'Sellable Item is not active' });
+    return res.status(400).json({ error: 'Product is not active' });
   }
-  // #631 §2: only recurring/periodic services are attachable. `classifySellableItem`
+  // #631 §2: only recurring/periodic services are attachable. `classifyProduct`
   // is the single source of truth for that rule (#550) — never re-derived here.
-  if (classifySellableItem(item) !== 'periodical') {
-    return res.status(400).json({ error: 'Only recurring Sellable Items can be added as periodic services' });
+  if (classifyProduct(item) !== 'periodical') {
+    return res.status(400).json({ error: 'Only recurring Products can be added as periodic services' });
   }
 
   // The same item may be attached again after an earlier stint ended, but not
@@ -309,7 +309,7 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   try {
     ({ insertId } = await db.query(
       // #635 (migration 174): the item's commercial facts are frozen onto the
-      // attachment as well as read live. §17 — repricing the Sellable Item
+      // attachment as well as read live. §17 — repricing the Product
       // must not move what an already-attached service costs, which is what
       // the Billing Simulation reads since stage 3; the live join below still
       // drives display, so the UI can flag an item that has changed.

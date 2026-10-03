@@ -1,4 +1,4 @@
-// #919/#920 — the Regular / Final Price pair a Promotion's Sellable Item
+// #919/#920 — the Regular / Final Price pair a Promotion's Product
 // sections report.
 //
 // #916 gave the Membership Plan card that pair; these tickets ask the Promotion
@@ -9,7 +9,7 @@
 //   > system wherever possible.
 //
 // So the point of exercising the real router is that the amounts come from the
-// one shared module (`api/sellable-item-benefit-pricing.ts`, over
+// one shared module (`api/product-benefit-pricing.ts`, over
 // `applyLineBenefit()` and `computePriceFields()`) rather than from a copy: a
 // Promotion and a Plan configuring the same item the same way must quote the
 // same two numbers. The pure arithmetic is `plan-benefit-prices.unit.test.ts`.

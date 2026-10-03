@@ -3,7 +3,7 @@
 //
 // Two things are proven here, over the full Express + MySQL stack:
 //   1. What the Assigned Plan card shows about an applied Promotion — who
-//      applied it, how it reads today, and the Sellable Items it granted at
+//      applied it, how it reads today, and the Products it granted at
 //      the prices agreed — comes from the application, never from the
 //      Promotion's current definition.
 //   2. What it *charges* does too: the fee resolution reads each
@@ -33,11 +33,11 @@ let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
 
 /**
- * A gym-owned Sellable Item. No `charge_type_id`: that column is unique per
+ * A gym-owned Product. No `charge_type_id`: that column is unique per
  * gym (one row per system charge type), so every item a test needs alongside
  * another one is a plain gym item, named and typed in its own right.
  */
-async function createSellableItem(
+async function createProduct(
   gymId: string, name: string, type: string, amount: number, frequency: string | null,
 ): Promise<number> {
   const { insertId } = await db.query(
@@ -118,7 +118,7 @@ async function setMembershipFeeBenefit(
   );
 }
 
-async function grantSellableItem(
+async function grantProduct(
   gymId: string, promotionId: number, category: 'session' | 'oneoff' | 'periodical',
   gymChargeId: number, quantity: number,
 ) {
@@ -223,19 +223,19 @@ describe('GET /user-memberships/:id/promotions — the expandable card (#635 §1
     expect(row.status).toBe('applied');
   });
 
-  it('lists the Sellable Items it granted, at the prices they were agreed at', async () => {
+  it('lists the Products it granted, at the prices they were agreed at', async () => {
     const umId = await createAssignment(gymId, planId);
     const promotionId = await createPromotion(gymId, `Grants-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);
-    // Types and frequencies follow classifySellableItem() (#550): 'sessions'
+    // Types and frequencies follow classifyProduct() (#550): 'sessions'
     // is a Session item, a recurring frequency makes a Period item, anything
     // else is One-off.
-    const sessionItem = await createSellableItem(gymId, 'PT Pack', 'sessions', 40, 'per_session');
-    const oneoffItem = await createSellableItem(gymId, 'Registration', 'fee', 25, 'once');
-    const periodicalItem = await createSellableItem(gymId, 'Locker', 'service', 10, 'month');
-    await grantSellableItem(gymId, promotionId, 'session', sessionItem, 10);
-    await grantSellableItem(gymId, promotionId, 'oneoff', oneoffItem, 1);
-    await grantSellableItem(gymId, promotionId, 'periodical', periodicalItem, 2);
+    const sessionItem = await createProduct(gymId, 'PT Pack', 'sessions', 40, 'per_session');
+    const oneoffItem = await createProduct(gymId, 'Registration', 'fee', 25, 'once');
+    const periodicalItem = await createProduct(gymId, 'Locker', 'service', 10, 'month');
+    await grantProduct(gymId, promotionId, 'session', sessionItem, 10);
+    await grantProduct(gymId, promotionId, 'oneoff', oneoffItem, 1);
+    await grantProduct(gymId, promotionId, 'periodical', periodicalItem, 2);
     await applyPromotion(gymId, umId, promotionId);
 
     // Everything the catalogue could say afterwards is changed: prices,
@@ -264,8 +264,8 @@ describe('GET /user-memberships/:id/promotions — the expandable card (#635 §1
     const umId = await createAssignment(gymId, planId);
     const promotionId = await createPromotion(gymId, `Legacy-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);
-    const item = await createSellableItem(gymId, 'Legacy Locker', 'service', 12, 'month');
-    await grantSellableItem(gymId, promotionId, 'periodical', item, 1);
+    const item = await createProduct(gymId, 'Legacy Locker', 'service', 12, 'month');
+    await grantProduct(gymId, promotionId, 'periodical', item, 1);
 
     // An application from before the snapshot flow: inserted directly, with no
     // snapshot JSON and no grant snapshot rows.
@@ -287,8 +287,8 @@ describe('GET /user-memberships/:id/promotions — the expandable card (#635 §1
     const umId = await createAssignment(gymId, planId);
     const promotionId = await createPromotion(gymId, `Detail-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);
-    const item = await createSellableItem(gymId, 'Detail Pack', 'sessions', 30, 'per_session');
-    await grantSellableItem(gymId, promotionId, 'session', item, 5);
+    const item = await createProduct(gymId, 'Detail Pack', 'sessions', 30, 'per_session');
+    await grantProduct(gymId, promotionId, 'session', item, 5);
     await applyPromotion(gymId, umId, promotionId);
 
     const res = await request

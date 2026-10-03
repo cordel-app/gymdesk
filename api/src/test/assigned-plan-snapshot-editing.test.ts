@@ -4,7 +4,7 @@
 // The point of the stage is that an edit lands on *this* assignment and
 // nowhere else, so every case drives the real routers over the full Express +
 // MySQL stack and then re-reads the Plan, the sibling assignment and the
-// Sellable Item to prove none of them moved. Fixtures are inserted directly;
+// Product to prove none of them moved. Fixtures are inserted directly;
 // the HTTP API is only used for the action under test (CLAUDE.md).
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -60,7 +60,7 @@ async function createMember(gymId: string): Promise<number> {
   return insertId;
 }
 
-async function createSellableItem(gymId: string, opts: {
+async function createProduct(gymId: string, opts: {
   type?: string; billingFrequency?: string | null; amount?: number; status?: string;
 } = {}): Promise<number> {
   const { type = 'service', billingFrequency = 'month', amount = 20, status = 'active' } = opts;
@@ -110,7 +110,7 @@ const getBenefits = (gymId: string, umId: number, path: string) =>
 /** A Plan with a price, a cadence and one Period Benefit, assigned to a new Member. */
 async function assignConfiguredPlan(gymId: string) {
   const planId = await createPlan(gymId);
-  const periodicalItem = await createSellableItem(gymId, { amount: 20 });
+  const periodicalItem = await createProduct(gymId, { amount: 20 });
   await addPlanBenefit(gymId, 'membership_plan_periodical', planId, periodicalItem, 1);
   const res = await assign(gymId, planId, await createMember(gymId));
   expect(res.status).toBe(201);
@@ -208,7 +208,7 @@ describe('PUT /user-memberships/:id/{session,oneoff,periodical}-benefits', () =>
   });
 
   it('replaces a section on the assignment, freezing a newly added line’s price', async () => {
-    const added = await createSellableItem(gymId, { amount: 35, billingFrequency: 'year' });
+    const added = await createProduct(gymId, { amount: 35, billingFrequency: 'year' });
     const res = await putBenefits(gymId, umId, 'periodical-benefits', [
       { gym_charge_id: periodicalItem, quantity: 3 },
       { gym_charge_id: added, quantity: 1 },
@@ -237,7 +237,7 @@ describe('PUT /user-memberships/:id/{session,oneoff,periodical}-benefits', () =>
     expect(res.body[0]).toMatchObject({ quantity: 5, unit_price: 20 });
   });
 
-  it('keeps a line whose Sellable Item was since retired saveable', async () => {
+  it('keeps a line whose Product was since retired saveable', async () => {
     await db.query('UPDATE gym_charges SET status = ? WHERE id = ?', ['inactive', periodicalItem]);
     const res = await putBenefits(gymId, umId, 'periodical-benefits', [
       { gym_charge_id: periodicalItem, quantity: 2 },
@@ -260,8 +260,8 @@ describe('PUT /user-memberships/:id/{session,oneoff,periodical}-benefits', () =>
   });
 
   it('rejects a new item of the wrong category, an inactive one and a bad payload', async () => {
-    const sessionItem = await createSellableItem(gymId, { type: 'sessions', billingFrequency: 'per_session' });
-    const inactive = await createSellableItem(gymId, { status: 'inactive' });
+    const sessionItem = await createProduct(gymId, { type: 'sessions', billingFrequency: 'per_session' });
+    const inactive = await createProduct(gymId, { status: 'inactive' });
 
     expect((await putBenefits(gymId, umId, 'periodical-benefits', [
       { gym_charge_id: sessionItem, quantity: 1 },
@@ -303,8 +303,8 @@ describe('editing an assignment that predates the snapshot', () => {
     gymId = await createTestGym('APSE Legacy Gym');
     await createTestMembership(gymId, 'admin');
     planId = await createPlan(gymId);
-    periodicalItem = await createSellableItem(gymId, { amount: 20 });
-    sessionItem = await createSellableItem(gymId, { type: 'sessions', billingFrequency: 'per_session', amount: 30 });
+    periodicalItem = await createProduct(gymId, { amount: 20 });
+    sessionItem = await createProduct(gymId, { type: 'sessions', billingFrequency: 'per_session', amount: 30 });
     await addPlanBenefit(gymId, 'membership_plan_periodical', planId, periodicalItem, 1);
     await addPlanBenefit(gymId, 'membership_plan_session', planId, sessionItem, 10);
 
@@ -423,7 +423,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
   });
 
   it("refuses an item that belongs to another gym", async () => {
-    const otherGymItem = await createSellableItem(gymB);
+    const otherGymItem = await createProduct(gymB);
     const res = await putBenefits(gymA, umId, 'periodical-benefits', [
       { gym_charge_id: otherGymItem, quantity: 1 },
     ]);
@@ -471,7 +471,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
    */
   async function assignConfiguredPlanAsAdmin(gym: string) {
     const planId = await createPlan(gym);
-    const item = await createSellableItem(gym, { amount: 20 });
+    const item = await createProduct(gym, { amount: 20 });
     const memberId = await createMember(gym);
     const { insertId } = await db.query(
       `INSERT INTO user_memberships

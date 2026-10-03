@@ -14,7 +14,7 @@ import React from 'react';
 //
 // So this module holds the values, and a page spreads them instead of restating
 // them. Three of them are deliberately *not* new numbers: the control box, the
-// field label and the section header are the ones the Sellable Items inline
+// field label and the section header are the ones the Products inline
 // form already uses, because that screen is the look & feel the Member card is
 // being brought in line with.
 //

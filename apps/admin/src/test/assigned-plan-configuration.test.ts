@@ -8,7 +8,7 @@ import { join } from 'path';
 // §9: Billing & Duration (Free Period / Paid Duration / Bonus Duration) plus
 // One-off / Session / Period Benefits. §10: each section has its own
 // Edit/Save/Cancel, only the section being edited is unlocked, and no
-// CrudModal is introduced. §6: no Sellable-Item-keyed Membership Fee *Benefit*
+// CrudModal is introduced. §6: no Product-keyed Membership Fee *Benefit*
 // section — the assignment's own Membership Fee is part of Billing & Duration,
 // which is a different thing.
 //
@@ -16,7 +16,7 @@ import { join } from 'path';
 // **Personal Membership Fee Benefit**, a `No benefit` / `% discount` pair that
 // belongs to the contract rather than to a Promotion and never expires. It is
 // its own section, with the same Edit/Save/Cancel shape, and it is still not a
-// Charge Benefit: nothing about it is keyed on a Sellable Item.
+// Charge Benefit: nothing about it is keyed on a Product.
 //
 // This repo has no component-test infra for apps/admin (see docs/architecture.md's
 // TL;DR), so — like plans-benefit-sections.test.ts (#635 stage 1) — the
@@ -101,8 +101,8 @@ describe('Assigned Plan: One-off / Session / Period Benefits (#635 §3–§5/§9
   });
 
   it('reuses the shared Promotion/Plan benefit editor rather than a second one', () => {
-    expect(src).toContain('SellableItemBenefitEditor');
-    expect(src).toContain("from '@/components/SellableItemBenefits'");
+    expect(src).toContain('ProductBenefitEditor');
+    expect(src).toContain("from '@/components/ProductBenefits'");
   });
 
   it('saves each section to its own assignment endpoint', () => {
@@ -114,11 +114,11 @@ describe('Assigned Plan: One-off / Session / Period Benefits (#635 §3–§5/§9
 
   // #924 stage 1: the hand-rolled table this section used to render — its own
   // columns, its own widths, its own single money column — is gone, replaced by
-  // the shared grid every Sellable Item section of every card renders from. The
+  // the shared grid every Product section of every card renders from. The
   // prices are still the frozen ones; where they come from is asserted in
   // assigned-plan-benefit-columns.test.ts.
   it('shows the frozen line through the shared read-only grid (#916/§4)', () => {
-    expect(src).toContain('SellableItemBenefitView');
+    expect(src).toContain('ProductBenefitView');
     expect(src, 'a second benefit table is still rendered here').not.toContain('<table');
   });
 });
@@ -136,7 +136,7 @@ describe('Assigned Plan configuration: editing rules (#635 §10)', () => {
     expect(src).not.toContain('Modal');
   });
 
-  it('adds no Sellable-Item-keyed Membership Fee Benefits section (§6)', () => {
+  it('adds no Product-keyed Membership Fee Benefits section (§6)', () => {
     // #635 §6's rule, unchanged: the Charge-Benefit vocabulary has no place
     // here. #772's section is keyed on nothing but the assignment itself.
     expect(src).not.toContain('benefits_membership_fee');
@@ -177,7 +177,7 @@ describe('Assigned Plan configuration: locales', () => {
     // #892 — a duration reads in the unit it is counted in.
     'months_value', 'periods_value_plain', 'duration_periods_hint',
     'not_configured', 'snapshot_edit_hint',
-    'col_sellable_item', 'col_quantity', 'col_frequency', 'inactive_item_tag',
+    'col_product', 'col_quantity', 'col_frequency', 'inactive_item_tag',
     // #924 stage 1 — the three columns the shared grid added to these sections,
     // and the labels their cells resolve.
     'col_item_action', 'col_original_price', 'col_final_price', 'benefit_total_price',

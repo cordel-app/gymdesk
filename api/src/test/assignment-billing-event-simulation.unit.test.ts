@@ -26,7 +26,7 @@ import { computeAssignmentBillingEventSimulation } from '../domain/assignmentBil
 import { SIMULATED_CYCLES } from '../domain/billingEventSimulation';
 import { NO_PERSONAL_FEE_BENEFIT } from '../domain/personalFeeBenefit';
 import { NO_PLAN_DURATION, toPlanDuration } from '../domain/planDuration';
-import { NO_SELLABLE_ITEM_BENEFIT } from '../domain/sellableItemBenefitActions';
+import { NO_PRODUCT_BENEFIT } from '../domain/productBenefitActions';
 
 const MONTHLY = { interval: 1, unit: 'month' as const };
 const FOUR_WEEKLY = { interval: 4, unit: 'week' as const };
@@ -43,7 +43,7 @@ function benefit(over: Partial<SimulationPlanBenefit> = {}): SimulationPlanBenef
     unitPrice: 20,
     quantity: 1,
     sessionFrequency: null,
-    benefit: NO_SELLABLE_ITEM_BENEFIT,
+    benefit: NO_PRODUCT_BENEFIT,
     ...over,
   };
 }

@@ -10,7 +10,7 @@ import { join, relative } from 'path';
 // which is exactly what "Diagnostics copied to clipboard." did.
 //
 // This repo has no component-test infra for apps/admin (see docs/architecture.md's
-// TL;DR), so — like sellable-items-column-alignment.test.ts (#637) — this scans
+// TL;DR), so — like products-column-alignment.test.ts (#637) — this scans
 // the sources. It pins the three call sites the ticket fixes, and then sweeps
 // every `toast(` call in the admin app so a future confirmation cannot regress
 // into the error variant by omission.

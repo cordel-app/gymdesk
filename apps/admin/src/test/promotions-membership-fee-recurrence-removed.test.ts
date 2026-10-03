@@ -15,12 +15,12 @@ import { join } from 'path';
 // Value and Enabled and nothing else, its PUT body carries only those, and the
 // two locale keys that existed solely for it are gone. The *other* Promotion
 // benefit sections (Session / One-off / Periodical) keep their own Quantity and
-// Frequency columns — they are keyed to a real Sellable Item — so this test is
+// Frequency columns — they are keyed to a real Product — so this test is
 // scoped to the Membership Fee functions rather than the whole file.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const PAGE = join(__dirname, '..', 'app', '[locale]', 'promotions', 'page.tsx');
-const SHARED_EDITOR = join(__dirname, '..', 'components', 'SellableItemBenefits.tsx');
+const SHARED_EDITOR = join(__dirname, '..', 'components', 'ProductBenefits.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 type Messages = Record<string, unknown>;
@@ -61,7 +61,7 @@ function extractBlock(src: string, needle: string): string {
 
 const RECURRENCE_FIELDS = ['quantity', 'frequency_interval', 'frequency_unit'] as const;
 // Column/label keys the section rendered for those three fields. `col_quantity`
-// and `col_frequency` are still used by the Sellable-Item sections, which is why
+// and `col_frequency` are still used by the Product sections, which is why
 // they are asserted per-block and not file-wide.
 const RECURRENCE_KEYS = [
   'col_quantity',
@@ -151,16 +151,16 @@ describe('Promotions: Membership Fee recurrence fields removed (#814)', () => {
     }
   });
 
-  it('keeps col_quantity and col_frequency, which the Sellable Item sections still use', () => {
+  it('keeps col_quantity and col_frequency, which the Product sections still use', () => {
     for (const locale of LOCALE_CODES) {
       const keys = getNamespaceKeys(locales[locale], 'promotions');
       expect(keys.has('col_quantity'), `${locale}.json lost promotions.col_quantity`).toBe(true);
       expect(keys.has('col_frequency'), `${locale}.json lost promotions.col_frequency`).toBe(true);
     }
-    // #896 stage 4: the three Sellable Item sections render through the shared
+    // #896 stage 4: the three Product sections render through the shared
     // editor now, so the Quantity column is declared there — the page names the
     // context, the component names the columns.
-    expect(code, 'the Sellable Item sections no longer render through the shared editor')
+    expect(code, 'the Product sections no longer render through the shared editor')
       .toContain('benefitContext="promotion"');
     const sharedSrc = stripComments(readFileSync(SHARED_EDITOR, 'utf-8'));
     expect(sharedSrc, 'the shared editor lost its Quantity column').toContain("t('col_quantity')");

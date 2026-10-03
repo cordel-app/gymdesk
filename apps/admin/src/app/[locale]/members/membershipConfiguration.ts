@@ -7,7 +7,7 @@
 // Assigned Plan it belongs to.
 //
 // #931 — Promotions are not part of a Member's configuration: a Promotion
-// applies to a Membership Plan or a Sellable Item, never to a Member, so neither
+// applies to a Membership Plan or a Product, never to a Member, so neither
 // this payload nor the Member card carries them. The applications an Assigned
 // Plan was agreed with are read from the Assigned Plans card instead.
 

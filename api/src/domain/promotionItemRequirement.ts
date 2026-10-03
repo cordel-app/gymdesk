@@ -1,9 +1,9 @@
-// #959 — a Sellable Item configured inside a **Promotion** carries a
+// #959 — a Product configured inside a **Promotion** carries a
 // **Requirement**: whether the member must take it with the Promotion, or may
 // decline it.
 //
 //   SESSION BENEFITS
-//   SELLABLE ITEM             QUANTITY   FREQUENCY   PROMOTION   REQUIREMENT
+//   PRODUCT                   QUANTITY   FREQUENCY   PROMOTION   REQUIREMENT
 //   Gym Membership Fee           1       Month       50%         Mandatory
 //   Locker Fee                   1       Month       50%         Optional
 //
@@ -15,7 +15,7 @@
 // gym's **catalogue** item, and its one meaning is that the item is forced into
 // every *Membership Plan* benefit section (`domain/mandatoryPlanBenefits.ts`).
 // This column is a property of the **relationship** between one Promotion and
-// one Sellable Item, exactly as #896's `(action, value)` pair is and for the
+// one Product, exactly as #896's `(action, value)` pair is and for the
 // same reason: the same item may be mandatory in one Promotion and optional in
 // another, and `gym_charges` learns nothing from either. The two never appear
 // in one grid — a Promotion section passes no `enforceMandatory`, so the
@@ -46,7 +46,7 @@
 //
 // Pure — no DB, no HTTP (CLAUDE.md).
 
-/** What a Promotion's Sellable Item line may be configured as, in dropdown order. */
+/** What a Promotion's Product line may be configured as, in dropdown order. */
 export const PROMOTION_ITEM_REQUIREMENTS = ['mandatory', 'optional'] as const;
 
 export type PromotionItemRequirement = (typeof PROMOTION_ITEM_REQUIREMENTS)[number];
@@ -71,7 +71,7 @@ export function isPromotionItemRequirement(value: unknown): value is PromotionIt
 
 /**
  * A stored column value, normalized. Defensive in the way
- * `toSellableItemBenefit()` is: the column is NOT NULL with a default, but a
+ * `toProductBenefit()` is: the column is NOT NULL with a default, but a
  * read must still report something usable for a row written in the instant
  * between migration 207's two statements, and the safe answer is the one that
  * grants what the Promotion configured.

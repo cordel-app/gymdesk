@@ -7,7 +7,7 @@
 //
 //  * **Example Timeline** (#818) — one row per *billing period* of the Plan's
 //    own cadence, saying what that period's Membership Fee status is. It knows
-//    nothing about Sellable Items.
+//    nothing about Products.
 //  * **Billing Event Simulation** (this module) — one group per *billing date*,
 //    listing every line that falls on it: the Membership Fee and each of the
 //    Plan's One-off / Session / Period Benefits, mandatory items included, each
@@ -39,7 +39,7 @@
 // ("€70.00 (tax included)") and no tax arithmetic happens here or in the
 // frontend (#817). That conversion is exact rather than an approximation because
 // a Membership Plan may only configure `no_benefit`, `waive` and
-// `percentage_discount` on a Sellable Item (#896 §16) — a percentage of the
+// `percentage_discount` on a Product (#896 §16) — a percentage of the
 // gross is the gross of the percentage — and its Billing & Duration only ever
 // waives outright. An item with no tax rate configured contributes its stored
 // amount, exactly as `formatPlanCurrentPrice()` falls back for the Plan's own
@@ -47,7 +47,7 @@
 
 import {
   SimulationAssignment,
-  SellableItemFrequency,
+  ProductFrequency,
   computeBillingSimulation,
 } from './billingSimulation';
 import {
@@ -62,9 +62,9 @@ import {
 import { PlanDuration, withDurationCadence } from './planDuration';
 import { PlanTimelineCadence } from './planExampleTimeline';
 import { NO_PERSONAL_FEE_BENEFIT } from './personalFeeBenefit';
-import { SellableItemBenefit } from './sellableItemBenefitActions';
+import { ProductBenefit } from './productBenefitActions';
 import { SessionBenefitFrequency } from './sessionBenefitFrequency';
-import { SellableItemBenefitCategory } from './sellableItemClassification';
+import { ProductBenefitCategory } from './productClassification';
 
 // The horizon floor and the result shape are the shared projection's (#922);
 // re-exported so #915's own importers and tests keep reading them from here.
@@ -74,15 +74,15 @@ export type PlanSimulationDate = BillingEventDate;
 export type PlanBillingEventSimulationResult = BillingEventSimulationResult;
 
 /**
- * One Sellable Item the Plan carries, as this projection needs it: the item's
+ * One Product the Plan carries, as this projection needs it: the item's
  * catalogue identity, the quantity and pricing treatment the Plan's benefit row
  * configures, and its **gross** unit price.
  */
 export interface PlanSimulationItem {
   gymChargeId: number;
   name: string;
-  category: SellableItemBenefitCategory;
-  billingFrequency: SellableItemFrequency | null;
+  category: ProductBenefitCategory;
+  billingFrequency: ProductFrequency | null;
   /** The item's unit price including VAT (see the tax note in the header). */
   unitPriceInclTax: number;
   quantity: number;
@@ -93,7 +93,7 @@ export interface PlanSimulationItem {
    */
   sessionFrequency: SessionBenefitFrequency | null;
   /** The Plan benefit row's own `(action, value)` pair (#896). */
-  benefit: SellableItemBenefit;
+  benefit: ProductBenefit;
   /** `gym_charges.mandatory` — the ticket labels such a line "(Mandatory)". */
   mandatory: boolean;
 }

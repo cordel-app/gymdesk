@@ -2,21 +2,21 @@
 // the period on which the included sessions are renewed.
 //
 //   SESSION BENEFITS
-//   SELLABLE ITEM             QUANTITY   FREQUENCY   BENEFIT
+//   PRODUCT                   QUANTITY   FREQUENCY   BENEFIT
 //   Personal Training Class      2       Weekly      Waive
 //
 // reads "2 Personal Training Classes every week, included in the membership".
 //
-// **Why this is its own option set, and not the Sellable Item's.** A Sellable
-// Item's `billing_frequency` (`domain/sellableItemFrequency.ts`) answers "how
+// **Why this is its own option set, and not the Product's.** A Product
+// Item's `billing_frequency` (`domain/productFrequency.ts`) answers "how
 // often is this item *priced*", and #821 deliberately retired `week` from that
 // surface: nobody sells a weekly locker rental. The question here is a
 // different one — how often an *allowance* renews — and the ticket thread's Q2
 // answer is explicit that weekly is exactly the case it exists for ("It is the
-// way to cover 1 session per week or 2 sessions per week. Sellable items cannot
+// way to cover 1 session per week or 2 sessions per week. Products cannot
 // be purchased per weeks"). So `week` is offered here without being un-retired
 // over there, and `per_session` is not offered at all: it is not a period, and
-// it is being removed from the Sellable Item surface in #945.
+// it is being removed from the Product surface in #945.
 //
 // `once` is offered and means what the thread says it means — "Once will take
 // place once. At the beginning of the assignment" — which is also what a

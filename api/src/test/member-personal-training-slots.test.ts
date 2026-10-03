@@ -122,7 +122,7 @@ async function createProfessionalService(
 
 /**
  * Grants `sessions` of `serviceId` to `memberId` through the stage-1 package
- * path: class_packages + its gym_charges Sellable Item +
+ * path: class_packages + its gym_charges Product +
  * sellable_item_professional_services + user_class_packages.
  */
 async function grantSessions(
@@ -137,7 +137,7 @@ async function grantSessions(
      VALUES (?, ?, ?, 100.00, 365, 'active')`,
     [gymId, name, sessions],
   );
-  const { insertId: sellableItemId } = await db.query(
+  const { insertId: productId } = await db.query(
     `INSERT INTO gym_charges
        (gym_id, name, type, units, amount, currency, billing_frequency,
         status, availability, is_system, class_package_id)
@@ -147,7 +147,7 @@ async function grantSessions(
   await db.query(
     `INSERT INTO sellable_item_professional_services (gym_id, sellable_item_id, professional_service_id)
      VALUES (?, ?, ?)`,
-    [gymId, sellableItemId, serviceId],
+    [gymId, productId, serviceId],
   );
   await db.query(
     `INSERT INTO user_class_packages

@@ -24,7 +24,7 @@
 // persisted and nothing is charged.
 //
 // **What is in it, and what is deliberately not.** A Promotion's own property is
-// the Sellable Items it grants, so those are the lines: each at its catalogue
+// the Products it grants, so those are the lines: each at its catalogue
 // price, treated by the grant's own `(action, value)` pair (#896) for the units
 // or periods the grant covers, and at the regular price after that — which is
 // the ticket's own "No applicable promotion → Final Price = Regular Price" case.
@@ -38,7 +38,7 @@
 // Benefit. What the Promotion does to a fee is already the Promotion card's
 // **Example Timeline**, which is one row per period of the Promotion's own
 // Free / Paid / Bonus timeline and is where its Membership Fee Promotion is
-// shown; this section is one group per billing *date* over its Sellable Items.
+// shown; this section is one group per billing *date* over its Products.
 // The two answer different questions and neither may grow into the other.
 //
 // **Tax.** As on the Plan side the whole projection runs in VAT-inclusive euros:
@@ -48,7 +48,7 @@
 // arithmetic happens here or in the page (#817).
 
 import {
-  SellableItemFrequency,
+  ProductFrequency,
   SimulationAssignment,
   SimulationGrant,
   computeBillingSimulation,
@@ -62,25 +62,25 @@ import {
 } from './billingEventSimulation';
 import { NO_PLAN_DURATION } from './planDuration';
 import { NO_PERSONAL_FEE_BENEFIT } from './personalFeeBenefit';
-import { SellableItemBenefit } from './sellableItemBenefitActions';
-import { SellableItemBenefitCategory } from './sellableItemClassification';
+import { ProductBenefit } from './productBenefitActions';
+import { ProductBenefitCategory } from './productClassification';
 
 /**
- * One Sellable Item the Promotion grants, as this projection needs it: the
+ * One Product the Promotion grants, as this projection needs it: the
  * item's catalogue identity, what the grant covers and how it prices it, and
  * the item's **gross** unit price.
  */
 export interface PromotionSimulationGrant {
   gymChargeId: number;
   name: string;
-  category: SellableItemBenefitCategory;
-  billingFrequency: SellableItemFrequency | null;
+  category: ProductBenefitCategory;
+  billingFrequency: ProductFrequency | null;
   /** The item's unit price including VAT (see the tax note in the header). */
   unitPriceInclTax: number;
   /** Units covered for a Session / One-off item, periods for a Periodical one. */
   quantity: number;
   /** The grant row's own `(action, value)` pair (#896) — what it does to those units. */
-  benefit: SellableItemBenefit;
+  benefit: ProductBenefit;
 }
 
 export interface PromotionBillingEventSimulationInput {
@@ -112,7 +112,7 @@ export interface PromotionBillingEventSimulationInput {
 export type PromotionBillingEventSimulationResult = BillingEventSimulationResult;
 
 const NOTHING_GRANTED_REASON =
-  'Add a promoted Sellable Item to preview the billing events this Promotion affects.';
+  'Add a promoted Product to preview the billing events this Promotion affects.';
 
 /**
  * Projects the Promotion as applied, on `anchorDate`, to a member who starts

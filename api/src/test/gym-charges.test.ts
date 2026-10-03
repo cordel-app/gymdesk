@@ -1,4 +1,4 @@
-// Tests for sellable-items.ts router (formerly gym-charges)
+// Tests for products.ts router (formerly gym-charges)
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -380,7 +380,7 @@ describe('PUT /sellable-items/:id', () => {
 
 // ─── enrollment_status ────────────────────────────────────────────────────────
 
-describe('Sellable Item enrollment_status', () => {
+describe('Product enrollment_status', () => {
   let gymId: string;
 
   beforeAll(async () => {
@@ -493,7 +493,7 @@ describe('Sellable Item enrollment_status', () => {
   });
 });
 
-// ─── POST /sellable-items — create custom sellable item ─────────────────────────
+// ─── POST /sellable-items — create custom product ─────────────────────────
 
 describe('POST /sellable-items', () => {
   let gymId: string;
@@ -530,7 +530,7 @@ describe('POST /sellable-items', () => {
     expect(res.status).toBe(400);
   });
 
-  it('creates a custom sellable item and returns 201 with is_system = 0', async () => {
+  it('creates a custom product and returns 201 with is_system = 0', async () => {
     const res = await request
       .post('/sellable-items')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -599,7 +599,7 @@ describe('POST /sellable-items', () => {
 
   // #945: 'per_session' left the product surface for the reason 'week' did —
   // a session package's size is its Units and its frequency is when the whole
-  // package is billed, so "Per Session" names a usage-based model the Sellable
+  // package is billed, so "Per Session" names a usage-based model the Product
   // Item does not have.
   it('returns 400 for billing_frequency = per_session and writes nothing', async () => {
     const res = await request
@@ -645,7 +645,7 @@ describe('POST /sellable-items', () => {
   });
 });
 
-// ─── #821 — a Sellable Item stored on the retired 'week' frequency ──────────────
+// ─── #821 — a Product stored on the retired 'week' frequency ──────────────
 
 describe('#821 legacy week frequency', () => {
   let gymId: string;
@@ -740,12 +740,12 @@ describe('#821 legacy week frequency', () => {
   });
 });
 
-// ─── #945 — a Sellable Item stored on the retired 'per_session' frequency ───────
+// ─── #945 — a Product stored on the retired 'per_session' frequency ───────
 //
 // The same shape as the #821 block above, because it is the same rule: the
 // value is retired from the product surface, not deleted from the data. What
 // differs is that #945 deliberately does **no** backfill — a per-session item
-// bills exactly like a `once` one today (`cadenceForSellableItem()` gives
+// bills exactly like a `once` one today (`cadenceForProduct()` gives
 // neither a schedule), but what the gym meant by it is not knowable from the
 // row, so the ticket's §3 "flag the value for correction rather than guessing"
 // applies and the row keeps its value until someone edits it.
@@ -1002,7 +1002,7 @@ describe('GET /sellable-items — computed price fields', () => {
 });
 
 // ─── benefit_category (#550) ────────────────────────────────────────────────────
-// Server-computed via classifySellableItem() (api/src/domain/sellableItemClassification.ts)
+// Server-computed via classifyProduct() (api/src/domain/productClassification.ts)
 // — the single source of truth Promotions' Session/One-off/Periodical Benefit
 // pickers group by, instead of re-deriving the type/frequency rules client-side.
 
@@ -1344,9 +1344,9 @@ describe('POST /sellable-items/:id/duplicate', () => {
   });
 });
 
-// ─── #546: Professional Services linkage on Session-type Sellable Items ────────
+// ─── #546: Professional Services linkage on Session-type Products ────────
 
-describe('Sellable Items — Professional Services linkage (#546)', () => {
+describe('Products — Professional Services linkage (#546)', () => {
   let gymId: string;
   let otherGymId: string;
   let psOne: number;
@@ -1871,7 +1871,7 @@ describe('#832 mandatory attribute', () => {
     expect(await stored(id)).toBe(1);
   });
 
-  // §2: the flag is editable on a Base (System) Sellable Item too, which is why
+  // §2: the flag is editable on a Base (System) Product too, which is why
   // the UPDATE writes it outside the is_system guard the catalogue-shape
   // columns carry — name/type on a System row still cannot move.
   it('is editable on a System item, whose name and type still cannot be', async () => {

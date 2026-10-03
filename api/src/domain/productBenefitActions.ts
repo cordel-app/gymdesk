@@ -1,12 +1,12 @@
-// #896 stage 1 — the **pricing treatment** a Sellable Item carries inside a
+// #896 stage 1 — the **pricing treatment** a Product carries inside a
 // Promotion or a Membership Plan, and the vocabulary that decides it.
 //
-// Until this ticket, a Sellable Item configured in a Promotion section
+// Until this ticket, a Product configured in a Promotion section
 // (`promotion_{session,oneoff,periodical}`, migration 155) or in a Membership
 // Plan section (`membership_plan_{session,oneoff,periodical}`, migration 173)
 // carried a `quantity` and nothing else. §15 adds the pair — a type and, when
 // the type asks for one, a value — to the *relationship*, never to the global
-// Sellable Item (§12): the same item may be waived by one Plan and discounted
+// Product (§12): the same item may be waived by one Plan and discounted
 // 20% by a Promotion, and `gym_charges` learns nothing from either.
 //
 // Two rules make this module the only place that decides any of it:
@@ -23,7 +23,7 @@
 //      Plans cannot configure `Fixed discount` or `Fixed Price`". The CHECK
 //      beside each table (migration 203) is what enforces that rather than the
 //      dropdown, so a new action goes in **two** places: the list here and the
-//      CHECK — `sellable-item-benefit-actions.unit.test.ts` fails if they part.
+//      CHECK — `product-benefit-actions.unit.test.ts` fails if they part.
 //
 // The UI *labels* differ by context and deliberately do not live here: the
 // Promotions screen says **Promotion** / *No promotion* and the Membership
@@ -36,7 +36,7 @@
 import { PromotionBenefitAction, applyPeriodBenefit } from './promotionBenefits';
 
 /** Which of the two editors is configuring the item. */
-export type SellableItemBenefitContext = 'promotion' | 'plan';
+export type ProductBenefitContext = 'promotion' | 'plan';
 
 /** §2 — what a Promotion may configure, in dropdown order. */
 export const PROMOTION_ITEM_ACTIONS: readonly PromotionBenefitAction[] = [
@@ -50,7 +50,7 @@ export const PROMOTION_ITEM_ACTIONS: readonly PromotionBenefitAction[] = [
 /**
  * §5/§16 — what a Membership Plan may configure. A strict subset: a Plan
  * benefit describes what the membership *includes*, so a monetary discount or
- * a fixed price on it would be a second price list beside the Sellable Item's
+ * a fixed price on it would be a second price list beside the Product's
  * own. Widening this is a product decision, and it moves the CHECK with it.
  */
 export type PlanBenefitAction = Extract<
@@ -64,7 +64,7 @@ export const PLAN_BENEFIT_ACTIONS: readonly PlanBenefitAction[] = [
 ];
 
 /**
- * §13's neutral default: the item is included at its normal Sellable Item
+ * §13's neutral default: the item is included at its normal Product
  * price. It is what a row written before this ticket reads as, what a new row
  * starts at, and what the column defaults to in SQL.
  *
@@ -76,13 +76,13 @@ export const DEFAULT_BENEFIT_ACTION: PromotionBenefitAction = 'no_benefit';
 
 /** The actions one context may store. */
 export function benefitActionsFor(
-  context: SellableItemBenefitContext,
+  context: ProductBenefitContext,
 ): readonly PromotionBenefitAction[] {
   return context === 'promotion' ? PROMOTION_ITEM_ACTIONS : PLAN_BENEFIT_ACTIONS;
 }
 
 export function isBenefitActionAllowed(
-  context: SellableItemBenefitContext, action: unknown,
+  context: ProductBenefitContext, action: unknown,
 ): action is PromotionBenefitAction {
   return typeof action === 'string'
     && (benefitActionsFor(context) as readonly string[]).includes(action);
@@ -115,7 +115,7 @@ export const MAX_BENEFIT_AMOUNT = 99_999_999.99;
  * Returns the message, or `null` when the pair is valid.
  */
 export function benefitConfigError(
-  context: SellableItemBenefitContext,
+  context: ProductBenefitContext,
   action: unknown,
   value: unknown,
 ): string | null {
@@ -138,13 +138,13 @@ export function benefitConfigError(
 }
 
 /** One relationship row's pricing treatment, normalized. */
-export interface SellableItemBenefit {
+export interface ProductBenefit {
   action: PromotionBenefitAction;
   /** The percentage or the amount. Always null for `no_benefit` and `waive`. */
   value: number | null;
 }
 
-export const NO_SELLABLE_ITEM_BENEFIT: SellableItemBenefit = {
+export const NO_PRODUCT_BENEFIT: ProductBenefit = {
   action: DEFAULT_BENEFIT_ACTION, value: null,
 };
 
@@ -159,19 +159,19 @@ export const NO_SELLABLE_ITEM_BENEFIT: SellableItemBenefit = {
  * `context` is what keeps a Plan section from reading a `fixed_price` it may
  * not configure, whatever is in the column.
  */
-export function toSellableItemBenefit(
-  context: SellableItemBenefitContext, action: unknown, value: unknown,
-): SellableItemBenefit {
-  if (!isBenefitActionAllowed(context, action)) return NO_SELLABLE_ITEM_BENEFIT;
+export function toProductBenefit(
+  context: ProductBenefitContext, action: unknown, value: unknown,
+): ProductBenefit {
+  if (!isBenefitActionAllowed(context, action)) return NO_PRODUCT_BENEFIT;
   if (!benefitActionRequiresValue(action)) return { action, value: null };
   const n = Number(value);
-  if (value == null || value === '' || !Number.isFinite(n) || n < 0) return NO_SELLABLE_ITEM_BENEFIT;
+  if (value == null || value === '' || !Number.isFinite(n) || n < 0) return NO_PRODUCT_BENEFIT;
   if (action === 'percentage_discount') return { action, value: Math.min(100, n) };
   return { action, value: Math.min(MAX_BENEFIT_AMOUNT, n) };
 }
 
 /**
- * What one configured line costs, given the Sellable Item's own unit price.
+ * What one configured line costs, given the Product's own unit price.
  *
  * The **line**, not the unit, is the basis — the thread's answer to Q2: "if
  * %discount is applied […] it will be applied to the total of Price x
@@ -187,7 +187,7 @@ export function toSellableItemBenefit(
  * covers.
  */
 export function applyLineBenefit(
-  unitPrice: number, quantity: number, benefit: SellableItemBenefit | null | undefined,
+  unitPrice: number, quantity: number, benefit: ProductBenefit | null | undefined,
 ): number {
   const units = Number.isFinite(quantity) ? Math.max(0, quantity) : 0;
   const line = (Number.isFinite(unitPrice) ? unitPrice : 0) * units;
@@ -214,11 +214,11 @@ export function applyLineBenefit(
  * Clearing a treatment stays possible and stays explicit: send
  * `action: 'no_benefit'`.
  */
-export interface ParsedSellableItemBenefit {
+export interface ParsedProductBenefit {
   /** The 400's message, or `null` when the line is valid. */
   error: string | null;
   /** The pair to write, or `null` when the request named none. */
-  benefit: SellableItemBenefit | null;
+  benefit: ProductBenefit | null;
 }
 
 /**
@@ -227,10 +227,10 @@ export interface ParsedSellableItemBenefit {
  * A `value` without an `action` is refused rather than ignored: it is the one
  * shape that reads as a configured discount the server would silently drop.
  */
-export function parseSellableItemBenefitInput(
-  context: SellableItemBenefitContext,
+export function parseProductBenefitInput(
+  context: ProductBenefitContext,
   item: { action?: unknown; value?: unknown } | null | undefined,
-): ParsedSellableItemBenefit {
+): ParsedProductBenefit {
   const action = item?.action;
   const value = item?.value;
   const hasValue = value !== undefined && value !== null && value !== '';
@@ -248,13 +248,13 @@ export function parseSellableItemBenefitInput(
 
 /**
  * One stored row as a read must report it: the pair normalized through
- * `toSellableItemBenefit()`, so `value` is a number rather than the
+ * `toProductBenefit()`, so `value` is a number rather than the
  * `DECIMAL(10,2)` string mysql2 hands back, and a pair the context may not
  * configure reads as the neutral default rather than leaking out of its editor.
  */
-export function shapeSellableItemBenefitRow<T extends { action?: unknown; value?: unknown }>(
-  context: SellableItemBenefitContext, row: T,
-): Omit<T, 'action' | 'value'> & SellableItemBenefit {
-  const benefit = toSellableItemBenefit(context, row.action, row.value);
+export function shapeProductBenefitRow<T extends { action?: unknown; value?: unknown }>(
+  context: ProductBenefitContext, row: T,
+): Omit<T, 'action' | 'value'> & ProductBenefit {
+  const benefit = toProductBenefit(context, row.action, row.value);
   return { ...row, action: benefit.action, value: benefit.value };
 }

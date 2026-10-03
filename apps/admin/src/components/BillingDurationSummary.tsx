@@ -18,7 +18,7 @@
  *
  * `t` is passed in already applied rather than taken from `useTranslations()`
  * here because the two pages namespace their keys differently (`promotions.*`
- * vs `plans.*`), the same reason `SellableItemBenefits` takes its labels ready.
+ * vs `plans.*`), the same reason `ProductBenefits` takes its labels ready.
  */
 
 import React from 'react';
