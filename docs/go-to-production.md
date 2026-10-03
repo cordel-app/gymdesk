@@ -148,6 +148,23 @@ Tick items off in the PR that completes them.
       snapshots — while any row holds `optional`: unlike 205's nullable column, a
       rollback-and-re-apply here would not leave the value empty but rewrite it as
       `mandatory`, which tells the member the opposite of what was configured.
+- [ ] **Run `npm run memberships:multi-active` before migration 213 — and read what it
+      says** (#956). 213 restores the one-active-Membership-per-Member UNIQUE index, and
+      it cannot be created while a Member owns two live rows, so the migration cancels
+      all but their current one first (`active` before `paused`, then the latest
+      `starts_at`, then the latest `id`) with `closed_at` and `ends_at` stamped and a
+      `status_changed` ledger row each. That is the one destructive step in the ticket
+      and it is **not reversible** — a swept row is indistinguishable from one an admin
+      closed, which is why `down()` only puts the narrower index back. The report is
+      read-only and lists exactly what the sweep will do, naming the keeper per Member,
+      so run it, decide whether the keeper it picked is the one that gym wants, and fix
+      the exceptions by hand *before* migrating. Its second half lists the Members
+      covered by two live plans without owning either (a family plan somebody else owns
+      plus one of their own): the index is keyed on the owner, so the sweep deliberately
+      leaves those and the API refuses only their *next* assignment — resolving them is
+      a per-gym decision and no migration can take it. The index swap itself is two
+      statements and no table rebuild, so a maintenance window is wanted for the sweep's
+      locks rather than for the DDL.
 - [ ] **Time migration 175's backfill before running it** (#635 stage 2). The DDL is
       cheap — six nullable column adds on `user_memberships` plus three new tables —
       but the file ends with data statements that touch every existing row: one
