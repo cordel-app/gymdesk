@@ -157,6 +157,9 @@ export default function MembersPage() {
 
   const canManageTraining = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
   const canManagePackages = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
+  // #948 §4: the PERSONAL GOALS section writes through `/member-personal-goals`,
+  // which is mounted on NUTRITION — the same module the catalogue is.
+  const canManageNutrition = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'NUTRITION'));
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
   const buildParams = useCallback(() => {
@@ -548,6 +551,7 @@ export default function MembersPage() {
               editing={editingId === m.id}
               canManageTraining={canManageTraining}
               canManagePackages={canManagePackages}
+              canManageNutrition={canManageNutrition}
               isAdmin={isAdmin}
               plans={plans}
             />

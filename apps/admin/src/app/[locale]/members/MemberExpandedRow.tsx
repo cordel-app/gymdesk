@@ -28,6 +28,7 @@ import { MemberBillingSimulation } from './MemberBillingSimulation';
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { MemberAdditionalServices } from './MemberAdditionalServices';
+import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
   formatProfileDate,
@@ -94,6 +95,7 @@ export function MemberExpandedRow({
   editing,
   canManageTraining,
   canManagePackages,
+  canManageNutrition,
   isAdmin,
   plans,
 }: {
@@ -114,6 +116,8 @@ export function MemberExpandedRow({
   editing: boolean;
   canManageTraining: boolean;
   canManagePackages: boolean;
+  /** #948 §4: write access to NUTRITION, which the PERSONAL GOALS section needs. */
+  canManageNutrition: boolean;
   isAdmin: boolean;
   plans: Plan[];
 }) {
@@ -476,6 +480,14 @@ export function MemberExpandedRow({
             ))}
           </div>
         )}
+      </Section>
+
+      {/* Personal Goals (#948 §4) — the goals this member holds. Goals *are*
+          assigned on a Member directly, which is the opposite of #931's answer
+          for Promotions and why this section carries its own controls; they all
+          belong to Edit mode (#957), so the read-only view has none of them. */}
+      <Section label={t('members.section_personal_goals')}>
+        <MemberPersonalGoals memberId={memberId} canWrite={canManageNutrition} editing={editing} />
       </Section>
 
       {/* Session Packages */}

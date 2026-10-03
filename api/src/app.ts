@@ -83,6 +83,9 @@ import {
 import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
 import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
 import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
+// #948 §4: the Personal Goals a member actually holds. The catalogue says which
+// goals exist; this says who holds which.
+import { memberPersonalGoalsRouter } from './api/member-personal-goals';
 import { nutritionDashboardRouter } from './api/nutrition-dashboard';
 import { calendarEventsRouter } from './api/calendar-events';
 import { sharedTrainingRequestsRouter } from './api/shared-training-requests';
@@ -315,6 +318,10 @@ app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess(
 // would be the only thing left pointing at it.
 app.use('/personal-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.personal_goals'), personalGoalsRouter);
 app.use('/nutrition-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), nutritionGoalsRouter);
+// #948 §4: Assigned Personal Goals. Behind the **Personal Goals** flag and not a
+// Nutrition one — the assignments are the catalogue's own domain (§8), and a gym
+// that hid Personal Goals hid the goals its members hold with them.
+app.use('/member-personal-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.personal_goals'), memberPersonalGoalsRouter);
 // #809: mounted on the Nutrition group flag, so turning the Nutrition Plans page off leaves the Dashboard readable.
 app.use('/nutrition/dashboard', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition'), nutritionDashboardRouter);
 

@@ -13,6 +13,14 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   invited:      { bg: '#e8f0fe', fg: '#1a56a8' },
   not_enrolled: { bg: '#f0f0f0', fg: '#666666' },
   suspended:    { bg: '#fdeaea', fg: '#c0392b' },
+  // #948 §4: an Assigned Personal Goal's progress. Each one reuses a pair already
+  // in this map rather than introducing a colour — `achieved` is the green every
+  // live row wears, `abandoned` the neutral grey of an inactive one, and
+  // `in_progress` the blue-grey `draft` tone, so the three read apart without this
+  // component growing a palette of its own.
+  in_progress:  { bg: '#eef2f7', fg: '#5a6b7b' },
+  achieved:     { bg: '#e6f6ec', fg: '#1e7e40' },
+  abandoned:    { bg: '#f0f0f0', fg: '#666666' },
   // Payment request statuses
   pending:      { bg: '#fff4e0', fg: '#b26a00' },
   completed:    { bg: '#e6f6ec', fg: '#1e7e40' },
