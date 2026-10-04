@@ -14,6 +14,7 @@ import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 import {
   EVENT_STATUS_CHIP_STYLE,
   eventBackgroundColor,
+  memberEventMetaLine,
   memberEventStatusLine,
   readableEventTextColor,
 } from '@/lib/calendarEventDisplay';
@@ -419,14 +420,20 @@ export default function MemberCalendarPage() {
             // class they skipped is just a past class, and the slot's own
             // operational state is none of their business.
             const statusLine = memberEventStatusLine(s);
+            // #981 §1 — the trainer *and* the space, in the Day and Week
+            // views only. Every other view keeps the trainer-alone line it
+            // has always shown: a month cell is a few pixels tall and the
+            // ticket's scope is the two time-grid views.
+            const timeGridView = arg.view.type === 'timeGridDay' || arg.view.type === 'timeGridWeek';
+            const metaLine = timeGridView ? memberEventMetaLine(s) : s.trainer_name;
             return (
               <div style={{ padding: '1px 3px', fontSize: 11, overflow: 'hidden', cursor: 'pointer' }}>
                 <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {arg.event.title}
                 </div>
-                {s.trainer_name && (
+                {metaLine && (
                   <div style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {s.trainer_name}
+                    {metaLine}
                   </div>
                 )}
                 <div style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>

@@ -20,6 +20,7 @@ import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, ty
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { calendarEventPaint } from '@/lib/calendarEventPaint';
+import { calendarEventMeta, calendarEventMetaLines, joinMetaParts } from '@/lib/calendarEventMeta';
 import { CalendarCenterFilter } from './CalendarCenterFilter';
 
 interface ActivityType {
@@ -491,8 +492,11 @@ export default function CalendarPage() {
               const isSession = e._type === 'session';
               const viewType: string = arg.view.type;
 
-              const trainerName: string | null = isSession ? (e.effective_trainer_name ?? e.trainer_name ?? null) : (e.trainer_name ?? null);
-              const spaceName: string | null = e.space_name ?? null;
+              // #981 — who delivers this occurrence and where, read from the
+              // occurrence's own columns and never from its Activity Type's
+              // defaults. `calendarEventMetaLines` is also what decides that a
+              // missing trainer or space produces no line at all (§6).
+              const meta = calendarEventMeta(e);
               const bookingCount: string | null = isSession ? `${e.booked_count}/${e.effective_capacity}` : null;
 
               // #977 — the badge carries the event's **execution** status, as
@@ -549,6 +553,13 @@ export default function CalendarPage() {
                     <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {arg.event.title}
                     </div>
+                    {/* #981 §7 — a week column is a few characters wide, so
+                        the trainer and the space share one truncated line. */}
+                    {calendarEventMetaLines(meta, 'compact').map((line, i) => (
+                      <div key={i} style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {line}
+                      </div>
+                    ))}
                     {(bookingCount || waitlistLine || statusLabel) && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
                         {bookingCount && (
@@ -566,12 +577,11 @@ export default function CalendarPage() {
                 );
               }
 
-              // Day view — two-line max
-              const line2Parts: string[] = [];
-              if (trainerName) line2Parts.push(trainerName);
-              if (spaceName) line2Parts.push(spaceName);
-              if (bookingCount) line2Parts.push(bookingCount);
-              if (waitlistLine) line2Parts.push(waitlistLine);
+              // Day view — #981 §4 gives the trainer and the space a line each
+              // (a day column is full-width), with the occupancy counts
+              // keeping a line of their own after them.
+              const metaLines = calendarEventMetaLines(meta, 'full');
+              const countsLine = joinMetaParts([bookingCount, waitlistLine]);
               return (
                 <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
@@ -582,9 +592,14 @@ export default function CalendarPage() {
                       <CalendarStatusBadge status={badgeStatus} label={statusLabel} />
                     )}
                   </div>
-                  {line2Parts.length > 0 && (
+                  {metaLines.map((line, i) => (
+                    <div key={i} style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {line}
+                    </div>
+                  ))}
+                  {countsLine && (
                     <div style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {line2Parts.join(' · ')}
+                      {countsLine}
                     </div>
                   )}
                 </div>
