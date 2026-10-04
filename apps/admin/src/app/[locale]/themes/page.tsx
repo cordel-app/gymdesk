@@ -791,10 +791,13 @@ export default function GymThemesPage() {
           style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: isDeleted ? 'default' : 'pointer' }}
           onClick={() => !isDeleted && openExpand(theme)}
         >
-          <div style={{ width: 40, flexShrink: 0 }}>
+          {/* #1040: one fixed logo box for every row. The image is fitted inside it
+              (contain keeps the aspect ratio), so a wide or tall logo can never
+              spill into the name or badges, and a row without a logo lines up. */}
+          <div style={{ width: 56, height: 28, flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {theme.has_logo ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={logoUrl(theme)} alt={theme.name} style={{ height: 28, width: 'auto', borderRadius: 4, objectFit: 'contain' }} />
+              <img src={logoUrl(theme)} alt={theme.name} style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', borderRadius: 4, objectFit: 'contain' }} />
             ) : (
               <div style={{ width: 36, height: 28, background: colors?.headerBackground ?? '#1a1a2e', borderRadius: 4 }} />
             )}
