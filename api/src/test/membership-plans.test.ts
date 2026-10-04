@@ -72,27 +72,6 @@ async function addCoveredMember(
   );
 }
 
-// Creates a gym-scoped Product (borrowing an existing Charge Type that seeds
-// one — `charge_types.is_product`,
-// seeded by migration 090) so a Benefit row can reference it. Picks a
-// charge_type not yet used by this gym, since products has a unique constraint
-// on (gym_id, charge_type_id) and this helper may be called more than once per gym.
-async function createSystemProduct(gymId: string): Promise<number> {
-  const { rows } = await db.query(
-    `SELECT ct.id FROM charge_types ct
-     WHERE ct.is_product = 1
-     AND NOT EXISTS (SELECT 1 FROM products gc WHERE gc.gym_id = ? AND gc.charge_type_id = ct.id)
-     LIMIT 1`,
-    [gymId],
-  );
-  const chargeTypeId = rows[0].id;
-  const { insertId } = await db.query(
-    `INSERT INTO products (gym_id, charge_type_id, availability) VALUES (?, ?, 'available')`,
-    [gymId, chargeTypeId],
-  );
-  return insertId;
-}
-
 // #512: creates a promotion and links it to a plan via promotion_membership_plans,
 // so enrichPlan()'s promotion_count can be exercised.
 async function createPromoTargetingPlan(gymId: string, planId: number): Promise<number> {
