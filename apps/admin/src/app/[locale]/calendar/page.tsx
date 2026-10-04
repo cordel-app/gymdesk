@@ -30,7 +30,10 @@ interface ActivityType {
   default_space_id: number | null;
   default_trainer_membership_id: number | null;
 }
-interface Space { id: number; name: string }
+// `status` and `center_id` are what `GET /spaces` returns beside the name, and
+// #980's Edit mode needs both to offer the spaces an occurrence may actually
+// move to (its own center's active ones).
+interface Space { id: number; name: string; status?: string; center_id?: number | null }
 interface Center { id: number; name: string }
 interface Trainer { gym_membership_id: number; name: string }
 
@@ -676,6 +679,8 @@ export default function CalendarPage() {
                 onClose={closeSessionPanel}
                 onMutated={refetch}
                 canWrite={canWrite}
+                spaces={spaces}
+                trainers={trainers}
               />
             </div>
           </>

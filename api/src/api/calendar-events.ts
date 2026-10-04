@@ -20,7 +20,7 @@
  *
  * Bookings for sessions live in calendar_event_bookings (migration 132).
  */
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { db, type Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite, requireRole } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
@@ -29,6 +29,7 @@ import { sendBulkNotification } from '../infra/notifications';
 import { bookMemberOnSession } from './bookings';
 import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
 import { withEventExecutionStatus, type EventExecutionInput } from '../domain/eventExecutionStatus';
+import { diffAuditedFields, SESSION_AUDITED_FIELDS } from '../domain/calendarEventChanges';
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -192,6 +193,41 @@ async function assertSlotAvailable(tx: Tx, opts: {
       status: 409, code: 'sharing_not_authorized', host_session_id: existing[0].id,
     });
   }
+}
+
+/**
+ * #980 §11 — re-read the occurrence a `PUT` has just written and record what
+ * changed about it, previous → new.
+ *
+ * Both of the `PUT /:id` branches (the one that re-occupies a shared slot
+ * under a transaction, and the plain one) end here, so an edit is audited the
+ * same way whichever path wrote it — the field set is the diff module's and
+ * not this route's. An edit that changed nothing writes no row: the staff
+ * screens send the whole form, so re-saving an unchanged trainer is an
+ * ordinary thing to do and would otherwise fill the log a gym reads to find
+ * out who moved a class.
+ *
+ * `before` is the pre-read taken ahead of the UPDATE, inside the same request.
+ */
+async function readSessionAndAudit(
+  req: Request, gymId: string, before: Record<string, unknown>,
+): Promise<any> {
+  const { rows } = await db.query(
+    `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
+    [req.params.id, gymId],
+  );
+  const after = rows[0];
+  const changes = after ? diffAuditedFields(before, after, SESSION_AUDITED_FIELDS) : null;
+  if (changes) {
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'class_session',
+      entityId: req.params.id,
+      previous: changes.previous,
+      next: changes.next,
+    });
+  }
+  return after;
 }
 
 export const classSessionsRouter = Router();
@@ -406,9 +442,14 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
   }
 
   try {
+    // The `cur_*` aliases are the slot comparison's; the plain columns beside
+    // them are #980 §11's — the row as it stands, which the audit diff below
+    // compares against the row as it ends up.
     const { rows: existingRows } = await db.query(
       `SELECT ce.center_id, ce.trainer_membership_id AS cur_trainer, ce.space_id AS cur_space,
-              ce.starts_at AS cur_starts, ce.ends_at AS cur_ends, ce.activity_type_id AS cur_activity
+              ce.starts_at AS cur_starts, ce.ends_at AS cur_ends, ce.activity_type_id AS cur_activity,
+              ce.activity_type_id, ce.trainer_membership_id, ce.space_id, ce.starts_at, ce.ends_at,
+              ce.capacity, ce.allows_shared_booking, ce.professional_service_id
        FROM calendar_events ce WHERE ce.id = ? AND ce.gym_id = ? AND ce.activity_type_id IS NOT NULL AND ce.deleted_at IS NULL`,
       [req.params.id, gymId],
     );
@@ -467,11 +508,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
         );
       });
 
-      const { rows } = await db.query(
-        `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
-        [req.params.id, gymId],
-      );
-      return res.json(shapeRow(rows[0]));
+      return res.json(shapeRow(await readSessionAndAudit(req, gymId, cur)));
     }
 
     const { rowCount } = await db.query(
@@ -501,11 +538,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
       ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Session not found' });
-    const { rows } = await db.query(
-      `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
-      [req.params.id, gymId],
-    );
-    res.json(shapeRow(rows[0]));
+    res.json(shapeRow(await readSessionAndAudit(req, gymId, cur)));
   } catch (e: any) {
     if (e.status) return res.status(e.status).json({ error: e.message, code: e.code, host_session_id: e.host_session_id });
     next(e);
