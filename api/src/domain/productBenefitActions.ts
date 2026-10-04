@@ -25,6 +25,16 @@
 //      dropdown, so a new action goes in **two** places: the list here and the
 //      CHECK — `product-benefit-actions.unit.test.ts` fails if they part.
 //
+// #997 narrowed the Plan set to **two**: `No benefit` and `Waive`. A Plan
+// benefit says what the membership includes, and a percentage off one line of
+// it was a third price beside the Product's own and the Promotion's. That
+// narrowing is a *configuration* change and not a data change, so this module
+// now draws two sets per context rather than one — what may be configured
+// (`benefitActionsFor`) and what may be stored and read
+// (`storedBenefitActionsFor`) — because a Plan that already carries a
+// percentage must keep billing it until somebody corrects it. §8 leaves
+// Promotions alone: they still configure all five.
+//
 // The UI *labels* differ by context and deliberately do not live here: the
 // Promotions screen says **Promotion** / *No promotion* and the Membership
 // Plans screen says **Benefit** / *No benefit* (§3, §4) for the same stored
@@ -52,15 +62,60 @@ export const PROMOTION_ITEM_ACTIONS: readonly PromotionBenefitAction[] = [
  * benefit describes what the membership *includes*, so a monetary discount or
  * a fixed price on it would be a second price list beside the Product's
  * own. Widening this is a product decision, and it moves the CHECK with it.
+ *
+ * #997 narrowed it again, to two: a Plan benefit is now either charged at the
+ * Product's normal price or waived outright. See `LEGACY_PLAN_BENEFIT_ACTIONS`
+ * below for what that did *not* do to the rows that already store a
+ * percentage.
  */
 export type PlanBenefitAction = Extract<
-  PromotionBenefitAction, 'no_benefit' | 'waive' | 'percentage_discount'
+  PromotionBenefitAction, 'no_benefit' | 'waive'
 >;
 
 export const PLAN_BENEFIT_ACTIONS: readonly PlanBenefitAction[] = [
   'no_benefit',
   'waive',
+];
+
+/**
+ * #997 — retired from the *Membership Plan* surface, and retired is not
+ * deleted. This is the same split `domain/productFrequency.ts` draws for a
+ * Product's Billing Frequency, for the same reason and with the same two
+ * halves:
+ *
+ *   OFFERED (`PLAN_BENEFIT_ACTIONS`) — what a Plan benefit may be
+ *            *configured* with. The section `PUT`s accept only these.
+ *   LEGACY  — stored, read, priced (`applyLineBenefit()`), displayed and
+ *            snapshotted onto an assignment exactly as before, but never
+ *            selectable again. A write may carry one through **unchanged**, so
+ *            that editing a legacy line's quantity neither 400s nor quietly
+ *            rewrites what the gym agreed to charge.
+ *
+ * No migration and no backfill: migration 203's `chk_<table>_action` keeps
+ * permitting all three on the Plan side, because the rows holding a percentage
+ * must stay valid, and the route — not the CHECK — is what refuses a new one.
+ * §6 is explicit that an existing `% Discount` must not be silently converted
+ * to `Waive` (that would make a €20 item free) nor silently read as
+ * `No benefit` (that would start charging €20 for a line agreed at €16), so it
+ * is neither: it keeps pricing as stored and is surfaced for correction —
+ * `npm run plans:percentage-benefits` is the read-only report that finds every
+ * one, and the editor renders the value as a disabled option beside it.
+ *
+ * A **Promotion** is untouched (§8): it still configures all five actions, and
+ * `percentage_discount` is retired only in the `plan` context.
+ */
+export const LEGACY_PLAN_BENEFIT_ACTIONS: readonly PromotionBenefitAction[] = [
   'percentage_discount',
+];
+
+/**
+ * Everything a Plan-side row may hold — what migration 203's CHECK permits and
+ * what a read answers with. Offered first, so the order still matches the
+ * migration's own list.
+ */
+export const STORED_PLAN_BENEFIT_ACTIONS: readonly PromotionBenefitAction[] = [
+  ...PLAN_BENEFIT_ACTIONS,
+  ...LEGACY_PLAN_BENEFIT_ACTIONS,
 ];
 
 /**
@@ -74,18 +129,57 @@ export const PLAN_BENEFIT_ACTIONS: readonly PlanBenefitAction[] = [
  */
 export const DEFAULT_BENEFIT_ACTION: PromotionBenefitAction = 'no_benefit';
 
-/** The actions one context may store. */
+/** The actions one context may **configure** — the dropdown, and the `PUT`. */
 export function benefitActionsFor(
   context: ProductBenefitContext,
 ): readonly PromotionBenefitAction[] {
   return context === 'promotion' ? PROMOTION_ITEM_ACTIONS : PLAN_BENEFIT_ACTIONS;
 }
 
+/**
+ * The actions one context may **store** — what a read answers with. Identical
+ * to the offered set for a Promotion; wider on the Plan side, by exactly the
+ * values #997 retired (see `LEGACY_PLAN_BENEFIT_ACTIONS`).
+ *
+ * The two sets are deliberately different functions: a reader that asked
+ * `benefitActionsFor()` would normalize a stored percentage to the neutral
+ * default and start charging the full price for a line the gym agreed at a
+ * discount, which is §6's "must not silently produce incorrect prices".
+ */
+export function storedBenefitActionsFor(
+  context: ProductBenefitContext,
+): readonly PromotionBenefitAction[] {
+  return context === 'promotion' ? PROMOTION_ITEM_ACTIONS : STORED_PLAN_BENEFIT_ACTIONS;
+}
+
+/** May this context configure this action? (The write gate.) */
 export function isBenefitActionAllowed(
   context: ProductBenefitContext, action: unknown,
 ): action is PromotionBenefitAction {
   return typeof action === 'string'
     && (benefitActionsFor(context) as readonly string[]).includes(action);
+}
+
+/** May this context's column hold this action? (The read gate.) */
+export function isStoredBenefitAction(
+  context: ProductBenefitContext, action: unknown,
+): action is PromotionBenefitAction {
+  return typeof action === 'string'
+    && (storedBenefitActionsFor(context) as readonly string[]).includes(action);
+}
+
+/**
+ * #997 — is this a treatment this context *stores* but no longer *offers*? True
+ * only for `percentage_discount` on the Plan side; a Promotion retires nothing.
+ *
+ * One predicate serves the write rule below and the editor's disabled option,
+ * so neither can decide for itself what counts as legacy.
+ */
+export function isRetiredBenefitAction(
+  context: ProductBenefitContext, action: unknown,
+): boolean {
+  return isStoredBenefitAction(context, action)
+    && !isBenefitActionAllowed(context, action);
 }
 
 /**
@@ -112,16 +206,31 @@ export const MAX_BENEFIT_AMOUNT = 99_999_999.99;
  * it must submit only the value belonging to the selected option, and the
  * server is what makes that true.
  *
+ * `current` is what the row stores today (`undefined`/`null` when the line is
+ * new), and it exists for #997's one rule: a **retired** action passes only
+ * when it is exactly the pair the row already holds — same action, same value.
+ * That is how a legacy `% Discount` line stays editable while a new one can
+ * never be created and an existing one can never be re-negotiated on a surface
+ * that no longer offers percentages. `domain/productFrequency.ts`'s
+ * `productFrequencyWriteError(next, current)` is the same rule one entity over.
+ *
  * Returns the message, or `null` when the pair is valid.
  */
 export function benefitConfigError(
   context: ProductBenefitContext,
   action: unknown,
   value: unknown,
+  current?: ProductBenefit | null,
 ): string | null {
   const allowed = benefitActionsFor(context);
-  if (!isBenefitActionAllowed(context, action)) {
+  if (!isStoredBenefitAction(context, action)) {
     return `action must be one of: ${allowed.join(', ')}`;
+  }
+  if (!isBenefitActionAllowed(context, action)
+    && !keepsRetiredBenefit(context, action, value, current)) {
+    return `action '${action}' is no longer offered on a Membership Plan benefit `
+      + 'and can only be kept unchanged on a line that already stores it; '
+      + `choose one of: ${allowed.join(', ')}`;
   }
   const hasValue = value !== undefined && value !== null && value !== '';
   if (!benefitActionRequiresValue(action)) {
@@ -135,6 +244,27 @@ export function benefitConfigError(
   }
   if (n < 0) return `${action} value must not be negative`;
   return n <= MAX_BENEFIT_AMOUNT ? null : `${action} value must not exceed ${MAX_BENEFIT_AMOUNT}`;
+}
+
+/**
+ * #997 — does this submitted pair simply carry back the retired treatment the
+ * row already stores? Both halves have to match: a legacy line may be *kept*,
+ * never re-configured, so moving 20% to 50% is refused exactly as creating a
+ * new percentage line is. The comparison is numeric, because the stored value
+ * arrives as mysql2's `DECIMAL` string on one side and a form number on the
+ * other.
+ */
+export function keepsRetiredBenefit(
+  context: ProductBenefitContext,
+  action: unknown,
+  value: unknown,
+  current?: ProductBenefit | null,
+): boolean {
+  if (!isRetiredBenefitAction(context, action)) return false;
+  if (!current || current.action !== action) return false;
+  if (!benefitActionRequiresValue(current.action)) return value == null || value === '';
+  const next = Number(value);
+  return Number.isFinite(next) && Number(current.value) === next;
 }
 
 /** One relationship row's pricing treatment, normalized. */
@@ -162,7 +292,9 @@ export const NO_PRODUCT_BENEFIT: ProductBenefit = {
 export function toProductBenefit(
   context: ProductBenefitContext, action: unknown, value: unknown,
 ): ProductBenefit {
-  if (!isBenefitActionAllowed(context, action)) return NO_PRODUCT_BENEFIT;
+  // #997: the **stored** set, not the offered one — a legacy `percentage_discount`
+  // on a Plan row keeps pricing and displaying as the gym configured it.
+  if (!isStoredBenefitAction(context, action)) return NO_PRODUCT_BENEFIT;
   if (!benefitActionRequiresValue(action)) return { action, value: null };
   const n = Number(value);
   if (value == null || value === '' || !Number.isFinite(n) || n < 0) return NO_PRODUCT_BENEFIT;
@@ -230,6 +362,7 @@ export interface ParsedProductBenefit {
 export function parseProductBenefitInput(
   context: ProductBenefitContext,
   item: { action?: unknown; value?: unknown } | null | undefined,
+  current?: ProductBenefit | null,
 ): ParsedProductBenefit {
   const action = item?.action;
   const value = item?.value;
@@ -237,7 +370,10 @@ export function parseProductBenefitInput(
   if (action === undefined || action === null || action === '') {
     return { error: hasValue ? 'value requires an action' : null, benefit: null };
   }
-  const error = benefitConfigError(context, action, value);
+  // #997: `current` is the pair this line is stored with, so a retired
+  // treatment carried back unchanged is accepted and anything else on that
+  // action is a 400. A line with no stored pair (a new line) can never pass.
+  const error = benefitConfigError(context, action, value, current);
   if (error) return { error, benefit: null };
   const act = action as PromotionBenefitAction;
   return {

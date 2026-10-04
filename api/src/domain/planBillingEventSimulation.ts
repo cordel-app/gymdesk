@@ -38,9 +38,10 @@
 // number the engine returns is already the amount the ticket wants displayed
 // ("€70.00 (tax included)") and no tax arithmetic happens here or in the
 // frontend (#817). That conversion is exact rather than an approximation because
-// a Membership Plan may only configure `no_benefit`, `waive` and
-// `percentage_discount` on a Product (#896 §16) — a percentage of the
-// gross is the gross of the percentage — and its Billing & Duration only ever
+// a Membership Plan may only configure `no_benefit` and `waive` on a Product
+// (#896 §16, narrowed to the two by #997) — and remains exact for a line still
+// carrying #997's retired `percentage_discount`, since a percentage of the gross
+// is the gross of the percentage — while its Billing & Duration only ever
 // waives outright. An item with no tax rate configured contributes its stored
 // amount, exactly as `formatPlanCurrentPrice()` falls back for the Plan's own
 // price.

@@ -2035,6 +2035,35 @@ Reference implementation: `api/src/domain/productFrequency.ts` +
 `apps/admin/src/app/[locale]/financials/products/productFrequency.ts`
 + `api/src/test/product-frequency.unit.test.ts`.
 
+#997 applied the same split to a **per-context** set — `percentage_discount`,
+retired from a Membership Plan benefit and still offered by a Promotion — which
+is where the pattern's own last bullet points: the retired value *is* someone
+else's offered one, in a different context of the same declaration. Two things
+follow, and a fourth retirement will need them both.
+
+- **Retire per context, not per value.** `domain/productBenefitActions.ts` splits
+  each *gate* rather than each list: `benefitActionsFor()` / `isBenefitActionAllowed()`
+  answer the write question and `storedBenefitActionsFor()` / `isStoredBenefitAction()`
+  the read one, so `isRetiredBenefitAction(context, action)` is simply "stored
+  here, not offered here" and answers `false` on the Promotion side with no
+  second list. A reader that asked the offered set would normalize a stored
+  percentage to the neutral default and start charging full price — the read gate
+  is not an optimisation, it is the rule.
+- **The whole pair is what may be kept.** `keepsRetiredBenefit()` compares the
+  action *and* its value, because the retired thing here carries a number: a line
+  stored at 20 % may be re-saved at 20 % and never at 50 %, so keeping cannot
+  become re-negotiating. `productFrequencyWriteError`'s one-argument comparison
+  is the same rule for a value that has no second half. Where the stored pair has
+  to reach the validator, read it *before* the write (`loadStoredPlanBenefitPairs()`)
+  and leave the transaction's own `FOR UPDATE` read as the only thing that
+  decides what a kept line is written with.
+- **A retirement with existing rows ships a report, not a migration.** `npm run
+  plans:percentage-benefits` is the "identified and handled through an explicit
+  data-cleanup process" half of the ticket: an operator script beside the other
+  read-only ones, listing the catalogue lines a human can correct in the editor
+  separately from the Assigned Plan snapshot lines that are what a member was
+  agreed at and are deliberately left alone.
+
 ### Renaming a label two entities share (#815)
 
 A label-only rename is only label-only while the key it changes belongs to one

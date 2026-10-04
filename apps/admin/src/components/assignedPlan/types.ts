@@ -36,7 +36,9 @@ export interface AssignedPlanSnapshotBenefit {
   /**
    * #896 — the pricing treatment this line was agreed with, frozen beside the
    * price. Read in the Membership Plan's option set, which is where the line
-   * came from: `no_benefit`, `waive` or `percentage_discount` (§16).
+   * came from: `no_benefit` or `waive` (§16, narrowed to the two by #997), or
+   * the `percentage_discount` a line agreed before #997 still carries — a
+   * frozen line reports what was agreed, never what is offered today.
    */
   action: ProductBenefitAction;
   value: number | null;
