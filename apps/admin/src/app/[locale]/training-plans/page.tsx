@@ -15,8 +15,9 @@ import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import {
-  LIST_PADDING_X, listCellStyle, listExpandedStyle, listHeaderCellStyle,
-  listHeaderRowStyle, listRowDividerStyle, listSurfaceStyle,
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, LIST_PADDING_X, type ListGridColumn,
+  listCellClasses, listCellStyle, listExpandedStyle, listHeaderCellStyle,
+  listHeaderRowStyle, listRowDividerStyle, listScrollerClass, listSurfaceStyle,
 } from '@/components/listChrome';
 import { cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import {
@@ -83,8 +84,7 @@ const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];
  * member's document number under their name.
  */
 
-interface ListColumn {
-  key: string;
+interface ListColumn extends ListGridColumn {
   /** Header label, a key in the `training_plans` namespace. Absent = no title. */
   labelKey?: string;
   /** Selecting the title sorts by this key. Absent = not sortable. */
@@ -95,16 +95,25 @@ interface ListColumn {
   grow?: number;
 }
 
+// #1011 stage 2: `mobile` says what each column is on a phone, in the one
+// vocabulary `listChrome` declares. The plan's name is the row's identity and
+// carries the member's name under it already, so a phone keeps the two facts
+// that identify the row — whose plan it is and what state it is in — and reads
+// the three dates in the expanded card.
 const LIST_COLUMNS: ListColumn[] = [
-  { key: 'expand', width: 20 },
-  { key: 'name', labelKey: 'col_name', sortKey: 'name', width: 180, grow: 2 },
-  { key: 'status', labelKey: 'col_status', sortKey: 'status', width: 100 },
-  { key: 'start_date', labelKey: 'col_start_date', sortKey: 'start_date', width: 120 },
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 20, mobile: 'keep' },
+  { key: 'name', labelKey: 'col_name', sortKey: 'name', width: 180, grow: 2, mobile: 'name' },
+  { key: 'status', labelKey: 'col_status', sortKey: 'status', width: 100, mobile: 'keep' },
+  { key: 'start_date', labelKey: 'col_start_date', sortKey: 'start_date', width: 120, mobile: 'secondary' },
   // Wide enough for the longest translated title plus its sort arrow.
-  { key: 'created_at', labelKey: 'col_created_at', sortKey: 'created_at', width: 120 },
-  { key: 'modified_at', labelKey: 'col_modified_at', sortKey: 'modified_at', width: 120 },
-  { key: 'actions', width: 44 },
+  { key: 'created_at', labelKey: 'col_created_at', sortKey: 'created_at', width: 120, mobile: 'secondary' },
+  { key: 'modified_at', labelKey: 'col_modified_at', sortKey: 'modified_at', width: 120, mobile: 'secondary' },
+  { key: 'actions', width: 44, mobile: 'actions' },
 ];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
 
 const LIST_COLUMN_GAP = 10;
 
@@ -437,11 +446,11 @@ export default function TrainingPlansPage() {
            LIST_GRID_COLUMNS and scroll together, so they cannot fall out of
            line, and a narrow viewport scrolls the list instead of the page. */
         <div style={listSurfaceStyle}>
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ minWidth: LIST_MIN_WIDTH }}>
-              <div style={colHeaderStyle}>
+          <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+            <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+              <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
                 {LIST_COLUMNS.map((col) => (
-                  <div key={col.key} style={cellStyle}>
+                  <div key={col.key} className={CELL_CLASS[col.key]} style={cellStyle}>
                     {col.labelKey && col.sortKey
                       ? sortBtn(col.sortKey, t(`training_plans.${col.labelKey}`))
                       : null}
@@ -626,27 +635,27 @@ function PlanCard({
         </div>
       ) : (
         /* Normal row — one cell per LIST_COLUMNS entry, same order */
-        <div onClick={onToggleExpand} style={headerRowStyle} role="button" tabIndex={0}
+        <div onClick={onToggleExpand} className={LIST_GRID_ROW_CLASS} style={headerRowStyle} role="button" tabIndex={0}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleExpand(); }}>
-          <span style={{ ...cellStyle, fontSize: 12, color: '#aaa', userSelect: 'none' }}>{expanded ? '▼' : '▶'}</span>
-          <div style={cellStyle}>
+          <span className={CELL_CLASS.expand} style={{ ...cellStyle, fontSize: 12, color: '#aaa', userSelect: 'none' }}>{expanded ? '▼' : '▶'}</span>
+          <div className={CELL_CLASS.name} style={cellStyle} title={`${row.name} · ${row.member_name}`}>
             <div style={nameCellStyle}>{row.name}</div>
             <div style={subCellStyle}>
               {row.member_name}{row.description ? ` · ${row.description}` : ''}
             </div>
           </div>
-          <div style={badgeCellStyle}>
+          <div className={CELL_CLASS.status} style={badgeCellStyle}>
             <StatusBadge status={row.status} label={t(`status.${row.status}`)} />
           </div>
-          <div style={cellStyle}>
+          <div className={CELL_CLASS.start_date} style={cellStyle}>
             <div style={dateCellStyle}>{formatDate(row.start_date, locale)}</div>
             {row.end_date && <div style={subCellStyle}>→ {formatDate(row.end_date, locale)}</div>}
           </div>
-          <div style={{ ...cellStyle, ...dateCellStyle }}>{formatDate(row.created_at, locale)}</div>
-          <div style={{ ...cellStyle, ...dateCellStyle }}>
+          <div className={CELL_CLASS.created_at} style={{ ...cellStyle, ...dateCellStyle }}>{formatDate(row.created_at, locale)}</div>
+          <div className={CELL_CLASS.modified_at} style={{ ...cellStyle, ...dateCellStyle }}>
             {row.modified_at ? formatDate(row.modified_at, locale) : '—'}
           </div>
-          <div style={actionsCellStyle} onClick={(e) => e.stopPropagation()}>
+          <div className={CELL_CLASS.actions} style={actionsCellStyle} onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('training_plans.col_actions')} items={menuItems} />
           </div>
         </div>

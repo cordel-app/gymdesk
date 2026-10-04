@@ -35,9 +35,9 @@ function stripComments(src: string): string {
 const page = stripComments(readFileSync(PRODUCTS_PAGE, 'utf-8'));
 
 /** The collapsed header only: everything before the inline editor. */
-const header = page.match(/<div style={rowStyle}[\s\S]*?\n {8}<\/div>\n/)?.[0] ?? '';
+const header = page.match(/<div className={LIST_GRID_ROW_CLASS} style={rowStyle}[\s\S]*?\n {8}<\/div>\n/)?.[0] ?? '';
 /** The name cell inside it, which is where both badges belong. */
-const nameCell = header.match(/<div style=\{\{ \.\.\.cellStyle, fontWeight: 600[\s\S]*?\n {10}<\/div>/)?.[0] ?? '';
+const nameCell = header.match(/<div className=\{CELL_CLASS\.name\} style=\{\{ \.\.\.cellStyle, fontWeight: 600[\s\S]*?\n {10}<\/div>/)?.[0] ?? '';
 
 function productsKey(code: string, key: string): string | undefined {
   const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8')) as Record<string, unknown>;

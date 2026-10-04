@@ -209,7 +209,7 @@ describe('#942 the page renders the note everywhere a price surfaces', () => {
   it('leaves the collapsed Price cell room for the sentence it now carries', () => {
     // Every cell on the #637 grid is nowrap-and-ellipsis, so the track has to be
     // wide enough for the longest of these sentences in en/es/ca.
-    expect(source).toMatch(/\{ labelKey: 'col_price', width: (?:19\d|2\d\d) \}/);
+    expect(source).toMatch(/\{ key: 'price', labelKey: 'col_price', width: (?:19\d|2\d\d), mobile: '[a-z]+' \}/);
   });
 
   it('annotates the price with its tax suffix on the two surfaces that lacked one', () => {

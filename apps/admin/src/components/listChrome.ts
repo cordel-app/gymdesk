@@ -120,6 +120,14 @@ export const listNameBadgeAccentStyle: React.CSSProperties = {
 // Neither shape scrolls the *page* horizontally: the scroll lives in the list's
 // own wrapper. Above the breakpoint none of these rules exist, so desktop and
 // tablet are exactly what they were (§4).
+//
+// That choice is about the *secondary* columns. How the row itself is laid out
+// is the other axis, and there are two of those too: a `<table>`, whose cells a
+// phone can simply hide, and the CSS grid a page builds from its own
+// `LIST_COLUMNS` declaration (#637), whose tracks live on the row — hiding one
+// of those cells would leave its track behind and slide every cell after it
+// under the wrong title, so below the breakpoint that row becomes a flex line
+// instead (`LIST_GRID_ROW_CLASS`). Both read the same per-column vocabulary.
 
 /**
  * Mirrors `AppShell`'s own mobile breakpoint (its CSS splits at 768/769px), the
@@ -150,6 +158,25 @@ export const LIST_NAME_CELL_CLASS = 'gd-list-cell-name';
 export const LIST_NAME_VALUE_CLASS = 'gd-list-name-value';
 export const LIST_ACTIONS_CELL_CLASS = 'gd-list-cell-actions';
 export const LIST_SECONDARY_CELL_CLASS = 'gd-list-cell-secondary';
+/**
+ * The row of a grid list — the header band and every collapsed row of a page
+ * laid out from its own `LIST_COLUMNS` declaration (#637's shape: Products,
+ * Members, Training Plans).
+ *
+ * Such a row cannot simply hide a cell the way a `<table>` can: the tracks are
+ * declared on the row, so a hidden cell leaves its track behind and every cell
+ * after it slides one column left of its own title. Below the breakpoint the
+ * row therefore stops being a grid at all and becomes a flex line of the cells
+ * that survive, where hiding one costs nothing.
+ */
+export const LIST_GRID_ROW_CLASS = 'gd-list-grid-row';
+/**
+ * The block a grid list pins to `LIST_MIN_WIDTH` — the sum of its tracks, which
+ * is what makes the list scroll rather than squeeze a column (#637). Below the
+ * breakpoint the row carries only the columns a phone has room for, so that
+ * minimum is released and nothing scrolls.
+ */
+export const LIST_MIN_WIDTH_CLASS = 'gd-list-min-width';
 
 /** The class a header cell and its row cells share, from the column's own declaration. */
 export function listCellClass(mobile: ListColumnMobile = 'secondary'): string {
@@ -160,6 +187,23 @@ export function listCellClass(mobile: ListColumnMobile = 'secondary'): string {
     case 'keep': return '';
     case 'secondary': return LIST_SECONDARY_CELL_CLASS;
   }
+}
+
+/** A column of a grid list: its own key, and what it is on a phone. */
+export interface ListGridColumn {
+  key: string;
+  mobile: ListColumnMobile;
+}
+
+/**
+ * The cell class of each column of a grid list, keyed by the column's own key.
+ *
+ * A grid page writes its cells by hand rather than mapping over its columns, so
+ * this is how a cell reaches its column's declaration: `CELL_CLASS.status` on
+ * both the header cell and the row cell, never a class spelled in the page.
+ */
+export function listCellClasses(columns: readonly ListGridColumn[]): Record<string, string> {
+  return Object.fromEntries(columns.map((c) => [c.key, listCellClass(c.mobile)]));
 }
 
 /** The class pair the list's own wrapper carries. */
@@ -202,6 +246,27 @@ export const LIST_RESPONSIVE_CSS = `
   /* collapse — the secondary columns are read in the expanded row instead. */
   .${LIST_MOBILE_COLLAPSE_CLASS} .${LIST_SECONDARY_CELL_CLASS} {
     display: none !important;
+  }
+
+  /* A grid list's row, laid out from its own LIST_COLUMNS declaration: below
+     the breakpoint it is a flex line rather than a grid, so a hidden cell takes
+     its track with it instead of pushing the rest out of line. The identity
+     takes whatever width is left, the actions stay at the end. */
+  .${LIST_GRID_ROW_CLASS} {
+    display: flex !important;
+    flex-wrap: nowrap;
+  }
+  .${LIST_GRID_ROW_CLASS} > .${LIST_NAME_CELL_CLASS} {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .${LIST_GRID_ROW_CLASS} > .${LIST_ACTIONS_CELL_CLASS} {
+    flex: 0 0 auto;
+    margin-left: auto;
+  }
+  /* …so the track sum that makes it scroll on a desktop window is released. */
+  .${LIST_MIN_WIDTH_CLASS} {
+    min-width: 0 !important;
   }
 
   /* scroll — every column stays; the name and the actions are pinned to the

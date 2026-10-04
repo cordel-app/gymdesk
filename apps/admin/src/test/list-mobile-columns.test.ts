@@ -2,10 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  LIST_ACTIONS_CELL_CLASS, LIST_MOBILE_COLLAPSE_CLASS, LIST_MOBILE_MEDIA_QUERY,
-  LIST_MOBILE_SCROLL_CLASS, LIST_NAME_CELL_CLASS, LIST_NAME_VALUE_CLASS,
-  LIST_RESPONSIVE_CSS, LIST_SCROLLER_CLASS, LIST_SECONDARY_CELL_CLASS,
-  listCellClass, listScrollerClass,
+  LIST_ACTIONS_CELL_CLASS, LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS,
+  LIST_MOBILE_COLLAPSE_CLASS, LIST_MOBILE_MEDIA_QUERY, LIST_MOBILE_SCROLL_CLASS,
+  LIST_NAME_CELL_CLASS, LIST_NAME_VALUE_CLASS, LIST_RESPONSIVE_CSS,
+  LIST_SCROLLER_CLASS, LIST_SECONDARY_CELL_CLASS,
+  listCellClass, listCellClasses, listScrollerClass,
 } from '../components/listChrome';
 
 // #1011 — what the mobile list mechanism *does*. The companion gate in
@@ -17,12 +18,21 @@ import {
 // (#883) scans AppShell.
 
 const COMPONENTS_DIR = join(__dirname, '..', 'components');
+const APP_DIR = join(__dirname, '..', 'app', '[locale]');
 
-function read(file: string): string {
-  return readFileSync(join(COMPONENTS_DIR, file), 'utf-8')
+function stripComments(src: string): string {
+  return src
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/^\s*\/\/.*$/gm, '')
     .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
+}
+
+function read(file: string): string {
+  return stripComments(readFileSync(join(COMPONENTS_DIR, file), 'utf-8'));
+}
+
+function readPage(...segments: string[]): string {
+  return stripComments(readFileSync(join(APP_DIR, ...segments, 'page.tsx'), 'utf-8'));
 }
 
 /** The CSS rules whose selector list mentions `needle`. */
@@ -149,5 +159,87 @@ describe('DataTable reads the declaration', () => {
   it('truncates the name cell and keeps its full value in the title', () => {
     expect(table).toContain(`<div className={LIST_NAME_VALUE_CLASS}>{value}</div>`);
     expect(table).toContain("title={col.mobile === 'name' ? col.title?.(row) : undefined}");
+  });
+});
+
+
+// ── stage 2: the grid lists ────────────────────────────────────────────────
+//
+// `DataTable` is one component, so the twelve table lists moved with it. The
+// three pages laid out from their own `LIST_COLUMNS` declaration (#637's shape)
+// write their cells by hand, so each one adopts the mechanism itself — which is
+// exactly why what they may write is asserted here, once, rather than three
+// times in three page guards.
+
+describe('a grid list cannot hide a cell the way a table can', () => {
+  it('turns the row into a flex line below the breakpoint', () => {
+    const row = rulesMentioning(LIST_GRID_ROW_CLASS);
+    // The tracks live on the row, so a hidden cell would leave its track behind
+    // and slide every cell after it under the wrong title. Only `!important`
+    // beats the inline `display: 'grid'`.
+    expect(row.join('\n')).toContain('display: flex !important');
+    // The identity takes the leftover width; the actions stay at the end.
+    const name = row.filter((r) => r.includes(LIST_NAME_CELL_CLASS)).join('\n');
+    expect(name).toContain('flex: 1 1 auto');
+    expect(name).toContain('min-width: 0');
+    expect(row.filter((r) => r.includes(LIST_ACTIONS_CELL_CLASS)).join('\n'))
+      .toContain('margin-left: auto');
+  });
+
+  it('releases the desktop track minimum, so nothing scrolls on a phone (`Q3`)', () => {
+    const released = rulesMentioning(LIST_MIN_WIDTH_CLASS);
+    expect(released).toHaveLength(1);
+    expect(released[0]).toContain('min-width: 0 !important');
+  });
+
+  it('gives each column its class from the column\u2019s own declaration', () => {
+    const columns = [
+      { key: 'name', mobile: 'name' },
+      { key: 'email', mobile: 'secondary' },
+      { key: 'status', mobile: 'keep' },
+      { key: 'actions', mobile: 'actions' },
+    ] as const;
+    expect(listCellClasses(columns)).toEqual({
+      name: LIST_NAME_CELL_CLASS,
+      email: LIST_SECONDARY_CELL_CLASS,
+      status: '',
+      actions: LIST_ACTIONS_CELL_CLASS,
+    });
+  });
+});
+
+describe('the three grid lists are on it', () => {
+  const PAGES: Array<[string, string]> = [
+    ['Products', readPage('financials', 'products')],
+    ['Members', readPage('members')],
+    ['Training Plans', readPage('training-plans')],
+  ];
+
+  it.each(PAGES)('%s declares what every column is on a phone', (_name, src) => {
+    const columns = src.match(/const LIST_COLUMNS: ListColumn\[\] = \[[\s\S]*?\n\];/)?.[0] ?? '';
+    expect(columns).not.toBe('');
+    const keys = [...columns.matchAll(/\bkey: '/g)].length;
+    expect(keys).toBeGreaterThan(0);
+    expect([...columns.matchAll(/\bmobile: '/g)]).toHaveLength(keys);
+    // One identity per row: never none, never two.
+    expect([...columns.matchAll(/mobile: 'name'/g)]).toHaveLength(1);
+    expect([...columns.matchAll(/mobile: 'actions'/g)]).toHaveLength(1);
+  });
+
+  it.each(PAGES)('%s reads its classes from listChrome rather than spelling them', (_name, src) => {
+    expect(src).toContain('const CELL_CLASS = listCellClasses(LIST_COLUMNS);');
+    // The page names no class of its own — the gate in the API suite scans for
+    // that across the whole app; here it is the three pages this stage touched.
+    expect(src).not.toMatch(/gd-list-/);
+  });
+
+  it.each(PAGES)('%s puts the row class on the header band and on the row', (_name, src) => {
+    // Both halves, or the titles would lay out one way and their values another.
+    expect([...src.matchAll(/className=\{LIST_GRID_ROW_CLASS\}/g)].length).toBeGreaterThanOrEqual(2);
+  });
+
+  it.each(PAGES)('%s collapses rather than scrolls, because its rows expand', (_name, src) => {
+    expect(src).toContain("listScrollerClass('collapse')");
+    expect(src).toContain('className={LIST_MIN_WIDTH_CLASS}');
   });
 });

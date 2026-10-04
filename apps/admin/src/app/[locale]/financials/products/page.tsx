@@ -15,7 +15,10 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
-import { listNameBadgeAccentStyle, listNameBadgeStyle } from '@/components/listChrome';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn, listCellClasses,
+  listNameBadgeAccentStyle, listNameBadgeStyle, listScrollerClass,
+} from '@/components/listChrome';
 // #974 §5: the list's own filter control (#724), so the search box and the Type
 // filter follow the Theme's input pair instead of a hardcoded `#ccc`.
 import { filterControlStyle } from '@/components/FilterBar';
@@ -84,7 +87,7 @@ const SESSION_TYPE: ItemType = SESSION_ITEM_TYPE;
 // viewport is narrower than the sum of the tracks the list scrolls
 // horizontally instead of dropping or squeezing columns.
 
-interface ListColumn {
+interface ListColumn extends ListGridColumn {
   /** Header label, a key in the `products` namespace. */
   labelKey: string;
   /** Fixed track width in px — also the minimum for the flexible column. */
@@ -94,24 +97,33 @@ interface ListColumn {
   align?: 'right';
 }
 
+// #1011 stage 2: `mobile` says what each column is on a phone, in the one
+// vocabulary `listChrome` declares. The item's name is the row's identity and
+// its status the badge beside it; everything else — the type, the units, the
+// price and its tax, the frequency, who created it and when, and whether
+// members may buy it — is read in the expanded card, which renders the same
+// declaration in both modes (#974).
 const LIST_COLUMNS: ListColumn[] = [
-  { labelKey: 'col_name', width: 180, grow: 2 },
-  { labelKey: 'col_type', width: 100 },
-  { labelKey: 'col_units', width: 70, align: 'right' },
+  { key: 'name', labelKey: 'col_name', width: 180, grow: 2, mobile: 'name' },
+  { key: 'type', labelKey: 'col_type', width: 100, mobile: 'secondary' },
+  { key: 'units', labelKey: 'col_units', width: 70, align: 'right', mobile: 'secondary' },
   // #942: the Price cell carries the "Total price for N sessions" line under
   // the figure, and every cell on this grid is nowrap-and-ellipsis (#637). 200
   // is what the longest of those sentences needs in en/es/ca without being cut.
-  { labelKey: 'col_price', width: 200 },
-  { labelKey: 'col_tax_rate', width: 80 },
-  { labelKey: 'col_frequency', width: 110 },
-  { labelKey: 'col_created_by', width: 100 },
-  { labelKey: 'col_created_at', width: 90 },
-  { labelKey: 'col_status', width: 90 },
-  { labelKey: 'col_enrollment_status', width: 100 },
+  { key: 'price', labelKey: 'col_price', width: 200, mobile: 'secondary' },
+  { key: 'tax_rate', labelKey: 'col_tax_rate', width: 80, mobile: 'secondary' },
+  { key: 'frequency', labelKey: 'col_frequency', width: 110, mobile: 'secondary' },
+  { key: 'created_by', labelKey: 'col_created_by', width: 100, mobile: 'secondary' },
+  { key: 'created_at', labelKey: 'col_created_at', width: 90, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', width: 90, mobile: 'keep' },
+  { key: 'enrollment_status', labelKey: 'col_enrollment_status', width: 100, mobile: 'secondary' },
   // Wide enough for the longest translated header ("ACCIONES") next to the
   // chevron and the ⋮ menu the cell also holds.
-  { labelKey: 'col_actions', width: 84 },
+  { key: 'actions', labelKey: 'col_actions', width: 84, mobile: 'actions' },
 ];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
 
 const LIST_COLUMN_GAP = 10;
 const LIST_ROW_PADDING_X = 16;
@@ -916,8 +928,8 @@ export default function ProductsPage() {
     return (
       <div key={item.id} style={cardStyle}>
         {/* Collapsed header — one cell per LIST_COLUMNS entry, same order */}
-        <div style={rowStyle} onClick={() => toggleExpand(item.id)}>
-          <div style={{ ...cellStyle, fontWeight: 600, fontSize: 15 }}>
+        <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(item.id)}>
+          <div className={CELL_CLASS.name} style={{ ...cellStyle, fontWeight: 600, fontSize: 15 }} title={item.name}>
             {item.name}
             {isSystem && (
               <span style={listNameBadgeStyle}>
@@ -935,13 +947,13 @@ export default function ProductsPage() {
               </span>
             )}
           </div>
-          <div style={{ ...cellStyle, fontSize: 13, color: '#555' }}>
+          <div className={CELL_CLASS.type} style={{ ...cellStyle, fontSize: 13, color: '#555' }}>
             {t(`type_${item.type}`)}
           </div>
-          <div style={{ ...cellStyle, fontSize: 13, color: '#555', textAlign: 'right' }}>
+          <div className={CELL_CLASS.units} style={{ ...cellStyle, fontSize: 13, color: '#555', textAlign: 'right' }}>
             {item.units != null ? item.units : '—'}
           </div>
-          <div style={{ ...cellStyle, fontSize: 13 }}>
+          <div className={CELL_CLASS.price} style={{ ...cellStyle, fontSize: 13 }}>
             {item.amount_incl_tax != null
               ? `${item.currency === 'EUR' ? '€' : item.currency}${item.amount_incl_tax.toFixed(2)} ${t(item.tax_behavior === 'exclusive' ? 'taxExcluded' : 'taxIncluded')}`
               : fmtAmount(item.amount, item.currency)}
@@ -951,30 +963,30 @@ export default function ProductsPage() {
                 be read as €250.00. */}
             {sessionNote && <span style={listHintStyle} title={sessionNote}>{sessionNote}</span>}
           </div>
-          <div style={{ ...cellStyle, fontSize: 13, color: '#666' }}>
+          <div className={CELL_CLASS.tax_rate} style={{ ...cellStyle, fontSize: 13, color: '#666' }}>
             {item.applied_tax_rate != null
               ? item.applied_tax_rate === 0 ? t('exempt') : `${item.applied_tax_rate}%`
               : '—'}
           </div>
-          <div style={{ ...cellStyle, fontSize: 13, color: '#666' }}>
+          <div className={CELL_CLASS.frequency} style={{ ...cellStyle, fontSize: 13, color: '#666' }}>
             {item.billing_frequency ? t(`frequency_${item.billing_frequency}`) : '—'}
           </div>
-          <div style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
+          <div className={CELL_CLASS.created_by} style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
             {item.created_by_name ?? '—'}
           </div>
-          <div style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
+          <div className={CELL_CLASS.created_at} style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
             {fmtDate(item.created_at)}
           </div>
-          <div style={badgeCellStyle}>
+          <div className={CELL_CLASS.status} style={badgeCellStyle}>
             <StatusBadge status={item.status} label={tStatus(item.status)} />
           </div>
-          <div style={badgeCellStyle}>
+          <div className={CELL_CLASS.enrollment_status} style={badgeCellStyle}>
             <StatusBadge
               status={item.enrollment_status === 'public' ? 'active' : 'paused'}
               label={tStatus(item.enrollment_status)}
             />
           </div>
-          <div style={actionsCellStyle}>
+          <div className={CELL_CLASS.actions} style={actionsCellStyle}>
             <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
             <div onClick={(e) => e.stopPropagation()}>
               <ContextMenu items={menuItems} ariaLabel={`Actions for ${item.name}`} />
@@ -1056,13 +1068,13 @@ export default function ProductsPage() {
       </div>
 
       {/* Headers + rows share LIST_GRID_COLUMNS and scroll together (#637) */}
-      <div style={{ overflowX: 'auto' }}>
-        <div style={{ minWidth: LIST_MIN_WIDTH }}>
+      <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+        <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
           {/* Column headers */}
           {(items.length > 0 || inlineNew) && (
-            <div style={colHeaderStyle}>
+            <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
               {LIST_COLUMNS.map((col) => (
-                <div key={col.labelKey} style={{ ...cellStyle, textAlign: col.align }}>
+                <div key={col.key} className={CELL_CLASS[col.key]} style={{ ...cellStyle, textAlign: col.align }}>
                   {t(col.labelKey)}
                 </div>
               ))}
