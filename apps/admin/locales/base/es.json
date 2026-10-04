@@ -60,7 +60,9 @@
     "assigned_personal_goals": "Objetivos Personales Asignados",
     "operating_hours": "Horario y Festivos",
     "website_integration": "Integración web",
-    "failed_payments_badge": "{count, plural, one {# pago fallido pendiente de acción} other {# pagos fallidos pendientes de acción}}"
+    "failed_payments_badge": "{count, plural, one {# pago fallido pendiente de acción} other {# pagos fallidos pendientes de acción}}",
+    "collapse_sidebar": "Contraer menú lateral",
+    "expand_sidebar": "Expandir menú lateral"
   },
   "dashboard": {
     "title": "Panel",

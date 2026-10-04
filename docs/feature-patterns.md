@@ -326,6 +326,8 @@ Navigation is config-driven — add an item to the right group instead of editin
   children: [{ href: '/{{locale}}/widgets/deleted', labelKey: 'nav.widgets_deleted' }] },
 ```
 
+A new item inherits both sidebar states for free (#1003): expanded it renders as today, and collapsed — icons only, on desktop — it is the **group's** icon that carries the active treatment, because the active navigation item is always a subsection. Nothing about that is the item's to configure. If you need to reason about which group holds the open page, call `navGroupContainsActivePath()` (`lib/sidebarCollapse.ts`) rather than comparing `pathname` to an `href` in a component: both sidebar modes ask that one function, and a second copy is how the highlight comes to differ between them. Note the hrefs in this config still carry the `{{locale}}` placeholder — resolve them (`translateItem`) before comparing against `pathname`, which is the bug that had kept the active group from auto-expanding at all.
+
 ### 6. i18n (`locales/base/{en,es,ca}.json`)
 Add a `"widgets"` namespace to each file:
 ```json
