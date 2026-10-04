@@ -204,7 +204,7 @@ export function NavGroup({
           // #884: 16px rather than 20px, and a 6px gap rather than 8px, so the
           // section icon fits beside the chevron without the longest uppercase
           // label ("CONFIGURACIÓN", "ENTRENAMIENTO") wrapping onto a second line
-          // in the 220px sidebar. Nothing else about the header's spacing moves.
+          // in the sidebar (SIDEBAR_EXPANDED_WIDTH). Nothing else about the header's spacing moves.
           padding: '10px 16px',
           // #1003: collapsed, the icon is the whole button, so it centres in
           // the strip rather than sitting at #884's label inset. The expanded
