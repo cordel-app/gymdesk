@@ -2,34 +2,43 @@
 
 import { createElement, type CSSProperties, type ReactNode } from 'react';
 import { useApp } from '@/context/AppContext';
-import { DEFAULT_TOKENS } from '@/lib/themeTokens';
 import {
-  CARD_SCRIM_ALPHA,
   backgroundUrlForSlot,
   cardBackgroundStyleValue,
-  hexToRgba,
   type MemberBackgroundSlot,
 } from '@/lib/membersBackground';
 
 /**
- * #728: the active theme's artwork for one Members section, as a CSS
- * `background` value — or `null` when the theme does not configure that slot.
+ * #728: the artwork the active theme configures for one Members section, as a
+ * resolved URL — or `null` when the theme does not configure that slot.
  *
  * The Members App consumes *resolved URLs only* (#725): it reads
  * `theme.members_images`, which the API has already resolved from the Customer
  * Theme, and resolves nothing further itself — no storage path, no second
- * theme, no asset of its own. A slot that is `null` means the card keeps the
- * plain surface it has today, and that is the end of the rule.
+ * theme, no asset of its own. A slot that is `null` means the surface keeps
+ * what it has today, and that is the end of the rule.
  *
- * The scrim is the theme's own card colour at partial opacity, the same
- * treatment `MembersBackground` gives the page, so a dark theme darkens and a
- * light theme lightens and every card reads the same way.
+ * It is exported because #982 makes one more thing depend on the same answer:
+ * a tile with artwork **replaces** its default icon rather than layering it
+ * over the picture, so the tile asks this hook instead of testing
+ * `theme.members_images` for itself.
+ */
+export function useSectionImageUrl(slot: MemberBackgroundSlot): string | null {
+  const { theme } = useApp();
+  return backgroundUrlForSlot(theme?.members_images ?? null, slot);
+}
+
+/**
+ * The same artwork as a CSS `background` value, or `null` for an unconfigured
+ * slot.
+ *
+ * Since #982 it carries **no scrim**: the uploaded image is the card's primary
+ * visual and is painted at full opacity, with its own colours and contrast
+ * intact. The page background keeps its scrim (`MembersBackground`), because
+ * that one surface sits under every page's text and controls at once.
  */
 export function useSectionBackground(slot: MemberBackgroundSlot): string | null {
-  const { theme } = useApp();
-  const url = backgroundUrlForSlot(theme?.members_images ?? null, slot);
-  const surface = (theme?.tokens as any)?.colors?.cardBackground ?? DEFAULT_TOKENS.colors.cardBackground;
-  return cardBackgroundStyleValue(url, hexToRgba(surface, CARD_SCRIM_ALPHA));
+  return cardBackgroundStyleValue(useSectionImageUrl(slot));
 }
 
 interface MembersSectionCardProps {

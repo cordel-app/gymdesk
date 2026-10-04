@@ -3,7 +3,6 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   BACKGROUND_SCRIM_ALPHA,
-  CARD_SCRIM_ALPHA,
   backgroundStyleValue,
   backgroundUrlForSlot,
   cardBackgroundStyleValue,
@@ -61,34 +60,86 @@ describe('the home sections map to their own images (#728 §Home Page Mapping)',
   });
 });
 
-describe('painting a card (#728 §Visual Treatment)', () => {
+describe('painting a card (#728 §Visual Treatment, #982)', () => {
   it('covers and centres the artwork, so it keeps its aspect ratio', () => {
-    const value = cardBackgroundStyleValue('https://r2/calendar.png', null)!;
+    const value = cardBackgroundStyleValue('https://r2/calendar.png')!;
     expect(value).toContain('url("https://r2/calendar.png")');
     expect(value).toContain('center center / cover no-repeat');
     expect(value).not.toContain('100% 100%');
   });
 
   it('scrolls with its card, unlike the page background, which is fixed', () => {
-    expect(cardBackgroundStyleValue('https://r2/calendar.png', null)).toContain('no-repeat scroll');
+    expect(cardBackgroundStyleValue('https://r2/calendar.png')).toContain('no-repeat scroll');
     expect(backgroundStyleValue('https://r2/background.png', null)).toContain('no-repeat fixed');
   });
 
-  it('lays the theme\'s own card colour over the image as the readability scrim', () => {
-    const scrim = hexToRgba('#ffffff', CARD_SCRIM_ALPHA)!;
-    expect(scrim).toBe('rgba(255, 255, 255, 0.82)');
-    const value = cardBackgroundStyleValue('https://r2/calendar.png', scrim)!;
-    expect(value.startsWith(`linear-gradient(${scrim}, ${scrim}), `)).toBe(true);
+  it('paints the uploaded image at full opacity — no scrim, overlay or blend (#982 §2)', () => {
+    // #728 laid the theme's card colour over the artwork at 0.82, which washed
+    // a black photograph out to grey. The card's artwork is now the image and
+    // nothing else, so the uploaded colours and contrast are what the member
+    // sees.
+    const value = cardBackgroundStyleValue('https://r2/calendar.png')!;
+    expect(value).not.toContain('linear-gradient');
+    expect(value).not.toContain('rgba(');
+    expect(value).toBe('url("https://r2/calendar.png") center center / cover no-repeat scroll');
   });
 
-  it('keeps the artwork visible — the scrim never fully covers it', () => {
-    expect(CARD_SCRIM_ALPHA).toBeGreaterThan(BACKGROUND_SCRIM_ALPHA);
-    expect(CARD_SCRIM_ALPHA).toBeLessThan(1);
+  it('takes no scrim argument at all, so no caller can reintroduce one', () => {
+    expect(cardBackgroundStyleValue.length).toBe(1);
+    expect(libSrc).not.toContain('CARD_SCRIM_ALPHA');
+    expect(cardSrc).not.toContain('hexToRgba');
+    expect(cardSrc).not.toContain('opacity');
+  });
+
+  it('keeps the page background\'s own scrim — a different surface with a different job', () => {
+    // The general background sits under every page's text and controls at
+    // once, so #982's "the image is the tile's primary visual" does not reach
+    // it; §Apply-to says it follows its existing purpose.
+    expect(BACKGROUND_SCRIM_ALPHA).toBeGreaterThan(0);
+    expect(BACKGROUND_SCRIM_ALPHA).toBeLessThan(1);
+    const scrim = hexToRgba('#101828', BACKGROUND_SCRIM_ALPHA)!;
+    expect(backgroundStyleValue('https://r2/background.png', scrim)!.startsWith('linear-gradient(')).toBe(true);
   });
 
   it('paints nothing for a slot the theme does not configure', () => {
-    expect(cardBackgroundStyleValue(null, 'rgba(0, 0, 0, 0.5)')).toBeNull();
+    expect(cardBackgroundStyleValue(null)).toBeNull();
     expect(backgroundUrlForSlot({ calendar_url: null }, 'calendar')).toBeNull();
+  });
+});
+
+describe('a custom image replaces the default icon (#982 §1)', () => {
+  it('asks one place whether the slot has artwork', () => {
+    expect(cardSrc).toContain('export function useSectionImageUrl');
+    expect(homeSrc).toContain('useSectionImageUrl');
+    // The tile never reads the theme payload for itself.
+    expect(homeSrc).not.toContain('members_images');
+  });
+
+  it('renders the default emoji only when there is no artwork', () => {
+    expect(homeSrc).toContain('const hasImage = useSectionImageUrl(slot) !== null;');
+    expect(homeSrc).toContain('{!hasImage && <span style={styles.tileIcon}>{icon}</span>}');
+  });
+
+  it('keeps the default emojis themselves untouched', () => {
+    for (const icon of ['📅', '🏋️', '🎟️', '🥗']) {
+      expect(homeSrc).toContain(`icon="${icon}"`);
+    }
+  });
+
+  it('adds no placeholder or second asset in the icon\'s place', () => {
+    expect(homeSrc).not.toContain('<img');
+    expect(cardSrc).not.toContain('<img');
+  });
+
+  it('keeps the tile the same box, so the artwork fills the height the icon gave it', () => {
+    expect(homeSrc).toContain('tileWithImage:');
+    expect(homeSrc).toContain('{ ...styles.tile, ...styles.tileWithImage }');
+    // …and a tile with no artwork keeps today's style object exactly.
+    expect(homeSrc).toContain(': styles.tile}');
+  });
+
+  it('leaves the label visible in both states', () => {
+    expect(homeSrc).toContain('<span style={styles.tileLabel}>{label}</span>');
   });
 });
 
@@ -107,7 +158,7 @@ describe('the section card is a background, not a redesign (#728 §Preserve Exis
   it('keeps the tiles clickable buttons and the membership card its existing element', () => {
     expect(cardSrc).toContain("type: 'button' as const");
     expect(homeSrc).toContain('as="button"');
-    expect(homeSrc).toContain('style={styles.tile}');
+    expect(homeSrc).toContain('styles.tile');
     expect(homeSrc).toContain('style={styles.card}');
     expect(homeSrc).toContain("role=\"button\"");
   });

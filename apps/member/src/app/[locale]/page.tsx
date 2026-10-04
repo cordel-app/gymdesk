@@ -8,7 +8,7 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
-import { MembersSectionCard } from '@/components/MembersSectionCard';
+import { MembersSectionCard, useSectionImageUrl } from '@/components/MembersSectionCard';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
 import { goalDetail, goalLabel, type NutritionGoalItem } from '@/lib/nutritionFood';
 
@@ -320,9 +320,21 @@ function alertTypeLabel(t: ReturnType<typeof useTranslations>, type: string): st
 }
 
 function NavTile({ slot, icon, label, onClick }: { slot: MemberBackgroundSlot; icon: string; label: string; onClick: () => void }) {
+  // #982: the uploaded artwork is the tile's whole visual. When the theme
+  // configures this slot the default emoji is not rendered at all — not over
+  // the picture, not under it, and with no placeholder in its place — and the
+  // tile keeps the height the icon used to give it so the artwork has the same
+  // box to fill. A slot the theme does not configure renders exactly as it did
+  // before: the default icon, and no `minHeight` of its own.
+  const hasImage = useSectionImageUrl(slot) !== null;
   return (
-    <MembersSectionCard slot={slot} as="button" style={styles.tile} onClick={onClick}>
-      <span style={styles.tileIcon}>{icon}</span>
+    <MembersSectionCard
+      slot={slot}
+      as="button"
+      style={hasImage ? { ...styles.tile, ...styles.tileWithImage } : styles.tile}
+      onClick={onClick}
+    >
+      {!hasImage && <span style={styles.tileIcon}>{icon}</span>}
       <span style={styles.tileLabel}>{label}</span>
     </MembersSectionCard>
   );
@@ -373,5 +385,6 @@ const styles: Record<string, React.CSSProperties> = {
   tileGrid:        { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 },
   tile:            { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#fff', borderRadius: 14, padding: '24px 8px', border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer' },
   tileIcon:        { fontSize: 32 },
+  tileWithImage:   { minHeight: 110 },
   tileLabel:       { fontSize: 13, fontWeight: 600, color: '#18181b', textAlign: 'center' },
 };

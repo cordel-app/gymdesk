@@ -62,14 +62,6 @@ export function hexToRgba(hex: string | null | undefined, alpha: number): string
 export const BACKGROUND_SCRIM_ALPHA = 0.72;
 
 /**
- * How much of the scrim sits over a card's artwork (#728 §Content
- * Readability). Heavier than the page's, because a card carries the text and
- * the controls right on top of the picture, and one value for every card keeps
- * the treatment consistent across the Members sections.
- */
-export const CARD_SCRIM_ALPHA = 0.82;
-
-/**
  * The CSS `background` shorthand for a page: the scrim over the artwork, sized
  * `cover` and centred so the image keeps its aspect ratio and is never
  * stretched, and `fixed` so scrolling a long page does not drag it.
@@ -88,11 +80,22 @@ export function backgroundStyleValue(url: string | null, scrim: string | null): 
  * being anchored to the viewport — a `fixed` image would show a different crop
  * in every card and slide under them as the page scrolls.
  *
+ * It takes **no scrim** (#982): a Section Card's artwork is the tile's primary
+ * visual, so it is painted at full opacity and the uploaded image's own
+ * colours, contrast and background are what the member sees — a black
+ * photograph reads black rather than washed out to grey. The `#728` card scrim
+ * that laid the theme's card colour over it at 0.82 is gone, and no overlay,
+ * fade or theme blend may be reintroduced here. The page background keeps its
+ * own scrim, which is a different surface with a different job: it sits under
+ * every page's text and controls at once (`backgroundStyleValue` above), while
+ * a card carries one label the tile design already places.
+ *
  * Null for an unconfigured slot, exactly as above: the card keeps the plain
- * background it has today.
+ * background it has today, which is what makes the default icon the fallback
+ * rather than a second asset.
  */
-export function cardBackgroundStyleValue(url: string | null, scrim: string | null): string | null {
-  return composeBackground(url, scrim, 'scroll');
+export function cardBackgroundStyleValue(url: string | null): string | null {
+  return composeBackground(url, null, 'scroll');
 }
 
 function composeBackground(url: string | null, scrim: string | null, attachment: 'fixed' | 'scroll'): string | null {
