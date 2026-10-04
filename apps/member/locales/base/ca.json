@@ -200,7 +200,9 @@
     "type_shared_training_approved": "Entrenament compartit aprovat",
     "type_shared_training_rejected": "Entrenament compartit rebutjat",
     "type_event_cancelled": "Reserva cancel·lada",
-    "type_event_updated": "Reserva actualitzada"
+    "type_event_updated": "Reserva actualitzada",
+    "type_event_reactivated": "Classe reactivada",
+    "detail_event_reactivated": "La classe torna a estar disponible i la teva reserva s’ha restaurat."
   },
   "membership": {
     "title": "La meva quota",

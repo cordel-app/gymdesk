@@ -265,8 +265,9 @@ describe('The two calendar detail panels theme their own filled actions (#954 §
     // fourth helper. The spread sits where the two colour properties were, so
     // the `opacity`/`cursor` overrides after it still win.
     expect(eventPanel.match(/\.\.\.primaryActionColors/g) ?? []).toHaveLength(1);
-    // Six since #977 added `Mark as completed` and its confirmation action.
-    expect(sessionPanel.match(/\.\.\.primaryActionColors/g) ?? []).toHaveLength(6);
+    // Eight: six after #977 added `Mark as completed` and its confirmation
+    // action, plus #979's `Reactivate event` and its confirmation action.
+    expect(sessionPanel.match(/\.\.\.primaryActionColors/g) ?? []).toHaveLength(8);
     for (const src of [eventPanel, sessionPanel]) {
       expect(src).toMatch(/import \{[^}]*\bprimaryActionColors\b[^}]*\} from '@\/components\/ui'/);
       expect(src).not.toContain('#6c63ff');

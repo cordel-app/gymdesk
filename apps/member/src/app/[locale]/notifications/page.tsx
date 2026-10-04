@@ -25,6 +25,19 @@ function timeAgo(iso: string, locale: string): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
+/**
+ * #979: the notification types that carry a second explanatory line
+ * (`notifications.detail_<type>`). It is a declared list rather than a `t()`
+ * fallback because next-intl has no `defaultValue` option and prints a missing
+ * key verbatim (CLAUDE.md), so asking for a detail line every type does not
+ * have would render `notifications.detail_booking_confirmed` on screen.
+ *
+ * `event_reactivated` needs one: the type label alone says the class is back,
+ * and the member also has to be told their own booking still stands rather
+ * than wondering whether they must book again (#979 section 6).
+ */
+const DETAIL_TYPES = ['event_reactivated'];
+
 export default function NotificationsPage() {
   const t = useTranslations('notifications');
   const locale = useLocale();
@@ -107,6 +120,9 @@ export default function NotificationsPage() {
               </div>
               {n.payload?.title && (
                 <div style={styles.title2}>{n.payload.title}</div>
+              )}
+              {DETAIL_TYPES.includes(n.type) && (
+                <div style={styles.sub}>{t(`detail_${n.type}` as any)}</div>
               )}
               {n.payload?.starts_at && (
                 <div style={styles.sub}>

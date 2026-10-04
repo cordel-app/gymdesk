@@ -200,7 +200,9 @@
     "type_shared_training_approved": "Entreno compartido aprobado",
     "type_shared_training_rejected": "Entreno compartido rechazado",
     "type_event_cancelled": "Reserva cancelada",
-    "type_event_updated": "Reserva actualizada"
+    "type_event_updated": "Reserva actualizada",
+    "type_event_reactivated": "Clase reactivada",
+    "detail_event_reactivated": "La clase vuelve a estar disponible y tu reserva se ha restaurado."
   },
   "membership": {
     "title": "Mi cuota",

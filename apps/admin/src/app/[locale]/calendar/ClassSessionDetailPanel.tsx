@@ -76,6 +76,14 @@ const btnBase: React.CSSProperties = {
 // eligibility and center coverage.
 const OVERRIDABLE_ACCESS_CODES = ['plan_not_eligible', 'plan_required', 'center_not_covered'];
 
+// #979: the 409 codes the API answers when the trainer or space a cancellation
+// freed has been taken by another session since. All four mean one thing to
+// somebody reactivating an event — the slot is no longer theirs — so they share
+// a line rather than needing four of their own.
+const SLOT_CONFLICT_CODES = [
+  'slot_fully_occupied', 'slot_not_shareable', 'activity_not_shareable', 'sharing_not_authorized',
+];
+
 // The execution statuses with a `calendar.status_*` translation. next-intl has
 // no locale fallback and no `defaultValue` option, so the label is decided
 // before `t()` is called (CLAUDE.md) and anything else shows its raw value.
@@ -119,6 +127,11 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
   const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
+
+  // #979 — Reactivate flow (§1/§2): the one action a cancelled event offers.
+  const [showReactivateConfirm, setShowReactivateConfirm] = useState(false);
+  const [reactivating, setReactivating] = useState(false);
+  const [reactivateError, setReactivateError] = useState<string | null>(null);
 
   // Cancel flow
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -253,6 +266,33 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
       toast(err.message ?? 'Failed to cancel event');
     } finally {
       setCancelling(false);
+    }
+  }
+
+  // ── Reactivate event ──────────────────────────────────────────────────────
+  // #979 — undo a cancellation. Unlike `Cancel event`, which closes the panel,
+  // this reloads and stays: §8 wants the status, the capacity, the enrolled
+  // members and the waiting list to read as restored immediately, and those
+  // are the very sections above this button. Nothing is re-booked — the
+  // bookings were never cancelled with the event — so there is no second
+  // request to make here.
+  async function handleReactivate() {
+    setReactivating(true);
+    setReactivateError(null);
+    try {
+      await apiFetch(`/class-sessions/${sessionId}/reactivate`, { method: 'POST' });
+      setShowReactivateConfirm(false);
+      onMutated();
+      await load();
+    } catch (err: any) {
+      const code = err?.body?.code;
+      setReactivateError(
+        code && SLOT_CONFLICT_CODES.includes(code) ? t('reactivate_blocked_slot')
+        : code === 'not_cancelled' ? t('reactivate_blocked_not_cancelled')
+        : err.message ?? t('error_generic'),
+      );
+    } finally {
+      setReactivating(false);
     }
   }
 
@@ -553,10 +593,52 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
       </div>
 
       {/* Actions */}
-      {canWrite && !isCancelled && (
+      {canWrite && (
         <div>
           <div style={sectionLabel}>Actions</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {/* #979 §1 — a cancelled event offers exactly one action, and the
+                three below are not among them: completing it, moving it or
+                cancelling it again all act on a slot nobody is holding. */}
+            {isCancelled ? (
+              !showReactivateConfirm ? (
+                <button
+                  onClick={() => { setShowReactivateConfirm(true); setReactivateError(null); }}
+                  style={{ ...btnBase, ...primaryActionColors, textAlign: 'left' }}
+                >
+                  {t('reactivate')}
+                </button>
+              ) : (
+                /* §2 — the confirmation, as this panel's own inline confirm
+                   card: the shape `Mark as completed` and `Cancel event`
+                   already use, so a cancelled event's panel does not grow a
+                   second overlay style of its own. */
+                <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t('reactivate_confirm_title')}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>{t('reactivate_confirm_message')}</div>
+                  {reactivateError && (
+                    <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{reactivateError}</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={handleReactivate}
+                      disabled={reactivating}
+                      style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: reactivating ? 0.6 : 1 }}
+                    >
+                      {reactivating ? t('reactivating') : t('reactivate')}
+                    </button>
+                    <button
+                      onClick={() => { setShowReactivateConfirm(false); setReactivateError(null); }}
+                      disabled={reactivating}
+                      style={{ ...btnBase, background: '#f3f4f6', color: '#374151' }}
+                    >
+                      {t('cancel')}
+                    </button>
+                  </div>
+                </div>
+              )
+            ) : (
+            <>
             {/* #977 §4/§11 — Mark as completed. Offered only once the event
                 has ended and only while it is awaiting confirmation: a future
                 event needs no action from the teacher (§2), and an empty slot
@@ -683,6 +765,8 @@ export function ClassSessionDetailPanel({ sessionId, onClose, onMutated, canWrit
                   </button>
                 </div>
               </div>
+            )}
+            </>
             )}
           </div>
         </div>
