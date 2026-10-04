@@ -177,6 +177,63 @@ export function memberEventStatusLine(session: MemberEventDisplayInput): MemberE
  * colour the gym configured and over the theme's own event background alike,
  * without this module having to know which of the two it is sitting on.
  */
+/**
+ * #981 — who delivers this occurrence and where, for the event box itself.
+ *
+ * `GET /me/schedule` projects `trainer_name` and `space_name` by joining
+ * `ce.trainer_membership_id` / `ce.space_id`, so these are the **occurrence's**
+ * own values (§3): an event retargeted away from its Activity Type's defaults
+ * reads as *Jane Smith · Studio 2*, never as the Activity's *John Smith ·
+ * Studio 1*. Nothing here reads an Activity Type default and no caller may
+ * pass one in as a fallback.
+ *
+ * A blank, whitespace or null name resolves to `null`, and `null` means the
+ * caller renders nothing for it (§6) — no `N/A`, no `Unknown`, no
+ * `Not assigned`. That is also why the line is composed here rather than by
+ * the page joining two fields with `·`: a trailing separator is exactly the
+ * empty placeholder the ticket forbids.
+ *
+ * It is text and only text (§8): the box stays painted with the event's own
+ * configured colour (`eventBackgroundColor()` above), and neither a trainer
+ * nor a space may become a hue.
+ */
+export interface MemberEventMetaSource {
+  trainer_name?: string | null;
+  space_name?: string | null;
+}
+
+export interface MemberEventMeta {
+  trainer: string | null;
+  space: string | null;
+}
+
+/** `' · '` — the separator the member event window already uses for these. */
+export const MEMBER_META_SEPARATOR = ' · ';
+
+function cleanName(value: string | null | undefined): string | null {
+  const trimmed = (value ?? '').trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+export function memberEventMeta(session: MemberEventMetaSource): MemberEventMeta {
+  return { trainer: cleanName(session.trainer_name), space: cleanName(session.space_name) };
+}
+
+/**
+ * One compact `Trainer · Space` line, or `null` when the occurrence has
+ * neither.
+ *
+ * Compact in both the Day and the Week view, unlike the Admin calendar's Day
+ * view: §5's own example is `Jane Smith · Studio 2` on a single line, and the
+ * Members app is phone-first, so even a full-width day column is narrow enough
+ * that a second line costs height the event may not have.
+ */
+export function memberEventMetaLine(session: MemberEventMetaSource): string | null {
+  const { trainer, space } = memberEventMeta(session);
+  const parts = [trainer, space].filter((p): p is string => !!p);
+  return parts.length > 0 ? parts.join(MEMBER_META_SEPARATOR) : null;
+}
+
 export const EVENT_STATUS_CHIP_STYLE = {
   background: 'rgba(0,0,0,0.22)',
   color: 'inherit',
