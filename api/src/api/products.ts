@@ -49,7 +49,7 @@ const SELECT = `
     mb.name AS modified_by_name,
     db.id   AS deleted_by_membership_id,
     db.name AS deleted_by_name
-  FROM gym_charges gc
+  FROM products gc
   LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
   LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
   LEFT JOIN gym_memberships cb ON cb.id = gc.created_by_membership_id
@@ -227,7 +227,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
 
     const { insertId } = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        `INSERT INTO gym_charges
+        `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
             is_system, mandatory, notes, package_information, validity_days, tax_rate_id, tax_behavior,
             created_by_membership_id, modified_by_membership_id)
@@ -265,7 +265,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
     const psMap = await loadProfessionalServicesMap([insertId]);
     recordAudit(req, {
       action: 'create',
-      entityType: 'gym_charge',
+      entityType: 'product',
       entityId: String(insertId),
       entityName: name.trim(),
       next: { name: name.trim(), type, units, amount, billing_frequency, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids, mandatory: mandatory ? 1 : 0 },
@@ -282,7 +282,7 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
   const { gymId, gymMembershipId } = getTenantContext(req);
   try {
     const { rows: origRows } = await db.query(
-      'SELECT * FROM gym_charges WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      'SELECT * FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],
     );
     if (origRows.length === 0) return res.status(404).json({ error: 'Not found' });
@@ -303,7 +303,7 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
 
     const { insertId } = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        `INSERT INTO gym_charges
+        `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
             is_system, mandatory, notes, package_information, validity_days, tax_rate_id, tax_behavior,
             created_by_membership_id, modified_by_membership_id)
@@ -344,7 +344,7 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
     const psMap = await loadProfessionalServicesMap([insertId]);
     recordAudit(req, {
       action: 'create',
-      entityType: 'gym_charge',
+      entityType: 'product',
       entityId: String(insertId),
       entityName: name,
       next: { name, type: orig.type, duplicated_from: Number(req.params.id), professional_service_ids: linkedServiceIds, mandatory: orig.mandatory },
@@ -394,7 +394,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     const { rows: existing } = await db.query(
       `SELECT id, is_system, name AS current_name, type AS current_type,
               billing_frequency AS current_billing_frequency
-         FROM gym_charges WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+         FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [req.params.id, gymId],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Not found' });
@@ -431,7 +431,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 
     const { rowCount } = await db.transaction(async (tx) => {
       const { rowCount } = await tx.query(
-        `UPDATE gym_charges SET
+        `UPDATE products SET
          description               = COALESCE(?, description),
          amount                    = ?,
          billing_frequency         = ?,
@@ -491,7 +491,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     const psMap = await loadProfessionalServicesMap([Number(req.params.id)]);
     recordAudit(req, {
       action: 'update',
-      entityType: 'gym_charge',
+      entityType: 'product',
       entityId: String(req.params.id),
       entityName: rows[0]?.name ?? rows[0]?.charge_type_name,
       next: { description, amount, billing_frequency, notes, name, type, units, status, enrollment_status, tax_rate_id, tax_behavior, professional_service_ids: professionalServiceIdsToPersist, mandatory: mandatoryProvided ? (mandatory ? 1 : 0) : undefined },
@@ -508,7 +508,7 @@ productsRouter.post('/:id/activate', requireRole('admin'), async (req, res, next
   const { gymId, gymMembershipId } = getTenantContext(req);
   try {
     const { rowCount } = await db.query(
-      `UPDATE gym_charges
+      `UPDATE products
        SET status = 'active', availability = 'available',
            modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -517,7 +517,7 @@ productsRouter.post('/:id/activate', requireRole('admin'), async (req, res, next
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
     const psMap = await loadProfessionalServicesMap([rows[0].id]);
-    recordAudit(req, { action: 'activate', entityType: 'gym_charge', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
+    recordAudit(req, { action: 'activate', entityType: 'product', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
     res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err) { next(err); }
 });
@@ -528,7 +528,7 @@ productsRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, ne
   const { gymId, gymMembershipId } = getTenantContext(req);
   try {
     const { rowCount } = await db.query(
-      `UPDATE gym_charges
+      `UPDATE products
        SET status = 'inactive', availability = 'unavailable',
            modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
@@ -537,7 +537,7 @@ productsRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, ne
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
     const psMap = await loadProfessionalServicesMap([rows[0].id]);
-    recordAudit(req, { action: 'deactivate', entityType: 'gym_charge', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
+    recordAudit(req, { action: 'deactivate', entityType: 'product', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
     res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
   } catch (err) { next(err); }
 });
@@ -548,21 +548,21 @@ productsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
   const { gymId, gymMembershipId, actorName } = getTenantContext(req);
   try {
     const { rows: existing } = await db.query(
-      'SELECT id, is_system, name FROM gym_charges WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      'SELECT id, is_system, name FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],
     );
     if (existing.length === 0) return res.status(404).json({ error: 'Not found' });
     if (existing[0].is_system) return res.status(403).json({ error: 'System products cannot be deleted.' });
 
     await db.query(
-      `UPDATE gym_charges
+      `UPDATE products
        SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [gymMembershipId, actorName, req.params.id, gymId],
     );
     recordAudit(req, {
       action: 'delete',
-      entityType: 'gym_charge',
+      entityType: 'product',
       entityId: String(req.params.id),
       entityName: existing[0].name,
     });

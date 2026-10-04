@@ -39,9 +39,9 @@ const plansLocales = Object.fromEntries(
 
 function line(over: Partial<PlanSimulationLine> = {}): PlanSimulationLine {
   return {
-    kind: 'sellable_item',
+    kind: 'product',
     label: 'Locker Rental',
-    gym_charge_id: 4,
+    product_id: 4,
     mandatory: false,
     quantity: 1,
     unit_price: 15,

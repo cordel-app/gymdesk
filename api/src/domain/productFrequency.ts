@@ -1,6 +1,6 @@
 // #821 / #945: a Product's **Billing Frequency** is one of four choices.
 //
-// `gym_charges.billing_frequency` has carried six values since migration 123
+// `products.billing_frequency` has carried six values since migration 123
 // (`once`, `per_session`, `four_weeks`, `week`, `month`, `year`). Two of them
 // are not things the product sells:
 //
@@ -19,7 +19,7 @@
 // gave a Membership Plan's cadence:
 //
 //   OFFERED — what a Product may be *configured* with, in the order the
-//             dropdown lists them. `POST /sellable-items` accepts only these.
+//             dropdown lists them. `POST /products` accepts only these.
 //   LEGACY  — stored, read, classified (`isRecurringFrequency()`), displayed
 //             and billed exactly as before, but never selectable. A `PUT` may
 //             carry one through **unchanged** so that editing another field of
@@ -27,7 +27,7 @@
 //             (#945 §3, #821 §"handled safely so that their existing data is
 //             not silently corrupted or changed").
 //
-// No migration: `gym_charges_billing_frequency_check` (migration 123) keeps
+// No migration: `products_billing_frequency_check` (migration 123) keeps
 // permitting all six, because the rows that hold a legacy value must stay valid
 // and the route — not the CHECK — is what refuses a new one. There is
 // deliberately no backfill and no coercion:

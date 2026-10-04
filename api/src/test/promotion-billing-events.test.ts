@@ -34,7 +34,7 @@ describe('Promotion Billing Event Simulation (#922)', () => {
     amount: string | null;
   }): Promise<number> {
     const { insertId } = await db.query(
-      `INSERT INTO gym_charges
+      `INSERT INTO products
          (gym_id, name, type, billing_frequency, status, is_system, currency, amount, tax_behavior)
        VALUES (?, ?, ?, ?, 'active', 0, 'EUR', ?, 'inclusive')`,
       [gymId, opts.name, opts.type, opts.frequency, opts.amount],
@@ -104,10 +104,10 @@ describe('Promotion Billing Event Simulation (#922)', () => {
       name: 'PBES Registration Fee', type: 'fee', frequency: 'once', amount: '100.00',
     });
     expect((await putSection('periodical-benefits', [
-      { gym_charge_id: insuranceId, quantity: 3, action: 'waive' },
+      { product_id: insuranceId, quantity: 3, action: 'waive' },
     ])).status).toBe(200);
     expect((await putSection('oneoff-benefits', [
-      { gym_charge_id: registrationId, quantity: 1, action: 'percentage_discount', value: 20 },
+      { product_id: registrationId, quantity: 1, action: 'percentage_discount', value: 20 },
     ])).status).toBe(200);
 
     const res = await get(promoId);
@@ -121,10 +121,10 @@ describe('Promotion Billing Event Simulation (#922)', () => {
     // charge (which appears exactly once) and the first monthly occurrence.
     const first = res.body.dates[0];
     expect(first.date).toBe(res.body.anchor_date);
-    const registration = first.lines.find((l: any) => l.gym_charge_id === registrationId);
+    const registration = first.lines.find((l: any) => l.product_id === registrationId);
     expect(registration.regular_price).toBe(100);
     expect(registration.actual_charge).toBe(80);
-    const insurance = first.lines.find((l: any) => l.gym_charge_id === insuranceId);
+    const insurance = first.lines.find((l: any) => l.product_id === insuranceId);
     expect(insurance.regular_price).toBe(20);
     expect(insurance.actual_charge).toBe(0);
     expect(insurance.benefits[0]).toMatchObject({ source: 'promotion', action: 'waive' });
@@ -133,7 +133,7 @@ describe('Promotion Billing Event Simulation (#922)', () => {
 
     // The one-off item is billed once, never per period.
     const oneoffGroups = res.body.dates.filter((g: any) =>
-      g.lines.some((l: any) => l.gym_charge_id === registrationId));
+      g.lines.some((l: any) => l.product_id === registrationId));
     expect(oneoffGroups.length).toBe(1);
 
     // Nothing was persisted: a second read answers the same, and no billing
@@ -149,6 +149,6 @@ describe('Promotion Billing Event Simulation (#922)', () => {
     const kinds = new Set<string>(
       res.body.dates.flatMap((g: any) => g.lines.map((l: any) => l.kind)),
     );
-    expect([...kinds]).toEqual(['sellable_item']);
+    expect([...kinds]).toEqual(['product']);
   });
 });

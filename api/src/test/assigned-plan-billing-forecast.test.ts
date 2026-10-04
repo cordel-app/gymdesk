@@ -79,7 +79,7 @@ async function createCharge(gymId: string, opts: {
   name: string; type: string; amount: number; billingFrequency: string;
 }): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
      VALUES (?, ?, ?, ?, 'EUR', ?, 'active', 'available', 0)`,
     [gymId, opts.name, opts.type, opts.amount, opts.billingFrequency],
@@ -91,7 +91,7 @@ async function addPlanBenefit(
   gymId: string, table: string, planId: number, chargeId: number, quantity = 1,
 ): Promise<void> {
   await db.query(
-    `INSERT INTO ${table} (gym_id, membership_plan_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)`,
+    `INSERT INTO ${table} (gym_id, membership_plan_id, product_id, quantity) VALUES (?, ?, ?, ?)`,
     [gymId, planId, chargeId, quantity],
   );
 }
@@ -157,7 +157,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     for (const date of dates) expect(date >= TODAY()).toBe(true);
     // The first group is today's Membership Fee, at the agreed price.
     const fee = forecast.dates[0].lines.find((l: any) => l.kind === 'membership_fee');
-    expect(fee).toMatchObject({ actual_charge: 70, regular_price: 70, gym_charge_id: null });
+    expect(fee).toMatchObject({ actual_charge: 70, regular_price: 70, product_id: null });
   });
 
   it('serves the same forecast on its own route', async () => {
@@ -179,7 +179,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     const today = forecast.dates.find((g: any) => g.date === TODAY());
     expect(today.lines).toHaveLength(2);
     expect(today.total).toBe(90);
-    expect(today.lines.map((l: any) => l.kind).sort()).toEqual(['membership_fee', 'sellable_item']);
+    expect(today.lines.map((l: any) => l.kind).sort()).toEqual(['membership_fee', 'product']);
   });
 
   it('bills the assignment’s frozen benefit line, not a later Product reprice (§17)', async () => {
@@ -191,7 +191,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     const umId = await assignPlan(gymId, planId);
 
     const before = await forecastOf(gymId, umId);
-    await db.query('UPDATE gym_charges SET amount = 99 WHERE id = ?', [lockerId]);
+    await db.query('UPDATE products SET amount = 99 WHERE id = ?', [lockerId]);
     const after = await forecastOf(gymId, umId);
     expect(after).toEqual(before);
   });
@@ -236,7 +236,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
       [gymId, promotionId, planId],
     );
     await db.query(
-      `INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity, \`action\`, \`value\`)
+      `INSERT INTO promotion_periodical (gym_id, promotion_id, product_id, quantity, \`action\`, \`value\`)
        VALUES (?, ?, ?, 3, 'waive', NULL)`,
       [gymId, promotionId, lockerId],
     );
@@ -270,7 +270,7 @@ describe('Assigned Plan — Billing Event Forecast (#924 stage 4)', () => {
     });
     const added = await request.post(`/user-memberships/${umId}/services`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
-      .send({ gym_charge_id: serviceCharge, quantity: 1, starts_at: TODAY() });
+      .send({ product_id: serviceCharge, quantity: 1, starts_at: TODAY() });
     expect(added.status).toBe(201);
 
     const forecast = await forecastOf(gymId, umId);

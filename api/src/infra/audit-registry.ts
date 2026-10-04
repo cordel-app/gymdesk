@@ -61,7 +61,7 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   activity_type:                  { kind: 'simple',   label: 'Activity Types',           table: 'activity_types',          nameColumn: 'name' },
   theme:                          { kind: 'simple',   label: 'Themes',                   table: 'themes',                  nameColumn: 'name' },
   tax_rate:                       { kind: 'simple',   label: 'Tax Rates',                table: 'tax_rates',               nameColumn: 'name' },
-  gym_charge:                     { kind: 'simple',   label: 'Products',           table: 'gym_charges',             nameColumn: 'name' },
+  product:                     { kind: 'simple',   label: 'Products',           table: 'products',             nameColumn: 'name' },
   professional_service:           { kind: 'simple',   label: 'Professional Services',    table: 'professional_services',   nameColumn: 'name' },
   nutrition_library_item:         { kind: 'simple',   label: 'Nutrition Library',        table: 'nutrition_library_items', nameColumn: 'name' },
   // #947: the Nutrition Library's two goal catalogues. Each has a Details view

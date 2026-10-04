@@ -11,7 +11,7 @@ import {
 } from './helpers';
 
 // Gyms created via the platform API (not via createTestGym) are tracked here
-// and hard-deleted in afterAll. centers/gym_charges cascade from gyms, so
+// and hard-deleted in afterAll. centers/products cascade from gyms, so
 // deleting the gym row is sufficient.
 const extraGymIds: string[] = [];
 
@@ -59,10 +59,10 @@ beforeAll(async () => {
 afterAll(async () => {
   if (extraGymIds.length > 0) {
     const marks = extraGymIds.map(() => '?').join(',');
-    // gym_charges and centers have ON DELETE CASCADE from gyms, so deleting
+    // products and centers have ON DELETE CASCADE from gyms, so deleting
     // the gym row cascades to them automatically. Explicit deletes here are
     // belt-and-suspenders in case of any non-cascading dependents.
-    await db.query(`DELETE FROM gym_charges WHERE gym_id IN (${marks})`, extraGymIds);
+    await db.query(`DELETE FROM products WHERE gym_id IN (${marks})`, extraGymIds);
     await db.query(`DELETE FROM gyms WHERE id IN (${marks})`, extraGymIds);
   }
   await cleanupTestGyms();
@@ -175,7 +175,7 @@ describe('POST /platform/gyms', () => {
 
     const { rows } = await db.query(
       `SELECT type, units, status, enrollment_status, is_system, validity_days, tax_rate_id, amount
-       FROM gym_charges WHERE gym_id = ? AND name = ?`,
+       FROM products WHERE gym_id = ? AND name = ?`,
       [res.body.id, 'Personal Training Class Package (10 Sessions)'],
     );
     expect(rows).toHaveLength(1);
@@ -199,12 +199,12 @@ describe('POST /platform/gyms', () => {
     expect(res.status).toBe(201);
 
     const { rows: chargeTypeRows } = await db.query(
-      `SELECT id, name FROM charge_types WHERE is_gym_charge = 1`,
+      `SELECT id, name FROM charge_types WHERE is_product = 1`,
     );
     expect(chargeTypeRows.length).toBeGreaterThan(0);
 
     const { rows } = await db.query(
-      `SELECT name, type FROM gym_charges WHERE gym_id = ? AND charge_type_id IS NOT NULL`,
+      `SELECT name, type FROM products WHERE gym_id = ? AND charge_type_id IS NOT NULL`,
       [res.body.id],
     );
     expect(rows).toHaveLength(chargeTypeRows.length);
@@ -453,7 +453,7 @@ describe('POST /platform/gyms/:id/duplicate', () => {
     if (res.body?.id) extraGymIds.push(res.body.id);
 
     const { rows } = await db.query(
-      `SELECT is_system, status, enrollment_status FROM gym_charges WHERE gym_id = ? AND name = ?`,
+      `SELECT is_system, status, enrollment_status FROM products WHERE gym_id = ? AND name = ?`,
       [res.body.id, 'Personal Training Class Package (10 Sessions)'],
     );
     expect(rows).toHaveLength(1);
@@ -470,7 +470,7 @@ describe('POST /platform/gyms/:id/duplicate', () => {
     if (res.body?.id) extraGymIds.push(res.body.id);
 
     const { rows } = await db.query(
-      `SELECT name, type FROM gym_charges WHERE gym_id = ? AND charge_type_id IS NOT NULL`,
+      `SELECT name, type FROM products WHERE gym_id = ? AND charge_type_id IS NOT NULL`,
       [res.body.id],
     );
     expect(rows.length).toBeGreaterThan(0);

@@ -344,7 +344,7 @@ export default function ProductsPage() {
       if (statusFilter) params.set('status', statusFilter);
       if (searchQ.trim()) params.set('q', searchQ.trim());
       const qs = params.toString();
-      setItems(await apiFetch<Product[]>(`/sellable-items${qs ? `?${qs}` : ''}`));
+      setItems(await apiFetch<Product[]>(`/products${qs ? `?${qs}` : ''}`));
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
@@ -393,7 +393,7 @@ export default function ProductsPage() {
     }
     setInlineNew({ ...inlineNew, saving: true, error: null });
     try {
-      await apiFetch<Product>('/sellable-items', {
+      await apiFetch<Product>('/products', {
         method: 'POST',
         body: JSON.stringify({
           name: inlineNew.name.trim(),
@@ -436,7 +436,7 @@ export default function ProductsPage() {
     }
     setEditSaving(true); setEditError(null);
     try {
-      await apiFetch(`/sellable-items/${item.id}`, {
+      await apiFetch(`/products/${item.id}`, {
         method: 'PUT',
         body: JSON.stringify({
           name: editForm.name.trim() || undefined,
@@ -469,7 +469,7 @@ export default function ProductsPage() {
 
   async function handleDuplicate(item: Product) {
     try {
-      await apiFetch(`/sellable-items/${item.id}/duplicate`, { method: 'POST' });
+      await apiFetch(`/products/${item.id}/duplicate`, { method: 'POST' });
       load();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
@@ -480,14 +480,14 @@ export default function ProductsPage() {
 
   async function handleActivate(item: Product) {
     try {
-      await apiFetch(`/sellable-items/${item.id}/activate`, { method: 'POST' });
+      await apiFetch(`/products/${item.id}/activate`, { method: 'POST' });
       load();
     } catch (err: any) { toast(err.message ?? t('error_generic')); }
   }
 
   async function handleDeactivate(item: Product) {
     try {
-      await apiFetch(`/sellable-items/${item.id}/deactivate`, { method: 'POST' });
+      await apiFetch(`/products/${item.id}/deactivate`, { method: 'POST' });
       load();
     } catch (err: any) { toast(err.message ?? t('error_generic')); }
   }
@@ -497,7 +497,7 @@ export default function ProductsPage() {
   async function handleDelete() {
     if (!deleting) return;
     try {
-      await apiFetch(`/sellable-items/${deleting.id}`, { method: 'DELETE' });
+      await apiFetch(`/products/${deleting.id}`, { method: 'DELETE' });
       setDeleting(null);
       if (editingId === deleting.id) { setEditingId(null); setEditForm(null); }
       setExpanded((prev) => { const next = new Set(prev); next.delete(deleting.id); return next; });
@@ -651,7 +651,7 @@ export default function ProductsPage() {
     // choosing Sessions reveals it before the row is saved — and a System row's
     // frozen name/type/units come back as `editable: false`, which is what
     // renders them as values in the form instead of as controls `PUT
-    // /sellable-items/:id` would ignore.
+    // /products/:id` would ignore.
     const draftType = isEditing && editForm ? editForm.type : item.type;
     const sections = visibleProductSections({
       isSystem,
@@ -1094,7 +1094,7 @@ export default function ProductsPage() {
         hideSave
         cancelLabel={t('close')}
         saveLabel=""
-        extraFooter={<ViewAuditLogButton entityType="gym_charge" entityId={details?.id} onNavigate={() => setDetails(null)} />}
+        extraFooter={<ViewAuditLogButton entityType="product" entityId={details?.id} onNavigate={() => setDetails(null)} />}
         onCancel={() => setDetails(null)}
         onSave={() => setDetails(null)}
       >

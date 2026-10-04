@@ -28,7 +28,7 @@
  * read-only card all take their options and their labels from here, so none of
  * them can offer a value the others do not know how to display. The accepted
  * sets themselves are the API's — `VALID_TYPES` in `api/src/api/products.ts`
- * and the `gym_charges_*_check` CHECKs beside it.
+ * and the `products_*_check` CHECKs beside it.
  *
  * The Billing Frequency is deliberately **not** here: it has two retired values
  * and one place that decides what may be offered (`productFrequency.ts`,
@@ -88,7 +88,7 @@ export interface ProductFieldSpec {
   checkbox?: true;
   /**
    * A System row (`is_system = 1`) freezes this column — `PUT
-   * /sellable-items/:id` writes name/type/units only inside its `is_system`
+   * /products/:id` writes name/type/units only inside its `is_system`
    * guard. The layout renders such a field as a **value in both modes**, so the
    * Edit form cannot grow a control the route would ignore, and the read-only
    * card keeps reporting it (it did before #974, and dropping it to keep the

@@ -131,7 +131,7 @@ export function AdditionalPeriodicServices({
       try {
         // benefit_category is computed server-side (#550) — the recurring items
         // are exactly the ones the API accepts here.
-        const rows = await apiFetch<Product[]>('/sellable-items');
+        const rows = await apiFetch<Product[]>('/products');
         setItems(rows.filter((i) => i.benefit_category === 'periodical' && i.status === 'active'));
       } catch {
         setError(t('services_items_error'));
@@ -174,7 +174,7 @@ export function AdditionalPeriodicServices({
       await apiFetch(`/user-memberships/${assignedPlanId}/services`, {
         method: 'POST',
         body: JSON.stringify({
-          gym_charge_id: Number(draftItemId),
+          product_id: Number(draftItemId),
           quantity: Number(draftQuantity) || 1,
           starts_at: draftStartsAt || undefined,
         }),
@@ -230,11 +230,11 @@ export function AdditionalPeriodicServices({
               // has already been removed and cannot be removed again.
               <tr key={s.id} style={{ opacity: s.ends_at == null ? 1 : 0.6 }}>
                 <td style={td}>
-                  {s.sellable_item_name}
+                  {s.product_name}
                   {/* The item was retired after it was attached: it keeps
                       billing (the attachment owns the window), but it can no
                       longer be picked for a new one. */}
-                  {s.sellable_item_retired && <span style={dim}> ({t('services_item_retired')})</span>}
+                  {s.product_retired && <span style={dim}> ({t('services_item_retired')})</span>}
                 </td>
                 <td style={td}>{s.quantity}</td>
                 <td style={td}>{frequencyLabel(s.billing_frequency)}</td>

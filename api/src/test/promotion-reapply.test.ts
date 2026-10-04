@@ -303,13 +303,13 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     const promotionId = await createPromotion(gymId, `Grants-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);
     const { insertId: lockerId } = await db.query(
-      `INSERT INTO gym_charges
+      `INSERT INTO products
          (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
        VALUES (?, ?, 'service', 10, 'EUR', 'month', 'active', 'available', 0)`,
       [gymId, `Locker-${uniq()}`],
     );
     await db.query(
-      'INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, 2)',
+      'INSERT INTO promotion_periodical (gym_id, promotion_id, product_id, quantity) VALUES (?, ?, ?, 2)',
       [gymId, promotionId, lockerId],
     );
 
@@ -317,7 +317,7 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     await revokePromotion(gymId, umId, promotionId);
     // The item is repriced in between: the new application freezes the new
     // price, the spent one keeps the agreed one (§17).
-    await db.query('UPDATE gym_charges SET amount = 18 WHERE id = ?', [lockerId]);
+    await db.query('UPDATE products SET amount = 18 WHERE id = ?', [lockerId]);
     await applyPromotion(gymId, umId, promotionId);
 
     const rows = await applicationRows(umId, promotionId);

@@ -93,7 +93,7 @@ interface PriceRow {
 // `type` / `billing_frequency` / `status` / `benefit_category` back the #635
 // Benefit pickers; `benefit_category` is computed server-side (#550) and is the
 // only classification source of truth — never re-derived here.
-interface GymCharge extends ProductOption {
+interface Product extends ProductOption {
   charge_type_name: string | null;
   charge_type_code: string | null;
   amount: string | null;
@@ -311,7 +311,7 @@ export default function PlansPage() {
   const [selectedCenterIds, setSelectedCenterIds] = useState<number[]>([]);
 
   // Charge benefits
-  const [gymCharges, setGymCharges] = useState<GymCharge[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
 
   // Billing & Duration (#635 §7, stage 13) — the Plan's only billing section,
   // edited independently: the four durations plus the cadence and Auto-renew
@@ -347,7 +347,7 @@ export default function PlansPage() {
 
   useEffect(() => {
     if (!gymLoading && activeGymId) {
-      apiFetch<GymCharge[]>('/sellable-items?availability=available').then(setGymCharges).catch(() => {});
+      apiFetch<Product[]>('/products?availability=available').then(setProducts).catch(() => {});
       apiFetch<TaxRate[]>('/taxes').then(setTaxRates).catch(() => setTaxRates([]));
     }
   }, [gymLoading, activeGymId]);
@@ -691,7 +691,7 @@ export default function PlansPage() {
     // the message name the item instead of the field.
     const incomplete = invalidBenefitValueRow(benefitDraft);
     if (incomplete) {
-      toast(t('plans.benefit_value_required', { item: incomplete.gym_charge_name }));
+      toast(t('plans.benefit_value_required', { item: incomplete.product_name }));
       return;
     }
     setBenefitSaving(true);
@@ -713,8 +713,8 @@ export default function PlansPage() {
   // Active, tenant-scoped items grouped by the server-computed category. New
   // selections only ever come from these; an item already attached to the plan
   // but since deactivated is merged back per-row by benefitRowOptions().
-  function categoryItems(section: BenefitSection): GymCharge[] {
-    return gymCharges.filter((gc) => gc.benefit_category === section && gc.status === 'active');
+  function categoryItems(section: BenefitSection): Product[] {
+    return products.filter((gc) => gc.benefit_category === section && gc.status === 'active');
   }
 
   // ─── Render helpers ─────────────────────────────────────────────────────────

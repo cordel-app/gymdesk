@@ -27,9 +27,9 @@ const CASES: { module: string; role: Role; reads: string[]; writes: [Verb, strin
              ['post', '/workout-templates'], ['post', '/training-plan-templates'], ['post', '/training-plans']] },
   { module: 'NUTRITION (R)', role: 'front_desk', reads: ['/nutrition-library', '/nutrition-plan-templates'],
     writes: [['post', '/nutrition-library'], ['post', '/nutrition-plan-templates']] },
-  { module: 'FINANCIALS (R)', role: 'front_desk', reads: ['/membership-plans', '/promotions', '/sellable-items', '/taxes'],
+  { module: 'FINANCIALS (R)', role: 'front_desk', reads: ['/membership-plans', '/promotions', '/products', '/taxes'],
     writes: [['post', '/membership-plans'], ['put', '/membership-plans/999999'], ['delete', '/membership-plans/999999'],
-             ['post', '/promotions'], ['post', '/sellable-items'], ['post', '/taxes'], ['put', '/taxes/999999'], ['delete', '/taxes/999999']] },
+             ['post', '/promotions'], ['post', '/products'], ['post', '/taxes'], ['put', '/taxes/999999'], ['delete', '/taxes/999999']] },
   { module: 'PAYMENTS (R)', role: 'accountant', reads: ['/user-memberships'],
     writes: [['post', '/user-memberships'],
              // #640: the two audited Billing Event payment actions.

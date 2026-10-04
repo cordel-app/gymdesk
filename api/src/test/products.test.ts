@@ -1,4 +1,5 @@
-// Tests for products.ts router (formerly gym-charges)
+// Tests for the Products router (`api/src/api/products.ts`, mounted at
+// `/products` since #949 stage 3).
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -18,20 +19,20 @@ afterAll(async () => {
 /**
  * Replicates the seeding that platformRouter.post('/gyms') runs.
  * createTestGym uses a direct INSERT so the trigger in the route handler
- * does not fire — we must seed gym_charges manually in tests.
+ * does not fire — we must seed products manually in tests.
  */
-async function seedGymCharges(gymId: string): Promise<void> {
+async function seedProducts(gymId: string): Promise<void> {
   await db.query(
-    `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, name, type, is_system, created_at)
-     SELECT ?, id, name, 'fee', 1, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
+    `INSERT IGNORE INTO products (gym_id, charge_type_id, name, type, is_system, created_at)
+     SELECT ?, id, name, 'fee', 1, UTC_TIMESTAMP() FROM charge_types WHERE is_product = 1`,
     [gymId],
   );
 }
 
-/** Returns the id of the first gym_charge row for the given gym, or undefined. */
+/** Returns the id of the first product row for the given gym, or undefined. */
 async function firstChargeId(gymId: string): Promise<number | undefined> {
   const { rows } = await db.query<{ id: number }>(
-    'SELECT id FROM gym_charges WHERE gym_id = ? ORDER BY id ASC LIMIT 1',
+    'SELECT id FROM products WHERE gym_id = ? ORDER BY id ASC LIMIT 1',
     [gymId],
   );
   return rows[0]?.id;
@@ -81,9 +82,9 @@ async function systemProfessionalServiceId(systemKey: string): Promise<number> {
   return id;
 }
 
-// ─── GET /sellable-items ─────────────────────────────────────────────────────────
+// ─── GET /products ─────────────────────────────────────────────────────────
 
-describe('GET /sellable-items', () => {
+describe('GET /products', () => {
   let gymId: string;
   let gymNoModule: string;  // trainer_performance — FINANCIALS = NONE → 403
   let gymReadOnly: string;  // accountant — FINANCIALS = R → 200
@@ -92,27 +93,27 @@ describe('GET /sellable-items', () => {
   beforeAll(async () => {
     gymId = await createTestGym('Charges Admin Gym');
     await createTestMembership(gymId, 'admin');
-    await seedGymCharges(gymId);
+    await seedProducts(gymId);
 
     gymNoModule = await createTestGym('Charges No Module Gym');
     await createTestMembership(gymNoModule, 'trainer_performance');
 
     gymReadOnly = await createTestGym('Charges Read Only Gym');
     await createTestMembership(gymReadOnly, 'accountant');
-    await seedGymCharges(gymReadOnly);
+    await seedProducts(gymReadOnly);
 
     // Intentionally no createTestMembership call — user has no row in this gym.
     gymNoMembership = await createTestGym('Charges No Membership Gym');
   });
 
   it('returns 401 without auth', async () => {
-    const res = await request.get('/sellable-items').set('x-gym-id', gymId);
+    const res = await request.get('/products').set('x-gym-id', gymId);
     expect(res.status).toBe(401);
   });
 
   it('returns 403 when user has no membership in the gym (tenant isolation)', async () => {
     const res = await request
-      .get('/sellable-items')
+      .get('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymNoMembership);
     expect(res.status).toBe(403);
@@ -120,7 +121,7 @@ describe('GET /sellable-items', () => {
 
   it('returns 403 when the role has no FINANCIALS module access (trainer_performance)', async () => {
     const res = await request
-      .get('/sellable-items')
+      .get('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymNoModule);
     expect(res.status).toBe(403);
@@ -128,7 +129,7 @@ describe('GET /sellable-items', () => {
 
   it('returns 200 with an array for admin', async () => {
     const res = await request
-      .get('/sellable-items')
+      .get('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -137,7 +138,7 @@ describe('GET /sellable-items', () => {
 
   it('returns 200 with an array for accountant (FINANCIALS read-only access)', async () => {
     const res = await request
-      .get('/sellable-items')
+      .get('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymReadOnly);
     expect(res.status).toBe(200);
@@ -148,7 +149,7 @@ describe('GET /sellable-items', () => {
   // NULL name/type renders as a blank name + "type_null" in the admin UI.
   it('returns non-null name/type for every charge-type-based system item', async () => {
     const res = await request
-      .get('/sellable-items')
+      .get('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -162,28 +163,28 @@ describe('GET /sellable-items', () => {
   });
 });
 
-// ─── GET /sellable-items/:id ─────────────────────────────────────────────────────
+// ─── GET /products/:id ─────────────────────────────────────────────────────
 
-describe('GET /sellable-items/:id', () => {
+describe('GET /products/:id', () => {
   let gymA: string;
   let gymB: string;
 
   beforeAll(async () => {
     gymA = await createTestGym('Charges GET Gym A');
     await createTestMembership(gymA, 'admin');
-    await seedGymCharges(gymA);
+    await seedProducts(gymA);
 
     gymB = await createTestGym('Charges GET Gym B');
     await createTestMembership(gymB, 'admin');
-    await seedGymCharges(gymB);
+    await seedProducts(gymB);
   });
 
   it('returns 200 for a valid charge id belonging to the gym', async () => {
     const chargeId = await firstChargeId(gymA);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
 
     const res = await request
-      .get(`/sellable-items/${chargeId}`)
+      .get(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymA);
     expect(res.status).toBe(200);
@@ -193,45 +194,45 @@ describe('GET /sellable-items/:id', () => {
 
   it('returns 404 when the charge belongs to a different gym (cross-gym isolation)', async () => {
     const chargeId = await firstChargeId(gymA);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
 
     // chargeId is from gymA; request scoped to gymB → WHERE id = ? AND gym_id = ? → empty
     const res = await request
-      .get(`/sellable-items/${chargeId}`)
+      .get(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymB);
     expect(res.status).toBe(404);
   });
 });
 
-// ─── GET /sellable-items filters ─────────────────────────────────────────────────
+// ─── GET /products filters ─────────────────────────────────────────────────
 
-describe('GET /sellable-items filters', () => {
+describe('GET /products filters', () => {
   let gymId: string;
   let activeChargeId: number | undefined;
 
   beforeAll(async () => {
     gymId = await createTestGym('Charges Filter Gym');
     await createTestMembership(gymId, 'admin');
-    await seedGymCharges(gymId);
+    await seedProducts(gymId);
 
     // Mark the first charge active and a second inactive for filter tests.
     const { rows: charges } = await db.query<{ id: number }>(
-      'SELECT id FROM gym_charges WHERE gym_id = ? ORDER BY id ASC LIMIT 2',
+      'SELECT id FROM products WHERE gym_id = ? ORDER BY id ASC LIMIT 2',
       [gymId],
     );
     if (charges.length >= 1) {
       activeChargeId = charges[0].id;
-      await db.query(`UPDATE gym_charges SET status = 'active' WHERE id = ?`, [charges[0].id]);
+      await db.query(`UPDATE products SET status = 'active' WHERE id = ?`, [charges[0].id]);
     }
     if (charges.length >= 2) {
-      await db.query(`UPDATE gym_charges SET status = 'inactive' WHERE id = ?`, [charges[1].id]);
+      await db.query(`UPDATE products SET status = 'inactive' WHERE id = ?`, [charges[1].id]);
     }
   });
 
   it('returns 400 for an invalid status query value', async () => {
     const res = await request
-      .get('/sellable-items?status=bad')
+      .get('/products?status=bad')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(400);
@@ -239,7 +240,7 @@ describe('GET /sellable-items filters', () => {
 
   it('returns 400 for an invalid type query value', async () => {
     const res = await request
-      .get('/sellable-items?type=bad')
+      .get('/products?type=bad')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(400);
@@ -247,7 +248,7 @@ describe('GET /sellable-items filters', () => {
 
   it('returns 400 for an invalid enrollment_status query value', async () => {
     const res = await request
-      .get('/sellable-items?enrollment_status=bad')
+      .get('/products?enrollment_status=bad')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(400);
@@ -255,7 +256,7 @@ describe('GET /sellable-items filters', () => {
 
   it('returns only active charges when ?status=active', async () => {
     const res = await request
-      .get('/sellable-items?status=active')
+      .get('/products?status=active')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -265,7 +266,7 @@ describe('GET /sellable-items filters', () => {
 
   it('returns only inactive charges when ?status=inactive', async () => {
     const res = await request
-      .get('/sellable-items?status=inactive')
+      .get('/products?status=inactive')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -277,14 +278,14 @@ describe('GET /sellable-items filters', () => {
     if (!activeChargeId) return;
 
     const deactivate = await request
-      .post(`/sellable-items/${activeChargeId}/deactivate`)
+      .post(`/products/${activeChargeId}/deactivate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(deactivate.status).toBe(200);
     expect(deactivate.body.status).toBe('inactive');
 
     const after = await request
-      .get('/sellable-items?status=inactive')
+      .get('/products?status=inactive')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(after.status).toBe(200);
@@ -293,9 +294,9 @@ describe('GET /sellable-items filters', () => {
   });
 });
 
-// ─── PUT /sellable-items/:id ─────────────────────────────────────────────────────
+// ─── PUT /products/:id ─────────────────────────────────────────────────────
 
-describe('PUT /sellable-items/:id', () => {
+describe('PUT /products/:id', () => {
   let gymAdmin: string;    // TEST_USER_ID = admin here → PUT allowed
   let gymAccountant: string; // TEST_USER_ID = accountant here → PUT blocked by requireRole
   let gymOther: string;    // used as cross-gym isolation source
@@ -303,23 +304,23 @@ describe('PUT /sellable-items/:id', () => {
   beforeAll(async () => {
     gymAdmin = await createTestGym('Charges PUT Admin Gym');
     await createTestMembership(gymAdmin, 'admin');
-    await seedGymCharges(gymAdmin);
+    await seedProducts(gymAdmin);
 
     gymAccountant = await createTestGym('Charges PUT Accountant Gym');
     await createTestMembership(gymAccountant, 'accountant');
-    await seedGymCharges(gymAccountant);
+    await seedProducts(gymAccountant);
 
     gymOther = await createTestGym('Charges PUT Other Gym');
     await createTestMembership(gymOther, 'admin');
-    await seedGymCharges(gymOther);
+    await seedProducts(gymOther);
   });
 
   it('returns 403 for accountant role (FINANCIALS access granted but requireRole("admin") blocks PUT)', async () => {
     const chargeId = await firstChargeId(gymAccountant);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
 
     const res = await request
-      .put(`/sellable-items/${chargeId}`)
+      .put(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymAccountant)
       .send({ amount: 9.99, billing_frequency: 'month', availability: 'available' });
@@ -328,7 +329,7 @@ describe('PUT /sellable-items/:id', () => {
 
   it('returns 200 for admin and reflects updated values in the response', async () => {
     const chargeId = await firstChargeId(gymAdmin);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
 
     const payload = {
       amount: 49.99,
@@ -338,7 +339,7 @@ describe('PUT /sellable-items/:id', () => {
     };
 
     const res = await request
-      .put(`/sellable-items/${chargeId}`)
+      .put(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymAdmin)
       .send(payload);
@@ -353,10 +354,10 @@ describe('PUT /sellable-items/:id', () => {
 
   it('accepts billing_frequency = four_weeks on update', async () => {
     const chargeId = await firstChargeId(gymAdmin);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
 
     const res = await request
-      .put(`/sellable-items/${chargeId}`)
+      .put(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymAdmin)
       .send({ billing_frequency: 'four_weeks' });
@@ -367,10 +368,10 @@ describe('PUT /sellable-items/:id', () => {
   it('returns 404 when the charge belongs to a different gym (cross-gym isolation on write)', async () => {
     // chargeId comes from gymOther; request scoped to gymAdmin → WHERE id = ? AND gym_id = ? → 0 rows
     const chargeId = await firstChargeId(gymOther);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
 
     const res = await request
-      .put(`/sellable-items/${chargeId}`)
+      .put(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymAdmin)
       .send({ amount: 1.0 });
@@ -386,12 +387,12 @@ describe('Product enrollment_status', () => {
   beforeAll(async () => {
     gymId = await createTestGym('Charges Enrollment Gym');
     await createTestMembership(gymId, 'admin');
-    await seedGymCharges(gymId);
+    await seedProducts(gymId);
   });
 
   it('defaults new custom items to enrollment_status = public', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Public By Default', type: 'fee', amount: 10 });
@@ -401,7 +402,7 @@ describe('Product enrollment_status', () => {
 
   it('creates a custom item with an explicit enrollment_status = staff_only', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Internal Only Item', type: 'fee', amount: 10, enrollment_status: 'staff_only' });
@@ -411,7 +412,7 @@ describe('Product enrollment_status', () => {
 
   it('returns 400 for an invalid enrollment_status on create', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Bad Enrollment', type: 'fee', enrollment_status: 'members_only' });
@@ -420,10 +421,10 @@ describe('Product enrollment_status', () => {
 
   it('returns 400 for an invalid enrollment_status on update', async () => {
     const chargeId = await firstChargeId(gymId);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
 
     const res = await request
-      .put(`/sellable-items/${chargeId}`)
+      .put(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ enrollment_status: 'members_only' });
@@ -432,10 +433,10 @@ describe('Product enrollment_status', () => {
 
   it('updates enrollment_status to staff_only and back to public independently of status', async () => {
     const chargeId = await firstChargeId(gymId);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
 
     const toStaffOnly = await request
-      .put(`/sellable-items/${chargeId}`)
+      .put(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ status: 'active', enrollment_status: 'staff_only' });
@@ -444,7 +445,7 @@ describe('Product enrollment_status', () => {
     expect(toStaffOnly.body.enrollment_status).toBe('staff_only');
 
     const backToPublic = await request
-      .put(`/sellable-items/${chargeId}`)
+      .put(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ enrollment_status: 'public' });
@@ -456,16 +457,16 @@ describe('Product enrollment_status', () => {
 
   it('filters by ?enrollment_status=staff_only', async () => {
     const chargeId = await firstChargeId(gymId);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
 
     await request
-      .put(`/sellable-items/${chargeId}`)
+      .put(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ enrollment_status: 'staff_only' });
 
     const res = await request
-      .get('/sellable-items?enrollment_status=staff_only')
+      .get('/products?enrollment_status=staff_only')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -475,16 +476,16 @@ describe('Product enrollment_status', () => {
 
   it('deactivating an item does not change its enrollment_status', async () => {
     const chargeId = await firstChargeId(gymId);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
 
     await request
-      .put(`/sellable-items/${chargeId}`)
+      .put(`/products/${chargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ status: 'active', enrollment_status: 'public' });
 
     const deactivate = await request
-      .post(`/sellable-items/${chargeId}/deactivate`)
+      .post(`/products/${chargeId}/deactivate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(deactivate.status).toBe(200);
@@ -493,9 +494,9 @@ describe('Product enrollment_status', () => {
   });
 });
 
-// ─── POST /sellable-items — create custom product ─────────────────────────
+// ─── POST /products — create custom product ─────────────────────────
 
-describe('POST /sellable-items', () => {
+describe('POST /products', () => {
   let gymId: string;
 
   beforeAll(async () => {
@@ -505,7 +506,7 @@ describe('POST /sellable-items', () => {
 
   it('returns 400 when name is missing', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ type: 'fee', amount: 10 });
@@ -514,7 +515,7 @@ describe('POST /sellable-items', () => {
 
   it('returns 400 when type is missing', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Test Item' });
@@ -523,7 +524,7 @@ describe('POST /sellable-items', () => {
 
   it('returns 400 when units is not a positive integer', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Bad Units', type: 'sessions', units: -5 });
@@ -532,7 +533,7 @@ describe('POST /sellable-items', () => {
 
   it('creates a custom product and returns 201 with is_system = 0', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({
@@ -551,7 +552,7 @@ describe('POST /sellable-items', () => {
 
   it('creates a sessions item with units', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Session Pack 10', type: 'sessions', units: 10, amount: 90 });
@@ -562,7 +563,7 @@ describe('POST /sellable-items', () => {
 
   it('creates an item with billing_frequency = four_weeks', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: '4-Week Package', type: 'sessions', units: 10, amount: 90, billing_frequency: 'four_weeks' });
@@ -572,7 +573,7 @@ describe('POST /sellable-items', () => {
 
   it('returns 400 for an invalid billing_frequency', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Bad Frequency', type: 'fee', amount: 10, billing_frequency: 'fortnight' });
@@ -584,14 +585,14 @@ describe('POST /sellable-items', () => {
   // stay valid), but no new item may be created on it.
   it('returns 400 for billing_frequency = week and writes nothing', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Weekly Locker', type: 'service', amount: 5, billing_frequency: 'week' });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('no longer offered');
     const { rows } = await db.query(
-      'SELECT id FROM gym_charges WHERE gym_id = ? AND name = ?',
+      'SELECT id FROM products WHERE gym_id = ? AND name = ?',
       [gymId, 'Weekly Locker'],
     );
     expect(rows).toHaveLength(0);
@@ -603,14 +604,14 @@ describe('POST /sellable-items', () => {
   // Item does not have.
   it('returns 400 for billing_frequency = per_session and writes nothing', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'PT Per Session', type: 'sessions', units: 10, amount: 500, billing_frequency: 'per_session' });
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('no longer offered');
     const { rows } = await db.query(
-      'SELECT id FROM gym_charges WHERE gym_id = ? AND name = ?',
+      'SELECT id FROM products WHERE gym_id = ? AND name = ?',
       [gymId, 'PT Per Session'],
     );
     expect(rows).toHaveLength(0);
@@ -620,7 +621,7 @@ describe('POST /sellable-items', () => {
   // own example describes is still exactly what a gym creates.
   it('creates the ticket\'s 10-session package on billing_frequency = once', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Personal Training Package', type: 'sessions', units: 10, amount: 500, billing_frequency: 'once' });
@@ -635,7 +636,7 @@ describe('POST /sellable-items', () => {
   it('creates an item on each offered billing_frequency', async () => {
     for (const freq of ['once', 'four_weeks', 'month', 'year']) {
       const res = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: `Offered ${freq}`, type: 'service', amount: 10, billing_frequency: freq });
@@ -658,13 +659,13 @@ describe('#821 legacy week frequency', () => {
     // Written directly, the way a pre-#821 item exists in a real gym: the API
     // refuses to create one now, which is the point of the ticket.
     const weekly = await db.query(
-      `INSERT INTO gym_charges (gym_id, name, type, amount, currency, billing_frequency, status, enrollment_status, is_system)
+      `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status, enrollment_status, is_system)
        VALUES (?, 'Legacy Weekly Locker', 'service', 5.00, 'EUR', 'week', 'active', 'public', 0)`,
       [gymId],
     );
     weeklyId = weekly.insertId as number;
     const monthly = await db.query(
-      `INSERT INTO gym_charges (gym_id, name, type, amount, currency, billing_frequency, status, enrollment_status, is_system)
+      `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status, enrollment_status, is_system)
        VALUES (?, 'Monthly Locker', 'service', 20.00, 'EUR', 'month', 'active', 'public', 0)`,
       [gymId],
     );
@@ -672,14 +673,14 @@ describe('#821 legacy week frequency', () => {
   });
 
   const put = (id: number, body: Record<string, unknown>) => request
-    .put(`/sellable-items/${id}`)
+    .put(`/products/${id}`)
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
     .send(body);
 
   it('still reads the stored frequency back', async () => {
     const res = await request
-      .get(`/sellable-items/${weeklyId}`)
+      .get(`/products/${weeklyId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -688,7 +689,7 @@ describe('#821 legacy week frequency', () => {
 
   it('still classifies it as a periodical benefit', async () => {
     const res = await request
-      .get(`/sellable-items/${weeklyId}`)
+      .get(`/products/${weeklyId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.body.benefit_category).toBe('periodical');
@@ -710,7 +711,7 @@ describe('#821 legacy week frequency', () => {
     expect(back.status).toBe(400);
     expect(back.body.error).toContain('no longer offered');
     const { rows } = await db.query(
-      'SELECT billing_frequency FROM gym_charges WHERE id = ?', [weeklyId],
+      'SELECT billing_frequency FROM products WHERE id = ?', [weeklyId],
     );
     expect(rows[0].billing_frequency).toBe('four_weeks');
   });
@@ -720,19 +721,19 @@ describe('#821 legacy week frequency', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('no longer offered');
     const { rows } = await db.query(
-      'SELECT billing_frequency FROM gym_charges WHERE id = ?', [monthlyId],
+      'SELECT billing_frequency FROM products WHERE id = ?', [monthlyId],
     );
     expect(rows[0].billing_frequency).toBe('month');
   });
 
   it('duplicates a weekly item faithfully, frequency included', async () => {
     const legacy = await db.query(
-      `INSERT INTO gym_charges (gym_id, name, type, amount, currency, billing_frequency, status, enrollment_status, is_system)
+      `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status, enrollment_status, is_system)
        VALUES (?, 'Weekly To Duplicate', 'service', 7.00, 'EUR', 'week', 'active', 'public', 0)`,
       [gymId],
     );
     const res = await request
-      .post(`/sellable-items/${legacy.insertId}/duplicate`)
+      .post(`/products/${legacy.insertId}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(201);
@@ -761,13 +762,13 @@ describe('#945 legacy per_session frequency', () => {
     // Written directly, the way a pre-#945 item exists in a real gym: the API
     // refuses to create one now, which is the point of the ticket.
     const perSession = await db.query(
-      `INSERT INTO gym_charges (gym_id, name, type, units, amount, currency, billing_frequency, status, enrollment_status, is_system)
+      `INSERT INTO products (gym_id, name, type, units, amount, currency, billing_frequency, status, enrollment_status, is_system)
        VALUES (?, 'Legacy PT Pack', 'sessions', 10, 500.00, 'EUR', 'per_session', 'active', 'public', 0)`,
       [gymId],
     );
     perSessionId = perSession.insertId as number;
     const once = await db.query(
-      `INSERT INTO gym_charges (gym_id, name, type, units, amount, currency, billing_frequency, status, enrollment_status, is_system)
+      `INSERT INTO products (gym_id, name, type, units, amount, currency, billing_frequency, status, enrollment_status, is_system)
        VALUES (?, 'Once PT Pack', 'sessions', 5, 250.00, 'EUR', 'once', 'active', 'public', 0)`,
       [gymId],
     );
@@ -775,13 +776,13 @@ describe('#945 legacy per_session frequency', () => {
   });
 
   const put = (id: number, body: Record<string, unknown>) => request
-    .put(`/sellable-items/${id}`)
+    .put(`/products/${id}`)
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
     .send(body);
 
   const get = (id: number) => request
-    .get(`/sellable-items/${id}`)
+    .get(`/products/${id}`)
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId);
 
@@ -793,7 +794,7 @@ describe('#945 legacy per_session frequency', () => {
 
   it('keeps its units and its price — nothing was migrated', async () => {
     const { rows } = await db.query(
-      'SELECT billing_frequency, units, amount FROM gym_charges WHERE id = ?', [perSessionId],
+      'SELECT billing_frequency, units, amount FROM products WHERE id = ?', [perSessionId],
     );
     expect(rows[0].billing_frequency).toBe('per_session');
     expect(rows[0].units).toBe(10);
@@ -808,7 +809,7 @@ describe('#945 legacy per_session frequency', () => {
   /** A fresh pre-#945 row, so the mutating cases below do not depend on order. */
   const newLegacyItem = async (name: string): Promise<number> => {
     const { insertId } = await db.query(
-      `INSERT INTO gym_charges (gym_id, name, type, units, amount, currency, billing_frequency, status, enrollment_status, is_system)
+      `INSERT INTO products (gym_id, name, type, units, amount, currency, billing_frequency, status, enrollment_status, is_system)
        VALUES (?, ?, 'sessions', 10, 500.00, 'EUR', 'per_session', 'active', 'public', 0)`,
       [gymId, name],
     );
@@ -826,7 +827,7 @@ describe('#945 legacy per_session frequency', () => {
   it('duplicates it faithfully, frequency included', async () => {
     const id = await newLegacyItem(`Legacy PT Duplicate ${Date.now()}`);
     const res = await request
-      .post(`/sellable-items/${id}/duplicate`)
+      .post(`/products/${id}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(201);
@@ -845,13 +846,13 @@ describe('#945 legacy per_session frequency', () => {
     expect(back.status).toBe(400);
     expect(back.body.error).toContain('no longer offered');
     const { rows } = await db.query(
-      'SELECT billing_frequency FROM gym_charges WHERE id = ?', [id],
+      'SELECT billing_frequency FROM products WHERE id = ?', [id],
     );
     expect(rows[0].billing_frequency).toBe('once');
   });
 
   // Pre-existing route behaviour, pinned here so #945 is not read as having
-  // changed it: `PUT /sellable-items/:id` assigns `billing_frequency` directly
+  // changed it: `PUT /products/:id` assigns `billing_frequency` directly
   // rather than COALESCE-ing it (exactly as it does `amount`), so a request
   // that omits the field **clears** the column. That is the dropdown's `—`,
   // which the rule allows — it is not a legacy value being coerced to
@@ -870,7 +871,7 @@ describe('#945 legacy per_session frequency', () => {
     expect(res.status).toBe(400);
     expect(res.body.error).toContain('no longer offered');
     const { rows } = await db.query(
-      'SELECT billing_frequency FROM gym_charges WHERE id = ?', [onceId],
+      'SELECT billing_frequency FROM products WHERE id = ?', [onceId],
     );
     expect(rows[0].billing_frequency).toBe('once');
   });
@@ -882,9 +883,9 @@ describe('#945 legacy per_session frequency', () => {
   });
 });
 
-// ─── DELETE /sellable-items/:id — soft-delete custom items ──────────────────────
+// ─── DELETE /products/:id — soft-delete custom items ──────────────────────
 
-describe('DELETE /sellable-items/:id', () => {
+describe('DELETE /products/:id', () => {
   let gymId: string;
   let gymOther: string;
   let systemChargeId: number | undefined;
@@ -893,7 +894,7 @@ describe('DELETE /sellable-items/:id', () => {
   beforeAll(async () => {
     gymId = await createTestGym('Charges DELETE Gym');
     await createTestMembership(gymId, 'admin');
-    await seedGymCharges(gymId);
+    await seedProducts(gymId);
     systemChargeId = await firstChargeId(gymId);
 
     gymOther = await createTestGym('Charges DELETE Other Gym');
@@ -901,7 +902,7 @@ describe('DELETE /sellable-items/:id', () => {
 
     // Create a custom item to test soft-delete
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Deletable Item', type: 'service', amount: 5 });
@@ -911,7 +912,7 @@ describe('DELETE /sellable-items/:id', () => {
   it('returns 403 when attempting to delete a system item', async () => {
     if (!systemChargeId) return;
     const res = await request
-      .delete(`/sellable-items/${systemChargeId}`)
+      .delete(`/products/${systemChargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(403);
@@ -920,7 +921,7 @@ describe('DELETE /sellable-items/:id', () => {
   it('returns 404 when charge belongs to a different gym (cross-gym isolation)', async () => {
     if (!customChargeId) return;
     const res = await request
-      .delete(`/sellable-items/${customChargeId}`)
+      .delete(`/products/${customChargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymOther);
     expect(res.status).toBe(404);
@@ -929,7 +930,7 @@ describe('DELETE /sellable-items/:id', () => {
   it('soft-deletes a custom item and returns 204', async () => {
     if (!customChargeId) return;
     const res = await request
-      .delete(`/sellable-items/${customChargeId}`)
+      .delete(`/products/${customChargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(204);
@@ -938,7 +939,7 @@ describe('DELETE /sellable-items/:id', () => {
   it('deleted item is hidden from GET / list', async () => {
     if (!customChargeId) return;
     const res = await request
-      .get('/sellable-items')
+      .get('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -949,7 +950,7 @@ describe('DELETE /sellable-items/:id', () => {
   it('deleted item is still accessible by GET /:id (Recycle Bin access)', async () => {
     if (!customChargeId) return;
     const res = await request
-      .get(`/sellable-items/${customChargeId}`)
+      .get(`/products/${customChargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
@@ -959,7 +960,7 @@ describe('DELETE /sellable-items/:id', () => {
   it('returns 404 on second delete attempt (already soft-deleted)', async () => {
     if (!customChargeId) return;
     const res = await request
-      .delete(`/sellable-items/${customChargeId}`)
+      .delete(`/products/${customChargeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(404);
@@ -968,7 +969,7 @@ describe('DELETE /sellable-items/:id', () => {
 
 // ─── Computed tax fields ───────────────────────────────────────────────────────
 
-describe('GET /sellable-items — computed price fields', () => {
+describe('GET /products — computed price fields', () => {
   let gymId: string;
 
   beforeAll(async () => {
@@ -979,7 +980,7 @@ describe('GET /sellable-items — computed price fields', () => {
   it('returns amount_incl_tax and amount_excl_tax for inclusive tax_behavior', async () => {
     // Create a custom item with amount=100 and inclusive tax (no explicit tax_rate_id — null → no rate)
     const create = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Tax Test Item', type: 'fee', amount: 100, tax_behavior: 'inclusive' });
@@ -993,7 +994,7 @@ describe('GET /sellable-items — computed price fields', () => {
 
   it('returns 400 for invalid tax_behavior', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Bad Behavior', type: 'fee', tax_behavior: 'bad' });
@@ -1006,7 +1007,7 @@ describe('GET /sellable-items — computed price fields', () => {
 // — the single source of truth Promotions' Session/One-off/Periodical Benefit
 // pickers group by, instead of re-deriving the type/frequency rules client-side.
 
-describe('GET /sellable-items — benefit_category', () => {
+describe('GET /products — benefit_category', () => {
   let gymId: string;
 
   beforeAll(async () => {
@@ -1016,7 +1017,7 @@ describe('GET /sellable-items — benefit_category', () => {
 
   it('classifies a Sessions-type item as session', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'BC Group Class', type: 'sessions' });
@@ -1026,7 +1027,7 @@ describe('GET /sellable-items — benefit_category', () => {
 
   it('classifies a non-Sessions item with a recurring frequency as periodical', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'BC Locker Rental', type: 'service', billing_frequency: 'month' });
@@ -1036,7 +1037,7 @@ describe('GET /sellable-items — benefit_category', () => {
 
   it('classifies a non-Sessions item with a non-recurring (or no) frequency as oneoff', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'BC Registration Fee', type: 'fee' });
@@ -1044,16 +1045,16 @@ describe('GET /sellable-items — benefit_category', () => {
     expect(res.body.benefit_category).toBe('oneoff');
   });
 
-  it('includes benefit_category on GET /sellable-items list and GET /:id', async () => {
+  it('includes benefit_category on GET /products list and GET /:id', async () => {
     const created = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'BC List Item', type: 'sessions' });
     expect(created.status).toBe(201);
 
     const list = await request
-      .get('/sellable-items')
+      .get('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(list.status).toBe(200);
@@ -1061,7 +1062,7 @@ describe('GET /sellable-items — benefit_category', () => {
     expect(row?.benefit_category).toBe('session');
 
     const single = await request
-      .get(`/sellable-items/${created.body.id}`)
+      .get(`/products/${created.body.id}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(single.status).toBe(200);
@@ -1071,7 +1072,7 @@ describe('GET /sellable-items — benefit_category', () => {
 
 // ─── Editing tax_rate_id (#368) ─────────────────────────────────────────────────
 
-describe('POST /sellable-items — tax_rate_id validation', () => {
+describe('POST /products — tax_rate_id validation', () => {
   let gymId: string;
   let otherGymId: string;
   let taxRateId: number;
@@ -1089,7 +1090,7 @@ describe('POST /sellable-items — tax_rate_id validation', () => {
 
   it('creates an item with a valid tax_rate_id and computes tax fields', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Taxed Item', type: 'fee', amount: 121, tax_behavior: 'inclusive', tax_rate_id: taxRateId });
@@ -1102,7 +1103,7 @@ describe('POST /sellable-items — tax_rate_id validation', () => {
 
   it('returns 400 for a tax_rate_id that does not exist', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Bad Tax Item', type: 'fee', amount: 10, tax_rate_id: 999999 });
@@ -1111,7 +1112,7 @@ describe('POST /sellable-items — tax_rate_id validation', () => {
 
   it('returns 400 for a tax_rate_id belonging to another gym (tenant isolation)', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Cross Gym Tax Item', type: 'fee', amount: 10, tax_rate_id: otherGymTaxRateId });
@@ -1119,7 +1120,7 @@ describe('POST /sellable-items — tax_rate_id validation', () => {
   });
 });
 
-describe('PUT /sellable-items/:id — tax_rate_id validation', () => {
+describe('PUT /products/:id — tax_rate_id validation', () => {
   let gymId: string;
   let otherGymId: string;
   let itemId: number;
@@ -1136,7 +1137,7 @@ describe('PUT /sellable-items/:id — tax_rate_id validation', () => {
     otherGymTaxRateId = await createTaxRate(otherGymId, 'VAT 10%', 10);
 
     const create = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Editable Tax Item', type: 'fee', amount: 100 });
@@ -1148,7 +1149,7 @@ describe('PUT /sellable-items/:id — tax_rate_id validation', () => {
     // real frontend usage, which always submits the full form), so it must be
     // resent here alongside the fields under test.
     const res = await request
-      .put(`/sellable-items/${itemId}`)
+      .put(`/products/${itemId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ amount: 100, tax_rate_id: taxRateId, tax_behavior: 'exclusive' });
@@ -1161,7 +1162,7 @@ describe('PUT /sellable-items/:id — tax_rate_id validation', () => {
 
   it('returns 400 when updating to a tax_rate_id that does not exist', async () => {
     const res = await request
-      .put(`/sellable-items/${itemId}`)
+      .put(`/products/${itemId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ tax_rate_id: 999999 });
@@ -1170,7 +1171,7 @@ describe('PUT /sellable-items/:id — tax_rate_id validation', () => {
 
   it('returns 400 when updating to a tax_rate_id belonging to another gym', async () => {
     const res = await request
-      .put(`/sellable-items/${itemId}`)
+      .put(`/products/${itemId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ tax_rate_id: otherGymTaxRateId });
@@ -1178,9 +1179,9 @@ describe('PUT /sellable-items/:id — tax_rate_id validation', () => {
   });
 });
 
-// ─── POST /sellable-items/:id/duplicate (#545) ───────────────────────────────
+// ─── POST /products/:id/duplicate (#545) ───────────────────────────────
 
-describe('POST /sellable-items/:id/duplicate', () => {
+describe('POST /products/:id/duplicate', () => {
   let gymId: string;
   let gymOther: string;
   let gymAccountant: string;
@@ -1190,18 +1191,18 @@ describe('POST /sellable-items/:id/duplicate', () => {
   beforeAll(async () => {
     gymId = await createTestGym('Charges Duplicate Gym');
     await createTestMembership(gymId, 'admin');
-    await seedGymCharges(gymId);
+    await seedProducts(gymId);
     systemSourceId = await firstChargeId(gymId);
 
     gymOther = await createTestGym('Charges Duplicate Other Gym');
     await createTestMembership(gymOther, 'admin');
-    await seedGymCharges(gymOther);
+    await seedProducts(gymOther);
 
     gymAccountant = await createTestGym('Charges Duplicate Accountant Gym');
     await createTestMembership(gymAccountant, 'accountant');
 
     const create = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({
@@ -1222,15 +1223,15 @@ describe('POST /sellable-items/:id/duplicate', () => {
   });
 
   it('returns 401 without auth', async () => {
-    const res = await request.post(`/sellable-items/${customSourceId}/duplicate`).set('x-gym-id', gymId);
+    const res = await request.post(`/products/${customSourceId}/duplicate`).set('x-gym-id', gymId);
     expect(res.status).toBe(401);
   });
 
   it('returns 403 for a non-admin role', async () => {
     const chargeId = await firstChargeId(gymAccountant);
-    if (!chargeId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!chargeId) return; // no is_product rows in this DB — skip gracefully
     const res = await request
-      .post(`/sellable-items/${chargeId}/duplicate`)
+      .post(`/products/${chargeId}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymAccountant);
     expect(res.status).toBe(403);
@@ -1238,7 +1239,7 @@ describe('POST /sellable-items/:id/duplicate', () => {
 
   it('returns 404 when the source item belongs to a different gym (tenant isolation)', async () => {
     const res = await request
-      .post(`/sellable-items/${customSourceId}/duplicate`)
+      .post(`/products/${customSourceId}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymOther);
     expect(res.status).toBe(404);
@@ -1246,7 +1247,7 @@ describe('POST /sellable-items/:id/duplicate', () => {
 
   it('returns 404 for a non-existent source item', async () => {
     const res = await request
-      .post('/sellable-items/999999/duplicate')
+      .post('/products/999999/duplicate')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(404);
@@ -1254,7 +1255,7 @@ describe('POST /sellable-items/:id/duplicate', () => {
 
   it('duplicates a custom item: new id, "Copy of" name, copied fields, original unchanged', async () => {
     const dup = await request
-      .post(`/sellable-items/${customSourceId}/duplicate`)
+      .post(`/products/${customSourceId}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(dup.status).toBe(201);
@@ -1282,7 +1283,7 @@ describe('POST /sellable-items/:id/duplicate', () => {
 
     // Original item is completely unchanged.
     const original = await request
-      .get(`/sellable-items/${customSourceId}`)
+      .get(`/products/${customSourceId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(original.status).toBe(200);
@@ -1291,10 +1292,10 @@ describe('POST /sellable-items/:id/duplicate', () => {
   });
 
   it('duplicating a system item creates an independent custom item, leaving the system item untouched', async () => {
-    if (!systemSourceId) return; // no is_gym_charge rows in this DB — skip gracefully
+    if (!systemSourceId) return; // no is_product rows in this DB — skip gracefully
 
     const dup = await request
-      .post(`/sellable-items/${systemSourceId}/duplicate`)
+      .post(`/products/${systemSourceId}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(dup.status).toBe(201);
@@ -1302,7 +1303,7 @@ describe('POST /sellable-items/:id/duplicate', () => {
     expect(dup.body.is_system).toBe(0);
 
     const original = await request
-      .get(`/sellable-items/${systemSourceId}`)
+      .get(`/products/${systemSourceId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(original.body.is_system).toBe(1);
@@ -1311,12 +1312,12 @@ describe('POST /sellable-items/:id/duplicate', () => {
 
   it('does not carry over historical/transactional linkage (charge_type_id, class_package_id) from the source', async () => {
     const dup = await request
-      .post(`/sellable-items/${customSourceId}/duplicate`)
+      .post(`/products/${customSourceId}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(dup.status).toBe(201);
     const { rows } = await db.query<{ charge_type_id: number | null; class_package_id: number | null }>(
-      'SELECT charge_type_id, class_package_id FROM gym_charges WHERE id = ?',
+      'SELECT charge_type_id, class_package_id FROM products WHERE id = ?',
       [dup.body.id],
     );
     expect(rows[0].charge_type_id).toBeNull();
@@ -1325,11 +1326,11 @@ describe('POST /sellable-items/:id/duplicate', () => {
 
   it('duplicating twice does not mutate the original and produces two independent rows', async () => {
     const first = await request
-      .post(`/sellable-items/${customSourceId}/duplicate`)
+      .post(`/products/${customSourceId}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     const second = await request
-      .post(`/sellable-items/${customSourceId}/duplicate`)
+      .post(`/products/${customSourceId}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(first.status).toBe(201);
@@ -1337,7 +1338,7 @@ describe('POST /sellable-items/:id/duplicate', () => {
     expect(first.body.id).not.toBe(second.body.id);
 
     const original = await request
-      .get(`/sellable-items/${customSourceId}`)
+      .get(`/products/${customSourceId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(original.body.name).toBe('Original Custom Item');
@@ -1368,7 +1369,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
   it('creates a sessions item with a single linked Professional Service', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'PT Single Session', type: 'sessions', units: 1, professional_service_ids: [psOne] });
@@ -1379,7 +1380,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
   it('creates a sessions item with multiple linked Professional Services', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Mixed Session Pack', type: 'sessions', units: 10, professional_service_ids: [psOne, psTwo] });
@@ -1389,7 +1390,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
   it('creates a sessions item with no Professional Services selected (empty is allowed, not required)', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Unassigned Session Pack', type: 'sessions', units: 5 });
@@ -1399,7 +1400,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
   it('ignores professional_service_ids for a non-sessions type (field not applicable)', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Merch Item', type: 'merchandise', professional_service_ids: [psOne] });
@@ -1409,7 +1410,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
   it('returns 400 when a professional_service_id belongs to another gym (tenant isolation)', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Cross Tenant Attempt', type: 'sessions', professional_service_ids: [psInOtherGym] });
@@ -1418,7 +1419,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
   it('returns 400 for a non-existent professional_service_id', async () => {
     const res = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Bogus PS Id', type: 'sessions', professional_service_ids: [9999999] });
@@ -1427,16 +1428,16 @@ describe('Products — Professional Services linkage (#546)', () => {
 
   // ── read ──────────────────────────────────────────────────────────────────
 
-  it('includes professional_services on GET /sellable-items list', async () => {
+  it('includes professional_services on GET /products list', async () => {
     const created = await request
-      .post('/sellable-items')
+      .post('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ name: 'Listed Session Item', type: 'sessions', professional_service_ids: [psOne] });
     expect(created.status).toBe(201);
 
     const list = await request
-      .get('/sellable-items')
+      .get('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(list.status).toBe(200);
@@ -1447,7 +1448,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
   it('does not include another gym\'s Professional Service data (no cross-tenant leakage)', async () => {
     const res = await request
-      .get('/sellable-items')
+      .get('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', otherGymId);
     expect(res.status).toBe(200);
@@ -1464,7 +1465,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     beforeAll(async () => {
       const created = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Editable Session Item', type: 'sessions', professional_service_ids: [psOne] });
@@ -1473,7 +1474,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('loads the currently selected Professional Services on GET /:id', async () => {
       const res = await request
-        .get(`/sellable-items/${itemId}`)
+        .get(`/products/${itemId}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
       expect(res.status).toBe(200);
@@ -1482,7 +1483,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('adds a second Professional Service via PUT', async () => {
       const res = await request
-        .put(`/sellable-items/${itemId}`)
+        .put(`/products/${itemId}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ professional_service_ids: [psOne, psTwo] });
@@ -1492,7 +1493,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('removes a Professional Service via PUT (replace-all semantics)', async () => {
       const res = await request
-        .put(`/sellable-items/${itemId}`)
+        .put(`/products/${itemId}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ professional_service_ids: [psTwo] });
@@ -1502,7 +1503,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('leaves selections untouched when a PUT omits professional_service_ids entirely', async () => {
       const res = await request
-        .put(`/sellable-items/${itemId}`)
+        .put(`/products/${itemId}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ notes: 'unrelated update' });
@@ -1512,14 +1513,14 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('returns 400 and leaves selections unchanged when PUT sends a cross-tenant professional_service_id', async () => {
       const res = await request
-        .put(`/sellable-items/${itemId}`)
+        .put(`/products/${itemId}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ professional_service_ids: [psInOtherGym] });
       expect(res.status).toBe(400);
 
       const after = await request
-        .get(`/sellable-items/${itemId}`)
+        .get(`/products/${itemId}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
       expect(after.body.professional_services.map((s: any) => s.id)).toEqual([psTwo]);
@@ -1531,14 +1532,14 @@ describe('Products — Professional Services linkage (#546)', () => {
   describe('type changes', () => {
     it('clears linked Professional Services when type changes away from sessions', async () => {
       const created = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Session To Fee', type: 'sessions', professional_service_ids: [psOne, psTwo] });
       expect(created.body.professional_services).toHaveLength(2);
 
       const res = await request
-        .put(`/sellable-items/${created.body.id}`)
+        .put(`/products/${created.body.id}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ type: 'fee' });
@@ -1547,7 +1548,7 @@ describe('Products — Professional Services linkage (#546)', () => {
       expect(res.body.professional_services).toEqual([]);
 
       const { rows } = await db.query(
-        'SELECT COUNT(*) AS cnt FROM sellable_item_professional_services WHERE sellable_item_id = ?',
+        'SELECT COUNT(*) AS cnt FROM product_professional_services WHERE product_id = ?',
         [created.body.id],
       );
       expect(rows[0].cnt).toBe(0);
@@ -1555,13 +1556,13 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('does not persist professional_service_ids sent alongside a non-sessions type change', async () => {
       const created = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Fee Item For Type Change', type: 'fee' });
 
       const res = await request
-        .put(`/sellable-items/${created.body.id}`)
+        .put(`/products/${created.body.id}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ type: 'merchandise', professional_service_ids: [psOne] });
@@ -1571,14 +1572,14 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('shows the field (allows selection) when type changes to sessions, without auto-selecting any service', async () => {
       const created = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Fee To Session', type: 'fee' });
       expect(created.body.professional_services).toEqual([]);
 
       const toSessions = await request
-        .put(`/sellable-items/${created.body.id}`)
+        .put(`/products/${created.body.id}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ type: 'sessions' });
@@ -1588,7 +1589,7 @@ describe('Products — Professional Services linkage (#546)', () => {
       expect(toSessions.body.professional_services).toEqual([]);
 
       const withSelection = await request
-        .put(`/sellable-items/${created.body.id}`)
+        .put(`/products/${created.body.id}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ professional_service_ids: [psOne] });
@@ -1602,13 +1603,13 @@ describe('Products — Professional Services linkage (#546)', () => {
   describe('duplication', () => {
     it('copies linked Professional Services onto the duplicate of a sessions item', async () => {
       const created = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Duplicate Source Session', type: 'sessions', professional_service_ids: [psOne, psTwo] });
 
       const dup = await request
-        .post(`/sellable-items/${created.body.id}/duplicate`)
+        .post(`/products/${created.body.id}/duplicate`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
       expect(dup.status).toBe(201);
@@ -1616,7 +1617,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
       // Original is unaffected.
       const original = await request
-        .get(`/sellable-items/${created.body.id}`)
+        .get(`/products/${created.body.id}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
       expect(original.body.professional_services.map((s: any) => s.id).sort()).toEqual([psOne, psTwo].sort());
@@ -1624,13 +1625,13 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('does not attach any Professional Services when duplicating a non-sessions item', async () => {
       const created = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Duplicate Source Fee', type: 'fee' });
 
       const dup = await request
-        .post(`/sellable-items/${created.body.id}/duplicate`)
+        .post(`/products/${created.body.id}/duplicate`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
       expect(dup.status).toBe(201);
@@ -1643,7 +1644,7 @@ describe('Products — Professional Services linkage (#546)', () => {
   describe('linking a global system Professional Service', () => {
     it('links a system Professional Service without a seeded gym_professional_services row for this gym', async () => {
       // createTestGym() bypasses the POST /gyms seeding trigger (see the
-      // header comment on seedGymCharges above), so gymId has no
+      // header comment on seedProducts above), so gymId has no
       // gym_professional_services row at all for this system service yet.
       // Linking must still succeed: professional_service_ids validation is
       // keyed off `professional_services.gym_id IS NULL`, not per-gym
@@ -1651,7 +1652,7 @@ describe('Products — Professional Services linkage (#546)', () => {
       const systemServiceId = await systemProfessionalServiceId('personal_training_individual');
 
       const res = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'PT With System Service', type: 'sessions', professional_service_ids: [systemServiceId] });
@@ -1666,7 +1667,7 @@ describe('Products — Professional Services linkage (#546)', () => {
   describe('professional_service_ids input validation', () => {
     it('returns 400 for a non-integer id in the array', async () => {
       const res = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Bad Array Element', type: 'sessions', professional_service_ids: ['not-a-number'] });
@@ -1675,7 +1676,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('returns 400 for a negative id in the array', async () => {
       const res = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Negative Array Element', type: 'sessions', professional_service_ids: [-1] });
@@ -1684,7 +1685,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('returns 400 when professional_service_ids is not an array', async () => {
       const res = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Not An Array', type: 'sessions', professional_service_ids: psOne });
@@ -1700,7 +1701,7 @@ describe('Products — Professional Services linkage (#546)', () => {
       expect(del.status).toBe(204);
 
       const res = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Deleted PS Attempt', type: 'sessions', professional_service_ids: [toDelete] });
@@ -1709,7 +1710,7 @@ describe('Products — Professional Services linkage (#546)', () => {
 
     it('dedupes repeated ids in the array instead of erroring', async () => {
       const res = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Duplicate Ids In Array', type: 'sessions', professional_service_ids: [psOne, psOne] });
@@ -1724,7 +1725,7 @@ describe('Products — Professional Services linkage (#546)', () => {
     it('drops the soft-deleted service from the response without erroring', async () => {
       const toDelete = await createProfessionalService(gymId, 'Deleted After Linking');
       const created = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Item Linked Then Orphaned', type: 'sessions', professional_service_ids: [psOne, toDelete] });
@@ -1737,7 +1738,7 @@ describe('Products — Professional Services linkage (#546)', () => {
       expect(del.status).toBe(204);
 
       const res = await request
-        .get(`/sellable-items/${created.body.id}`)
+        .get(`/products/${created.body.id}`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
       expect(res.status).toBe(200);
@@ -1750,14 +1751,14 @@ describe('Products — Professional Services linkage (#546)', () => {
   describe('activate / deactivate preserve the professional_services field', () => {
     it('includes professional_services in the /activate and /deactivate responses', async () => {
       const created = await request
-        .post('/sellable-items')
+        .post('/products')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId)
         .send({ name: 'Toggle Status Session Item', type: 'sessions', professional_service_ids: [psOne] });
       expect(created.status).toBe(201);
 
       const deactivate = await request
-        .post(`/sellable-items/${created.body.id}/deactivate`)
+        .post(`/products/${created.body.id}/deactivate`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
       expect(deactivate.status).toBe(200);
@@ -1765,7 +1766,7 @@ describe('Products — Professional Services linkage (#546)', () => {
       expect(deactivate.body.professional_services.map((s: any) => s.id)).toEqual([psOne]);
 
       const activate = await request
-        .post(`/sellable-items/${created.body.id}/activate`)
+        .post(`/products/${created.body.id}/activate`)
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
       expect(activate.status).toBe(200);
@@ -1784,25 +1785,25 @@ describe('#832 mandatory attribute', () => {
   beforeAll(async () => {
     gymId = await createTestGym('Charges Mandatory Gym');
     await createTestMembership(gymId, 'admin');
-    await seedGymCharges(gymId);
+    await seedProducts(gymId);
     systemId = (await firstChargeId(gymId))!;
   });
 
   const post = (body: Record<string, unknown>) => request
-    .post('/sellable-items')
+    .post('/products')
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
     .send(body);
 
   const put = (id: number, body: Record<string, unknown>) => request
-    .put(`/sellable-items/${id}`)
+    .put(`/products/${id}`)
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
     .send(body);
 
   const stored = async (id: number) => {
     const { rows } = await db.query<{ mandatory: number }>(
-      'SELECT mandatory FROM gym_charges WHERE id = ?', [id],
+      'SELECT mandatory FROM products WHERE id = ?', [id],
     );
     return rows[0].mandatory;
   };
@@ -1830,14 +1831,14 @@ describe('#832 mandatory attribute', () => {
   it('reads the flag back on GET /:id and in the list', async () => {
     const created = await post({ name: 'Mandatory Readback', type: 'fee', mandatory: true });
     const one = await request
-      .get(`/sellable-items/${created.body.id}`)
+      .get(`/products/${created.body.id}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(one.status).toBe(200);
     expect(one.body.mandatory).toBe(1);
 
     const list = await request
-      .get('/sellable-items')
+      .get('/products')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(list.status).toBe(200);
@@ -1876,7 +1877,7 @@ describe('#832 mandatory attribute', () => {
   // columns carry — name/type on a System row still cannot move.
   it('is editable on a System item, whose name and type still cannot be', async () => {
     const { rows: before } = await db.query<{ name: string; type: string; is_system: number }>(
-      'SELECT name, type, is_system FROM gym_charges WHERE id = ?', [systemId],
+      'SELECT name, type, is_system FROM products WHERE id = ?', [systemId],
     );
     expect(before[0].is_system).toBe(1);
 
@@ -1923,7 +1924,7 @@ describe('#832 mandatory attribute', () => {
   it('copies the flag onto a duplicate', async () => {
     const created = await post({ name: 'Mandatory To Duplicate', type: 'service', mandatory: true });
     const res = await request
-      .post(`/sellable-items/${created.body.id}/duplicate`)
+      .post(`/products/${created.body.id}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(201);

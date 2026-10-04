@@ -112,7 +112,7 @@ async function createProduct(
   gymId: string, name: string, amount = 20, billingFrequency = 'month',
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
      VALUES (?, ?, 'service', ?, 'EUR', ?, 'active', 'available', 0)`,
     [gymId, name, amount, billingFrequency],
@@ -129,7 +129,7 @@ async function attachService(
   const { quantity = 1, startsAt = '2026-03-01', endsAt = null } = opts;
   const { insertId } = await db.query(
     `INSERT INTO user_membership_services
-       (gym_id, user_membership_id, gym_charge_id, quantity, starts_at, ends_at)
+       (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [gymId, umId, chargeId, quantity, startsAt, endsAt],
   );
@@ -332,12 +332,12 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
       id: serviceId,
       user_membership_id: umId,
       plan_name: 'Shape Standard',
-      gym_charge_id: itemId,
+      product_id: itemId,
       quantity: 2,
       billing_frequency: 'month',
       currency: 'EUR',
       active: true,
-      sellable_item_retired: false,
+      product_retired: false,
     });
     expect(Number(res.body.services[0].unit_price)).toBe(12.5);
   });

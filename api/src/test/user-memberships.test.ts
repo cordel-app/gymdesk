@@ -2434,7 +2434,7 @@ async function createProduct(
   gymId: string, name: string, type: string, billingFrequency: string, amount: number,
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
+    `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
      VALUES (?, ?, ?, ?, 'EUR', ?, 'active', 'available', 0)`,
     [gymId, name, type, amount, billingFrequency],
   );
@@ -2460,15 +2460,15 @@ async function applyPromotionDirect(gymId: string, umId: number, promoId: number
   );
 }
 
-async function grantPeriodicalItem(gymId: string, promoId: number, gymChargeId: number, quantity: number): Promise<void> {
+async function grantPeriodicalItem(gymId: string, promoId: number, productId: number, quantity: number): Promise<void> {
   // #896 — a grant carries its own pricing treatment since migration 203, and
   // the column defaults to `no_benefit` (the normal price). `waive` is what a
   // grant meant before the column existed, and what migration 203 backfilled
   // every existing row to, so it is what these cases configure.
   await db.query(
-    `INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity, action)
+    `INSERT INTO promotion_periodical (gym_id, promotion_id, product_id, quantity, action)
      VALUES (?, ?, ?, ?, 'waive')`,
-    [gymId, promoId, gymChargeId, quantity],
+    [gymId, promoId, productId, quantity],
   );
 }
 
@@ -2619,7 +2619,7 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
       ['2026-03-29', '2026-04-25'],
     ]);
     expect(fourWeeks.events.map((e: any) => e.total)).toEqual([0, 20]);
-    expect(fourWeeks.events[0].lines[0]).toMatchObject({ label: 'Locker Rental', gym_charge_id: itemId });
+    expect(fourWeeks.events[0].lines[0]).toMatchObject({ label: 'Locker Rental', product_id: itemId });
   });
 
   // #631 — Additional Periodic Services are plain items on the assignment, so
@@ -2632,7 +2632,7 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
     const itemId = await createProduct(gymId, 'Personal Training', 'service', 'month', 30);
     await db.query(
-      `INSERT INTO user_membership_services (gym_id, user_membership_id, gym_charge_id, quantity, starts_at)
+      `INSERT INTO user_membership_services (gym_id, user_membership_id, product_id, quantity, starts_at)
        VALUES (?, ?, ?, 2, '2026-04-01')`,
       [gymId, umId, itemId],
     );
@@ -2645,9 +2645,9 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
       ['2026-03-01', 100],
       ['2026-04-01', 160],
     ]);
-    const serviceLine = monthly.events[1].lines.find((l: any) => l.kind === 'sellable_item');
+    const serviceLine = monthly.events[1].lines.find((l: any) => l.kind === 'product');
     expect(serviceLine).toMatchObject({
-      label: 'Personal Training', gym_charge_id: itemId,
+      label: 'Personal Training', product_id: itemId,
       quantity: 2, unit_price: 30, regular_price: 60, actual_charge: 60, benefits: [],
     });
   });
@@ -2662,7 +2662,7 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     await setPromotionDuration(promoId, { free: 3 });
     await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
     await db.query(
-      `INSERT INTO user_membership_services (gym_id, user_membership_id, gym_charge_id, quantity, starts_at, ends_at)
+      `INSERT INTO user_membership_services (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
        VALUES (?, ?, ?, 1, '2026-03-01', '2026-04-15')`,
       [gymId, umId, itemId],
     );
@@ -2753,12 +2753,12 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     // #896 — `waive` is the treatment that makes a granted item free; the
     // column's own default charges the normal price.
     await db.query(
-      `INSERT INTO promotion_oneoff (gym_id, promotion_id, gym_charge_id, quantity, action)
+      `INSERT INTO promotion_oneoff (gym_id, promotion_id, product_id, quantity, action)
        VALUES (?, ?, ?, 1, 'waive')`,
       [gymId, promoId, feeItem],
     );
     await db.query(
-      `INSERT INTO promotion_session (gym_id, promotion_id, gym_charge_id, quantity, action)
+      `INSERT INTO promotion_session (gym_id, promotion_id, product_id, quantity, action)
        VALUES (?, ?, ?, 4, 'waive')`,
       [gymId, promoId, sessionItem],
     );

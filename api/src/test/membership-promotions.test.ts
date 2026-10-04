@@ -29,9 +29,9 @@ async function getChargeTypeId(code: string): Promise<number> {
   return rows[0].id;
 }
 
-async function createGymCharge(gymId: string, chargeTypeId: number): Promise<number> {
+async function createProduct(gymId: string, chargeTypeId: number): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges (gym_id, charge_type_id, amount, currency, billing_frequency, availability)
+    `INSERT INTO products (gym_id, charge_type_id, amount, currency, billing_frequency, availability)
      VALUES (?, ?, 0, 'EUR', 'month', 'available')`,
     [gymId, chargeTypeId],
   );

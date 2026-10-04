@@ -219,10 +219,10 @@ async function buildPromotionSnapshot(tx: Tx, gymId: string, promotionId: number
 // charge: §16/§17 require that repricing a Product, or editing the
 // Promotion's benefits, leave an already-applied Promotion alone.
 //
-// `gym_charges` is joined without a `deleted_at` filter (as everywhere else a
+// `products` is joined without a `deleted_at` filter (as everywhere else a
 // snapshot is taken) so an item retired later still reads back with its real
-// name and price rather than disappearing from the record. `gym_charge_name`
-// is NOT NULL while `gym_charges.name`/`.type` are nullable (a system charge
+// name and price rather than disappearing from the record. `product_name`
+// is NOT NULL while `products.name`/`.type` are nullable (a system charge
 // displays under its `charge_types` name), so both resolve the same fallback
 // `assigned-plan-snapshot.ts` and migration 174 use — otherwise applying a
 // Promotion that grants a system item would fail on the insert.
@@ -252,16 +252,16 @@ async function snapshotPromotionGrants(
   for (const { source, target } of PROMOTION_GRANT_SNAPSHOTS) {
     await tx.query(
       `INSERT INTO ${target}
-         (gym_id, user_membership_promotion_id, gym_charge_id, gym_charge_name, quantity,
+         (gym_id, user_membership_promotion_id, product_id, product_name, quantity,
           item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`,
           requirement)
-       SELECT ?, ?, b.gym_charge_id,
+       SELECT ?, ?, b.product_id,
               COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id)), b.quantity,
               COALESCE(gc.type, 'other'), gc.billing_frequency,
               COALESCE(gc.amount, 0), gc.currency, b.\`action\`, b.\`value\`,
               b.requirement
        FROM ${source} b
-       JOIN gym_charges gc ON gc.id = b.gym_charge_id
+       JOIN products gc ON gc.id = b.product_id
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        WHERE b.promotion_id = ? AND b.gym_id = ?`,
       [gymId, userMembershipPromotionId, promotionId, gymId],
@@ -637,7 +637,7 @@ export async function applyPromotionToMembership(
  * grant differently from what the assignment is billed for it.
  */
 export interface AppliedPromotionGrant extends PlanBenefitPrices {
-  gym_charge_id: number | null;
+  product_id: number | null;
   item_name: string;
   quantity: number;
   item_billing_frequency: string | null;
@@ -660,13 +660,13 @@ function emptyGrants(): AppliedPromotionGrants {
 
 /**
  * #924 stage 2 — the **tax treatment** of the Products a set of grants
- * points at, keyed by `gym_charges.id`.
+ * points at, keyed by `products.id`.
  *
  * It is the one live column a frozen grant line has to read, and for the reason
  * stage 1 gives on the Plan side: a statutory VAT rate is not a term of this
  * contract, the snapshot never captured one, and §4 asks the card to quote
  * these lines tax-included. The frozen *price* is still the frozen price —
- * nothing here reaches for `gym_charges.amount`, and an item deleted since is
+ * nothing here reaches for `products.amount`, and an item deleted since is
  * simply absent from the map, which leaves the frozen amount as the honest
  * gross exactly as `grossBenefitUnitPrice()` falls back for a gym with no rate
  * configured.
@@ -684,7 +684,7 @@ async function loadGrantTaxTreatments(
   if (ids.length === 0) return byId;
   const { rows } = await db.query(
     `SELECT gc.id, gc.tax_behavior, tr.rate_percent AS tax_rate_percent
-     FROM gym_charges gc
+     FROM products gc
      LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
      WHERE gc.gym_id = ? AND gc.id IN (${ids.map(() => '?').join(',')})`,
     [gymId, ...ids],
@@ -707,7 +707,7 @@ async function loadGrantTaxTreatments(
  * page (#817).
  */
 function shapeGrant(grant: {
-  gymChargeId: number;
+  productId: number;
   name: string;
   billingFrequency: string | null;
   unitPrice: number;
@@ -715,7 +715,7 @@ function shapeGrant(grant: {
   benefit: { action: PromotionBenefitAction; value: number | null };
 }, tax?: ItemTaxTreatment): AppliedPromotionGrant {
   return {
-    gym_charge_id: grant.gymChargeId || null,
+    product_id: grant.productId || null,
     item_name: grant.name,
     quantity: grant.quantity,
     item_billing_frequency: grant.billingFrequency,
@@ -723,13 +723,13 @@ function shapeGrant(grant: {
     action: grant.benefit.action,
     value: grant.benefit.value,
     ...productBenefitPrices('promotion', {
-      gym_charge_id: grant.gymChargeId,
+      product_id: grant.productId,
       quantity: grant.quantity,
       action: grant.benefit.action,
       value: grant.benefit.value,
-      gym_charge_amount: grant.unitPrice,
-      gym_charge_tax_behavior: tax?.tax_behavior ?? null,
-      gym_charge_tax_rate_percent: tax?.tax_rate_percent ?? null,
+      product_amount: grant.unitPrice,
+      product_tax_behavior: tax?.tax_behavior ?? null,
+      product_tax_rate_percent: tax?.tax_rate_percent ?? null,
     }),
   };
 }
@@ -759,12 +759,12 @@ async function loadAppliedPromotionGrants(
   // One lookup for every grant of every application on this card, rather than
   // one per line.
   const taxes = await loadGrantTaxTreatments(
-    gymId, [...snapshots.values()].flatMap((grants) => grants.map((g) => g.gymChargeId)),
+    gymId, [...snapshots.values()].flatMap((grants) => grants.map((g) => g.productId)),
   );
   for (const [applicationId, grants] of snapshots) {
     const shaped = emptyGrants();
     for (const g of grants) {
-      shaped[GRANT_FIELD[g.category]].push(shapeGrant(g, taxes.get(Number(g.gymChargeId))));
+      shaped[GRANT_FIELD[g.category]].push(shapeGrant(g, taxes.get(Number(g.productId))));
     }
     byApplication.set(applicationId, shaped);
   }
@@ -776,12 +776,12 @@ async function loadAppliedPromotionGrants(
   const marks = promotionIds.map(() => '?').join(',');
   const { rows } = await db.query(
     PROMOTION_GRANT_SNAPSHOTS.map(({ category, source }) => `
-      SELECT '${category}' AS category, b.promotion_id, b.gym_charge_id, b.quantity,
+      SELECT '${category}' AS category, b.promotion_id, b.product_id, b.quantity,
              COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id)) AS item_name,
              gc.billing_frequency AS item_billing_frequency, COALESCE(gc.amount, 0) AS unit_price,
              b.\`action\`, b.\`value\`, gc.tax_behavior, tr.rate_percent AS tax_rate_percent
       FROM ${source} b
-      JOIN gym_charges gc ON gc.id = b.gym_charge_id
+      JOIN products gc ON gc.id = b.product_id
       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
       LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
       WHERE b.gym_id = ? AND b.promotion_id IN (${marks})`).join(' UNION ALL '),
@@ -791,7 +791,7 @@ async function loadAppliedPromotionGrants(
   for (const row of rows as any[]) {
     const shaped = livePerPromotion.get(row.promotion_id) ?? emptyGrants();
     shaped[GRANT_FIELD[row.category as ProductBenefitCategory]].push(shapeGrant({
-      gymChargeId: Number(row.gym_charge_id),
+      productId: Number(row.product_id),
       name: row.item_name,
       billingFrequency: row.item_billing_frequency ?? null,
       unitPrice: row.unit_price != null ? Number(row.unit_price) : 0,

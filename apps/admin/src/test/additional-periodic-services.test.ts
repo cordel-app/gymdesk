@@ -52,7 +52,7 @@ const SECTION_KEYS = [
   'services_item_retired',
 ];
 
-// Every value `gym_charges.billing_frequency` can hold — the label lookup is a
+// Every value `products.billing_frequency` can hold — the label lookup is a
 // template key, so the locale tests' static scan can't catch a missing one.
 const FREQUENCY_KEYS = [
   'services_frequency_week',
@@ -79,7 +79,7 @@ describe('Additional Periodic Services (#631)', () => {
   });
 
   it('offers only recurring Products, classified server-side', () => {
-    expect(sectionSrc).toContain('/sellable-items');
+    expect(sectionSrc).toContain('/products');
     expect(sectionSrc).toContain("benefit_category === 'periodical'");
     expect(sectionSrc).toContain("i.status === 'active'");
   });

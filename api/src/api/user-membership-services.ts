@@ -17,7 +17,7 @@ import { SimulationService, ProductFrequency } from '../domain/billingSimulation
  * The Product stays the source of truth for the price and the billing
  * frequency (#631 §2 — "use the existing Product definitions ... rather
  * than creating a new product/service model"), so those are read live from
- * `gym_charges` on every request instead of being copied onto the attachment.
+ * `products` on every request instead of being copied onto the attachment.
  * Only the assignment-specific facts are stored: which item, how many, and the
  * effective window.
  *
@@ -36,26 +36,26 @@ const ATTACHABLE_STATUSES = ['active', 'paused'];
 
 const DUPLICATE_ERROR = 'This service is already attached to the Assigned Plan for that period';
 
-// `gym_charges` is joined without a `deleted_at` filter on purpose: an item
+// `products` is joined without a `deleted_at` filter on purpose: an item
 // that is retired after being attached must keep billing and keep displaying
 // (the FK has no ON DELETE CASCADE for the same reason). Its retired state is
 // reported on the row instead, so the UI can flag it.
 const SELECT = `
-  SELECT ums.id, ums.gym_id, ums.user_membership_id, ums.gym_charge_id,
+  SELECT ums.id, ums.gym_id, ums.user_membership_id, ums.product_id,
          ums.quantity, ums.starts_at, ums.ends_at, ums.created_at,
          ums.item_name AS snapshot_item_name,
          ums.item_billing_frequency AS snapshot_billing_frequency,
          ums.unit_price AS snapshot_unit_price,
          ums.currency AS snapshot_currency,
-         gc.name AS sellable_item_name,
-         gc.type AS sellable_item_type,
-         gc.status AS sellable_item_status,
-         gc.deleted_at AS sellable_item_deleted_at,
+         gc.name AS product_name,
+         gc.type AS product_type,
+         gc.status AS product_status,
+         gc.deleted_at AS product_deleted_at,
          gc.billing_frequency,
          gc.amount AS unit_price,
          gc.currency
   FROM user_membership_services ums
-  JOIN gym_charges gc ON gc.id = ums.gym_charge_id
+  JOIN products gc ON gc.id = ums.product_id
 `;
 
 // mysql2 may return DATE columns as Date objects rather than strings depending
@@ -72,11 +72,11 @@ function todayISO(): string {
 export interface AssignedPlanServiceRow {
   id: number;
   user_membership_id: number;
-  gym_charge_id: number;
+  product_id: number;
   quantity: number;
   starts_at: string;
   ends_at: string | null;
-  sellable_item_name: string;
+  product_name: string;
   billing_frequency: ProductFrequency | null;
   unit_price: number;
   currency: string | null;
@@ -88,7 +88,7 @@ export interface AssignedPlanServiceRow {
    * window, not the catalogue — but POST would no longer accept it, so the UI
    * flags it rather than presenting it as an ordinary item.
    */
-  sellable_item_retired: boolean;
+  product_retired: boolean;
   /**
    * #635 — what the Product cost when the service was attached
    * (migration 174). `null` for an attachment made before that migration, which
@@ -109,16 +109,16 @@ function shape(row: any): AssignedPlanServiceRow {
   return {
     id: row.id,
     user_membership_id: row.user_membership_id,
-    gym_charge_id: row.gym_charge_id,
+    product_id: row.product_id,
     quantity: Number(row.quantity),
     starts_at: toDateOnly(row.starts_at),
     ends_at: endsAt,
-    sellable_item_name: row.sellable_item_name,
+    product_name: row.product_name,
     billing_frequency: (row.billing_frequency ?? null) as ProductFrequency | null,
     unit_price: row.unit_price != null ? Number(row.unit_price) : 0,
     currency: row.currency ?? null,
     active: endsAt == null || endsAt >= todayISO(),
-    sellable_item_retired: row.sellable_item_deleted_at != null || row.sellable_item_status !== 'active',
+    product_retired: row.product_deleted_at != null || row.product_status !== 'active',
     snapshot: row.snapshot_unit_price != null ? {
       item_name: row.snapshot_item_name,
       billing_frequency: (row.snapshot_billing_frequency ?? null) as ProductFrequency | null,
@@ -184,13 +184,13 @@ export async function loadServicesForSimulation(
     // Either the whole snapshot or none of it: a snapshot that recorded "no
     // billing frequency" must not silently pick the item's current one up.
     const priced = shaped.snapshot ?? {
-      item_name: shaped.sellable_item_name,
+      item_name: shaped.product_name,
       billing_frequency: shaped.billing_frequency,
       unit_price: shaped.unit_price,
     };
     list.push({
       id: shaped.id,
-      gymChargeId: shaped.gym_charge_id,
+      productId: shaped.product_id,
       name: priced.item_name,
       billingFrequency: priced.billing_frequency,
       unitPrice: priced.unit_price,
@@ -243,11 +243,11 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
     return res.status(409).json({ error: 'Services cannot be added to a cancelled or expired Assigned Plan' });
   }
 
-  const { gym_charge_id, quantity, starts_at } = req.body ?? {};
+  const { product_id, quantity, starts_at } = req.body ?? {};
 
-  const chargeId = Number(gym_charge_id);
+  const chargeId = Number(product_id);
   if (!Number.isInteger(chargeId) || chargeId <= 0) {
-    return res.status(400).json({ error: 'gym_charge_id must be a positive integer' });
+    return res.status(400).json({ error: 'product_id must be a positive integer' });
   }
 
   const parsedQuantity = quantity === undefined || quantity === null || quantity === '' ? 1 : Number(quantity);
@@ -274,7 +274,7 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   const { rows: itemRows } = await db.query(
     `SELECT gc.id, COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id)) AS name,
             gc.type, gc.status, gc.billing_frequency, gc.amount, gc.currency
-     FROM gym_charges gc
+     FROM products gc
      LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
      WHERE gc.id = ? AND gc.gym_id = ? AND gc.deleted_at IS NULL`,
     [chargeId, gymId],
@@ -297,7 +297,7 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   // window that still ends on or after the requested start date.
   const { rows: overlapping } = await db.query(
     `SELECT id FROM user_membership_services
-     WHERE gym_id = ? AND user_membership_id = ? AND gym_charge_id = ?
+     WHERE gym_id = ? AND user_membership_id = ? AND product_id = ?
        AND (ends_at IS NULL OR ends_at >= ?)`,
     [gymId, plan.id, chargeId, startsAt],
   );
@@ -314,7 +314,7 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
       // the Billing Simulation reads since stage 3; the live join below still
       // drives display, so the UI can flag an item that has changed.
       `INSERT INTO user_membership_services
-       (gym_id, user_membership_id, gym_charge_id, quantity, starts_at, created_by_membership_id,
+       (gym_id, user_membership_id, product_id, quantity, starts_at, created_by_membership_id,
         item_name, item_type, item_billing_frequency, unit_price, currency)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -334,7 +334,7 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
     action: 'add_service',
     entityType: 'user_membership',
     entityId: plan.id,
-    next: { gym_charge_id: chargeId, sellable_item: item.name, quantity: parsedQuantity, starts_at: startsAt },
+    next: { product_id: chargeId, product: item.name, quantity: parsedQuantity, starts_at: startsAt },
   });
   res.status(201).json(created);
 });
@@ -378,7 +378,7 @@ userMembershipServicesRouter.delete('/:serviceId', requireModuleWrite('PAYMENTS'
     action: 'remove_service',
     entityType: 'user_membership',
     entityId: plan.id,
-    previous: { gym_charge_id: service.gym_charge_id, sellable_item: service.sellable_item_name, starts_at: service.starts_at },
+    previous: { product_id: service.product_id, product: service.product_name, starts_at: service.starts_at },
     next: deleted ? null : { ends_at: today },
   });
   res.json({ id: serviceId, deleted, ends_at: deleted ? null : today });

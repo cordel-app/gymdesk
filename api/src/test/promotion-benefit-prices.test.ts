@@ -47,7 +47,7 @@ describe('Promotion Benefit prices (#919/#920)', () => {
     taxBehavior?: 'inclusive' | 'exclusive';
   }): Promise<number> {
     const { insertId } = await db.query(
-      `INSERT INTO gym_charges
+      `INSERT INTO products
          (gym_id, name, type, billing_frequency, status, is_system, currency,
           amount, tax_rate_id, tax_behavior)
        VALUES (?, ?, ?, ?, 'active', 0, 'EUR', ?, ?, ?)`,
@@ -95,10 +95,10 @@ describe('Promotion Benefit prices (#919/#920)', () => {
       name: 'PBP Neutral Locker', type: 'service', frequency: 'month', amount: '15.00',
     });
     const res = await putSection('periodical-benefits', [
-      { gym_charge_id: lockerId, quantity: 1, action: 'no_benefit' },
+      { product_id: lockerId, quantity: 1, action: 'no_benefit' },
     ]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === lockerId);
+    const row = res.body.find((r: any) => r.product_id === lockerId);
     expect(row.original_price_incl_tax).toBe(15);
     expect(row.final_price_incl_tax).toBe(15);
   });
@@ -108,10 +108,10 @@ describe('Promotion Benefit prices (#919/#920)', () => {
       name: 'PBP Waived Insurance', type: 'fee', frequency: 'year', amount: '20.00',
     });
     const res = await putSection('periodical-benefits', [
-      { gym_charge_id: insuranceId, quantity: 1, action: 'waive' },
+      { product_id: insuranceId, quantity: 1, action: 'waive' },
     ]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === insuranceId);
+    const row = res.body.find((r: any) => r.product_id === insuranceId);
     // The ticket's own example: "The Regular Price must remain visible even
     // when the Final Price is zero."
     expect(row.original_price_incl_tax).toBe(20);
@@ -123,10 +123,10 @@ describe('Promotion Benefit prices (#919/#920)', () => {
       name: 'PBP Discounted Locker', type: 'service', frequency: 'month', amount: '15.00',
     });
     const res = await putSection('periodical-benefits', [
-      { gym_charge_id: lockerId, quantity: 1, action: 'percentage_discount', value: 20 },
+      { product_id: lockerId, quantity: 1, action: 'percentage_discount', value: 20 },
     ]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === lockerId);
+    const row = res.body.find((r: any) => r.product_id === lockerId);
     expect(row.original_price_incl_tax).toBe(15);
     expect(row.final_price_incl_tax).toBe(12);
   });
@@ -136,14 +136,14 @@ describe('Promotion Benefit prices (#919/#920)', () => {
       name: 'PBP Registration Fee', type: 'fee', frequency: 'once', amount: '100.00',
     });
     const discounted = await putSection('oneoff-benefits', [
-      { gym_charge_id: feeId, quantity: 1, action: 'fixed_discount', value: 25 },
+      { product_id: feeId, quantity: 1, action: 'fixed_discount', value: 25 },
     ]);
     expect(discounted.status).toBe(200);
     expect(discounted.body[0].original_price_incl_tax).toBe(100);
     expect(discounted.body[0].final_price_incl_tax).toBe(75);
 
     const fixed = await putSection('oneoff-benefits', [
-      { gym_charge_id: feeId, quantity: 1, action: 'fixed_price', value: 60 },
+      { product_id: feeId, quantity: 1, action: 'fixed_price', value: 60 },
     ]);
     expect(fixed.status).toBe(200);
     expect(fixed.body[0].original_price_incl_tax).toBe(100);
@@ -157,10 +157,10 @@ describe('Promotion Benefit prices (#919/#920)', () => {
       name: 'PBP Bulk Class', type: 'sessions', frequency: null, amount: '25.00',
     });
     const res = await putSection('session-benefits', [
-      { gym_charge_id: classId, quantity: 4, action: 'percentage_discount', value: 10 },
+      { product_id: classId, quantity: 4, action: 'percentage_discount', value: 10 },
     ]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === classId);
+    const row = res.body.find((r: any) => r.product_id === classId);
     expect(row.original_price_incl_tax).toBe(25);
     expect(row.final_price_incl_tax).toBe(22.5);
     expect(row.original_line_price_incl_tax).toBe(100);
@@ -173,10 +173,10 @@ describe('Promotion Benefit prices (#919/#920)', () => {
       taxRateId, taxBehavior: 'exclusive',
     });
     const res = await putSection('periodical-benefits', [
-      { gym_charge_id: lockerId, quantity: 1, action: 'waive' },
+      { product_id: lockerId, quantity: 1, action: 'waive' },
     ]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === lockerId);
+    const row = res.body.find((r: any) => r.product_id === lockerId);
     expect(row.original_price_incl_tax).toBe(16.5);
     expect(row.final_price_incl_tax).toBe(0);
   });
@@ -186,10 +186,10 @@ describe('Promotion Benefit prices (#919/#920)', () => {
       name: 'PBP Unpriced Class', type: 'sessions', frequency: null, amount: null,
     });
     const res = await putSection('session-benefits', [
-      { gym_charge_id: freeId, quantity: 1, action: 'waive' },
+      { product_id: freeId, quantity: 1, action: 'waive' },
     ]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === freeId);
+    const row = res.body.find((r: any) => r.product_id === freeId);
     // null is what the page renders as "—"; €0.00 would claim the item is free.
     expect(row.original_price_incl_tax).toBeNull();
     expect(row.final_price_incl_tax).toBeNull();
@@ -202,13 +202,13 @@ describe('Promotion Benefit prices (#919/#920)', () => {
       name: 'PBP Reread Fee', type: 'fee', frequency: 'once', amount: '40.00',
     });
     const put = await putSection('oneoff-benefits', [
-      { gym_charge_id: feeId, quantity: 2, action: 'percentage_discount', value: 50 },
+      { product_id: feeId, quantity: 2, action: 'percentage_discount', value: 50 },
     ]);
     expect(put.status).toBe(200);
     const get = await getSection('oneoff-benefits');
     expect(get.status).toBe(200);
-    const fromPut = put.body.find((r: any) => r.gym_charge_id === feeId);
-    const fromGet = get.body.find((r: any) => r.gym_charge_id === feeId);
+    const fromPut = put.body.find((r: any) => r.product_id === feeId);
+    const fromGet = get.body.find((r: any) => r.product_id === feeId);
     for (const field of [
       'original_price_incl_tax', 'final_price_incl_tax',
       'original_line_price_incl_tax', 'final_line_price_incl_tax',
@@ -226,13 +226,13 @@ describe('Promotion Benefit prices (#919/#920)', () => {
       name: 'PBP Retired Service', type: 'service', frequency: 'month', amount: '30.00',
     });
     const put = await putSection('periodical-benefits', [
-      { gym_charge_id: itemId, quantity: 1, action: 'waive' },
+      { product_id: itemId, quantity: 1, action: 'waive' },
     ]);
     expect(put.status).toBe(200);
-    await db.query('UPDATE gym_charges SET status = ? WHERE id = ? AND gym_id = ?', ['inactive', itemId, gymId]);
+    await db.query('UPDATE products SET status = ? WHERE id = ? AND gym_id = ?', ['inactive', itemId, gymId]);
     const res = await getSection('periodical-benefits');
-    const row = res.body.find((r: any) => r.gym_charge_id === itemId);
-    expect(row.gym_charge_status).toBe('inactive');
+    const row = res.body.find((r: any) => r.product_id === itemId);
+    expect(row.product_status).toBe('inactive');
     expect(row.original_price_incl_tax).toBe(30);
     expect(row.final_price_incl_tax).toBe(0);
   });

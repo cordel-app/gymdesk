@@ -33,7 +33,7 @@ import type {
  *   knowledge of a Product.
  * * **A field this row freezes is a value in both modes** (`editable: false`,
  *   which `visibleProductSections()` decides). A System row's name, type
- *   and units are outside `PUT /sellable-items/:id`'s `is_system` guard, so the
+ *   and units are outside `PUT /products/:id`'s `is_system` guard, so the
  *   form has no business offering a control for them — and the read-only card
  *   still reports them.
  * * **A section's actions sit immediately after its title** (#963/#974 §4),

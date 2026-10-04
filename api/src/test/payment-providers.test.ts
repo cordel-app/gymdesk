@@ -107,7 +107,7 @@ afterAll(async () => {
 
   if (extraGymIds.length > 0) {
     const marks = extraGymIds.map(() => '?').join(',');
-    await db.query(`DELETE FROM gym_charges WHERE gym_id IN (${marks})`, extraGymIds);
+    await db.query(`DELETE FROM products WHERE gym_id IN (${marks})`, extraGymIds);
     await db.query(`DELETE FROM gyms WHERE id IN (${marks})`, extraGymIds);
   }
 

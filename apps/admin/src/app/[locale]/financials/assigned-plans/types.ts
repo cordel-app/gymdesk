@@ -26,7 +26,7 @@ export interface BillingPolicy {
  */
 export interface AssignedPlanSnapshotBenefit {
   id: number;
-  gym_charge_id: number;
+  product_id: number;
   quantity: number;
   item_name: string;
   item_type: string;
@@ -98,7 +98,7 @@ export interface PersonalFeeBenefit {
  * ones, which is why the card shows `unit_price` from the line itself.
  */
 export interface AppliedPromotionGrant {
-  gym_charge_id: number | null;
+  product_id: number | null;
   item_name: string;
   quantity: number;
   item_billing_frequency: string | null;
@@ -172,22 +172,22 @@ export interface AppliedPromotion {
  * #631 — an Additional Periodic Service attached to the Assigned Plan. The
  * name, price and frequency are the Product's own, read live by the API;
  * `ends_at` is the effective removal date (removal is future-only), `active`
- * is false once it has passed, and `sellable_item_retired` marks an item that
+ * is false once it has passed, and `product_retired` marks an item that
  * was soft-deleted or deactivated after being attached (it still bills).
  */
 export interface AssignedPlanService {
   id: number;
   user_membership_id: number;
-  gym_charge_id: number;
+  product_id: number;
   quantity: number;
   starts_at: string;
   ends_at: string | null;
-  sellable_item_name: string;
+  product_name: string;
   billing_frequency: string | null;
   unit_price: number;
   currency: string | null;
   active: boolean;
-  sellable_item_retired: boolean;
+  product_retired: boolean;
 }
 
 export interface BillingEventItem {

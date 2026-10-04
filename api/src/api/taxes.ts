@@ -111,14 +111,14 @@ taxesRouter.post('/', requireRole('admin'), requireFeatureEnabled('financials.ta
 // snapshotted onto a Membership at instantiation time, so this is the full set of entities an
 // edit can affect — Membership instances are deliberately not counted (see #388).
 async function getTaxImpact(gymId: string, taxRateId: string) {
-  const { rows } = await db.query<{ sellable_items: number; membership_plans: number }>(
+  const { rows } = await db.query<{ products: number; membership_plans: number }>(
     `SELECT
-       (SELECT COUNT(*) FROM gym_charges      WHERE tax_rate_id = ? AND gym_id = ? AND deleted_at IS NULL) AS sellable_items,
+       (SELECT COUNT(*) FROM products      WHERE tax_rate_id = ? AND gym_id = ? AND deleted_at IS NULL) AS products,
        (SELECT COUNT(*) FROM membership_plans WHERE tax_rate_id = ? AND gym_id = ? AND deleted_at IS NULL) AS membership_plans`,
     [taxRateId, gymId, taxRateId, gymId],
   );
   return {
-    sellable_items: Number(rows[0].sellable_items),
+    products: Number(rows[0].products),
     membership_plans: Number(rows[0].membership_plans),
   };
 }
@@ -149,7 +149,7 @@ taxesRouter.put('/:id', requireRole('admin'), requireFeatureEnabled('financials.
     // sending the update fields, since the check runs unconditionally on every PUT.
     if (!confirmImpact) {
       const impact = await getTaxImpact(gymId, String(req.params.id));
-      if (impact.sellable_items > 0 || impact.membership_plans > 0) {
+      if (impact.products > 0 || impact.membership_plans > 0) {
         return res.status(409).json({ error: 'confirmation_required', impact });
       }
     }

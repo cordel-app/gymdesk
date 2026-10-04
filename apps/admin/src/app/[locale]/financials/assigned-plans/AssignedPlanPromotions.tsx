@@ -310,19 +310,19 @@ export function AssignedPlanPromotions({
  * as they were agreed, the treatment the grant was agreed with and the two
  * prices the server computed from the frozen `unit_price` (§17), which is what
  * makes this section different from the Promotions page's own view of the same
- * benefit. `gym_charge_status` is 'active' because the snapshot does not carry
+ * benefit. `product_status` is 'active' because the snapshot does not carry
  * the catalogue's current state and a frozen line is never "inactive" as far as
- * this application goes; `gym_charge_type` likewise is not part of what the
+ * this application goes; `product_type` likewise is not part of what the
  * snapshot froze, and the grid does not render it.
  */
 function toGrantRow(g: AppliedPromotionGrant): ProductBenefitRow {
   return {
-    gym_charge_id: g.gym_charge_id ?? 0,
+    product_id: g.product_id ?? 0,
     quantity: g.quantity,
-    gym_charge_name: g.item_name,
-    gym_charge_type: '',
-    gym_charge_billing_frequency: g.item_billing_frequency,
-    gym_charge_status: 'active',
+    product_name: g.item_name,
+    product_type: '',
+    product_billing_frequency: g.item_billing_frequency,
+    product_status: 'active',
     action: g.action,
     value: g.value,
     original_price_incl_tax: g.original_price_incl_tax,

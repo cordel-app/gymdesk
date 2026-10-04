@@ -67,7 +67,7 @@ describe('Promotion item Requirement (#959)', () => {
 
   async function createItem(name: string, type = 'service', frequency: string | null = 'month') {
     const { insertId } = await db.query(
-      `INSERT INTO gym_charges
+      `INSERT INTO products
          (gym_id, name, type, amount, currency, billing_frequency, status, availability,
           is_system, tax_behavior)
        VALUES (?, ?, ?, 10.00, 'EUR', ?, 'active', 'available', 0, 'inclusive')`,
@@ -139,7 +139,7 @@ describe('Promotion item Requirement (#959)', () => {
 
     it('refuses a value outside the accepted set, in SQL', async () => {
       await expect(db.query(
-        `INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity, requirement)
+        `INSERT INTO promotion_periodical (gym_id, promotion_id, product_id, quantity, requirement)
          VALUES (?, ?, ?, 1, 'required')`,
         [gymId, promoId, lockerId],
       )).rejects.toThrow();
@@ -150,7 +150,7 @@ describe('Promotion item Requirement (#959)', () => {
 
   describe('the three section PUTs', () => {
     it('defaults a line that names no Requirement to mandatory', async () => {
-      const res = await put('periodical-benefits', [{ gym_charge_id: lockerId, quantity: 1 }]);
+      const res = await put('periodical-benefits', [{ product_id: lockerId, quantity: 1 }]);
       expect(res.status).toBe(200);
       expect(res.body).toHaveLength(1);
       expect(res.body[0].requirement).toBe('mandatory');
@@ -158,7 +158,7 @@ describe('Promotion item Requirement (#959)', () => {
 
     it('stores and reports an explicit optional', async () => {
       const res = await put('periodical-benefits', [
-        { gym_charge_id: lockerId, quantity: 1, requirement: 'optional' },
+        { product_id: lockerId, quantity: 1, requirement: 'optional' },
       ]);
       expect(res.status).toBe(200);
       expect(res.body[0].requirement).toBe('optional');
@@ -170,12 +170,12 @@ describe('Promotion item Requirement (#959)', () => {
 
     it('keeps a stored Requirement when the request does not mention it', async () => {
       // The load-bearing case. The section `PUT` is replace-all, so a client that
-      // sends `gym_charge_id` + `quantity` alone — anything written before this
+      // sends `product_id` + `quantity` alone — anything written before this
       // ticket — must not reset an optional item to mandatory.
       await put('periodical-benefits', [
-        { gym_charge_id: lockerId, quantity: 1, requirement: 'optional' },
+        { product_id: lockerId, quantity: 1, requirement: 'optional' },
       ]);
-      const res = await put('periodical-benefits', [{ gym_charge_id: lockerId, quantity: 3 }]);
+      const res = await put('periodical-benefits', [{ product_id: lockerId, quantity: 3 }]);
       expect(res.status).toBe(200);
       expect(res.body[0].quantity).toBe(3);
       expect(res.body[0].requirement).toBe('optional');
@@ -183,7 +183,7 @@ describe('Promotion item Requirement (#959)', () => {
 
     it('changes it back when the request says so', async () => {
       const res = await put('periodical-benefits', [
-        { gym_charge_id: lockerId, quantity: 1, requirement: 'mandatory' },
+        { product_id: lockerId, quantity: 1, requirement: 'mandatory' },
       ]);
       expect(res.status).toBe(200);
       expect(res.body[0].requirement).toBe('mandatory');
@@ -191,27 +191,27 @@ describe('Promotion item Requirement (#959)', () => {
 
     it('keeps each line’s own Requirement across a multi-line save', async () => {
       const res = await put('periodical-benefits', [
-        { gym_charge_id: lockerId, quantity: 1, requirement: 'optional' },
-        { gym_charge_id: insuranceId, quantity: 1, requirement: 'mandatory' },
+        { product_id: lockerId, quantity: 1, requirement: 'optional' },
+        { product_id: insuranceId, quantity: 1, requirement: 'mandatory' },
       ]);
       expect(res.status).toBe(200);
-      const byId = new Map(res.body.map((r: any) => [r.gym_charge_id, r.requirement]));
+      const byId = new Map(res.body.map((r: any) => [r.product_id, r.requirement]));
       expect(byId.get(lockerId)).toBe('optional');
       expect(byId.get(insuranceId)).toBe('mandatory');
 
       // …and a quantity-only save of both keeps both.
       const again = await put('periodical-benefits', [
-        { gym_charge_id: lockerId, quantity: 2 },
-        { gym_charge_id: insuranceId, quantity: 2 },
+        { product_id: lockerId, quantity: 2 },
+        { product_id: insuranceId, quantity: 2 },
       ]);
-      const after = new Map(again.body.map((r: any) => [r.gym_charge_id, r.requirement]));
+      const after = new Map(again.body.map((r: any) => [r.product_id, r.requirement]));
       expect(after.get(lockerId)).toBe('optional');
       expect(after.get(insuranceId)).toBe('mandatory');
     });
 
     it('400s an unknown Requirement rather than coercing it', async () => {
       const res = await put('periodical-benefits', [
-        { gym_charge_id: lockerId, quantity: 1, requirement: 'Optional' },
+        { product_id: lockerId, quantity: 1, requirement: 'Optional' },
       ]);
       expect(res.status).toBe(400);
       expect(res.body.error).toBe('requirement must be one of: mandatory, optional');
@@ -220,7 +220,7 @@ describe('Promotion item Requirement (#959)', () => {
     it('does not disturb the (action, value) pair beside it', async () => {
       const res = await put('periodical-benefits', [
         {
-          gym_charge_id: lockerId, quantity: 1, requirement: 'optional',
+          product_id: lockerId, quantity: 1, requirement: 'optional',
           action: 'percentage_discount', value: 50,
         },
       ]);
@@ -240,7 +240,7 @@ describe('Promotion item Requirement (#959)', () => {
         ['session-benefits', sessionItem], ['oneoff-benefits', oneoffItem],
       ] as const) {
         const res = await put(section, [
-          { gym_charge_id: itemId, quantity: 1, requirement: 'optional' },
+          { product_id: itemId, quantity: 1, requirement: 'optional' },
         ]);
         expect(res.status, section).toBe(200);
         expect(res.body[0].requirement, section).toBe('optional');
@@ -251,7 +251,7 @@ describe('Promotion item Requirement (#959)', () => {
       const otherGym = await createTestGym('PIR Other Gym');
       await createTestMembership(otherGym, 'admin');
       const res = await put('periodical-benefits', [
-        { gym_charge_id: lockerId, quantity: 1, requirement: 'optional' },
+        { product_id: lockerId, quantity: 1, requirement: 'optional' },
       ], promoId, otherGym);
       expect(res.status).toBe(404);
     });
@@ -266,7 +266,7 @@ describe('Promotion item Requirement (#959)', () => {
       );
       const fdPromo = await createPromotion(`PIR-FD-Promo-${uniq()}`, fdGym, fdPlan);
       const res = await put('periodical-benefits', [
-        { gym_charge_id: lockerId, quantity: 1, requirement: 'optional' },
+        { product_id: lockerId, quantity: 1, requirement: 'optional' },
       ], fdPromo, fdGym);
       expect(res.status).toBe(403);
     });
@@ -278,7 +278,7 @@ describe('Promotion item Requirement (#959)', () => {
     const source = await createPromotion(`PIR-Dup-Source-${uniq()}`);
     const item = await createItem(`PIR Dup Locker ${uniq()}`);
     await put('periodical-benefits', [
-      { gym_charge_id: item, quantity: 2, requirement: 'optional' },
+      { product_id: item, quantity: 2, requirement: 'optional' },
     ], source);
 
     const res = await request
@@ -301,8 +301,8 @@ describe('Promotion item Requirement (#959)', () => {
     const optionalItem = await createItem(`PIR Apply Locker ${uniq()}`);
     const mandatoryItem = await createItem(`PIR Apply Insurance ${uniq()}`, 'fee', 'year');
     await put('periodical-benefits', [
-      { gym_charge_id: optionalItem, quantity: 1, requirement: 'optional', action: 'waive' },
-      { gym_charge_id: mandatoryItem, quantity: 1, requirement: 'mandatory', action: 'waive' },
+      { product_id: optionalItem, quantity: 1, requirement: 'optional', action: 'waive' },
+      { product_id: mandatoryItem, quantity: 1, requirement: 'mandatory', action: 'waive' },
     ], promotion);
 
     const { insertId: memberId } = await db.query(
@@ -326,14 +326,14 @@ describe('Promotion item Requirement (#959)', () => {
     // flag has to be *in* the snapshot — otherwise the screen that will offer the
     // member the choice would read a Promotion that may have been edited since.
     const { rows } = await db.query(
-      `SELECT s.gym_charge_id, s.requirement
+      `SELECT s.product_id, s.requirement
          FROM user_membership_promotion_periodical_snapshot s
          JOIN user_membership_promotions ump ON ump.id = s.user_membership_promotion_id
         WHERE ump.user_membership_id = ? AND s.gym_id = ?
-        ORDER BY s.gym_charge_id`,
+        ORDER BY s.product_id`,
       [umId, gymId],
     );
-    const byId = new Map((rows as any[]).map((r) => [Number(r.gym_charge_id), r.requirement]));
+    const byId = new Map((rows as any[]).map((r) => [Number(r.product_id), r.requirement]));
     expect(byId.get(optionalItem)).toBe('optional');
     expect(byId.get(mandatoryItem)).toBe('mandatory');
 
