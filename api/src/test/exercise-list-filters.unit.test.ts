@@ -14,6 +14,7 @@ import {
   DEFAULT_MUSCLE_MATCH,
   EXERCISE_METADATA_COLUMNS,
   EXERCISE_MUSCLE_MATCHES,
+  exerciseFacetsQuery,
   exerciseFacetsSql,
   exerciseListFilterSql,
   groupExerciseFacets,
@@ -172,6 +173,21 @@ describe('facets', () => {
     }
     expect(sql.match(/UNION ALL/g)).toHaveLength(EXERCISE_METADATA_COLUMNS.length - 1);
     expect(sql.match(/e\.gym_id IS NULL/g)).toHaveLength(EXERCISE_METADATA_COLUMNS.length);
+  });
+
+  it('binds a parameterised scope once per column', () => {
+    // The scope is repeated across the union's arms, so a gym-scoped facets
+    // read (`e.gym_id = ?`, #969 stage 2) needs its value repeated as many
+    // times — which is this module's to know, not a router's.
+    const { sql, params } = exerciseFacetsQuery("e.gym_id = ? AND e.status != 'deleted'", ['gym-1']);
+    expect(params).toEqual(Array(EXERCISE_METADATA_COLUMNS.length).fill('gym-1'));
+    expect((sql.match(/\?/g) ?? []).length).toBe(params.length);
+  });
+
+  it('binds nothing for a scope that has no parameters', () => {
+    const { sql, params } = exerciseFacetsQuery("e.gym_id IS NULL AND e.status = 'active'");
+    expect(params).toEqual([]);
+    expect(sql).not.toContain('?');
   });
 
   it('groups the rows per column, sorted, and reports an absent column as empty', () => {

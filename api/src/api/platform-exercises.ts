@@ -21,7 +21,7 @@ import {
 import { logger } from '../lib/logger';
 import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
 import {
-  exerciseFacetsSql,
+  exerciseFacetsQuery,
   exerciseListFilterSql,
   groupExerciseFacets,
   parseExerciseListFilter,
@@ -174,8 +174,9 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
  */
 platformExercisesRouter.get('/facets', requireSuperadmin, async (_req, res, next) => {
   try {
+    const facetQuery = exerciseFacetsQuery(BASE_SCOPE_SQL);
     const [facets, totals] = await Promise.all([
-      db.query(exerciseFacetsSql(BASE_SCOPE_SQL)),
+      db.query(facetQuery.sql, facetQuery.params),
       db.query(`SELECT COUNT(*) AS total FROM exercises e WHERE ${BASE_SCOPE_SQL}`),
     ]);
     res.json({

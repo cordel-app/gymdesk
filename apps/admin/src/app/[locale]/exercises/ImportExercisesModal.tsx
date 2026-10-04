@@ -4,16 +4,27 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { btnStyle } from '@/components/ui';
+// #969 stage 2: the Import modal is the second of the ticket's three screens, so
+// it renders the *same* toolbar over the *same* filter-state declaration as the
+// two list pages (§19) rather than its own name box and single muscle select.
+import { ExerciseFilterBar, type ExerciseFacetOptions } from '@/components/exercises/ExerciseFilterBar';
+import { EMPTY_EXERCISE_FILTER, exerciseFilterQuery, type ExerciseFilterState } from '@/lib/exerciseFilters';
 
 /**
  * #718: Import Exercises — pick Base Exercises from the platform library and
  * import the selection in one request (`POST /exercises/import`).
  *
- * Both filters are server-side (`GET /exercises/base?q=&muscle=`), so the
- * library is never pulled into the browser to be filtered here, and
- * "Select all matching" means exactly the rows the server returned for the
- * current filters. Selection is keyed by base exercise id and lives outside
- * the fetched list, so changing a filter never drops what is already ticked.
+ * Every filter is server-side (`GET /exercises/base`), so the library is never
+ * pulled into the browser to be filtered here, and "Select all matching" means
+ * exactly the rows the server returned for the current filters. Selection is
+ * keyed by base exercise id and lives outside the fetched list, so changing a
+ * filter never drops what is already ticked.
+ *
+ * Since #969 the filters are the catalogue toolbar every exercise screen wears
+ * — name/translation, slug, muscles (multi-select, Any/All, Primary/Secondary)
+ * and the metadata facets — and the Status control is deliberately **not**
+ * offered: this list is `status = 'active'` by definition, since an inactive
+ * Base Exercise is not importable at all.
  */
 
 interface BaseMuscle { key: string; role: 'principal' | 'secondary' }
@@ -59,9 +70,11 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
   const t = useTranslations('exercises');
   const { apiFetch } = useApiClient();
 
-  const [nameInput, setNameInput] = useState('');
-  const [name, setName] = useState('');
-  const [muscle, setMuscle] = useState('');
+  const [filter, setFilter] = useState<ExerciseFilterState>(EMPTY_EXERCISE_FILTER);
+  // What the metadata dropdowns offer and the unfiltered library total (§8, §9,
+  // §14), read from the library's own gym-facing facets route.
+  const [facets, setFacets] = useState<ExerciseFacetOptions | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
   const [rows, setRows] = useState<BaseExercise[]>([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -73,15 +86,11 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
   // ImpersonationDialog's searchSeq).
   const loadSeq = useRef(0);
 
-  const load = useCallback(async (q: string, muscleKey: string) => {
+  const load = useCallback(async (current: ExerciseFilterState) => {
     const seq = ++loadSeq.current;
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (q) params.set('q', q);
-      if (muscleKey) params.set('muscle', muscleKey);
-      const qs = params.toString();
-      const result = await apiFetch<BaseExercise[]>(`/exercises/base${qs ? `?${qs}` : ''}`);
+      const result = await apiFetch<BaseExercise[]>(`/exercises/base${exerciseFilterQuery(current)}`);
       if (seq !== loadSeq.current) return;
       setRows(result);
       setError(null);
@@ -97,25 +106,34 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
   // §9: opening the modal always starts from a fresh selection and no filters.
   useEffect(() => {
     if (!open) return;
-    setNameInput('');
-    setName('');
-    setMuscle('');
+    setFilter({ ...EMPTY_EXERCISE_FILTER });
     setSelected(new Set());
     setError(null);
   }, [open]);
 
-  // One effect drives every fetch; a typed name debounces, everything else fires at once.
+  // One effect drives every fetch, debounced because the toolbar's text fields
+  // change on every keystroke (#969 §17) — the same 250ms the two list pages use.
   useEffect(() => {
     if (!open) return;
-    const timer = setTimeout(() => load(name, muscle), name ? 300 : 0);
+    const timer = setTimeout(() => load(filter), 250);
     return () => clearTimeout(timer);
-  }, [open, name, muscle, load]);
+  }, [open, filter, load]);
 
+  // The facets and the library total do not depend on the current filter, so
+  // they are read once per opening rather than per keystroke.
   useEffect(() => {
-    if (nameInput === name) return;
-    const timer = setTimeout(() => setName(nameInput), 300);
-    return () => clearTimeout(timer);
-  }, [nameInput, name]);
+    if (!open) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch<{ total: number; equipment: string[]; category: string[] }>('/exercises/base/facets');
+        if (cancelled) return;
+        setFacets({ equipment: res.equipment ?? [], category: res.category ?? [] });
+        setTotal(res.total ?? null);
+      } catch { /* non-critical: the toolbar simply offers no metadata filter */ }
+    })();
+    return () => { cancelled = true; };
+  }, [open, apiFetch]);
 
   if (!open) return null;
 
@@ -171,12 +189,6 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
     }
   }
 
-  const inputSt: React.CSSProperties = {
-    width: '100%', boxSizing: 'border-box', padding: '8px 12px',
-    border: '1px solid var(--gd-input-border, #d1d5db)', borderRadius: 6,
-    background: 'var(--gd-input-bg, #ffffff)', fontSize: 14, color: 'inherit',
-  };
-
   return (
     <div
       onClick={(e) => { if (e.target === e.currentTarget && !importing) onCancel(); }}
@@ -187,31 +199,28 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
     >
       <div style={{
         background: 'var(--gd-card-bg, #ffffff)', borderRadius: 12,
-        width: '100%', maxWidth: 560, maxHeight: '80vh',
+        width: '100%', maxWidth: 720, maxHeight: '80vh',
         boxShadow: '0 8px 32px rgba(0,0,0,0.2)', display: 'flex', flexDirection: 'column',
       }}>
         <div style={{ padding: '18px 22px 12px' }}>
           <h2 style={{ margin: 0, fontSize: 18 }}>{t('import_modal_title')}</h2>
         </div>
 
-        <div style={{ padding: '0 22px 12px', display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 220px' }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{t('import_filter_name')}</label>
-            <input
-              autoFocus
-              value={nameInput}
-              onChange={(e) => setNameInput(e.target.value)}
-              placeholder={t('import_filter_name_placeholder')}
-              style={inputSt}
-            />
-          </div>
-          <div style={{ flex: '1 1 160px' }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 4 }}>{t('import_filter_muscle')}</label>
-            <select value={muscle} onChange={(e) => setMuscle(e.target.value)} style={inputSt}>
-              <option value="">{t('import_filter_muscle_all')}</option>
-              {muscleKeys.map((key) => <option key={key} value={key}>{muscleLabel(key)}</option>)}
-            </select>
-          </div>
+        {/* §19: the catalogue toolbar, not a second filtering UX. A Base
+            Exercise carries a slug, so §4's field is offered here as it is on
+            Base Exercises; Status is not, because the library is active-only. */}
+        <div style={{ padding: '0 22px' }}>
+          <ExerciseFilterBar
+            value={filter}
+            onChange={setFilter}
+            muscleKeys={muscleKeys}
+            muscleLabel={muscleLabel}
+            facets={facets}
+            showSlug
+            autoFocusSearch
+            shown={rows.length}
+            total={total}
+          />
         </div>
 
         <div style={{ padding: '0 22px 10px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>

@@ -727,9 +727,18 @@ describe('GET /exercises/base', () => {
     expect(neither.body).toEqual([]);
   });
 
-  it('returns 400 for an invalid muscle key', async () => {
+  it('takes an unknown muscle key as a filter that matches nothing', async () => {
+    // #969 stage 2: this route reads the one exercise filter vocabulary now
+    // (`domain/exerciseListFilters.ts`), in which only `status` and
+    // `muscle_match` are closed sets. #964 §8 lets the importer store a muscle
+    // key outside `MUSCLE_KEYS` rather than fail the import, so a filter that
+    // refused one would make a legitimately stored muscle unfilterable — it
+    // returns nothing instead, exactly as the other two exercise lists do.
     const res = await get('/exercises/base?muscle=not a muscle');
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+    // The two closed sets still answer 400.
+    expect((await get('/exercises/base?muscle_match=either')).status).toBe(400);
   });
 
   it('marks a base exercise the gym imported (cloned_from_id) as already imported', async () => {
