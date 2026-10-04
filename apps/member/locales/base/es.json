@@ -202,7 +202,11 @@
     "type_event_cancelled": "Reserva cancelada",
     "type_event_updated": "Reserva actualizada",
     "type_event_reactivated": "Clase reactivada",
-    "detail_event_reactivated": "La clase vuelve a estar disponible y tu reserva se ha restaurado."
+    "detail_event_reactivated": "La clase vuelve a estar disponible y tu reserva se ha restaurado.",
+    "type_waitlist_closed": "Lista de espera cerrada",
+    "detail_waitlist_closed": "La lista de espera de esta clase se ha cerrado. Ya no estás en ella y no puedes volver a apuntarte.",
+    "type_waitlist_removed": "Fuera de la lista de espera",
+    "detail_waitlist_removed": "Se te ha retirado de la lista de espera de esta clase. La lista sigue abierta, así que puedes volver a apuntarte."
   },
   "membership": {
     "title": "Mi cuota",

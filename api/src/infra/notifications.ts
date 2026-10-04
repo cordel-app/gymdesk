@@ -18,7 +18,20 @@ export type NotificationType =
    * made no new booking (§6, §11), and sending the booking alert would tell
    * them they had just booked something they never touched.
    */
-  | 'event_reactivated';
+  | 'event_reactivated'
+  /**
+   * #980 stage 2: the occurrence's waiting list was disabled, so the member is
+   * no longer on it (§4/§5). Deliberately not `event_cancelled` — the class is
+   * still running and the member never held a booking, so the booking
+   * vocabulary would tell them something false.
+   */
+  | 'waitlist_closed'
+  /**
+   * #980 stage 2: staff took this one member off the waiting list, with the
+   * list itself still there. A different fact from `waitlist_closed`, and the
+   * Alerts page words the two differently.
+   */
+  | 'waitlist_removed';
 
 export interface NotificationPayload {
   title: string;

@@ -52,12 +52,17 @@ describe('Class session detail panel: Edit mode (#980 stage 1)', () => {
     }
   });
 
-  it('saves both fields in one request to the one session route (§9)', () => {
+  it('saves every field in one request to the one session route (§9)', () => {
     const save = panelSrc.match(/async function handleSaveDetails\(\)[\s\S]*?\n {2}\}/)?.[0] ?? '';
     expect(save).toContain("method: 'PUT'");
     expect(save).toContain('/class-sessions/${sessionId}');
-    expect(save).toContain('trainer_membership_id');
-    expect(save).toContain('space_id');
+    // The body is built by `detailsPayload()` since #980 stage 2 added the
+    // Waitlist to the same form — the point of the assertion is that the
+    // fields go in *one* body, not which function assembles it.
+    const payload = panelSrc.match(/function detailsPayload\([\s\S]*?\n {2}\}/)?.[0] ?? '';
+    expect(payload).toContain('trainer_membership_id');
+    expect(payload).toContain('space_id');
+    expect(payload).toContain('waitlist_mode');
     // One request, not one per field: a partial save is what §9 forbids.
     expect((save.match(/apiFetch\(/g) ?? []).length).toBe(1);
   });
@@ -65,16 +70,18 @@ describe('Class session detail panel: Edit mode (#980 stage 1)', () => {
   it('writes the occurrence only — no activity-type route is called (§12)', () => {
     const save = panelSrc.match(/async function handleSaveDetails\(\)[\s\S]*?\n {2}\}/)?.[0] ?? '';
     expect(save).not.toContain('/activity-types');
+    expect(panelSrc).not.toContain('at.waitlist_mode');
     expect(panelSrc).not.toContain('default_trainer_membership_id');
     expect(panelSrc).not.toContain('default_space_id');
   });
 
   it('sends only what the admin changed', () => {
+    const payload = panelSrc.match(/function detailsPayload\([\s\S]*?\n {2}\}/)?.[0] ?? '';
     const save = panelSrc.match(/async function handleSaveDetails\(\)[\s\S]*?\n {2}\}/)?.[0] ?? '';
     // A space the gym has since deactivated is still displayed, so re-sending
     // the stored value on an unrelated edit would 400 the save.
-    expect(save).toContain('session.trainer_membership_id ?? null');
-    expect(save).toContain('session.space_id ?? null');
+    expect(payload).toContain('current.trainer_membership_id ?? null');
+    expect(payload).toContain('current.space_id ?? null');
     expect(save).toContain('Object.keys(body).length === 0');
   });
 

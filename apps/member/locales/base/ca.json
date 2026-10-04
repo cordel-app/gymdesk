@@ -202,7 +202,11 @@
     "type_event_cancelled": "Reserva cancel·lada",
     "type_event_updated": "Reserva actualitzada",
     "type_event_reactivated": "Classe reactivada",
-    "detail_event_reactivated": "La classe torna a estar disponible i la teva reserva s’ha restaurat."
+    "detail_event_reactivated": "La classe torna a estar disponible i la teva reserva s’ha restaurat.",
+    "type_waitlist_closed": "Llista d'espera tancada",
+    "detail_waitlist_closed": "La llista d'espera d'aquesta classe s'ha tancat. Ja no hi ets i no t'hi pots tornar a apuntar.",
+    "type_waitlist_removed": "Fora de la llista d'espera",
+    "detail_waitlist_removed": "Se t'ha retirat de la llista d'espera d'aquesta classe. La llista continua oberta, així que t'hi pots tornar a apuntar."
   },
   "membership": {
     "title": "La meva quota",

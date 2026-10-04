@@ -22,7 +22,11 @@ describe('The Alerts page carries the reactivation line (#979 §6)', () => {
     // `detail_<type>` on every type would render
     // `notifications.detail_booking_confirmed` on screen.
     expect(notificationsPage).toContain('DETAIL_TYPES');
-    expect(notificationsPage).toMatch(/DETAIL_TYPES = \[\s*'event_reactivated'\s*\]/);
+    // Membership of the list, not the whole list: #980 stage 2 added the two
+    // waitlist types beside this one, and a test pinned to the list's exact
+    // contents makes every later type a failing assertion rather than a
+    // deliberate one.
+    expect(notificationsPage).toMatch(/DETAIL_TYPES = \[[^\]]*'event_reactivated'[^\]]*\]/);
     expect(notificationsPage).toMatch(/DETAIL_TYPES\.includes\(n\.type\)/);
   });
 

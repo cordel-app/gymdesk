@@ -86,6 +86,8 @@ describe('diffAuditedFields (#980 §11)', () => {
       'capacity',
       'allows_shared_booking',
       'professional_service_id',
+      // #980 stage 2 — the occurrence's own Waitlist setting.
+      'waitlist_mode',
     ]);
   });
 });

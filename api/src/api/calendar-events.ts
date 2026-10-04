@@ -30,6 +30,7 @@ import { bookMemberOnSession } from './bookings';
 import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
 import { withEventExecutionStatus, type EventExecutionInput } from '../domain/eventExecutionStatus';
 import { diffAuditedFields, SESSION_AUDITED_FIELDS } from '../domain/calendarEventChanges';
+import { parseWaitlistModeInput, waitlistModeClosesQueue, type WaitlistMode } from '../domain/waitlistMode';
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
@@ -196,6 +197,88 @@ async function assertSlotAvailable(tx: Tx, opts: {
 }
 
 /**
+ * #980 stage 2 §5 — take every member off this occurrence's waiting list,
+ * inside the caller's transaction, and answer who was removed.
+ *
+ * Called only when the write sets the occurrence's Waitlist to `disabled`
+ * (`waitlistModeClosesQueue()`, the one place that distinction lives):
+ * `closed` deliberately leaves the queue and its `waitlist_position` ordering
+ * exactly as they are, which is the whole reason the column has three states
+ * rather than the ticket's two.
+ *
+ * Removal is `status = 'cancelled'` — the existing vocabulary §5 asks for
+ * (`chk_ceb_status` has `booked` · `waitlisted` · `cancelled` and nothing
+ * else), written the same way `cancelBooking()` writes it, `waitlist_position`
+ * included: the position is the record of the place the member held, and
+ * nothing reads it on a cancelled row (`bookMemberOnSession()` takes
+ * `MAX(waitlist_position) + 1` over `status = 'waitlisted'` alone). The
+ * generated `active_booking_key` goes NULL with the status, so a member taken
+ * off the queue can join it again if the gym reopens it.
+ *
+ * Two things it deliberately does **not** do. It never promotes anybody — a
+ * freed place is not what happened here, so this is not `cancelBooking()`,
+ * whose promotion step exists for a `booked` row — and it never touches a
+ * `booked` row, which never had a place in the queue to lose (§4: the alert
+ * "must not be interpreted as a new booking or cancellation"). Nor does it
+ * refund a package credit: a waitlisted row holds none, since
+ * `debitPackageIfClaimed()` runs on a booking and on a promotion.
+ *
+ * It runs under `FOR UPDATE` so a member joining the queue in the same moment
+ * either lands before the removal and is removed with the rest, or waits for
+ * it and is refused by the mode the write has just stored.
+ */
+async function emptyWaitlistQueue(
+  tx: Tx, gymId: string, sessionId: string | number, actorMembershipId: number | null,
+): Promise<number[]> {
+  const { rows } = await tx.query(
+    `SELECT member_id FROM calendar_event_bookings
+     WHERE calendar_event_id = ? AND gym_id = ? AND status = 'waitlisted'
+     ORDER BY waitlist_position ASC, id ASC
+     FOR UPDATE`,
+    [sessionId, gymId],
+  );
+  if (rows.length === 0) return [];
+
+  await tx.query(
+    `UPDATE calendar_event_bookings
+     SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(),
+         modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+     WHERE calendar_event_id = ? AND gym_id = ? AND status = 'waitlisted'`,
+    [actorMembershipId ?? null, sessionId, gymId],
+  );
+  return rows.map((r: any) => Number(r.member_id));
+}
+
+/**
+ * #980 stage 2 §4 — tell the members disabling the waiting list removed that
+ * it is gone.
+ *
+ * `waitlist_closed`, never `event_cancelled`: the class is still running and
+ * the member never had a booking, so the booking vocabulary would say
+ * something false (§4 — the alert "must not be interpreted as a new booking or
+ * cancellation"). A member holding a `booked` row is not in this list at all,
+ * because the waiting list was never theirs.
+ *
+ * Fire-and-forget like every other member alert this router raises: the staff
+ * save has already committed, and failing it because an advisory row could not
+ * be written would undo a change the gym has been told succeeded.
+ */
+function alertWaitlistClosed(
+  gymId: string, memberIds: number[], sessionId: number, session: { activity_name?: string; starts_at?: unknown },
+): void {
+  if (memberIds.length === 0) return;
+  sendBulkNotification(gymId, memberIds, 'waitlist_closed', 'session', sessionId, {
+    title: String(session.activity_name ?? ''),
+    starts_at: session.starts_at as string | undefined,
+  });
+}
+
+/** The removed members as the audit row's own consequence field, or nothing. */
+function waitlistAuditExtra(removed: number[]): Record<string, unknown> | undefined {
+  return removed.length > 0 ? { removed_waitlist_member_ids: removed } : undefined;
+}
+
+/**
  * #980 §11 — re-read the occurrence a `PUT` has just written and record what
  * changed about it, previous → new.
  *
@@ -208,9 +291,16 @@ async function assertSlotAvailable(tx: Tx, opts: {
  * out who moved a class.
  *
  * `before` is the pre-read taken ahead of the UPDATE, inside the same request.
+ *
+ * `extra` is for a *consequence* of the edit rather than a column of it —
+ * stage 2's `removed_waitlist_member_ids`, the members disabling the waiting
+ * list took off it (§5). It rides the row the changed field already wrote
+ * rather than becoming an audit row of its own, because it is the same action:
+ * a gym reading `Waitlist: open → disabled` is being told who that cost.
  */
 async function readSessionAndAudit(
   req: Request, gymId: string, before: Record<string, unknown>,
+  extra?: Record<string, unknown>,
 ): Promise<any> {
   const { rows } = await db.query(
     `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
@@ -224,7 +314,7 @@ async function readSessionAndAudit(
       entityType: 'class_session',
       entityId: req.params.id,
       previous: changes.previous,
-      next: changes.next,
+      next: { ...changes.next, ...(extra ?? {}) },
     });
   }
   return after;
@@ -423,9 +513,21 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
 classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, activity_type_id, allows_shared_booking,
-          professional_service_id } = req.body;
+          professional_service_id, waitlist_mode } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
     return res.status(400).json({ error: 'ends_at must be after starts_at' });
+  }
+
+  // #980 stage 2 §3 — the occurrence's own Waitlist setting, judged in the one
+  // place that owns the vocabulary. Only a field the request sent changes it:
+  // an absent key keeps what the occurrence is stored with, which for an event
+  // written before this ticket is NULL and therefore still its Activity Type's
+  // setting.
+  let waitlistMode: WaitlistMode | null | undefined;
+  if ('waitlist_mode' in req.body) {
+    const parsedWaitlist = parseWaitlistModeInput(waitlist_mode);
+    if ('error' in parsedWaitlist) return res.status(400).json({ error: parsedWaitlist.error });
+    waitlistMode = parsedWaitlist.mode;
   }
 
   // #647: only an explicitly sent field changes the occurrence's Professional
@@ -449,8 +551,11 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
       `SELECT ce.center_id, ce.trainer_membership_id AS cur_trainer, ce.space_id AS cur_space,
               ce.starts_at AS cur_starts, ce.ends_at AS cur_ends, ce.activity_type_id AS cur_activity,
               ce.activity_type_id, ce.trainer_membership_id, ce.space_id, ce.starts_at, ce.ends_at,
-              ce.capacity, ce.allows_shared_booking, ce.professional_service_id
-       FROM calendar_events ce WHERE ce.id = ? AND ce.gym_id = ? AND ce.activity_type_id IS NOT NULL AND ce.deleted_at IS NULL`,
+              ce.capacity, ce.allows_shared_booking, ce.professional_service_id, ce.waitlist_mode,
+              at.name AS activity_name
+       FROM calendar_events ce
+       JOIN activity_types at ON at.id = ce.activity_type_id
+       WHERE ce.id = ? AND ce.gym_id = ? AND ce.activity_type_id IS NOT NULL AND ce.deleted_at IS NULL`,
       [req.params.id, gymId],
     );
     if (existingRows.length === 0) return res.status(404).json({ error: 'Session not found' });
@@ -476,7 +581,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
       );
       const newShareable = !!atRows[0]?.is_shareable;
 
-      await db.transaction(async (tx) => {
+      const removed = await db.transaction(async (tx) => {
         await assertSlotAvailable(tx, {
           gymId, trainerId: effTrainer, spaceId: effSpace,
           startsAt: effStarts, endsAt: effEnds, excludeId: String(req.params.id), newShareable,
@@ -491,6 +596,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
             ends_at               = COALESCE(?, ends_at),
             capacity              = IF(?, ?, capacity),
             professional_service_id = IF(?, ?, professional_service_id),
+            waitlist_mode         = IF(?, ?, waitlist_mode),
             modified_by_membership_id = ?
            WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
           [
@@ -502,43 +608,62 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
             'max_capacity_override' in req.body ? 1 : 0,
             max_capacity_override != null && max_capacity_override !== '' ? parseInt(max_capacity_override, 10) : null,
             serviceId !== undefined ? 1 : 0, serviceId ?? null,
+            waitlistMode !== undefined ? 1 : 0, waitlistMode ?? null,
             gymMembershipId,
             req.params.id, gymId,
           ],
         );
+
+        return waitlistModeClosesQueue(waitlistMode)
+          ? emptyWaitlistQueue(tx, gymId, String(req.params.id), gymMembershipId)
+          : [];
       });
 
-      return res.json(shapeRow(await readSessionAndAudit(req, gymId, cur)));
+      alertWaitlistClosed(gymId, removed, Number(req.params.id), cur);
+      return res.json(shapeRow(await readSessionAndAudit(req, gymId, cur, waitlistAuditExtra(removed))));
     }
 
-    const { rowCount } = await db.query(
-      `UPDATE calendar_events SET
-        activity_type_id       = COALESCE(?, activity_type_id),
-        trainer_membership_id  = IF(?, ?, trainer_membership_id),
-        space_id               = IF(?, ?, space_id),
-        starts_at              = COALESCE(?, starts_at),
-        ends_at                = COALESCE(?, ends_at),
-        capacity               = IF(?, ?, capacity),
-        allows_shared_booking  = IF(?, ?, allows_shared_booking),
-        professional_service_id = IF(?, ?, professional_service_id),
-        modified_by_membership_id = ?
-       WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
-      [
-        activity_type_id ?? null,
-        'trainer_membership_id' in req.body ? 1 : 0, trainer_membership_id ?? null,
-        'space_id'              in req.body ? 1 : 0, space_id ?? null,
-        starts_at ? new Date(starts_at) : null,
-        ends_at   ? new Date(ends_at)   : null,
-        'max_capacity_override' in req.body ? 1 : 0,
-        max_capacity_override != null && max_capacity_override !== '' ? parseInt(max_capacity_override, 10) : null,
-        'allows_shared_booking' in req.body ? 1 : 0, allows_shared_booking ? 1 : 0,
-        serviceId !== undefined ? 1 : 0, serviceId ?? null,
-        gymMembershipId,
-        req.params.id, gymId,
-      ],
-    );
-    if (rowCount === 0) return res.status(404).json({ error: 'Session not found' });
-    res.json(shapeRow(await readSessionAndAudit(req, gymId, cur)));
+    // §9 — the write and the waiting list it empties are one transaction, so a
+    // failure leaves the occurrence and its queue exactly as they were rather
+    // than removing members from a waitlist that is still open.
+    const result = await db.transaction(async (tx) => {
+      const { rowCount } = await tx.query(
+        `UPDATE calendar_events SET
+          activity_type_id       = COALESCE(?, activity_type_id),
+          trainer_membership_id  = IF(?, ?, trainer_membership_id),
+          space_id               = IF(?, ?, space_id),
+          starts_at              = COALESCE(?, starts_at),
+          ends_at                = COALESCE(?, ends_at),
+          capacity               = IF(?, ?, capacity),
+          allows_shared_booking  = IF(?, ?, allows_shared_booking),
+          professional_service_id = IF(?, ?, professional_service_id),
+          waitlist_mode          = IF(?, ?, waitlist_mode),
+          modified_by_membership_id = ?
+         WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
+        [
+          activity_type_id ?? null,
+          'trainer_membership_id' in req.body ? 1 : 0, trainer_membership_id ?? null,
+          'space_id'              in req.body ? 1 : 0, space_id ?? null,
+          starts_at ? new Date(starts_at) : null,
+          ends_at   ? new Date(ends_at)   : null,
+          'max_capacity_override' in req.body ? 1 : 0,
+          max_capacity_override != null && max_capacity_override !== '' ? parseInt(max_capacity_override, 10) : null,
+          'allows_shared_booking' in req.body ? 1 : 0, allows_shared_booking ? 1 : 0,
+          serviceId !== undefined ? 1 : 0, serviceId ?? null,
+          waitlistMode !== undefined ? 1 : 0, waitlistMode ?? null,
+          gymMembershipId,
+          req.params.id, gymId,
+        ],
+      );
+      if (rowCount === 0) return { rowCount, removed: [] as number[] };
+      const removed = waitlistModeClosesQueue(waitlistMode)
+        ? await emptyWaitlistQueue(tx, gymId, String(req.params.id), gymMembershipId)
+        : [];
+      return { rowCount, removed };
+    });
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Session not found' });
+    alertWaitlistClosed(gymId, result.removed, Number(req.params.id), cur);
+    res.json(shapeRow(await readSessionAndAudit(req, gymId, cur, waitlistAuditExtra(result.removed))));
   } catch (e: any) {
     if (e.status) return res.status(e.status).json({ error: e.message, code: e.code, host_session_id: e.host_session_id });
     next(e);

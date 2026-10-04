@@ -118,6 +118,19 @@ Tick items off in the PR that completes them.
       narrowing the constraint, so stop the API, or at least any reactivation,
       before rolling back: a row inserted between the DELETE and the ADD fails
       the ADD with errno 3819.
+- [ ] **Run migration 217 in the same maintenance window as 170 and 216** (#980
+      stage 2). The third `chk_member_notifications_type` swap, two values wider
+      (`waitlist_closed`, `waitlist_removed`), so it costs one more
+      ALGORITHM=COPY rebuild of `member_notifications` with exactly the
+      consequences listed above. The new list is a strict superset of 216's, so
+      it cannot fail on data, and the statement is guarded on the live clause,
+      so re-running migrations after it lands is a no-op. If 170 and 216 have
+      not run in production yet, all three are back to back on the same table
+      and belong in **one** window — they are three rebuilds of one table, not
+      three independent changes. Its `down` deletes the rows of both types (in
+      batches, per type — there is still no index on `type`) before narrowing
+      the constraint, so stop the API, or at least any waitlist edit, before
+      rolling back.
 - [ ] **Run migration 203 in a maintenance window** (#896 stage 1). Twelve tables
       gain an `(action, value)` pair, and each one takes a CHECK — which MySQL 8
       applies with ALGORITHM=COPY, exactly as migration 170's does. The file is
