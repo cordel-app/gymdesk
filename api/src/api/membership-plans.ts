@@ -1539,6 +1539,28 @@ async function loadMandatoryProducts(gymId: string): Promise<MandatoryProduct[]>
   return rows;
 }
 
+/**
+ * #997 — one Plan section's stored `(action, value)` pairs, keyed by Product.
+ *
+ * Read by the section `PUT` before it validates, so a line submitting the
+ * retired `percentage_discount` can be recognised as *keeping* what it already
+ * has rather than configuring a new discount. Normalized through the same
+ * `shapeProductBenefitRow('plan', …)` the read path uses, so the comparison is
+ * against a number rather than mysql2's `DECIMAL` string.
+ */
+async function loadStoredPlanBenefitPairs(
+  table: string, planId: number, gymId: string,
+): Promise<Map<number, ProductBenefit>> {
+  const { rows } = await db.query(
+    `SELECT product_id, \`action\`, \`value\` FROM ${table}
+      WHERE membership_plan_id = ? AND gym_id = ?`,
+    [planId, gymId],
+  );
+  return new Map<number, ProductBenefit>(
+    rows.map((r: any) => [Number(r.product_id), shapeProductBenefitRow('plan', r)]),
+  );
+}
+
 const PLAN_BENEFIT_ROUTES: { path: string; category: ProductBenefitCategory }[] = [
   { path: 'session-benefits', category: 'session' },
   { path: 'oneoff-benefits', category: 'oneoff' },
@@ -1572,6 +1594,16 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
     if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
     if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
 
+    // #997: the pair each line is stored with, read before the loop because
+    // `parseProductBenefitInput()` needs it — a retired `percentage_discount`
+    // may be carried back unchanged and nothing else on that action may be
+    // written. The authoritative copy is still the `FOR UPDATE` read inside the
+    // transaction below, which is what decides what a *kept* line is written
+    // with; this one only answers "is this what the row already says?", and a
+    // concurrent save in between can at worst let a stale pair validate — never
+    // get stored, since the write never uses this map.
+    const storedBenefits = await loadStoredPlanBenefitPairs(table, planId, gymId);
+
     const productIds: number[] = [];
     const submitted: PlanBenefitWrite[] = [];
     const seen = new Set<number>();
@@ -1587,10 +1619,12 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       if (seen.has(productId)) {
         return res.status(400).json({ error: `Duplicate product_id: ${productId}` });
       }
-      // #896 stage 2 §5/§16 — a Plan may configure three of the five actions;
-      // `Fixed discount` and `Fixed Price` are a 400 here and a CHECK violation
-      // in SQL, so the dropdown is never what enforces it.
-      const parsed = parseProductBenefitInput('plan', item);
+      // #896 stage 2 §5/§16 — a Plan may configure two of the five actions
+      // since #997; `Fixed discount` and `Fixed Price` are a 400 here and a
+      // CHECK violation in SQL, so the dropdown is never what enforces it, and
+      // `percentage_discount` is a 400 unless it is exactly what this line
+      // already stores (#997 §6/§7 — retired, not deleted).
+      const parsed = parseProductBenefitInput('plan', item, storedBenefits.get(productId));
       if (parsed.error) return res.status(400).json({ error: parsed.error });
       // #918 — the Session Benefit's renewal Frequency, on the one section that
       // has the column. A value sent to the other two is ignored rather than

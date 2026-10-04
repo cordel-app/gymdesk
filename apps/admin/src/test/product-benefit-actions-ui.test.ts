@@ -3,11 +3,14 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
   DEFAULT_BENEFIT_ACTION,
+  LEGACY_PLAN_BENEFIT_ACTIONS,
   PLAN_BENEFIT_ACTIONS,
   PROMOTION_ITEM_ACTIONS,
+  STORED_PLAN_BENEFIT_ACTIONS,
   benefitActionOf,
   benefitActionRequiresValue,
   benefitActionsFor,
+  isRetiredBenefitAction,
 } from '@/lib/productBenefitActions';
 import {
   ProductBenefitRow,
@@ -81,11 +84,23 @@ describe('the option sets mirror the API declaration', () => {
     expect([...PROMOTION_ITEM_ACTIONS]).toEqual(apiActions('PROMOTION_ITEM_ACTIONS'));
   });
 
-  it('offers a Membership Plan the same three the API allows it (§16)', () => {
+  it('offers a Membership Plan the same two the API allows it (§16, #997)', () => {
     expect([...PLAN_BENEFIT_ACTIONS]).toEqual(apiActions('PLAN_BENEFIT_ACTIONS'));
-    // Spelled out too: a Plan must never be able to pick a monetary treatment.
+    // Spelled out too: a Plan must never be able to pick a monetary treatment,
+    // and since #997 not a percentage either.
+    expect(PLAN_BENEFIT_ACTIONS).not.toContain('percentage_discount');
     expect(PLAN_BENEFIT_ACTIONS).not.toContain('fixed_discount');
     expect(PLAN_BENEFIT_ACTIONS).not.toContain('fixed_price');
+  });
+
+  it('mirrors #997\'s retired set and the stored set it widens', () => {
+    expect([...LEGACY_PLAN_BENEFIT_ACTIONS]).toEqual(apiActions('LEGACY_PLAN_BENEFIT_ACTIONS'));
+    expect([...STORED_PLAN_BENEFIT_ACTIONS])
+      .toEqual([...PLAN_BENEFIT_ACTIONS, ...LEGACY_PLAN_BENEFIT_ACTIONS]);
+    expect(isRetiredBenefitAction('plan', 'percentage_discount')).toBe(true);
+    // §8: a Promotion retires nothing, so no option of its own disappears.
+    expect(isRetiredBenefitAction('promotion', 'percentage_discount')).toBe(false);
+    expect(isRetiredBenefitAction('plan', 'fixed_price')).toBe(false);
   });
 
   it('starts a new line neutral (§13)', () => {
@@ -94,10 +109,13 @@ describe('the option sets mirror the API declaration', () => {
     expect(benefitActionsFor('plan')[0]).toBe('no_benefit');
   });
 
-  it('reads an action its context may not configure as the default', () => {
+  it('reads an action its context may not store as the default', () => {
     expect(benefitActionOf('promotion', 'fixed_price')).toBe('fixed_price');
     expect(benefitActionOf('plan', 'fixed_price')).toBe('no_benefit');
     expect(benefitActionOf('plan', undefined)).toBe('no_benefit');
+    // #997: the retired value is *stored*, so it still reads as itself — a Plan
+    // line carrying it must not render as "No benefit" and bill the full price.
+    expect(benefitActionOf('plan', 'percentage_discount')).toBe('percentage_discount');
   });
 
   it('asks for a value for exactly the three that take one (§6)', () => {
@@ -251,6 +269,34 @@ describe('the shared editor renders the treatment', () => {
   });
 });
 
+describe('#997 — the editor still reads a retired treatment correctly', () => {
+  const t = (key: string) => key;
+
+  it('renders the stored value as a disabled option, never a selectable one', () => {
+    // Dropping it would make the select read `No benefit` for a line that bills
+    // a discount, and the first unrelated save would make that true.
+    expect(componentSrc).toContain('{isRetiredBenefitAction(benefitContext, action) && (');
+    expect(componentSrc).toContain('<option value={action} disabled>{t(`item_action_${action}`)}</option>');
+  });
+
+  it('shows no percentage input inside a Membership Plan (§2)', () => {
+    expect(componentSrc).toContain('isRetiredBenefitAction(benefitContext, action) ? (');
+    expect(componentSrc).toContain('<span style={legacyValueSt}>{row.value ?? \'—\'}</span>');
+  });
+
+  it('submits the stored pair unchanged, which is what the API accepts as keeping it', () => {
+    expect(toBenefitItems([row({ action: 'percentage_discount', value: 20 })]))
+      .toEqual([{ product_id: 1, quantity: 1, action: 'percentage_discount', value: 20 }]);
+  });
+
+  it('still reports it in the read-only half', () => {
+    // The card must say what the line costs; retiring the option did not make
+    // the stored treatment unreportable.
+    expect(benefitTreatmentLabel(t, 'plan', row({ action: 'percentage_discount', value: 20 })))
+      .toBe('item_action_percentage_discount (20%)');
+  });
+});
+
 describe('who names a context', () => {
   it('Promotions do, for both halves of every section', () => {
     expect(promotionsSrc.match(/benefitContext="promotion"/g) ?? []).toHaveLength(2);
@@ -294,10 +340,14 @@ describe('locale keys', () => {
     ...PROMOTION_ITEM_ACTIONS.map((a) => `item_action_${a}`),
     ...PROMOTION_ITEM_ACTIONS.filter(benefitActionRequiresValue).map((a) => `item_action_value_${a}`),
   ];
+  // #997: the retired action's own labels stay required — the editor renders
+  // the stored value as a disabled option and names the number beside it, so
+  // dropping the keys would print `plans.item_action_percentage_discount`.
   const PLAN_KEYS = [
     'col_item_action', 'benefit_value_required',
-    ...PLAN_BENEFIT_ACTIONS.map((a) => `item_action_${a}`),
-    ...PLAN_BENEFIT_ACTIONS.filter(benefitActionRequiresValue).map((a) => `item_action_value_${a}`),
+    ...STORED_PLAN_BENEFIT_ACTIONS.map((a) => `item_action_${a}`),
+    ...STORED_PLAN_BENEFIT_ACTIONS.filter(benefitActionRequiresValue)
+      .map((a) => `item_action_value_${a}`),
   ];
 
   for (const code of LOCALE_CODES) {

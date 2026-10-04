@@ -63,13 +63,14 @@ const round2 = (n: number): number => Math.round(n * 100) / 100;
  * One row's prices, from its item's **gross** unit price, its quantity and its
  * own pricing treatment.
  *
- * A Membership Plan may configure only `no_benefit`, `waive` and
- * `percentage_discount` (#896 §16), all three of which are proportional — which
- * is why quoting a per-unit final price is exact here rather than an
- * approximation of the line, and why the gross-up before this call is exact too
- * (a percentage of the gross is the gross of the percentage, #915's tax note).
- * A pair outside that set has already been normalized away by
- * `toProductBenefit('plan', …)`, so nothing here has to second-guess it.
+ * A Membership Plan may configure only `no_benefit` and `waive` (#896 §16,
+ * narrowed to the two by #997), and may still *store* `percentage_discount` on a
+ * line written before that — all three of which are proportional, which is why
+ * quoting a per-unit final price is exact here rather than an approximation of
+ * the line, and why the gross-up before this call is exact too (a percentage of
+ * the gross is the gross of the percentage, #915's tax note). A pair outside the
+ * stored set has already been normalized away by `toProductBenefit('plan', …)`,
+ * so nothing here has to second-guess it.
  */
 export function planBenefitPrices(
   unitPriceInclTax: number | null | undefined,
