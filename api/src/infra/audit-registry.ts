@@ -269,6 +269,12 @@ const FK_MAP: Record<string, { table: string; nameColumn: string }> = {
   center_id:                  { table: 'centers',                 nameColumn: 'name' },
   space_id:                   { table: 'spaces',                  nameColumn: 'name' },
   promotion_id:               { table: 'promotions',              nameColumn: 'name' },
+  // #980 §11: an occurrence's trainer, activity and professional service are
+  // edited from the event itself, so the audit row has to read
+  // `John Smith → Jane Smith` rather than two membership ids.
+  trainer_membership_id:      { table: 'gym_memberships',         nameColumn: 'name' },
+  activity_type_id:           { table: 'activity_types',          nameColumn: 'name' },
+  professional_service_id:    { table: 'professional_services',   nameColumn: 'name' },
 };
 
 /**
