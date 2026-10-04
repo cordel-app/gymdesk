@@ -49,6 +49,15 @@ interface NavGroupProps {
   isAnyChildActive: boolean;
   /** Hidden when absent or zero. */
   badge?: NavBadge | null;
+  /**
+   * #1003: the desktop sidebar is collapsed to icons only. The header button
+   * then renders its icon alone — no chevron, no label, no items underneath —
+   * and carries the active treatment when the open page is inside this group,
+   * because the active subsection that would carry it is no longer on screen.
+   * `onToggle` is what the sidebar wires to "expand me again and open this
+   * group" in that mode: a collapsed section is not a page of its own (§2).
+   */
+  collapsed?: boolean;
 }
 
 export function NavGroup({
@@ -59,11 +68,15 @@ export function NavGroup({
   onNavigate,
   isAnyChildActive,
   badge,
+  collapsed = false,
 }: NavGroupProps) {
   const showBadge = !!badge && badge.count > 0;
   const pathname = usePathname();
   const t = useTranslations();
   const [hoveredHref, setHoveredHref] = useState<string | null>(null);
+  // Only read while collapsed: expanded mode keeps the header exactly as it was
+  // (#1003 §1 — "Expanded mode preserves the current look & feel").
+  const [headerHovered, setHeaderHovered] = useState(false);
 
   function renderNavItem(item: NavItemType) {
     const active = pathname === item.href;
@@ -154,23 +167,51 @@ export function NavGroup({
     transition: 'max-height 150ms ease-in-out',
   };
 
+  // #1003 §2/§4: collapsed, the parent icon stands in for the active subsection
+  // and takes the treatment an active navigation item already has — the same
+  // selected background, text colour and 3px brand rail, no new colour.
+  const showActiveParent = collapsed && isAnyChildActive;
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', marginTop: '8px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginTop: '8px', position: 'relative' }}>
       <button
         onClick={onToggle}
+        onMouseEnter={() => setHeaderHovered(true)}
+        onMouseLeave={() => setHeaderHovered(false)}
+        // Collapsed, the label is the only thing naming the section, so it is
+        // both the tooltip (§4) and the accessible name — the icon beside it is
+        // decorative and `aria-hidden`. Expanded, the label is on screen and
+        // repeating it as a title would just shadow it.
+        title={collapsed ? label : undefined}
+        aria-label={collapsed ? label : undefined}
         style={{
           display: 'flex',
           alignItems: 'center',
+          justifyContent: collapsed ? 'center' : 'flex-start',
           width: '100%',
+          boxSizing: 'border-box',
           // #884: 16px rather than 20px, and a 6px gap rather than 8px, so the
           // section icon fits beside the chevron without the longest uppercase
           // label ("CONFIGURACIÓN", "ENTRENAMIENTO") wrapping onto a second line
           // in the 220px sidebar. Nothing else about the header's spacing moves.
           padding: '10px 16px',
-          background: 'transparent',
+          // #1003: collapsed, the icon is the whole button, so it centres in
+          // the strip rather than sitting at #884's label inset. The expanded
+          // spacing above is untouched — this only overrides it.
+          ...(collapsed ? { padding: '10px 0' } : null),
+          background: showActiveParent
+            ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))'
+            : collapsed && headerHovered
+              ? 'var(--gd-sidebar-hover-bg, rgba(255,255,255,0.08))'
+              : 'transparent',
           border: 'none',
-          color: 'rgba(255,255,255,0.6)',
+          borderLeft: showActiveParent
+            ? '3px solid var(--brand, #6c63ff)'
+            : '3px solid transparent',
+          color: showActiveParent
+            ? 'var(--gd-sidebar-selected-text, #fff)'
+            : 'rgba(255,255,255,0.6)',
           textDecoration: 'none',
           fontSize: 14,
           fontWeight: 600,
@@ -181,38 +222,53 @@ export function NavGroup({
           whiteSpace: 'nowrap',
         }}
       >
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: '16px',
-            height: '16px',
-            flexShrink: 0,
-            transition: 'transform 150ms ease-in-out',
-            transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-          }}
-        >
-          ▶
-        </span>
+        {!collapsed && (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '16px',
+              height: '16px',
+              flexShrink: 0,
+              transition: 'transform 150ms ease-in-out',
+              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            }}
+          >
+            ▶
+          </span>
+        )}
         {/*
           #884: the section's own icon, beside — never instead of — the chevron:
           the icon identifies the category, the chevron says whether it is open.
           It is decorative and `aria-hidden`, so the button's accessible name is
           still the label, and it draws in `currentColor`, so it follows the
           header's colour rather than carrying a state of its own.
+
+          #1003: collapsed, it is the only thing left in the button — the one
+          occurrence, rendered at the one shared size in both modes.
         */}
         <NavIcon name={group.icon} />
-        {label}
+        {!collapsed && label}
       </button>
       {showBadge && (
-        <span style={{ paddingRight: 16 }}><Badge badge={badge!} onNavigate={onNavigate} /></span>
+        collapsed
+          // #779's attention count survives the collapse: there is no label to
+          // sit beside, so it rides the icon's corner rather than disappearing.
+          ? (
+            <span style={{ position: 'absolute', top: 2, right: 4, lineHeight: 0 }}>
+              <Badge badge={badge!} onNavigate={onNavigate} />
+            </span>
+          )
+          : <span style={{ paddingRight: 16 }}><Badge badge={badge!} onNavigate={onNavigate} /></span>
       )}
       </div>
 
-      <div style={groupContainerStyle}>
-        {group.items.map((item) => renderNavItem(item))}
-      </div>
+      {!collapsed && (
+        <div style={groupContainerStyle}>
+          {group.items.map((item) => renderNavItem(item))}
+        </div>
+      )}
     </div>
   );
 }
