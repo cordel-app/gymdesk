@@ -7,7 +7,7 @@
     "plans": "Quotes",
     "rooms": "Sales",
     "trainers": "Entrenadors",
-    "staff": "Staff",
+    "staff": "Personal",
     "class_types": "Tipus de classe",
     "class_packages": "Bons",
     "promotions": "Promocions",
@@ -2157,7 +2157,7 @@
     "save_changes": "Desar canvis"
   },
   "trainers": {
-    "title": "Staff",
+    "title": "Personal",
     "loading": "Carregant…",
     "empty": "Encara no hi ha entrenadors. Afegeix primer un membre amb rol coach.",
     "col_id": "Usuari",
@@ -2737,7 +2737,7 @@
     }
   },
   "staff": {
-    "title": "Staff",
+    "title": "Personal",
     "add": "+ Nou empleat",
     "loading": "Carregant…",
     "empty": "Encara no hi ha empleats.",
@@ -3806,7 +3806,7 @@
     "audit_created_by": "Creat per",
     "audit_modified_at": "Modificat el",
     "audit_modified_by": "Modificat per",
-    "actor_staff": "Staff",
+    "actor_staff": "Personal",
     "actor_superadmin": "Superadmin",
     "impact_title": "Aquest impost s'utilitza actualment a:",
     "impact_products": "Productes",
