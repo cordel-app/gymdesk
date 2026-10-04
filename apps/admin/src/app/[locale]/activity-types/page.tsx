@@ -780,6 +780,24 @@ export default function ActivityTypesPage() {
       editForm.default_center_id ? s.center_id === parseInt(editForm.default_center_id, 10) : true,
     );
 
+    // #986 §3: the lookup offers every *active* staff member, and the trainer
+    // this activity already holds is offered too — as a **disabled** option, so
+    // an activity whose trainer has since left reads correctly instead of
+    // appearing to have none. The value is preserved either way: the `PUT`
+    // treats an unchanged id as not a new selection, and a save that never
+    // touches this field never sends it.
+    const trainerOptions = [
+      ...trainers.map((tr) => ({ gym_membership_id: tr.gym_membership_id, name: tr.name, unavailable: false })),
+      ...(row.default_trainer_membership_id
+        && !trainers.some((tr) => tr.gym_membership_id === row.default_trainer_membership_id)
+        ? [{
+            gym_membership_id: row.default_trainer_membership_id,
+            name: row.default_trainer_name ?? String(row.default_trainer_membership_id),
+            unavailable: true,
+          }]
+        : []),
+    ];
+
     return (
       <div key={row.id} style={cardStyle}>
         {/* Collapsed header */}
@@ -884,7 +902,11 @@ export default function ActivityTypesPage() {
                 <label style={inlineLabelStyle}>{t('label_default_trainer')}</label>
                 <select value={editForm.default_trainer_membership_id} onChange={(e) => setEditForm({ ...editForm, default_trainer_membership_id: e.target.value })} style={inlineSelectStyle}>
                   <option value="">—</option>
-                  {trainers.map((tr) => <option key={tr.gym_membership_id} value={tr.gym_membership_id}>{tr.name}</option>)}
+                  {trainerOptions.map((tr) => (
+                    <option key={tr.gym_membership_id} value={tr.gym_membership_id} disabled={tr.unavailable}>
+                      {tr.name}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>

@@ -8,6 +8,10 @@ import {
   cancelFutureOccurrencesByActivityType,
 } from '../domain/scheduleEngine';
 import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
+// #986: the Default Trainer is an active Staff record, and which ones those
+// are is decided in one place — the same module `GET /trainers` projects the
+// picker from, so a value the dropdown offers is a value this route accepts.
+import { parseTrainerMembershipId, validateTrainerMembershipId } from '../domain/trainerAssignment';
 // #503 stage 2: 'disabled' = no waitlist, 'open' = accepting, 'closed' = enabled
 // but not accepting right now. Occurrences may override it per calendar event.
 // #980 stage 2 made that vocabulary editable on the occurrence too, so it is
@@ -191,6 +195,14 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const serviceErr = await validateProfessionalServiceId(gymId, parsedService.id);
   if (serviceErr) return res.status(400).json({ error: serviceErr });
 
+  // #986: the Default Trainer must be an active staff member of *this* gym.
+  // Until this ticket the value was inserted unvalidated, so another gym's
+  // membership id satisfied the FK and crossed the tenant boundary.
+  const parsedTrainer = parseTrainerMembershipId(default_trainer_membership_id);
+  if ('error' in parsedTrainer) return res.status(400).json({ error: parsedTrainer.error });
+  const trainerErr = await validateTrainerMembershipId(gymId, parsedTrainer.id, null);
+  if (trainerErr) return res.status(400).json({ error: trainerErr });
+
   // #481: public_event defaults to true when omitted — see migration 139 for
   // the backward-compatibility rationale (existing activity types must stay
   // bookable by anyone unless staff explicitly opts into the restriction).
@@ -208,7 +220,7 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
        intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
        parseInt(max_capacity, 10),
        status ?? 'active',
-       spaceId, default_trainer_membership_id ?? null, centerId, color ?? null,
+       spaceId, parsedTrainer.id, centerId, color ?? null,
        is_shareable ? 1 : 0,
        publicEvent,
        waitlist_mode ?? 'disabled',
@@ -272,7 +284,19 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     if (spaceErr) return res.status(400).json({ error: spaceErr });
   }
 
-  const trainerId = 'default_trainer_membership_id' in req.body ? (default_trainer_membership_id ?? null) : undefined;
+  // #986: a submitted trainer is validated as a *selection*; the value the row
+  // already holds is not one, so an edit that leaves the field alone (or sends
+  // it back unchanged) never fails because that person has since left the gym.
+  let trainerId: number | null | undefined;
+  if ('default_trainer_membership_id' in req.body) {
+    const parsedTrainer = parseTrainerMembershipId(default_trainer_membership_id);
+    if ('error' in parsedTrainer) return res.status(400).json({ error: parsedTrainer.error });
+    const trainerErr = await validateTrainerMembershipId(
+      gymId, parsedTrainer.id, current.default_trainer_membership_id ?? null,
+    );
+    if (trainerErr) return res.status(400).json({ error: trainerErr });
+    trainerId = parsedTrainer.id;
+  }
   const colorVal = 'color' in req.body ? (color ?? null) : undefined;
   const capacity = max_capacity != null ? parseInt(max_capacity, 10) : undefined;
 
@@ -352,7 +376,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
           max_capacity != null ? parseInt(max_capacity, 10) : null,
           status ?? null,
           'default_space_id' in req.body ? 1 : 0, spaceId ?? null,
-          'default_trainer_membership_id' in req.body ? 1 : 0, default_trainer_membership_id ?? null,
+          'default_trainer_membership_id' in req.body ? 1 : 0, trainerId ?? null,
           'default_center_id' in req.body ? 1 : 0, centerId ?? null,
           'color' in req.body ? 1 : 0, color ?? null,
           'is_shareable' in req.body ? 1 : 0, is_shareable ? 1 : 0,

@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
-  TEST_AUTH_HEADER,
-  TEST_USER_ID,
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
+  createTestStaffForMembership,
   request,
+  TEST_AUTH_HEADER,
+  TEST_USER_ID,
 } from './helpers';
 
 let gymId: string;
@@ -49,6 +50,8 @@ beforeAll(async () => {
     [gymId],
   );
   trainerMembershipId = tm[0].id;
+  // #986: a trainer is an active Staff record, not a coach role on the login.
+  await createTestStaffForMembership(gymId, trainerMembershipId, 'Coach', 'T');
 
   // Centers for center_id tests
   const { insertId: cid } = await db.query(

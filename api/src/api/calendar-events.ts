@@ -28,6 +28,7 @@ import { recordAudit } from '../infra/audit';
 import { sendBulkNotification } from '../infra/notifications';
 import { bookMemberOnSession } from './bookings';
 import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
+import { isAssignableTrainer } from '../domain/trainerAssignment';
 import { withEventExecutionStatus, type EventExecutionInput } from '../domain/eventExecutionStatus';
 import { diffAuditedFields, SESSION_AUDITED_FIELDS } from '../domain/calendarEventChanges';
 import { parseWaitlistModeInput, waitlistModeClosesQueue, type WaitlistMode } from '../domain/waitlistMode';
@@ -351,7 +352,15 @@ classSessionsRouter.get('/:id', async (req, res) => {
   res.json(shapeRow(rows[0]));
 });
 
-async function validateSessionRefs(gymId: string, body: any, centerId: number) {
+/**
+ * #986: `currentTrainerId` is the trainer the occurrence already holds. A value
+ * identical to it is not a new selection, so an edit that resends an unchanged
+ * trainer cannot 400 because that person has since left the gym — the same rule
+ * `PUT /activity-types/:id` applies to the Default Trainer.
+ */
+async function validateSessionRefs(
+  gymId: string, body: any, centerId: number, currentTrainerId: number | null = null,
+) {
   if (body.activity_type_id) {
     const { rows } = await db.query(
       "SELECT id, status FROM activity_types WHERE id = ? AND gym_id = ?",
@@ -361,11 +370,12 @@ async function validateSessionRefs(gymId: string, body: any, centerId: number) {
     if (rows[0].status !== 'active') return 'Activity type is inactive';
   }
   if (body.trainer_membership_id) {
-    const { rows } = await db.query(
-      "SELECT id FROM gym_memberships WHERE id = ? AND gym_id = ? AND role IN ('trainer_performance','trainer_perf_nutrition')",
-      [body.trainer_membership_id, gymId],
-    );
-    if (rows.length === 0) return 'Trainer not found';
+    // #986: a trainer is an active staff member of this gym, whatever their
+    // role — the same set `GET /trainers` offers the panel's lookup.
+    const trainerId = Number(body.trainer_membership_id);
+    if (trainerId !== currentTrainerId && !(await isAssignableTrainer(gymId, trainerId))) {
+      return 'Trainer not found';
+    }
   }
   if (body.space_id) {
     const { rows } = await db.query(
@@ -561,7 +571,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
     if (existingRows.length === 0) return res.status(404).json({ error: 'Session not found' });
     const cur = existingRows[0];
 
-    const err = await validateSessionRefs(gymId, req.body, cur.center_id);
+    const err = await validateSessionRefs(gymId, req.body, cur.center_id, cur.cur_trainer ?? null);
     if (err) return res.status(err.includes('inactive') || err.includes('center') ? 400 : 404).json({ error: err });
 
     const effTrainer  = 'trainer_membership_id' in req.body ? (trainer_membership_id ?? null) : cur.cur_trainer;
@@ -966,12 +976,12 @@ classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('CALENDAR')
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { trainer_membership_id } = req.body;
 
+  // #986: whoever is covering the session is an active staff member of this
+  // gym, read through the one rule the picker reads.
   if (trainer_membership_id != null) {
-    const { rows: trainerRows } = await db.query(
-      "SELECT id FROM gym_memberships WHERE id = ? AND gym_id = ? AND role IN ('trainer_performance','trainer_perf_nutrition')",
-      [trainer_membership_id, gymId],
-    );
-    if (trainerRows.length === 0) return res.status(404).json({ error: 'Trainer not found' });
+    if (!(await isAssignableTrainer(gymId, Number(trainer_membership_id)))) {
+      return res.status(404).json({ error: 'Trainer not found' });
+    }
   }
 
   const { rows: prev } = await db.query(

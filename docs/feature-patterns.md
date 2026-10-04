@@ -2114,6 +2114,43 @@ routes in `api/src/api/payments.ts` + migration 165.
 
 ---
 
+## A lookup whose eligible set can shrink (#986)
+
+A picker over live rows — the Activity Type's **Default Trainer**, an event's
+Space — has the same shape as a retired-value set above, for the same reason: the
+set of *selectable* values and the set of *storable* values are not the same, and
+a row stored yesterday must keep reading correctly today.
+
+- **One place decides who is eligible, and every reader is a projection of it.**
+  `api/src/domain/trainerAssignment.ts` holds the scope and the ordering as SQL
+  fragments (`ASSIGNABLE_TRAINERS_FROM`, `assignableTrainersSql(columns)`), so
+  `GET /trainers` (staff picker), `GET /me/trainers` (member filter) and
+  `isAssignableTrainer()` (the write validation) cannot disagree. A second query
+  spelling the same `WHERE` is how a dropdown comes to offer a value the `PUT`
+  refuses.
+- **Validate the selection, not the request.** `trainerWriteNeedsLookup(next,
+  current)` is `productFrequencyWriteError`'s second argument in another guise:
+  a clear is always allowed, a value identical to the stored one is **not** a new
+  selection, and anything else must be eligible *today*. Replace-all and
+  whole-form `PUT`s resend fields nobody touched, so without this an unrelated
+  edit 400s on a trainer who has since left.
+- **Offer the stored value as a `disabled` option.** The same device as the
+  retired frequency, with the name the read already returns
+  (`default_trainer_name`, `space_name`): the select reads truthfully, submits the
+  value back untouched, and never invents a placeholder for it.
+- **Let the FK clear what really is gone.** Deactivating staff deletes the login
+  row and every trainer FK is `ON DELETE SET NULL`, so there is no sweep, no
+  nightly reconciliation and no stored "is this still valid" flag.
+- **A structural condition is not a second rule.** Only a staff member with a
+  `gym_membership_id` can be stored, because that is the id the column holds —
+  worth a comment at the declaration, never a filter the UI re-applies.
+
+Reference implementation: `api/src/domain/trainerAssignment.ts` + `api/src/api/trainers.ts`
++ the `default_trainer_membership_id` validation in `api/src/api/activity-types.ts`
++ `api/src/test/trainer-assignment.unit.test.ts`.
+
+---
+
 ## Duplicate Action (flat catalog item)
 
 For a single-row catalog entity (not a hierarchy — see "Duplicate at every level" below for that case), "Duplicate" is a single immediate backend action, not a pre-filled form the user reviews before saving:
