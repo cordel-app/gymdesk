@@ -371,6 +371,11 @@ Clerk Development and Production instances are separate: users, user ids and met
       conditionals — see `docs/wordpress-integration.md`) on the production instance; templates
       belong to each instance and are not copied over. Custom templates are a Clerk **premium**
       feature: free on Development, a paid plan on Production.
+- [ ] **Invitation emails land in Spam** (seen on Development, 2026-10-04: a member invited at
+      an ordinary Gmail address found it in Spam). Clerk sends from its own shared domain there.
+      Before inviting real members, configure a sending domain of ours with SPF/DKIM on the
+      production instance, and re-test with Gmail and Outlook. See §6 (mobile app) — an
+      invitation the member never finds is the only way into the app.
 - [ ] Admin and member apps: `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` is a Docker build `ARG`,
       baked in at **build time** — the production images must be built with the `pk_live_…`
       key; changing a runtime variable is not enough.
@@ -941,3 +946,69 @@ runbook is how.
       `SELECT um.gym_id, COUNT(*) FROM user_memberships um LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id WHERE um.status = 'active' AND COALESCE(um.recurring_billing_unit, bp.recurring_billing_unit) <> 'month' AND (um.free_periods > 0 OR um.bonus_periods > 0 OR um.pay_beforehand_periods > 0) GROUP BY um.gym_id`
       — tell those gyms before the deploy. Nothing is back-dated and no adjustment is
       written: the run prices each cycle as it comes.
+
+## 6. Mobile app (iOS / Android)
+
+Planned, nothing built yet: plan and spike findings in `docs/mobile-app.md`, decision in
+`docs/decisions.md` #18. Stage 1 is **one generic app** ("Cordel Fitness",
+`com.cordel.fitness`); items marked *(stage 2)* only matter when a gym asks for its own app.
+Tick items off in the PR that completes them.
+
+### Accounts (start early — verification takes days or weeks)
+
+- [ ] **D-U-N-S number** for the company (free; the slowest step, both stores ask for it for an
+      organization account).
+- [ ] **Apple Developer Program**, organization account (99 USD/year). Needed for Sign in with
+      Apple, associated domains (universal links), TestFlight and the App Store.
+- [ ] **Google Play Console**, organization account (25 USD, one time). Check Google's current
+      testing requirement for new accounts before planning the first release.
+- [ ] **Firebase project** for push (FCM delivers to iOS through APNs): upload the APNs key,
+      create the Android app, and set the FCM credentials as API environment variables.
+- [ ] *(stage 2)* Read the **current text of App Store guideline 4.2.6** (template apps) before
+      promising a gym its own app: it may require each gym's app to be submitted from the gym's
+      own Apple Developer account (own D-U-N-S and 99 USD/year per gym).
+
+### Sign-in
+
+- [ ] Clerk Production exists (§2) and the Members App is built with its `pk_live_…` key.
+- [ ] Google Cloud project `cordel-fitness-pro`: create the **iOS** OAuth client (Bundle ID
+      `com.cordel.fitness`) and the **Android** client (package name + SHA-1 of the debug key
+      *and* of the Google Play signing key). The existing web client *Clerk sign-in* stays the
+      one Clerk holds: the token's `aud` must be that **web** client. Client IDs are not secrets;
+      the web client's secret is only ever pasted into Clerk by a person.
+      *(Development: the iOS client `…ddue41qcinsvg7n3cbdk17rvblpjucuq` exists.)*
+- [ ] **Sign in with Apple** (App Store guideline 4.8, equivalent privacy-preserving option
+      next to Google): Apple connection in Clerk with Services ID, Team ID, Key ID and private key;
+      *Sign in with Apple* capability on the app. Needs its own spike first
+      (`docs/mobile-app.md` WP3b).
+- [ ] Decide how a member who hides their email on Apple (private relay address) is linked:
+      `POST /me/link` matches by email + `gym_id`, which a relay address never equals.
+- [ ] Verify a **first-time** Google sign-in by an *invited* member under Clerk's restricted
+      mode (the spike only used a user that already existed).
+- [ ] Note for testing: Clerk's *Block email subaddresses* is on for Google, so `name+tag@…`
+      aliases cannot sign in with Google (they work with email + password).
+
+### Links and push
+
+- [ ] `apple-app-site-association` and `assetlinks.json` served from the Members App's
+      production domain (`Content-Type: application/json`, no redirect) and *Associated Domains*
+      enabled; check an invitation link opens the app from Notes and from Mail.
+- [ ] Push: FCM credentials in the production API environment; `member_device_tokens` migrated;
+      verify a notification reaches a physical iPhone and a physical Android phone.
+- [ ] *(stage 2)* Association files list every app profile; push credentials are resolved per
+      `app_id`.
+
+### Store submission
+
+- [ ] Privacy policy URL, store listing text, screenshots, age rating, data-safety / privacy
+      nutrition labels.
+- [ ] A **demo account** for App Review (sign-in is by invitation, so a reviewer cannot
+      register): a member of a demo gym with its credentials in the review notes.
+- [ ] Justify *minimum functionality* (guideline 4.2) in the review notes: native push, native
+      sign-in, links that open the app.
+- [ ] TestFlight and Google Play internal testing track, then a physical-device pass on each
+      platform (the simulator is not enough for push or for Sign in with Apple).
+- [ ] CI that builds the iOS app on a macOS runner (the build needs the current Xcode, which may
+      require a newer macOS than a developer's Mac).
+- [ ] Web releases reach the app without a store review, native changes do not: agree who
+      releases what, and keep an error screen with retry for when the web is down.

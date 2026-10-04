@@ -1533,6 +1533,19 @@ _(Old Stripe tickets #42–#44 are closed and superseded by this phase.)_
 | Member app: my class packages & credit balance | [#106](https://github.com/cordel-app/gymdesk/issues/106) | M | — |
 | Member app: profile page (view & edit personal data) | [#107](https://github.com/cordel-app/gymdesk/issues/107) | M | — |
 
+## Mobile app (Capacitor shell, planned 2026-10-04)
+
+**Status: planned, no issue yet, nothing built.** The Members App as an iOS/Android store app. **Stage 1 is one generic app ("Cordel Fitness")**; per-gym apps are a later stage on request and are designed for now. Plan, spike findings and design rules: `docs/mobile-app.md`; decision: `docs/decisions.md` #18; launch checklist: `docs/go-to-production.md` §6. One PR per work package, in this order:
+
+| Work package | Scope | Depends on |
+|---|---|---|
+| WP1 | `member_device_tokens` migration (with `app_id`), `POST`/`DELETE /me/devices`, FCM send from `sendNotification()` | — |
+| WP2 | `apps/member`: `isNative()`, safe areas, `public/manifest.json`, native Google button, push registration, deep links | WP1 |
+| WP3 | `apps/mobile` Capacitor shell (iOS first, then Android) | WP2 |
+| WP3b | Sign in with Apple (iOS), after its own spike; decide how to link a private relay email | WP3, Apple Developer account |
+| WP4 | Universal links / app links (invitation links open the app) | WP3, Apple Developer account |
+| WP5 | Production Clerk/Google/Apple credentials, own mail domain, store listings, TestFlight/Play internal track | all above |
+
 ## Critical path
 
 - **Billing**: P1.1 → P1.5 → P1.6 — the ledger unblocks packages (Phase 3), promotions (Phase 4), and MONEI payments (Phase 8).

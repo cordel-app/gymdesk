@@ -13,6 +13,7 @@ Read these files first — they contain the full context needed to implement cor
 - `docs/roadmap.md` — ticket order, current status, and phase decisions
 - `docs/decisions.md` — settled architectural choices (MySQL, Clerk, no ORM, etc.) — don't re-litigate these
 - `docs/payments.md` — **required reading for anything that touches money**: the first-payment (CIT) and recurring-charge (MIT) processes end to end, the data model with its CHECK sets, the provider boundary, and the manual test runbook. The constraints below are the rules; that document is how the two processes actually run.
+- `docs/mobile-app.md` — **required reading for anything that touches the iOS/Android app** (Capacitor shell, native sign-in, push tokens, universal links): the plan, what the 2026-10-04 spike proved, and the design rules that keep per-gym apps (stage 2) a configuration of the generic app (stage 1) rather than a fork. Planned, not built yet.
 
 Use **Members** as the reference implementation for staff-level CRUD with soft-delete.
 Use **Plans** (`api/src/api/membership-plans.ts` + `apps/admin/src/app/[locale]/plans/`) as the reference implementation for an admin-only CRUD API and its Inline row CRUD frontend (expandable rows, no modals — see `docs/feature-patterns.md`). For the Modal CRUD frontend shape, see Class Types.
