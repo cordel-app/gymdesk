@@ -27,6 +27,12 @@ import {
   type MemberEditFormValues,
   type MemberProfile,
 } from './memberProfile';
+import {
+  MEMBER_TABS,
+  memberTabFromParam,
+  type MemberTabId,
+} from './memberTabs';
+import { Tabs } from '@/components/Tabs';
 import { validateDocumentId } from '@/lib/documentId';
 
 interface Plan {
@@ -126,7 +132,18 @@ export default function MembersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detailFor, setDetailFor] = useState<Member | null>(null);
-  const [expandedMemberIds, setExpandedMemberIds] = useState<Set<number>>(new Set());
+  // #961 — the Member card is five parallel tabs. The selected one is the
+  // page's state rather than the row's, so it survives a save, an edit and a
+  // re-render of the list, and several expanded Members each keep their own.
+  const urlMemberId = Number(searchParams.get('member'));
+  const [expandedMemberIds, setExpandedMemberIds] = useState<Set<number>>(
+    () => new Set(Number.isInteger(urlMemberId) && urlMemberId > 0 ? [urlMemberId] : []),
+  );
+  const [memberTabs, setMemberTabs] = useState<Record<number, MemberTabId>>(
+    () => (Number.isInteger(urlMemberId) && urlMemberId > 0
+      ? { [urlMemberId]: memberTabFromParam(searchParams.get('tab')) }
+      : {}),
+  );
 
   const showCenters = centers.length > 1;
   const [assignedCenterIds, setAssignedCenterIds] = useState<Set<number>>(new Set());
@@ -203,7 +220,12 @@ export default function MembersPage() {
     if (!gymLoading) load();
   }, [activeGymId, gymLoading, centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter]);
 
-  function syncUrl(updates: { centerId?: string; q?: string; nif_nie_passport?: string; payment_status?: string; enrollment_status?: string }) {
+  function syncUrl(updates: {
+    centerId?: string; q?: string; nif_nie_passport?: string; payment_status?: string; enrollment_status?: string;
+    /** #961: the expanded Member and the work area open on it, so a refresh, a
+        back/forward and a pasted link all land on the same tab. */
+    member?: string; tab?: string;
+  }) {
     const p = new URLSearchParams(searchParams.toString());
     for (const [k, v] of Object.entries(updates)) {
       if (v) p.set(k, v); else p.delete(k);
@@ -313,6 +335,9 @@ export default function MembersPage() {
       next.add(m.id);
       return next;
     });
+    // #961: the inline form is the Profile's, so `⋮ → Edit` opens that tab —
+    // it must never open behind a tab the Member happens to be left on.
+    selectTab(m.id, 'profile');
     if (showCenters) {
       try {
         const rows = await apiFetch<{ center_id: number; is_default: boolean }[]>(`/members/${m.id}/centers`);
@@ -436,11 +461,27 @@ export default function MembersPage() {
   }
 
   function toggleExpand(m: Member) {
+    const collapsing = expandedMemberIds.has(m.id);
     setExpandedMemberIds((prev) => {
       const next = new Set(prev);
-      if (next.has(m.id)) next.delete(m.id); else next.add(m.id);
+      if (collapsing) next.delete(m.id); else next.add(m.id);
       return next;
     });
+    // #961: the URL names the Member whose card is open and the tab it is open
+    // on, so a refresh or a pasted link lands back on the same work area. It is
+    // written outside the updater, which React may run twice.
+    if (collapsing) syncUrl({ member: '', tab: '' });
+    else syncUrl({ member: String(m.id), tab: tabFor(m.id) });
+  }
+
+  /** The work area open on a Member — Profile until they pick another (#961). */
+  function tabFor(memberId: number): MemberTabId {
+    return memberTabs[memberId] ?? memberTabFromParam(null);
+  }
+
+  function selectTab(memberId: number, tab: MemberTabId) {
+    setMemberTabs((prev) => ({ ...prev, [memberId]: tab }));
+    syncUrl({ member: String(memberId), tab });
   }
 
   function buildActions(m: Member): ContextMenuItem[] {
@@ -473,6 +514,7 @@ export default function MembersPage() {
    */
   function renderRow(m: Member) {
     const isExpanded = expandedMemberIds.has(m.id);
+    const activeTab = tabFor(m.id);
     const toggle = () => guardUnsaved(() => toggleExpand(m));
 
     return (
@@ -527,7 +569,26 @@ export default function MembersPage() {
 
         {isExpanded && (
           <div style={listExpandedStyle}>
-            {editingId === m.id && (
+            {/* #961 — the Member's five work areas. The strip is the app's one
+                tab component (`components/Tabs.tsx`, promoted out of the
+                Nutrition Library's own in this ticket), the tabs themselves are
+                MEMBER_TABS, and only the selected one's sections render below:
+                the card is a workspace rather than one very long column. */}
+            <div style={tabStripWrapStyle}>
+              <Tabs
+                tabs={MEMBER_TABS}
+                active={activeTab}
+                onChange={(tab) => selectTab(m.id, tab)}
+                label={(key) => t(`members.${key}`)}
+                ariaLabel={`${t('members.title')} — ${m.name}`}
+              />
+            </div>
+            {/* The inline Edit form is the Profile's: it writes
+                MEMBER_PROFILE_FIELDS and nothing another tab shows, so its
+                Save/Cancel pair stays with the fields it commits (#929). A tab
+                change never discards it — the draft is the page's state, and
+                `⋮ → Edit` brings this tab back. */}
+            {activeTab === 'profile' && editingId === m.id && (
               <MemberEditForm
                 form={editForm}
                 isNewMember={m.is_new_member}
@@ -547,6 +608,7 @@ export default function MembersPage() {
             <MemberExpandedRow
               memberId={m.id}
               member={m}
+              tab={activeTab}
               profileVersion={profileVersion}
               editing={editingId === m.id}
               canManageTraining={canManageTraining}
@@ -782,6 +844,14 @@ const actionsCellStyle: React.CSSProperties = {
 /** A status column with nothing in it yet — the same grey it has always been. */
 const noStatusStyle: React.CSSProperties = { color: '#bbb' };
 const mutedTextStyle: React.CSSProperties = { color: 'var(--gd-text-muted, #6b7280)' };
+/**
+ * #961: the tab strip sits at the top of the expanded body, inset to the same
+ * margin the card's sections use. It declares no colour, no type and no border
+ * of its own — those are `components/Tabs.tsx`'s, which takes them from the
+ * Theme.
+ */
+const tabStripWrapStyle: React.CSSProperties = { padding: '16px 24px 0' };
+
 function chevronStyle(expanded: boolean): React.CSSProperties {
   return {
     fontSize: 14, color: '#aaa',

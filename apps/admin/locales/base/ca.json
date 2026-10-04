@@ -147,6 +147,11 @@
     "placeholder_search": "Cercar socis…",
     "action_details": "Detalls",
     "detail_title": "Detalls del soci",
+    "tab_profile": "Perfil",
+    "tab_products_services": "Productes i Serveis",
+    "tab_nutrition": "Nutrició",
+    "tab_personal_goals": "Objectius Personals",
+    "tab_training_plan": "Pla d'entrenament",
     "section_profile": "Perfil",
     "label_date_of_birth": "Data de naixement",
     "label_gender": "Gènere",
@@ -298,7 +303,10 @@
     "additional_services_needs_plan": "Afegeix un pla de membresia abans d’afegir un producte.",
     "event_waived_billing": "Quota exempta",
     "billing_simulation_plan_prepaid": "Durada prepagada del pla",
-    "billing_simulation_benefit_personal": "Benefici personal"
+    "billing_simulation_benefit_personal": "Benefici personal",
+    "membership_created_by": "Creat per",
+    "membership_created_at": "Creat el",
+    "membership_plan_snapshot": "Detalls del Pla de Subscripció Assignat"
   },
   "member_payments": {
     "title": "Pagaments del soci",

@@ -44,6 +44,8 @@ const read = (...parts: string[]) => stripComments(readFileSync(join(ADMIN_SRC, 
 
 const sectionSrc = read('components', 'goalLibrary', 'GoalLibrarySection.tsx');
 const tabsSrc = read('components', 'goalLibrary', 'LibraryTabs.tsx');
+// #961 — the tab strip the two libraries and the Member card share.
+const sharedTabsSrc = read('components', 'Tabs.tsx');
 const modalSrc = read('components', 'goalLibrary', 'GoalDetailsModal.tsx');
 const gymPageSrc = read('app', '[locale]', 'nutrition', 'nutrition-library', 'page.tsx');
 const cordelPageSrc = read('app', '[locale]', 'cordel', 'nutrition-library', 'page.tsx');
@@ -104,16 +106,19 @@ describe('library tabs (§1, §2, §6)', () => {
   });
 
   it('renders the tab strip from the declaration, never a hardcoded list', () => {
-    expect(tabsSrc).toContain('LIBRARY_TABS.map');
+    // #961 — the strip itself moved to the app's shared `Tabs`, so this module
+    // binds that component to LIBRARY_TABS and still spells no label.
+    expect(tabsSrc).toContain('tabs={LIBRARY_TABS}');
+    expect(tabsSrc).toContain("from '@/components/Tabs'");
     for (const tab of LIBRARY_TABS) {
       expect(tabsSrc).not.toContain(`'${tab.labelKey}'`);
     }
   });
 
   it('marks the selected tab for assistive technology', () => {
-    expect(tabsSrc).toContain('role="tablist"');
-    expect(tabsSrc).toContain('role="tab"');
-    expect(tabsSrc).toContain('aria-selected={selected}');
+    expect(sharedTabsSrc).toContain('role="tablist"');
+    expect(sharedTabsSrc).toContain('role="tab"');
+    expect(sharedTabsSrc).toContain('aria-selected={selected}');
   });
 
   it('shows the goal tab\'s section with each library\'s own scope', () => {

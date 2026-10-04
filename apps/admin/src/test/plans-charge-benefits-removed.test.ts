@@ -17,7 +17,7 @@ import { join } from 'path';
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const PLANS_DIR = join(__dirname, '..', 'app', '[locale]', 'plans');
-const ASSIGNED_PLANS_DIR = join(__dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans');
+const ASSIGNED_PLANS_DIR = join(__dirname, '..', 'components', 'assignedPlan');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 type Messages = Record<string, unknown>;

@@ -17,7 +17,7 @@ import { join } from 'path';
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const EXPANDED_ROW = join(
-  __dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans', 'AssignedPlanExpandedRow.tsx',
+  __dirname, '..', 'components', 'assignedPlan', 'AssignedPlanExpandedRow.tsx',
 );
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 

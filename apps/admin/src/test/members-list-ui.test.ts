@@ -299,7 +299,7 @@ describe('Members list: one list with Products (#928)', () => {
   });
 
   it('keeps the expanded body, the inline Edit form and the Add modal', () => {
-    expect(pageSrc).toMatch(/\{editingId === m\.id && \(\s*\n\s*<MemberEditForm/);
+    expect(pageSrc).toMatch(/\{activeTab === 'profile' && editingId === m\.id && \(\s*\n\s*<MemberEditForm/);
     expect(pageSrc).toMatch(/<MemberExpandedRow\n\s*memberId=\{m\.id\}/);
     expect(pageSrc).toMatch(/editing=\{editingId === m\.id\}/);
     // #928 is UI-only: creation is still the modal it was (that is #805's shape

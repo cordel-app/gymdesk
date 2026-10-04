@@ -47,7 +47,7 @@ const COMPONENT = join(__dirname, '..', 'components', 'ProductBenefits.tsx');
 const PLANS_PAGE = join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx');
 const PROMOTIONS_PAGE = join(__dirname, '..', 'app', '[locale]', 'promotions', 'page.tsx');
 const ASSIGNED_PLAN = join(
-  __dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans', 'AssignedPlanConfiguration.tsx',
+  __dirname, '..', 'components', 'assignedPlan', 'AssignedPlanConfiguration.tsx',
 );
 const API_DECLARATION = join(ROOT, 'api', 'src', 'domain', 'productBenefitActions.ts');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;

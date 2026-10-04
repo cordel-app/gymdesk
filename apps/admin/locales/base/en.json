@@ -130,6 +130,11 @@
     "expanded_loading": "Loading…",
     "expanded_error": "Failed to load member details.",
     "retry": "Retry",
+    "tab_profile": "Profile",
+    "tab_products_services": "Products & Services",
+    "tab_nutrition": "Nutrition",
+    "tab_personal_goals": "Personal Goals",
+    "tab_training_plan": "Training Plan",
     "section_account": "Account",
     "section_membership": "Plans",
     "section_training_plans": "Assigned Training Plans",
@@ -297,7 +302,10 @@
     "additional_services_needs_plan": "Add a membership plan before adding a product.",
     "event_waived_billing": "Fee waived",
     "billing_simulation_plan_prepaid": "Plan pre-paid duration",
-    "billing_simulation_benefit_personal": "Personal benefit"
+    "billing_simulation_benefit_personal": "Personal benefit",
+    "membership_created_by": "Created by",
+    "membership_created_at": "Created at",
+    "membership_plan_snapshot": "Assigned Membership Plan details"
   },
   "member_payments": {
     "title": "Member Payments",

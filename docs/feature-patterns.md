@@ -813,6 +813,35 @@ Reference implementation: `components/exercises/` + both pages. Regression tests
 `apps/admin/src/test/exercise-editor-unification.test.ts` and
 `exercise-read-only-expansion.test.ts`.
 
+**The same rule holds for a card body two different screens expand (#958).** An
+Assigned Plan is not *edited* from two pages, but it is *read* from two: its own
+card on `[locale]/financials/assigned-plans`, and the Member page's MEMBERSHIP
+PLANS section, where each plan card expands into the same sections. So the body
+moved up the same way — `components/assignedPlan/` now holds
+`AssignedPlanExpandedRow` and the four sections, the profile declaration and the
+types — and both hosts render it. One section list, one set of locale keys, one
+`GET /user-memberships/:id`, and every later stage of the card reaches both
+screens at once; the alternative is the second, simplified rendering of a frozen
+configuration that drifts from what the assignment actually bills.
+
+**Express the host's difference as one prop about chrome, never about content.**
+The Member card already carries the plan's name, status, dates and its own `⋮`,
+so it passes `embedded`, which drops the body's own summary header and context
+menu — and therefore its Edit mode, since `⋮ → Edit` is the single entry point
+into one (#797). That is why the flag every writable section asks is `editing`
+(`!embedded && isEditing`) rather than `isEditing`: a host with no menu cannot be
+in the mode, so the sections' controls are absent there for the same reason they
+are absent outside the mode on the page that does have one. A prop that changed
+what a section *says* — a shorter field list, a different price — would be the
+second rendering again, wearing one component's name.
+
+**A modal fed from a detail the host does not have gets a loader, not a copy.**
+The Member card lists plans through the configuration read (one row per plan), so
+its `⋮ → Details` cannot hand the existing `AssignedPlanDetailsModal` a detail.
+`AssignedPlanDetailsDialog` fetches one and renders that same modal — it declares
+no field, no label and no layout, which is what keeps "reuse the existing Details
+UI" true rather than nearly true.
+
 **A gym-wide section and a Member card section are two pages too (#948 §4).**
 Assigned Personal Goals is administered from `[locale]/assigned-personal-goals`
 and from the Member card's own PERSONAL GOALS section, which look nothing alike —
@@ -1419,7 +1448,7 @@ When a catalog item is attached to a record that is *already billing* (an Additi
 - **The projection does the rest**: the forecast (`domain/billingSimulation.ts`) treats each attachment as a stream from `max(parent.start, starts_at)` to `min(parent.end, ends_at)`. Removal needs no other code path — the window is the whole mechanism.
 - **Frontend**: inline row CRUD (no modal), the action column keyed on `ends_at == null` rather than a derived `active` flag — a row removed today is still billable today, but must not offer Remove twice.
 
-Reference implementation: `api/src/api/user-membership-services.ts` + migration 164 + `apps/admin/src/app/[locale]/financials/assigned-plans/AdditionalPeriodicServices.tsx`.
+Reference implementation: `api/src/api/user-membership-services.ts` + migration 164 + `apps/admin/src/components/assignedPlan/AdditionalPeriodicServices.tsx`.
 
 ---
 
@@ -2324,6 +2353,48 @@ type-checks and builds, so `apps/admin/src/test` and `apps/member/src/test` do
 not run there. A cross-app rule therefore belongs in the API suite, even though
 it scans another workspace; a copy in the app's own suite is documentation for
 local runs, not enforcement.
+
+## Tabs on an Expanded Card (#961)
+
+When an expanded card grows past the point where a reader can find anything in
+it — the Member card had reached ten sections and several screens of scroll —
+split it into **parallel tabs** rather than into a new page or a set of
+collapsible groups.
+
+1. **One declaration says which tabs exist and what each one holds.**
+   `apps/admin/src/app/[locale]/members/memberTabs.ts`: the tab ids in the
+   order they are shown, each with its `labelKey` and the `section_*` keys it
+   renders. Moving a section between tabs is a one-line change there and a
+   failing test, never a hunt through JSX — the same rule `PLAN_SECTION_ORDER`
+   states for a card's section order (#816). A test asserts the declaration and
+   the card's actual sections are the same set, so a section cannot be shown by
+   two tabs or lost by all of them.
+2. **The strip is the app's one tab component.** `components/Tabs.tsx` owns the
+   look, the `tablist` semantics, the arrow-key handling and the phone-width
+   horizontal scroll; it resolves no label (each page hands in a resolver, so
+   the words come from that page's namespace — #901) and declares no colour of
+   its own (the active tab follows `--brand`, #912). The Nutrition Library's
+   `LibraryTabs` is a binding of it to `LIBRARY_TABS`; a third screen with tabs
+   adds a declaration and a binding, never a second strip.
+3. **The card is handed its tab; it does not choose one.** The page owns the
+   selected tab (one per expanded row), so it survives a save, a re-render and
+   the URL, and the card renders only that tab's sections. The first section of
+   each tab carries `divider={false}`, so every tab opens without the card's
+   hairline above it.
+4. **The URL carries the open card and its tab** (`?member=<id>&tab=<tabId>`),
+   so a refresh, back/forward and a pasted link all land on the same work area.
+   An unusable `?tab=` falls back to the first tab (`memberTabFromParam()`)
+   rather than rendering an empty card.
+5. **Edit mode belongs to the tab whose fields it writes.** The inline Member
+   form is the Profile's, so it renders in the Profile pane and `⋮ → Edit`
+   selects that tab — a form must never open behind a tab the user is left on,
+   and its Save/Cancel pair stays with the fields it commits (#929). Switching
+   tabs discards nothing: the draft is the page's state.
+
+Tabs are a layout decision and nothing else: no section changed what it reads,
+writes or gates on, and no endpoint, payload or permission moved with them.
+
+---
 
 ## Testing a payment-provider call (#773, #791)
 

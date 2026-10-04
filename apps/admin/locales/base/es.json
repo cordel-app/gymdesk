@@ -146,6 +146,11 @@
     "placeholder_search": "Buscar socios…",
     "action_details": "Detalles",
     "detail_title": "Detalles del socio",
+    "tab_profile": "Perfil",
+    "tab_products_services": "Productos y Servicios",
+    "tab_nutrition": "Nutrición",
+    "tab_personal_goals": "Objetivos Personales",
+    "tab_training_plan": "Plan de entrenamiento",
     "section_profile": "Perfil",
     "label_date_of_birth": "Fecha de nacimiento",
     "label_gender": "Género",
@@ -297,7 +302,10 @@
     "additional_services_needs_plan": "Añade un plan de membresía antes de añadir un producto.",
     "event_waived_billing": "Cuota exenta",
     "billing_simulation_plan_prepaid": "Duración prepagada del plan",
-    "billing_simulation_benefit_personal": "Beneficio personal"
+    "billing_simulation_benefit_personal": "Beneficio personal",
+    "membership_created_by": "Creado por",
+    "membership_created_at": "Creado el",
+    "membership_plan_snapshot": "Detalles del Plan de Suscripción Asignado"
   },
   "member_payments": {
     "title": "Pagos del socio",

@@ -6,6 +6,7 @@ import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
 import { rollStaleNextBillingDateForward } from '../domain/nextBillingDateStamp';
+import { actorSnapshot } from '../domain/nutritionLibrary';
 import {
   applyPromotionToMembership,
   fetchAppliedPromotions,
@@ -187,38 +188,40 @@ userMembershipsRouter.get('/', async (req, res) => {
   res.json(rows.map((r: any) => ({ ...r, membership_fee: fees.get(Number(r.id)) ?? null })));
 });
 
-// #511 (stage 2 — Assigned Plan Details modal): `created_by`/`modified_by`
-// are derived from audit_logs rather than stored on user_memberships itself,
-// mirroring the existing promotions.ts / themes.ts `:id` pattern. "Modified"
-// means the latest action of any kind after creation — edit, close,
-// pause, reactivate, apply/revoke promotion, add/remove member — never just
-// 'update', per the ticket's requirement that it reflect the last change
-// regardless of which action produced it. Deliberately not added to
-// LIST_SELECT/the expanded card: the ticket requires this audit metadata be
-// shown only in the Details modal, so it's queried just for this single-row
-// read instead of costing every list row a correlated subquery.
-// 'assign_new_plan' is the alternate creation entry point (#412 — supersede
-// a member's current plan) alongside plain 'create'; both count as this
-// row's creation, never as a later "modification" of it.
-const CREATION_ACTIONS = ['create', 'assign_new_plan'];
+// #511 (stage 2 — Assigned Plan Details modal): "modified" means the latest
+// action of any kind after creation — edit, close, pause, reactivate,
+// apply/revoke promotion, add/remove member — never just 'update', per the
+// ticket's requirement that it reflect the last change regardless of which
+// action produced it. It stays derived from `audit_logs` and stays out of
+// LIST_SELECT, because an assignment is also modified by things that are not
+// people: the nightly run advancing `next_billing_date`, the payment webhook
+// stamping the first one, the dunning escalation pausing it. None of those has
+// an actor to snapshot, and the audit log records them with their own `source`.
+//
+// There is one creation action per insert path, and all three are excluded
+// here: 'create' (POST /), 'assign_new_plan' (#412 — supersede a member's
+// current plan) and 'assign_plan' (the Plans page's bulk assign, written by
+// membership-plans.ts). Each counts as a row's creation, never as a later
+// "modification" of it — 'assign_plan' was missing from this list until #958,
+// which made a bulk-assigned plan report its creator as the last person to
+// modify it, since the creation row was then the newest row not excluded.
+//
+// #958: `created_by` is **not** read from here any more. The Member's
+// MEMBERSHIP PLANS section shows it on every card, and one correlated subquery
+// per row is exactly what #511 declined to pay — so the creation actor is
+// snapshotted onto the row by the three paths that insert one (migration 215,
+// backfilled from these same audit rows) and read as the plain column it is.
+const CREATION_ACTIONS = ['create', 'assign_new_plan', 'assign_plan'];
 
 async function loadAuditMetadata(gymId: string, userMembershipId: string | number) {
-  const [{ rows: createdRows }, { rows: modifiedRows }] = await Promise.all([
-    db.query(
-      `SELECT actor_name, created_at FROM audit_logs
-       WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action IN (?, ?)
-       ORDER BY created_at ASC LIMIT 1`,
-      [gymId, String(userMembershipId), ...CREATION_ACTIONS],
-    ),
-    db.query(
-      `SELECT actor_name, created_at FROM audit_logs
-       WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action NOT IN (?, ?)
-       ORDER BY created_at DESC LIMIT 1`,
-      [gymId, String(userMembershipId), ...CREATION_ACTIONS],
-    ),
-  ]);
+  const { rows: modifiedRows } = await db.query(
+    `SELECT actor_name, created_at FROM audit_logs
+     WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ?
+       AND action NOT IN (${CREATION_ACTIONS.map(() => '?').join(',')})
+     ORDER BY created_at DESC LIMIT 1`,
+    [gymId, String(userMembershipId), ...CREATION_ACTIONS],
+  );
   return {
-    created_by_name: createdRows[0]?.actor_name ?? null,
     modified_by_name: modifiedRows[0]?.actor_name ?? null,
     modified_at: modifiedRows[0]?.created_at ?? null,
   };
@@ -621,7 +624,11 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
   }
 
   try {
-    const { userId, role } = getTenantContext(req);
+    const { userId, role, actorName, isSuperadmin } = getTenantContext(req);
+    // #958 — the creation actor, snapshotted onto the row (migration 215) so
+    // the Member's plan cards can show *Created by* without a per-row audit
+    // subquery. One of the three paths that insert a `user_memberships` row.
+    const actor = actorSnapshot({ name: actorName, isSuperadmin });
     // #956: one Member, one Membership Plan. The member's live plan is found and
     // locked in the same transaction as the insert — outside it there would be a
     // window in which a second request assigns the same member — and replacing
@@ -644,14 +651,19 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, base_price, plan_price_id,
-          discount_reason, discount_expires_at, starts_at, ends_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+          discount_reason, discount_expires_at, starts_at, ends_at, status,
+          created_by_name, created_by_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
         [
           member_id, gymId, membership_plan_id,
           eff.base_price, eff.plan_price_id,
           feeOverride ? String(discount_reason).trim() : null,
           discount_expires_at || null,
           starts_at, ends_at ?? null,
+          // #958 — who assigned the plan, snapshotted in the same INSERT
+          // (migration 215). The Member's MEMBERSHIP PLANS section shows it on
+          // every card, which is why it is a column rather than an audit read.
+          actor.name, actor.type,
         ],
       );
       await recordStatusChange(tx, {
@@ -832,7 +844,9 @@ function parsePromotionIds(raw: unknown): number[] | null {
 // transaction, so the applies can only run after this one commits, and an
 // invalid selection must never leave a half-configured assignment behind.
 userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId, role } = getTenantContext(req);
+  const { gymId, userId, role, actorName, isSuperadmin } = getTenantContext(req);
+  // #958 — the creation actor of the assignment this route creates (migration 215).
+  const actor = actorSnapshot({ name: actorName, isSuperadmin });
   const { membership_plan_id, starts_at, ends_at, membership_fee_price, discount_reason, discount_expires_at, promotion_ids } = req.body;
   if (!membership_plan_id || !starts_at) {
     return res.status(400).json({ error: 'membership_plan_id and starts_at are required' });
@@ -905,14 +919,18 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, base_price, plan_price_id,
-          discount_reason, discount_expires_at, starts_at, ends_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')`,
+          discount_reason, discount_expires_at, starts_at, ends_at, status,
+          created_by_name, created_by_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
         [
           prev.member_id, gymId, membership_plan_id,
           eff.base_price, eff.plan_price_id,
           feeOverride ? String(discount_reason).trim() : null,
           discount_expires_at || null,
           starts_at, ends_at ?? null,
+          // #958 — the successor is a new Assigned Plan, so it records who
+          // assigned *it* (migration 215); the superseded row keeps its own.
+          actor.name, actor.type,
         ],
       );
       await recordStatusChange(tx, {

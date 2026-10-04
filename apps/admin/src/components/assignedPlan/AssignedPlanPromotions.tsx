@@ -43,6 +43,8 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import {
+  cardExpandCaretStyle,
+  cardExpandToggleStyle,
   cardMutedTextStyle,
   cardSubLabelStyle,
   innerCardStyle,
@@ -191,7 +193,7 @@ export function AssignedPlanPromotions({
                 aria-expanded={isOpen}
                 style={{ ...titleBtnSt, cursor: standing ? 'pointer' : 'default' }}
               >
-                {standing && <span style={{ color: '#888', fontSize: 11 }}>{isOpen ? '▾' : '▸'}</span>}
+                {standing && <span style={cardExpandCaretStyle}>{isOpen ? '▾' : '▸'}</span>}
                 <span style={{ fontWeight: 500, fontSize: 14 }}>{p.promotion_name}</span>
               </button>
               <span style={metaSt}>{t('promo_created_at', { at: fmtDate(p.applied_at) })}</span>
@@ -349,10 +351,10 @@ function SubSection({ title, children }: { title: string; children: React.ReactN
 
 // The card an application sits in is #929's `innerCardStyle`, used directly:
 // the same one the Member card's plans and the Plan card's nested cards wear.
-const titleBtnSt: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 6, background: 'none',
-  border: 'none', padding: 0, textAlign: 'left', flex: 1, color: 'inherit',
-};
+// #958 — the expand affordance itself is `formChrome`'s now, shared with the
+// Member card's Assigned Membership Plan cards; what stays here is this card's
+// own use of it (the title fills the row, so the meta and the badge sit right).
+const titleBtnSt: React.CSSProperties = { ...cardExpandToggleStyle, flex: 1 };
 const metaSt: React.CSSProperties = { color: '#888', fontSize: 12, whiteSpace: 'nowrap' };
 const descSt: React.CSSProperties = { color: '#666', fontSize: 13, margin: '0 0 10px' };
 const dimSt = cardMutedTextStyle;

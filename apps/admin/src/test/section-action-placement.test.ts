@@ -28,9 +28,9 @@ const PLANS_PAGE = join(SRC, 'app', '[locale]', 'plans', 'page.tsx');
 const PROMOTIONS_PAGE = join(SRC, 'app', '[locale]', 'promotions', 'page.tsx');
 const ASSIGNED_PLANS = [
   join(SRC, 'app', '[locale]', 'memberships', 'page.tsx'),
-  join(SRC, 'app', '[locale]', 'financials', 'assigned-plans', 'AssignedPlanExpandedRow.tsx'),
-  join(SRC, 'app', '[locale]', 'financials', 'assigned-plans', 'AssignedPlanConfiguration.tsx'),
-  join(SRC, 'app', '[locale]', 'financials', 'assigned-plans', 'AssignedPlanPromotions.tsx'),
+  join(SRC, 'components', 'assignedPlan', 'AssignedPlanExpandedRow.tsx'),
+  join(SRC, 'components', 'assignedPlan', 'AssignedPlanConfiguration.tsx'),
+  join(SRC, 'components', 'assignedPlan', 'AssignedPlanPromotions.tsx'),
 ];
 
 // Every file's comments quote the layout that was removed, so the scans below

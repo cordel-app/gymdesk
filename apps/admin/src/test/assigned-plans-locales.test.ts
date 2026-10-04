@@ -14,7 +14,14 @@ import { join } from 'path';
 //     Plans page components (parsed from source) resolves in every locale.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const ASSIGNED_PLANS_DIR = join(__dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans');
+// #958 moved the card body out of the page directory and into
+// `components/assignedPlan/`, so the Member card can render the same sections
+// (#806: an entity administered from two pages has one editor). Both halves are
+// scanned — the page that lists the assignments and the shared body it expands.
+const ASSIGNED_PLANS_DIRS = [
+  join(__dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans'),
+  join(__dirname, '..', 'components', 'assignedPlan'),
+];
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 type Messages = Record<string, unknown>;
@@ -36,17 +43,17 @@ function resolveKey(messages: Messages, dottedKey: string): unknown {
   }, messages);
 }
 
-// Every namespace referenced by a component under
-// apps/admin/src/app/[locale]/financials/assigned-plans/ via
+// Every namespace referenced by a component in one of ASSIGNED_PLANS_DIRS via
 // useTranslations('<namespace>') or a dotted key on the global t().
 const ASSIGNED_PLANS_NAMESPACES = ['assigned_plans_page', 'status'];
 
 function extractReferencedKeys(): string[] {
-  const files = readdirSync(ASSIGNED_PLANS_DIR).filter((f) => f.endsWith('.tsx'));
+  const files = ASSIGNED_PLANS_DIRS.flatMap((dir) =>
+    readdirSync(dir).filter((f) => f.endsWith('.tsx')).map((f) => join(dir, f)));
   const keys = new Set<string>();
 
   for (const file of files) {
-    const src = readFileSync(join(ASSIGNED_PLANS_DIR, file), 'utf-8');
+    const src = readFileSync(file, 'utf-8');
 
     const hookRe = /const\s+(\w+)\s*=\s*useTranslations\((?:'([^']*)')?\)/g;
     const hooks: { name: string; ns: string | null }[] = [];

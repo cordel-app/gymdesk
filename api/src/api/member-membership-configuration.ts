@@ -80,6 +80,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     `SELECT um.id, um.membership_plan_id, um.status,
             um.starts_at, um.ends_at, um.next_billing_date,
             um.closed_at, um.created_at,
+            um.created_by_name, um.created_by_type,
             p.name AS plan_name,
             um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live
      FROM user_memberships um
@@ -116,6 +117,15 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       plan_name: p.plan_name,
       status: p.status,
       membership_fee: fees.get(Number(p.id)) ?? null,
+      // #958 — the Assigned Membership Plan card shows who created the
+      // assignment and when, beside its dates and status. Both are columns of
+      // `user_memberships` (migration 215): the actor is snapshotted by the
+      // three paths that insert one, so no card costs an `audit_logs` subquery.
+      // `created_at` is a DATETIME, reported as a bare date like every other
+      // date in this payload (see `toDateOnly` above).
+      created_at: toDateOnly(p.created_at),
+      created_by_name: p.created_by_name ?? null,
+      created_by_type: p.created_by_type ?? null,
       starts_at: toDateOnly(p.starts_at),
       ends_at: toDateOnly(p.ends_at),
       next_billing_date: toDateOnly(p.next_billing_date),
