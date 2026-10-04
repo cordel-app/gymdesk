@@ -6,7 +6,7 @@
     "memberships": "Membresías",
     "plans": "Cuotas",
     "trainers": "Entrenadores",
-    "staff": "Staff",
+    "staff": "Personal",
     "class_types": "Tipos de clase",
     "class_packages": "Bonos",
     "promotions": "Promociones",
@@ -2157,7 +2157,7 @@
     "save_changes": "Guardar cambios"
   },
   "trainers": {
-    "title": "Staff",
+    "title": "Personal",
     "loading": "Cargando…",
     "empty": "Aún no hay entrenadores. Añade primero un miembro con rol coach.",
     "col_id": "Usuario",
@@ -2710,7 +2710,7 @@
     }
   },
   "staff": {
-    "title": "Staff",
+    "title": "Personal",
     "add": "+ Nuevo empleado",
     "loading": "Cargando…",
     "empty": "No hay empleados.",
@@ -3779,7 +3779,7 @@
     "audit_created_by": "Creado por",
     "audit_modified_at": "Modificado el",
     "audit_modified_by": "Modificado por",
-    "actor_staff": "Staff",
+    "actor_staff": "Personal",
     "actor_superadmin": "Superadmin",
     "impact_title": "Este impuesto se usa actualmente en:",
     "impact_products": "Productos",
