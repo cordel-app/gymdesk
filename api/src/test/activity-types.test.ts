@@ -1137,3 +1137,125 @@ describe('professional_service_id (#647)', () => {
     expect(dup.body.professional_service_id).toBe(activeServiceId);
   });
 });
+
+// ── #986: default_trainer_membership_id ─────────────────────────────────────
+
+describe('default_trainer_membership_id (#986)', () => {
+  let dtGymId: string;
+  let foreignGymId: string;
+  let frontDeskTrainerId: number;
+  let formerStaffTrainerId: number;
+  let foreignTrainerId: number;
+  let alreadyInactiveTrainerId: number;
+  let formerStaffId: number;
+
+  const post = (gid: string, body: any) => request
+    .post(BASE).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid).send(body);
+  const put = (gid: string, id: number, body: any) => request
+    .put(`${BASE}/${id}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid).send(body);
+
+  /** A staff member with the login row a trainer assignment keys to. */
+  async function createStaffTrainer(
+    gid: string,
+    first: string,
+    profile: string,
+    employment: 'active' | 'inactive' = 'active',
+  ): Promise<{ membershipId: number; staffId: number }> {
+    const { insertId: membershipId } = await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
+       VALUES (?, ?, 'front_desk', 'active', ?)`,
+      [`at-trainer-${Math.random().toString(36).slice(2, 10)}`, gid, `${first} Staff`],
+    );
+    const { insertId: staffId } = await db.query(
+      `INSERT INTO staff
+         (gym_id, gym_membership_id, first_name, last_name, email, profile,
+          employment_status, current_status, hire_date)
+       VALUES (?, ?, ?, 'Staff', ?, ?, ?, 'available', '2026-01-01')`,
+      [
+        gid, membershipId, first,
+        `${first}.${Math.random().toString(36).slice(2, 7)}@example.com`.toLowerCase(),
+        profile, employment,
+      ],
+    );
+    return { membershipId: Number(membershipId), staffId: Number(staffId) };
+  }
+
+  beforeAll(async () => {
+    dtGymId = await createTestGym('AT Trainer Gym');
+    await createTestMembership(dtGymId, 'admin');
+    foreignGymId = await createTestGym('AT Trainer Other Gym');
+
+    // Front Desk: an active employee who is not a coach. Assignable since #986.
+    ({ membershipId: frontDeskTrainerId } = await createStaffTrainer(dtGymId, 'Ana', 'Front Desk'));
+    ({ membershipId: formerStaffTrainerId, staffId: formerStaffId } =
+      await createStaffTrainer(dtGymId, 'Bruno', 'Personal Trainer'));
+    ({ membershipId: foreignTrainerId } = await createStaffTrainer(foreignGymId, 'Gil', 'Personal Trainer'));
+    ({ membershipId: alreadyInactiveTrainerId } =
+      await createStaffTrainer(dtGymId, 'Carla', 'Personal Trainer', 'inactive'));
+  });
+
+  it('stores an active staff member of any profile and returns their name', async () => {
+    const res = await post(dtGymId, {
+      name: `DT create ${Date.now()}`, duration_minutes: 45, max_capacity: 10,
+      default_trainer_membership_id: frontDeskTrainerId,
+    });
+    expect(res.status).toBe(201);
+    expect(res.body.default_trainer_membership_id).toBe(frontDeskTrainerId);
+    expect(res.body.default_trainer_name).toBe('Ana Staff');
+  });
+
+  it('refuses a membership from another gym', async () => {
+    const res = await post(dtGymId, {
+      name: `DT foreign ${Date.now()}`, duration_minutes: 45, max_capacity: 10,
+      default_trainer_membership_id: foreignTrainerId,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses a value that is not a positive integer', async () => {
+    const res = await post(dtGymId, {
+      name: `DT bogus ${Date.now()}`, duration_minutes: 45, max_capacity: 10,
+      default_trainer_membership_id: 'not-an-id',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('clears the trainer on an explicit null', async () => {
+    const created = await post(dtGymId, {
+      name: `DT clear ${Date.now()}`, duration_minutes: 45, max_capacity: 10,
+      default_trainer_membership_id: frontDeskTrainerId,
+    });
+    const res = await put(dtGymId, created.body.id, { default_trainer_membership_id: null });
+    expect(res.status).toBe(200);
+    expect(res.body.default_trainer_membership_id).toBeNull();
+  });
+
+  // §3: the assignment survives the trainer leaving. Saving an unrelated field
+  // resends the stored id, and that is not a new selection.
+  it('keeps a stored trainer who is no longer an active staff member', async () => {
+    const created = await post(dtGymId, {
+      name: `DT keep ${Date.now()}`, duration_minutes: 45, max_capacity: 10,
+      default_trainer_membership_id: formerStaffTrainerId,
+    });
+    expect(created.status).toBe(201);
+
+    await db.query("UPDATE staff SET employment_status = 'inactive' WHERE id = ?", [formerStaffId]);
+
+    const renamed = await put(dtGymId, created.body.id, {
+      name: `DT keep renamed ${Date.now()}`,
+      default_trainer_membership_id: formerStaffTrainerId,
+    });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.default_trainer_membership_id).toBe(formerStaffTrainerId);
+  });
+
+  it('refuses newly selecting a trainer who is not an active staff member', async () => {
+    const created = await post(dtGymId, {
+      name: `DT select inactive ${Date.now()}`, duration_minutes: 45, max_capacity: 10,
+    });
+    const res = await put(dtGymId, created.body.id, {
+      default_trainer_membership_id: alreadyInactiveTrainerId,
+    });
+    expect(res.status).toBe(400);
+  });
+});

@@ -536,6 +536,7 @@ describe('#503 stage 6: schedule filters and /me/trainers', () => {
   let centerB: number;
   let outsideCenterId: number;
   let trainerMembershipId: number;
+  let loginOnlyTrainerId: number;
   let sessionInCenterB: number;
   let sessionWithTrainer: number;
 
@@ -555,6 +556,21 @@ describe('#503 stage 6: schedule filters and /me/trainers', () => {
       [`trainer-${Date.now()}`, gymId],
     );
     trainerMembershipId = tId;
+    // #986: a trainer is an *active staff record*, not a role on a login row,
+    // so the filter's options come with an employment record behind them.
+    await db.query(
+      `INSERT INTO staff
+         (gym_id, gym_membership_id, first_name, last_name, email, profile,
+          employment_status, current_status, hire_date)
+       VALUES (?, ?, 'Filter', 'Trainer', ?, 'Personal Trainer', 'active', 'available', '2026-01-01')`,
+      [gymId, trainerMembershipId, `filter.trainer.${Date.now()}@example.com`],
+    );
+    const { insertId: noStaffId } = await db.query(
+      `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
+       VALUES (?, ?, 'trainer_performance', 'active', 'No Staff Record')`,
+      [`trainer-nostaff-${Date.now()}`, gymId],
+    );
+    loginOnlyTrainerId = noStaffId;
     const { insertId: sId } = await db.query(
       `INSERT INTO calendar_events
          (gym_id, center_id, title, activity_type_id, trainer_membership_id, starts_at, ends_at, status)
@@ -612,7 +628,7 @@ describe('#503 stage 6: schedule filters and /me/trainers', () => {
     expect(res.status).toBe(403);
   });
 
-  it('GET /me/trainers returns trainer-role gym_memberships with only id + name', async () => {
+  it('GET /me/trainers returns active staff members with only id + name', async () => {
     const res = await request
       .get('/me/trainers')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -624,6 +640,9 @@ describe('#503 stage 6: schedule filters and /me/trainers', () => {
     expect(row.name).toBe('Filter Trainer');
     expect(row).not.toHaveProperty('role');
     expect(row).not.toHaveProperty('user_id');
+    // #986: a coach-role login with no employment record behind it is not a
+    // trainer — the member filter and the admin picker read one rule.
+    expect((res.body as any[]).some((t: any) => t.id === loginOnlyTrainerId)).toBe(false);
   });
   // #976: the member calendar paints an event with the *event's* colour, so
   // GET /me/schedule has to report one. The resolution is the event's own
