@@ -491,7 +491,20 @@
     "image_not_configured": "Cloudflare storage has not been configured for this deployment.",
     "image_not_initialized": "Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.",
     "read_only_hint": "Read-only access",
-    "action_view_audit_log": "View Audit Log"
+    "action_view_audit_log": "View Audit Log",
+    "replace_plan_title": "This member already has an active Membership Plan.",
+    "replace_plan_title_many": "The selected members already hold {count} active Membership Plans.",
+    "replace_plan_body": "Assigning this new Membership Plan will cancel the member's current plan.",
+    "replace_plan_body_many": "Assigning this new Membership Plan will cancel all {count} of them.",
+    "replace_plan_current": "Current plan",
+    "replace_plan_current_many": "Plans that will be cancelled",
+    "replace_plan_new": "New plan",
+    "replace_plan_since": "since {date}",
+    "replace_plan_shared": "Shared plan owned by {owner} — cancelling it affects every member it covers.",
+    "replace_plan_dates": "The current plan will end on the date the new plan starts.",
+    "replace_plan_dates_many": "Each cancelled plan will end on the date the new plan starts.",
+    "replace_plan_confirm": "Continue",
+    "replace_plan_cancel": "Cancel"
   },
   "system_gyms": {
     "title": "Gyms",
