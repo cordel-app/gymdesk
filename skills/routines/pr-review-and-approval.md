@@ -1,6 +1,15 @@
 Review pull requests in the cordel-app/gymdesk repository.
 
-Work the open PRs that target `main` **oldest first, as a queue** — not one PR and stop. A PR you cannot finish must not block the ones behind it: when you park one (below), move on to the next and keep going until the queue is empty or you have merged something.
+Work the open PRs that target `main` **oldest first, as a loop** — not one PR and stop. Merging a PR, parking one, or finding one already merged or closed is the end of *that PR*, never of the run. Keep going until a full pass finds nothing left to work (see **The loop**).
+
+## The loop
+
+1. List the open PRs targeting `main`, oldest first.
+2. Take the first one that is not skipped (parked with nothing changed since — see **Parking a PR**) and not already handled earlier in this run, and work it through the checks below until it is **merged** or **parked**.
+3. Go back to step 1 and **list again**. Do not keep walking the list you fetched at the start: a merge moves `main`, PRs get opened, merged or changed under you, and a PR you parked earlier may have un-parked (see **After each merge**).
+4. Stop only when a fresh list contains no PR you can work: none open, or every one is parked with nothing changed, or every remaining one was already handled in this run. Then report what you merged, what you parked and why.
+
+A PR you cannot finish must not block the ones behind it: park it and move on. Do not stop after the first merge, and do not stop after the first park.
 
 For each PR in turn, take the cheap checks first, before reading a diff or a log:
 
@@ -77,4 +86,4 @@ Resolving conflicts and waiting for CI take minutes, and a second iteration of t
 
 This repo has no separate reviewer identity — every PR is authored by the same account this task runs as, so GitHub will refuse a formal "approve" review (self-approval is blocked platform-wide). Don't attempt to approve; merging directly is the intended workflow here, but only once CI is actually green — never merge with a failing or pending check.
 
-If there are no open PRs, or every one of them is parked with nothing changed since, confirm briefly.
+When the loop ends, summarise the run briefly: the PRs merged, the PRs parked (with the reason), and the PRs skipped as already parked. If there were no open PRs, or every one of them is parked with nothing changed since, just confirm that.
