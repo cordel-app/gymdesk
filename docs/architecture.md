@@ -2,7 +2,7 @@
 
 ## TL;DR (read this first, skip the rest for small tasks)
 
-**Stack**: Express API (`api/`) · Next.js admin app (`apps/admin/`, port 8081) · Next.js member PWA (`apps/member/`, port 8082) · MySQL 8 (HeatWave in prod, schema `fitness`) · Clerk auth.
+**Stack**: Express API (`api/`) · Next.js admin app (`apps/admin/`, port 8081) · Next.js member PWA (`apps/member/`, port 8082; planned: wrapped as an iOS/Android app by a Capacitor shell, see `docs/mobile-app.md`) · MySQL 8 (HeatWave in prod, schema `fitness`) · Clerk auth.
 
 **Tenant isolation**: every domain table has `gym_id`. Every query filters by it. The `x-gym-id` request header carries the active gym; `tenantContext` middleware resolves it and attaches `req.tenantCtx`.
 
@@ -1216,6 +1216,18 @@ In the panel the setting is a value in the read-only card — the *effective* mo
 Professional Services on the occurrence stays #980 stage 3's, after #973's stage 1, so the occurrence-level and activity-level relations are modelled once.
 
 **Migration**: hard cutover, as decided (no dual-write/backfill — see decisions.md #10): stage 3 repointed every router at the new tables directly, with no data migration from `class_sessions`/`bookings`/`shared_training_requests` (there was no production data to preserve). Stage 5 (cleanup, not yet done) drops `class_sessions`, `bookings`, `shared_training_requests`, and `calendar_event_series`.
+
+---
+
+## Planned: Mobile app shell (decision #18, 2026-10-04)
+
+**Status: planned, nothing built.** Full plan, spike findings and work packages are in `docs/mobile-app.md`; this section is only the architectural summary.
+
+- **A Capacitor shell, not a second front end.** A future workspace `apps/mobile` holds the `ios/` and `android/` projects and loads the *deployed* Members App through `server.url`. The UI stays in `apps/member`; a web release reaches the app with no store review, a native change does not.
+- **Everything native is behind `apps/member/src/lib/native.ts` (`isNative()`)**, and the web bundle includes `@capacitor/core` (the native bridge alone does not give a remote page `registerPlugin`). A plain browser never runs native code.
+- **Social sign-in is native inside the app.** Clerk's default OAuth redirect would leave the app and drop the session in the system browser, so the app obtains a Google ID token natively (`@capgo/capacitor-social-login`) and hands it to Clerk with `authenticateWithGoogleOneTap`. The token's `aud` must be the **web** OAuth client (the one Clerk holds), so the plugin is initialised with both `iOSClientId` and `iOSServerClientId`. Sign in with Apple (iOS) follows the same shape after its own spike.
+- **Push** adds `member_device_tokens` (`gym_id` NOT NULL, `member_id`, `platform`, `app_id`, `token`; `UNIQUE (platform, token)`) and `POST`/`DELETE /me/devices` on the `me` router. `sendNotification()` in `api/src/infra/notifications.ts` also sends through FCM after writing `member_notifications`; it stays fire-and-forget, and it adds no notification type, so `chk_member_notifications_type` is untouched.
+- **Designed for per-gym apps (stage 2), built only generic (stage 1).** No app identity is hard-coded (Bundle ID, name, `server.url`, OAuth client IDs, Firebase config are configuration), `app_id` is in the first migration, and the universal-link association files list apps. After sign-in the gym already comes from the member's own memberships (`GymSwitcher` is hidden for a single-gym actor); only the login screen's branding before sign-in would need the app to know which gym it is.
 
 ---
 

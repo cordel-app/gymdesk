@@ -4,6 +4,22 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 18. The Members App reaches the stores as a Capacitor shell; one generic app first, per-gym apps later (2026-10-04)
+
+**Decision**: the iOS and Android app is a **Capacitor 8 shell that loads the deployed Members App** (`server.url`). There is no second front end and no React Native rewrite. **Stage 1 is one generic app, "Cordel Fitness"**, published by us; the gym's theme is applied after sign-in, as on the web. **Stage 2 is one app per gym**, built only when a gym asks for it, and it is designed for now: a gym app is another *profile* of the same shell, never a fork. Social sign-in inside the app is **native** (Google, and Sign in with Apple on iOS) and its ID token is handed to Clerk (`authenticateWithGoogleOneTap`); Clerk's default OAuth redirect is not used there. Bundle ID of the generic app: `com.cordel.fitness`.
+
+**Why**: the UI already exists and is already responsive; a rewrite would double its maintenance for nothing the product needs yet. A feasibility spike (2026-10-04, iOS simulator) showed the shell works and that Clerk's default "Continue with Google" leaves the app for the system browser, so the session lands in Safari and never reaches the WebView, while the native Google token produces an active session inside the WebView that survives a restart. Google sign-in is a requirement, and a third-party login on iOS brings App Store guideline 4.8 (an equivalent privacy-preserving option), which is why Sign in with Apple is in scope. Push notifications are in scope because they are the clearest answer to guideline 4.2 (minimum functionality), not because Apple requires them.
+
+**Consequences**:
+- Everything native sits behind one module (`apps/member/src/lib/native.ts`, `isNative()`); a plain browser never runs it. The web bundle includes `@capacitor/core`: the native bridge alone does not provide `registerPlugin` to a remote page.
+- The Google ID token's `aud` must be the **web** OAuth client (the one Clerk holds); the iOS/Android clients only identify the app.
+- No app identity is hard-coded (Bundle ID, name, `server.url`, OAuth client IDs, Firebase config come from configuration), `member_device_tokens` carries an `app_id` from its first migration, and the association files list apps rather than one app — all so that stage 2 costs plumbing, not code.
+- Stage 2 has two unverified risks that must be read before promising it to a gym: App Store guideline 4.2.6 (template apps may have to be submitted from the gym's own developer account) and whether Clerk accepts a native Apple token per Bundle ID.
+- Sign in with Apple can return a private relay email that does not match the invited address, and `POST /me/link` matches by email + `gym_id`; how to link those members is an open decision (see `docs/mobile-app.md` WP3b).
+- Full plan, spike findings and work packages: `docs/mobile-app.md`. Launch checklist: `docs/go-to-production.md` §6.
+
+---
+
 ## 17. Amounts cross the payment-provider boundary in minor units (#773, 2026-09-26)
 
 **Decision**: every caller of `createPaymentRequest()` and `executeRecurring()` converts through `toMinorUnits()` (`api/src/payments/money.ts`). Everything on our side of that boundary — `user_memberships.membership_fee_price`, `billing_events.amount`, `payment_requests.amount`, what `resolveMembershipFee()` and `priceMembershipFeeOn()` return — stays a decimal number of euros.
