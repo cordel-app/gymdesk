@@ -21,7 +21,7 @@
  * Bookings for sessions live in calendar_event_bookings (migration 132).
  */
 import { Router } from 'express';
-import { db } from '../infra/db';
+import { db, type Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite, requireRole } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
@@ -132,6 +132,67 @@ const SESSION_SELECT = `
   LEFT JOIN gym_memberships etm ON etm.id = ce.effective_trainer_membership_id
   LEFT JOIN professional_services ps ON ps.id = ce.professional_service_id
 `;
+
+/**
+ * #979: the shared-slot rule for a session about to occupy
+ * `(trainer, space, starts_at, ends_at)`, read under `FOR UPDATE` so two
+ * concurrent writers cannot both pass it.
+ *
+ * It was inlined in `POST /` and `PUT /:id`; reactivating a cancelled session
+ * re-occupies a slot the cancellation freed, so it needed the same rule a
+ * third time and now lives in one place rather than being copied again. It
+ * throws the `{ status, code }` errors both routes already answer with, so
+ * every caller's 409 vocabulary is unchanged.
+ *
+ * `excludeId` is the row being written itself (a `PUT`, or the session being
+ * reactivated); `null` on an INSERT, where `ce.id <> COALESCE(NULL, 0)` is the
+ * no-op the create path has always had.
+ */
+async function assertSlotAvailable(tx: Tx, opts: {
+  gymId: string;
+  trainerId: number;
+  spaceId: number;
+  startsAt: Date | string;
+  endsAt: Date | string;
+  excludeId?: number | string | null;
+  /** `activity_types.is_shareable` of the activity taking the slot. */
+  newShareable: boolean;
+}): Promise<void> {
+  const { rows: existing } = await tx.query(
+    `SELECT ce.id, at.is_shareable AS act_shareable, ce.allows_shared_booking,
+            COALESCE(gm.max_concurrent_groups, 1) AS trainer_max,
+            COALESCE(sp.max_concurrent_groups, 1) AS space_max
+     FROM calendar_events ce
+     JOIN activity_types at ON at.id = ce.activity_type_id
+     JOIN gym_memberships gm ON gm.id = ce.trainer_membership_id
+     JOIN spaces sp ON sp.id = ce.space_id
+     WHERE ce.gym_id = ? AND ce.trainer_membership_id = ? AND ce.space_id = ?
+       AND ce.starts_at = ? AND ce.ends_at = ?
+       AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL
+       AND ce.id <> COALESCE(?, 0)
+     FOR UPDATE`,
+    [opts.gymId, opts.trainerId, opts.spaceId, opts.startsAt, opts.endsAt, opts.excludeId ?? null],
+  );
+  if (existing.length === 0) return;
+
+  const effectiveMax = Math.min(Number(existing[0].trainer_max), Number(existing[0].space_max));
+  if (existing.length >= effectiveMax) {
+    throw Object.assign(new Error('Slot is fully occupied'), { status: 409, code: 'slot_fully_occupied' });
+  }
+  const nonShareable = existing.find((r: any) => !r.act_shareable);
+  if (nonShareable) {
+    throw Object.assign(new Error('An existing session at this slot is not eligible for shared training'), { status: 409, code: 'slot_not_shareable' });
+  }
+  if (!opts.newShareable) {
+    throw Object.assign(new Error('This activity is not eligible for shared training'), { status: 409, code: 'activity_not_shareable' });
+  }
+  const sharingAuthorized = existing.some((r: any) => r.allows_shared_booking);
+  if (!sharingAuthorized) {
+    throw Object.assign(new Error('Sharing is not authorized for this slot'), {
+      status: 409, code: 'sharing_not_authorized', host_session_id: existing[0].id,
+    });
+  }
+}
 
 export const classSessionsRouter = Router();
 
@@ -271,40 +332,10 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
 
     if (trainerId && spaceIdVal) {
       const row = await db.transaction(async (tx) => {
-        const { rows: existing } = await tx.query(
-          `SELECT ce.id, at.is_shareable AS act_shareable, ce.allows_shared_booking,
-                  COALESCE(gm.max_concurrent_groups, 1) AS trainer_max,
-                  COALESCE(sp.max_concurrent_groups, 1) AS space_max
-           FROM calendar_events ce
-           JOIN activity_types at ON at.id = ce.activity_type_id
-           JOIN gym_memberships gm ON gm.id = ce.trainer_membership_id
-           JOIN spaces sp ON sp.id = ce.space_id
-           WHERE ce.gym_id = ? AND ce.trainer_membership_id = ? AND ce.space_id = ?
-             AND ce.starts_at = ? AND ce.ends_at = ?
-             AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL
-           FOR UPDATE`,
-          [gymId, trainerId, spaceIdVal, startsAtDate, endsAtDate],
-        );
-
-        if (existing.length > 0) {
-          const effectiveMax = Math.min(Number(existing[0].trainer_max), Number(existing[0].space_max));
-          if (existing.length >= effectiveMax) {
-            throw Object.assign(new Error('Slot is fully occupied'), { status: 409, code: 'slot_fully_occupied' });
-          }
-          const nonShareable = existing.find((r: any) => !r.act_shareable);
-          if (nonShareable) {
-            throw Object.assign(new Error('An existing session at this slot is not eligible for shared training'), { status: 409, code: 'slot_not_shareable' });
-          }
-          if (!newShareable) {
-            throw Object.assign(new Error('This activity is not eligible for shared training'), { status: 409, code: 'activity_not_shareable' });
-          }
-          const sharingAuthorized = existing.some((r: any) => r.allows_shared_booking);
-          if (!sharingAuthorized) {
-            throw Object.assign(new Error('Sharing is not authorized for this slot'), {
-              status: 409, code: 'sharing_not_authorized', host_session_id: existing[0].id,
-            });
-          }
-        }
+        await assertSlotAvailable(tx, {
+          gymId, trainerId, spaceId: spaceIdVal,
+          startsAt: startsAtDate, endsAt: endsAtDate, newShareable,
+        });
 
         const { insertId } = await tx.query(
           `INSERT INTO calendar_events
@@ -405,41 +436,10 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
       const newShareable = !!atRows[0]?.is_shareable;
 
       await db.transaction(async (tx) => {
-        const { rows: existing } = await tx.query(
-          `SELECT ce.id, at.is_shareable AS act_shareable, ce.allows_shared_booking,
-                  COALESCE(gm.max_concurrent_groups, 1) AS trainer_max,
-                  COALESCE(sp.max_concurrent_groups, 1) AS space_max
-           FROM calendar_events ce
-           JOIN activity_types at ON at.id = ce.activity_type_id
-           JOIN gym_memberships gm ON gm.id = ce.trainer_membership_id
-           JOIN spaces sp ON sp.id = ce.space_id
-           WHERE ce.gym_id = ? AND ce.trainer_membership_id = ? AND ce.space_id = ?
-             AND ce.starts_at = ? AND ce.ends_at = ?
-             AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL
-             AND ce.id <> ?
-           FOR UPDATE`,
-          [gymId, effTrainer, effSpace, effStarts, effEnds, req.params.id],
-        );
-
-        if (existing.length > 0) {
-          const effectiveMax = Math.min(Number(existing[0].trainer_max), Number(existing[0].space_max));
-          if (existing.length >= effectiveMax) {
-            throw Object.assign(new Error('Slot is fully occupied'), { status: 409, code: 'slot_fully_occupied' });
-          }
-          const nonShareable = existing.find((r: any) => !r.act_shareable);
-          if (nonShareable) {
-            throw Object.assign(new Error('An existing session at this slot is not eligible for shared training'), { status: 409, code: 'slot_not_shareable' });
-          }
-          if (!newShareable) {
-            throw Object.assign(new Error('This activity is not eligible for shared training'), { status: 409, code: 'activity_not_shareable' });
-          }
-          const sharingAuthorized = existing.some((r: any) => r.allows_shared_booking);
-          if (!sharingAuthorized) {
-            throw Object.assign(new Error('Sharing is not authorized for this slot'), {
-              status: 409, code: 'sharing_not_authorized', host_session_id: existing[0].id,
-            });
-          }
-        }
+        await assertSlotAvailable(tx, {
+          gymId, trainerId: effTrainer, spaceId: effSpace,
+          startsAt: effStarts, endsAt: effEnds, excludeId: String(req.params.id), newShareable,
+        });
 
         await tx.query(
           `UPDATE calendar_events SET
@@ -601,6 +601,134 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (r
     next: { status: 'cancelled', cancellation_reason: reason },
   });
   res.status(204).send();
+});
+
+/**
+ * #979 — undo a cancellation: `Cancelled → Scheduled`, on the same row.
+ *
+ * The counterpart of `POST /:id/cancel` above, and deliberately the only way
+ * back: `Completed` is reserved for an event that actually took place (§3), so
+ * this writes `scheduled` and nothing else invents a fifth state.
+ *
+ * **Nothing is "restored", and that is the point.** Cancelling a session
+ * writes `calendar_events.status` and never touches
+ * `calendar_event_bookings` — so the enrolled members, the waitlist and its
+ * ordering are still exactly as they were (§4, §5), and reactivation cannot
+ * create a duplicate booking, a duplicate waitlist entry or a second event
+ * (§11) because it inserts nothing at all. The booking read below exists to
+ * *report* what came back, for the member alert and the audit row, never to
+ * rebuild it.
+ *
+ * Two things it does guard. The row is flipped under `status = 'cancelled'` in
+ * the WHERE, so two concurrent reactivations settle to one (the loser gets the
+ * same 409 as a session that was never cancelled). And the cancellation freed
+ * the trainer/space slot — `assertSlotAvailable()`'s query, and every conflict
+ * check in this router, skips `cancelled` rows — so another session may have
+ * taken it in the meantime; re-occupying it goes through the same rule a
+ * create or a reschedule does rather than silently double-booking a trainer.
+ *
+ * A past cancelled event is reactivatable on purpose: "cancelled by mistake"
+ * is most often noticed after the class should have run, and refusing would
+ * leave no way to put yesterday's session back and mark its attendance. It
+ * reads `scheduled` (or `not_used`, if nobody is on it) exactly as any other
+ * past event does — #977's rule, not this route's.
+ */
+classSessionsRouter.post('/:id/reactivate', requireModuleWrite('CALENDAR'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  try {
+    const { rows: sessionRows } = await db.query(
+      `SELECT ce.id, ce.status, ce.cancellation_reason, ce.starts_at, ce.ends_at,
+              ce.trainer_membership_id, ce.space_id, at.name AS title, at.is_shareable
+       FROM calendar_events ce
+       JOIN activity_types at ON at.id = ce.activity_type_id
+       WHERE ce.id = ? AND ce.gym_id = ? AND ce.deleted_at IS NULL`,
+      [req.params.id, gymId],
+    );
+    if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found' });
+    const session = sessionRows[0];
+    if (session.status !== 'cancelled') {
+      return res.status(400).json({
+        error: 'Only a cancelled event can be reactivated',
+        code: 'not_cancelled',
+        status_was: session.status,
+      });
+    }
+
+    const bookings = await db.transaction(async (tx) => {
+      if (session.trainer_membership_id && session.space_id) {
+        await assertSlotAvailable(tx, {
+          gymId,
+          trainerId: session.trainer_membership_id,
+          spaceId: session.space_id,
+          startsAt: session.starts_at,
+          endsAt: session.ends_at,
+          excludeId: session.id,
+          newShareable: !!session.is_shareable,
+        });
+      }
+
+      const { rowCount } = await tx.query(
+        `UPDATE calendar_events
+         SET status = 'scheduled', cancellation_reason = NULL, modified_by_membership_id = ?
+         WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND status = 'cancelled'`,
+        [gymMembershipId, session.id, gymId],
+      );
+      // Lost a race with another reactivation (or a status write in between):
+      // the row is no longer cancelled, so there is nothing to undo.
+      if (rowCount === 0) {
+        throw Object.assign(new Error('Only a cancelled event can be reactivated'), {
+          status: 409, code: 'not_cancelled',
+        });
+      }
+
+      const { rows } = await tx.query(
+        `SELECT member_id, status FROM calendar_event_bookings
+         WHERE calendar_event_id = ? AND gym_id = ? AND status IN ('booked', 'waitlisted')`,
+        [session.id, gymId],
+      );
+      return rows;
+    });
+
+    const bookedMemberIds    = bookings.filter((b: any) => b.status === 'booked').map((b: any) => b.member_id);
+    const waitlistMemberIds  = bookings.filter((b: any) => b.status === 'waitlisted').map((b: any) => b.member_id);
+
+    // §6 — the members whose *booking* the cancellation affected, which is the
+    // same set `event_cancelled` was sent to above. A waitlisted member was
+    // never told the class was cancelled and has no booking to have restored,
+    // so telling them one was would be wrong; their place in the queue is
+    // still theirs either way (§5).
+    sendBulkNotification(gymId, bookedMemberIds, 'event_reactivated', 'session', Number(req.params.id), {
+      title: session.title,
+      starts_at: session.starts_at,
+    });
+
+    // §9 — the transition, both ways round, plus who still holds a place. The
+    // actor, the timestamp and the event id are `recordAudit`'s own, and the
+    // cancellation reason is preserved here because the column it was in is
+    // cleared: the audit log is the only record of why the event was cancelled
+    // in the first place.
+    recordAudit(req, {
+      action: 'reactivate',
+      entityType: 'class_session',
+      entityId: req.params.id,
+      previous: { status: 'cancelled', cancellation_reason: session.cancellation_reason ?? null },
+      next: {
+        status: 'scheduled',
+        cancellation_reason: null,
+        restored_member_ids: bookedMemberIds,
+        restored_waitlist_member_ids: waitlistMemberIds,
+      },
+    });
+
+    const { rows } = await db.query(
+      `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
+      [req.params.id, gymId],
+    );
+    res.json(shapeRow(rows[0]));
+  } catch (e: any) {
+    if (e.status) return res.status(e.status).json({ error: e.message, code: e.code, host_session_id: e.host_session_id });
+    next(e);
+  }
 });
 
 classSessionsRouter.post('/:id/bulk-present',
