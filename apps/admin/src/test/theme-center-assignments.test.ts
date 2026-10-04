@@ -20,44 +20,51 @@ import {
 const SRC = join(__dirname, '..');
 const GYM_THEMES = readFileSync(join(SRC, 'app', '[locale]', 'themes', 'page.tsx'), 'utf-8');
 
-function center(id: string, over: Partial<AssignmentCenter> = {}): AssignmentCenter {
-  return { id, name: id.toUpperCase(), is_assigned: false, is_inherited: false, ...over };
+// `centers.id` is an auto-increment integer (migration 043), so the wire value
+// is a number — which is what every case here passes, with one string case for
+// the key the draft actually holds.
+function center(id: number, over: Partial<AssignmentCenter> = {}): AssignmentCenter {
+  return { id, name: `Center ${id}`, is_assigned: false, is_inherited: false, ...over };
 }
 
 describe('the draft opens at what is stored', () => {
   it('selects the Centers assigned to this theme and nothing else', () => {
     const centers = [
-      center('a', { is_assigned: true }),
-      center('b', { is_inherited: true }),
-      center('c'),
+      center(1, { is_assigned: true }),
+      center(2, { is_inherited: true }),
+      center(3),
     ];
-    expect(assignedCenterIds(centers)).toEqual(new Set(['a']));
+    expect(assignedCenterIds(centers)).toEqual(new Set(['1']));
   });
 
   it('does not tick a Center that merely inherits the theme', () => {
     // An inherited Center has no assignment of its own, so its box is unticked
     // and the list says `Inherited` beside the name — ticking it is what makes
     // the assignment explicit, and the save must not do that by itself.
-    const centers = [center('b', { is_inherited: true })];
-    expect(assignedCenterIds(centers).has('b')).toBe(false);
+    const centers = [center(2, { is_inherited: true })];
+    expect(assignedCenterIds(centers).has('2')).toBe(false);
   });
 
   it('is not dirty until a box moves', () => {
-    const centers = [center('a', { is_assigned: true }), center('b')];
+    const centers = [center(1, { is_assigned: true }), center(2)];
     const stored = assignedCenterIds(centers);
     expect(centerSelectionChanged(stored, new Set(stored))).toBe(false);
-    expect(centerSelectionChanged(stored, toggleCenter(stored, 'b', true))).toBe(true);
-    expect(centerSelectionChanged(stored, toggleCenter(stored, 'a', false))).toBe(true);
+    // A numeric id and its string form are one entry, so ticking a box the API
+    // reported as a number cannot leave a second key behind.
+    expect(centerSelectionChanged(stored, toggleCenter(stored, 2, true))).toBe(true);
+    expect(centerSelectionChanged(stored, toggleCenter(stored, 1, false))).toBe(true);
+    expect(toggleCenter(stored, 1, false)).toEqual(new Set());
+    expect(toggleCenter(stored, '1', false)).toEqual(new Set());
   });
 
   it('reports no change while the section is still loading', () => {
-    expect(centerSelectionChanged(null, new Set(['a']))).toBe(false);
-    expect(centerSelectionChanged(new Set(['a']), null)).toBe(false);
+    expect(centerSelectionChanged(null, new Set(['1']))).toBe(false);
+    expect(centerSelectionChanged(new Set(['1']), null)).toBe(false);
   });
 });
 
 describe('All Centers is derived, never its own state (§4)', () => {
-  const centers = [center('a'), center('b'), center('c')];
+  const centers = [center(1), center(2), center(3)];
 
   it('checks itself once every Center is selected by hand', () => {
     let selected = new Set<string>();
@@ -67,12 +74,12 @@ describe('All Centers is derived, never its own state (§4)', () => {
   });
 
   it('clears itself as soon as one Center is unselected', () => {
-    const selected = toggleCenter(new Set(['a', 'b', 'c']), 'b', false);
+    const selected = toggleCenter(new Set(['1', '2', '3']), 2, false);
     expect(allCentersChecked(centers, selected)).toBe(false);
   });
 
   it('selects every Center when ticked and clears the set when unticked', () => {
-    expect(toggleAllCenters(centers, true)).toEqual(new Set(['a', 'b', 'c']));
+    expect(toggleAllCenters(centers, true)).toEqual(new Set(['1', '2', '3']));
     expect(toggleAllCenters(centers, false)).toEqual(new Set());
   });
 
@@ -100,6 +107,8 @@ describe('the page keeps no second copy of the rule (§1, §5)', () => {
     expect(GYM_THEMES).toContain('allCentersChecked(centers, selection)');
     expect(GYM_THEMES).toContain('toggleAllCenters(centers, e.target.checked)');
     expect(GYM_THEMES).toContain('toggleCenter(selection, center.id, e.target.checked)');
+    // The draft is keyed through the module, never on the raw wire value.
+    expect(GYM_THEMES).toContain('selection.has(centerKey(center.id))');
   });
 
   it('puts the Centers in the card\'s dirty state', () => {

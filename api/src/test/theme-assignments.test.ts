@@ -244,8 +244,11 @@ describe('PUT /system/themes/:id/centers', () => {
     expect(await themeIdOf(centerId)).toBe(themeId);
   });
 
-  it('returns 400 for a non-array or non-string payload', async () => {
-    for (const body of [{}, { center_ids: 'a' }, { center_ids: [1] }]) {
+  it('returns 400 for a payload that is not a list of center ids', async () => {
+    // A number *is* a center id here (`centers.id` is an auto-increment integer,
+    // migration 043), so the shape error is about values that are not ids at
+    // all; an id of the right shape naming no Center is the next test's 400.
+    for (const body of [{}, { center_ids: 'a' }, { center_ids: [null] }, { center_ids: [{ id: 1 }] }]) {
       const res = await request
         .put(`/system/themes/${themeId}/centers`)
         .set('Authorization', TEST_AUTH_HEADER)
@@ -258,12 +261,29 @@ describe('PUT /system/themes/:id/centers', () => {
   });
 
   it('returns 400 for a center that is not this gym\'s', async () => {
+    for (const ids of [['non-existent-center'], [987654321]]) {
+      const res = await request
+        .put(`/system/themes/${themeId}/centers`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ center_ids: ids });
+      expect(res.status).toBe(400);
+    }
+    expect(await themeIdOf(centerId)).toBe(themeId);
+  });
+
+  it('accepts a center id a client sent as a string', async () => {
+    // The browser reads the id out of JSON as a number but may hold it as a
+    // string; both resolve against the stored integer, and the response reports
+    // the stored form. Cleared first, so this asserts the write and not a no-op.
+    await db.query('UPDATE centers SET theme_id = NULL WHERE id = ?', [centerId]);
     const res = await request
       .put(`/system/themes/${themeId}/centers`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ center_ids: ['non-existent-center'] });
-    expect(res.status).toBe(400);
+      .send({ center_ids: [String(centerId)] });
+    expect(res.status).toBe(200);
+    expect(res.body.assigned).toEqual([centerId]);
     expect(await themeIdOf(centerId)).toBe(themeId);
   });
 

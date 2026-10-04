@@ -16,8 +16,20 @@
  * did before this ticket).
  */
 
+/**
+ * `centers.id` is an auto-increment integer (migration 043), so the wire value
+ * is a number. The draft keys on `centerKey()` rather than on the raw value, so
+ * the Set holds one spelling whatever the API sent and the ids submitted back
+ * resolve against the stored ones (the route compares them the same way).
+ */
+export type CenterId = string | number;
+
+export function centerKey(id: CenterId): string {
+  return String(id);
+}
+
 export interface AssignmentCenter {
-  id: string;
+  id: CenterId;
   name: string;
   /** `centers.theme_id` points at this theme. */
   is_assigned: boolean;
@@ -27,7 +39,7 @@ export interface AssignmentCenter {
 
 /** The draft the section opens with: exactly what is stored. */
 export function assignedCenterIds(centers: AssignmentCenter[]): Set<string> {
-  return new Set(centers.filter((c) => c.is_assigned).map((c) => c.id));
+  return new Set(centers.filter((c) => c.is_assigned).map((c) => centerKey(c.id)));
 }
 
 /**
@@ -37,17 +49,18 @@ export function assignedCenterIds(centers: AssignmentCenter[]): Set<string> {
  * nothing to be assigned to, and the list renders its empty state instead).
  */
 export function allCentersChecked(centers: AssignmentCenter[], selected: Set<string>): boolean {
-  return centers.length > 0 && centers.every((c) => selected.has(c.id));
+  return centers.length > 0 && centers.every((c) => selected.has(centerKey(c.id)));
 }
 
 /** Ticking `All Centers` selects every Center; unticking it clears the set. */
 export function toggleAllCenters(centers: AssignmentCenter[], checked: boolean): Set<string> {
-  return checked ? new Set(centers.map((c) => c.id)) : new Set<string>();
+  return checked ? new Set(centers.map((c) => centerKey(c.id))) : new Set<string>();
 }
 
-export function toggleCenter(selected: Set<string>, centerId: string, checked: boolean): Set<string> {
+export function toggleCenter(selected: Set<string>, centerId: CenterId, checked: boolean): Set<string> {
   const next = new Set(selected);
-  if (checked) next.add(centerId); else next.delete(centerId);
+  const key = centerKey(centerId);
+  if (checked) next.add(key); else next.delete(key);
   return next;
 }
 

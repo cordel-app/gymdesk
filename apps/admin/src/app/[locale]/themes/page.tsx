@@ -43,6 +43,7 @@ import { btnSmall, cardSurfaceStyle, primaryBtnSmall } from '@/components/ui';
 import {
   allCentersChecked,
   assignedCenterIds,
+  centerKey,
   centerSelectionChanged,
   toggleAllCenters,
   toggleCenter,
@@ -643,10 +644,10 @@ export default function GymThemesPage() {
                 <span style={{ fontSize: 14, fontWeight: 500 }}>{t('assign_all_centers')}</span>
               </label>
               {centers.map((center) => (
-                <label key={center.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f0f0f0', cursor: rowCursor }}>
+                <label key={centerKey(center.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f0f0f0', cursor: rowCursor }}>
                   <input
                     type="checkbox"
-                    checked={selection.has(center.id)}
+                    checked={selection.has(centerKey(center.id))}
                     disabled={!canAssign}
                     onChange={(e) => setCenterSelection(toggleCenter(selection, center.id, e.target.checked))}
                     style={{ width: 16, height: 16, cursor: rowCursor }}
@@ -655,7 +656,7 @@ export default function GymThemesPage() {
                   {/* A Center with no assignment of its own that this theme
                       reaches as the Gym Default: the box stays unticked, because
                       ticking it is what would make the assignment explicit. */}
-                  {center.is_inherited && !selection.has(center.id) && (
+                  {center.is_inherited && !selection.has(centerKey(center.id)) && (
                     <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: '#f0f0f0', color: '#666' }}>{t('assign_inherited')}</span>
                   )}
                 </label>

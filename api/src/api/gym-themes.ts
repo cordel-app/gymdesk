@@ -12,6 +12,7 @@ import {
   planChangesNothing,
   themeCenterAssignmentPlan,
   unknownCenterIds,
+  type CenterId,
   type ThemeCenterRow,
 } from '../domain/themeCenterAssignments';
 import { folderStageForKey, themeFolderStageForKey } from '../domain/storageFailureStage';
@@ -921,8 +922,15 @@ gymThemesRouter.put('/:id/centers', async (req, res, next) => {
       );
       if (themeRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
 
+      // `centers.id` is an auto-increment integer (migration 043), so an id is a
+      // number on the wire from one client and a string from another: both are
+      // accepted and resolved by value below, while anything that is not an id
+      // at all is a 400. An id of the right *shape* that names no Center of this
+      // gym is the unknown check's 400, not this one's.
       const { center_ids } = req.body ?? {};
-      if (!Array.isArray(center_ids) || center_ids.some((id: unknown) => typeof id !== 'string')) {
+      const isCenterId = (id: unknown): id is CenterId =>
+        typeof id === 'string' || (typeof id === 'number' && Number.isFinite(id));
+      if (!Array.isArray(center_ids) || !center_ids.every(isCenterId)) {
         return res.status(400).json({ error: 'center_ids must be an array of center ids' });
       }
       // An empty set is a legitimate save (every box unticked), so the Active
@@ -932,7 +940,7 @@ gymThemesRouter.put('/:id/centers', async (req, res, next) => {
         return res.status(400).json({ error: 'Only Active themes can be assigned to Centers.' });
       }
 
-      const { rows: centers } = await db.query<ThemeCenterRow & { id: string }>(
+      const { rows: centers } = await db.query<ThemeCenterRow>(
         'SELECT id, theme_id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
         [gymId],
       );
@@ -941,7 +949,7 @@ gymThemesRouter.put('/:id/centers', async (req, res, next) => {
 
       const plan = themeCenterAssignmentPlan(centers, req.params.id, center_ids);
       const previous = assignedCenterIds(centers, req.params.id);
-      if (planChangesNothing(plan)) return res.json({ ok: true, assigned: previous });
+      if (planChangesNothing(plan)) return res.json({ ok: true, assigned: plan.assigned });
 
       await db.transaction(async (tx) => {
         if (plan.clear.length > 0) {
@@ -960,9 +968,9 @@ gymThemesRouter.put('/:id/centers', async (req, res, next) => {
         }
       });
 
-      // Every requested id is a Center of this gym (the unknown check above), so
-      // the set that is now stored is exactly what the request asked for.
-      const assigned = Array.from(new Set<string>(center_ids));
+      // Reported as *stored* rather than as submitted, so the ids a client reads
+      // back are the ones it will send next time whichever form it sent now.
+      const assigned = plan.assigned;
       recordAudit(req, {
         action: 'update',
         entityType: 'theme',
