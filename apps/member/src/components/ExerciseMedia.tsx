@@ -7,6 +7,7 @@ import {
   exerciseVideoKind, exerciseVideoPosterUrl, hasExerciseMedia,
 } from '@/lib/exerciseMedia';
 import { ExerciseImageViewer, ExerciseVideoViewer } from './ExerciseMediaViewer';
+import { memberTheme } from '@/lib/memberChrome';
 
 /**
  * #723 — the image and video of one exercise, rendered inside that exercise's
@@ -136,7 +137,10 @@ const styles: Record<string, React.CSSProperties> = {
   row:         { display: 'inline-flex', alignItems: 'center', gap: 6, flex: '0 0 auto' },
   tileBtn:     { position: 'relative', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', padding: 0, border: 'none', background: 'none', cursor: 'pointer', lineHeight: 0, borderRadius: 8, flex: '0 0 auto', textDecoration: 'none' },
   videoBtn:    { overflow: 'hidden' },
-  tile:        { borderRadius: 8, border: '1px solid #e4e4e7', background: '#fafafa', display: 'block' },
-  emptyPoster: { background: '#eeecff', border: '1px solid #e2def8' },
-  play:        { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', lineHeight: 1, textShadow: '0 1px 3px rgba(0,0,0,.55)' },
+  tile:        { borderRadius: 8, border: `1px solid ${memberTheme.cardBorderColor}`, background: memberTheme.pageBackground, display: 'block' },
+  emptyPoster: {
+    background: `color-mix(in srgb, ${memberTheme.primaryButton} 10%, ${memberTheme.surface})`,
+    border: `1px solid color-mix(in srgb, ${memberTheme.primaryButton} 25%, ${memberTheme.surface})`,
+  },
+  play:        { position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: memberTheme.primaryButtonText, lineHeight: 1, textShadow: '0 1px 3px rgba(0,0,0,.55)' },
 };

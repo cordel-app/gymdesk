@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { youtubeEmbedUrl } from '@/lib/exerciseMedia';
+import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
 
 /**
  * #723 — the larger views a member gets when they select an exercise's image or
@@ -128,11 +129,11 @@ export function ExerciseVideoViewer({ url, poster, name, onClose }: {
 
 const styles: Record<string, React.CSSProperties> = {
   backdrop:   { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, zIndex: 1000 },
-  panel:      { background: '#fff', borderRadius: 12, padding: 12, width: '100%', maxWidth: 720, maxHeight: '90vh', overflow: 'auto' },
+  panel:      { ...sectionCardStyle, padding: 12, width: '100%', maxWidth: 720, maxHeight: '90vh', overflow: 'auto' },
   panelHead:  { display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 },
-  panelTitle: { flex: 1, fontSize: 14, fontWeight: 600, color: '#18181b' },
-  closeBtn:   { width: 44, height: 44, borderRadius: '50%', border: '1px solid #e4e4e7', background: '#fff', color: '#18181b', fontSize: 18, lineHeight: 1, cursor: 'pointer', flex: '0 0 auto' },
+  panelTitle: { flex: 1, fontSize: 14, fontWeight: 600, color: memberTheme.text },
+  closeBtn:   { width: 44, height: 44, borderRadius: '50%', border: `1px solid ${memberTheme.cardBorderColor}`, background: memberTheme.surface, color: memberTheme.text, fontSize: 18, lineHeight: 1, cursor: 'pointer', flex: '0 0 auto' },
   image:      { display: 'block', width: '100%', height: 'auto', maxHeight: '75vh', objectFit: 'contain' },
-  video:      { display: 'block', width: '100%', maxHeight: '75vh', background: '#000', borderRadius: 8 },
-  frame:      { display: 'block', width: '100%', aspectRatio: '16 / 9', border: 'none', borderRadius: 8, background: '#000' },
+  video:      { display: 'block', width: '100%', maxHeight: '75vh', background: memberTheme.mediaLetterbox, borderRadius: 8 },
+  frame:      { display: 'block', width: '100%', aspectRatio: '16 / 9', border: 'none', borderRadius: 8, background: memberTheme.mediaLetterbox },
 };

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { NutritionFoodItem, formatQuantity, humanizeSlug, translatedLabel } from '@/lib/nutritionFood';
+import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
 
 /**
  * #722 — one food of a member's nutrition plan: its image on top, then the
@@ -70,14 +71,14 @@ export function NutritionFoodCard({ item, eager = false }: {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  card:        { background: '#fff', borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' },
-  imageBox:    { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fafafa' },
+  card:        { ...sectionCardStyle, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' },
+  imageBox:    { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground },
   image:       { width: '100%', height: '100%', objectFit: 'contain', display: 'block' },
-  placeholder: { color: '#a1a1aa', fontSize: 12, textAlign: 'center', padding: '0 12px' },
+  placeholder: { color: memberTheme.textMuted, fontSize: 12, textAlign: 'center', padding: '0 12px' },
   body:        { padding: '12px 14px 14px' },
-  name:        { margin: 0, fontSize: 15, fontWeight: 700, color: '#18181b' },
-  quantity:    { margin: '4px 0 0', fontSize: 13, color: '#52525b' },
-  role:        { margin: '2px 0 0', fontSize: 12, color: '#71717a' },
+  name:        { margin: 0, fontSize: 15, fontWeight: 700, color: memberTheme.text },
+  quantity:    { margin: '4px 0 0', fontSize: 13, color: memberTheme.textSecondary },
+  role:        { margin: '2px 0 0', fontSize: 12, color: memberTheme.textMuted },
   chips:       { display: 'flex', flexWrap: 'wrap', gap: 6, listStyle: 'none', margin: '10px 0 0', padding: 0 },
-  chip:        { background: '#f4f4f5', color: '#3f3f46', borderRadius: 999, padding: '3px 9px', fontSize: 11, fontWeight: 600 },
+  chip:        { background: memberTheme.pageBackground, color: memberTheme.textSecondary, borderRadius: 999, padding: '3px 9px', fontSize: 11, fontWeight: 600 },
 };

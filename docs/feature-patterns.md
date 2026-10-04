@@ -1759,6 +1759,22 @@ Reference implementation: `apps/admin/src/components/ProductBenefits.tsx` (`PROD
 
 ---
 
+## One Chrome Module per App (#983)
+
+The Members App's counterpart to `listChrome.ts`/`formChrome.ts`. When a surface is painted from a theme the customer configures, a colour typed into a page is a value the theme cannot move — so one module spells them and every screen spreads what it exports.
+
+- **A role, not a shade.** `memberTheme.textMuted` means "the secondary text colour"; a page asks for that rather than for `#71717a`, and the theme decides what it is. The module's own value is the CSS variable (`var(--gd-text-muted, …)`), and the literal inside it is that variable's fallback for the frames before `ThemeProvider`'s effect has run — which is why the fallback is the *default token's* value and not whatever a page happened to carry.
+- **One object per surface.** `sectionCardStyle`, `rowDividerStyle`, `inputStyle`, `primaryButtonStyle`/`secondaryButtonStyle`/`destructiveButtonStyle`, `statusPillStyle(tone)`, `noticeStyle(tone)`. A page spreads one and overrides its own geometry (`{ ...sectionCardStyle, padding: '16px 18px' }`), exactly as a borrowed `formChrome` object is spread.
+- **A declared setting must reach every surface of its kind, not one.** #833 wired the Section Cards border to the component the navigation tiles render through, which was right and not enough: the content cards of six other screens are Section Cards to the gym owner reading the setting's label. Putting the border in the shared module is what made "all relevant cards" one rule instead of seven.
+- **One tone map for a status.** The same four lifecycle states were three copies of a `{bg, fg}` map on three screens. One `statusTone()` + `statusPillStyle()` answers for all of them, and the tint is `color-mix()` of the theme's own status colour over the card surface — mixed over the surface rather than `transparent`, so a pill stays opaque on a card carrying artwork.
+- **Name the variable's owner.** A Members App surface reading `--gd-sidebar-selected-bg` is reading the *Admin sidebar's* colour: no Members App setting can move it, so the control is unthemable however carefully the theme is configured. When a surface has no setting of its own, inherit from the nearest one that is about the same thing (the Calendar's filter buttons take the Calendar Buttons setting FullCalendar's navigation buttons already follow).
+- **A carve-out is a product decision, and the gate asserts the set.** Three files keep a literal: the static `theme-color` meta (it tints the browser's chrome and is read before any gym resolves) and the two impersonation bars (the platform's, because a gym able to repaint them could hide them). The gate lists them and asserts the list, so a fourth is argued in a review rather than appended quietly.
+- **The gate goes where CI runs.** `npm test` runs in `api/` only, so a scan that must hold on every push lives in `api/src/test/` even when what it scans is a frontend (see *A recurring defect class gets a gate, not a fourth point fix*). Strip comments (they cite `#983`, which looks exactly like a three-digit colour) and `var(--token, fallback)` expressions before looking for a hex, or the gate fails on its own documentation.
+
+Reference implementation: `apps/member/src/lib/memberChrome.ts`, with `api/src/test/members-app-theme-consumption.unit.test.ts` as the gate and `apps/member/src/test/members-app-theme-vars.test.ts` asserting which setting reaches which surface.
+
+---
+
 ## Two Member-App Sections, One Image Row (#932)
 
 The Member app's read-only equivalent of the rule above. When one page carries two sections of the *same shape* — an image beside a name, with an optional line under it (My Nutrition's Dietary Restrictions and Nutrition Goals) — the row is a component, not a style object copied twice.
