@@ -68,10 +68,8 @@ const NOTIFICATION_TYPES = [
 ];
 
 const NOTIFICATION_CHECK = 'chk_member_notifications_type';
-/** The values that tell this migration's list from the one before it. */
+/** Every value that tells this migration's list from the one before it. */
 const WAITLIST_TYPES = ['waitlist_closed', 'waitlist_removed'];
-/** The one of them the guard below tests the live clause for. */
-const GUARD_TYPE = 'waitlist_closed';
 
 async function constraintExists(knex, table, name) {
   const [[row]] = await knex.raw(
@@ -89,11 +87,13 @@ async function constraintExists(knex, table, name) {
  * (``(`type` in (_utf8mb4'booking_confirmed',…))``), which is why this matches
  * a substring rather than comparing the clause.
  *
- * Note `waitlist_closed` is used as the guard value rather than
- * `waitlist_removed` for no reason beyond having to pick one — but it must be
- * a value no *earlier* list contains as a substring, which both of this
- * migration's are (migration 216's longest waitlist value is
- * `promoted_from_waitlist`, and neither of these is a substring of it).
+ * Note the `_` in each type name is a single-character LIKE wildcard, so this
+ * really asks for `waitlist` + any character + `closed`. That is looser than
+ * the substring it reads as, and it is kept for consistency with migrations
+ * 170 and 216, whose helpers this is copied from — verified against all three
+ * earlier clauses to match nothing it should not. A future value whose name is
+ * a wildcard-match of an existing one would need `LOCATE('<quoted value>',
+ * CHECK_CLAUSE)` here instead.
  */
 async function notificationCheckAllows(knex, value) {
   const [[row]] = await knex.raw(
@@ -107,26 +107,45 @@ async function notificationCheckAllows(knex, value) {
 
 /**
  * Swap the type CHECK for the given list — but only when it is not already
- * right. `waitlist_closed` is what tells the two lists apart, so its presence
- * in the live clause is the whole test, in both directions.
+ * right. The two values this migration adds are what tell its list from
+ * migration 216's, so their presence in the live clause is the whole test, in
+ * both directions.
  *
  * Without that guard every `db:migrate` reaching this line would rebuild
  * `member_notifications` again, and the DROP would need a blind `.catch()`
  * that would also swallow a metadata-lock timeout.
  *
+ * **Both** values are checked, not one standing for the pair — which is where
+ * this diverges from 216, deliberately. There the delta *was* one value, so
+ * "the clause mentions it" and "the list is right" were the same question;
+ * with two, a clause holding `waitlist_closed` but not `waitlist_removed`
+ * would read as already-correct and return without repairing it, leaving
+ * every `waitlist_removed` insert failing errno 3819 permanently and
+ * invisibly (the alert is fire-and-forget and only logs). That half state is
+ * unreachable through this migration — one `ADD CONSTRAINT` writes both — but
+ * reachable through a hand-applied hotfix or a restored backup, which is
+ * exactly the kind of state a guard exists to fix.
+ *
  * The **existence** check is part of the guard rather than only of the DROP.
  * DDL commits implicitly, so a run that died between the DROP and the ADD
  * comes back to a table with no constraint at all — and a guard that only
- * asked "does the clause mention this value" would read that as the narrow
+ * asked "does the clause mention these values" would read that as the narrow
  * list it wants and return without re-adding anything, leaving `type`
  * unconstrained for good. Asking both questions is also what makes a database
- * whose constraint went missing for any other reason repair itself on the next
- * migrate.
+ * whose constraint went missing, or was left narrower than it should be,
+ * repair itself on the next migrate.
  */
 async function setNotificationCheck(knex, types) {
-  const wanted = types.includes(GUARD_TYPE);
   const exists = await constraintExists(knex, 'member_notifications', NOTIFICATION_CHECK);
-  if (exists && (await notificationCheckAllows(knex, GUARD_TYPE)) === wanted) return;
+  let correct = exists;
+  for (const type of WAITLIST_TYPES) {
+    const wanted = types.includes(type);
+    if (!exists || (await notificationCheckAllows(knex, type)) !== wanted) {
+      correct = false;
+      break;
+    }
+  }
+  if (correct) return;
   if (exists) {
     await knex.raw(`ALTER TABLE member_notifications DROP CHECK ${NOTIFICATION_CHECK}`);
   }
