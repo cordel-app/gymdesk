@@ -502,9 +502,10 @@ export default function CordelNutritionLibraryPage() {
   }
 
   const columns: Column<LibraryItem>[] = [
-    { header: 'Name', render: (item) => <strong>{item.name}</strong> },
+    { header: 'Name', mobile: 'name', title: (item) => item.name, render: (item) => <strong>{item.name}</strong> },
     {
       header: 'Categories',
+      mobile: 'secondary',
       render: (item) => (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {item.categories.map((c) => <span key={c.id} style={categoryChipStyle}>{categoryLabel(c.slug)}</span>)}
@@ -513,15 +514,16 @@ export default function CordelNutritionLibraryPage() {
     },
     {
       header: 'Qualities',
+      mobile: 'secondary',
       render: (item) => item.qualities.length > 0 ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {item.qualities.map((q) => <span key={q.id} style={qualityChipStyle}>{qualityLabel(q.slug)}</span>)}
         </div>
       ) : <span style={{ color: 'var(--text-muted, #9ca3af)', fontSize: 13 }}>—</span>,
     },
-    { header: 'Status', width: 100, render: (item) => <StatusBadge status={item.status} label={item.status} /> },
+    { header: 'Status', width: 100, mobile: 'keep', render: (item) => <StatusBadge status={item.status} label={item.status} /> },
     {
-      header: '', width: 40,
+      header: '', width: 40, mobile: 'actions',
       // #799 §8: Details is the read-only modal (audit information), Edit the form.
       // Expanding the row is a third, separate interaction.
       //

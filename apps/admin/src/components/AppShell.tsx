@@ -6,6 +6,7 @@ import { useAuth } from '@clerk/nextjs';
 import { Sidebar } from './Sidebar';
 import { TopHeader } from './TopHeader';
 import { ImpersonationBanner } from './ImpersonationBanner';
+import { ListResponsiveStyles } from './ListResponsiveStyles';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -43,6 +44,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
+      {/* #1011: the list chrome's mobile rules, mounted once for every screen. */}
+      <ListResponsiveStyles />
+
       <div ref={topBarRef} style={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 50 }}>
         <ImpersonationBanner />
         <TopHeader onMenuToggle={() => setSidebarOpen((v) => !v)} />

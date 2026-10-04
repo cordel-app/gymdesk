@@ -341,9 +341,10 @@ export default function NutritionLibraryPage() {
   }
 
   const columns: Column<LibraryItem>[] = [
-    { header: t('nutrition_library.label_name'), render: (item) => <strong>{item.display_name ?? item.name}</strong> },
+    { header: t('nutrition_library.label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => <strong>{item.display_name ?? item.name}</strong> },
     {
       header: t('nutrition_library.label_categories'),
+      mobile: 'secondary',
       render: (item) => (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {item.categories.map((c) => <span key={c.id} style={categoryChipStyle}>{categoryLabel(c.slug)}</span>)}
@@ -352,6 +353,7 @@ export default function NutritionLibraryPage() {
     },
     {
       header: t('nutrition_library.nutritional_qualities_label'),
+      mobile: 'secondary',
       render: (item) => item.qualities.length > 0 ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {item.qualities.map((q) => <span key={q.id} style={qualityChipStyle}>{qualityLabel(q.slug)}</span>)}
@@ -359,13 +361,13 @@ export default function NutritionLibraryPage() {
       ) : <span style={{ color: 'var(--text-muted, #9ca3af)', fontSize: 13 }}>—</span>,
     },
     {
-      header: '', width: 120,
+      header: '', width: 120, mobile: 'secondary',
       render: (item) => item.gym_id === null
         ? <span style={{ fontSize: 12, color: '#888' }}>{t('nutrition_library.read_only')}</span>
         : null,
     },
     {
-      header: '', width: 40,
+      header: '', width: 40, mobile: 'actions',
       render: (item) => {
         const isGymItem = item.gym_id !== null;
         return (

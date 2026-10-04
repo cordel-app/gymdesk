@@ -86,17 +86,23 @@ export default function OrphanedAccountsPage() {
 
   const columns: Column<OrphanedAccount>[] = [
     // Natural width like the Members list: may only break after the @.
+    //
+    // #1011: an orphaned Clerk account often has no name at all, so the email is
+    // what identifies the row and is therefore the name cell.
     {
       header: t('col_email'),
+      mobile: 'name',
+      title: (r) => r.email ?? undefined,
       render: (r) => {
         if (!r.email) return '—';
         const at = r.email.indexOf('@');
         return at < 0 ? r.email : <>{r.email.slice(0, at + 1)}<wbr />{r.email.slice(at + 1)}</>;
       },
     },
-    { header: t('col_name'), render: (r) => r.name ?? '—' },
+    { header: t('col_name'), mobile: 'secondary', render: (r) => r.name ?? '—' },
     {
       header: t('col_reason'),
+      mobile: 'keep',
       render: (r) => {
         const c = REASON_COLORS[r.reason];
         return (
@@ -106,12 +112,13 @@ export default function OrphanedAccountsPage() {
         );
       },
     },
-    { header: t('col_gyms'), render: (r) => (r.gyms.length ? r.gyms.map((g) => g.gym_name ?? g.gym_id).join(', ') : '—') },
-    { header: t('col_created'), width: 110, render: (r) => fmtDate(r.created_at) },
-    { header: t('col_last_sign_in'), width: 110, render: (r) => fmtDate(r.last_sign_in_at) },
+    { header: t('col_gyms'), mobile: 'secondary', render: (r) => (r.gyms.length ? r.gyms.map((g) => g.gym_name ?? g.gym_id).join(', ') : '—') },
+    { header: t('col_created'), width: 110, mobile: 'secondary', render: (r) => fmtDate(r.created_at) },
+    { header: t('col_last_sign_in'), width: 110, mobile: 'secondary', render: (r) => fmtDate(r.last_sign_in_at) },
     {
       header: t('col_actions'),
       width: 110,
+      mobile: 'actions',
       render: (r) => (
         <button
           onClick={() => setDeleting(r)}

@@ -288,15 +288,18 @@ export default function MembershipsPage() {
   if (gymLoading) return null;
 
   const columns: Column<Membership>[] = [
-    { header: t('memberships.col_member'), render: (m) => m.member_name },
-    { header: t('memberships.col_plan'),   render: (m) => m.plan_name ?? '—' },
-    { header: t('memberships.col_status'), width: 110, render: (m) => <StatusBadge status={m.status} label={t(`status.${m.status}`)} /> },
-    { header: t('memberships.col_price'),  width: 110, render: (m) => m.membership_fee != null ? m.membership_fee.toFixed(2) : '—' },
-    { header: t('memberships.col_starts'), width: 130, render: (m) => day(m.starts_at) },
-    { header: t('memberships.col_ends'),   width: 130, render: (m) => day(m.ends_at) || <em style={{ color: '#888' }}>{t('memberships.ongoing')}</em> },
+    // #1011: the Member is this list's identity, so it is the name cell (the
+    // ticket's "Member name, where the list is member-related").
+    { header: t('memberships.col_member'), mobile: 'name', title: (m) => m.member_name, render: (m) => m.member_name },
+    { header: t('memberships.col_plan'),   mobile: 'secondary', render: (m) => m.plan_name ?? '—' },
+    { header: t('memberships.col_status'), width: 110, mobile: 'keep', render: (m) => <StatusBadge status={m.status} label={t(`status.${m.status}`)} /> },
+    { header: t('memberships.col_price'),  width: 110, mobile: 'secondary', render: (m) => m.membership_fee != null ? m.membership_fee.toFixed(2) : '—' },
+    { header: t('memberships.col_starts'), width: 130, mobile: 'secondary', render: (m) => day(m.starts_at) },
+    { header: t('memberships.col_ends'),   width: 130, mobile: 'secondary', render: (m) => day(m.ends_at) || <em style={{ color: '#888' }}>{t('memberships.ongoing')}</em> },
     {
       header: t('memberships.col_actions'),
       width: 320,
+      mobile: 'actions',
       render: (m) => (
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           <button onClick={() => setLedgerFor(m)} style={primaryBtnSmall()}>{t('memberships.ledger')}</button>
