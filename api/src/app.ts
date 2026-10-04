@@ -112,7 +112,7 @@ import { httpErrorStatus, publicErrorMessage } from './domain/httpErrorResponse'
 
 export const app = express();
 
-// #599: the API runs behind nginx (infra/nginx/corback.conf). Without this,
+// #599: the API runs behind a reverse proxy (Traefik on corfront). Without this,
 // req.ip is the proxy's address for every request, so every per-IP rate limiter
 // collapses into a single bucket shared by all clients.
 const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
@@ -195,8 +195,8 @@ app.get('/health', (_req, res) => {
 });
 
 // #782: nightly-run freshness for an external prober (Grafana Cloud synthetic).
-// Unauthenticated and deliberately outside /billing/, whose nginx location is
-// restricted to GitHub Actions IPs — see api/health.ts.
+// Unauthenticated and deliberately outside /billing/, the internal-run surface
+// with its own shared secret and rate limiter — see api/health.ts.
 app.use('/health', healthRouter);
 
 app.use('/docs', swaggerUi.serve as any);

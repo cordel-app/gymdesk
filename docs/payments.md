@@ -264,7 +264,7 @@ to provision and rotate.
   quadlet (it refuses to deploy while it is empty). Until 2026-09-27 neither side had it,
   so every scheduled run answered `401` and no recurring charge ran on `dev`.
 - There is **no** network-layer restriction: `/billing/*` and `/recurring-bookings/*` both
-  fall through `location /` in `infra/nginx/corback.conf` (#783). What stands in for one is
+  are reached directly through Traefik with no IP restriction (#783; the nginx allowlist that was meant to sit in front never ran, as there is no nginx on corback). What stands in for one is
   a per-route rate limiter mounted in `api/src/app.ts` ahead of both internal routers
   (`internalRunLimiter`, config in `api/src/domain/internalRunRateLimit.ts`): per client IP,
   `INTERNAL_RUN_RATE_LIMIT_MAX` (default 10) failed attempts per
@@ -779,10 +779,9 @@ absence into something a prober outside GitHub can see:
 - **200 whenever the database answers**, stale or not — the prober asserts on `stale`. **503**
   only when the run logs cannot be read.
 - **Unauthenticated**, and it returns nothing else: no counters, no gym, no member.
-- **Outside `/billing/`** on purpose: nginx restricts `location /billing/` to GitHub Actions IPs
-  (`infra/nginx/corback.conf`), which would 403 a Grafana Cloud prober. `/health/runs` is
-  served by the unrestricted `location /` block, so `https://api.vdicube.com/health/runs` is
-  publicly reachable with no nginx change. The global API rate limiter (500 requests / 15 min
+- **Outside `/billing/`** on purpose: `/billing/` is the internal-run surface (shared secret plus its
+  own rate limiter), which a Grafana Cloud prober must not share. `/health/runs` is public, so
+  `https://api.vdicube.com/health/runs` is reachable with no proxy change. The global API rate limiter (500 requests / 15 min
   per IP) applies; a probe every few minutes from a handful of locations is far below it.
 
 **Grafana Cloud setup (manual, not provisioned from the repo):**
@@ -811,9 +810,8 @@ absence into something a prober outside GitHub can see:
 >   not a Loki query on the `billing/run: complete` log line and not a GitHub-scheduled
 >   check, because a GitHub-hosted check shares GitHub's failure modes, which are exactly
 >   what this alert exists to catch.
-> - The endpoint is unauthenticated at `GET /health/runs`, outside `/billing/`, so the nginx
->   GitHub Actions allowlist (still live on the server until #783's conf is installed)
->   never 403s the prober and no internal secret is handed to Grafana. It leaks one timestamp per internal job and nothing tenant-scoped.
+> - The endpoint is unauthenticated at `GET /health/runs`, outside `/billing/`, so the internal-run
+>   secret and rate limiter never apply to the prober and no internal secret is handed to Grafana. It leaks one timestamp per internal job and nothing tenant-scoped.
 > - One endpoint for both runs, default threshold 26 h (a daily run plus the 06:00/10:00
 >   UTC spread), configurable through `RUN_FRESHNESS_THRESHOLD_HOURS`.
 > - Grafana (check, alert rule, contact point) is configured by hand, not provisioned from

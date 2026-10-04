@@ -15,9 +15,9 @@ import { evaluateRunFreshness, runFreshnessThresholdHours } from '../domain/runF
  * no member — and an authenticated probe would mean handing
  * `BILLING_INTERNAL_SECRET` to a Grafana synthetic check.
  *
- * **Outside `/billing/` on purpose**: nginx restricts `location /billing/` to
- * GitHub Actions' IP ranges (`infra/nginx/corback.conf`), which would 403 a
- * Grafana Cloud prober. `/health/runs` is served by `location /`.
+ * **Outside `/billing/` on purpose**: that prefix is the internal-run surface
+ * (shared-secret authenticated, with its own rate limiter), and a prober must
+ * not share its budget or be handed its secret. `/health/runs` is public.
  *
  * A stale answer is still a 200: the prober asserts on `stale`, so the status
  * code is kept for "the API could not answer the question at all".
