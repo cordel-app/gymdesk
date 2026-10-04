@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { CSSProperties, useState } from 'react';
 import { NavGroup as NavGroupType, NavItem as NavItemType } from '@/config/navigationGroups';
 import { NavIcon } from './icons/NavIcons';
+import { navGroupSeparatorStyle, navItemSeparatorStyle } from './navChrome';
 
 /**
  * #779: a count shown beside the group header and beside one of its items,
@@ -58,6 +59,12 @@ interface NavGroupProps {
    * group" in that mode: a collapsed section is not a page of its own (§2).
    */
   collapsed?: boolean;
+  /**
+   * #1020: the heavier rule above this section, declared on the group itself
+   * (`NavGroup.separatorAbove`) and switched off by the sidebar for the first
+   * visible section, which has nothing above it to be separated from.
+   */
+  separatorAbove?: boolean;
 }
 
 export function NavGroup({
@@ -69,6 +76,7 @@ export function NavGroup({
   isAnyChildActive,
   badge,
   collapsed = false,
+  separatorAbove = false,
 }: NavGroupProps) {
   const showBadge = !!badge && badge.count > 0;
   const pathname = usePathname();
@@ -85,9 +93,7 @@ export function NavGroup({
 
     return (
       <div key={item.href}>
-        {item.separatorAbove && (
-          <div style={{ borderTop: '1px solid rgba(255,255,255,0.15)', margin: '6px 16px' }} />
-        )}
+        {item.separatorAbove && <div style={navItemSeparatorStyle} />}
         <div style={{ display: 'flex', alignItems: 'center' }}>
         <Link
           href={item.href}
@@ -174,6 +180,10 @@ export function NavGroup({
 
   return (
     <div>
+      {/* #1020: above the header, so it separates this section from the one
+          before it in both modes — the collapsed strip keeps the rule and only
+          narrows its inset (navChrome). */}
+      {separatorAbove && <div style={navGroupSeparatorStyle(collapsed)} />}
       <div style={{ display: 'flex', alignItems: 'center', marginTop: '8px', position: 'relative' }}>
       <button
         onClick={onToggle}

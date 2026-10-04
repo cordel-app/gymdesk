@@ -229,7 +229,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         overscrollBehavior: 'contain',
         WebkitOverflowScrolling: 'touch',
       }}>
-        {translatedGroups.map(group => {
+        {translatedGroups.map((group, index) => {
           const isAnyChildActive = navGroupContainsActivePath(group, pathname);
 
           return (
@@ -243,6 +243,10 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               isAnyChildActive={isAnyChildActive}
               badge={group.id === 'payments' ? paymentsBadge : null}
               collapsed={collapsed}
+              // #1020: the group declares the divider; the sidebar is the only
+              // thing that knows this group is the first one on screen for this
+              // role, and a leading rule separates a section from nothing.
+              separatorAbove={!!group.separatorAbove && index > 0}
             />
           );
         })}
