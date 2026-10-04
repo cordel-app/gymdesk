@@ -19,6 +19,7 @@ import { ClassSessionDetailPanel } from './ClassSessionDetailPanel';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
+import { calendarEventPaint } from '@/lib/calendarEventPaint';
 import { CalendarCenterFilter } from './CalendarCenterFilter';
 
 interface ActivityType {
@@ -158,10 +159,14 @@ export default function CalendarPage() {
         apiFetch<any[]>(`/class-sessions?${params}`),
       ])
         .then(([calEvents, sessions]) => {
-          // No per-event backgroundColor/borderColor (#559 stage 3): every
-          // event takes the theme's Calendar event colors, and the status is
-          // carried by the pill badge in `eventContent` below. An inline color
-          // here would override the theme.
+          // #975 — the box takes the *event's* configured colour
+          // (`COALESCE(calendar_events.color, activity_types.color)`), which is
+          // the same for every viewer and for every state the event passes
+          // through. An event with no colour configured gets no inline style
+          // at all, so the theme's Calendar event tokens show through (#559
+          // stage 2) — FullCalendar writes these as inline styles, which would
+          // otherwise beat them. What a status changes is the badge in
+          // `eventContent` below, never the fill (#559 stage 3, #977 §8).
           const calMapped = calEvents.map((e) => ({
             id: `ce-${e.id}`,
             title: e.title,
@@ -169,6 +174,7 @@ export default function CalendarPage() {
             end: e.ends_at,
             allDay: !!e.all_day,
             editable: true,
+            ...(calendarEventPaint(e) ?? {}),
             extendedProps: { ...e, _type: 'event' },
           }));
           const sessionMapped = sessions.map((s) => ({
@@ -179,6 +185,7 @@ export default function CalendarPage() {
             allDay: false,
             // Sessions use a different time-change flow; disable FC drag/resize
             editable: false,
+            ...(calendarEventPaint(s) ?? {}),
             extendedProps: { ...s, _type: 'session' },
           }));
           const holidayBg = holidayBackgroundEvents(holidays, info.start, info.end);
