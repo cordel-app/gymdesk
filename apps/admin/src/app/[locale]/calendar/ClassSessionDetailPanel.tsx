@@ -6,9 +6,11 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { cardSurfaceStyle, primaryActionColors, primaryBtnSmall } from '@/components/ui';
 import {
-  formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, secondaryBtnSmall,
+  formControlStyle, formErrorStyle, formFieldLabelStyle, formHelpTextStyle, inlineActionsRowStyle,
+  secondaryBtnSmall,
 } from '@/components/formChrome';
 import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
+import { WAITLIST_MODES, waitlistModeClosesQueue, type WaitlistMode } from '@/lib/waitlistModes';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
 
 interface ClassSession {
@@ -31,7 +33,16 @@ interface ClassSession {
    */
   professional_service_name: string | null;
   effective_capacity: number;
-  effective_waitlist_mode: 'disabled' | 'open' | 'closed';
+  /**
+   * #980 stage 2: the occurrence's *own* Waitlist setting, `null` while it
+   * still follows its Activity Type's. The pair is what lets the card say
+   * which of the two the member is actually subject to, and the reason Save
+   * compares the draft against `effective_waitlist_mode` rather than this one
+   * — re-saving an untouched form must not quietly stop the occurrence
+   * inheriting.
+   */
+  waitlist_mode: WaitlistMode | null;
+  effective_waitlist_mode: WaitlistMode;
   booked_count: number;
   status: string;
   /**
@@ -173,8 +184,13 @@ export function ClassSessionDetailPanel({
   const [editingDetails, setEditingDetails] = useState(false);
   const [draftTrainerId, setDraftTrainerId] = useState('');
   const [draftSpaceId, setDraftSpaceId] = useState('');
+  const [draftWaitlistMode, setDraftWaitlistMode] = useState<WaitlistMode>('disabled');
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  // §3 — Save asks first when it is about to empty the waiting list, and the
+  // confirmation carries the live count. It is a step of this form rather than
+  // a second overlay: the panel's own inline confirm shape (#979).
+  const [confirmDisableWaitlist, setConfirmDisableWaitlist] = useState(false);
 
   // Change time flow
   const [showChangeTime, setShowChangeTime] = useState(false);
@@ -342,40 +358,83 @@ export function ClassSessionDetailPanel({
     if (!session) return;
     setDraftTrainerId(session.trainer_membership_id ? String(session.trainer_membership_id) : '');
     setDraftSpaceId(session.space_id ? String(session.space_id) : '');
+    // Seeded from the *effective* mode, which is what the read-only card above
+    // showed: an occurrence with no setting of its own is subject to its
+    // Activity Type's, so that is the value staff are editing away from.
+    setDraftWaitlistMode(session.effective_waitlist_mode);
     setDetailsError(null);
+    setConfirmDisableWaitlist(false);
     setEditingDetails(true);
   }
 
   function cancelEditDetails() {
     setEditingDetails(false);
     setDetailsError(null);
+    setConfirmDisableWaitlist(false);
+  }
+
+  /**
+   * The occurrence fields the draft would change, as the `PUT`'s body.
+   *
+   * Only a field the admin actually changed is sent: the `PUT` treats a
+   * present key as an instruction to write it, and re-sending the stored space
+   * would 400 on a space the gym has since deactivated — which is exactly the
+   * value the panel must still be able to display.
+   *
+   * The Waitlist comparison is against the **effective** mode on purpose. The
+   * column is nullable and `null` means "follow the Activity Type", so
+   * comparing against the occurrence's own value would write the inherited
+   * mode onto the occurrence the first time anybody saved the form for an
+   * unrelated reason, silently ending that inheritance.
+   */
+  function detailsPayload(current: ClassSession): Record<string, unknown> {
+    const body: Record<string, unknown> = {};
+    const nextTrainer = draftTrainerId ? Number(draftTrainerId) : null;
+    const nextSpace   = draftSpaceId   ? Number(draftSpaceId)   : null;
+    if (nextTrainer !== (current.trainer_membership_id ?? null)) body.trainer_membership_id = nextTrainer;
+    if (nextSpace   !== (current.space_id ?? null))              body.space_id              = nextSpace;
+    if (draftWaitlistMode !== current.effective_waitlist_mode)   body.waitlist_mode         = draftWaitlistMode;
+    return body;
+  }
+
+  /**
+   * §3 — is this save the one that closes the waiting list? Only a move *to*
+   * `disabled` is, and only while the occurrence is not already there;
+   * `closed` keeps everybody's place and needs no warning.
+   */
+  function saveClosesWaitlist(current: ClassSession): boolean {
+    return waitlistModeClosesQueue(draftWaitlistMode)
+      && !waitlistModeClosesQueue(current.effective_waitlist_mode);
   }
 
   async function handleSaveDetails() {
     if (!session) return;
-    // Only a field the admin actually changed is sent: the `PUT` treats a
-    // present key as an instruction to write it, and re-sending the stored
-    // space would 400 on a space the gym has since deactivated — which is
-    // exactly the value the panel must still be able to display.
-    const body: Record<string, unknown> = {};
-    const nextTrainer = draftTrainerId ? Number(draftTrainerId) : null;
-    const nextSpace   = draftSpaceId   ? Number(draftSpaceId)   : null;
-    if (nextTrainer !== (session.trainer_membership_id ?? null)) body.trainer_membership_id = nextTrainer;
-    if (nextSpace   !== (session.space_id ?? null))              body.space_id              = nextSpace;
-
+    const body = detailsPayload(session);
     if (Object.keys(body).length === 0) { setEditingDetails(false); return; }
+
+    // The confirmation is a step of Save rather than a control of its own, so
+    // the admin sees the count before anything is written and `Cancel` leaves
+    // the draft exactly as typed.
+    if (saveClosesWaitlist(session) && !confirmDisableWaitlist) {
+      setConfirmDisableWaitlist(true);
+      setDetailsError(null);
+      return;
+    }
 
     setSavingDetails(true);
     setDetailsError(null);
     try {
-      // §9: one request, so the UPDATE is one statement — a failure leaves the
-      // occurrence exactly as it was rather than half written.
+      // §9: one request, so the UPDATE and the waiting list it empties are one
+      // transaction — a failure leaves the occurrence exactly as it was rather
+      // than half written.
       await apiFetch(`/class-sessions/${sessionId}`, { method: 'PUT', body: JSON.stringify(body) });
       setEditingDetails(false);
+      setConfirmDisableWaitlist(false);
       onMutated();
       await load();
     } catch (err: any) {
       const code = err?.body?.code;
+      setConfirmDisableWaitlist(false);
       setDetailsError(
         code && SLOT_CONFLICT_CODES.includes(code) ? t('details_blocked_slot')
         : err.message ?? t('error_generic'),
@@ -521,6 +580,16 @@ export function ClassSessionDetailPanel({
               <DetailRow label={t('event_covering_trainer')} value={session.effective_trainer_name} />
             )}
             <DetailRow label={t('event_space')} value={session.space_name} />
+            {/* §3 — the Waitlist state, visible in the read-only card rather
+                than only inside the form. `(inherited)` is a note on the
+                value, not a fourth state: the occurrence's own column is NULL
+                and what the member is subject to is the Activity Type's
+                setting. */}
+            <DetailRow
+              label={t('event_waitlist')}
+              value={`${t(`waitlist_mode_${session.effective_waitlist_mode}` as any)}${
+                session.waitlist_mode == null ? ` (${t('waitlist_inherited')})` : ''}`}
+            />
           </>
         )}
 
@@ -563,6 +632,30 @@ export function ClassSessionDetailPanel({
                 ))}
               </select>
             </div>
+            {/* §3 — the Waitlist setting, as the three states the column
+                actually has. Writing one overrides the Activity Type's
+                default for this occurrence alone (§12), exactly as the trainer
+                and the space above it do. */}
+            <div>
+              <label style={formFieldLabelStyle} htmlFor="session-waitlist">{t('event_waitlist')}</label>
+              <select
+                id="session-waitlist"
+                value={draftWaitlistMode}
+                onChange={(e) => {
+                  setDraftWaitlistMode(e.target.value as WaitlistMode);
+                  // A changed choice invalidates a confirmation the admin has
+                  // already been shown — it was about the previous one.
+                  setConfirmDisableWaitlist(false);
+                }}
+                disabled={savingDetails}
+                style={formControlStyle}
+              >
+                {WAITLIST_MODES.map((m) => (
+                  <option key={m} value={m}>{t(`waitlist_mode_${m}` as any)}</option>
+                ))}
+              </select>
+              <p style={formHelpTextStyle}>{t(`waitlist_mode_hint_${draftWaitlistMode}` as any)}</p>
+            </div>
           </div>
         )}
 
@@ -585,6 +678,21 @@ export function ClassSessionDetailPanel({
             commit (#929), with the form's one error line above them. */}
         {editingDetails && (
           <>
+            {/* §3 — the confirmation, carrying the live waiting count. It
+                appears above the form's own Save/Cancel rather than replacing
+                them, so `Cancel` still means "leave the form" and the admin's
+                draft is untouched either way. */}
+            {confirmDisableWaitlist && (
+              <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+                <div style={{ fontSize: 13, fontWeight: 600 }}>{t('waitlist_disable_confirm_title')}</div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>{t('waitlist_disable_confirm_message')}</div>
+                {waitlist.length > 0 && (
+                  <div style={{ fontSize: 12, color: '#b45309', fontWeight: 600 }}>
+                    {t('waitlist_disable_confirm_count', { count: waitlist.length })}
+                  </div>
+                )}
+              </div>
+            )}
             {detailsError && <p style={formErrorStyle}>{detailsError}</p>}
             <div style={inlineActionsRowStyle}>
               <button
@@ -592,7 +700,9 @@ export function ClassSessionDetailPanel({
                 disabled={savingDetails}
                 style={{ ...primaryBtnSmall(), opacity: savingDetails ? 0.6 : 1 }}
               >
-                {savingDetails ? t('saving') : t('save_changes')}
+                {savingDetails ? t('saving')
+                  : confirmDisableWaitlist ? t('waitlist_disable_confirm_action')
+                  : t('save_changes')}
               </button>
               <button onClick={cancelEditDetails} disabled={savingDetails} style={secondaryBtnSmall}>
                 {t('cancel')}

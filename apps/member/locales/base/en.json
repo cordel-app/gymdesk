@@ -202,7 +202,11 @@
     "type_event_cancelled": "Booking cancelled",
     "type_event_updated": "Booking updated",
     "type_event_reactivated": "Class reactivated",
-    "detail_event_reactivated": "The class is available again and your booking has been restored."
+    "detail_event_reactivated": "The class is available again and your booking has been restored.",
+    "type_waitlist_closed": "Waiting list closed",
+    "detail_waitlist_closed": "The waiting list for this class has been closed. You are no longer on it and cannot join it again.",
+    "type_waitlist_removed": "Removed from waiting list",
+    "detail_waitlist_removed": "You have been taken off the waiting list for this class. The list is still open, so you can join it again."
   },
   "membership": {
     "title": "My membership",

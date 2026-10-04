@@ -35,8 +35,16 @@ function timeAgo(iso: string, locale: string): string {
  * `event_reactivated` needs one: the type label alone says the class is back,
  * and the member also has to be told their own booking still stands rather
  * than wondering whether they must book again (#979 section 6).
+ *
+ * #980 stage 2's two need one for the same reason, and they are two types
+ * rather than one because they are two different promises: `waitlist_closed`
+ * says the list itself is gone, so there is nothing to rejoin, while
+ * `waitlist_removed` says this member was taken off a list that is still open
+ * and can be joined again. A member told the wrong one of those either gives
+ * up a place they could still have, or waits for a queue that no longer
+ * exists.
  */
-const DETAIL_TYPES = ['event_reactivated'];
+const DETAIL_TYPES = ['event_reactivated', 'waitlist_closed', 'waitlist_removed'];
 
 export default function NotificationsPage() {
   const t = useTranslations('notifications');

@@ -191,7 +191,13 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
       }
     }
 
-    if (b.status !== 'booked') return { promoted: null, promotedMemberId: null };
+    // #980 stage 2 — what was cancelled, for the caller to decide whether the
+    // member needs telling. Only the *staff* route alerts on a waitlist
+    // removal: a member cancelling their own place in the queue does not need
+    // an alert about having done it.
+    if (b.status !== 'booked') {
+      return { promoted: null, promotedMemberId: null, previousStatus: b.status as string, memberId: Number(b.member_id) };
+    }
 
     const { rows: waitRows } = await tx.query(
       `SELECT id, member_id, waitlist_position FROM calendar_event_bookings
@@ -199,7 +205,9 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
        ORDER BY waitlist_position ASC LIMIT 1 FOR UPDATE`,
       [b.calendar_event_id],
     );
-    if (waitRows.length === 0) return { promoted: null, promotedMemberId: null };
+    if (waitRows.length === 0) {
+      return { promoted: null, promotedMemberId: null, previousStatus: b.status as string, memberId: Number(b.member_id) };
+    }
     await tx.query(
       "UPDATE calendar_event_bookings SET status='booked', booked_at=UTC_TIMESTAMP(), waitlist_position=NULL WHERE id = ?",
       [waitRows[0].id],
@@ -217,7 +225,10 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
     const pc = await packageCredits();
     await pc.debitPackageIfClaimed(tx, waitRows[0].id, gymId);
 
-    return { promoted: waitRows[0].id, promotedMemberId: waitRows[0].member_id };
+    return {
+      promoted: waitRows[0].id, promotedMemberId: waitRows[0].member_id,
+      previousStatus: b.status as string, memberId: Number(b.member_id),
+    };
   });
 }
 
@@ -239,6 +250,15 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
       undefined, Boolean(override_eligibility),
     );
     const { rows } = await db.query(`${SELECT} WHERE ceb.id = ?`, [result.id]);
+    // #980 stage 2 (the thread's `Q2`: every update to the waiting list reaches
+    // the Members App). A member who joins the queue themselves is already
+    // told by `POST /me/bookings`; this is the staff-side half, which raised
+    // nothing at all until now. Only the waitlist case: an enrolment booked by
+    // staff is a different alert and a different ticket.
+    if (result.status === 'waitlisted' && rows[0]) {
+      sendNotification(gymId, Number(member_id), 'waitlist_joined', 'session',
+        Number(class_session_id), { title: rows[0].class_type_name, starts_at: rows[0].session_starts_at });
+    }
     res.status(201).json({ ...rows[0], over_capacity: result.over_capacity });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
@@ -260,6 +280,15 @@ bookingsRouter.delete('/:id', requireModuleWrite('MEMBERS'), async (req, res, ne
     const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
     if (cancelResult.promotedMemberId && sessionRows.length > 0) {
       sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
+        sessionRows[0].calendar_event_id, { title: sessionRows[0].title, starts_at: sessionRows[0].starts_at });
+    }
+    // #980 stage 2 — staff took this member off the waiting list. Not
+    // `waitlist_closed`, which says the list itself is gone: this one is still
+    // open and the member may rejoin it. A cancelled *booking* raises nothing
+    // here, exactly as before — that is the existing behaviour and a different
+    // question from the waiting list.
+    if (cancelResult.previousStatus === 'waitlisted' && sessionRows.length > 0) {
+      sendNotification(gymId, cancelResult.memberId, 'waitlist_removed', 'session',
         sessionRows[0].calendar_event_id, { title: sessionRows[0].title, starts_at: sessionRows[0].starts_at });
     }
     res.status(204).send();

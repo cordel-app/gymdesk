@@ -32,6 +32,11 @@ export const SESSION_AUDITED_FIELDS = [
   'capacity',
   'allows_shared_booking',
   'professional_service_id',
+  // #980 stage 2 — the occurrence's own Waitlist setting. `NULL` is a value
+  // here rather than an absence: it means "follow the Activity Type", so
+  // `null → disabled` is as real a change as `open → disabled` and reads as
+  // one in the log.
+  'waitlist_mode',
 ] as const;
 
 export interface FieldChanges {

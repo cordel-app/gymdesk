@@ -17,6 +17,7 @@ import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
+import { WAITLIST_MODES } from '@/lib/waitlistModes';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,7 +70,8 @@ interface Trainer { gym_membership_id: number; name: string; }
 interface MembershipPlan { id: number; name: string; lifecycle_status: string; }
 
 const STATUSES = ['active', 'inactive'] as const;
-const WAITLIST_MODES = ['disabled', 'open', 'closed'] as const;
+// #980 stage 2: the same vocabulary the calendar event panel offers for an
+// occurrence's override, so it is declared once in `lib/waitlistModes.ts`.
 const RULE_TYPES = ['one_off', 'weekly', 'monthly'] as const;
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6].map((value) => ({ value })); // labels via tWeekday(String(value))
 const ORDINALS = ['first', 'second', 'third', 'fourth', 'fifth', 'last'] as const;

@@ -8,11 +8,13 @@ import {
   cancelFutureOccurrencesByActivityType,
 } from '../domain/scheduleEngine';
 import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
-
-const STATUSES = ['active', 'inactive'] as const;
 // #503 stage 2: 'disabled' = no waitlist, 'open' = accepting, 'closed' = enabled
 // but not accepting right now. Occurrences may override it per calendar event.
-const WAITLIST_MODES = ['disabled', 'open', 'closed'] as const;
+// #980 stage 2 made that vocabulary editable on the occurrence too, so it is
+// declared once in the domain module both writers read rather than twice.
+import { WAITLIST_MODES } from '../domain/waitlistMode';
+
+const STATUSES = ['active', 'inactive'] as const;
 
 function fmtDate(v: any): string | null {
   if (v == null) return null;

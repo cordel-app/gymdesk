@@ -13,6 +13,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
+  eventually,
   request,
 } from './helpers';
 
@@ -229,10 +230,18 @@ describe('Explicit transitions outrank the clock (#977)', () => {
     const id = await createSession({ startsHours: -3, endsHours: -2 });
     await request.post(`/class-sessions/${id}/complete`).set(headers());
 
-    const { rows } = await db.query(
-      `SELECT action, previous_values, new_values FROM audit_logs
-       WHERE gym_id = ? AND entity_type = 'class_session' AND entity_id = ? AND action = 'complete'`,
-      [gymId, String(id)],
+    // `recordAudit()` is fire-and-forget and resolves the entity name and the
+    // FK enrichment before its INSERT, so the row lands just after the
+    // response — reading it straight through passes on an idle database and
+    // races the pool's ten connections under a full-suite run (#980 stage 2's
+    // own audit assertions use the same helper for this reason).
+    const rows = await eventually(
+      async () => (await db.query(
+        `SELECT action, previous_values, new_values FROM audit_logs
+         WHERE gym_id = ? AND entity_type = 'class_session' AND entity_id = ? AND action = 'complete'`,
+        [gymId, String(id)],
+      )).rows,
+      (r) => r.length >= 1,
     );
     expect(rows).toHaveLength(1);
     const previous = typeof rows[0].previous_values === 'string'
