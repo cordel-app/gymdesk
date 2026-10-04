@@ -31,7 +31,7 @@ const shellSrc = stripComments(readFileSync(join(COMPONENTS, 'AppShell.tsx'), 'u
 
 describe('the two widths and the preference (#1003 §1, §3, §5)', () => {
   it('keeps the expanded width and narrows to icons only', () => {
-    expect(SIDEBAR_EXPANDED_WIDTH).toBe(220);
+    expect(SIDEBAR_EXPANDED_WIDTH).toBe(250);
     expect(SIDEBAR_COLLAPSED_WIDTH).toBeLessThan(SIDEBAR_EXPANDED_WIDTH);
     expect(sidebarWidth(false)).toBe(SIDEBAR_EXPANDED_WIDTH);
     expect(sidebarWidth(true)).toBe(SIDEBAR_COLLAPSED_WIDTH);
@@ -125,15 +125,18 @@ describe('collapsing moves the layout and nothing else (#1003 §1, §4)', () => 
   it('drives the panel width from the shared helper, with a transition', () => {
     expect(sidebarSrc).toContain('width: sidebarWidth(collapsed)');
     expect(sidebarSrc).toContain("transition: 'width 150ms ease-in-out'");
-    // Never a hardcoded 220 beside it.
+    // Never a hardcoded width beside it.
     expect(sidebarSrc).not.toContain('width: 220');
+    expect(sidebarSrc).not.toContain('width: 250');
   });
 
   it('leaves the mobile drawer exactly as it was (§5)', () => {
-    // The collapse is state inside the panel; AppShell's drawer CSS is untouched
-    // and the preference is ignored below the desktop breakpoint.
+    // The collapse is state inside the panel; the preference is ignored below
+    // the desktop breakpoint. #1033: the closed drawer parks at the shared
+    // expanded width rather than a literal of its own, so widening the sidebar
+    // cannot leave a sliver of the drawer on screen.
     expect(shellSrc).not.toContain('collapsed');
-    expect(shellSrc).toContain('left: -220px');
+    expect(shellSrc).toContain('left: -${SIDEBAR_EXPANDED_WIDTH}px');
   });
 
   it('keeps every navigation option reachable while collapsed', () => {

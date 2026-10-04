@@ -7,6 +7,7 @@ import { Sidebar } from './Sidebar';
 import { TopHeader } from './TopHeader';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { ListResponsiveStyles } from './ListResponsiveStyles';
+import { SIDEBAR_EXPANDED_WIDTH } from '@/lib/sidebarCollapse';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -93,7 +94,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           .sidebar-wrapper {
             position: fixed;
             top: var(--gd-top-bar-h, 52px);
-            left: -220px;
+            left: -${SIDEBAR_EXPANDED_WIDTH}px;
             /* The drawer never exceeds the viewport below the top bar. 100dvh
                follows the mobile browser's collapsing address bar; 100vh is the
                fallback where it is unsupported. */

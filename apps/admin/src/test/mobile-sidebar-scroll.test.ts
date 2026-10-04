@@ -34,14 +34,34 @@ function shellCss(): string {
   return shellSrc.slice(start, end);
 }
 
+/**
+ * The end of a `${…}` interpolation starting at `i`, or `i` itself if that is
+ * not where one starts. AppShell's CSS reads SIDEBAR_EXPANDED_WIDTH (#1033), so
+ * a brace scan over that block has to step over an interpolation's own closing
+ * brace rather than reading it as the end of a rule.
+ */
+function skipInterpolation(css: string, i: number): number {
+  if (css[i] !== '$' || css[i + 1] !== '{') return i;
+  const end = css.indexOf('}', i);
+  expect(end, 'unterminated interpolation').toBeGreaterThan(-1);
+  return end;
+}
+
 /** The block of a CSS rule whose selector list starts with `selector`. */
 function cssRule(css: string, selector: string): string {
   const at = css.indexOf(selector);
   expect(at, `no ${selector} rule`).toBeGreaterThan(-1);
   const open = css.indexOf('{', at);
-  const close = css.indexOf('}', open);
-  expect(close).toBeGreaterThan(open);
-  return css.slice(open + 1, close);
+  expect(open).toBeGreaterThan(-1);
+  for (let i = open + 1; i < css.length; i++) {
+    const skipped = skipInterpolation(css, i);
+    if (skipped !== i) {
+      i = skipped;
+      continue;
+    }
+    if (css[i] === '}') return css.slice(open + 1, i);
+  }
+  throw new Error(`unterminated ${selector} rule`);
 }
 
 /** The body of the `max-width: 768px` media query — the mobile half. */
@@ -51,6 +71,11 @@ function mobileMediaQuery(css: string): string {
   const open = css.indexOf('{', at);
   let depth = 0;
   for (let i = open; i < css.length; i++) {
+    const skipped = skipInterpolation(css, i);
+    if (skipped !== i) {
+      i = skipped;
+      continue;
+    }
     if (css[i] === '{') depth++;
     if (css[i] === '}') {
       depth--;
