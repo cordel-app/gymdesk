@@ -10,7 +10,8 @@ import {
   type ExerciseFilterState,
 } from '@/lib/exerciseFilters';
 
-// #969 stage 1 — the compact exercise catalogue toolbar.
+// #969 — the compact exercise catalogue toolbar, and (stage 2) its three
+// consumers.
 //
 //   one row     → [ Search ] [ Slug ] [ Muscles ▾ ] [ Equipment ▾ ] [ Category ▾ ] [ Status ▾ ] [ Clear ]
 //   under it    → `Showing 42 of 612 exercises` and the active-filter chips, on one line
@@ -34,6 +35,8 @@ const read = (path: string) => stripComments(readFileSync(path, 'utf-8'));
 
 const bar = read(join(SRC, 'components', 'exercises', 'ExerciseFilterBar.tsx'));
 const basePage = read(join(SRC, 'app', '[locale]', 'cordel', 'exercises', 'page.tsx'));
+const gymPage = read(join(SRC, 'app', '[locale]', 'exercises', 'page.tsx'));
+const importModal = read(join(SRC, 'app', '[locale]', 'exercises', 'ImportExercisesModal.tsx'));
 const en = JSON.parse(readFileSync(join(SRC, '..', 'locales', 'base', 'en.json'), 'utf-8'));
 const es = JSON.parse(readFileSync(join(SRC, '..', 'locales', 'base', 'es.json'), 'utf-8'));
 const ca = JSON.parse(readFileSync(join(SRC, '..', 'locales', 'base', 'ca.json'), 'utf-8'));
@@ -206,6 +209,76 @@ describe('the toolbar is the app’s own chrome, used by the page', () => {
   it('asks the server for the rows rather than filtering them in the page (§16)', () => {
     expect(basePage).not.toMatch(/rows\s*\.filter\(/);
     expect(bar).not.toMatch(/\.filter\(/);
+  });
+});
+
+// ─── Stage 2: the other two screens ─────────────────────────────────────────
+//
+// §19 is the stage's whole point — "do not create three independent
+// implementations of the same filtering UX" — so what these assert is that each
+// screen *renders the shared toolbar over the shared state* and declares no
+// filter control, no query building and no narrowing pass of its own.
+
+describe('a gym’s own Exercises list (§19)', () => {
+  it('renders the one toolbar over the one filter state', () => {
+    expect(gymPage).toContain("from '@/components/exercises/ExerciseFilterBar'");
+    expect(gymPage).toContain('<ExerciseFilterBar');
+    expect(gymPage).toContain('exerciseFilterQuery(filter)');
+    expect(gymPage).toContain('shown={rows.length}');
+  });
+
+  it('kept no search box or Status dropdown of its own', () => {
+    expect(gymPage).not.toContain("from '@/components/StatusFilter'");
+    expect(gymPage).not.toContain('handleSearchChange');
+    expect(gymPage).not.toContain('searchInput');
+    expect(gymPage).not.toContain("params.set('q'");
+    expect(gymPage).not.toContain("params.set('status'");
+  });
+
+  it('offers no Slug field, because a gym’s exercises carry no slug (§4)', () => {
+    // The toolbar's `showSlug` is opt-in and this page does not pass it; the
+    // server drops the clause too (`withSlug: false`).
+    const bar = gymPage.slice(gymPage.indexOf('<ExerciseFilterBar'));
+    expect(bar.slice(0, bar.indexOf('/>'))).not.toContain('showSlug');
+    expect(bar.slice(0, bar.indexOf('/>'))).toContain('showStatus');
+  });
+
+  it('reads the facets and the unfiltered total for §14’s count', () => {
+    expect(gymPage).toContain("'/exercises/facets'");
+    expect(gymPage).toContain('total={total}');
+  });
+
+  it('narrows nothing in the browser (§16)', () => {
+    expect(gymPage).not.toMatch(/rows\s*\.filter\(/);
+  });
+});
+
+describe('the Import modal (§19)', () => {
+  it('renders the one toolbar over the one filter state', () => {
+    expect(importModal).toContain("from '@/components/exercises/ExerciseFilterBar'");
+    expect(importModal).toContain('<ExerciseFilterBar');
+    expect(importModal).toContain('exerciseFilterQuery(current)');
+  });
+
+  it('offers the Slug field and no Status one', () => {
+    // A Base Exercise carries a slug (§4); the library is `status = 'active'`
+    // by definition, so a Status control there would filter nothing.
+    const markup = importModal.slice(importModal.indexOf('<ExerciseFilterBar'));
+    const props = markup.slice(0, markup.indexOf('/>'));
+    expect(props).toContain('showSlug');
+    expect(props).not.toContain('showStatus');
+  });
+
+  it('reads the library’s own gym-facing facets, not the platform’s', () => {
+    // `/platform/exercises/facets` is superadmin-only, and a gym admin
+    // importing a Base Exercise is not a platform administrator (#718).
+    expect(importModal).toContain("'/exercises/base/facets'");
+    expect(importModal).not.toContain('/platform/exercises');
+  });
+
+  it('keeps its own two filter controls out of the modal', () => {
+    expect(importModal).not.toContain('import_filter_name');
+    expect(importModal).not.toContain('import_filter_muscle');
   });
 });
 

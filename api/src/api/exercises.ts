@@ -46,7 +46,6 @@ import {
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
 import {
   copyExerciseTranslations,
-  exerciseNameSearchSql,
   exerciseTranslationsExpr,
   localizedExerciseNameExpr,
   localizedExerciseNameSql,
@@ -54,6 +53,12 @@ import {
   replaceExerciseTranslations,
   withExerciseTranslations,
 } from '../domain/exerciseTranslations';
+import {
+  exerciseFacetsQuery,
+  exerciseListFilterSql,
+  groupExerciseFacets,
+  parseExerciseListFilter,
+} from '../domain/exerciseListFilters';
 import { BASE_LOCALE, SUPPORTED_LOCALES, TRANSLATABLE_LOCALES, getRequestLocale } from '../infra/locale';
 import { logger } from '../lib/logger';
 
@@ -211,6 +216,9 @@ async function nameTaken(gymId: string, name: string, excludeId?: string | numbe
   return rows.length > 0;
 }
 
+/** The rows this list owns: the gym's own, minus the soft-deleted. */
+const GYM_SCOPE_SQL = "e.gym_id = ? AND e.status != 'deleted'";
+
 /**
  * The gym's own catalogue, and only that (#804). A Base Exercise
  * (`gym_id IS NULL`) reaches a gym by being **imported** — `POST
@@ -227,26 +235,63 @@ async function nameTaken(gymId: string, name: string, excludeId?: string | numbe
  * modal), and `GET /exercises/:id` still answers for a base row — #804 §15
  * leaves Exercise details alone, and a base row is readable by the gym there
  * and through the library either way.
+ *
+ * #969 stage 2: the gym's Exercises page is the third of the ticket's three
+ * screens, so its filters are the **same** ones — one vocabulary, one `WHERE`
+ * builder (`domain/exerciseListFilters.ts`), applied server-side (§16/§19).
+ * The search still matches the base name or any stored translation (#967 §7),
+ * because that rule now lives in that builder rather than in this route.
+ *
+ * `withSlug: false` is the one difference the context has: a gym's own
+ * exercises carry no slug — no editor writes one, and `POST /exercises/import`
+ * does not copy the Base Exercise's — so §4's field is neither offered on this
+ * screen nor searched here, rather than being a clause that can only ever match
+ * nothing. The same reasoning is why the Equipment and Category dropdowns are
+ * absent there: the facets come back empty (`GET /exercises/facets`) and §9
+ * says a control with no values is not rendered at all.
  */
-exercisesRouter.get('/', async (req, res) => {
+exercisesRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const status = req.query.status as string | undefined;
-  const q = req.query.q as string | undefined;
-  if (status && !SETTABLE_STATUSES.includes(status)) {
-    return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
-  }
+  const parsed = parseExerciseListFilter(req.query as Record<string, unknown>);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
   const locale = getRequestLocale(req);
-  const params: any[] = [gymId];
-  let sql = `${selectFor(locale)} WHERE e.gym_id = ? AND e.status != 'deleted'`;
-  if (status) { sql += ' AND e.status = ?'; params.push(status); }
-  // #967 §7: the search matches the base name *or* any stored translation, so a
-  // gym searching for `Press de Banca` finds the exercise whose base name is
-  // `Bench Press` — in any language, not only the one on screen. Ordering
-  // follows the *displayed* name for the same reason (#643).
-  if (q) { sql += ` AND ${exerciseNameSearchSql('e')}`; params.push(`%${q}%`, `%${q}%`); }
-  sql += ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
-  const { rows } = await db.query(sql, params);
-  res.json(rows.map(withExerciseTranslations));
+  const where = exerciseListFilterSql('e', parsed.filter, { withSlug: false });
+  // Ordering follows the *displayed* name, because that is what the page shows (#643).
+  const sql = `${selectFor(locale)} WHERE ${GYM_SCOPE_SQL}${where.sql}`
+    + ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
+  try {
+    const { rows } = await db.query(sql, [gymId, ...where.params]);
+    res.json(rows.map(withExerciseTranslations));
+  } catch (err) { next(err); }
+});
+
+/**
+ * What this screen's filter dropdowns offer, plus the unfiltered total
+ * `Showing 42 of 612` counts against (#969 §8, §9, §14) — the gym-scoped
+ * counterpart of `GET /platform/exercises/facets`.
+ *
+ * It reports the same shape for the same reason: the options are the values
+ * **present** among the gym's own exercises, never a declared list, so a
+ * catalogue whose rows carry no source metadata (which is every gym's today —
+ * only #964's importer writes those columns, and only on `gym_id IS NULL` rows)
+ * renders no Equipment or Category control rather than an empty one. The total
+ * is what the count needs either way.
+ *
+ * Registered **before** `/:id`, or Express reads `facets` as an exercise id.
+ */
+exercisesRouter.get('/facets', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const facetQuery = exerciseFacetsQuery(GYM_SCOPE_SQL, [gymId]);
+  try {
+    const [facets, totals] = await Promise.all([
+      db.query(facetQuery.sql, facetQuery.params),
+      db.query(`SELECT COUNT(*) AS total FROM exercises e WHERE ${GYM_SCOPE_SQL}`, [gymId]),
+    ]);
+    res.json({
+      total: Number(totals.rows[0]?.total ?? 0),
+      ...groupExerciseFacets(facets.rows as { facet: string; value: string }[]),
+    });
+  } catch (err) { next(err); }
 });
 
 /**
@@ -307,39 +352,73 @@ const MEDIA_REFRESHABLE = `
       AND (g.cloned_from_id = e.id OR g.name = e.name)
     ORDER BY g.id ASC LIMIT 1), 0)`;
 
+/**
+ * The library as the Import modal reads it: the platform's own exercises, and
+ * only the ones a gym may actually import (`status = 'active'`).
+ */
+const BASE_LIBRARY_SCOPE_SQL = "e.gym_id IS NULL AND e.status = 'active'";
+
+/**
+ * #969 stage 2: the Import modal is the second of the ticket's three screens,
+ * and it now reads the identical filter vocabulary — the hand-rolled `?q=` and
+ * single `?muscle=` this route carried are `domain/exerciseListFilters.ts`'s
+ * clauses, so a muscle selection means the same thing here, on Base Exercises
+ * and on a gym's own list (§19), and the modal gets §4–§9's filters for free.
+ *
+ * Two consequences worth naming. The rows are Base Exercises, so they do carry
+ * a slug and `withSlug` stays at its default. And an unknown muscle key is no
+ * longer a `400`: the filter vocabulary is one vocabulary, in which only
+ * `status` and `muscle_match` are closed sets — #964 §8 lets the importer store
+ * a muscle key outside `MUSCLE_KEYS` rather than fail, so a filter that refused
+ * one would make a legitimately stored muscle unfilterable. An unmatched key
+ * now simply returns nothing, which is what the other two screens already did.
+ */
 exercisesRouter.get('/base', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
-  const q = req.query.q as string | undefined;
-  const muscleParam = req.query.muscle as string | undefined;
-  let muscle: string | null = null;
-  if (muscleParam) {
-    muscle = normalizeMuscleKey(muscleParam);
-    if (!muscle) return res.status(400).json({ error: `invalid muscle key: ${JSON.stringify(muscleParam)}` });
-  }
+  const parsed = parseExerciseListFilter(req.query as Record<string, unknown>);
+  if ('error' in parsed) return res.status(400).json({ error: parsed.error });
   // The `?`s inside IMPORTED_COPY_ID and MEDIA_REFRESHABLE sit in the SELECT
   // list, so their gymIds bind before the WHERE-clause filters below, in order.
   const locale = getRequestLocale(req);
-  const params: any[] = [gymId, gymId];
-  let sql = `
+  const where = exerciseListFilterSql('e', parsed.filter);
+  const sql = `
     SELECT e.id, e.name, ${localizedExerciseNameExpr('e', locale, 'display_name')},
-      e.description, e.image_url, e.image_thumbnail_url,
+      e.slug, e.description, e.image_url, e.image_thumbnail_url,
       e.video_url, e.video_thumbnail_url,
       (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
        FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
       ${IMPORTED_COPY_ID} AS imported_exercise_id,
       ${MEDIA_REFRESHABLE} AS media_refreshable
     FROM exercises e
-    WHERE e.gym_id IS NULL AND e.status = 'active'`;
-  if (q) { sql += ` AND ${exerciseNameSearchSql('e')}`; params.push(`%${q}%`, `%${q}%`); }
-  if (muscle) {
-    sql += ' AND EXISTS (SELECT 1 FROM exercise_muscles em2 WHERE em2.exercise_id = e.id AND em2.muscle = ?)';
-    params.push(muscle);
-  }
-  sql += ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
+    WHERE ${BASE_LIBRARY_SCOPE_SQL}${where.sql}
+    ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
   try {
-    const { rows } = await db.query(sql, params);
+    const { rows } = await db.query(sql, [gymId, gymId, ...where.params]);
     // MySQL answers the CASE with 0/1; the contract is a boolean.
     res.json(rows.map((row: any) => ({ ...row, media_refreshable: Number(row.media_refreshable) === 1 })));
+  } catch (err) { next(err); }
+});
+
+/**
+ * The Import modal's own facets and unfiltered total (#969 §8, §9, §14), over
+ * the library's scope rather than the gym's.
+ *
+ * Gym-facing on purpose, exactly as `/base` is: `GET
+ * /platform/exercises/facets` is superadmin-only, and a gym admin importing a
+ * Base Exercise is not a platform administrator (#718). It is the same
+ * statement either way — the scope is the only parameter.
+ */
+exercisesRouter.get('/base/facets', async (_req, res, next) => {
+  const facetQuery = exerciseFacetsQuery(BASE_LIBRARY_SCOPE_SQL);
+  try {
+    const [facets, totals] = await Promise.all([
+      db.query(facetQuery.sql, facetQuery.params),
+      db.query(`SELECT COUNT(*) AS total FROM exercises e WHERE ${BASE_LIBRARY_SCOPE_SQL}`),
+    ]);
+    res.json({
+      total: Number(totals.rows[0]?.total ?? 0),
+      ...groupExerciseFacets(facets.rows as { facet: string; value: string }[]),
+    });
   } catch (err) { next(err); }
 });
 

@@ -217,6 +217,27 @@ export function exerciseFacetsSql(scopeSql: string): string {
     .join('\n    UNION ALL\n    ');
 }
 
+/**
+ * {@link exerciseFacetsSql} with its scope's own parameters bound, once per
+ * column.
+ *
+ * The scope is one `WHERE` body repeated across the union's arms, so a
+ * parameterised one — `e.gym_id = ?`, which is every context except the
+ * platform's — needs its values repeated as many times as there are columns.
+ * How many arms the statement has is this module's to know, which is why the
+ * repetition lives here rather than in a router counting
+ * `EXERCISE_METADATA_COLUMNS` for itself.
+ */
+export function exerciseFacetsQuery(
+  scopeSql: string,
+  scopeParams: unknown[] = [],
+): { sql: string; params: unknown[] } {
+  return {
+    sql: exerciseFacetsSql(scopeSql),
+    params: EXERCISE_METADATA_COLUMNS.flatMap(() => scopeParams),
+  };
+}
+
 /** Groups {@link exerciseFacetsSql}'s rows into the map a page reads. */
 export function groupExerciseFacets(
   rows: { facet: string; value: string }[],

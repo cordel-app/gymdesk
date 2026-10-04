@@ -11,7 +11,6 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DependencyDialog, ReferenceReport } from '@/components/DependencyDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
-import { StatusFilter } from '@/components/StatusFilter';
 import { ExerciseImageField } from '@/components/ExerciseImageField';
 import { ExerciseVideoField } from '@/components/ExerciseVideoField';
 import type { PreparedExerciseImage } from '@/lib/exerciseImageUpload';
@@ -23,7 +22,6 @@ import { btnStyle, cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/co
 import { ExerciseEditor, ExerciseMediaPair, type ExerciseNameLocales } from '@/components/exercises/ExerciseEditor';
 import { useExerciseEditorState, useMuscleLabel } from '@/components/exercises/useExerciseEditorState';
 import {
-  EXERCISE_STATUSES,
   toExerciseCreatePayload,
   toExerciseUpdatePayload,
   type MuscleRole,
@@ -35,6 +33,12 @@ import {
 import { ExerciseReadOnlyView } from '@/components/exercises/ExerciseReadOnlyView';
 import { ExerciseMediaPreview } from '@/components/exercises/ExerciseMediaPreview';
 import { ExerciseDetailModal } from '@/components/exercises/ExerciseDetailModal';
+// #969 stage 2: the gym's own Exercises list is the third of the ticket's three
+// screens, so it renders the *same* toolbar over the *same* filter-state
+// declaration as Base Exercises and the Import modal (§19) — never a search box
+// of its own.
+import { ExerciseFilterBar, type ExerciseFacetOptions } from '@/components/exercises/ExerciseFilterBar';
+import { EMPTY_EXERCISE_FILTER, exerciseFilterQuery, type ExerciseFilterState } from '@/lib/exerciseFilters';
 import { ImportExercisesModal } from './ImportExercisesModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -64,7 +68,6 @@ interface Exercise {
   allowed_result_types: ResultType[] | null;
 }
 
-const STATUSES = EXERCISE_STATUSES;
 const truncate = (s: string | null, n = 55) => s ? (s.length > n ? s.slice(0, n) + '…' : s) : '—';
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -84,10 +87,15 @@ export default function ExercisesPage() {
   const [resultTypes, setResultTypes] = useState<ResultType[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [statusFilter, setStatusFilter] = useState('');
-  const [searchInput, setSearchInput] = useState('');
-  const [search, setSearch] = useState('');
-  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // #969: every filter the toolbar offers, applied server-side (§16/§17) — the
+  // list is never narrowed in the browser.
+  const [filter, setFilter] = useState<ExerciseFilterState>(EMPTY_EXERCISE_FILTER);
+  // What the metadata dropdowns offer, and the unfiltered total `Showing 42 of
+  // 612` counts against (§8, §9, §14). A gym's own exercises carry none of
+  // #964's source columns, so these come back empty and the two controls are
+  // absent rather than empty — the count still needs the total.
+  const [facets, setFacets] = useState<ExerciseFacetOptions | null>(null);
+  const [total, setTotal] = useState<number | null>(null);
 
   // Expanded/edit state. #806: the form itself — values, muscles, result types,
   // the error line and the saving flag — lives in the shared hook, so this page
@@ -127,9 +135,21 @@ export default function ExercisesPage() {
     if (!gymLoading && canRead) loadLookups();
   }, [gymLoading, canRead, activeGymId]);
 
+  // A short debounce, because the toolbar's text fields change on every
+  // keystroke (§17). The mutation paths call `load()` directly and are
+  // unaffected.
   useEffect(() => {
-    if (!gymLoading && canRead) load();
-  }, [activeGymId, gymLoading, statusFilter, search]);
+    if (gymLoading || !canRead) return;
+    const handle = setTimeout(load, 250);
+    return () => clearTimeout(handle);
+  }, [activeGymId, gymLoading, canRead, filter]);
+
+  // The facets and the total describe the whole catalogue rather than the
+  // current filter, so they are re-read when the catalogue itself may have
+  // moved — not on every keystroke.
+  useEffect(() => {
+    if (!gymLoading && canRead) loadFacets();
+  }, [activeGymId, gymLoading, canRead]);
 
   async function loadLookups() {
     try {
@@ -148,11 +168,7 @@ export default function ExercisesPage() {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (statusFilter) params.set('status', statusFilter);
-      if (search) params.set('q', search);
-      const qs = params.toString();
-      setRows(await apiFetch<Exercise[]>(`/exercises${qs ? `?${qs}` : ''}`));
+      setRows(await apiFetch<Exercise[]>(`/exercises${exerciseFilterQuery(filter)}`));
     } catch (err: any) {
       setRows([]);
       toast(err.message ?? t('error_generic'));
@@ -161,10 +177,13 @@ export default function ExercisesPage() {
     }
   }
 
-  function handleSearchChange(val: string) {
-    setSearchInput(val);
-    if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => setSearch(val), 300);
+  async function loadFacets() {
+    if (!activeGymId) return;
+    try {
+      const res = await apiFetch<{ total: number; equipment: string[]; category: string[] }>('/exercises/facets');
+      setFacets({ equipment: res.equipment ?? [], category: res.category ?? [] });
+      setTotal(res.total ?? null);
+    } catch { /* non-critical: the toolbar simply offers no metadata filter */ }
   }
 
   // ─── Muscle label helper (#806: shared with the Base Exercises page) ──────
@@ -580,19 +599,6 @@ export default function ExercisesPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20, gap: 12, flexWrap: 'wrap' }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-          <input
-            type="text"
-            value={searchInput}
-            onChange={(e) => handleSearchChange(e.target.value)}
-            placeholder={t('search_placeholder')}
-            style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: 220 }}
-          />
-          <StatusFilter
-            value={statusFilter}
-            onChange={setStatusFilter}
-            options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
-            allLabel={tStatus('all')}
-          />
           {/* #803: the header button names what it imports — the platform's System
               Exercises. The modal's own primary action stays `import`, so the two
               deliberately read differently and need two keys. */}
@@ -601,6 +607,23 @@ export default function ExercisesPage() {
           <button onClick={openAdd} disabled={!canWrite || addOpen} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>{t('add')}</button>
         </div>
       </div>
+
+      {/* #969 §2: the search box and the Status dropdown that sat in the header
+          are two fields of the shared toolbar now, and the list starts directly
+          below it. This context carries no slug (§4 — no editor writes one) and
+          no source metadata, so it renders Search + Muscles + Status and
+          nothing else: the facets come back empty and §9's rule keeps a control
+          with no values off the row entirely. */}
+      <ExerciseFilterBar
+        value={filter}
+        onChange={setFilter}
+        muscleKeys={muscleKeys}
+        muscleLabel={muscleLabel}
+        facets={facets}
+        showStatus
+        shown={rows.length}
+        total={total}
+      />
 
       {renderInlineNewRow()}
 

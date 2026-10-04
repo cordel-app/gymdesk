@@ -50,7 +50,7 @@ export interface ExerciseFacetOptions {
 
 export function ExerciseFilterBar({
   value, onChange, muscleKeys, muscleLabel, facets,
-  showSlug = false, showStatus = false, shown, total = null,
+  showSlug = false, showStatus = false, shown, total = null, autoFocusSearch = false,
 }: {
   value: ExerciseFilterState;
   onChange: (next: ExerciseFilterState) => void;
@@ -66,6 +66,11 @@ export function ExerciseFilterBar({
   shown: number;
   /** The unfiltered total, or `null` while it is unknown. */
   total?: number | null;
+  /**
+   * Focus the search field on mount — for a host that opens *onto* the toolbar
+   * (the Import modal), never for a page the administrator is already reading.
+   */
+  autoFocusSearch?: boolean;
 }) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
@@ -90,6 +95,7 @@ export function ExerciseFilterBar({
           <input
             id="exercise-filter-search"
             type="search"
+            autoFocus={autoFocusSearch}
             value={value.q}
             onChange={(e) => onChange({ ...value, q: e.target.value })}
             placeholder={t('filter_search_placeholder')}

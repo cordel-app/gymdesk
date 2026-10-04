@@ -42,10 +42,6 @@ const modal = stripComments(readFileSync(join(EXERCISES_DIR, 'ImportExercisesMod
 const MODAL_KEYS = [
   'import',
   'import_modal_title',
-  'import_filter_name',
-  'import_filter_name_placeholder',
-  'import_filter_muscle',
-  'import_filter_muscle_all',
   'import_select_all_matching',
   'import_clear_all_matching',
   'import_available_count',
@@ -75,6 +71,16 @@ describe('Exercises: Import Exercises modal (#718)', () => {
     expect(exercisesKey(locales[code], 'type_gym')).toBeUndefined();
     // #719 part 3: the toast is composed from parts, so the combined key is gone.
     expect(exercisesKey(locales[code], 'imported_with_skipped')).toBeUndefined();
+    // #969 stage 2: the modal's own name box and muscle select are the shared
+    // toolbar's fields now, which carry the `filter_*` keys — so these four,
+    // and the gym list's own search placeholder, have no consumer left.
+    for (const retired of [
+      'import_filter_name', 'import_filter_name_placeholder',
+      'import_filter_muscle', 'import_filter_muscle_all',
+      'search_placeholder',
+    ]) {
+      expect(exercisesKey(locales[code], retired), `exercises.${retired} is retired`).toBeUndefined();
+    }
   });
 
   it('opens the modal from the header instead of importing', () => {
@@ -108,10 +114,15 @@ describe('Exercises: Import Exercises modal (#718)', () => {
     expect(page).not.toContain("t('type_gym')");
   });
 
-  it('filters the library server-side by name and muscle', () => {
-    expect(modal).toContain("params.set('q', q)");
-    expect(modal).toContain("params.set('muscle', muscleKey)");
+  it('filters the library server-side, through the shared toolbar (#969 §16/§19)', () => {
+    expect(modal).toContain('<ExerciseFilterBar');
+    expect(modal).toContain('exerciseFilterQuery(current)');
     expect(modal).toContain('/exercises/base');
+    // No filter of its own any more: neither a hand-built query nor a
+    // narrowing pass over the rows the server returned.
+    expect(modal).not.toContain("params.set('q'");
+    expect(modal).not.toContain("params.set('muscle'");
+    expect(modal).not.toMatch(/rows\s*\.filter\(\(r\) => r\.(name|display_name)/);
   });
 
   it('keys the selection by base exercise id, outside the fetched list', () => {
@@ -119,8 +130,8 @@ describe('Exercises: Import Exercises modal (#718)', () => {
     // Only opening the modal clears it — a filter change must not.
     const reset = modal.slice(modal.indexOf('if (!open) return;'));
     expect(reset.slice(0, reset.indexOf('}, [open]'))).toContain('setSelected(new Set())');
-    const filterEffect = modal.slice(modal.indexOf('const timer = setTimeout(() => load(name, muscle)'));
-    expect(filterEffect.slice(0, filterEffect.indexOf('}, [open, name, muscle, load]'))).not.toContain('setSelected');
+    const filterEffect = modal.slice(modal.indexOf('const timer = setTimeout(() => load(filter)'));
+    expect(filterEffect.slice(0, filterEffect.indexOf('}, [open, filter, load]'))).not.toContain('setSelected');
   });
 
   it('restricts Select all matching to the filtered, importable rows', () => {
