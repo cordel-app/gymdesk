@@ -92,7 +92,7 @@ with Apple; universal links; push.
 
 ## 5. Work packages (one PR each, in this order)
 
-### WP1 — Device tokens (API contract first)
+### WP1 — Device tokens (API contract first) (#1072)
 - Migration (reviewed by the `db-reviewer` agent): `member_device_tokens` with `gym_id` NOT NULL,
   `member_id`, `platform` (CHECK `ios`|`android`), `app_id`, `token`, `last_seen_at`, `created_at`;
   `UNIQUE (platform, token)`; FKs to `members` and `gyms` with `ON DELETE CASCADE`.
@@ -106,7 +106,7 @@ with Apple; universal links; push.
   and that a failing FCM call never breaks the notification. Extend `cleanupTestGyms` with the new
   table (before `members`).
 
-### WP2 — Members App changes (`apps/member`)
+### WP2 — Members App changes (`apps/member`) (#1073)
 - Create `public/` with `manifest.json` and icons (the layout already links `/manifest.json`, which
   404s today).
 - `lib/native.ts` (`isNative()`, `@capacitor/core` in the bundle); `safe-area-inset` on `TopBar`
@@ -120,7 +120,7 @@ with Apple; universal links; push.
   change, make it in `POST /me/link` (match by email + `gym_id`), never in the frontend.
 - Tests (vitest): `isNative()`, which button renders, the token-registration payload.
 
-### WP3 — Mobile shell (`apps/mobile`, new workspace)
+### WP3 — Mobile shell (`apps/mobile`, new workspace) (#1074)
 - Capacitor 8, `ios/` and `android/` in the repo. `capacitor.config.ts` reads `server.url` and
   `allowNavigation` from environment variables.
 - iOS: URL scheme for Google in `Info.plist`, `GIDSignIn.handle` in `AppDelegate`, keychain
@@ -128,7 +128,7 @@ with Apple; universal links; push.
 - A manual runbook for simulator and physical-device checks (no automated suite covers native
   behaviour; CI runs `npm test` in `api/` only).
 
-### WP3b — Sign in with Apple (iOS)
+### WP3b — Sign in with Apple (iOS) (#1075)
 - **Why:** App Store guideline 4.8 asks for an equivalent privacy-preserving login option when the
   app offers a third-party login (Google). Sign in with Apple is the standard way to satisfy it.
   Check the current text at review time. It is **not** required for push (push is not an Apple
@@ -142,14 +142,14 @@ with Apple; universal links; push.
   the invitation ticket instead of the email; (2) let a signed-in member attach Apple/Google to an
   existing account; (3) let the gym link manually.
 
-### WP4 — Universal links / app links
+### WP4 — Universal links / app links (#1076)
 - Serve `/.well-known/apple-app-site-association` (`Content-Type: application/json`, no redirect)
   and `/.well-known/assetlinks.json` from `apps/member`; the middleware matcher already skips paths
   containing a dot, which must be checked. Add *Associated Domains* to the app.
 - Done when an invitation link (`/link?gym_id=…&__clerk_ticket=…`) opened from Notes or Mail opens
   the app. Needs the Apple Developer account.
 
-### WP5 — Production and publication
+### WP5 — Production and publication (#1077)
 See `docs/go-to-production.md` §6.
 
 ## 6. Out of scope
