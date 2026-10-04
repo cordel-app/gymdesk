@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
+import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
+import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
 import { btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 import { MemberSearchInput, MemberResult } from '../calendar/MemberSearchInput';
 
@@ -22,6 +24,14 @@ function todayISO() {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * #956 stage 2: this is the one assignment path that assigns a *set* of
+ * members, and the server answers all-or-nothing — a run that replaced three
+ * members' plans and refused the fourth would leave the gym with cancellations
+ * it did not get to weigh. So the 409 lists every plan Continue cancels and the
+ * shared `ReplacePlanDialog` names them all before the resend carries
+ * `confirm: true`.
+ */
 export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
@@ -31,6 +41,7 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
   const [startsAt, setStartsAt] = useState(todayISO());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<ActivePlanConflict | null>(null);
 
   const limitCount = plan.member_limit === 'family' ? null : parseInt(plan.member_limit, 10);
   const overCapacity = limitCount != null && members.length > limitCount;
@@ -49,7 +60,7 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
     if (ownerId === id) setOwnerId(null);
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(confirmReplacement = false) {
     setError(null);
     if (members.length === 0) { setError(t('plans.assign_error_no_members')); return; }
     if (limitCount != null && members.length !== limitCount) {
@@ -67,11 +78,19 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
           member_ids: members.map((m) => m.id),
           owner_member_id: ownerId,
           starts_at: startsAt,
+          ...(confirmReplacement ? { confirm: true } : {}),
         }),
       });
+      setConflict(null);
       onAssigned();
     } catch (err: any) {
-      setError(apiErrorMessage(err) ?? t('plans.error_generic'));
+      const replacement = confirmReplacement ? null : activePlanConflict(err);
+      if (replacement) {
+        setConflict(replacement);
+      } else {
+        setConflict(null);
+        setError(apiErrorMessage(err) ?? t('plans.error_generic'));
+      }
     } finally {
       setSaving(false);
     }
@@ -138,10 +157,18 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={btnStyle('#aaa')} disabled={saving}>{t('plans.cancel')}</button>
-          <button onClick={handleSubmit} style={primaryBtnStyle()} disabled={saving}>
+          <button onClick={() => handleSubmit()} style={primaryBtnStyle()} disabled={saving}>
             {saving ? t('plans.saving') : t('plans.assign_submit')}
           </button>
         </div>
+
+        <ReplacePlanDialog
+          conflict={conflict}
+          newPlanName={plan.name}
+          busy={saving}
+          onConfirm={() => handleSubmit(true)}
+          onCancel={() => setConflict(null)}
+        />
       </div>
     </div>
   );

@@ -491,7 +491,20 @@
     "image_not_configured": "El almacenamiento de Cloudflare no está configurado para este entorno.",
     "image_not_initialized": "El almacenamiento de Cloudflare no se ha inicializado para este gimnasio, por lo que no se pueden subir imágenes.",
     "read_only_hint": "Acceso de solo lectura",
-    "action_view_audit_log": "Ver registro de auditoría"
+    "action_view_audit_log": "Ver registro de auditoría",
+    "replace_plan_title": "Este miembro ya tiene un Plan de Membresía activo.",
+    "replace_plan_title_many": "Los miembros seleccionados ya tienen {count} Planes de Membresía activos.",
+    "replace_plan_body": "Asignar este nuevo Plan de Membresía cancelará el plan actual del miembro.",
+    "replace_plan_body_many": "Asignar este nuevo Plan de Membresía cancelará los {count}.",
+    "replace_plan_current": "Plan actual",
+    "replace_plan_current_many": "Planes que se cancelarán",
+    "replace_plan_new": "Nuevo plan",
+    "replace_plan_since": "desde {date}",
+    "replace_plan_shared": "Plan compartido cuyo titular es {owner}: cancelarlo afecta a todos los miembros que cubre.",
+    "replace_plan_dates": "El plan actual finalizará en la fecha en que empiece el nuevo plan.",
+    "replace_plan_dates_many": "Cada plan cancelado finalizará en la fecha en que empiece el nuevo plan.",
+    "replace_plan_confirm": "Continuar",
+    "replace_plan_cancel": "Cancelar"
   },
   "system_gyms": {
     "title": "Gimnasios",

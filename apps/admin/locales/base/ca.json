@@ -492,7 +492,20 @@
     "image_not_configured": "L'emmagatzematge de Cloudflare no està configurat per a aquest entorn.",
     "image_not_initialized": "L'emmagatzematge de Cloudflare no s'ha inicialitzat per a aquest gimnàs, per la qual cosa no es poden pujar imatges.",
     "read_only_hint": "Accés de només lectura",
-    "action_view_audit_log": "Veure registre d'auditoria"
+    "action_view_audit_log": "Veure registre d'auditoria",
+    "replace_plan_title": "Aquest membre ja té un Pla de Membresia actiu.",
+    "replace_plan_title_many": "Els membres seleccionats ja tenen {count} Plans de Membresia actius.",
+    "replace_plan_body": "Assignar aquest nou Pla de Membresia cancel·larà el pla actual del membre.",
+    "replace_plan_body_many": "Assignar aquest nou Pla de Membresia cancel·larà tots {count}.",
+    "replace_plan_current": "Pla actual",
+    "replace_plan_current_many": "Plans que es cancel·laran",
+    "replace_plan_new": "Nou pla",
+    "replace_plan_since": "des de {date}",
+    "replace_plan_shared": "Pla compartit del qual {owner} és titular: cancel·lar-lo afecta tots els membres que cobreix.",
+    "replace_plan_dates": "El pla actual finalitzarà la data en què comenci el nou pla.",
+    "replace_plan_dates_many": "Cada pla cancel·lat finalitzarà la data en què comenci el nou pla.",
+    "replace_plan_confirm": "Continuar",
+    "replace_plan_cancel": "Cancel·lar"
   },
   "system_gyms": {
     "title": "Gimnasos",

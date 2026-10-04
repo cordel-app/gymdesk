@@ -5,10 +5,14 @@
 //
 // It manages nothing but the Member's Membership Plans: Promotions, Additional
 // Services and the Billing Simulation are siblings of this section, never
-// nested inside a plan card (§13). Adding a plan is additive — it never closes,
-// cancels or replaces an existing one (§14) — because a Member may hold several
-// active plans at once (§6, one per Plan; migration 172). Superseding a plan is
-// still available as the explicit "Assign New Plan" action on the plan itself.
+// nested inside a plan card (§13).
+//
+// #956 reversed §6/§14: a Member holds zero or one Membership Plan, so adding
+// one to a Member who already has a live plan *replaces* it. The server is what
+// decides that — it answers `409 active_plan_exists` and takes `confirm: true`
+// — and this section's job is to show the warning the admin confirms, through
+// the shared `ReplacePlanDialog`. Superseding a specific plan is still available
+// as the explicit "Assign New Plan" action on the plan itself.
 //
 // Inline throughout (§15): "+ Add Membership Plan" opens a draft below the
 // list, saved or discarded in place. No modal, no wizard, no separate page.
@@ -16,6 +20,8 @@
 import React, { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
+import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
+import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import {
@@ -84,6 +90,9 @@ export function MemberMembershipPlans({
   const [draftStartsAt, setDraftStartsAt] = useState(todayISO());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // #956 stage 2: the replacement the admin has not confirmed yet. Holding the
+  // 409 rather than a boolean is what lets the dialog name the plan it cancels.
+  const [conflict, setConflict] = useState<ActivePlanConflict | null>(null);
 
   // §2: only Active + Public Membership Plans may be offered. The server
   // enforces the same rule on assignment, so this filter only keeps the picker
@@ -101,8 +110,10 @@ export function MemberMembershipPlans({
 
   const live = plans.filter((p) => p.is_live);
   const history = plans.filter((p) => !p.is_live);
-  // §14: a Plan already active for this Member can't be assigned again (the
-  // unique index would reject it), so it is left out of the picker.
+  // The Plan the Member already holds is left out of the picker: re-assigning
+  // it would be a replacement with nothing to replace it with. Every *other*
+  // Plan stays offered — under #956 picking one replaces the live plan, which
+  // is what the confirmation dialog is for.
   const activePlanIds = new Set(live.map((p) => p.membership_plan_id).filter((id): id is number => id != null));
   const selectable = options.filter((o) => !activePlanIds.has(o.id));
 
@@ -117,9 +128,17 @@ export function MemberMembershipPlans({
     setAdding(false);
     setDraftPlanId(null);
     setError(null);
+    setConflict(null);
   }
 
-  async function save() {
+  /**
+   * #956 stage 2: `confirmReplacement` is the admin's answer to the dialog and
+   * nothing else — the first attempt never sends it, so a member who already
+   * has a plan cannot have it cancelled without the warning being shown, and
+   * the resend carries the identical draft so Continue assigns exactly what was
+   * confirmed. Cancel leaves the draft open and changes nothing.
+   */
+  async function save(confirmReplacement = false) {
     if (draftPlanId == null) { setError(t('add_membership_plan_error_no_plan')); return; }
     if (!draftStartsAt) { setError(t('assign_new_plan_error_no_start')); return; }
     setSaving(true);
@@ -131,13 +150,21 @@ export function MemberMembershipPlans({
           member_id: memberId,
           membership_plan_id: draftPlanId,
           starts_at: draftStartsAt,
+          ...(confirmReplacement ? { confirm: true } : {}),
         }),
       });
+      setConflict(null);
       setAdding(false);
       setDraftPlanId(null);
       onChanged();
     } catch (err: any) {
-      setError(apiErrorMessage(err) ?? t('error_generic'));
+      const replacement = confirmReplacement ? null : activePlanConflict(err);
+      if (replacement) {
+        setConflict(replacement);
+      } else {
+        setConflict(null);
+        setError(apiErrorMessage(err) ?? t('error_generic'));
+      }
     } finally {
       setSaving(false);
     }
@@ -208,13 +235,21 @@ export function MemberMembershipPlans({
           {error && <p style={errorStyle}>{error}</p>}
 
           <div style={actionsRow}>
-            <button onClick={save} disabled={saving || selectable.length === 0} style={saveBtn}>
+            <button onClick={() => save()} disabled={saving || selectable.length === 0} style={saveBtn}>
               {saving ? t('saving') : t('add_membership_plan_submit')}
             </button>
             <button onClick={cancelAdding} disabled={saving} style={cancelBtn}>{t('cancel')}</button>
           </div>
         </div>
       )}
+
+      <ReplacePlanDialog
+        conflict={conflict}
+        newPlanName={selectable.find((o) => o.id === draftPlanId)?.name ?? null}
+        busy={saving}
+        onConfirm={() => save(true)}
+        onCancel={() => setConflict(null)}
+      />
 
       {history.length > 0 && (
         <div style={{ marginTop: 12 }}>

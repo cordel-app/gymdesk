@@ -3,12 +3,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
+import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
 import { useGym } from '@/context/GymContext';
 import { canWriteModule } from '@/config/permissions';
 import { useToast } from '@/components/Toast';
 import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
@@ -91,6 +93,8 @@ export default function MembershipsPage() {
   const [error, setError] = useState<string | null>(null);
   const [priceHint, setPriceHint] = useState<number | null>(null); // effective price for chosen plan/date
   const [priceOverridden, setPriceOverridden] = useState(false);
+  // #956 stage 2: the replacement warning the admin has not answered yet.
+  const [conflict, setConflict] = useState<ActivePlanConflict | null>(null);
 
   const [cancelling, setCancelling] = useState<Membership | null>(null);
   const [ledgerFor, setLedgerFor] = useState<Membership | null>(null);
@@ -177,6 +181,7 @@ export default function MembershipsPage() {
     setEditing(null);
     setForm(emptyForm);
     setError(null);
+    setConflict(null);
   }
 
   function onFinalPriceChange(v: string) {
@@ -190,7 +195,14 @@ export default function MembershipsPage() {
     return !isNaN(parsed) && Math.abs(parsed - priceHint) > 0.005;
   }, [form.membership_fee_price, priceHint]);
 
-  async function handleSave() {
+  /**
+   * #956 stage 2: only the create branch can replace a plan — editing an
+   * assignment's own dates never assigns one — so `confirmReplacement` reaches
+   * the `POST` alone, and the first attempt never sends it. The admin confirms
+   * the warning in the shared `ReplacePlanDialog`, which is what the resend
+   * answers.
+   */
+  async function handleSave(confirmReplacement = false) {
     if (!editing) {
       if (!form.member_id || !form.membership_plan_id || !form.starts_at) {
         setError(t('memberships.error_required'));
@@ -243,12 +255,19 @@ export default function MembershipsPage() {
           body.discount_reason = form.discount_reason.trim();
           if (form.discount_expires_at) body.discount_expires_at = form.discount_expires_at;
         }
+        if (confirmReplacement) body.confirm = true;
         await apiFetch('/user-memberships', { method: 'POST', body: JSON.stringify(body) });
       }
       closeModal();
       load();
     } catch (err: any) {
-      setError(apiErrorMessage(err) ?? t('memberships.error_generic'));
+      const replacement = confirmReplacement ? null : activePlanConflict(err);
+      if (replacement) {
+        setConflict(replacement);
+      } else {
+        setConflict(null);
+        setError(apiErrorMessage(err) ?? t('memberships.error_generic'));
+      }
     } finally {
       setSaving(false);
     }
@@ -324,7 +343,7 @@ export default function MembershipsPage() {
         cancelLabel={t('memberships.cancel')}
         saveLabel={saving ? t('memberships.saving') : editing ? t('memberships.save_changes') : t('memberships.modal_add')}
         onCancel={closeModal}
-        onSave={handleSave}
+        onSave={() => handleSave()}
       >
         <FormLabel>{t('memberships.label_member')} *</FormLabel>
         <select
@@ -422,6 +441,14 @@ export default function MembershipsPage() {
           </>
         )}
       </CrudModal>
+
+      <ReplacePlanDialog
+        conflict={conflict}
+        newPlanName={plans.find((p) => String(p.id) === form.membership_plan_id)?.name ?? null}
+        busy={saving}
+        onConfirm={() => handleSave(true)}
+        onCancel={() => setConflict(null)}
+      />
 
       <ConfirmDialog
         open={cancelling !== null}
