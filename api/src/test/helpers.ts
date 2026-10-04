@@ -51,6 +51,31 @@ export async function createTestMembership(
   );
 }
 
+/**
+ * #986: a trainer is an **active Staff record**, so a `gym_memberships` row used
+ * as a trainer (an activity's Default Trainer, an occurrence's trainer, a
+ * trainer-availability window) needs the employment row behind it — the login's
+ * role no longer decides. Inserts one for an existing membership.
+ */
+export async function createTestStaffForMembership(
+  gymId: string,
+  membershipId: number,
+  first = 'Test',
+  last = 'Trainer',
+): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO staff
+       (gym_id, gym_membership_id, first_name, last_name, email, profile,
+        employment_status, current_status, hire_date)
+     VALUES (?, ?, ?, ?, ?, 'Personal Trainer', 'active', 'available', '2026-01-01')`,
+    [
+      gymId, membershipId, first, last,
+      `staff-${membershipId}-${Math.random().toString(36).slice(2, 8)}@example.com`,
+    ],
+  );
+  return Number(insertId);
+}
+
 /** Deletes gyms created by this worker and their dependent rows. */
 export async function cleanupTestGyms() {
   // #780: the two run histories are the deliberate no-`gym_id` exception, so

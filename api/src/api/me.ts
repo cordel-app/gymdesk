@@ -28,6 +28,7 @@ import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
+import { assignableTrainersSql } from '../domain/trainerAssignment';
 import {
   createCardUpdateRequest,
   loadCardRemovalBlock,
@@ -810,18 +811,19 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
 /**
  * #503 stage 6: a lightweight, member-facing trainer list for the calendar's
  * local filter panel. `/trainers` (api/src/api/trainers.ts) exposes the same
- * coach-role gym_memberships but is admin-only (requireModuleAccess), so
- * members need their own read-only view — id + name only, no staff-facing
- * fields like role/user_id/max_concurrent_groups.
+ * set but is admin-only (requireModuleAccess), so members need their own
+ * read-only view — id + name only, no staff-facing fields like
+ * role/user_id/max_concurrent_groups.
+ *
+ * #986: that set is "every active Staff record" and is decided in one place
+ * (`domain/trainerAssignment.ts`), so this filter cannot offer a different
+ * list of trainers from the one the admin assigns from.
  */
 meRouter.get('/trainers', requireRole('member'), requireFeatureEnabled('calendar.calendar'), async (req: Request, res: Response, next: NextFunction) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT gm.id, gm.name
-       FROM gym_memberships gm
-       WHERE gm.gym_id = ? AND gm.role IN ('trainer_performance','trainer_perf_nutrition')
-       ORDER BY gm.name ASC`,
+      assignableTrainersSql("gm.id, CONCAT(s.first_name, ' ', s.last_name) AS name"),
       [gymId],
     );
     res.json(rows);

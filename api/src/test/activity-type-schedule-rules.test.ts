@@ -7,6 +7,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
+  createTestStaffForMembership,
   request,
 } from './helpers';
 
@@ -1608,6 +1609,9 @@ describe('overlap warnings between rules (#482)', () => {
       [gymId, trainerUserId],
     );
     trainerMembershipId = trainerRows[0].id;
+    // #986: a membership id is only assignable as a trainer when an active
+    // staff record stands behind it, so the login row alone is no longer enough.
+    await createTestStaffForMembership(gymId, trainerMembershipId, 'Overlap', 'Trainer');
 
     const makeActivityType = async (name: string, extra: Record<string, unknown>) => {
       const res = await request
