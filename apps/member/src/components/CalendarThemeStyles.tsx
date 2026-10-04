@@ -29,6 +29,11 @@
  * that wins over these rules. The pill badge stage 3 adds belongs to the Admin
  * calendar, whose events convey a booking status instead.
  *
+ * The two `.gd-event-colored` rules carried over from Admin (#975) match
+ * nothing in this app: a member's events take their colour inline from the
+ * event's own `color` (#976) and no class is added beside it, so the rules are
+ * inert here and the sheet stays byte-identical rather than forking.
+ *
  * Rendered inside the page body (same pattern as `Toast`/`AppShell`), which
  * places it after the stylesheet FullCalendar injects into `<head>` — so
  * equal-specificity rules below win on document order, and the few rules that
@@ -98,6 +103,17 @@ export const CALENDAR_THEME_CSS = `
   background-color: var(--gd-calendar-event-hover-bg, #5a52d5);
 }
 
+/* #975 — an event carrying its own configured colour is painted by
+   FullCalendar as an inline background, which beats the rule above, so the
+   hover affordance has to come from somewhere that an inline style cannot
+   win against. It darkens whatever colour the gym configured rather than
+   replacing it with the theme's hover colour: the event's identity is that
+   colour, and swapping it under the pointer is the status-as-colour mistake
+   in another guise. Uncoloured events are untouched and keep the token. */
+.gd-calendar .fc .fc-event.gd-event-colored:not(.fc-bg-event):not(.fc-event-selected):hover {
+  filter: brightness(0.92);
+}
+
 /* Selected / keyboard-focused event. FullCalendar paints a translucent
    rgba(0,0,0,.25) sheet over the event through an ::after pseudo-element; the
    token is a plain color (it's a color picker), so the .25 is applied here as
@@ -117,6 +133,17 @@ export const CALENDAR_THEME_CSS = `
 .gd-calendar .fc .fc-event:focus-visible {
   outline: 2px solid var(--gd-calendar-event-text, #ffffff);
   outline-offset: -2px;
+}
+
+/* The same ring on an event painted with its own colour (#975). The theme's
+   event text colour is scored against the theme's *event background*, so it
+   is not guaranteed to read over a per-event hue — currentColor is, because
+   FullCalendar sets the event's text colour inline from
+   readableEventTextColor(), which picked it against this very background.
+   One class more specific than the rule above, so it wins on specificity
+   rather than on document order. */
+.gd-calendar .fc .fc-event.gd-event-colored:focus-visible {
+  outline-color: currentColor;
 }
 
 /* The nav buttons' only focus affordance in FullCalendar is a box-shadow baked

@@ -7,6 +7,14 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import {
+  inputStyle,
+  memberTheme,
+  noticeStyle,
+  primaryButtonStyle,
+  secondaryButtonStyle,
+  sectionCardStyle,
+} from '@/lib/memberChrome';
 
 interface Profile {
   id: number;
@@ -113,7 +121,7 @@ export default function ProfilePage() {
   }
 
   if (error || !profile) {
-    return <main style={styles.container}><p style={{ ...styles.hint, color: '#c0392b' }}>{error ?? t('common.error')}</p></main>;
+    return <main style={styles.container}><p style={{ ...styles.hint, color: memberTheme.statusError }}>{error ?? t('common.error')}</p></main>;
   }
 
   return (
@@ -161,7 +169,7 @@ export default function ProfilePage() {
       {/* #361: default gym / center + enrollment / payment status summary */}
       <div style={{ ...styles.card, marginTop: 16 }}>
         {gyms.length > 1 && (
-          <div style={{ padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
+          <div style={styles.editRow}>
             <p style={styles.label}>{t('profile.default_gym')}</p>
             <select
               value={gymId ?? ''}
@@ -174,7 +182,7 @@ export default function ProfilePage() {
           </div>
         )}
 
-        <div style={{ padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
+        <div style={styles.editRow}>
           <p style={styles.label}>{t('profile.default_center')}</p>
           {centers.length > 0 ? (
             <select
@@ -214,30 +222,31 @@ export default function ProfilePage() {
 
 function Field({ label, value, note }: { label: string; value: string; note?: string }) {
   return (
-    <div style={{ padding: '12px 0', borderBottom: '1px solid #f0f0f0' }}>
-      <p style={{ margin: 0, fontSize: 12, color: '#71717a', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</p>
-      <p style={{ margin: '4px 0 0', fontSize: 16, color: '#18181b', fontWeight: 500 }}>{value}</p>
-      {note && <p style={{ margin: '2px 0 0', fontSize: 12, color: '#a1a1aa' }}>{note}</p>}
+    <div style={styles.editRow}>
+      <p style={styles.label}>{label}</p>
+      <p style={styles.value}>{value}</p>
+      {note && <p style={styles.note}>{note}</p>}
     </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
   container:   { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title:       { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
-  card:        { background: '#fff', borderRadius: 12, padding: '0 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
-  fieldRow:    { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f0f0f0' },
-  label:       { margin: 0, fontSize: 12, color: '#71717a', fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
-  value:       { margin: '4px 0 0', fontSize: 16, color: '#18181b', fontWeight: 500 },
-  empty:       { color: '#a1a1aa', fontWeight: 400, fontStyle: 'italic' as const },
-  editBtn:     { background: 'none', border: '1px solid #e4e4e7', borderRadius: 8, padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: '#18181b', flexShrink: 0 },
-  editRow:     { padding: '12px 0', borderBottom: '1px solid #f0f0f0' },
-  input:       { display: 'block', width: '100%', padding: '10px 12px', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 16, marginTop: 6, boxSizing: 'border-box' as const, outline: 'none' },
-  select:      { display: 'block', width: '100%', padding: '10px 12px', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 15, marginTop: 6, boxSizing: 'border-box' as const, background: '#fff', color: '#18181b' },
-  fieldError:  { margin: '6px 0 0', fontSize: 13, color: '#c0392b' },
+  title:       { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  card:        { ...sectionCardStyle, padding: '0 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
+  fieldRow:    { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: `1px solid ${memberTheme.separator}` },
+  label:       { margin: 0, fontSize: 12, color: memberTheme.textMuted, fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: '0.04em' },
+  value:       { margin: '4px 0 0', fontSize: 16, color: memberTheme.text, fontWeight: 500 },
+  note:        { margin: '2px 0 0', fontSize: 12, color: memberTheme.textMuted },
+  empty:       { color: memberTheme.textMuted, fontWeight: 400, fontStyle: 'italic' as const },
+  editBtn:     { ...secondaryButtonStyle, padding: '6px 14px', fontSize: 13, fontWeight: 600, flexShrink: 0 },
+  editRow:     { padding: '12px 0', borderBottom: `1px solid ${memberTheme.separator}` },
+  input:       { ...inputStyle, display: 'block', width: '100%', padding: '10px 12px', fontSize: 16, marginTop: 6, boxSizing: 'border-box' as const, outline: 'none' },
+  select:      { ...inputStyle, display: 'block', width: '100%', padding: '10px 12px', fontSize: 15, marginTop: 6, boxSizing: 'border-box' as const },
+  fieldError:  { margin: '6px 0 0', fontSize: 13, color: memberTheme.statusError },
   editActions: { display: 'flex', gap: 8, marginTop: 10 },
-  btnSave:     { flex: 1, padding: '10px 0', background: '#18181b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' },
-  btnCancel:   { flex: 1, padding: '10px 0', background: 'transparent', color: '#18181b', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' },
-  toast:       { background: '#e6f6ec', color: '#1e7e40', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 14 },
-  hint:        { color: '#71717a', fontSize: 14, textAlign: 'center', margin: '20px 0' },
+  btnSave:     { ...primaryButtonStyle, flex: 1, padding: '10px 0', fontSize: 15, fontWeight: 600 },
+  btnCancel:   { ...secondaryButtonStyle, flex: 1, padding: '10px 0', fontSize: 15, fontWeight: 600 },
+  toast:       { ...noticeStyle('success'), marginBottom: 16 },
+  hint:        { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
 };

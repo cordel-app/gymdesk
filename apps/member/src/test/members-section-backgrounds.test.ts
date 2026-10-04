@@ -149,10 +149,12 @@ describe('the section card is a background, not a redesign (#728 §Preserve Exis
     // The caller's own styles are spread first, so nothing of theirs is
     // dropped, and the artwork is applied only for a slot the theme
     // configures. Since #833 §4 the card also carries the theme's Section
-    // Cards border — the one thing a Section Card gains unconditionally.
+    // Cards border — the one thing a Section Card gains unconditionally —
+    // which #983 moved into `lib/memberChrome.ts` so the content cards of the
+    // sections this component does not wrap carry the same border.
     expect(cardSrc).toContain('...style');
     expect(cardSrc).toContain('...(background ? { background } : {})');
-    expect(cardSrc).toContain('...SECTION_CARD_BORDER');
+    expect(cardSrc).toContain('...sectionCardBorder');
   });
 
   it('keeps the tiles clickable buttons and the membership card its existing element', () => {

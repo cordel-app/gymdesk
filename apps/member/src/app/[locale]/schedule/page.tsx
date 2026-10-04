@@ -7,6 +7,14 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import {
+  destructiveButtonStyle,
+  memberTheme,
+  noticeStyle,
+  primaryButtonStyle,
+  sectionCardStyle,
+  statusPillStyle,
+} from '@/lib/memberChrome';
 
 interface Session {
   id: number;
@@ -264,23 +272,23 @@ export default function MemberSchedulePage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
-  message: { background: '#e6f6ec', color: '#1e7e40', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 14 },
-  sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: 'var(--gd-color-h2, #18181b)' },
-  dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: 'var(--gd-color-h3, #71717a)', textTransform: 'uppercase', letterSpacing: '0.05em' },
-  card: { background: '#fff', borderRadius: 10, padding: 14, marginBottom: 10, cursor: 'pointer' },
-  details: { marginTop: 8, paddingTop: 8, borderTop: '1px solid #f0f0f0' },
-  time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: '#18181b' },
-  name: { fontSize: 16, fontWeight: 600, color: '#18181b' },
-  sub: { fontSize: 13, color: '#71717a', marginTop: 2 },
-  spots: { fontSize: 12, color: '#71717a' },
-  pillBooked: { background: '#e6f6ec', color: '#1e7e40', padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600 },
-  pillWait: { background: '#fff4e0', color: '#b26a00', padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600 },
-  pillFull: { background: '#fdeaea', color: '#c0392b', padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600 },
-  pillLocked: { background: '#f3eafd', color: '#7d3cbd', padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600 },
-  btnBook: { flex: 1, padding: '10px 0', background: '#18181b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' },
-  btnCancel: { flex: 1, padding: '10px 0', background: 'transparent', color: '#c0392b', border: '1px solid #c0392b', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' },
-  btnWait: { flex: 1, padding: '10px 0', background: '#b26a00', color: '#fff', border: 'none', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer' },
-  hint: { color: '#71717a', fontSize: 14, textAlign: 'center', margin: '20px 0' },
-  errorHint: { color: '#c0392b', fontSize: 14, textAlign: 'center', margin: '20px 0' },
+  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  message: { ...noticeStyle('success'), marginBottom: 16 },
+  sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: memberTheme.title2 },
+  dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: memberTheme.title3, textTransform: 'uppercase', letterSpacing: '0.05em' },
+  card: { ...sectionCardStyle, borderRadius: 10, padding: 14, marginBottom: 10, cursor: 'pointer' },
+  details: { marginTop: 8, paddingTop: 8, borderTop: `1px solid ${memberTheme.separator}` },
+  time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: memberTheme.text },
+  name: { fontSize: 16, fontWeight: 600, color: memberTheme.text },
+  sub: { fontSize: 13, color: memberTheme.textMuted, marginTop: 2 },
+  spots: { fontSize: 12, color: memberTheme.textMuted },
+  pillBooked: statusPillStyle('success'),
+  pillWait: statusPillStyle('warning'),
+  pillFull: statusPillStyle('error'),
+  pillLocked: statusPillStyle('info'),
+  btnBook: { ...primaryButtonStyle, flex: 1, padding: '10px 0', fontSize: 15, fontWeight: 600 },
+  btnCancel: { ...destructiveButtonStyle, flex: 1, padding: '10px 0', fontSize: 15, fontWeight: 600 },
+  btnWait: { ...primaryButtonStyle, flex: 1, padding: '10px 0', background: memberTheme.statusWarning, fontSize: 15, fontWeight: 600 },
+  hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
+  errorHint: { color: memberTheme.statusError, fontSize: 14, textAlign: 'center', margin: '20px 0' },
 };

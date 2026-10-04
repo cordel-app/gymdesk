@@ -9,6 +9,17 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { MembersSectionCard, useSectionImageUrl } from '@/components/MembersSectionCard';
+import {
+  destructiveButtonStyle,
+  memberTheme,
+  noticeStyle,
+  primaryButtonStyle,
+  rowDividerStyle,
+  secondaryButtonStyle,
+  sectionCardStyle,
+  statusPillStyle,
+  statusTone,
+} from '@/lib/memberChrome';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
 import { goalDetail, goalLabel, type NutritionGoalItem } from '@/lib/nutritionFood';
 
@@ -341,50 +352,42 @@ function NavTile({ slot, icon, label, onClick }: { slot: MemberBackgroundSlot; i
 }
 
 function StatusPill({ status, label }: { status: string; label: string }) {
-  const COLORS: Record<string, { bg: string; fg: string }> = {
-    active:    { bg: '#e6f6ec', fg: '#1e7e40' },
-    paused:    { bg: '#fff4e0', fg: '#b26a00' },
-    cancelled: { bg: '#fdeaea', fg: '#c0392b' },
-    expired:   { bg: '#f3eafd', fg: '#7d3cbd' },
-  };
-  const c = COLORS[status] ?? { bg: '#f0f0f0', fg: '#666' };
-  return (
-    <span style={{ background: c.bg, color: c.fg, borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
-      {label}
-    </span>
-  );
+  // #983 — the tone and its two colours are `lib/memberChrome.ts`'s: the same
+  // four Assigned Plan statuses are shown here, on My Membership and on My
+  // Bookings, and three copies of the map were three places to theme.
+  return <span style={{ ...statusPillStyle(statusTone(status)), padding: '4px 12px' }}>{label}</span>;
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  center:          { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f5f5', padding: 24 },
-  landingCard:     { background: '#fff', borderRadius: 16, padding: '48px 40px', maxWidth: 400, width: '100%', textAlign: 'center', boxShadow: '0 2px 16px rgba(0,0,0,0.08)' },
-  landingTitle:    { margin: '0 0 8px', fontSize: 32, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
-  landingSubtitle: { margin: '0 0 32px', color: '#71717a', fontSize: 16 },
+  center:          { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground, padding: 24 },
+  landingCard:     { ...sectionCardStyle, borderRadius: 16, padding: '48px 40px', maxWidth: 400, width: '100%', textAlign: 'center', boxShadow: '0 2px 16px rgba(0,0,0,0.08)' },
+  landingTitle:    { margin: '0 0 8px', fontSize: 32, fontWeight: 700, color: memberTheme.title1 },
+  landingSubtitle: { margin: '0 0 32px', color: memberTheme.textMuted, fontSize: 16 },
   container:       { padding: 16, maxWidth: 720, margin: '0 auto' },
-  greeting:        { margin: '8px 0 20px', fontSize: 24, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
+  greeting:        { margin: '8px 0 20px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
   section:         { marginBottom: 20 },
-  h2:              { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--gd-color-h2, #71717a)', textTransform: 'uppercase', letterSpacing: '0.05em' },
-  card:            { background: '#fff', borderRadius: 12, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'default' },
+  h2:              { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, textTransform: 'uppercase', letterSpacing: '0.05em' },
+  card:            { ...sectionCardStyle, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'default' },
   bookingRow:      { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
-  bookingName:     { margin: 0, fontSize: 17, fontWeight: 700, color: '#18181b' },
-  bookingSub:      { margin: '4px 0 0', fontSize: 13, color: '#71717a' },
+  bookingName:     { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
+  bookingSub:      { margin: '4px 0 0', fontSize: 13, color: memberTheme.textMuted },
   membershipRow:   { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 6 },
-  planName:        { margin: 0, fontSize: 17, fontWeight: 700, color: '#18181b' },
-  messageBanner:   { background: '#e6f6ec', color: '#1e7e40', padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 14 },
-  pillWait:        { background: '#fff4e0', color: '#b26a00', padding: '3px 10px', borderRadius: 999, fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' },
-  hint:            { color: '#71717a', fontSize: 14, margin: '4px 0 12px' },
-  btnPrimary:      { display: 'block', width: '100%', padding: '14px 0', background: '#18181b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 16, fontWeight: 600, cursor: 'pointer', marginBottom: 16 },
-  btnSecondary:    { marginTop: 8, padding: '10px 18px', background: 'transparent', color: '#18181b', border: '1px solid #e4e4e7', borderRadius: 8, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
-  btnCancel:       { width: '100%', padding: '10px 0', background: 'transparent', color: '#c0392b', border: '1px solid #c0392b', borderRadius: 8, fontSize: 15, fontWeight: 600, cursor: 'pointer', marginTop: 4 },
-  alertCard:       { background: '#fff4e0', border: '1px solid #f9c734', borderRadius: 12, padding: '14px 18px', cursor: 'pointer' },
-  alertTitle:      { margin: 0, fontSize: 15, fontWeight: 700, color: '#92600a' },
-  alertLink:       { margin: '6px 0 0', fontSize: 13, fontWeight: 600, color: '#92600a' },
-  mealRow:         { padding: '6px 0', borderBottom: '1px solid #f0f0f0' },
-  mealName:        { margin: 0, fontSize: 14, fontWeight: 700, color: '#18181b' },
+  planName:        { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
+  messageBanner:   { ...noticeStyle('success'), marginBottom: 16 },
+  pillWait:        statusPillStyle('warning'),
+  hint:            { color: memberTheme.textMuted, fontSize: 14, margin: '4px 0 12px' },
+  btnPrimary:      { ...primaryButtonStyle, display: 'block', width: '100%', padding: '14px 0', fontSize: 16, fontWeight: 600, marginBottom: 16 },
+  btnSecondary:    { ...secondaryButtonStyle, marginTop: 8, padding: '10px 18px', fontSize: 14, fontWeight: 600 },
+  btnCancel:       { ...destructiveButtonStyle, width: '100%', padding: '10px 0', fontSize: 15, fontWeight: 600, marginTop: 4 },
+  alertCard:       { ...noticeStyle('warning'), borderRadius: 12, padding: '14px 18px', cursor: 'pointer' },
+  alertTitle:      { margin: 0, fontSize: 15, fontWeight: 700, color: 'inherit' },
+  alertLink:       { margin: '6px 0 0', fontSize: 13, fontWeight: 600, color: 'inherit' },
+  mealRow:         { ...rowDividerStyle, padding: '6px 0' },
+  mealName:        { margin: 0, fontSize: 14, fontWeight: 700, color: memberTheme.text },
   goalsRow:        { padding: '10px 0 0' },
   tileGrid:        { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 },
-  tile:            { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, background: '#fff', borderRadius: 14, padding: '24px 8px', border: 'none', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer' },
+  tile:            { ...sectionCardStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, padding: '24px 8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer' },
   tileIcon:        { fontSize: 32 },
   tileWithImage:   { minHeight: 110 },
-  tileLabel:       { fontSize: 13, fontWeight: 600, color: '#18181b', textAlign: 'center' },
+  tileLabel:       { fontSize: 13, fontWeight: 600, color: memberTheme.text, textAlign: 'center' },
 };

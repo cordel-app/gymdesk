@@ -2,6 +2,7 @@
 
 import { useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
+import { memberTheme } from '@/lib/memberChrome';
 
 /** #341: only rendered when the actor has access to more than one gym. */
 export function GymSwitcher() {
@@ -12,7 +13,7 @@ export function GymSwitcher() {
   if (!isLinked && !isSuperadmin) return null;
 
   return (
-    <div style={{ padding: '8px 16px', background: 'var(--gd-card-bg, #fff)', borderBottom: '1px solid var(--gd-card-border, #eee)' }}>
+    <div style={{ padding: '8px 16px', background: memberTheme.surface, borderBottom: `1px solid ${memberTheme.cardBorderColor}` }}>
       <select
         value={gymId ?? ''}
         onChange={(e) => switchGym(e.target.value)}
@@ -20,7 +21,7 @@ export function GymSwitcher() {
           width: '100%',
           padding: '8px 10px',
           borderRadius: 6,
-          border: '1px solid #ccc',
+          border: `1px solid ${memberTheme.inputBorder}`,
           fontSize: 14,
           background: 'inherit',
           color: 'inherit',

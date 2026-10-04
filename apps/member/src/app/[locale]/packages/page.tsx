@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { memberTheme, sectionCardStyle, statusPillStyle } from '@/lib/memberChrome';
 
 interface ClassPackage {
   id: number;
@@ -55,7 +56,7 @@ export default function PackagesPage() {
   }
 
   if (error) {
-    return <main style={styles.container}><p style={{ ...styles.hint, color: '#c0392b' }}>{error}</p></main>;
+    return <main style={styles.container}><p style={{ ...styles.hint, color: memberTheme.statusError }}>{error}</p></main>;
   }
 
   return (
@@ -132,26 +133,26 @@ export default function PackagesPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container:     { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title:         { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
-  summaryChip:   { display: 'inline-flex', alignItems: 'center', gap: 8, background: '#18181b', color: '#fff', borderRadius: 999, padding: '8px 18px', marginBottom: 20 },
+  title:         { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  summaryChip:   { display: 'inline-flex', alignItems: 'center', gap: 8, background: memberTheme.primaryButton, color: memberTheme.primaryButtonText, borderRadius: 999, padding: '8px 18px', marginBottom: 20 },
   summaryCount:  { fontSize: 22, fontWeight: 800, fontVariantNumeric: 'tabular-nums' },
   summaryLabel:  { fontSize: 14, fontWeight: 500 },
   list:          { listStyle: 'none', padding: 0, margin: 0 },
-  card:          { background: '#fff', borderRadius: 12, padding: '16px 18px', marginBottom: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
+  card:          { ...sectionCardStyle, padding: '16px 18px', marginBottom: 10, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
   cardHead:      { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, marginBottom: 10 },
-  packageName:   { fontSize: 16, fontWeight: 600, color: '#18181b' },
-  activePill:    { background: '#e6f6ec', color: '#1e7e40', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' },
-  pastPill:      { background: '#f0f0f0', color: '#666', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' },
+  packageName:   { fontSize: 16, fontWeight: 600, color: memberTheme.text },
+  activePill:    statusPillStyle('success'),
+  pastPill:      statusPillStyle('neutral'),
   creditsRow:    { display: 'flex', alignItems: 'baseline', gap: 4, marginBottom: 8 },
-  creditsCount:  { fontSize: 32, fontWeight: 800, color: '#18181b', fontVariantNumeric: 'tabular-nums' },
-  creditsOf:     { fontSize: 14, color: '#71717a' },
-  progressBar:   { height: 6, background: '#f0f0f0', borderRadius: 999, overflow: 'hidden', marginBottom: 8 },
-  progressFill:  { height: '100%', background: '#18181b', borderRadius: 999, transition: 'width 0.3s' },
-  expiry:        { margin: 0, fontSize: 13, color: '#71717a' },
+  creditsCount:  { fontSize: 32, fontWeight: 800, color: memberTheme.text, fontVariantNumeric: 'tabular-nums' },
+  creditsOf:     { fontSize: 14, color: memberTheme.textMuted },
+  progressBar:   { height: 6, background: memberTheme.separator, borderRadius: 999, overflow: 'hidden', marginBottom: 8 },
+  progressFill:  { height: '100%', background: memberTheme.primaryButton, borderRadius: 999, transition: 'width 0.3s' },
+  expiry:        { margin: 0, fontSize: 13, color: memberTheme.textMuted },
   pastSection:   { marginTop: 24 },
-  pastToggle:    { background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: '#71717a', padding: '4px 0', marginBottom: 10 },
-  emptyCard:     { background: '#fff', borderRadius: 12, padding: '40px 24px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
+  pastToggle:    { background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 600, color: memberTheme.textMuted, padding: '4px 0', marginBottom: 10 },
+  emptyCard:     { ...sectionCardStyle, padding: '40px 24px', textAlign: 'center', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
   emptyIcon:     { fontSize: 40, margin: '0 0 12px' },
-  emptyText:     { margin: '0 0 8px', fontSize: 16, fontWeight: 600, color: '#18181b' },
-  hint:          { color: '#71717a', fontSize: 13, margin: 0 },
+  emptyText:     { margin: '0 0 8px', fontSize: 16, fontWeight: 600, color: memberTheme.text },
+  hint:          { color: memberTheme.textMuted, fontSize: 13, margin: 0 },
 };

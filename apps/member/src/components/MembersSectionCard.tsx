@@ -2,6 +2,7 @@
 
 import { createElement, type CSSProperties, type ReactNode } from 'react';
 import { useApp } from '@/context/AppContext';
+import { sectionCardBorder } from '@/lib/memberChrome';
 import {
   backgroundUrlForSlot,
   cardBackgroundStyleValue,
@@ -65,6 +66,13 @@ interface MembersSectionCardProps {
  * image is background artwork, not an `<img>`: decorative, so it carries no
  * alt text and reaches no screen reader, and it sits behind the content
  * rather than in the tab order.
+ *
+ * The border is the theme's (#833 §4: the Section Cards Border Colour and
+ * Width, each inheriting from the Admin Card Border until the Theme overrides
+ * it), and since #983 it is `sectionCardBorder` in `lib/memberChrome.ts` — the
+ * one place the Members App spells a visual value, so the content cards of the
+ * sections this component does not wrap carry the same border rather than a
+ * second copy of the rule.
  */
 export function MembersSectionCard({ slot, as = 'div', style, children, ...rest }: MembersSectionCardProps) {
   const background = useSectionBackground(slot);
@@ -73,25 +81,8 @@ export function MembersSectionCard({ slot, as = 'div', style, children, ...rest 
     {
       ...(as === 'button' ? { type: 'button' as const } : {}),
       ...rest,
-      style: { ...style, ...(background ? { background } : {}), ...SECTION_CARD_BORDER },
+      style: { ...style, ...(background ? { background } : {}), ...sectionCardBorder },
     },
     children,
   );
 }
-
-/**
- * #833 §4 — a Section Card's border, from the theme. The colour and the width
- * are two Members App settings of their own, each inheriting from the Admin
- * Card Border / Card Border Width until the Theme overrides it
- * (lib/membersAppTokens.ts writes both variables).
- *
- * It lives here rather than on the pages because "Section Card" is exactly what
- * this component is: every navigation card the ticket names renders through it,
- * and nothing else does, so one rule covers all of them and reaches no other
- * surface.
- */
-const SECTION_CARD_BORDER = {
-  borderStyle: 'solid',
-  borderColor: 'var(--gd-members-card-border, var(--gd-card-border, #e5e7eb))',
-  borderWidth: 'var(--gd-members-card-border-width, 1px)',
-} as const;

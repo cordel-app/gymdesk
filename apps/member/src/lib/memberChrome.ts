@@ -1,0 +1,224 @@
+// #983 — the one place the Members App spells a visual value.
+//
+// The same rule `listChrome.ts` is for an Admin list and `formChrome.ts` is for
+// the inside of an Admin card, applied to this app: a page spreads these
+// objects rather than restating a colour, a surface, a border or a button, so
+// changing a Members App theme setting reaches every screen that renders
+// through them. A hex typed into a page is what §7 exists to remove — it is a
+// value the theme cannot move, and it is why a gym with a dark header still saw
+// white cards and near-black headings.
+//
+// Every colour here is the CSS variable that holds it, with the value
+// `applyTokens()` / `applyMembersAppTokens()` write as its `var()` fallback —
+// the fallback covers the frames before `ThemeProvider`'s effect has run and
+// nothing else, so it is deliberately the *default token's* value rather than
+// whatever literal a page happened to carry before this ticket (those had
+// drifted: the same heading level was `#18181b` on one page and `#71717a` on
+// the next, while the theme writes one value for both).
+//
+// Which variable a setting lands in is `lib/membersAppTokens.ts`'s to say, and
+// this module reads them rather than resolving anything: the Members App
+// settings (header, background, section cards, titles, calendar) are written
+// last, so a surface reading `--gd-app-bg` or `--gd-color-h1` gets the Members
+// App value where the Theme overrides it and the inherited Admin value where it
+// does not (§6).
+import type { CSSProperties } from 'react';
+
+/**
+ * The themed value of every role the Members App paints with.
+ *
+ * A role, not a shade: `textMuted` is "the secondary text colour", so a page
+ * asks for that rather than for `#71717a`, and the theme decides what it is.
+ */
+export const memberTheme = {
+  // Header (§1) — the five Members App header settings, which `TopBar` reads
+  // through this module like every other surface. It borrowed the Admin
+  // *sidebar*'s colour until #833 and the variables directly until #983.
+  headerBackground: 'var(--gd-members-header-bg, var(--gd-header-bg, #1a1a2e))',
+  headerText: 'var(--gd-members-header-text, var(--gd-text, #ffffff))',
+  headerFont: 'var(--gd-members-header-font, inherit)',
+  headerSeparatorColor: 'var(--gd-header-sep-color, #6c63ff)',
+  headerSeparatorWidth: 'var(--gd-header-sep-height, 2px)',
+  // Application surfaces (§2).
+  pageBackground: 'var(--gd-app-bg, #f5f5f5)',
+  surface: 'var(--gd-card-bg, #ffffff)',
+  // Text.
+  text: 'var(--gd-text, #111827)',
+  textSecondary: 'var(--gd-text-secondary, #374151)',
+  textMuted: 'var(--gd-text-muted, #6b7280)',
+  separator: 'var(--gd-border, #e5e7eb)',
+  // Titles (§4) — the three heading levels, from the three Title settings.
+  title1: 'var(--gd-color-h1, #111827)',
+  title2: 'var(--gd-color-h2, #111827)',
+  title3: 'var(--gd-color-h3, #374151)',
+  // Section cards (§3).
+  cardBorderColor: 'var(--gd-members-card-border, var(--gd-card-border, #e5e7eb))',
+  cardBorderWidth: 'var(--gd-members-card-border-width, 1px)',
+  // Inputs.
+  inputBackground: 'var(--gd-input-bg, #ffffff)',
+  inputBorder: 'var(--gd-input-border, #d1d5db)',
+  // Buttons.
+  primaryButton: 'var(--gd-primary-btn, #6c63ff)',
+  primaryButtonText: 'var(--gd-primary-btn-text, #ffffff)',
+  secondaryButton: 'var(--gd-secondary-btn, #ffffff)',
+  secondaryButtonText: 'var(--gd-secondary-btn-text, #374151)',
+  link: 'var(--gd-link, #6c63ff)',
+  // Status.
+  statusSuccess: 'var(--gd-status-success, #059669)',
+  statusWarning: 'var(--gd-status-warning, #d97706)',
+  statusError: 'var(--gd-status-error, #dc2626)',
+  statusInfo: 'var(--gd-status-info, #2563eb)',
+  // Calendar (§5). The grid itself is painted by the FullCalendar sheet
+  // (`components/CalendarThemeStyles.tsx`, which is the only reader of the
+  // `--gd-calendar-*` set); these are the Calendar *page*'s own chrome — its
+  // filter bar and the event window layered above it.
+  calendarBackground: 'var(--gd-calendar-bg, #ffffff)',
+  calendarButton: 'var(--gd-calendar-nav-btn-bg, #2c3e50)',
+  calendarButtonText: 'var(--gd-calendar-nav-btn-text, #ffffff)',
+  calendarModalBackground: 'var(--gd-members-calendar-modal-bg, var(--gd-card-bg, #ffffff))',
+  calendarModalInputBackground: 'var(--gd-members-calendar-modal-input-bg, var(--gd-input-bg, #ffffff))',
+  // The matte behind a `<video>` or an embedded player. Deliberately *not* a
+  // theme value: it is the letterbox a frame is centred in, and a gym tinting
+  // it would tint the film rather than the page. It lives here so no component
+  // spells a colour of its own, not because it is configurable.
+  mediaLetterbox: '#000000',
+} as const;
+
+/**
+ * A Section Card's border — the two Members App card settings (§3).
+ *
+ * `MembersSectionCard` applies it to every navigation tile, and the content
+ * cards of My Membership, My Training Plan, My Bookings, My Nutrition and the
+ * dashboard spread `sectionCardStyle` below, so the ticket's list is one rule
+ * rather than one rule per page.
+ */
+export const sectionCardBorder: CSSProperties = {
+  borderStyle: 'solid',
+  borderColor: memberTheme.cardBorderColor,
+  borderWidth: memberTheme.cardBorderWidth,
+};
+
+/** The surface a section's contents sit in: the card background plus that border. */
+export const sectionCardStyle: CSSProperties = {
+  background: memberTheme.surface,
+  borderRadius: 12,
+  ...sectionCardBorder,
+};
+
+/** The hairline between two rows inside a card. */
+export const rowDividerStyle: CSSProperties = {
+  borderTop: `1px solid ${memberTheme.separator}`,
+};
+
+/** A text input, a `<select>` or a `<textarea>`. */
+export const inputStyle: CSSProperties = {
+  background: memberTheme.inputBackground,
+  border: `1px solid ${memberTheme.inputBorder}`,
+  color: memberTheme.text,
+  borderRadius: 8,
+};
+
+/** The filled action of a screen or a form. */
+export const primaryButtonStyle: CSSProperties = {
+  background: memberTheme.primaryButton,
+  color: memberTheme.primaryButtonText,
+  border: 'none',
+  borderRadius: 8,
+  cursor: 'pointer',
+};
+
+/** The action beside it. */
+export const secondaryButtonStyle: CSSProperties = {
+  background: 'transparent',
+  color: memberTheme.secondaryButtonText,
+  border: `1px solid ${memberTheme.cardBorderColor}`,
+  borderRadius: 8,
+  cursor: 'pointer',
+};
+
+/** The action that undoes something — a cancellation, a removal. */
+export const destructiveButtonStyle: CSSProperties = {
+  background: 'transparent',
+  color: memberTheme.statusError,
+  border: `1px solid ${memberTheme.statusError}`,
+  borderRadius: 8,
+  cursor: 'pointer',
+};
+
+export type StatusTone = 'success' | 'warning' | 'error' | 'info' | 'neutral';
+
+/**
+ * A status pill's two colours.
+ *
+ * The foreground is the Theme's own status colour; the background is that
+ * colour at 12% over the card surface, mixed in the browser rather than stored,
+ * so a gym that themes `statusError` gets a matching tint instead of a pink
+ * nobody configured. It is mixed over `surface` rather than over `transparent`
+ * so the pill stays opaque on a Section Card carrying artwork (#982), where the
+ * card's own background is the uploaded image.
+ *
+ * It lives here because the same four states are rendered on the dashboard, on
+ * My Membership and on My Bookings, which each carried their own copy of the
+ * map — three places to change one colour.
+ */
+export function statusPillStyle(tone: StatusTone): CSSProperties {
+  const fg = STATUS_TONE_COLOR[tone];
+  return {
+    background: `color-mix(in srgb, ${fg} 12%, ${memberTheme.surface})`,
+    color: fg,
+    borderRadius: 999,
+    padding: '3px 10px',
+    fontSize: 12,
+    fontWeight: 600,
+    whiteSpace: 'nowrap',
+  };
+}
+
+const STATUS_TONE_COLOR: Record<StatusTone, string> = {
+  success: memberTheme.statusSuccess,
+  warning: memberTheme.statusWarning,
+  error: memberTheme.statusError,
+  info: memberTheme.statusInfo,
+  neutral: memberTheme.textMuted,
+};
+
+/**
+ * Which tone a lifecycle status reads in. One answer for the whole app: an
+ * Assigned Plan's status is shown on the dashboard and on My Membership, and a
+ * booking's on My Bookings and the Calendar, so neither pair may disagree.
+ */
+export function statusTone(status: string): StatusTone {
+  switch (status) {
+    case 'active':
+    case 'paid':
+    case 'booked':
+    case 'completed':
+      return 'success';
+    case 'paused':
+    case 'pending':
+    case 'waitlisted':
+      return 'warning';
+    case 'cancelled':
+    case 'failed':
+    case 'full':
+      return 'error';
+    case 'scheduled':
+    case 'expired':
+      return 'info';
+    default:
+      return 'neutral';
+  }
+}
+
+/** A short banner reporting something that just happened. */
+export function noticeStyle(tone: StatusTone): CSSProperties {
+  const fg = STATUS_TONE_COLOR[tone];
+  return {
+    background: `color-mix(in srgb, ${fg} 12%, ${memberTheme.surface})`,
+    color: fg,
+    border: `1px solid color-mix(in srgb, ${fg} 35%, ${memberTheme.surface})`,
+    padding: '10px 14px',
+    borderRadius: 8,
+    fontSize: 14,
+  };
+}

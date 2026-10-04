@@ -11,11 +11,16 @@ import { GymSwitcher } from '@/components/GymSwitcher';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { MembersBackground } from '@/components/MembersBackground';
 import { AdminBar } from '@/components/AdminBar';
+import { memberTheme } from '@/lib/memberChrome';
 
 export const metadata: Metadata = {
   title: 'Gymdesk',
   description: 'Your gym, in your pocket.',
   other: {
+    // Static metadata, rendered before any gym is resolved, so it cannot
+    // follow a Theme: `theme-color` tints the browser's own chrome and is read
+    // from the document head at navigation time. Every *painted* surface takes
+    // its value from `lib/memberChrome.ts` instead (#983).
     'theme-color': '#18181b',
   },
 };
@@ -41,7 +46,7 @@ export default async function LocaleLayout({
           <meta name="apple-mobile-web-app-capable" content="yes" />
           <link rel="manifest" href="/manifest.json" />
         </head>
-        <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: 'var(--gd-app-bg, #f5f5f5)', color: 'var(--gd-text, #111827)', fontSize: 16 }}>
+        <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: memberTheme.pageBackground, color: memberTheme.text, fontSize: 16 }}>
           <NextIntlClientProvider messages={messages}>
             <ImpersonationProvider>
               <AppProvider>

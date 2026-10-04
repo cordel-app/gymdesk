@@ -8,6 +8,17 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import {
+  destructiveButtonStyle,
+  memberTheme,
+  noticeStyle,
+  primaryButtonStyle,
+  rowDividerStyle,
+  secondaryButtonStyle,
+  sectionCardStyle,
+  statusPillStyle,
+  statusTone,
+} from '@/lib/memberChrome';
 
 type BenefitCategory = 'oneoff' | 'session' | 'periodical';
 
@@ -284,7 +295,7 @@ export default function MembershipPage() {
   if (error) {
     return (
       <main style={styles.container}>
-        <p style={{ ...styles.hint, color: '#c0392b' }}>{error}</p>
+        <p style={{ ...styles.hint, color: memberTheme.statusError }}>{error}</p>
       </main>
     );
   }
@@ -401,7 +412,7 @@ export default function MembershipPage() {
         {card?.payment_method && !card.can_remove && (
           <p style={styles.hint}>{t('payment_method.remove_blocked')}</p>
         )}
-        {cardError && <p style={{ ...styles.hint, color: '#c0392b' }}>{cardError}</p>}
+        {cardError && <p style={{ ...styles.hint, color: memberTheme.statusError }}>{cardError}</p>}
       </section>
 
       {membership.benefits.length > 0 && (
@@ -578,88 +589,69 @@ export default function MembershipPage() {
   );
 }
 
+// #983 — both pills read their tone from `lib/memberChrome.ts`, which is also
+// where the dashboard and My Bookings read theirs: the same billing event
+// status must not be one colour here and another there.
 function EventStatusPill({ status, label }: { status: string; label: string }) {
-  const COLORS: Record<string, { bg: string; fg: string }> = {
-    scheduled: { bg: '#e8f4fd', fg: '#1565c0' },
-    paid:      { bg: '#e6f6ec', fg: '#1e7e40' },
-    failed:    { bg: '#fdeaea', fg: '#c0392b' },
-    pending:   { bg: '#fff4e0', fg: '#b26a00' },
-  };
-  const c = COLORS[status] ?? { bg: '#f0f0f0', fg: '#666' };
-  return (
-    <span style={{ background: c.bg, color: c.fg, borderRadius: 999, padding: '2px 8px', fontSize: 11, fontWeight: 600 }}>
-      {label}
-    </span>
-  );
+  return <span style={{ ...statusPillStyle(statusTone(status)), padding: '2px 8px', fontSize: 11 }}>{label}</span>;
 }
 
 function StatusPill({ status, label }: { status: string; label: string }) {
-  const COLORS: Record<string, { bg: string; fg: string }> = {
-    active:    { bg: '#e6f6ec', fg: '#1e7e40' },
-    paused:    { bg: '#fff4e0', fg: '#b26a00' },
-    cancelled: { bg: '#fdeaea', fg: '#c0392b' },
-    expired:   { bg: '#f3eafd', fg: '#7d3cbd' },
-  };
-  const c = COLORS[status] ?? { bg: '#f0f0f0', fg: '#666' };
-  return (
-    <span style={{ background: c.bg, color: c.fg, borderRadius: 999, padding: '4px 12px', fontSize: 12, fontWeight: 600 }}>
-      {label}
-    </span>
-  );
+  return <span style={{ ...statusPillStyle(statusTone(status)), padding: '4px 12px' }}>{label}</span>;
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  cardLine: { margin: '0 0 4px', fontSize: 15, fontWeight: 600, color: '#18181b' },
+  cardLine: { margin: '0 0 4px', fontSize: 15, fontWeight: 600, color: memberTheme.text },
   cardActions: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 },
   removeCardBtn: {
-    background: 'transparent', color: '#c0392b', border: '1px solid #e4b3ad',
-    borderRadius: 8, padding: '10px 16px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+    ...destructiveButtonStyle,
+    padding: '10px 16px', fontSize: 14, fontWeight: 600,
   },
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
-  card: { background: '#fff', borderRadius: 12, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
+  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  card: { ...sectionCardStyle, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
   cardHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 },
-  planName: { margin: 0, fontSize: 20, fontWeight: 700, color: '#18181b' },
-  planDesc: { margin: '4px 0 0', fontSize: 13, color: '#71717a' },
+  planName: { margin: 0, fontSize: 20, fontWeight: 700, color: memberTheme.text },
+  planDesc: { margin: '4px 0 0', fontSize: 13, color: memberTheme.textMuted },
   dl: { margin: 0 },
-  row: { display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderTop: '1px solid #f0f0f0' },
-  dt: { margin: 0, fontSize: 13, color: '#71717a' },
-  dd: { margin: 0, fontSize: 15, color: '#18181b', fontWeight: 500 },
-  discount: { fontSize: 12, color: '#b26a00', fontWeight: 400 },
-  promoLine: { fontSize: 12, color: '#7d3cbd', fontWeight: 400, marginTop: 2 },
+  row: { ...rowDividerStyle, display: 'flex', justifyContent: 'space-between', padding: '8px 0' },
+  dt: { margin: 0, fontSize: 13, color: memberTheme.textMuted },
+  dd: { margin: 0, fontSize: 15, color: memberTheme.text, fontWeight: 500 },
+  discount: { fontSize: 12, color: memberTheme.statusWarning, fontWeight: 400 },
+  promoLine: { fontSize: 12, color: memberTheme.statusInfo, fontWeight: 400, marginTop: 2 },
   section: { marginTop: 24 },
-  h2: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: 'var(--gd-color-h2, #18181b)' },
-  h3: { margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: 'var(--gd-color-h3, #71717a)' },
+  h2: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: memberTheme.title2 },
+  h3: { margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: memberTheme.title3 },
   benefitGroup: { marginBottom: 12 },
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
-  benefitItem: { background: '#fff', borderRadius: 8, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
-  benefitMeta: { fontSize: 13, color: '#71717a' },
+  benefitItem: { ...sectionCardStyle, borderRadius: 8, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
+  benefitMeta: { fontSize: 13, color: memberTheme.textMuted },
   eventList: { listStyle: 'none', padding: 0, margin: 0 },
-  eventItem: { background: '#fff', borderRadius: 8, padding: '12px 14px', marginBottom: 6 },
+  eventItem: { ...sectionCardStyle, borderRadius: 8, padding: '12px 14px', marginBottom: 6 },
   eventLine: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  eventLabel: { fontSize: 14, fontWeight: 500, color: '#18181b' },
+  eventLabel: { fontSize: 14, fontWeight: 500, color: memberTheme.text },
   eventAmount: { fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums' },
-  eventSub: { fontSize: 12, color: '#71717a', marginTop: 4 },
-  receiptBtn: { background: 'none', border: 'none', padding: 0, color: '#1e7e40', textDecoration: 'underline', fontSize: 12, cursor: 'pointer' },
-  emptyCard: { background: '#fff', borderRadius: 12, padding: '40px 24px', textAlign: 'center' },
+  eventSub: { fontSize: 12, color: memberTheme.textMuted, marginTop: 4 },
+  receiptBtn: { background: 'none', border: 'none', padding: 0, color: memberTheme.link, textDecoration: 'underline', fontSize: 12, cursor: 'pointer' },
+  emptyCard: { ...sectionCardStyle, padding: '40px 24px', textAlign: 'center' },
   emptyTitle: { margin: '8px 0 12px', fontSize: 20, fontWeight: 700 },
-  hint: { color: '#71717a', fontSize: 14, textAlign: 'center', margin: 0 },
+  hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: 0 },
   // Payment banner
-  paymentBanner: { marginTop: 16, background: '#fff8e1', border: '1px solid #f9c734', borderRadius: 12, padding: 16 },
+  paymentBanner: { ...noticeStyle('warning'), marginTop: 16, borderRadius: 12, padding: 16 },
   bannerContent: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 },
-  bannerHeading: { margin: 0, fontSize: 14, fontWeight: 600, color: '#92600a' },
-  bannerAmount: { margin: '4px 0 0', fontSize: 20, fontWeight: 700, color: '#18181b' },
-  payNowBtn: { flexShrink: 0, background: '#f9c734', color: '#18181b', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 700, cursor: 'pointer' },
+  bannerHeading: { margin: 0, fontSize: 14, fontWeight: 600, color: 'inherit' },
+  bannerAmount: { margin: '4px 0 0', fontSize: 20, fontWeight: 700, color: memberTheme.text },
+  payNowBtn: { ...primaryButtonStyle, flexShrink: 0, padding: '10px 20px', fontSize: 14, fontWeight: 700 },
   startPaymentRow: { marginTop: 12, display: 'flex', justifyContent: 'flex-end' },
-  startPaymentBtn: { background: 'transparent', color: '#71717a', border: '1px solid #e4e4e7', borderRadius: 8, padding: '8px 16px', fontSize: 13, cursor: 'pointer' },
+  startPaymentBtn: { ...secondaryButtonStyle, padding: '8px 16px', fontSize: 13 },
   // Consent modal
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 },
-  modal: { background: '#fff', borderRadius: 16, padding: 24, maxWidth: 480, width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' },
-  modalTitle: { margin: '0 0 12px', fontSize: 18, fontWeight: 700, color: 'var(--gd-color-h2, #18181b)' },
-  modalBody: { margin: '0 0 16px', fontSize: 14, color: '#3f3f46', lineHeight: 1.6 },
-  checkLabel: { display: 'flex', alignItems: 'flex-start', fontSize: 13, color: '#18181b', cursor: 'pointer', marginBottom: 16 },
-  submitError: { margin: '0 0 12px', fontSize: 13, color: '#c0392b' },
+  modal: { ...sectionCardStyle, borderRadius: 16, padding: 24, maxWidth: 480, width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' },
+  modalTitle: { margin: '0 0 12px', fontSize: 18, fontWeight: 700, color: memberTheme.title2 },
+  modalBody: { margin: '0 0 16px', fontSize: 14, color: memberTheme.textSecondary, lineHeight: 1.6 },
+  checkLabel: { display: 'flex', alignItems: 'flex-start', fontSize: 13, color: memberTheme.text, cursor: 'pointer', marginBottom: 16 },
+  submitError: { margin: '0 0 12px', fontSize: 13, color: memberTheme.statusError },
   modalActions: { display: 'flex', gap: 10, justifyContent: 'flex-end' },
-  cancelBtn: { background: 'transparent', border: '1px solid #e4e4e7', borderRadius: 8, padding: '10px 16px', fontSize: 14, cursor: 'pointer', color: '#71717a' },
-  confirmBtn: { background: '#18181b', color: '#fff', border: 'none', borderRadius: 8, padding: '10px 20px', fontSize: 14, fontWeight: 600, cursor: 'pointer', transition: 'opacity 0.15s' },
+  cancelBtn: { ...secondaryButtonStyle, padding: '10px 16px', fontSize: 14 },
+  confirmBtn: { ...primaryButtonStyle, padding: '10px 20px', fontSize: 14, fontWeight: 600, transition: 'opacity 0.15s' },
 };

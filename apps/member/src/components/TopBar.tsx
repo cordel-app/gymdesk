@@ -3,6 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
+import { memberTheme } from '@/lib/memberChrome';
 
 /**
  * #361: replaces the old bottom tab bar. Home is reached via its own
@@ -42,15 +43,16 @@ export function TopBar() {
       alignItems: 'center',
       justifyContent: 'space-between',
       padding: '10px 16px',
-      // #833 §2 — the Members App header's own colour, text colour and font.
-      // Each follows the Admin Header setting it inherits from unless the
-      // active Theme overrides it; lib/membersAppTokens.ts writes the three
-      // variables. Before this the bar borrowed `--gd-sidebar-bg`, which is the
-      // Admin sidebar's colour and was never the header's.
-      background: 'var(--gd-members-header-bg, var(--gd-header-bg, #fff))',
-      color: 'var(--gd-members-header-text, var(--gd-text, #18181b))',
-      fontFamily: 'var(--gd-members-header-font, inherit)',
-      borderBottom: 'var(--gd-header-sep-height, 1px) solid var(--gd-header-sep-color, #e5e5e5)',
+      // #833 §2 — the Members App header's own colour, text colour, font and
+      // separator. Each follows the Admin Header setting it inherits from
+      // unless the active Theme overrides it; lib/membersAppTokens.ts writes
+      // the five variables and lib/memberChrome.ts is where this app reads
+      // them (#983). Before #833 the bar borrowed `--gd-sidebar-bg`, which is
+      // the Admin sidebar's colour and was never the header's.
+      background: memberTheme.headerBackground,
+      color: memberTheme.headerText,
+      fontFamily: memberTheme.headerFont,
+      borderBottom: `${memberTheme.headerSeparatorWidth} solid ${memberTheme.headerSeparatorColor}`,
     }}>
       {isHome ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -91,7 +93,7 @@ export function TopBar() {
               <span style={{
                 position: 'absolute', top: 0, right: 0,
                 width: 8, height: 8, borderRadius: '50%',
-                background: '#ef4444',
+                background: memberTheme.statusError,
               }} />
             )}
           </button>
