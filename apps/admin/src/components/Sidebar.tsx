@@ -9,6 +9,13 @@ import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { navigationGroups, filterNavGroups, NavItem as NavItemType } from '@/config/navigationGroups';
 import { NavGroup, NavBadge } from './NavGroup';
 import { failedPaymentsQueueHref, useFailedPaymentsAttention } from '@/lib/failedPaymentsAttention';
+import {
+  SIDEBAR_DESKTOP_MEDIA_QUERY,
+  navGroupContainsActivePath,
+  readSidebarCollapsed,
+  sidebarWidth,
+  writeSidebarCollapsed,
+} from '@/lib/sidebarCollapse';
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const t = useTranslations();
@@ -18,6 +25,15 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { isImpersonating } = useImpersonation();
   const { flags } = useFeatureFlags();
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  // #1003: collapsing is a desktop affordance, so it is two pieces of state —
+  // the stored preference, and whether this viewport is a desktop one at all.
+  // Both start at their not-collapsed value and are resolved after mount, which
+  // is also what keeps the server-rendered markup and the first client render
+  // identical (the same reason `expandedGroups` starts empty).
+  const [collapsedPref, setCollapsedPref] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
+  const [toggleHovered, setToggleHovered] = useState(false);
+  const collapsed = isDesktop && collapsedPref;
 
   // Determine user role for filtering. The superadmin bypass only applies in
   // native capacity — while impersonating, nav/feature-key gating must reflect
@@ -43,14 +59,38 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     sessionStorage.setItem('navGroupsExpanded', JSON.stringify([...expandedGroups]));
   }, [expandedGroups]);
 
+  // #1003: the stored collapse preference, and the breakpoint it applies at.
+  // On mobile the panel is the drawer — open at its full width or off-screen —
+  // so the preference is ignored there rather than shrinking it to a strip (§5).
+  useEffect(() => {
+    setCollapsedPref(readSidebarCollapsed());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const query = window.matchMedia(SIDEBAR_DESKTOP_MEDIA_QUERY);
+    setIsDesktop(query.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
+    query.addEventListener('change', onChange);
+    return () => query.removeEventListener('change', onChange);
+  }, []);
+
+  function setCollapsed(next: boolean) {
+    setCollapsedPref(next);
+    writeSidebarCollapsed(next);
+  }
+
   // Auto-expand group containing active route
   useEffect(() => {
     const filteredGroups = filterNavGroups(navigationGroups, userRole, flags);
 
     for (const group of filteredGroups) {
-      const hasActiveItem = group.items.some(item =>
-        pathname === item.href ||
-        (item.children?.some(child => pathname === child.href))
+      // #1003: one rule for "the open page is inside this group", shared with
+      // the group header and the collapsed icon, so the highlight cannot move
+      // when the sidebar is collapsed.
+      const hasActiveItem = navGroupContainsActivePath(
+        { items: group.items.map(translateItem) },
+        pathname,
       );
 
       if (hasActiveItem && !expandedGroups.has(group.id)) {
@@ -89,6 +129,17 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     label: t('nav.failed_payments_badge', { count: attention.count }),
   } : null;
 
+  // #1003: clicking a section's icon while the sidebar is collapsed cannot
+  // reveal that section's items — there is nowhere to show them. So it brings
+  // the sidebar back and opens the group it names, which is what keeps every
+  // navigation option reachable in collapsed mode without a second flyout menu.
+  // It *adds* to the group state and never resets it, so §3's "the previously
+  // expanded navigation context is restored" still holds.
+  function expandIntoGroup(groupId: string) {
+    setCollapsed(false);
+    setExpandedGroups(prev => new Set(prev).add(groupId));
+  }
+
   function toggleGroup(groupId: string) {
     setExpandedGroups(prev => {
       const next = new Set(prev);
@@ -107,7 +158,13 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     // below the top bar, so a panel taller than the viewport would push its own
     // bottom items out of reach with nothing able to scroll them back.
     <aside className="sidebar-panel" style={{
-      width: 220,
+      // #1003: the width is the collapsed state, and the only thing that moves
+      // the layout — `main` is the row's flexible item, so it takes the space
+      // back by itself. The transition is what makes the change smooth (§4);
+      // the drawer's own slide is `left`, on mobile, where `collapsed` is
+      // always false.
+      width: sidebarWidth(collapsed),
+      transition: 'width 150ms ease-in-out',
       background: 'var(--gd-sidebar-bg, var(--chrome, #1a1a2e))',
       color: 'var(--gd-sidebar-text, #fff)',
       display: 'flex',
@@ -115,6 +172,47 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       flex: 1,
       minHeight: 0,
     }}>
+      {/* #1003 §1: the collapse control, on desktop only. It sits outside the
+          <nav> so it cannot scroll away from the navigation it controls, and it
+          adds no second scroll container (#883). */}
+      {isDesktop && (
+        <div style={{
+          display: 'flex',
+          justifyContent: collapsed ? 'center' : 'flex-end',
+          padding: collapsed ? '8px 0 0' : '8px 12px 0',
+          flexShrink: 0,
+        }}>
+          <button
+            type="button"
+            onClick={() => setCollapsed(!collapsed)}
+            onMouseEnter={() => setToggleHovered(true)}
+            onMouseLeave={() => setToggleHovered(false)}
+            title={collapsed ? t('nav.expand_sidebar') : t('nav.collapse_sidebar')}
+            aria-label={collapsed ? t('nav.expand_sidebar') : t('nav.collapse_sidebar')}
+            aria-expanded={!collapsed}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 28,
+              height: 28,
+              padding: 0,
+              borderRadius: 6,
+              border: 'none',
+              cursor: 'pointer',
+              fontSize: 14,
+              lineHeight: 1,
+              // The sidebar's own palette, never a colour of this control's own.
+              background: toggleHovered
+                ? 'var(--gd-sidebar-hover-bg, rgba(255,255,255,0.08))'
+                : 'transparent',
+              color: 'var(--gd-sidebar-text, rgba(255,255,255,0.6))',
+            }}
+          >
+            {collapsed ? '»' : '«'}
+          </button>
+        </div>
+      )}
       {/* The one scroll container of the navigation (#883): it takes the height
           the panel has left and scrolls its own overflow. `minHeight: 0` is what
           lets a flex child shrink below its content, `overscrollBehavior:
@@ -131,11 +229,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         overscrollBehavior: 'contain',
         WebkitOverflowScrolling: 'touch',
       }}>
-        {translatedGroups.map(group => {
-          const isAnyChildActive = group.items.some(item =>
-            pathname === item.href ||
-            (item.children?.some(child => pathname === child.href))
-          );
+        {translatedGroups.map((group, index) => {
+          const isAnyChildActive = navGroupContainsActivePath(group, pathname);
 
           return (
             <NavGroup
@@ -143,10 +238,15 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
               group={group}
               label={t(`nav.groups.${group.id}` as any)}
               isExpanded={expandedGroups.has(group.id)}
-              onToggle={() => toggleGroup(group.id)}
+              onToggle={() => (collapsed ? expandIntoGroup(group.id) : toggleGroup(group.id))}
               onNavigate={onNavigate}
               isAnyChildActive={isAnyChildActive}
               badge={group.id === 'payments' ? paymentsBadge : null}
+              collapsed={collapsed}
+              // #1020: the group declares the divider; the sidebar is the only
+              // thing that knows this group is the first one on screen for this
+              // role, and a leading rule separates a section from nothing.
+              separatorAbove={!!group.separatorAbove && index > 0}
             />
           );
         })}

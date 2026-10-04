@@ -2,6 +2,7 @@
 
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
+import { memberTheme, primaryButtonStyle, sectionCardStyle } from '@/lib/memberChrome';
 
 export default function PaymentErrorPage() {
   const t = useTranslations();
@@ -23,11 +24,11 @@ export default function PaymentErrorPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 24, maxWidth: 480, margin: '40px auto', textAlign: 'center' },
-  card: { background: '#fff', borderRadius: 16, padding: '40px 24px', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' },
-  icon: { fontSize: 40, color: '#c0392b', marginBottom: 12 },
-  title: { margin: '0 0 24px', fontSize: 20, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
+  card: { ...sectionCardStyle, borderRadius: 16, padding: '40px 24px', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' },
+  icon: { fontSize: 40, color: memberTheme.statusError, marginBottom: 12 },
+  title: { margin: '0 0 24px', fontSize: 20, fontWeight: 700, color: memberTheme.title1 },
   retryBtn: {
-    background: '#18181b', color: '#fff', border: 'none',
-    borderRadius: 8, padding: '10px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+    ...primaryButtonStyle,
+    padding: '10px 24px', fontSize: 14, fontWeight: 600,
   },
 };

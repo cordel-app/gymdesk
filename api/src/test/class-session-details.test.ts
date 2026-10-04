@@ -10,12 +10,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
-  TEST_AUTH_HEADER,
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
+  createTestStaffForMembership,
   eventually,
   request,
+  TEST_AUTH_HEADER,
 } from './helpers';
 
 let gymId: string;
@@ -88,6 +89,8 @@ async function createTrainer(label: string): Promise<number> {
     `SELECT id FROM gym_memberships WHERE gym_id = ? AND name = ? ORDER BY id DESC LIMIT 1`,
     [gymId, label],
   );
+  // #986: a trainer is an active Staff record, not a coach role on the login.
+  await createTestStaffForMembership(gymId, rows[0].id, label, 'Coach');
   return rows[0].id;
 }
 

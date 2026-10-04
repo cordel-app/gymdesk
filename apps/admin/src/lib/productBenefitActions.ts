@@ -37,21 +37,63 @@ export const PROMOTION_ITEM_ACTIONS: readonly ProductBenefitAction[] = [
 
 /**
  * §5/§16 — what a Membership Plan may configure. A strict subset: "Membership
- * Plans cannot configure `Fixed discount` or `Fixed Price`".
+ * Plans cannot configure `Fixed discount` or `Fixed Price`", and since #997 not
+ * `% Discount` either — a Plan benefit is charged at the Product's normal price
+ * or waived outright.
  */
 export const PLAN_BENEFIT_ACTIONS: readonly ProductBenefitAction[] = [
   'no_benefit',
   'waive',
+];
+
+/**
+ * #997 — stored on Plan-side rows written before the ticket, never selectable
+ * again. The API module is what decides this (`LEGACY_PLAN_BENEFIT_ACTIONS`
+ * there); this copy exists so the editor can render the stored value as a
+ * **disabled** option rather than quietly reading it as `No benefit`, which
+ * would quote the full price for a line the gym agreed at a discount.
+ *
+ * A Promotion retires nothing (§8), so this is empty in that context.
+ */
+export const LEGACY_PLAN_BENEFIT_ACTIONS: readonly ProductBenefitAction[] = [
   'percentage_discount',
+];
+
+/** Everything a Plan-side row may hold — what a read answers with. */
+export const STORED_PLAN_BENEFIT_ACTIONS: readonly ProductBenefitAction[] = [
+  ...PLAN_BENEFIT_ACTIONS,
+  ...LEGACY_PLAN_BENEFIT_ACTIONS,
 ];
 
 /** §13's neutral default: the item is included at its normal price. */
 export const DEFAULT_BENEFIT_ACTION: ProductBenefitAction = 'no_benefit';
 
+/** What the dropdown offers. */
 export function benefitActionsFor(
   context: ProductBenefitContext,
 ): readonly ProductBenefitAction[] {
   return context === 'promotion' ? PROMOTION_ITEM_ACTIONS : PLAN_BENEFIT_ACTIONS;
+}
+
+/** What a stored row may read as — wider than the above by #997's retired set. */
+export function storedBenefitActionsFor(
+  context: ProductBenefitContext,
+): readonly ProductBenefitAction[] {
+  return context === 'promotion' ? PROMOTION_ITEM_ACTIONS : STORED_PLAN_BENEFIT_ACTIONS;
+}
+
+/**
+ * #997 — a treatment this context stores but no longer offers. The editor
+ * renders it as a disabled option while the row holds it, and
+ * `toBenefitItems()` still submits it unchanged, which is what the API accepts
+ * as *keeping* it.
+ */
+export function isRetiredBenefitAction(
+  context: ProductBenefitContext, action: unknown,
+): boolean {
+  return typeof action === 'string'
+    && (storedBenefitActionsFor(context) as readonly string[]).includes(action)
+    && !(benefitActionsFor(context) as readonly string[]).includes(action);
 }
 
 /**
@@ -71,16 +113,17 @@ export function isPercentageBenefitAction(action: ProductBenefitAction): boolean
 
 /**
  * The action a stored row reads as in a given context. A row carrying an action
- * its context may not configure (only reachable if the catalogue is edited
+ * its context cannot even *store* (only reachable if the catalogue is edited
  * behind the screen's back) reads as the neutral default rather than leaking a
- * `fixed_price` into a Plan's three-option dropdown — exactly what
- * `toProductBenefit()` does server-side.
+ * `fixed_price` into a Plan's dropdown — exactly what `toProductBenefit()` does
+ * server-side, and off the same **stored** set, so #997's retired
+ * `percentage_discount` still reads as itself on the line that holds it.
  */
 export function benefitActionOf(
   context: ProductBenefitContext, action: unknown,
 ): ProductBenefitAction {
   return typeof action === 'string'
-    && (benefitActionsFor(context) as readonly string[]).includes(action)
+    && (storedBenefitActionsFor(context) as readonly string[]).includes(action)
     ? action as ProductBenefitAction
     : DEFAULT_BENEFIT_ACTION;
 }

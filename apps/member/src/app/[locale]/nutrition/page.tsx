@@ -9,6 +9,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';
 import { NutritionItemRow } from '@/components/NutritionItemRow';
+import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
 import {
   NutritionFoodItem,
   NutritionGoalItem,
@@ -76,7 +77,7 @@ export default function NutritionPage() {
   }
 
   if (error) {
-    return <main style={styles.container}><p style={{ ...styles.hint, color: '#c0392b' }}>{error}</p></main>;
+    return <main style={styles.container}><p style={{ ...styles.hint, color: memberTheme.statusError }}>{error}</p></main>;
   }
 
   // Defaulted rather than read straight off the payload: the Member app and the
@@ -165,15 +166,15 @@ export default function NutritionPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container:  { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title:      { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
+  title:      { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
   section:    { marginBottom: 20 },
-  h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: 'var(--gd-color-h2, #71717a)', textTransform: 'uppercase', letterSpacing: '0.05em' },
-  card:       { background: '#fff', borderRadius: 12, padding: '4px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
-  mealRow:    { padding: '12px 0', borderBottom: '1px solid #f0f0f0' },
-  mealName:   { margin: 0, fontSize: 15, fontWeight: 700, color: '#18181b' },
-  mealType:   { fontSize: 12, fontWeight: 500, color: '#71717a', textTransform: 'none' },
-  mealNotes:  { margin: '4px 0 0', fontSize: 12, color: '#a1a1aa', fontStyle: 'italic' },
-  sectionEmpty: { color: '#a1a1aa', fontSize: 13, margin: '14px 0' },
-  emptyCard:  { background: '#fff', borderRadius: 12, padding: '40px 24px', textAlign: 'center' },
-  hint:       { color: '#71717a', fontSize: 14, textAlign: 'center', margin: '20px 0' },
+  h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, textTransform: 'uppercase', letterSpacing: '0.05em' },
+  card:       { ...sectionCardStyle, padding: '4px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
+  mealRow:    { padding: '12px 0', borderBottom: `1px solid ${memberTheme.separator}` },
+  mealName:   { margin: 0, fontSize: 15, fontWeight: 700, color: memberTheme.text },
+  mealType:   { fontSize: 12, fontWeight: 500, color: memberTheme.textMuted, textTransform: 'none' },
+  mealNotes:  { margin: '4px 0 0', fontSize: 12, color: memberTheme.textMuted, fontStyle: 'italic' },
+  sectionEmpty: { color: memberTheme.textMuted, fontSize: 13, margin: '14px 0' },
+  emptyCard:  { ...sectionCardStyle, padding: '40px 24px', textAlign: 'center' },
+  hint:       { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
 };

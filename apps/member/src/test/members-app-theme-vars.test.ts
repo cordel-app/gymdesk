@@ -156,7 +156,7 @@ describe('Members App theme settings: resolution (#833)', () => {
   });
 });
 
-describe('Members App theme settings: where they are painted (#833)', () => {
+describe('Members App theme settings: where they are painted (#833, #983)', () => {
   // Comments in these files name the variables they replaced, so the scans run
   // on comment-free code.
   const read = (...parts: string[]) =>
@@ -165,6 +165,13 @@ describe('Members App theme settings: where they are painted (#833)', () => {
       .replace(/^\s*\/\/.*$/gm, '')
       .replace(/\{\/\*[\s\S]*?\*\/\}/g, '');
 
+  // #983 — the variables are read in one place now (`lib/memberChrome.ts`, the
+  // rule `listChrome.ts`/`formChrome.ts` are for the Admin app), and the
+  // surfaces spread the objects it exports. So "is this setting painted?" is a
+  // question about that module, and "does this surface follow the theme?" is a
+  // question about which object it spreads.
+  const chrome = read('lib', 'memberChrome.ts');
+
   it('applies them once the Theme’s own variables are written', () => {
     const provider = read('components', 'ThemeProvider.tsx');
     expect(provider).toContain('applyMembersAppTokens(tokens)');
@@ -172,53 +179,95 @@ describe('Members App theme settings: where they are painted (#833)', () => {
   });
 
   it('paints the header from the Members App header settings, not the sidebar', () => {
+    expect(chrome).toContain('var(--gd-members-header-bg');
+    expect(chrome).toContain('var(--gd-members-header-text');
+    expect(chrome).toContain('var(--gd-members-header-font');
+    expect(chrome).toContain('var(--gd-header-sep-height');
+    expect(chrome).toContain('var(--gd-header-sep-color');
     const topBar = read('components', 'TopBar.tsx');
-    expect(topBar).toContain('var(--gd-members-header-bg');
-    expect(topBar).toContain('var(--gd-members-header-text');
-    expect(topBar).toContain('var(--gd-members-header-font');
+    expect(topBar).toContain('memberTheme.headerBackground');
+    expect(topBar).toContain('memberTheme.headerText');
+    expect(topBar).toContain('memberTheme.headerFont');
+    expect(topBar).toContain('memberTheme.headerSeparatorWidth');
+    expect(topBar).toContain('memberTheme.headerSeparatorColor');
     expect(topBar, 'the header still borrows the sidebar colour').not.toContain('--gd-sidebar-bg');
   });
 
-  it('borders every Section Card, and only Section Cards', () => {
+  it('borders every Section Card from one declaration', () => {
+    expect(chrome).toContain('var(--gd-members-card-border,');
+    expect(chrome).toContain('var(--gd-members-card-border-width, 1px)');
+    // The tiles get it from the component every navigation card renders
+    // through; the content cards of the sections it does not wrap get it from
+    // `sectionCardStyle`. Neither restates the rule.
     const card = read('components', 'MembersSectionCard.tsx');
-    expect(card).toContain('var(--gd-members-card-border,');
-    expect(card).toContain('var(--gd-members-card-border-width, 1px)');
-    // The rule lives on the component every navigation card renders through,
-    // so no page restates it.
-    const home = read('app', '[locale]', 'page.tsx');
-    expect(home).not.toContain('--gd-members-card-border');
+    expect(card).toContain('...sectionCardBorder');
+    for (const page of [
+      ['app', '[locale]', 'page.tsx'],
+      ['app', '[locale]', 'membership', 'page.tsx'],
+      ['app', '[locale]', 'training', 'page.tsx'],
+      ['app', '[locale]', 'schedule', 'page.tsx'],
+      ['app', '[locale]', 'nutrition', 'page.tsx'],
+    ]) {
+      const src = read(...page);
+      expect(src, `${page.join('/')} does not use the shared Section Card surface`).toContain('sectionCardStyle');
+      expect(src, `${page.join('/')} restates the Section Card border`).not.toContain('--gd-members-card-border');
+    }
   });
 
   it('paints the titles from the Title 1/2/3 settings', () => {
-    const home = read('app', '[locale]', 'page.tsx');
-    expect(home).toContain('var(--gd-color-h1,');
-    expect(home).toContain('var(--gd-color-h2,');
-    const membership = read('app', '[locale]', 'membership', 'page.tsx');
-    expect(membership).toContain('var(--gd-color-h3,');
+    expect(chrome).toContain('var(--gd-color-h1,');
+    expect(chrome).toContain('var(--gd-color-h2,');
+    expect(chrome).toContain('var(--gd-color-h3,');
+    // …and every screen with a heading takes its colour from there, rather
+    // than from a literal of its own (§4).
+    for (const page of [
+      ['app', '[locale]', 'page.tsx'],
+      ['app', '[locale]', 'membership', 'page.tsx'],
+      ['app', '[locale]', 'nutrition', 'page.tsx'],
+      ['app', '[locale]', 'packages', 'page.tsx'],
+      ['app', '[locale]', 'profile', 'page.tsx'],
+      ['app', '[locale]', 'schedule', 'page.tsx'],
+      ['app', '[locale]', 'training', 'page.tsx'],
+      ['app', '[locale]', 'notifications', 'page.tsx'],
+    ]) {
+      expect(read(...page), `${page.join('/')} does not use a Title setting`).toContain('memberTheme.title1');
+    }
   });
 
   it('leaves no setting unpainted', () => {
     // Every Members App setting has to reach a surface: a setting the editor
     // persists but nothing reads is a setting that changes nothing (the #677
     // defect). The variables the FullCalendar sheet owns count through it.
-    const sources = [
-      read('components', 'TopBar.tsx'),
-      read('components', 'MembersSectionCard.tsx'),
-      read('components', 'CalendarThemeStyles.tsx'),
-      read('app', '[locale]', 'layout.tsx'),
-      read('app', '[locale]', 'page.tsx'),
-      read('app', '[locale]', 'membership', 'page.tsx'),
-      read('app', '[locale]', 'calendar', 'page.tsx'),
-    ].join('\n');
+    const sources = [chrome, read('components', 'CalendarThemeStyles.tsx')].join('\n');
     for (const { key, cssVar } of MEMBERS_APP_SETTINGS) {
       expect(sources, `${key} writes ${cssVar}, which nothing reads`).toContain(`var(${cssVar}`);
     }
   });
 
-  it('paints the calendar’s event window and its inputs from their own settings', () => {
+  it('paints the page background and the calendar surfaces where they belong', () => {
+    // The background setting shares `--gd-app-bg` with the Admin page
+    // background, so the body and the two full-height screens read it through
+    // the one `pageBackground` value.
+    expect(chrome).toContain("pageBackground: 'var(--gd-app-bg");
+    expect(read('app', '[locale]', 'layout.tsx')).toContain('memberTheme.pageBackground');
+    expect(chrome).toContain('var(--gd-members-calendar-modal-bg');
+    expect(chrome).toContain('var(--gd-members-calendar-modal-input-bg');
+    expect(chrome).toContain('var(--gd-calendar-nav-btn-bg');
     const calendar = read('app', '[locale]', 'calendar', 'page.tsx');
-    expect(calendar).toContain('var(--gd-members-calendar-modal-bg');
-    expect(calendar).toContain('var(--gd-members-calendar-modal-input-bg');
-    expect(calendar, 'the event window still borrows the sidebar colour').not.toContain('--gd-sidebar-bg');
+    expect(calendar).toContain('memberTheme.calendarModalBackground');
+    expect(calendar).toContain('memberTheme.calendarModalInputBackground');
+    // #983 §5/§7 — the filter bar's own buttons used to borrow the Admin
+    // sidebar's selected colour, which no Members App setting can move.
+    expect(calendar, 'the calendar still borrows the sidebar colour').not.toContain('--gd-sidebar-bg');
+    expect(calendar).toContain('memberTheme.calendarButton');
+  });
+
+  it('resolves the background scrim from the Members App setting, not the Admin one', () => {
+    // §6 — a Theme that overrides the Members App background must tint its
+    // artwork with that colour; reading `colors.pageBackground` directly is
+    // what made an overridden background invisible behind a photograph.
+    const background = read('components', 'MembersBackground.tsx');
+    expect(background).toContain('membersAppVarValue');
+    expect(background).not.toContain('colors?.pageBackground');
   });
 });

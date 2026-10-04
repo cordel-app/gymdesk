@@ -14,6 +14,13 @@ interface FeatureFlag {
   updated_by_name: string | null;
 }
 
+interface RoleAccessData {
+  roles: { role: string; label: string }[];
+  access: Record<string, Record<string, '-' | 'R' | 'RW'>>;
+}
+
+const ROLE_COL_WIDTH = 64;
+
 // Build a tree from flat dot-separated keys
 interface FlagNode {
   key: string;
@@ -65,6 +72,7 @@ export default function FeatureFlagsPage() {
   const [flags, setFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
+  const [roleAccess, setRoleAccess] = useState<RoleAccessData | null>(null);
 
   useEffect(() => {
     if (!gymLoading && !isSuperadmin) router.replace(`/${locale}`);
@@ -79,6 +87,7 @@ export default function FeatureFlagsPage() {
     try {
       const data = await apiFetch('/platform/feature-flags') as FeatureFlag[];
       setFlags(data);
+      setRoleAccess(await apiFetch('/platform/feature-flags/role-access') as RoleAccessData);
     } catch {
       toast(t('feature_flags.load_error'), 'error');
     } finally {
@@ -123,8 +132,9 @@ export default function FeatureFlagsPage() {
           paddingLeft: 16 + depth * 24,
           borderBottom: '1px solid var(--gd-border, #e5e7eb)',
           gap: 12,
+          minWidth: 'max-content',
         }}>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: 200 }}>
             <span style={{
               fontWeight: depth === 0 ? 600 : 400,
               fontSize: depth === 0 ? 15 : 14,
@@ -141,8 +151,20 @@ export default function FeatureFlagsPage() {
               {node.key}
             </span>
           </div>
+          {roleAccess?.roles.map(r => {
+            const level = roleAccess.access[node.key.split('.')[0]]?.[r.role];
+            return (
+              <span key={r.role} style={{
+                width: ROLE_COL_WIDTH, flexShrink: 0, textAlign: 'center', fontSize: 12,
+                fontFamily: 'monospace', fontWeight: level === 'RW' ? 600 : 400,
+                color: level === 'RW' ? 'var(--gd-text, #111827)' : 'var(--gd-text-muted, #6b7280)',
+              }}>
+                {level ?? ''}
+              </span>
+            );
+          })}
           {flag && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 230, flexShrink: 0 }}>
               {flag.updated_by_name && (
                 <span style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>
                   {flag.updated_by_name}
@@ -192,7 +214,7 @@ export default function FeatureFlagsPage() {
   }
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 860 }}>
+    <div style={{ padding: '24px 32px', maxWidth: 1400 }}>
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4, color: 'var(--gd-text, #111827)' }}>
         {t('feature_flags.title')}
       </h1>
@@ -205,7 +227,23 @@ export default function FeatureFlagsPage() {
         borderRadius: 8,
         overflow: 'hidden',
         background: 'var(--gd-card-bg, #fff)',
+        overflowX: 'auto',
       }}>
+        {!loading && roleAccess && (
+          <div style={{
+            display: 'flex', alignItems: 'center', padding: '8px 16px', gap: 12, minWidth: 'max-content',
+            borderBottom: '1px solid var(--gd-border, #e5e7eb)', fontSize: 12, fontWeight: 600,
+            color: 'var(--gd-text-muted, #6b7280)',
+          }}>
+            <div style={{ flex: 1, minWidth: 200 }}>{t('feature_flags.col_feature')}</div>
+            {roleAccess.roles.map(r => (
+              <span key={r.role} title={r.role} style={{ width: ROLE_COL_WIDTH, flexShrink: 0, textAlign: 'center' }}>
+                {r.label}
+              </span>
+            ))}
+            <div style={{ width: 230, flexShrink: 0 }}>{t('feature_flags.col_enabled')}</div>
+          </div>
+        )}
         {loading ? (
           <div style={{ padding: 32, textAlign: 'center', color: 'var(--gd-text-muted, #6b7280)' }}>
             {t('common.loading')}

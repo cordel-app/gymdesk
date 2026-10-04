@@ -12,6 +12,7 @@
     "exercises:import-free-db": "tsx src/scripts/import-free-exercise-db.ts",
     "memberships:multi-active": "tsx src/scripts/report-multi-active-memberships.ts",
     "nutrition:base-images": "tsx src/scripts/backfill-base-nutrition-images.ts",
+    "plans:percentage-benefits": "tsx src/scripts/report-plan-percentage-benefits.ts",
     "storage:rewrite-urls": "tsx src/scripts/rewrite-storage-urls.ts",
     "test": "vitest run",
     "test:watch": "vitest"

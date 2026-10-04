@@ -16,14 +16,20 @@ import {
   DEFAULT_BENEFIT_ACTION,
   MAX_BENEFIT_AMOUNT,
   NO_PRODUCT_BENEFIT,
+  LEGACY_PLAN_BENEFIT_ACTIONS,
   PLAN_BENEFIT_ACTIONS,
   PROMOTION_ITEM_ACTIONS,
+  STORED_PLAN_BENEFIT_ACTIONS,
   applyLineBenefit,
   benefitActionRequiresValue,
   benefitActionsFor,
   benefitConfigError,
   isBenefitActionAllowed,
+  isRetiredBenefitAction,
+  isStoredBenefitAction,
+  keepsRetiredBenefit,
   parseProductBenefitInput,
+  storedBenefitActionsFor,
   shapeProductBenefitRow,
   toProductBenefit,
 } from '../domain/productBenefitActions';
@@ -51,8 +57,12 @@ describe('#896 — the two option sets', () => {
     ]);
   });
 
-  it('offers a Membership Plan three — §16: it cannot configure Fixed discount or Fixed Price', () => {
-    expect(PLAN_BENEFIT_ACTIONS).toEqual(['no_benefit', 'waive', 'percentage_discount']);
+  it('offers a Membership Plan two — §16, and #997 for the third', () => {
+    // §16 keeps `Fixed discount` and `Fixed Price` out; #997 retired
+    // `% Discount` as well, so a Plan benefit is either charged at the
+    // Product's own price or waived.
+    expect(PLAN_BENEFIT_ACTIONS).toEqual(['no_benefit', 'waive']);
+    expect(PLAN_BENEFIT_ACTIONS).not.toContain('percentage_discount');
     expect(PLAN_BENEFIT_ACTIONS).not.toContain('fixed_discount');
     expect(PLAN_BENEFIT_ACTIONS).not.toContain('fixed_price');
   });
@@ -70,7 +80,7 @@ describe('#896 — the two option sets', () => {
     expect(benefitActionsFor('plan')).toBe(PLAN_BENEFIT_ACTIONS);
     expect(isBenefitActionAllowed('promotion', 'fixed_price')).toBe(true);
     expect(isBenefitActionAllowed('plan', 'fixed_price')).toBe(false);
-    expect(isBenefitActionAllowed('plan', 'percentage_discount')).toBe(true);
+    expect(isBenefitActionAllowed('plan', 'percentage_discount')).toBe(false);
     expect(isBenefitActionAllowed('promotion', 'free_forever')).toBe(false);
     expect(isBenefitActionAllowed('promotion', null)).toBe(false);
   });
@@ -101,8 +111,10 @@ describe('#896 — benefitConfigError (the backend half of §6)', () => {
     expect(benefitConfigError('promotion', 'percentage_discount', 20)).toBeNull();
     expect(benefitConfigError('promotion', 'fixed_discount', 10)).toBeNull();
     expect(benefitConfigError('promotion', 'fixed_price', 20)).toBeNull();
-    expect(benefitConfigError('plan', 'percentage_discount', 0)).toBeNull();
-    expect(benefitConfigError('plan', 'percentage_discount', 100)).toBeNull();
+    // A Plan's percentage is #997's retired case, exercised below — it is valid
+    // only as the pair the line already stores.
+    expect(benefitConfigError('plan', 'percentage_discount', 20,
+      { action: 'percentage_discount', value: 20 })).toBeNull();
   });
 
   it('rejects a value-requiring action with nothing to apply', () => {
@@ -127,7 +139,7 @@ describe('#896 — benefitConfigError (the backend half of §6)', () => {
 
   it('refuses a Plan the two monetary actions, by name', () => {
     const err = benefitConfigError('plan', 'fixed_price', 20);
-    expect(err).toBe('action must be one of: no_benefit, waive, percentage_discount');
+    expect(err).toBe('action must be one of: no_benefit, waive');
     expect(benefitConfigError('plan', 'fixed_discount', 10)).toBe(err);
   });
 });
@@ -157,6 +169,11 @@ describe('#896 — reading a stored pair back', () => {
     // A `fixed_price` somehow stored on a Plan row reads as neutral, whatever
     // the column says — the context decides, not the data.
     expect(toProductBenefit('plan', 'fixed_price', 20)).toEqual(NO_PRODUCT_BENEFIT);
+    // …but #997's retired value reads as itself: it is stored, it bills, and
+    // normalizing it here would charge the full price for a discounted line.
+    expect(toProductBenefit('plan', 'percentage_discount', '20.00')).toEqual({
+      action: 'percentage_discount', value: 20,
+    });
   });
 });
 
@@ -190,7 +207,10 @@ describe('#896 — applyLineBenefit (the Q2 answer: the line, not the unit)', ()
 describe('#896 — migration 203 says the same thing as the module', () => {
   it('permits exactly the module\'s actions on each side', () => {
     expect(migration.PROMOTION_ACTIONS).toEqual([...PROMOTION_ITEM_ACTIONS]);
-    expect(migration.PLAN_ACTIONS).toEqual([...PLAN_BENEFIT_ACTIONS]);
+    // #997: the CHECK permits what may be **stored**, which is wider than what
+    // may be configured — a Plan row that already carries `percentage_discount`
+    // has to stay valid, so the migration's list is the stored set.
+    expect(migration.PLAN_ACTIONS).toEqual([...STORED_PLAN_BENEFIT_ACTIONS]);
   });
 
   it('defaults new rows to the module\'s neutral action', () => {
@@ -303,9 +323,9 @@ describe('#896 stage 2 — reading one submitted line', () => {
   it('refuses a value the action does not take, and a missing one it does', () => {
     expect(parseProductBenefitInput('plan', { action: 'waive', value: 5 }).error)
       .toBe('waive takes no value');
-    expect(parseProductBenefitInput('plan', { action: 'percentage_discount' }).error)
+    expect(parseProductBenefitInput('promotion', { action: 'percentage_discount' }).error)
       .toBe('percentage_discount requires a value');
-    expect(parseProductBenefitInput('plan', { action: 'percentage_discount', value: 120 }).error)
+    expect(parseProductBenefitInput('promotion', { action: 'percentage_discount', value: 120 }).error)
       .toBe('percentage_discount value must be between 0 and 100');
   });
 });
@@ -316,11 +336,15 @@ describe('#896 stage 2 — reporting one stored row', () => {
       .toEqual({ product_id: 7, action: 'percentage_discount', value: 20 });
   });
 
-  it('reports an action the context may not configure as the neutral default', () => {
+  it('reports an action the context may not store as the neutral default', () => {
     // Nothing can put a `fixed_price` on a Plan row — the CHECK refuses it —
     // but a read must never hand the Plan editor an option it cannot offer.
     expect(shapeProductBenefitRow('plan', { action: 'fixed_price', value: '20.00' }))
       .toEqual({ action: 'no_benefit', value: null });
+    // #997's retired value is a different case: the CHECK does permit it, so a
+    // read reports it and the editor shows it as a disabled option.
+    expect(shapeProductBenefitRow('plan', { action: 'percentage_discount', value: '20.00' }))
+      .toEqual({ action: 'percentage_discount', value: 20 });
     expect(shapeProductBenefitRow('plan', { action: 'waive', value: null }))
       .toEqual({ action: 'waive', value: null });
   });
@@ -352,5 +376,87 @@ describe('#896 stage 2 — the mandatory rule carries the pair (#893)', () => {
   it('passes a submitted mandatory item through with its own pair', () => {
     const submitted = [{ product_id: 9, quantity: 3, benefit: { action: 'waive' as const, value: null } }];
     expect(withMandatoryBenefits(submitted, [item])).toEqual(submitted);
+  });
+});
+
+/* ── #997: `% Discount` retired from the Membership Plan surface ──────────── */
+
+describe('#997 — the Plan set narrows to two, the stored set does not', () => {
+  it('names exactly one retired action, and only on the Plan side', () => {
+    expect(LEGACY_PLAN_BENEFIT_ACTIONS).toEqual(['percentage_discount']);
+    expect(isRetiredBenefitAction('plan', 'percentage_discount')).toBe(true);
+    // §8: a Promotion still configures all five, so nothing is retired there.
+    expect(isRetiredBenefitAction('promotion', 'percentage_discount')).toBe(false);
+    for (const action of PROMOTION_ITEM_ACTIONS) {
+      expect(isRetiredBenefitAction('promotion', action)).toBe(false);
+    }
+  });
+
+  it('keeps offered and stored as two different questions', () => {
+    expect(STORED_PLAN_BENEFIT_ACTIONS).toEqual(['no_benefit', 'waive', 'percentage_discount']);
+    expect(storedBenefitActionsFor('plan')).toBe(STORED_PLAN_BENEFIT_ACTIONS);
+    // A Promotion's two sets are the same list, so nothing diverges there.
+    expect(storedBenefitActionsFor('promotion')).toBe(PROMOTION_ITEM_ACTIONS);
+    expect(isStoredBenefitAction('plan', 'percentage_discount')).toBe(true);
+    expect(isBenefitActionAllowed('plan', 'percentage_discount')).toBe(false);
+    // What neither set admits stays out of both.
+    expect(isStoredBenefitAction('plan', 'fixed_price')).toBe(false);
+    expect(isRetiredBenefitAction('plan', 'fixed_price')).toBe(false);
+  });
+
+  it('never leaves the set in a state where a Plan action is not a Promotion one', () => {
+    for (const action of STORED_PLAN_BENEFIT_ACTIONS) {
+      expect(PROMOTION_ITEM_ACTIONS).toContain(action);
+    }
+  });
+});
+
+describe('#997 — a retired treatment may be kept, never configured', () => {
+  const stored = { action: 'percentage_discount' as const, value: 20 };
+
+  it('accepts the stored pair carried back unchanged', () => {
+    expect(keepsRetiredBenefit('plan', 'percentage_discount', 20, stored)).toBe(true);
+    // mysql2 hands a DECIMAL back as a string on one side of this comparison.
+    expect(keepsRetiredBenefit('plan', 'percentage_discount', '20', stored)).toBe(true);
+    expect(benefitConfigError('plan', 'percentage_discount', 20, stored)).toBeNull();
+    expect(parseProductBenefitInput('plan', { action: 'percentage_discount', value: 20 }, stored))
+      .toEqual({ error: null, benefit: { action: 'percentage_discount', value: 20 } });
+  });
+
+  it('refuses a different percentage — keeping is not renegotiating', () => {
+    expect(keepsRetiredBenefit('plan', 'percentage_discount', 50, stored)).toBe(false);
+    expect(benefitConfigError('plan', 'percentage_discount', 50, stored))
+      .toContain('no longer offered');
+  });
+
+  it('refuses it on a line that stores something else, or nothing at all', () => {
+    expect(keepsRetiredBenefit('plan', 'percentage_discount', 20, null)).toBe(false);
+    expect(keepsRetiredBenefit('plan', 'percentage_discount', 20, NO_PRODUCT_BENEFIT)).toBe(false);
+    const err = benefitConfigError('plan', 'percentage_discount', 20);
+    expect(err).toContain('no longer offered');
+    expect(err).toContain('no_benefit, waive');
+    expect(parseProductBenefitInput('plan', { action: 'percentage_discount', value: 20 }).error)
+      .toBe(err);
+  });
+
+  it('is not a way around §16 — a Plan can never store the two monetary actions', () => {
+    // `current` cannot launder an action the context does not even store: the
+    // CHECK refuses it, so there is no row it could be "kept" from.
+    expect(benefitConfigError('plan', 'fixed_price', 20,
+      { action: 'fixed_price', value: 20 } as any)).toBe('action must be one of: no_benefit, waive');
+  });
+
+  it('ignores `current` for an action the context still offers', () => {
+    // Nothing about the keep rule may loosen the ordinary validation.
+    expect(benefitConfigError('plan', 'waive', 5, stored)).toBe('waive takes no value');
+    expect(benefitConfigError('plan', 'no_benefit', null, stored)).toBeNull();
+  });
+
+  it('still prices a legacy line at its discount', () => {
+    // §6: the row must not silently produce an incorrect price — in either
+    // direction. Reading it as `no_benefit` would charge €100 for a line agreed
+    // at €80; converting it to `waive` would charge nothing.
+    const benefit = toProductBenefit('plan', 'percentage_discount', '20.00');
+    expect(applyLineBenefit(50, 2, benefit)).toBe(80);
   });
 });

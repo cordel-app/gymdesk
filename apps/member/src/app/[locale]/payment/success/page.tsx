@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { memberTheme, primaryButtonStyle, sectionCardStyle } from '@/lib/memberChrome';
 
 const POLL_INTERVAL_MS = 3000;
 const TIMEOUT_MS = 30000;
@@ -73,14 +74,14 @@ export default function PaymentSuccessPage() {
         {status === 'done' && (
           <>
             <div style={styles.checkmark}>✓</div>
-            <p style={{ ...styles.message, color: '#1e7e40', fontWeight: 700 }}>
+            <p style={{ ...styles.message, color: memberTheme.statusSuccess, fontWeight: 700 }}>
               {t(isCardUpdate ? 'payment_success.card_done' : 'payment_success.done')}
             </p>
           </>
         )}
         {status === 'timeout' && (
           <>
-            <p style={{ ...styles.message, color: '#71717a' }}>
+            <p style={{ ...styles.message, color: memberTheme.textMuted }}>
               {t(isCardUpdate ? 'payment_success.card_timeout' : 'payment_success.timeout')}
             </p>
           </>
@@ -95,17 +96,17 @@ export default function PaymentSuccessPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 24, maxWidth: 480, margin: '40px auto', textAlign: 'center' },
-  card: { background: '#fff', borderRadius: 16, padding: '40px 24px', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' },
+  card: { ...sectionCardStyle, borderRadius: 16, padding: '40px 24px', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' },
   spinner: {
     width: 40, height: 40, borderRadius: '50%',
-    border: '3px solid #e4e4e7', borderTopColor: '#18181b',
+    border: `3px solid ${memberTheme.separator}`, borderTopColor: memberTheme.primaryButton,
     animation: 'spin 0.8s linear infinite',
     margin: '0 auto 16px',
   },
-  checkmark: { fontSize: 40, color: '#1e7e40', marginBottom: 12 },
-  message: { margin: '0 0 24px', fontSize: 16, color: '#18181b' },
+  checkmark: { fontSize: 40, color: memberTheme.statusSuccess, marginBottom: 12 },
+  message: { margin: '0 0 24px', fontSize: 16, color: memberTheme.text },
   backBtn: {
-    background: '#18181b', color: '#fff', border: 'none',
-    borderRadius: 8, padding: '10px 24px', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+    ...primaryButtonStyle,
+    padding: '10px 24px', fontSize: 14, fontWeight: 600,
   },
 };

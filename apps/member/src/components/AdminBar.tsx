@@ -7,6 +7,14 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { MemberImpersonationDialog } from './MemberImpersonationDialog';
 
+/**
+ * #983 — the one surface in this app that deliberately does **not** follow the
+ * gym's Theme, with `ImpersonationBanner` beside it. It tells a superadmin
+ * which account they are looking at, so its colours are the platform's and are
+ * fixed: a Theme able to repaint it could make the bar disappear into the page
+ * the gym designed, and the member whose account is open would be the only clue
+ * left. Every member-facing surface reads `lib/memberChrome.ts` instead.
+ */
 export function AdminBar() {
   const t = useTranslations('impersonation');
   const { isSuperadmin } = useApp();

@@ -46,6 +46,25 @@ async function createProduct(
   return insertId;
 }
 
+/**
+ * #997 — a Plan benefit line carrying the retired `% Discount` treatment,
+ * written the only way one can exist from now on: directly, the way every row
+ * stored before the ticket was. The section `PUT` refuses the action, so a test
+ * that needs a legacy line has to write it rather than configure it, which is
+ * exactly the point — migration 203's CHECK still permits the value and the
+ * route is what no longer offers it.
+ */
+async function addLegacyPercentageBenefit(
+  table: string, gymId: string, planId: number, productId: number,
+  quantity: number, value: number,
+): Promise<void> {
+  await db.query(
+    `INSERT INTO ${table} (gym_id, membership_plan_id, product_id, quantity, \`action\`, \`value\`)
+     VALUES (?, ?, ?, ?, 'percentage_discount', ?)`,
+    [gymId, planId, productId, quantity, value],
+  );
+}
+
 // ─── Billing & Duration (§7) ──────────────────────────────────────────────────
 
 describe('Membership Plan Billing & Duration', () => {
@@ -408,6 +427,12 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ free_periods: 1, paid_periods: 2, bonus_periods: 2 });
+    // #997: a legacy `% Discount` line, written directly because the section
+    // `PUT` no longer offers the action. Duplicate must copy it verbatim — a
+    // copy is a copy, and silently normalizing it would reprice the new Plan.
+    await addLegacyPercentageBenefit(
+      'membership_plan_session', gymId, planId, sessionItemId, 4, 15,
+    );
     await request
       .put(`/membership-plans/${planId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -415,6 +440,8 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
       .send({
         items: [{
           product_id: sessionItemId, quantity: 4,
+          // The stored pair carried back unchanged, which is the one way a
+          // retired treatment may be written (#997 §6/§7).
           action: 'percentage_discount', value: 15,
           // #918: and the renewal Frequency, which Duplicate must carry too.
           frequency: 'week',
@@ -687,19 +714,18 @@ describe('Membership Plan benefit actions', () => {
     expect(res.body[0]).toMatchObject({ quantity: 4, action: 'no_benefit', value: null });
   });
 
-  it('stores a percentage discount and reports the value as a number', async () => {
+  it('stores a waive and reports it back', async () => {
     const res = await putSession([
-      { product_id: itemId, quantity: 4, action: 'percentage_discount', value: 20 },
+      { product_id: itemId, quantity: 4, action: 'waive' },
     ]);
     expect(res.status).toBe(200);
-    // Not the "20.00" string mysql2 hands back for a DECIMAL column.
-    expect(res.body[0]).toMatchObject({ action: 'percentage_discount', value: 20 });
+    expect(res.body[0]).toMatchObject({ action: 'waive', value: null });
 
     const get = await request
       .get(`/membership-plans/${planId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    expect(get.body[0]).toMatchObject({ action: 'percentage_discount', value: 20 });
+    expect(get.body[0]).toMatchObject({ action: 'waive', value: null });
   });
 
   it('keeps a stored treatment when the save does not mention it', async () => {
@@ -708,10 +734,20 @@ describe('Membership Plan benefit actions', () => {
     // what someone configured. Clearing it stays possible, explicitly.
     const res = await putSession([{ product_id: itemId, quantity: 9 }]);
     expect(res.status).toBe(200);
-    expect(res.body[0]).toMatchObject({ quantity: 9, action: 'percentage_discount', value: 20 });
+    expect(res.body[0]).toMatchObject({ quantity: 9, action: 'waive', value: null });
 
     const cleared = await putSession([{ product_id: itemId, quantity: 9, action: 'no_benefit' }]);
     expect(cleared.body[0]).toMatchObject({ action: 'no_benefit', value: null });
+  });
+
+  // #997 §1/§7 — `% Discount` is no longer one of the two a Plan may configure.
+  it('refuses a new percentage discount, by name', async () => {
+    const res = await putSession([
+      { product_id: itemId, quantity: 4, action: 'percentage_discount', value: 20 },
+    ]);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('no longer offered');
+    expect(res.body.error).toContain('no_benefit, waive');
   });
 
   it('refuses the two actions §16 keeps out of a Membership Plan', async () => {
@@ -722,12 +758,10 @@ describe('Membership Plan benefit actions', () => {
     }
   });
 
-  it('refuses a missing, out-of-range or superfluous value', async () => {
-    expect((await putSession([{ product_id: itemId, quantity: 1, action: 'percentage_discount' }])).status)
-      .toBe(400);
-    expect((await putSession([{ product_id: itemId, quantity: 1, action: 'percentage_discount', value: 120 }])).status)
-      .toBe(400);
+  it('refuses a superfluous value, and an unknown action', async () => {
     expect((await putSession([{ product_id: itemId, quantity: 1, action: 'waive', value: 5 }])).status)
+      .toBe(400);
+    expect((await putSession([{ product_id: itemId, quantity: 1, action: 'free_forever' }])).status)
       .toBe(400);
     const orphanValue = await putSession([{ product_id: itemId, quantity: 1, value: 20 }]);
     expect(orphanValue.status).toBe(400);
@@ -772,6 +806,109 @@ describe('Membership Plan benefit actions', () => {
     expect(res.status).toBe(200);
     const row = res.body.find((r: any) => r.product_id === mandatoryId);
     expect(row).toMatchObject({ action: 'waive', value: null });
+  });
+});
+
+// ─── #997: `% Discount` retired from a Membership Plan benefit ────────────────
+//
+// Retired is not deleted: migration 203's CHECK still permits the value, so a
+// row stored before the ticket keeps pricing exactly as the gym agreed (§6 —
+// "existing `% Discount` configurations must not silently produce incorrect
+// prices", and "do not silently convert an existing percentage discount to
+// `Waive`"). What changed is only what may be *configured*.
+//
+// §8 — that a **Promotion** still configures all five actions — is
+// `promotions.test.ts`'s "stores all five actions a Promotion may configure",
+// which is unchanged by this ticket and is the assertion that would fail if the
+// retirement leaked across contexts.
+
+describe('Membership Plan benefit % Discount retired (#997)', () => {
+  let gymId: string;
+  let planId: number;
+  let legacyId: number;
+  let freshId: number;
+
+  const putOneoff = (items: unknown[]) => request
+    .put(`/membership-plans/${planId}/oneoff-benefits`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send({ items });
+
+  const getOneoff = () => request
+    .get(`/membership-plans/${planId}/oneoff-benefits`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId);
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MPB Retired Gym');
+    await createTestMembership(gymId, 'admin');
+    planId = await createPlan(gymId, 'MPB Retired Plan');
+    legacyId = await createProduct(gymId, 'Retired Legacy Fee', 'fee', 'once');
+    freshId = await createProduct(gymId, 'Retired Fresh Fee', 'fee', 'once');
+    await addLegacyPercentageBenefit(
+      'membership_plan_oneoff', gymId, planId, legacyId, 2, 20,
+    );
+  });
+
+  it('reads a stored percentage back as itself, not as the neutral default', async () => {
+    // Reading it as `no_benefit` would quote the full price for a line the gym
+    // agreed at a discount — and the first unrelated save would make that true.
+    const res = await getOneoff();
+    expect(res.status).toBe(200);
+    const row = res.body.find((r: any) => r.product_id === legacyId);
+    expect(row).toMatchObject({ action: 'percentage_discount', value: 20, quantity: 2 });
+  });
+
+  it('refuses the action on a line that does not already store it', async () => {
+    const res = await putOneoff([
+      { product_id: legacyId, quantity: 2, action: 'percentage_discount', value: 20 },
+      { product_id: freshId, quantity: 1, action: 'percentage_discount', value: 10 },
+    ]);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('no longer offered');
+    // The replace-all never ran, so the legacy line is still there.
+    const after = await getOneoff();
+    expect(after.body.find((r: any) => r.product_id === legacyId).value).toBe(20);
+    expect(after.body.find((r: any) => r.product_id === freshId)).toBeUndefined();
+  });
+
+  it('refuses a different percentage on the legacy line — kept, never renegotiated', async () => {
+    const res = await putOneoff([
+      { product_id: legacyId, quantity: 2, action: 'percentage_discount', value: 50 },
+    ]);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('no longer offered');
+  });
+
+  it('lets the legacy line be edited — the pair survives a quantity-only save', async () => {
+    const res = await putOneoff([{ product_id: legacyId, quantity: 7 }]);
+    expect(res.status).toBe(200);
+    expect(res.body.find((r: any) => r.product_id === legacyId))
+      .toMatchObject({ quantity: 7, action: 'percentage_discount', value: 20 });
+  });
+
+  it('accepts the stored pair carried back unchanged', async () => {
+    // What the editor submits for a legacy line: the disabled option's own
+    // value, so an unrelated edit of the section neither 400s nor rewrites it.
+    const res = await putOneoff([
+      { product_id: legacyId, quantity: 7, action: 'percentage_discount', value: 20 },
+    ]);
+    expect(res.status).toBe(200);
+    expect(res.body.find((r: any) => r.product_id === legacyId))
+      .toMatchObject({ action: 'percentage_discount', value: 20 });
+  });
+
+  it('is corrected by choosing one of the two that remain', async () => {
+    const res = await putOneoff([{ product_id: legacyId, quantity: 7, action: 'waive' }]);
+    expect(res.status).toBe(200);
+    expect(res.body.find((r: any) => r.product_id === legacyId))
+      .toMatchObject({ action: 'waive', value: null });
+
+    // …and once corrected there is no way back to it.
+    const back = await putOneoff([
+      { product_id: legacyId, quantity: 7, action: 'percentage_discount', value: 20 },
+    ]);
+    expect(back.status).toBe(400);
   });
 });
 
@@ -872,15 +1009,18 @@ describe('Membership Plan Benefit prices (#916)', () => {
     expect(row.final_price_incl_tax).toBe(0);
   });
 
-  it('applies a percentage discount to the item price', async () => {
+  // #997: a legacy `% Discount` line still quotes its discount. The treatment
+  // is no longer configurable, so the row is written directly — and §6's whole
+  // point is that reading it must not quietly become the full price.
+  it('applies a legacy percentage discount to the item price', async () => {
     const packageId = await createPricedItem({
       name: 'Prices Package', type: 'fee', frequency: 'once', amount: '70.00',
     });
-    const res = await putSection('oneoff-benefits', [
-      { product_id: packageId, quantity: 1, action: 'percentage_discount', value: 20 },
-    ]);
+    await addLegacyPercentageBenefit('membership_plan_oneoff', gymId, planId, packageId, 1, 20);
+    const res = await getSection('oneoff-benefits');
     expect(res.status).toBe(200);
     const row = res.body.find((r: any) => r.product_id === packageId);
+    expect(row.action).toBe('percentage_discount');
     expect(row.original_price_incl_tax).toBe(70);
     expect(row.final_price_incl_tax).toBe(56);
   });
@@ -889,9 +1029,8 @@ describe('Membership Plan Benefit prices (#916)', () => {
     const classId = await createPricedItem({
       name: 'Prices Bulk Class', type: 'sessions', frequency: null, amount: '25.00',
     });
-    const res = await putSection('session-benefits', [
-      { product_id: classId, quantity: 5, action: 'percentage_discount', value: 10 },
-    ]);
+    await addLegacyPercentageBenefit('membership_plan_session', gymId, planId, classId, 5, 10);
+    const res = await getSection('session-benefits');
     expect(res.status).toBe(200);
     const row = res.body.find((r: any) => r.product_id === classId);
     expect(row.original_price_incl_tax).toBe(25);
@@ -929,9 +1068,7 @@ describe('Membership Plan Benefit prices (#916)', () => {
     const itemId = await createPricedItem({
       name: 'Prices Embedded', type: 'service', frequency: 'month', amount: '30.00',
     });
-    await putSection('periodical-benefits', [
-      { product_id: itemId, quantity: 2, action: 'percentage_discount', value: 50 },
-    ]);
+    await addLegacyPercentageBenefit('membership_plan_periodical', gymId, planId, itemId, 2, 50);
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -967,9 +1104,7 @@ describe('Membership Plan Benefit prices (#916)', () => {
     const itemId = await createPricedItem({
       name: 'Prices Agreement', type: 'service', frequency: 'month', amount: '12.50',
     });
-    await putSection('periodical-benefits', [
-      { product_id: itemId, quantity: 4, action: 'percentage_discount', value: 25 },
-    ]);
+    await addLegacyPercentageBenefit('membership_plan_periodical', gymId, planId, itemId, 4, 25);
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)

@@ -3,7 +3,8 @@
 import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
-import { DEFAULT_TOKENS } from '@/lib/themeTokens';
+import { DEFAULT_TOKENS, type ThemeTokens } from '@/lib/themeTokens';
+import { MEMBERS_APP_SETTINGS, membersAppVarValue } from '@/lib/membersAppTokens';
 import {
   BACKGROUND_SCRIM_ALPHA,
   backgroundStyleValue,
@@ -32,7 +33,13 @@ export function MembersBackground() {
   const pathname = usePathname();
   const images = theme?.members_images ?? null;
   const url = backgroundUrlForSlot(images, slotForPathname(pathname));
-  const pageBackground = (theme?.tokens as any)?.colors?.pageBackground ?? DEFAULT_TOKENS.colors.pageBackground;
+  // #983 §2/§6 — the scrim is the *Members App*'s background colour, which is
+  // its own setting and only follows the Admin page background while the Theme
+  // leaves it inherited. Reading `colors.pageBackground` directly (as this did
+  // until #983) tinted the artwork with the Admin colour on every Theme that
+  // overrides the Members one, so a gym that configured a dark members
+  // background still got a light scrim over its photograph.
+  const pageBackground = membersAppBackgroundColor((theme?.tokens ?? null) as ThemeTokens | null);
 
   useEffect(() => {
     const { body } = document;
@@ -44,4 +51,11 @@ export function MembersBackground() {
   }, [url, pageBackground]);
 
   return null;
+}
+
+const BACKGROUND_SETTING = MEMBERS_APP_SETTINGS.find((s) => s.key === 'backgroundColor')!;
+
+function membersAppBackgroundColor(tokens: ThemeTokens | null): string {
+  if (!tokens?.colors) return DEFAULT_TOKENS.colors.pageBackground;
+  return membersAppVarValue(tokens, BACKGROUND_SETTING);
 }

@@ -4,6 +4,11 @@ import { useTranslations } from 'next-intl';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 
+/**
+ * #983 — deliberately outside the Theme, for `AdminBar`'s reason: this is the
+ * banner that says somebody is acting as another person, and a gym must not be
+ * able to tint it into its own chrome.
+ */
 export function ImpersonationBanner() {
   const t = useTranslations('impersonation');
   const { session, isImpersonating, stopImpersonation } = useImpersonation();

@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { memberTheme } from '@/lib/memberChrome';
 
 /**
  * #932 §4 — one image-plus-name row of My Nutrition, shared by the plan's
@@ -56,11 +57,11 @@ export function NutritionItemRow({ name, imageUrl = null, detail = null }: {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  row:         { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: '1px solid #f0f0f0' },
-  imageBox:    { flex: '0 0 auto', width: 56, aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', background: '#fafafa', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  row:         { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: `1px solid ${memberTheme.separator}` },
+  imageBox:    { flex: '0 0 auto', width: 56, aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', background: memberTheme.pageBackground, display: 'flex', alignItems: 'center', justifyContent: 'center' },
   image:       { width: '100%', height: '100%', objectFit: 'contain', display: 'block' },
-  placeholder: { color: '#a1a1aa', fontSize: 9, lineHeight: 1.2, textAlign: 'center', padding: '0 4px' },
+  placeholder: { color: memberTheme.textMuted, fontSize: 9, lineHeight: 1.2, textAlign: 'center', padding: '0 4px' },
   body:        { minWidth: 0 },
-  name:        { margin: 0, fontSize: 14, fontWeight: 500, color: '#18181b' },
-  detail:      { margin: '2px 0 0', fontSize: 12, color: '#71717a' },
+  name:        { margin: 0, fontSize: 14, fontWeight: 500, color: memberTheme.text },
+  detail:      { margin: '2px 0 0', fontSize: 12, color: memberTheme.textMuted },
 };

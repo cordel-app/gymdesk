@@ -8,6 +8,14 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
+import {
+  inputStyle,
+  memberTheme,
+  noticeStyle,
+  primaryButtonStyle,
+  secondaryButtonStyle,
+  sectionCardStyle,
+} from '@/lib/memberChrome';
 
 interface BlockExercise {
   id: number; position: number; exercise_id: number; exercise_name: string;
@@ -257,32 +265,36 @@ export default function TrainingPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
-  message: { background: '#e6f6ec', color: '#1e7e40', padding: '10px 14px', borderRadius: 8, marginBottom: 12, fontSize: 14 },
+  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  message: { ...noticeStyle('success'), marginBottom: 12 },
   weekdayBar: { display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto' },
-  weekdayBtn: { flex: 1, padding: '10px 0', background: '#fff', color: '#71717a', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer' },
-  weekdayBtnActive: { background: '#18181b', color: '#fff' },
-  planCard: { background: '#fff', borderRadius: 12, padding: 16, marginBottom: 16 },
-  planName: { margin: 0, fontSize: 17, fontWeight: 700 },
-  planDesc: { margin: '4px 0 12px', fontSize: 13, color: '#71717a' },
-  blockCard: { borderTop: '1px solid #eee', paddingTop: 10, marginTop: 10 },
+  weekdayBtn: { flex: 1, padding: '10px 0', background: memberTheme.surface, color: memberTheme.textMuted, border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer' },
+  weekdayBtnActive: { background: memberTheme.primaryButton, color: memberTheme.primaryButtonText },
+  planCard: { ...sectionCardStyle, padding: 16, marginBottom: 16 },
+  planName: { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.title2 },
+  planDesc: { margin: '4px 0 12px', fontSize: 13, color: memberTheme.textMuted },
+  blockCard: { borderTop: `1px solid ${memberTheme.separator}`, paddingTop: 10, marginTop: 10 },
   blockHead: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 },
-  blockName: { fontSize: 14, fontWeight: 700, color: '#18181b', display: 'flex', alignItems: 'center', gap: 8 },
-  blockTypeBadge: { fontSize: 11, fontWeight: 600, color: '#6c63ff', background: '#eeecff', borderRadius: 999, padding: '2px 8px' },
+  blockName: { fontSize: 14, fontWeight: 700, color: memberTheme.text, display: 'flex', alignItems: 'center', gap: 8 },
+  blockTypeBadge: {
+    fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px',
+    color: memberTheme.primaryButton,
+    background: `color-mix(in srgb, ${memberTheme.primaryButton} 12%, ${memberTheme.surface})`,
+  },
   exerciseCard: { marginTop: 8, marginLeft: 8 },
   exerciseHead: { display: 'flex', gap: 8, alignItems: 'center' },
-  exerciseName: { fontSize: 15, fontWeight: 600, color: '#18181b' },
-  exerciseMeta: { fontSize: 12, color: '#71717a' },
-  expandBtn: { width: 30, height: 30, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', cursor: 'pointer', fontSize: 16 },
-  expandBody: { marginTop: 10, padding: 10, background: '#fafafa', borderRadius: 8 },
+  exerciseName: { fontSize: 15, fontWeight: 600, color: memberTheme.text },
+  exerciseMeta: { fontSize: 12, color: memberTheme.textMuted },
+  expandBtn: { width: 30, height: 30, borderRadius: '50%', border: `1px solid ${memberTheme.inputBorder}`, background: memberTheme.surface, color: memberTheme.text, cursor: 'pointer', fontSize: 16 },
+  expandBody: { marginTop: 10, padding: 10, background: memberTheme.pageBackground, borderRadius: 8 },
   logForm: { display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 6 },
-  setLabel: { fontSize: 12, color: '#71717a', width: 24 },
-  miniLabel: { fontSize: 11, color: '#71717a', display: 'flex', flexDirection: 'column', gap: 2 },
-  miniInput: { width: 70, padding: '6px 8px', borderRadius: 4, border: '1px solid #ccc', fontSize: 14 },
+  setLabel: { fontSize: 12, color: memberTheme.textMuted, width: 24 },
+  miniLabel: { fontSize: 11, color: memberTheme.textMuted, display: 'flex', flexDirection: 'column', gap: 2 },
+  miniInput: { ...inputStyle, width: 70, padding: '6px 8px', borderRadius: 4, fontSize: 14 },
   logActions: { display: 'flex', gap: 8, marginTop: 4 },
-  addSetBtn: { padding: '8px 14px', background: '#fff', color: '#18181b', border: '1px solid #ccc', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
-  logBtn: { padding: '8px 14px', background: '#18181b', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
+  addSetBtn: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
+  logBtn: { ...primaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   blockDoneRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 },
-  blockDoneBtn: { padding: '8px 14px', background: '#1e7e40', color: '#fff', border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: 'pointer' },
-  hint: { color: '#71717a', fontSize: 14, textAlign: 'center', margin: '20px 0' },
+  blockDoneBtn: { ...primaryButtonStyle, padding: '8px 14px', background: memberTheme.statusSuccess, borderRadius: 6, fontSize: 13, fontWeight: 600 },
+  hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
 };

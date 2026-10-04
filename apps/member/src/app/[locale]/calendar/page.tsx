@@ -12,6 +12,12 @@ import { useApiClient } from '@/lib/apiClient';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 import {
+  memberTheme,
+  primaryButtonStyle,
+  secondaryButtonStyle,
+  statusPillStyle,
+} from '@/lib/memberChrome';
+import {
   EVENT_STATUS_CHIP_STYLE,
   eventBackgroundColor,
   memberEventMetaLine,
@@ -286,15 +292,20 @@ export default function MemberCalendarPage() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', boxSizing: 'border-box' }}>
       {/* Filter bar */}
-      <div style={{ padding: '8px 12px', borderBottom: '1px solid #e5e7eb', display: 'flex', gap: 8, flexShrink: 0 }}>
+      <div style={{ padding: '8px 12px', borderBottom: `1px solid ${memberTheme.separator}`, display: 'flex', gap: 8, flexShrink: 0 }}>
         <div style={{ position: 'relative', flexShrink: 0 }}>
           <button
             onClick={() => (showFilterPanel ? setShowFilterPanel(false) : openFilterPanel())}
             style={{
               padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-              border: '1px solid #d1d5db',
-              background: filtersActive ? 'var(--gd-sidebar-selected-bg, #18181b)' : 'transparent',
-              color:      filtersActive ? '#fff' : 'inherit',
+              border: `1px solid ${memberTheme.inputBorder}`,
+              // #983 §5 — a control in the Calendar's own filter bar takes the
+              // Calendar Buttons Colour, the setting FullCalendar's navigation
+              // buttons already follow. It borrowed `--gd-sidebar-selected-bg`
+              // until this ticket: the *Admin sidebar's* colour, which no
+              // Members App setting can move.
+              background: filtersActive ? memberTheme.calendarButton : 'transparent',
+              color:      filtersActive ? memberTheme.calendarButtonText : 'inherit',
               whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 5,
             }}
           >
@@ -302,7 +313,7 @@ export default function MemberCalendarPage() {
             {filtersActive && (
               <span style={{
                 display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
-                background: '#f97316',
+                background: memberTheme.statusWarning,
               }} />
             )}
           </button>
@@ -313,13 +324,13 @@ export default function MemberCalendarPage() {
                 position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 70,
                 // #833 §7 — a window layered above the Calendar takes the
                 // Calendar Modal Background, never the Calendar Background.
-                width: 240, background: 'var(--gd-members-calendar-modal-bg, var(--gd-card-bg, #fff))', borderRadius: 10,
-                border: '1px solid #e5e7eb', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
+                width: 240, background: memberTheme.calendarModalBackground, borderRadius: 10,
+                border: `1px solid ${memberTheme.cardBorderColor}`, boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
                 padding: 14, display: 'flex', flexDirection: 'column', gap: 10,
               }}
             >
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', marginBottom: 4 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: memberTheme.textMuted, textTransform: 'uppercase', marginBottom: 4 }}>
                   {t('filter_center_label')}
                 </div>
                 <select
@@ -335,7 +346,7 @@ export default function MemberCalendarPage() {
               </div>
 
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', marginBottom: 4 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: memberTheme.textMuted, textTransform: 'uppercase', marginBottom: 4 }}>
                   {t('filter_trainer_label')}
                 </div>
                 <select
@@ -353,13 +364,13 @@ export default function MemberCalendarPage() {
               <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
                 <button
                   onClick={applyFilters}
-                  style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: 'none', background: 'var(--gd-sidebar-selected-bg, #18181b)', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                  style={{ ...primaryButtonStyle, flex: 1, padding: '6px 10px', borderRadius: 6, background: memberTheme.calendarButton, color: memberTheme.calendarButtonText, fontSize: 12, fontWeight: 600 }}
                 >
                   {t('filter_apply')}
                 </button>
                 <button
                   onClick={clearFilters}
-                  style={{ flex: 1, padding: '6px 10px', borderRadius: 6, border: '1px solid #d1d5db', background: 'transparent', fontSize: 12, cursor: 'pointer' }}
+                  style={{ ...secondaryButtonStyle, flex: 1, padding: '6px 10px', borderRadius: 6, fontSize: 12 }}
                 >
                   {t('filter_clear')}
                 </button>
@@ -373,9 +384,9 @@ export default function MemberCalendarPage() {
             onClick={() => { setFilterAtId(''); }}
             style={{
               padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-              border: '1px solid #d1d5db',
-              background: !filterAtId ? 'var(--gd-sidebar-selected-bg, #18181b)' : 'transparent',
-              color:      !filterAtId ? '#fff' : 'inherit',
+              border: `1px solid ${memberTheme.inputBorder}`,
+              background: !filterAtId ? memberTheme.calendarButton : 'transparent',
+              color:      !filterAtId ? memberTheme.calendarButtonText : 'inherit',
               whiteSpace: 'nowrap',
             }}
           >
@@ -387,9 +398,12 @@ export default function MemberCalendarPage() {
               onClick={() => setFilterAtId(String(at.id))}
               style={{
                 padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-                border: '1px solid #d1d5db',
-                background: filterAtId === String(at.id) ? (at.color ?? 'var(--gd-sidebar-selected-bg, #18181b)') : 'transparent',
-                color:      filterAtId === String(at.id) ? '#fff' : 'inherit',
+                border: `1px solid ${memberTheme.inputBorder}`,
+                // The Activity Type's own colour stays its own (#975): only the
+                // chip for an Activity Type that configures none falls back to
+                // the Calendar Buttons Colour.
+                background: filterAtId === String(at.id) ? (at.color ?? memberTheme.calendarButton) : 'transparent',
+                color:      filterAtId === String(at.id) ? memberTheme.calendarButtonText : 'inherit',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -466,14 +480,14 @@ export default function MemberCalendarPage() {
             style={{
               // #833 §7 — the event window's own surface setting. It used to
               // borrow the Admin sidebar's colour, which was never its own.
-              width: '100%', background: 'var(--gd-members-calendar-modal-bg, var(--gd-card-bg, #fff))',
+              width: '100%', background: memberTheme.calendarModalBackground,
               borderRadius: '16px 16px 0 0', padding: '20px 16px',
               boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
             }}
           >
-            <div style={{ width: 36, height: 4, background: '#d1d5db', borderRadius: 2, margin: '0 auto 16px' }} />
-            <h3 style={{ margin: '0 0 4px', fontSize: 16 }}>{selected.class_type_name}</h3>
-            <p style={{ margin: '0 0 2px', fontSize: 13, color: '#6b7280' }}>
+            <div style={{ width: 36, height: 4, background: memberTheme.inputBorder, borderRadius: 2, margin: '0 auto 16px' }} />
+            <h3 style={{ margin: '0 0 4px', fontSize: 16, color: memberTheme.title3 }}>{selected.class_type_name}</h3>
+            <p style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
               {new Date(selected.starts_at).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               {selected.trainer_name ? ` · ${selected.trainer_name}` : ''}
               {selected.center_name ? ` · ${selected.center_name}` : ''}
@@ -484,12 +498,12 @@ export default function MemberCalendarPage() {
                 lifecycle status, occupancy status (+ aggregate count), and waitlist
                 (aggregate count only; never member identities), each independent. */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0 12px' }}>
-              <span style={badgeStyle('#e5e7eb', '#374151')}>{t(`status_${selected.status}`)}</span>
-              <span style={badgeStyle(OCCUPANCY_BADGE_COLORS[selected.occupancy_status], '#fff')}>
+              <span style={statusPillStyle('neutral')}>{t(`status_${selected.status}`)}</span>
+              <span style={badgeStyle(OCCUPANCY_BADGE_COLORS[selected.occupancy_status])}>
                 {t(`occupancy_${selected.occupancy_status}`)} · {t('occupancy_count', { booked: selected.booked_count, capacity: selected.effective_capacity })}
               </span>
               {selected.waitlist_status !== 'disabled' && (
-                <span style={badgeStyle('#a855f7', '#fff')}>
+                <span style={badgeStyle(memberTheme.primaryButton)}>
                   {t(`waitlist_${selected.waitlist_status}`)}
                   {selected.waitlist_count > 0 ? ` · ${t('waitlist_count', { count: selected.waitlist_count })}` : ''}
                 </span>
@@ -497,42 +511,42 @@ export default function MemberCalendarPage() {
             </div>
 
             {actionMsg && (
-              <p style={{ color: '#ef4444', fontSize: 13, marginBottom: 12 }}>{actionMsg}</p>
+              <p style={{ color: memberTheme.statusError, fontSize: 13, marginBottom: 12 }}>{actionMsg}</p>
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selected.availability_state === 'AVAILABLE' && (
-                <button onClick={book} disabled={actionLoading} style={actionBtn('#3b82f6')}>
+                <button onClick={book} disabled={actionLoading} style={actionBtn(memberTheme.primaryButton)}>
                   {t('action_book')}
                 </button>
               )}
               {(selected.availability_state === 'WAITLIST_AVAILABLE') && (
-                <button onClick={book} disabled={actionLoading} style={actionBtn('#f97316')}>
+                <button onClick={book} disabled={actionLoading} style={actionBtn(memberTheme.statusWarning)}>
                   {t('action_join_waitlist')}
                 </button>
               )}
               {selected.availability_state === 'BOOKED_BY_MEMBER' && selected.can_cancel && (
-                <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn('#ef4444')}>
+                <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn(memberTheme.statusError)}>
                   {t('action_cancel_booking')}
                 </button>
               )}
               {selected.availability_state === 'WAITLISTED_BY_MEMBER' && selected.can_cancel && (
-                <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn('#6b7280')}>
+                <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn(memberTheme.textMuted)}>
                   {t('action_leave_waitlist')}
                 </button>
               )}
               {selected.availability_state === 'SHARED_REQUEST_AVAILABLE' && (
-                <button onClick={requestSharedTraining} disabled={actionLoading} style={actionBtn('#8b5cf6')}>
+                <button onClick={requestSharedTraining} disabled={actionLoading} style={actionBtn(memberTheme.statusInfo)}>
                   {t('action_request_shared')}
                 </button>
               )}
               {selected.availability_state === 'SHARED_REQUESTED_BY_MEMBER' && (
                 <>
-                  <p style={{ margin: 0, fontSize: 13, color: '#6b7280' }}>
+                  <p style={{ margin: 0, fontSize: 13, color: memberTheme.textMuted }}>
                     {t('shared_request_status', { status: selected.my_shared_request_status ?? '' })}
                   </p>
                   {selected.my_shared_request_status === 'pending' && (
-                    <button onClick={cancelSharedRequest} disabled={actionLoading} style={actionBtn('#6b7280')}>
+                    <button onClick={cancelSharedRequest} disabled={actionLoading} style={actionBtn(memberTheme.textMuted)}>
                       {t('action_cancel_shared_request')}
                     </button>
                   )}
@@ -540,7 +554,7 @@ export default function MemberCalendarPage() {
               )}
               <button
                 onClick={() => { setSelected(null); setActionMsg(null); }}
-                style={{ padding: '10px', borderRadius: 8, border: '1px solid #d1d5db', background: 'transparent', cursor: 'pointer', fontSize: 14 }}
+                style={{ ...secondaryButtonStyle, padding: '10px', fontSize: 14 }}
               >
                 {t('action_close')}
               </button>
@@ -553,10 +567,10 @@ export default function MemberCalendarPage() {
 }
 
 const OCCUPANCY_BADGE_COLORS: Record<OccupancyStatus, string> = {
-  available:       '#3b82f6',
-  few_spots_left:  '#f59e0b',
-  full:            '#ef4444',
-  unavailable:     '#9ca3af',
+  available:       memberTheme.statusInfo,
+  few_spots_left:  memberTheme.statusWarning,
+  full:            memberTheme.statusError,
+  unavailable:     memberTheme.textMuted,
 };
 
 /**
@@ -566,21 +580,27 @@ const OCCUPANCY_BADGE_COLORS: Record<OccupancyStatus, string> = {
  */
 const modalInputStyle: React.CSSProperties = {
   width: '100%', padding: '6px 8px', borderRadius: 6, fontSize: 13,
-  border: '1px solid var(--gd-input-border, #d1d5db)',
-  background: 'var(--gd-members-calendar-modal-input-bg, var(--gd-input-bg, #fff))',
+  border: `1px solid ${memberTheme.inputBorder}`,
+  background: memberTheme.calendarModalInputBackground,
   color: 'inherit',
 };
 
-function badgeStyle(bg: string, color: string): React.CSSProperties {
+/**
+ * A filled badge in the event window. The foreground is the calendar's own
+ * button text — the token already guaranteed to read against a filled surface —
+ * rather than a white nobody can theme.
+ */
+function badgeStyle(bg: string): React.CSSProperties {
   return {
     display: 'inline-block', padding: '3px 9px', borderRadius: 12,
-    fontSize: 11.5, fontWeight: 600, background: bg, color,
+    fontSize: 11.5, fontWeight: 600, background: bg, color: memberTheme.calendarButtonText,
   };
 }
 
 function actionBtn(bg: string): React.CSSProperties {
   return {
-    padding: '12px', borderRadius: 8, border: 'none', background: bg,
-    color: '#fff', fontWeight: 600, fontSize: 15, cursor: 'pointer', width: '100%',
+    ...primaryButtonStyle,
+    padding: '12px', background: bg,
+    color: memberTheme.primaryButtonText, fontWeight: 600, fontSize: 15, width: '100%',
   };
 }

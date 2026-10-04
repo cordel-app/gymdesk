@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { memberTheme, secondaryButtonStyle, sectionCardStyle } from '@/lib/memberChrome';
 
 interface Notification {
   id: number;
@@ -119,7 +120,7 @@ export default function NotificationsPage() {
           {items.map((n) => (
             <li
               key={n.id}
-              style={{ ...styles.item, background: n.read_at ? '#fff' : '#f0f4ff' }}
+              style={{ ...styles.item, ...(n.read_at ? null : styles.itemUnread) }}
               onClick={() => !n.read_at && markRead(n.id)}
             >
               <div style={styles.itemTop}>
@@ -152,24 +153,28 @@ export default function NotificationsPage() {
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto', paddingBottom: 80 },
   header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  title: { margin: 0, fontSize: 22, fontWeight: 700, color: 'var(--gd-color-h1, #18181b)' },
+  title: { margin: 0, fontSize: 22, fontWeight: 700, color: memberTheme.title1 },
   markAllBtn: {
-    padding: '6px 12px', background: 'transparent', color: '#18181b',
-    border: '1px solid #d4d4d8', borderRadius: 8, fontSize: 13, fontWeight: 500, cursor: 'pointer',
+    ...secondaryButtonStyle,
+    padding: '6px 12px', fontSize: 13, fontWeight: 500,
   },
   list: { listStyle: 'none', margin: 0, padding: 0 },
   item: {
+    ...sectionCardStyle,
     position: 'relative', borderRadius: 10, padding: '12px 14px', marginBottom: 8,
     cursor: 'pointer', transition: 'background 0.15s',
   },
+  // An unread alert is tinted with the theme's own accent rather than a fixed
+  // lilac wash: the same `color-mix` the status pills use (#983).
+  itemUnread: { background: `color-mix(in srgb, ${memberTheme.primaryButton} 8%, ${memberTheme.surface})` },
   itemTop: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
-  typeLabel: { fontSize: 12, fontWeight: 600, color: '#6366f1', textTransform: 'uppercase', letterSpacing: '0.04em' },
-  timeLabel: { fontSize: 12, color: '#9ca3af' },
-  title2: { fontSize: 15, fontWeight: 600, color: '#18181b' },
-  sub: { fontSize: 13, color: '#71717a', marginTop: 2 },
+  typeLabel: { fontSize: 12, fontWeight: 600, color: memberTheme.primaryButton, textTransform: 'uppercase', letterSpacing: '0.04em' },
+  timeLabel: { fontSize: 12, color: memberTheme.textMuted },
+  title2: { fontSize: 15, fontWeight: 600, color: memberTheme.text },
+  sub: { fontSize: 13, color: memberTheme.textMuted, marginTop: 2 },
   unreadDot: {
     position: 'absolute', top: 12, right: 12, width: 8, height: 8,
-    borderRadius: '50%', background: '#6366f1',
+    borderRadius: '50%', background: memberTheme.primaryButton,
   },
-  hint: { color: '#71717a', fontSize: 14, textAlign: 'center', margin: '40px 0' },
+  hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '40px 0' },
 };

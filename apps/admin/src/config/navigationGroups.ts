@@ -26,6 +26,15 @@ export interface NavGroup {
   module?: AppModule;
   /** Explicit role gate — only used for superadmin-only groups. */
   requiredRole?: 'superadmin';
+  /**
+   * #1020: draw a divider above this first-level section, heavier than the
+   * hairline `NavItem.separatorAbove` draws inside a section. It is declared
+   * here, with the rest of the navigation, so the sidebar never branches on a
+   * group's id or label to decide how it looks (#884's rule for the icons).
+   * The first visible section never draws one — a leading rule separates a
+   * section from nothing.
+   */
+  separatorAbove?: boolean;
   items: NavItem[];
 }
 
@@ -292,6 +301,9 @@ export const navigationGroups: NavGroup[] = [
     labelKey: 'nav.groups.cordel',
     icon: 'shield',
     requiredRole: 'superadmin',
+    // #1020: the platform's own administration, set apart from the gym's
+    // sections above it.
+    separatorAbove: true,
     items: [
       {
         href: '/{{locale}}/system/gyms',

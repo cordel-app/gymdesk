@@ -29,6 +29,7 @@ import {
   benefitActionRequiresValue,
   benefitActionsFor,
   isPercentageBenefitAction,
+  isRetiredBenefitAction,
 } from '@/lib/productBenefitActions';
 import {
   DEFAULT_PROMOTION_ITEM_REQUIREMENT,
@@ -344,6 +345,16 @@ const valueLabelSt: React.CSSProperties = {
   textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2,
 };
 /**
+ * #997: the stored value of a retired treatment, shown as text where its input
+ * used to be. It wears `formValueStyle`'s own reasoning — a value flush under
+ * the label whose sibling rows carry an inset control would move the column —
+ * so it keeps the control's padding and type size with no border or background
+ * of its own, declaring no colour the Theme cannot move.
+ */
+const legacyValueSt: React.CSSProperties = {
+  display: 'block', padding: '6px 0', fontSize: 13, color: '#666',
+};
+/**
  * #893 §2/§3: the pill that says *why* a row has no Remove control. Same
  * compact grey badge the Products list uses for `System`, so the two
  * screens read as one visual language.
@@ -589,25 +600,44 @@ export function ProductBenefitEditor({
                     {benefitActionsFor(benefitContext).map((a) => (
                       <option key={a} value={a}>{t(`item_action_${a}`)}</option>
                     ))}
+                    {/*
+                      #997: the treatment this line is *stored* with, when it is
+                      one the context no longer offers. Rendered **disabled**, so
+                      the row still says what it costs and the value can never be
+                      picked again — dropping it would make the select read
+                      `No benefit` for a line that bills a discount, and the
+                      first unrelated save would make that true.
+                    */}
+                    {isRetiredBenefitAction(benefitContext, action) && (
+                      <option value={action} disabled>{t(`item_action_${action}`)}</option>
+                    )}
                   </select>
                 )}
                 {benefitContext && action && (
                   benefitActionRequiresValue(action) ? (
                     <span>
                       <span style={valueLabelSt}>{t(`item_action_value_${action}`)}</span>
-                      <input
-                        type="number" min="0" step={isPercentageBenefitAction(action) ? '1' : '0.01'}
-                        max={isPercentageBenefitAction(action) ? 100 : undefined}
-                        value={row.value ?? ''}
-                        // A percentage is clamped as it is typed, the same way
-                        // the Membership Fee Benefit's duration is capped —
-                        // the API refuses anything above 100 anyway.
-                        onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, {
-                          value: clampBenefitValue(action, e.target.value),
-                        })}
-                        placeholder="0"
-                        style={{ ...inlineSelectSt, width: '100%' }}
-                      />
+                      {isRetiredBenefitAction(benefitContext, action) ? (
+                        // #997 §2 — no percentage *input* inside a Membership
+                        // Plan. The stored number is still shown, because it is
+                        // what this line bills until somebody corrects the
+                        // treatment, and a blank cell would read as no discount.
+                        <span style={legacyValueSt}>{row.value ?? '—'}</span>
+                      ) : (
+                        <input
+                          type="number" min="0" step={isPercentageBenefitAction(action) ? '1' : '0.01'}
+                          max={isPercentageBenefitAction(action) ? 100 : undefined}
+                          value={row.value ?? ''}
+                          // A percentage is clamped as it is typed, the same way
+                          // the Membership Fee Benefit's duration is capped —
+                          // the API refuses anything above 100 anyway.
+                          onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, {
+                            value: clampBenefitValue(action, e.target.value),
+                          })}
+                          placeholder="0"
+                          style={{ ...inlineSelectSt, width: '100%' }}
+                        />
+                      )}
                     </span>
                   ) : <span />
                 )}

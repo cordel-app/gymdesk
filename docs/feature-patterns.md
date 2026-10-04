@@ -326,6 +326,8 @@ Navigation is config-driven — add an item to the right group instead of editin
   children: [{ href: '/{{locale}}/widgets/deleted', labelKey: 'nav.widgets_deleted' }] },
 ```
 
+A new item inherits both sidebar states for free (#1003): expanded it renders as today, and collapsed — icons only, on desktop — it is the **group's** icon that carries the active treatment, because the active navigation item is always a subsection. Nothing about that is the item's to configure. If you need to reason about which group holds the open page, call `navGroupContainsActivePath()` (`lib/sidebarCollapse.ts`) rather than comparing `pathname` to an `href` in a component: both sidebar modes ask that one function, and a second copy is how the highlight comes to differ between them. Note the hrefs in this config still carry the `{{locale}}` placeholder — resolve them (`translateItem`) before comparing against `pathname`, which is the bug that had kept the active group from auto-expanding at all.
+
 ### 6. i18n (`locales/base/{en,es,ca}.json`)
 Add a `"widgets"` namespace to each file:
 ```json
@@ -1759,6 +1761,22 @@ Reference implementation: `apps/admin/src/components/ProductBenefits.tsx` (`PROD
 
 ---
 
+## One Chrome Module per App (#983)
+
+The Members App's counterpart to `listChrome.ts`/`formChrome.ts`. When a surface is painted from a theme the customer configures, a colour typed into a page is a value the theme cannot move — so one module spells them and every screen spreads what it exports.
+
+- **A role, not a shade.** `memberTheme.textMuted` means "the secondary text colour"; a page asks for that rather than for `#71717a`, and the theme decides what it is. The module's own value is the CSS variable (`var(--gd-text-muted, …)`), and the literal inside it is that variable's fallback for the frames before `ThemeProvider`'s effect has run — which is why the fallback is the *default token's* value and not whatever a page happened to carry.
+- **One object per surface.** `sectionCardStyle`, `rowDividerStyle`, `inputStyle`, `primaryButtonStyle`/`secondaryButtonStyle`/`destructiveButtonStyle`, `statusPillStyle(tone)`, `noticeStyle(tone)`. A page spreads one and overrides its own geometry (`{ ...sectionCardStyle, padding: '16px 18px' }`), exactly as a borrowed `formChrome` object is spread.
+- **A declared setting must reach every surface of its kind, not one.** #833 wired the Section Cards border to the component the navigation tiles render through, which was right and not enough: the content cards of six other screens are Section Cards to the gym owner reading the setting's label. Putting the border in the shared module is what made "all relevant cards" one rule instead of seven.
+- **One tone map for a status.** The same four lifecycle states were three copies of a `{bg, fg}` map on three screens. One `statusTone()` + `statusPillStyle()` answers for all of them, and the tint is `color-mix()` of the theme's own status colour over the card surface — mixed over the surface rather than `transparent`, so a pill stays opaque on a card carrying artwork.
+- **Name the variable's owner.** A Members App surface reading `--gd-sidebar-selected-bg` is reading the *Admin sidebar's* colour: no Members App setting can move it, so the control is unthemable however carefully the theme is configured. When a surface has no setting of its own, inherit from the nearest one that is about the same thing (the Calendar's filter buttons take the Calendar Buttons setting FullCalendar's navigation buttons already follow).
+- **A carve-out is a product decision, and the gate asserts the set.** Three files keep a literal: the static `theme-color` meta (it tints the browser's chrome and is read before any gym resolves) and the two impersonation bars (the platform's, because a gym able to repaint them could hide them). The gate lists them and asserts the list, so a fourth is argued in a review rather than appended quietly.
+- **The gate goes where CI runs.** `npm test` runs in `api/` only, so a scan that must hold on every push lives in `api/src/test/` even when what it scans is a frontend (see *A recurring defect class gets a gate, not a fourth point fix*). Strip comments (they cite `#983`, which looks exactly like a three-digit colour) and `var(--token, fallback)` expressions before looking for a hex, or the gate fails on its own documentation.
+
+Reference implementation: `apps/member/src/lib/memberChrome.ts`, with `api/src/test/members-app-theme-consumption.unit.test.ts` as the gate and `apps/member/src/test/members-app-theme-vars.test.ts` asserting which setting reaches which surface.
+
+---
+
 ## Two Member-App Sections, One Image Row (#932)
 
 The Member app's read-only equivalent of the rule above. When one page carries two sections of the *same shape* — an image beside a name, with an optional line under it (My Nutrition's Dietary Restrictions and Nutrition Goals) — the row is a component, not a style object copied twice.
@@ -2019,6 +2037,35 @@ Reference implementation: `api/src/domain/productFrequency.ts` +
 `apps/admin/src/app/[locale]/financials/products/productFrequency.ts`
 + `api/src/test/product-frequency.unit.test.ts`.
 
+#997 applied the same split to a **per-context** set — `percentage_discount`,
+retired from a Membership Plan benefit and still offered by a Promotion — which
+is where the pattern's own last bullet points: the retired value *is* someone
+else's offered one, in a different context of the same declaration. Two things
+follow, and a fourth retirement will need them both.
+
+- **Retire per context, not per value.** `domain/productBenefitActions.ts` splits
+  each *gate* rather than each list: `benefitActionsFor()` / `isBenefitActionAllowed()`
+  answer the write question and `storedBenefitActionsFor()` / `isStoredBenefitAction()`
+  the read one, so `isRetiredBenefitAction(context, action)` is simply "stored
+  here, not offered here" and answers `false` on the Promotion side with no
+  second list. A reader that asked the offered set would normalize a stored
+  percentage to the neutral default and start charging full price — the read gate
+  is not an optimisation, it is the rule.
+- **The whole pair is what may be kept.** `keepsRetiredBenefit()` compares the
+  action *and* its value, because the retired thing here carries a number: a line
+  stored at 20 % may be re-saved at 20 % and never at 50 %, so keeping cannot
+  become re-negotiating. `productFrequencyWriteError`'s one-argument comparison
+  is the same rule for a value that has no second half. Where the stored pair has
+  to reach the validator, read it *before* the write (`loadStoredPlanBenefitPairs()`)
+  and leave the transaction's own `FOR UPDATE` read as the only thing that
+  decides what a kept line is written with.
+- **A retirement with existing rows ships a report, not a migration.** `npm run
+  plans:percentage-benefits` is the "identified and handled through an explicit
+  data-cleanup process" half of the ticket: an operator script beside the other
+  read-only ones, listing the catalogue lines a human can correct in the editor
+  separately from the Assigned Plan snapshot lines that are what a member was
+  agreed at and are deliberately left alone.
+
 ### Renaming a label two entities share (#815)
 
 A label-only rename is only label-only while the key it changes belongs to one
@@ -2095,6 +2142,43 @@ the row's children**, never an edit of the row:
 Reference implementation: `api/src/domain/billingEventPayments.ts` +
 `domain/billingEventStatus.ts` + the three `/payments/billing-events/:id*`
 routes in `api/src/api/payments.ts` + migration 165.
+
+---
+
+## A lookup whose eligible set can shrink (#986)
+
+A picker over live rows — the Activity Type's **Default Trainer**, an event's
+Space — has the same shape as a retired-value set above, for the same reason: the
+set of *selectable* values and the set of *storable* values are not the same, and
+a row stored yesterday must keep reading correctly today.
+
+- **One place decides who is eligible, and every reader is a projection of it.**
+  `api/src/domain/trainerAssignment.ts` holds the scope and the ordering as SQL
+  fragments (`ASSIGNABLE_TRAINERS_FROM`, `assignableTrainersSql(columns)`), so
+  `GET /trainers` (staff picker), `GET /me/trainers` (member filter) and
+  `isAssignableTrainer()` (the write validation) cannot disagree. A second query
+  spelling the same `WHERE` is how a dropdown comes to offer a value the `PUT`
+  refuses.
+- **Validate the selection, not the request.** `trainerWriteNeedsLookup(next,
+  current)` is `productFrequencyWriteError`'s second argument in another guise:
+  a clear is always allowed, a value identical to the stored one is **not** a new
+  selection, and anything else must be eligible *today*. Replace-all and
+  whole-form `PUT`s resend fields nobody touched, so without this an unrelated
+  edit 400s on a trainer who has since left.
+- **Offer the stored value as a `disabled` option.** The same device as the
+  retired frequency, with the name the read already returns
+  (`default_trainer_name`, `space_name`): the select reads truthfully, submits the
+  value back untouched, and never invents a placeholder for it.
+- **Let the FK clear what really is gone.** Deactivating staff deletes the login
+  row and every trainer FK is `ON DELETE SET NULL`, so there is no sweep, no
+  nightly reconciliation and no stored "is this still valid" flag.
+- **A structural condition is not a second rule.** Only a staff member with a
+  `gym_membership_id` can be stored, because that is the id the column holds —
+  worth a comment at the declaration, never a filter the UI re-applies.
+
+Reference implementation: `api/src/domain/trainerAssignment.ts` + `api/src/api/trainers.ts`
++ the `default_trainer_membership_id` validation in `api/src/api/activity-types.ts`
++ `api/src/test/trainer-assignment.unit.test.ts`.
 
 ---
 

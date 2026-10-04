@@ -4,6 +4,7 @@ import React, { useCallback, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { NutritionFoodCard } from './NutritionFoodCard';
 import { NutritionFoodItem } from '@/lib/nutritionFood';
+import { memberTheme } from '@/lib/memberChrome';
 
 /**
  * #722 — the foods of one meal, as a horizontal carousel the member swipes
@@ -153,12 +154,12 @@ const styles: Record<string, React.CSSProperties> = {
   slide:    { flex: '0 0 min(320px, 82%)', scrollSnapAlign: 'center', minWidth: 0 },
   controls: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, marginTop: 8 },
   navButton: {
-    width: 36, height: 36, borderRadius: 18, border: '1px solid #e4e4e7', background: '#fff',
-    color: '#3f3f46', fontSize: 18, lineHeight: 1, cursor: 'pointer', flex: '0 0 auto',
+    width: 36, height: 36, borderRadius: 18, border: `1px solid ${memberTheme.cardBorderColor}`, background: memberTheme.surface,
+    color: memberTheme.textSecondary, fontSize: 18, lineHeight: 1, cursor: 'pointer', flex: '0 0 auto',
   },
-  navButtonDisabled: { color: '#d4d4d8', cursor: 'default' },
+  navButtonDisabled: { color: memberTheme.textMuted, opacity: 0.5, cursor: 'default' },
   dots:       { display: 'inline-flex', alignItems: 'center', gap: 6 },
-  dot:        { width: 6, height: 6, borderRadius: 3, background: '#d4d4d8' },
-  dotCurrent: { width: 10, height: 10, borderRadius: 5, background: '#52525b' },
-  position:   { fontSize: 12, color: '#71717a' },
+  dot:        { width: 6, height: 6, borderRadius: 3, background: memberTheme.separator },
+  dotCurrent: { width: 10, height: 10, borderRadius: 5, background: memberTheme.textSecondary },
+  position:   { fontSize: 12, color: memberTheme.textMuted },
 };

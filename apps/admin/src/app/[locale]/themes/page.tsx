@@ -40,6 +40,15 @@ import {
   type MembersImages,
 } from '@/components/ThemeMembersImagesEditor';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall } from '@/components/ui';
+import {
+  allCentersChecked,
+  assignedCenterIds,
+  centerKey,
+  centerSelectionChanged,
+  toggleAllCenters,
+  toggleCenter,
+  type AssignmentCenter,
+} from './centerAssignments';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 
 interface Theme {
@@ -65,20 +74,9 @@ interface Theme {
   modified_at: string | null;
 }
 
-interface AssignmentCenter {
-  id: string;
-  name: string;
-  is_inherited: boolean;
-}
-
 interface Assignments {
   is_gym_default: boolean;
   centers: AssignmentCenter[];
-}
-
-interface UnassignedCenter {
-  id: string;
-  name: string;
 }
 
 const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
@@ -86,7 +84,6 @@ const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
 // Assignments first, then Branding → Colors → Typography — the same set for a
 // Base Theme and a Custom one (#678); see renderInlineEditor().
 type SectionKey = 'branding' | 'members' | 'typography' | 'colors' | 'assignments' | 'members_app';
-const CENTERS_INITIAL_LIMIT = 10;
 
 const emptyForm = { name: '', description: '', logoContainsGymName: false, tokens: DEFAULT_TOKENS };
 
@@ -146,17 +143,12 @@ export default function GymThemesPage() {
 
   const [assignments, setAssignments] = useState<Assignments | null>(null);
   const [assignmentsLoading, setAssignmentsLoading] = useState(false);
-  const [centersSearch, setCentersSearch] = useState('');
-  const [showAllCenters, setShowAllCenters] = useState(false);
   const [settingDefault, setSettingDefault] = useState(false);
-  const [restoringId, setRestoringId] = useState<string | null>(null);
-
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerThemeId, setPickerThemeId] = useState<string | null>(null);
-  const [unassigned, setUnassigned] = useState<UnassignedCenter[]>([]);
-  const [pickerSearch, setPickerSearch] = useState('');
-  const [pickerSelected, setPickerSelected] = useState<Set<string>>(new Set());
-  const [pickerSaving, setPickerSaving] = useState(false);
+  // #985 — the Center checkbox draft, and the set it is compared against. It
+  // leaves the browser on Save like every other field of this card, so Cancel
+  // discards it and the unsaved-changes guard covers it.
+  const [centerSelection, setCenterSelection] = useState<Set<string> | null>(null);
+  const centerBaselineRef = useRef<Set<string> | null>(null);
 
   const [cloning, setCloning] = useState<Theme | null>(null);
   const [cloneName, setCloneName] = useState('');
@@ -221,8 +213,8 @@ export default function GymThemesPage() {
         ) as Record<MemberImageSlot, string | null>,
       );
       setAssignments(null);
-      setCentersSearch('');
-      setShowAllCenters(false);
+      setCenterSelection(null);
+      centerBaselineRef.current = null;
     });
   }
 
@@ -239,6 +231,11 @@ export default function GymThemesPage() {
     try {
       const data = await apiFetch<Assignments>(`/system/themes/${themeId}/assignments`);
       setAssignments(data);
+      // The draft and its baseline both start at what is stored, so an opened
+      // section is never dirty and Save stays disabled until a box moves.
+      const stored = assignedCenterIds(data.centers);
+      centerBaselineRef.current = stored;
+      setCenterSelection(stored);
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
@@ -273,48 +270,6 @@ export default function GymThemesPage() {
     }
   }
 
-  async function handleRestoreInheritance(themeId: string, centerId: string) {
-    setRestoringId(centerId);
-    try {
-      await apiFetch(`/system/themes/${themeId}/centers/${centerId}`, { method: 'DELETE' });
-      await Promise.all([loadAssignments(themeId), refreshGyms(), refreshCenters()]);
-    } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
-    } finally {
-      setRestoringId(null);
-    }
-  }
-
-  async function openPicker(themeId: string) {
-    setPickerThemeId(themeId);
-    setPickerSearch('');
-    setPickerSelected(new Set());
-    try {
-      const data = await apiFetch<UnassignedCenter[]>(`/system/themes/${themeId}/unassigned-centers`);
-      setUnassigned(data);
-      setPickerOpen(true);
-    } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
-    }
-  }
-
-  async function handlePickerAssign() {
-    if (!pickerThemeId || pickerSelected.size === 0) return;
-    setPickerSaving(true);
-    try {
-      await apiFetch(`/system/themes/${pickerThemeId}/assign-centers`, {
-        method: 'POST',
-        body: JSON.stringify({ center_ids: Array.from(pickerSelected) }),
-      });
-      setPickerOpen(false);
-      await Promise.all([loadAssignments(pickerThemeId), refreshGyms(), refreshCenters()]);
-    } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
-    } finally {
-      setPickerSaving(false);
-    }
-  }
-
   // The tokens actually painting the app chrome right now, independent of
   // which theme (if any) is being edited — the restore point for Cancel.
   function currentLiveTokens(): ThemeTokens {
@@ -331,8 +286,14 @@ export default function GymThemesPage() {
       !tokensEqual(editForm.tokens, orig.tokens) ||
       editLogoFile !== null ||
       logoRemovePending ||
-      MEMBER_IMAGE_SLOTS.some((slot) => membersImageFiles[slot] !== null || membersImageRemovals[slot])
+      MEMBER_IMAGE_SLOTS.some((slot) => membersImageFiles[slot] !== null || membersImageRemovals[slot]) ||
+      // #985: a ticked Center is an unsaved change like any other field's.
+      centersDirty()
     );
+  }
+
+  function centersDirty(): boolean {
+    return centerSelectionChanged(centerBaselineRef.current, centerSelection);
   }
 
   function pickMembersImage(slot: MemberImageSlot, file: File) {
@@ -450,21 +411,27 @@ export default function GymThemesPage() {
     setEditError(null);
     setAssetFailures([]);
     try {
-      try {
-        await apiFetch(`/system/themes/${theme.id}`, {
-          method: 'PUT',
-          body: JSON.stringify({
-            name: editForm.name.trim(),
-            description: editForm.description.trim() || null,
-            logo_contains_gym_name: editForm.logoContainsGymName,
-            tokens: editForm.tokens,
-          }),
-        });
-      } catch (err: any) {
-        // The configuration is the one step that still aborts: the asset keys
-        // are built from the theme's persisted name, so there is nothing to be
-        // gained from uploading against a rename that did not happen.
-        throw new Error(storageErrorMessage(err, 'storage_error_title_settings', 'save_settings'));
+      // #985: a Base Theme's configuration belongs to the platform and this
+      // screen renders it read-only, but a gym may still assign it to its own
+      // Centers — so Save writes the assignments alone for one of those, and
+      // the settings `PUT` (which would 403) is not attempted.
+      if (!theme.is_base) {
+        try {
+          await apiFetch(`/system/themes/${theme.id}`, {
+            method: 'PUT',
+            body: JSON.stringify({
+              name: editForm.name.trim(),
+              description: editForm.description.trim() || null,
+              logo_contains_gym_name: editForm.logoContainsGymName,
+              tokens: editForm.tokens,
+            }),
+          });
+        } catch (err: any) {
+          // The configuration is the one step that still aborts: the asset keys
+          // are built from the theme's persisted name, so there is nothing to be
+          // gained from uploading against a rename that did not happen.
+          throw new Error(storageErrorMessage(err, 'storage_error_title_settings', 'save_settings'));
+        }
       }
 
       // #830 — every asset the admin touched is attempted, whatever the others
@@ -486,6 +453,24 @@ export default function GymThemesPage() {
         },
       );
 
+      // #985 — the Center assignments, persisted by this Save and nothing else.
+      // A failure keeps the draft *and* its baseline, so Save is the retry
+      // exactly as it is for a failed asset, and the error says which step it
+      // was rather than replacing the asset report.
+      let centersError: string | null = null;
+      if (centersDirty() && centerSelection) {
+        const submitted = Array.from(centerSelection);
+        try {
+          await apiFetch(`/system/themes/${theme.id}/centers`, {
+            method: 'PUT',
+            body: JSON.stringify({ center_ids: submitted }),
+          });
+          centerBaselineRef.current = new Set(submitted);
+        } catch (err: any) {
+          centersError = t('assign_centers_error', { error: err.message ?? t('error_generic') });
+        }
+      }
+
       // The configuration saved, so the draft baseline moves regardless; only the
       // assets that failed stay pending, with their files and previews intact.
       const pending = pendingAfterFailures(failures);
@@ -496,8 +481,20 @@ export default function GymThemesPage() {
       setMembersImageFiles(keepBySlot(membersImageFiles, pending.slotUploads));
       setMembersImageRemovals(keepFlagsBySlot(pending.slotRemovals));
       setAssetFailures(failures);
-      setEditError(failures.length > 0 ? formatThemeAssetFailures(failures, assetLabels) : null);
-      await Promise.all([load(), refreshGyms(), refreshCenters()]);
+      setEditError(
+        [centersError, failures.length > 0 ? formatThemeAssetFailures(failures, assetLabels) : null]
+          .filter(Boolean)
+          .join('\n\n') || null,
+      );
+      await Promise.all([
+        load(),
+        refreshGyms(),
+        refreshCenters(),
+        // Re-read the Assignments so the inherited/assigned tags match what was
+        // just written — but not when that write failed, since the reload would
+        // reseed the draft and throw away the admin's selection.
+        centersError ? Promise.resolve() : loadAssignments(theme.id),
+      ]);
     } catch (err: any) {
       setEditError(err.message ?? t('error_generic'));
     } finally {
@@ -540,7 +537,7 @@ export default function GymThemesPage() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editForm, editLogoFile, logoRemovePending, membersImageFiles, membersImageRemovals, expandedId]);
+  }, [editForm, editLogoFile, logoRemovePending, membersImageFiles, membersImageRemovals, centerSelection, expandedId]);
 
   function openClone(theme: Theme) {
     setCloning(theme);
@@ -598,13 +595,22 @@ export default function GymThemesPage() {
     );
   }
 
+  /**
+   * #985 — the Centers as an inline checkbox list: every Center of the gym, the
+   * `All Centers` box above them, and nothing that persists on its own. The
+   * card's Save writes the set (the modal, its search field and its
+   * Assign/Cancel pair are gone, and so is the per-row `Restore Inheritance`
+   * button — unticking a box is that action now).
+   */
   function renderAssignmentsContent(theme: Theme) {
     const canAssign = theme.status === 'active';
-    if (assignmentsLoading || !assignments) {
+    if (assignmentsLoading || !assignments || !centerSelection) {
       return <p style={{ color: '#888', fontSize: 14 }}>{t('loading')}</p>;
     }
-    const filteredCenters = assignments.centers.filter((c) => c.name.toLowerCase().includes(centersSearch.toLowerCase()));
-    const visibleCenters = showAllCenters ? filteredCenters : filteredCenters.slice(0, CENTERS_INITIAL_LIMIT);
+    const centers = assignments.centers;
+    const selection = centerSelection;
+    const allChecked = allCentersChecked(centers, selection);
+    const rowCursor = canAssign ? 'pointer' : 'default';
     return (
       <div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 0', borderBottom: '1px solid var(--gd-border, #eee)', marginBottom: 16, opacity: canAssign ? 1 : 0.5 }}>
@@ -618,43 +624,48 @@ export default function GymThemesPage() {
           />
           <label htmlFor={`gym-default-${theme.id}`} style={{ fontSize: 14, fontWeight: 500, cursor: (assignments.is_gym_default || !canAssign) ? 'default' : 'pointer' }}>{t('assign_gym_default')}</label>
         </div>
-        <div style={{ marginBottom: 8 }}>
-          <p style={{ margin: '0 0 10px', fontWeight: 600, fontSize: 14 }}>{t('assign_centers_title')} ({assignments.centers.length})</p>
-          <input type="text" value={centersSearch} onChange={(e) => { setCentersSearch(e.target.value); setShowAllCenters(false); }} placeholder={t('assign_centers_search')} style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #ddd', fontSize: 14, marginBottom: 8, boxSizing: 'border-box' }} />
-          {filteredCenters.length === 0 ? (
-            <p style={{ color: 'var(--gd-text-muted, #6b7280)', fontSize: 13 }}>{t('assign_no_centers')}</p>
+        <div style={{ opacity: canAssign ? 1 : 0.5 }}>
+          <p style={{ margin: '0 0 10px', fontWeight: 600, fontSize: 14 }}>{t('assign_centers_title')}</p>
+          {centers.length === 0 ? (
+            // §7: a message, never an empty checkbox list.
+            <p style={{ color: 'var(--gd-text-muted, #6b7280)', fontSize: 13 }}>{t('assign_centers_empty')}</p>
           ) : (
             <>
-              {visibleCenters.map((center) => (
-                <div key={center.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
-                  <span style={{ fontSize: 14 }}>{center.name}</span>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: center.is_inherited ? '#f0f0f0' : '#e8f0fe', color: center.is_inherited ? '#666' : '#1a56db' }}>
-                      {center.is_inherited ? t('assign_inherited') : t('assign_assigned')}
-                    </span>
-                    {!center.is_inherited && (
-                      <button onClick={() => handleRestoreInheritance(theme.id, center.id)} disabled={restoringId === center.id} style={btnSmall('#888')}>{t('assign_restore')}</button>
-                    )}
-                  </div>
-                </div>
+              {/* `All Centers` is separated from the individual Centers by the
+                  same hairline the rest of this card uses. */}
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', marginBottom: 8, borderBottom: '1px solid var(--gd-border, #eee)', cursor: rowCursor }}>
+                <input
+                  type="checkbox"
+                  checked={allChecked}
+                  disabled={!canAssign}
+                  onChange={(e) => setCenterSelection(toggleAllCenters(centers, e.target.checked))}
+                  style={{ width: 16, height: 16, cursor: rowCursor }}
+                />
+                <span style={{ fontSize: 14, fontWeight: 500 }}>{t('assign_all_centers')}</span>
+              </label>
+              {centers.map((center) => (
+                <label key={centerKey(center.id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f0f0f0', cursor: rowCursor }}>
+                  <input
+                    type="checkbox"
+                    checked={selection.has(centerKey(center.id))}
+                    disabled={!canAssign}
+                    onChange={(e) => setCenterSelection(toggleCenter(selection, center.id, e.target.checked))}
+                    style={{ width: 16, height: 16, cursor: rowCursor }}
+                  />
+                  <span style={{ fontSize: 14, flex: 1, minWidth: 0 }}>{center.name}</span>
+                  {/* A Center with no assignment of its own that this theme
+                      reaches as the Gym Default: the box stays unticked, because
+                      ticking it is what would make the assignment explicit. */}
+                  {center.is_inherited && !selection.has(centerKey(center.id)) && (
+                    <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 12, background: '#f0f0f0', color: '#666' }}>{t('assign_inherited')}</span>
+                  )}
+                </label>
               ))}
-              {!showAllCenters && filteredCenters.length > CENTERS_INITIAL_LIMIT && (
-                <button onClick={() => setShowAllCenters(true)} style={{ marginTop: 8, background: 'none', border: 'none', color: '#6c63ff', cursor: 'pointer', fontSize: 13, padding: 0 }}>
-                  {t('assign_centers_show_all').replace('{count}', String(filteredCenters.length))}
-                </button>
-              )}
             </>
           )}
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <button
-            onClick={() => openPicker(theme.id)}
-            disabled={!canAssign}
-            title={canAssign ? undefined : tStatus('active')}
-            style={{ ...primaryBtnSmall(), opacity: canAssign ? 1 : 0.5, cursor: canAssign ? 'pointer' : 'not-allowed' }}
-          >
-            {t('assign_centers_btn')}
-          </button>
+          {!canAssign && (
+            <p style={{ margin: '10px 0 0', fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>{t('assign_centers_inactive_hint')}</p>
+          )}
         </div>
       </div>
     );
@@ -723,18 +734,16 @@ export default function GymThemesPage() {
           ))}
         </div>
 
-        {isBase ? (
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
-            <button onClick={() => setExpandedId(null)} style={btnSmall('#888')}>{t('cancel')}</button>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end', borderTop: '1px solid var(--gd-border, #eee)', paddingTop: 16 }}>
-            <button onClick={handleCancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
-            <button onClick={() => handleSaveAll(theme)} disabled={saving || !dirty} style={{ ...primaryBtnSmall(), opacity: (saving || !dirty) ? 0.5 : 1, cursor: (saving || !dirty) ? 'not-allowed' : 'pointer' }}>
-              {saving ? t('saving') : t('save_changes')}
-            </button>
-          </div>
-        )}
+        {/* #985 — a Base Theme now gets the same Save pair: its configuration is
+            the platform's and stays read-only, but its Center assignments are
+            this gym's and are persisted by this button, since there is no
+            Assign action any more. Nothing else about the footer moves. */}
+        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end', borderTop: '1px solid var(--gd-border, #eee)', paddingTop: 16 }}>
+          <button onClick={handleCancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button onClick={() => handleSaveAll(theme)} disabled={saving || !dirty} style={{ ...primaryBtnSmall(), opacity: (saving || !dirty) ? 0.5 : 1, cursor: (saving || !dirty) ? 'not-allowed' : 'pointer' }}>
+            {saving ? t('saving') : t('save_changes')}
+          </button>
+        </div>
       </div>
     );
   }
@@ -886,22 +895,6 @@ export default function GymThemesPage() {
             {details.modified_at && <DetailRow label={t('details_modified_at')} value={formatDate(details.modified_at)} />}
           </div>
         )}
-      </CrudModal>
-
-      <CrudModal open={pickerOpen} title={t('picker_title')} error={null} saving={pickerSaving} cancelLabel={t('picker_cancel')} saveLabel={pickerSaving ? t('picker_saving') : t('picker_save')} onCancel={() => setPickerOpen(false)} onSave={handlePickerAssign}>
-        <FormInput value={pickerSearch} onChange={(e) => setPickerSearch(e.target.value)} placeholder={t('picker_search')} autoFocus />
-        <div style={{ marginTop: 12, maxHeight: 300, overflowY: 'auto' }}>
-          {unassigned.filter((c) => c.name.toLowerCase().includes(pickerSearch.toLowerCase())).length === 0 ? (
-            <p style={{ color: '#888', fontSize: 13 }}>{t('picker_empty')}</p>
-          ) : (
-            unassigned.filter((c) => c.name.toLowerCase().includes(pickerSearch.toLowerCase())).map((c) => (
-              <label key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', cursor: 'pointer', borderBottom: '1px solid #f0f0f0' }}>
-                <input type="checkbox" checked={pickerSelected.has(c.id)} onChange={(e) => { const next = new Set(pickerSelected); if (e.target.checked) next.add(c.id); else next.delete(c.id); setPickerSelected(next); }} style={{ width: 16, height: 16 }} />
-                <span style={{ fontSize: 14 }}>{c.name}</span>
-              </label>
-            ))
-          )}
-        </div>
       </CrudModal>
 
       <ConfirmDialog open={deleting !== null} message={t('confirm_delete')} confirmLabel={t('delete')} cancelLabel={t('cancel')} onConfirm={handleDelete} onCancel={() => setDeleting(null)} />

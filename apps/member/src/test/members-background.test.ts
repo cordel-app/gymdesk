@@ -39,10 +39,35 @@ describe('which background a page uses (#725)', () => {
   it('maps each Members section to its own slot', () => {
     expect(slotForPathname('/en/training')).toBe('training');
     expect(slotForPathname('/en/nutrition')).toBe('nutrition');
-    expect(slotForPathname('/en/calendar')).toBe('calendar');
     // "My Bookings" is the `/schedule` route.
     expect(slotForPathname('/es/schedule')).toBe('bookings');
     expect(slotForPathname('/ca/membership')).toBe('membership');
+  });
+
+  // #984 — the Calendar tile's artwork is the tile's alone. The Calendar page
+  // falls through to the general background like any unnamed route, so the
+  // 512×512 tile image can never be stretched behind the time grid.
+  it('does not give the Calendar page the Calendar tile image', () => {
+    expect(slotForPathname('/en/calendar')).toBe('background');
+    expect(slotForPathname('/es/calendar')).toBe('background');
+    expect(slotForPathname('/en/calendar/2026-10-02')).toBe('background');
+  });
+
+  it('still keeps `calendar` as one of the six slots, for the tile', () => {
+    expect(MEMBER_BACKGROUND_SLOTS).toContain('calendar');
+    expect(backgroundUrlForSlot({ calendar_url: 'https://r2/calendar.png' }, 'calendar'))
+      .toBe('https://r2/calendar.png');
+  });
+
+  it('paints the Calendar page with the general background when one is configured', () => {
+    const images = { background_url: 'https://r2/background.png', calendar_url: 'https://r2/calendar.png' };
+    expect(backgroundUrlForSlot(images, slotForPathname('/en/calendar')))
+      .toBe('https://r2/background.png');
+  });
+
+  it('paints the Calendar page with nothing — the theme colour — when there is no general background', () => {
+    const images = { calendar_url: 'https://r2/calendar.png' };
+    expect(backgroundUrlForSlot(images, slotForPathname('/en/calendar'))).toBeNull();
   });
 
   it('keeps the slot for a nested route of a section', () => {
