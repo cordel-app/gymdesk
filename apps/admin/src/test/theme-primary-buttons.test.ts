@@ -82,10 +82,13 @@ describe('primaryActionColors: the Theme Buttons group, in one place (#912 §3, 
 });
 
 describe('Both Theme screens render their primary actions themed (#912 §1, §2)', () => {
-  it('the gym Theme editor does, for + Assign Centers and Save changes', () => {
+  it('the gym Theme editor does, for Save changes', () => {
+    // #985 removed the second one with the `+ Assign Centers…` modal: the
+    // Centers are an inline checkbox list now and this card's own Save is what
+    // persists them, so `Save changes` is the screen's only filled action.
     expect(gymSrc).toContain('primaryBtnSmall');
-    expect(gymSrc.match(/\.\.\.primaryBtnSmall\(\)/g) ?? []).toHaveLength(2);
-    expect(gymSrc).toContain("{t('assign_centers_btn')}");
+    expect(gymSrc.match(/\.\.\.primaryBtnSmall\(\)/g) ?? []).toHaveLength(1);
+    expect(gymSrc).not.toContain("{t('assign_centers_btn')}");
   });
 
   it('the Base Theme screen does, for Save changes and + Add', () => {
@@ -93,24 +96,21 @@ describe('Both Theme screens render their primary actions themed (#912 §1, §2)
     expect(baseSrc).toContain('style={primaryBtnStyle()}');
   });
 
-  it('leaves no hardcoded lilac in either screen\'s buttons', () => {
-    // The gym screen keeps one `#6c63ff`: the "show all centers" disclosure
-    // text link, which is not a primary action and is deliberately out of
-    // scope (§4). Neither screen may carry one on a <button> style helper.
+  it('leaves no hardcoded lilac in either screen', () => {
+    // The gym screen's one remaining `#6c63ff` — the "show all centers"
+    // disclosure text link #912 left out of scope — went with the list it
+    // disclosed (#985), so neither screen carries the literal at all now.
     for (const src of [gymSrc, baseSrc]) {
       expect(src).not.toContain("btnSmall('#6c63ff')");
       expect(src).not.toContain("btnStyle('#6c63ff')");
+      expect(src.match(/#6c63ff/g) ?? []).toEqual([]);
     }
-    expect(baseSrc.match(/#6c63ff/g) ?? []).toEqual([]);
-    expect(gymSrc.match(/#6c63ff/g) ?? []).toHaveLength(1);
-    expect(gymSrc).toContain("color: '#6c63ff', cursor: 'pointer'");
   });
 
   it('preserves the disabled affordance each button already had', () => {
     // §6: the spread only replaces the colours — the opacity/cursor pair that
-    // marks a Save with nothing to save, and a picker on a non-active Theme,
-    // still rides on top of it.
-    expect(gymSrc).toContain("...primaryBtnSmall(), opacity: canAssign ? 1 : 0.5, cursor: canAssign ? 'pointer' : 'not-allowed'");
+    // marks a Save with nothing to save still rides on top of it. (The picker's
+    // own pair went with the picker, #985.)
     expect(gymSrc).toContain("...primaryBtnSmall(), opacity: (saving || !dirty) ? 0.5 : 1");
     expect(baseSrc).toContain('...primaryBtnSmall(), opacity: (editSaving || !isDirty()) ? 0.5 : 1');
     expect(baseSrc).toContain('disabled={hasNewRow}');
