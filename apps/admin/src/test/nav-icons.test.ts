@@ -120,7 +120,7 @@ describe('the sidebar renders them, and nothing else moves (#884 §11, §15, §1
   });
 
   it('spends only the room the icon needs, and never wraps a header', () => {
-    // 220px sidebar, uppercase 14px: the longest label ("CONFIGURACIÓN",
+    // 250px sidebar (#1033), uppercase 14px: the longest label ("CONFIGURACIÓN",
     // "ENTRENAMIENTO") fits beside the chevron and the icon at these values.
     expect(navGroupSrc).toContain("padding: '10px 16px'");
     expect(navGroupSrc).toContain("gap: '6px'");
