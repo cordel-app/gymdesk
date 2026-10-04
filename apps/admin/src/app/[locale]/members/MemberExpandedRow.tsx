@@ -37,6 +37,7 @@ import {
   type MemberProfile,
 } from './memberProfile';
 import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './MemberProfileLayout';
+import type { MemberTabId } from './memberTabs';
 
 interface Plan {
   id: number;
@@ -91,6 +92,7 @@ interface BillingEvent {
 export function MemberExpandedRow({
   memberId,
   member,
+  tab,
   profileVersion,
   editing,
   canManageTraining,
@@ -106,6 +108,13 @@ export function MemberExpandedRow({
    * `⋮ → Edit` form is seeded from, so the two can never show different data.
    */
   member: MemberProfile;
+  /**
+   * #961: the work area on screen. Only this tab's sections are rendered —
+   * which ones those are is `MEMBER_TABS` in `memberTabs.ts`, so a section is
+   * never shown by two tabs and never by none. The page owns the state, so the
+   * selected tab survives a save, an edit and the URL (`?member=&tab=`).
+   */
+  tab: MemberTabId;
   /** Bumped by the page when an edit was saved, so the centers below are re-read. */
   profileVersion: number;
   /**
@@ -292,333 +301,359 @@ export function MemberExpandedRow({
 
   return (
     <div style={panel}>
-      {/* #797 — PROFILE: the complete persisted Member Profile, read-only.
-          Expanding a Member is for reading it; editing stays behind ⋮ → Edit,
-          so this section carries no input, no toggle and no Edit affordance.
 
-          #882 — and it reads in the layout the Edit form writes in: the same
-          grid, order, labels and full-width Notes, from MemberProfileLayout.
-          While that form is open above, this section steps aside rather than
-          showing the same Profile a second time. */}
-      {!editing && (
-        <Section label={t('members.section_profile')} divider={false}>
-          <div style={card}>
-            <MemberProfileLayout
-              fieldLabel={(f) => t(`members.${f.labelKey}`)}
-              renderField={(f) => (
-                <p style={profileValueStyle}>
-                  {(f.kind === 'date' ? formatProfileDate(member[f.key]) : member[f.key]?.trim()) || EMPTY_VALUE}
-                </p>
-              )}
-              /* #927: calculated by the server from the Member's Membership
-                 history and read off the same row as every other value here —
-                 so the Profile, the member header's badge and the Promotion
-                 apply paths can never disagree about who is new. */
-              renderCalculated={() => (
-                <NewMemberValue
-                  isNewMember={member.is_new_member}
-                  label={t(`members.${newMemberValueKey(member.is_new_member)}`)}
-                  announce={t(`members.${newMemberAnnounceKey(member.is_new_member)}`)}
-                />
-              )}
-              centers={{
-                assignedLabel: t('members.assigned_centers'),
-                assigned: (
-                  <p style={profileValueStyle}>
-                    {centers.length === 0 ? EMPTY_VALUE : centers.map((c) => c.name).join('\n')}
-                  </p>
-                ),
-                defaultLabel: t('members.default_center'),
-                default: <p style={profileValueStyle}>{defaultCenter?.name ?? EMPTY_VALUE}</p>,
-              }}
-            />
-          </div>
-        </Section>
-      )}
+      {tab === 'profile' && (
+        <>
+          {/* #797 — PROFILE: the complete persisted Member Profile, read-only.
+              Expanding a Member is for reading it; editing stays behind ⋮ → Edit,
+              so this section carries no input, no toggle and no Edit affordance.
 
-      {/* Account (Clerk status) */}
-      {clerkStatus && (
-        <Section label={t('members.section_account')} divider={!editing}>
-          <StatusBadge
-            status={clerkStatus.status}
-            label={
-              clerkStatus.status === 'not_enrolled' ? t('members.clerk_not_enrolled')
-              : clerkStatus.status === 'invited' ? t('members.clerk_invited')
-              : clerkStatus.status === 'active' ? t('members.clerk_active')
-              : clerkStatus.status === 'suspended' ? t('members.clerk_suspended')
-              : t('members.clerk_error')
-            }
-          />
-        </Section>
-      )}
-
-      {/* #634 §13 — the Member's Membership configuration as independent
-          sections. Additional Services and the Billing Simulation are siblings
-          of MEMBERSHIP PLANS, never nested inside a plan card, and each one has
-          its own editing controls.
-
-          #931 — there is no PROMOTIONS section here. A Promotion belongs to the
-          target it applies to (a Membership Plan or a Product), never to a
-          Member, so it is configured from the Promotions page and applied with
-          the Membership Plan the Member is assigned — which is what the Billing
-          Simulation below already reflects. The applications an Assigned Plan
-          was agreed with stay on the Assigned Plans card, from that
-          application's own snapshot (#635 §16). */}
-
-      {/* 1. MEMBERSHIP PLANS — the Member's plans, several of which may be
-          active at once (§6). Adding one never replaces another (§14). */}
-      <Section label={t('members.section_membership_plans')}>
-        <MemberMembershipPlans
-          memberId={memberId}
-          plans={configuration.plans}
-          canWrite={isAdmin}
-          onChanged={reloadConfiguration}
-          onAssignNewPlan={setAssigningFor}
-          onCancelPlan={setCancelling}
-          assignBusy={assigningFor !== null}
-          renderAssignEditor={(m) => (
-            // #628: Assign New Plan stays an explicit supersede action, edited
-            // inline inside the plan card it replaces — distinct from "+ Add
-            // Membership Plan", which is purely additive.
-            assigningFor?.id === m.id ? (
-              <AssignPlanInlineEditor
-                membership={{ id: m.id, plan_name: m.plan_name }}
-                plans={plans}
-                onCancel={() => setAssigningFor(null)}
-                onAssigned={() => { setAssigningFor(null); reloadConfiguration(); }}
-              />
-            ) : null
-          )}
-        />
-      </Section>
-
-      {/* 2. ADDITIONAL PRODUCTS — recurring Products, added and removed at
-          any time, independent from plans and promotions (§4). #957: the
-          section reads in both modes; its `+ Add Product` button is Edit
-          mode's alone. */}
-      <Section label={t('members.section_additional_services')}>
-        <MemberAdditionalServices
-          plans={configuration.plans}
-          services={configuration.services}
-          canWrite={isAdmin}
-          editing={editing}
-          onChanged={reloadConfiguration}
-        />
-      </Section>
-
-      {/* Billing Simulation (#629) — a section of its own, never nested inside
-          a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
-      <Section label={t('members.section_billing_simulation')}>
-        <MemberBillingSimulation key={simulationKey} memberId={memberId} />
-      </Section>
-
-      {/* Personal Training Class Slots (#647 stages 2–3) — the Mon–Sun weekly
-          availability grid, with slot selection and Book. The nightly rolling
-          2-month window is stage 4. */}
-      <Section label={t('members.section_pt_slots')}>
-        <MemberPersonalTrainingSlots memberId={memberId} />
-      </Section>
-
-      {/* Training Plans */}
-      <Section label={t('members.section_training_plans')}>
-        {trainingPlans.length === 0 ? (
-          <p style={dim}>{t('members.no_training_plans')}</p>
-        ) : (
-          <>
-            {activePlans.length > 0 && (
-              <div style={{ marginBottom: 8 }}>
-                <div style={subLabelStyle}>{t('members.plans_active')}</div>
-                {activePlans.map((p) => (
-                  <PlanCard
-                    key={p.id}
-                    name={p.training_plan_name}
-                    status={p.status}
-                    validFrom={p.valid_from}
-                    validTo={p.valid_to}
-                    onEdit={canManageTraining ? () => router.push(`/${locale}/training-plans?open=${p.training_plan_id}&member_id=${memberId}`) : undefined}
-                    editLabel={t('members.edit')}
-                  />
-                ))}
-              </div>
-            )}
-            {inactivePlans.length > 0 && (
-              <div>
-                <div style={subLabelStyle}>{t('members.plans_inactive')}</div>
-                {inactivePlans.map((p) => (
-                  <PlanCard
-                    key={p.id}
-                    name={p.training_plan_name}
-                    status={p.status}
-                    validFrom={p.valid_from}
-                    validTo={p.valid_to}
-                    onEdit={canManageTraining ? () => router.push(`/${locale}/training-plans?open=${p.training_plan_id}&member_id=${memberId}`) : undefined}
-                    editLabel={t('members.edit')}
-                    dim
-                  />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </Section>
-
-      {/* Nutrition Plans */}
-      <Section label={t('members.section_nutrition_plans')}>
-        {nutritionPlans.length === 0 ? (
-          <p style={dim}>{t('members.no_nutrition_plans')}</p>
-        ) : (
-          <div>
-            {nutritionPlans.map((p) => (
-              <div key={p.id} style={card}>
-                <div style={{ fontWeight: 500, fontSize: 14 }}>{p.name}</div>
-                {p.status && (
-                  <div style={{ marginTop: 4 }}>
-                    <StatusBadge status={p.status} label={p.status} />
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-      </Section>
-
-      {/* Personal Goals (#948 §4) — the goals this member holds. Goals *are*
-          assigned on a Member directly, which is the opposite of #931's answer
-          for Promotions and why this section carries its own controls; they all
-          belong to Edit mode (#957), so the read-only view has none of them. */}
-      <Section label={t('members.section_personal_goals')}>
-        <MemberPersonalGoals memberId={memberId} canWrite={canManageNutrition} editing={editing} />
-      </Section>
-
-      {/* Session Packages */}
-      <Section label={t('members.section_session_packages')}>
-        {sessionPackages.length === 0 ? (
-          <p style={dim}>{t('members.no_session_packages')}</p>
-        ) : (
-          <div>
-            {sessionPackages.map((pkg) => {
-              const used = pkg.package_sessions - pkg.sessions_remaining;
-              const isExpired = pkg.status === 'expired';
-              return (
-                <div key={pkg.id} style={card}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 500, fontSize: 14 }}>{pkg.package_name}</div>
-                      <Field label={t('members.package_purchased')}>{fmtDate(pkg.purchased_at)}</Field>
-                      <Field label={t('members.package_sessions_total')}>{pkg.package_sessions}</Field>
-                      <Field label={t('members.package_sessions_used')}>{used}</Field>
-                      <Field label={t('members.package_sessions_remaining')}>{pkg.sessions_remaining}</Field>
-                      <Field label={isExpired ? t('members.package_expired_label') : t('members.package_expires')}>
-                        {fmtDate(pkg.expires_at)}
-                      </Field>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
-                      <StatusBadge status={pkg.status} label={pkg.status} />
-                      {canManagePackages && extendingId !== pkg.id && (
-                        <button onClick={() => startExtend(pkg)} style={editBtnStyle}>{t('members.extend_expiration')}</button>
-                      )}
-                    </div>
-                  </div>
-                  {extendingId === pkg.id && (
-                    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--gd-card-border, #e8e8ed)' }}>
-                      <div style={fieldLabelStyle}>{t('members.extend_expiration_title')}</div>
-                      <Field label={t('members.extend_expiration_current')}>{fmtDate(pkg.expires_at)}</Field>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-                        <span style={{ ...cardHintStyle, margin: 0, minWidth: 120 }}>{t('members.extend_expiration_new')}</span>
-                        <input
-                          type="date"
-                          value={extendValue}
-                          onChange={(e) => setExtendValue(e.target.value)}
-                          style={{ ...formControlStyle, width: 'auto' }}
-                        />
-                      </div>
-                      {extendError && <p style={formFieldErrorStyle}>{extendError}</p>}
-                      {/* The section's own Save is a primary action and takes the
-                          Theme's primary-button colours (#912), not a black box. */}
-                      <div style={inlineActionsRowStyle}>
-                        <button onClick={cancelExtend} disabled={extendSaving} style={secondaryBtnSmall}>{t('members.cancel')}</button>
-                        <button
-                          onClick={() => saveExtend(pkg)}
-                          disabled={extendSaving || !extendValue}
-                          style={primaryBtnSmall()}
-                        >
-                          {extendSaving ? t('members.saving') : t('members.save_changes')}
-                        </button>
-                      </div>
-                    </div>
+              #882 — and it reads in the layout the Edit form writes in: the same
+              grid, order, labels and full-width Notes, from MemberProfileLayout.
+              While that form is open above, this section steps aside rather than
+              showing the same Profile a second time. */}
+          {!editing && (
+            <Section label={t('members.section_profile')} divider={false}>
+              <div style={card}>
+                <MemberProfileLayout
+                  fieldLabel={(f) => t(`members.${f.labelKey}`)}
+                  renderField={(f) => (
+                    <p style={profileValueStyle}>
+                      {(f.kind === 'date' ? formatProfileDate(member[f.key]) : member[f.key]?.trim()) || EMPTY_VALUE}
+                    </p>
                   )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Section>
+                  /* #927: calculated by the server from the Member's Membership
+                     history and read off the same row as every other value here —
+                     so the Profile, the member header's badge and the Promotion
+                     apply paths can never disagree about who is new. */
+                  renderCalculated={() => (
+                    <NewMemberValue
+                      isNewMember={member.is_new_member}
+                      label={t(`members.${newMemberValueKey(member.is_new_member)}`)}
+                      announce={t(`members.${newMemberAnnounceKey(member.is_new_member)}`)}
+                    />
+                  )}
+                  centers={{
+                    assignedLabel: t('members.assigned_centers'),
+                    assigned: (
+                      <p style={profileValueStyle}>
+                        {centers.length === 0 ? EMPTY_VALUE : centers.map((c) => c.name).join('\n')}
+                      </p>
+                    ),
+                    defaultLabel: t('members.default_center'),
+                    default: <p style={profileValueStyle}>{defaultCenter?.name ?? EMPTY_VALUE}</p>,
+                  }}
+                />
+              </div>
+            </Section>
+          )}
 
-      {/* Billing Events */}
-      <Section label={t('members.section_billing_events')}>
-        {billingEvents.length === 0 ? (
-          <p style={dim}>{t('members.no_billing_events')}</p>
-        ) : (
-          <div>
-            {billingEvents.map((ev) => {
-              const isExpanded = expandedEventIds.has(ev.id);
-              return (
-                <div key={ev.id} style={eventRow}>
-                  <button
-                    onClick={() => toggleEvent(ev.id)}
-                    aria-expanded={isExpanded}
-                    aria-label={isExpanded ? 'Collapse event' : 'Expand event'}
-                    style={chevronBtn}
-                  >
-                    <span style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
-                  </button>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div
-                      style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flexWrap: 'wrap' }}
-                      onClick={() => toggleEvent(ev.id)}
-                    >
-                      <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{fmtDate(ev.created_at)}</span>
-                      <span style={{ fontSize: 13, flex: 1 }}>{eventTypeLabel(ev.event_type, t)}</span>
-                      {ev.amount && (
-                        <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          €{parseFloat(ev.amount).toFixed(2)}
-                        </span>
+          {/* Account (Clerk status) */}
+          {clerkStatus && (
+            <Section label={t('members.section_account')} divider={!editing}>
+              <StatusBadge
+                status={clerkStatus.status}
+                label={
+                  clerkStatus.status === 'not_enrolled' ? t('members.clerk_not_enrolled')
+                  : clerkStatus.status === 'invited' ? t('members.clerk_invited')
+                  : clerkStatus.status === 'active' ? t('members.clerk_active')
+                  : clerkStatus.status === 'suspended' ? t('members.clerk_suspended')
+                  : t('members.clerk_error')
+                }
+              />
+            </Section>
+          )}
+
+          {/* #634 §13 — the Member's Membership configuration as independent
+              sections. Additional Services and the Billing Simulation are siblings
+              of MEMBERSHIP PLANS, never nested inside a plan card, and each one has
+              its own editing controls.
+
+              #931 — there is no PROMOTIONS section here. A Promotion belongs to the
+              target it applies to (a Membership Plan or a Product), never to a
+              Member, so it is configured from the Promotions page and applied with
+              the Membership Plan the Member is assigned — which is what the Billing
+              Simulation below already reflects. The applications an Assigned Plan
+              was agreed with stay on the Assigned Plans card, from that
+              application's own snapshot (#635 §16). */}
+
+          {/* 1. MEMBERSHIP PLANS — the Member's plans, several of which may be
+              active at once (§6). Adding one never replaces another (§14). */}
+          <Section label={t('members.section_membership_plans')}>
+            <MemberMembershipPlans
+              memberId={memberId}
+              plans={configuration.plans}
+              canWrite={isAdmin}
+              onChanged={reloadConfiguration}
+              onAssignNewPlan={setAssigningFor}
+              onCancelPlan={setCancelling}
+              assignBusy={assigningFor !== null}
+              renderAssignEditor={(m) => (
+                // #628: Assign New Plan stays an explicit supersede action, edited
+                // inline inside the plan card it replaces — distinct from "+ Add
+                // Membership Plan", which is purely additive.
+                assigningFor?.id === m.id ? (
+                  <AssignPlanInlineEditor
+                    membership={{ id: m.id, plan_name: m.plan_name }}
+                    plans={plans}
+                    onCancel={() => setAssigningFor(null)}
+                    onAssigned={() => { setAssigningFor(null); reloadConfiguration(); }}
+                  />
+                ) : null
+              )}
+            />
+          </Section>
+        </>
+      )}
+
+      {tab === 'products_services' && (
+        <>
+          {/* #961 §2 — Products & Services: everything the Member bought or is
+              billed for. The thread's Q2 answer put all four of the sections the
+              ticket's own table left unassigned here, in the order the single
+              column had them. Which sections belong to which tab is
+              `MEMBER_TABS` in memberTabs.ts, never this JSX. */}
+          {/* 2. ADDITIONAL PRODUCTS — recurring Products, added and removed at
+              any time, independent from plans and promotions (§4). #957: the
+              section reads in both modes; its `+ Add Product` button is Edit
+              mode's alone. */}
+          <Section label={t('members.section_additional_services')} divider={false}>
+            <MemberAdditionalServices
+              plans={configuration.plans}
+              services={configuration.services}
+              canWrite={isAdmin}
+              editing={editing}
+              onChanged={reloadConfiguration}
+            />
+          </Section>
+
+          {/* Billing Simulation (#629) — a section of its own, never nested inside
+              a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
+          <Section label={t('members.section_billing_simulation')}>
+            <MemberBillingSimulation key={simulationKey} memberId={memberId} />
+          </Section>
+
+          {/* Personal Training Class Slots (#647 stages 2–3) — the Mon–Sun weekly
+              availability grid, with slot selection and Book. The nightly rolling
+              2-month window is stage 4. */}
+          <Section label={t('members.section_pt_slots')}>
+            <MemberPersonalTrainingSlots memberId={memberId} />
+          </Section>
+
+          {/* Session Packages */}
+          <Section label={t('members.section_session_packages')}>
+            {sessionPackages.length === 0 ? (
+              <p style={dim}>{t('members.no_session_packages')}</p>
+            ) : (
+              <div>
+                {sessionPackages.map((pkg) => {
+                  const used = pkg.package_sessions - pkg.sessions_remaining;
+                  const isExpired = pkg.status === 'expired';
+                  return (
+                    <div key={pkg.id} style={card}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 500, fontSize: 14 }}>{pkg.package_name}</div>
+                          <Field label={t('members.package_purchased')}>{fmtDate(pkg.purchased_at)}</Field>
+                          <Field label={t('members.package_sessions_total')}>{pkg.package_sessions}</Field>
+                          <Field label={t('members.package_sessions_used')}>{used}</Field>
+                          <Field label={t('members.package_sessions_remaining')}>{pkg.sessions_remaining}</Field>
+                          <Field label={isExpired ? t('members.package_expired_label') : t('members.package_expires')}>
+                            {fmtDate(pkg.expires_at)}
+                          </Field>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
+                          <StatusBadge status={pkg.status} label={pkg.status} />
+                          {canManagePackages && extendingId !== pkg.id && (
+                            <button onClick={() => startExtend(pkg)} style={editBtnStyle}>{t('members.extend_expiration')}</button>
+                          )}
+                        </div>
+                      </div>
+                      {extendingId === pkg.id && (
+                        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--gd-card-border, #e8e8ed)' }}>
+                          <div style={fieldLabelStyle}>{t('members.extend_expiration_title')}</div>
+                          <Field label={t('members.extend_expiration_current')}>{fmtDate(pkg.expires_at)}</Field>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
+                            <span style={{ ...cardHintStyle, margin: 0, minWidth: 120 }}>{t('members.extend_expiration_new')}</span>
+                            <input
+                              type="date"
+                              value={extendValue}
+                              onChange={(e) => setExtendValue(e.target.value)}
+                              style={{ ...formControlStyle, width: 'auto' }}
+                            />
+                          </div>
+                          {extendError && <p style={formFieldErrorStyle}>{extendError}</p>}
+                          {/* The section's own Save is a primary action and takes the
+                              Theme's primary-button colours (#912), not a black box. */}
+                          <div style={inlineActionsRowStyle}>
+                            <button onClick={cancelExtend} disabled={extendSaving} style={secondaryBtnSmall}>{t('members.cancel')}</button>
+                            <button
+                              onClick={() => saveExtend(pkg)}
+                              disabled={extendSaving || !extendValue}
+                              style={primaryBtnSmall()}
+                            >
+                              {extendSaving ? t('members.saving') : t('members.save_changes')}
+                            </button>
+                          </div>
+                        </div>
                       )}
                     </div>
-                    {isExpanded && (
-                      <div style={eventDetail}>
-                        {ev.event_type === 'status_changed' ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <span style={{ color: '#888', fontSize: 12 }}>{t('members.event_status_changed')}:</span>
-                            <StatusBadge status={ev.previous_status ?? 'inactive'} label={ev.previous_status ?? '—'} />
-                            <span style={{ color: '#888' }}>→</span>
-                            <StatusBadge status={ev.new_status ?? 'inactive'} label={ev.new_status ?? '—'} />
-                          </div>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 13 }}>
-                            {ev.charge_type_code && (
-                              <span><span style={{ color: '#888' }}>{t('members.event_type_label')}:</span> {ev.charge_type_code}</span>
-                            )}
-                            {ev.notes && (
-                              <span><span style={{ color: '#888' }}>{t('members.event_notes')}:</span> {ev.notes}</span>
-                            )}
-                            {ev.source && (
-                              <span><span style={{ color: '#888' }}>{t('members.event_source')}:</span> {ev.source}</span>
-                            )}
-                            {ev.receipt_number && (
-                              <span><span style={{ color: '#888' }}>{t('members.event_receipt')}:</span> {ev.receipt_number}</span>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
+
+          {/* Billing Events */}
+          <Section label={t('members.section_billing_events')}>
+            {billingEvents.length === 0 ? (
+              <p style={dim}>{t('members.no_billing_events')}</p>
+            ) : (
+              <div>
+                {billingEvents.map((ev) => {
+                  const isExpanded = expandedEventIds.has(ev.id);
+                  return (
+                    <div key={ev.id} style={eventRow}>
+                      <button
+                        onClick={() => toggleEvent(ev.id)}
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? 'Collapse event' : 'Expand event'}
+                        style={chevronBtn}
+                      >
+                        <span style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+                      </button>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div
+                          style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flexWrap: 'wrap' }}
+                          onClick={() => toggleEvent(ev.id)}
+                        >
+                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{fmtDate(ev.created_at)}</span>
+                          <span style={{ fontSize: 13, flex: 1 }}>{eventTypeLabel(ev.event_type, t)}</span>
+                          {ev.amount && (
+                            <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
+                              €{parseFloat(ev.amount).toFixed(2)}
+                            </span>
+                          )}
+                        </div>
+                        {isExpanded && (
+                          <div style={eventDetail}>
+                            {ev.event_type === 'status_changed' ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <span style={{ color: '#888', fontSize: 12 }}>{t('members.event_status_changed')}:</span>
+                                <StatusBadge status={ev.previous_status ?? 'inactive'} label={ev.previous_status ?? '—'} />
+                                <span style={{ color: '#888' }}>→</span>
+                                <StatusBadge status={ev.new_status ?? 'inactive'} label={ev.new_status ?? '—'} />
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, fontSize: 13 }}>
+                                {ev.charge_type_code && (
+                                  <span><span style={{ color: '#888' }}>{t('members.event_type_label')}:</span> {ev.charge_type_code}</span>
+                                )}
+                                {ev.notes && (
+                                  <span><span style={{ color: '#888' }}>{t('members.event_notes')}:</span> {ev.notes}</span>
+                                )}
+                                {ev.source && (
+                                  <span><span style={{ color: '#888' }}>{t('members.event_source')}:</span> {ev.source}</span>
+                                )}
+                                {ev.receipt_number && (
+                                  <span><span style={{ color: '#888' }}>{t('members.event_receipt')}:</span> {ev.receipt_number}</span>
+                                )}
+                              </div>
                             )}
                           </div>
                         )}
                       </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Section>
+        </>
+      )}
+
+      {tab === 'nutrition' && (
+        <>
+          {/* Nutrition Plans */}
+          <Section label={t('members.section_nutrition_plans')} divider={false}>
+            {nutritionPlans.length === 0 ? (
+              <p style={dim}>{t('members.no_nutrition_plans')}</p>
+            ) : (
+              <div>
+                {nutritionPlans.map((p) => (
+                  <div key={p.id} style={card}>
+                    <div style={{ fontWeight: 500, fontSize: 14 }}>{p.name}</div>
+                    {p.status && (
+                      <div style={{ marginTop: 4 }}>
+                        <StatusBadge status={p.status} label={p.status} />
+                      </div>
                     )}
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Section>
+                ))}
+              </div>
+            )}
+          </Section>
+        </>
+      )}
+
+      {tab === 'personal_goals' && (
+        <>
+          {/* Personal Goals (#948 §4) — the goals this member holds. Goals *are*
+              assigned on a Member directly, which is the opposite of #931's answer
+              for Promotions and why this section carries its own controls; they all
+              belong to Edit mode (#957), so the read-only view has none of them. */}
+          <Section label={t('members.section_personal_goals')} divider={false}>
+            <MemberPersonalGoals memberId={memberId} canWrite={canManageNutrition} editing={editing} />
+          </Section>
+        </>
+      )}
+
+      {tab === 'training_plan' && (
+        <>
+          {/* Training Plans */}
+          <Section label={t('members.section_training_plans')} divider={false}>
+            {trainingPlans.length === 0 ? (
+              <p style={dim}>{t('members.no_training_plans')}</p>
+            ) : (
+              <>
+                {activePlans.length > 0 && (
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={subLabelStyle}>{t('members.plans_active')}</div>
+                    {activePlans.map((p) => (
+                      <PlanCard
+                        key={p.id}
+                        name={p.training_plan_name}
+                        status={p.status}
+                        validFrom={p.valid_from}
+                        validTo={p.valid_to}
+                        onEdit={canManageTraining ? () => router.push(`/${locale}/training-plans?open=${p.training_plan_id}&member_id=${memberId}`) : undefined}
+                        editLabel={t('members.edit')}
+                      />
+                    ))}
+                  </div>
+                )}
+                {inactivePlans.length > 0 && (
+                  <div>
+                    <div style={subLabelStyle}>{t('members.plans_inactive')}</div>
+                    {inactivePlans.map((p) => (
+                      <PlanCard
+                        key={p.id}
+                        name={p.training_plan_name}
+                        status={p.status}
+                        validFrom={p.valid_from}
+                        validTo={p.valid_to}
+                        onEdit={canManageTraining ? () => router.push(`/${locale}/training-plans?open=${p.training_plan_id}&member_id=${memberId}`) : undefined}
+                        editLabel={t('members.edit')}
+                        dim
+                      />
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </Section>
+        </>
+      )}
 
       <ConfirmDialog
         open={cancelling !== null}
