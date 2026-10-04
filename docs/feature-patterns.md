@@ -2354,6 +2354,48 @@ not run there. A cross-app rule therefore belongs in the API suite, even though
 it scans another workspace; a copy in the app's own suite is documentation for
 local runs, not enforcement.
 
+## Tabs on an Expanded Card (#961)
+
+When an expanded card grows past the point where a reader can find anything in
+it — the Member card had reached ten sections and several screens of scroll —
+split it into **parallel tabs** rather than into a new page or a set of
+collapsible groups.
+
+1. **One declaration says which tabs exist and what each one holds.**
+   `apps/admin/src/app/[locale]/members/memberTabs.ts`: the tab ids in the
+   order they are shown, each with its `labelKey` and the `section_*` keys it
+   renders. Moving a section between tabs is a one-line change there and a
+   failing test, never a hunt through JSX — the same rule `PLAN_SECTION_ORDER`
+   states for a card's section order (#816). A test asserts the declaration and
+   the card's actual sections are the same set, so a section cannot be shown by
+   two tabs or lost by all of them.
+2. **The strip is the app's one tab component.** `components/Tabs.tsx` owns the
+   look, the `tablist` semantics, the arrow-key handling and the phone-width
+   horizontal scroll; it resolves no label (each page hands in a resolver, so
+   the words come from that page's namespace — #901) and declares no colour of
+   its own (the active tab follows `--brand`, #912). The Nutrition Library's
+   `LibraryTabs` is a binding of it to `LIBRARY_TABS`; a third screen with tabs
+   adds a declaration and a binding, never a second strip.
+3. **The card is handed its tab; it does not choose one.** The page owns the
+   selected tab (one per expanded row), so it survives a save, a re-render and
+   the URL, and the card renders only that tab's sections. The first section of
+   each tab carries `divider={false}`, so every tab opens without the card's
+   hairline above it.
+4. **The URL carries the open card and its tab** (`?member=<id>&tab=<tabId>`),
+   so a refresh, back/forward and a pasted link all land on the same work area.
+   An unusable `?tab=` falls back to the first tab (`memberTabFromParam()`)
+   rather than rendering an empty card.
+5. **Edit mode belongs to the tab whose fields it writes.** The inline Member
+   form is the Profile's, so it renders in the Profile pane and `⋮ → Edit`
+   selects that tab — a form must never open behind a tab the user is left on,
+   and its Save/Cancel pair stays with the fields it commits (#929). Switching
+   tabs discards nothing: the draft is the page's state.
+
+Tabs are a layout decision and nothing else: no section changed what it reads,
+writes or gates on, and no endpoint, payload or permission moved with them.
+
+---
+
 ## Testing a payment-provider call (#773, #791)
 
 Any new code path that charges, tokenises or refunds through `PaymentProvider` is tested

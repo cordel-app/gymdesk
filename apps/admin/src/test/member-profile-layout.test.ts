@@ -76,8 +76,9 @@ describe('Members: the Profile is rendered once per page (#882)', () => {
     expect(expandedSrc).toContain('{!editing && (');
     expect(expandedSrc).toContain('editing: boolean;');
     expect(pageSrc).toContain('editing={editingId === m.id}');
-    // The same condition opens the form, so the two can never both render.
-    expect(pageSrc).toContain('{editingId === m.id && (');
+    // The same condition opens the form, so the two can never both render —
+    // #961 scopes it to the Profile tab, which is the tab that form writes.
+    expect(pageSrc).toContain("{activeTab === 'profile' && editingId === m.id && (");
   });
 
   it('keeps ⋮ → Edit as the only entry point into the form', () => {
