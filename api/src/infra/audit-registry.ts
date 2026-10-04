@@ -13,6 +13,8 @@ export const AUDIT_ACTIONS: string[] = [
   'close', 'complete', 'waive', 'extend_expiration', 'issue_receipt', 'refund_credit',
   'assign_plan', 'assign_new_plan', 'add_member', 'remove_member', 'add_service', 'remove_service',
   'book_recurring_slots', 'update_recurring_slots',
+  // #979: a cancelled event put back on the calendar.
+  'reactivate',
 ];
 
 interface SimpleEntity {

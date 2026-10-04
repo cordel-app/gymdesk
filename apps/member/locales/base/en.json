@@ -200,7 +200,9 @@
     "type_shared_training_approved": "Shared training approved",
     "type_shared_training_rejected": "Shared training declined",
     "type_event_cancelled": "Booking cancelled",
-    "type_event_updated": "Booking updated"
+    "type_event_updated": "Booking updated",
+    "type_event_reactivated": "Class reactivated",
+    "detail_event_reactivated": "The class is available again and your booking has been restored."
   },
   "membership": {
     "title": "My membership",

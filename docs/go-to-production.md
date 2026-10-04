@@ -103,6 +103,21 @@ Tick items off in the PR that completes them.
       list is a strict superset of the old one, so it cannot fail on data; time it
       against a copy of the table first. (The statement is guarded, so re-running
       migrations after it lands is a no-op rather than a second rebuild.)
+- [ ] **Run migration 216 in the same maintenance window as 170** (#979). It is
+      the same `chk_member_notifications_type` swap, one value wider
+      (`event_reactivated`), so it costs exactly one more ALGORITHM=COPY rebuild
+      of `member_notifications` with the same consequences: reads continue,
+      every write to the log blocks, and a blocked fire-and-forget insert holds
+      one of the API pool's ten connections rather than failing a member's
+      request. The new list is a strict superset of the old one, so it cannot
+      fail on data. If 170 has not run in production yet, the two are back to
+      back on the same table and belong in one window; the statement is guarded
+      on the live clause, so re-running migrations after it lands is a no-op
+      rather than a second rebuild. Its `down` deletes the
+      `event_reactivated` rows (in batches — there is no index on `type`) before
+      narrowing the constraint, so stop the API, or at least any reactivation,
+      before rolling back: a row inserted between the DELETE and the ADD fails
+      the ADD with errno 3819.
 - [ ] **Run migration 203 in a maintenance window** (#896 stage 1). Twelve tables
       gain an `(action, value)` pair, and each one takes a CHECK — which MySQL 8
       applies with ALGORITHM=COPY, exactly as migration 170's does. The file is

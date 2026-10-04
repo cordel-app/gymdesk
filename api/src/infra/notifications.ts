@@ -11,7 +11,14 @@ export type NotificationType =
   | 'shared_training_approved'
   | 'shared_training_rejected'
   /** #647 stage 4: a recurring Personal Training date the nightly job could not book. */
-  | 'recurring_booking_skipped';
+  | 'recurring_booking_skipped'
+  /**
+   * #979: a cancelled event put back on the calendar, with the member's
+   * booking still on it. Deliberately not `booking_confirmed` — the member
+   * made no new booking (§6, §11), and sending the booking alert would tell
+   * them they had just booked something they never touched.
+   */
+  | 'event_reactivated';
 
 export interface NotificationPayload {
   title: string;
