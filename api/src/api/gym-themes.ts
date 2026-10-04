@@ -7,6 +7,14 @@ import { recordAudit } from '../infra/audit';
 import { validateTokens } from '../domain/themeTokens';
 import { buildThemeLogoKey, themeLogoFolderKeys, themeLogoUrl } from '../domain/themeLogo';
 import { themeStorageFolderKeys } from '../domain/themeFolders';
+import {
+  assignedCenterIds,
+  planChangesNothing,
+  themeCenterAssignmentPlan,
+  unknownCenterIds,
+  type CenterId,
+  type ThemeCenterRow,
+} from '../domain/themeCenterAssignments';
 import { folderStageForKey, themeFolderStageForKey } from '../domain/storageFailureStage';
 import {
   bytesMatchImageMime,
@@ -840,17 +848,33 @@ gymThemesRouter.get('/:id/assignments', async (req, res, next) => {
       const { rows: gymRows } = await db.query('SELECT theme_id FROM gyms WHERE id = ?', [gymId]);
       const is_gym_default = gymRows[0]?.theme_id === req.params.id;
 
+      // #985: every Center of the gym, not only the ones using this theme — the
+      // Assignments section is a checkbox list and an unticked box has to be a
+      // Center you can tick. `is_assigned` is the Center's own `theme_id`
+      // (null-safe `<=>`, since `theme_id = ?` is NULL for an inheriting
+      // Center), and `is_inherited` says this theme reaches it through the Gym
+      // Default instead — reported so the list can say so beside the name,
+      // never as a checked box, because the box is what the save writes.
       const { rows: centers } = await db.query(
-        `SELECT c.id, c.name, (c.theme_id IS NULL) AS is_inherited
+        `SELECT c.id, c.name,
+                (c.theme_id <=> ?) AS is_assigned,
+                (c.theme_id IS NULL AND g.theme_id <=> ?) AS is_inherited
          FROM centers c
          JOIN gyms g ON g.id = c.gym_id
          WHERE c.gym_id = ? AND c.deleted_at IS NULL
-           AND (c.theme_id = ? OR (c.theme_id IS NULL AND g.theme_id = ?))
          ORDER BY c.name ASC`,
-        [gymId, req.params.id, req.params.id],
+        [req.params.id, req.params.id, gymId],
       );
 
-      res.json({ is_gym_default, centers: centers.map((c: any) => ({ ...c, is_inherited: !!c.is_inherited })) });
+      res.json({
+        is_gym_default,
+        centers: centers.map((c: any) => ({
+          id: c.id,
+          name: c.name,
+          is_assigned: !!c.is_assigned,
+          is_inherited: !!c.is_inherited,
+        })),
+      });
     });
   } catch (err) { next(err); }
 });
@@ -877,36 +901,18 @@ gymThemesRouter.put('/:id/set-default', async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// ─── Assignments: list unassigned centers (for the picker) ────────────────────
+// ─── Assignments: replace this theme's Center assignments (#985) ─────────────
 
-gymThemesRouter.get('/:id/unassigned-centers', async (req, res, next) => {
-  try {
-    const { gymId } = getTenantContext(req);
-    await requireRole('admin')(req, res, async () => {
-      const { rows: themeRows } = await db.query(
-        'SELECT id FROM themes WHERE id = ? AND deleted_at IS NULL AND (gym_id IS NULL OR gym_id = ?)',
-        [req.params.id, gymId],
-      );
-      if (themeRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
-
-      const { rows: centers } = await db.query(
-        `SELECT c.id, c.name
-         FROM centers c
-         JOIN gyms g ON g.id = c.gym_id
-         WHERE c.gym_id = ? AND c.deleted_at IS NULL
-           AND NOT (c.theme_id = ? OR (c.theme_id IS NULL AND g.theme_id = ?))
-         ORDER BY c.name ASC`,
-        [gymId, req.params.id, req.params.id],
-      );
-
-      res.json(centers);
-    });
-  } catch (err) { next(err); }
-});
-
-// ─── Assignments: assign centers to this theme ────────────────────────────────
-
-gymThemesRouter.post('/:id/assign-centers', async (req, res, next) => {
+/**
+ * One replace-all write, so the Assignments section can be a checkbox list the
+ * page's own Save persists: the submitted ids become this theme's Centers and a
+ * Center the request leaves out goes back to inheriting the Gym Default Theme.
+ * It replaces `POST /:id/assign-centers`, `GET /:id/unassigned-centers` and
+ * `DELETE /:id/centers/:centerId` — a set edited as a set has one writer, and
+ * the two halves must commit together or a half-saved list would assign some
+ * Centers and leave others pointing at a theme the admin had unticked.
+ */
+gymThemesRouter.put('/:id/centers', async (req, res, next) => {
   try {
     const { gymId } = getTenantContext(req);
     await requireRole('admin')(req, res, async () => {
@@ -915,51 +921,64 @@ gymThemesRouter.post('/:id/assign-centers', async (req, res, next) => {
         [req.params.id, gymId],
       );
       if (themeRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
-      if (themeRows[0].status !== 'active') {
+
+      // `centers.id` is an auto-increment integer (migration 043), so an id is a
+      // number on the wire from one client and a string from another: both are
+      // accepted and resolved by value below, while anything that is not an id
+      // at all is a 400. An id of the right *shape* that names no Center of this
+      // gym is the unknown check's 400, not this one's.
+      const { center_ids } = req.body ?? {};
+      const isCenterId = (id: unknown): id is CenterId =>
+        typeof id === 'string' || (typeof id === 'number' && Number.isFinite(id));
+      if (!Array.isArray(center_ids) || !center_ids.every(isCenterId)) {
+        return res.status(400).json({ error: 'center_ids must be an array of center ids' });
+      }
+      // An empty set is a legitimate save (every box unticked), so the Active
+      // rule guards *assigning* rather than the request: a theme taken out of
+      // service must still be removable from the Centers it was on.
+      if (center_ids.length > 0 && themeRows[0].status !== 'active') {
         return res.status(400).json({ error: 'Only Active themes can be assigned to Centers.' });
       }
 
-      const { center_ids } = req.body;
-      if (!Array.isArray(center_ids) || center_ids.length === 0) {
-        return res.status(400).json({ error: 'center_ids must be a non-empty array' });
-      }
-
-      // Verify all centers belong to this gym
-      const placeholders = center_ids.map(() => '?').join(', ');
-      const { rows: validCenters } = await db.query(
-        `SELECT id FROM centers WHERE id IN (${placeholders}) AND gym_id = ? AND deleted_at IS NULL`,
-        [...center_ids, gymId],
+      const { rows: centers } = await db.query<ThemeCenterRow>(
+        'SELECT id, theme_id FROM centers WHERE gym_id = ? AND deleted_at IS NULL',
+        [gymId],
       );
-      if (validCenters.length !== center_ids.length) {
-        return res.status(400).json({ error: 'One or more centers not found' });
-      }
+      const unknown = unknownCenterIds(centers, center_ids);
+      if (unknown.length > 0) return res.status(400).json({ error: 'One or more centers not found' });
 
-      await db.query(
-        `UPDATE centers SET theme_id = ? WHERE id IN (${placeholders}) AND gym_id = ?`,
-        [req.params.id, ...center_ids, gymId],
-      );
-      res.json({ ok: true });
-    });
-  } catch (err) { next(err); }
-});
+      const plan = themeCenterAssignmentPlan(centers, req.params.id, center_ids);
+      const previous = assignedCenterIds(centers, req.params.id);
+      if (planChangesNothing(plan)) return res.json({ ok: true, assigned: plan.assigned });
 
-// ─── Assignments: restore inheritance for a center ────────────────────────────
+      await db.transaction(async (tx) => {
+        if (plan.clear.length > 0) {
+          await tx.query(
+            `UPDATE centers SET theme_id = NULL
+             WHERE gym_id = ? AND id IN (${plan.clear.map(() => '?').join(', ')})`,
+            [gymId, ...plan.clear],
+          );
+        }
+        if (plan.assign.length > 0) {
+          await tx.query(
+            `UPDATE centers SET theme_id = ?
+             WHERE gym_id = ? AND id IN (${plan.assign.map(() => '?').join(', ')})`,
+            [req.params.id, gymId, ...plan.assign],
+          );
+        }
+      });
 
-gymThemesRouter.delete('/:id/centers/:centerId', async (req, res, next) => {
-  try {
-    const { gymId } = getTenantContext(req);
-    await requireRole('admin')(req, res, async () => {
-      const { rows: centerRows } = await db.query(
-        'SELECT id, theme_id FROM centers WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-        [req.params.centerId, gymId],
-      );
-      if (centerRows.length === 0) return res.status(404).json({ error: 'Center not found' });
-      if (centerRows[0].theme_id !== req.params.id) {
-        return res.status(409).json({ error: 'Center is not explicitly assigned to this theme' });
-      }
-
-      await db.query('UPDATE centers SET theme_id = NULL WHERE id = ? AND gym_id = ?', [req.params.centerId, gymId]);
-      res.json({ ok: true });
+      // Reported as *stored* rather than as submitted, so the ids a client reads
+      // back are the ones it will send next time whichever form it sent now.
+      const assigned = plan.assigned;
+      recordAudit(req, {
+        action: 'update',
+        entityType: 'theme',
+        entityId: req.params.id,
+        previous: { assigned_center_ids: previous },
+        next: { assigned_center_ids: assigned },
+      });
+      res.json({ ok: true, assigned });
     });
   } catch (err) { next(err); }
 });

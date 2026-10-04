@@ -85,6 +85,46 @@ describe('GET /system/themes/:id/assignments', () => {
     expect(typeof res.body.is_gym_default).toBe('boolean');
     expect(Array.isArray(res.body.centers)).toBe(true);
   });
+
+  // #985: the Assignments section is a checkbox list, so the read reports every
+  // Center of the gym — an unassigned one has to be a box you can tick.
+  it('reports every center of the gym, assigned or not', async () => {
+    await db.query('UPDATE centers SET theme_id = NULL WHERE id = ?', [centerId]);
+    await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
+    const res = await request
+      .get(`/system/themes/${themeId}/assignments`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const row = res.body.centers.find((c: any) => c.id === centerId);
+    expect(row).toMatchObject({ is_assigned: false, is_inherited: false });
+  });
+
+  it('distinguishes an assigned center from one inheriting the gym default', async () => {
+    await db.query('UPDATE centers SET theme_id = ? WHERE id = ?', [themeId, centerId]);
+    const assignedRes = await request
+      .get(`/system/themes/${themeId}/assignments`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(assignedRes.body.centers.find((c: any) => c.id === centerId)).toMatchObject({
+      is_assigned: true,
+      is_inherited: false,
+    });
+
+    // No assignment of its own + this theme as the Gym Default ⇒ inherited, and
+    // deliberately *not* `is_assigned`: the checkbox is the center's own column.
+    await db.query('UPDATE centers SET theme_id = NULL WHERE id = ?', [centerId]);
+    await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [themeId, gymId]);
+    const inheritedRes = await request
+      .get(`/system/themes/${themeId}/assignments`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(inheritedRes.body.centers.find((c: any) => c.id === centerId)).toMatchObject({
+      is_assigned: false,
+      is_inherited: true,
+    });
+    await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
+  });
 });
 
 // ─── PUT /system/themes/:id/set-default ──────────────────────────────────────
@@ -124,100 +164,178 @@ describe('PUT /system/themes/:id/set-default', () => {
   });
 });
 
-// ─── GET /system/themes/:id/unassigned-centers ───────────────────────────────
+// ─── PUT /system/themes/:id/centers (#985 replace-all) ───────────────────────
 
-describe('GET /system/themes/:id/unassigned-centers', () => {
-  it('excludes centers currently inheriting this theme as org default', async () => {
-    // After set-default above, Center A inherits this theme → should NOT appear in unassigned
-    const res = await request
-      .get(`/system/themes/${themeId}/unassigned-centers`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    const ids = res.body.map((c: any) => c.id);
-    expect(ids).not.toContain(centerId);
-  });
-});
-
-// ─── POST /system/themes/:id/assign-centers ──────────────────────────────────
-
-describe('POST /system/themes/:id/assign-centers', () => {
+describe('PUT /system/themes/:id/centers', () => {
   beforeAll(async () => {
-    // Reset org default so Center A goes back to "unassigned" for assign test
     await db.query('UPDATE gyms SET theme_id = NULL WHERE id = ?', [gymId]);
-  });
-
-  it('assigns a center to this theme', async () => {
-    const res = await request
-      .post(`/system/themes/${themeId}/assign-centers`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ center_ids: [centerId] });
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-
-    const { rows } = await db.query<{ theme_id: string }>(
-      'SELECT theme_id FROM centers WHERE id = ?',
-      [centerId],
-    );
-    expect(rows[0].theme_id).toBe(themeId);
-  });
-
-  it('returns 400 for empty center_ids', async () => {
-    const res = await request
-      .post(`/system/themes/${themeId}/assign-centers`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ center_ids: [] });
-    expect(res.status).toBe(400);
-  });
-
-  it('returns 400 when theme is not active', async () => {
-    await db.query("UPDATE themes SET status = 'draft' WHERE id = ?", [themeId]);
-    const res = await request
-      .post(`/system/themes/${themeId}/assign-centers`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ center_ids: [centerId] });
-    expect(res.status).toBe(400);
+    await db.query('UPDATE centers SET theme_id = NULL WHERE gym_id = ?', [gymId]);
     await db.query("UPDATE themes SET status = 'active' WHERE id = ?", [themeId]);
   });
 
-  it('returns 400 for center from another gym', async () => {
-    const res = await request
-      .post(`/system/themes/${themeId}/assign-centers`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ center_ids: ['non-existent-center'] });
-    expect(res.status).toBe(400);
-  });
-});
-
-// ─── DELETE /system/themes/:id/centers/:centerId ──────────────────────────────
-
-describe('DELETE /system/themes/:id/centers/:centerId (restore inheritance)', () => {
-  it('restores inheritance for an explicitly assigned center', async () => {
-    // centerId was assigned in the POST test above
-    const res = await request
-      .delete(`/system/themes/${themeId}/centers/${centerId}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
-
+  async function themeIdOf(id: string) {
     const { rows } = await db.query<{ theme_id: string | null }>(
       'SELECT theme_id FROM centers WHERE id = ?',
-      [centerId],
+      [id],
     );
-    expect(rows[0].theme_id).toBeNull();
+    return rows[0].theme_id;
+  }
+
+  it('returns 401 without auth', async () => {
+    const res = await request.put(`/system/themes/${themeId}/centers`).send({ center_ids: [] });
+    expect(res.status).toBe(401);
   });
 
-  it('returns 409 when center is not assigned to this theme', async () => {
+  it('returns 403 for a different gym', async () => {
     const res = await request
-      .delete(`/system/themes/${themeId}/centers/${centerId}`)
+      .put(`/system/themes/${themeId}/centers`)
       .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(409);
+      .set('x-gym-id', otherGymId)
+      .send({ center_ids: [] });
+    expect(res.status).toBe(403);
+  });
+
+  it('returns 404 for a theme not in this gym', async () => {
+    const res = await request
+      .put(`/system/themes/non-existent-id/centers`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ center_ids: [] });
+    expect(res.status).toBe(404);
+  });
+
+  it('assigns the submitted centers', async () => {
+    const res = await request
+      .put(`/system/themes/${themeId}/centers`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ center_ids: [centerId] });
+    expect(res.status).toBe(200);
+    expect(res.body.assigned).toEqual([centerId]);
+    expect(await themeIdOf(centerId)).toBe(themeId);
+  });
+
+  it('restores inheritance for a center the request leaves out', async () => {
+    // The replace-all half: an unticked checkbox is what `DELETE
+    // /:id/centers/:centerId` ("Restore Inheritance") used to be.
+    const res = await request
+      .put(`/system/themes/${themeId}/centers`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ center_ids: [] });
+    expect(res.status).toBe(200);
+    expect(res.body.assigned).toEqual([]);
+    expect(await themeIdOf(centerId)).toBeNull();
+  });
+
+  it('is idempotent — submitting the stored set again changes nothing', async () => {
+    await request
+      .put(`/system/themes/${themeId}/centers`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ center_ids: [centerId] });
+    const res = await request
+      .put(`/system/themes/${themeId}/centers`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ center_ids: [centerId] });
+    expect(res.status).toBe(200);
+    expect(res.body.assigned).toEqual([centerId]);
+    expect(await themeIdOf(centerId)).toBe(themeId);
+  });
+
+  it('returns 400 for a payload that is not a list of center ids', async () => {
+    // A number *is* a center id here (`centers.id` is an auto-increment integer,
+    // migration 043), so the shape error is about values that are not ids at
+    // all; an id of the right shape naming no Center is the next test's 400.
+    for (const body of [{}, { center_ids: 'a' }, { center_ids: [null] }, { center_ids: [{ id: 1 }] }]) {
+      const res = await request
+        .put(`/system/themes/${themeId}/centers`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send(body);
+      expect(res.status).toBe(400);
+    }
+    // The refused calls left the stored assignment exactly as it was.
+    expect(await themeIdOf(centerId)).toBe(themeId);
+  });
+
+  it('returns 400 for a center that is not this gym\'s', async () => {
+    for (const ids of [['non-existent-center'], [987654321]]) {
+      const res = await request
+        .put(`/system/themes/${themeId}/centers`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ center_ids: ids });
+      expect(res.status).toBe(400);
+    }
+    expect(await themeIdOf(centerId)).toBe(themeId);
+  });
+
+  it('accepts a center id a client sent as a string', async () => {
+    // The browser reads the id out of JSON as a number but may hold it as a
+    // string; both resolve against the stored integer, and the response reports
+    // the stored form. Cleared first, so this asserts the write and not a no-op.
+    await db.query('UPDATE centers SET theme_id = NULL WHERE id = ?', [centerId]);
+    const res = await request
+      .put(`/system/themes/${themeId}/centers`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ center_ids: [String(centerId)] });
+    expect(res.status).toBe(200);
+    expect(res.body.assigned).toEqual([centerId]);
+    expect(await themeIdOf(centerId)).toBe(themeId);
+  });
+
+  it('refuses to assign a theme that is not active', async () => {
+    await db.query("UPDATE themes SET status = 'draft' WHERE id = ?", [themeId]);
+    try {
+      const res = await request
+        .put(`/system/themes/${themeId}/centers`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ center_ids: [centerId] });
+      expect(res.status).toBe(400);
+    } finally {
+      await db.query("UPDATE themes SET status = 'active' WHERE id = ?", [themeId]);
+    }
+  });
+
+  it('still clears the assignments of a theme that is not active', async () => {
+    // An empty set is a legitimate save, so a theme taken out of service can be
+    // removed from the Centers it was left on.
+    await db.query('UPDATE centers SET theme_id = ? WHERE id = ?', [themeId, centerId]);
+    await db.query("UPDATE themes SET status = 'inactive' WHERE id = ?", [themeId]);
+    try {
+      const res = await request
+        .put(`/system/themes/${themeId}/centers`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ center_ids: [] });
+      expect(res.status).toBe(200);
+      expect(await themeIdOf(centerId)).toBeNull();
+    } finally {
+      await db.query("UPDATE themes SET status = 'active' WHERE id = ?", [themeId]);
+    }
+  });
+
+  it('has retired the picker routes it replaced', async () => {
+    const gone = await Promise.all([
+      request
+        .get(`/system/themes/${themeId}/unassigned-centers`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId),
+      request
+        .post(`/system/themes/${themeId}/assign-centers`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ center_ids: [centerId] }),
+      request
+        .delete(`/system/themes/${themeId}/centers/${centerId}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId),
+    ]);
+    for (const res of gone) expect(res.status).toBe(404);
   });
 });
 
