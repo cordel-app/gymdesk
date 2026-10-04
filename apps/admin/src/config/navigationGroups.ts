@@ -241,7 +241,7 @@ export const navigationGroups: NavGroup[] = [
       {
         href: '/{{locale}}/financials/products',
         labelKey: 'nav.products',
-        featureKey: 'financials.gym_charges',
+        featureKey: 'financials.products',
       },
       {
         href: '/{{locale}}/financials/assigned-plans',

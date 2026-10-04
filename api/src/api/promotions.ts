@@ -431,17 +431,17 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
       // reason: the copy must not make an optional item mandatory.
       for (const table of ['promotion_session', 'promotion_oneoff', 'promotion_periodical']) {
         const { rows: sibs } = await tx.query(
-          `SELECT gym_charge_id, quantity, \`action\`, \`value\`, requirement FROM ${table}
+          `SELECT product_id, quantity, \`action\`, \`value\`, requirement FROM ${table}
             WHERE promotion_id = ? AND gym_id = ?`,
           [src.id, gymId],
         );
         for (const sib of sibs) {
           await tx.query(
             `INSERT INTO ${table}
-               (gym_id, promotion_id, gym_charge_id, quantity, \`action\`, \`value\`,
+               (gym_id, promotion_id, product_id, quantity, \`action\`, \`value\`,
                 requirement, created_by_membership_id)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, newId, sib.gym_charge_id, sib.quantity, sib.action, sib.value,
+            [gymId, newId, sib.product_id, sib.quantity, sib.action, sib.value,
              sib.requirement, gymMembershipId ?? null],
           );
         }

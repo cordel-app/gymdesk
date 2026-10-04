@@ -49,7 +49,7 @@ function assignment(over: Partial<SimulationAssignment> = {}): SimulationAssignm
 function service(over: Partial<SimulationService> = {}): SimulationService {
   return {
     id: 1,
-    gymChargeId: 42,
+    productId: 42,
     name: 'Locker Rental',
     billingFrequency: 'month',
     unitPrice: 20,
@@ -77,7 +77,7 @@ function promotion(over: Partial<SimulationPromotion> = {}): SimulationPromotion
 
 function grant(over: Partial<SimulationGrant> = {}): SimulationGrant {
   return {
-    gymChargeId: 7,
+    productId: 7,
     name: 'Locker Rental',
     category: 'periodical',
     billingFrequency: 'four_weeks',
@@ -95,7 +95,7 @@ function grant(over: Partial<SimulationGrant> = {}): SimulationGrant {
 // opposed to a Promotion grant (free for as long as it covers the item).
 function planBenefit(over: Partial<SimulationPlanBenefit> = {}): SimulationPlanBenefit {
   return {
-    gymChargeId: 7,
+    productId: 7,
     name: 'Locker Rental',
     category: 'periodical',
     billingFrequency: 'month',
@@ -241,7 +241,7 @@ describe('computeBillingSimulation — products granted by a promotion', () => {
     ]);
     expect(fourWeeks.events.map((e) => e.total)).toEqual([0, 0, 20]);
     expect(fourWeeks.events[0].lines[0]).toMatchObject({
-      kind: 'sellable_item', label: 'Locker Rental', gym_charge_id: 7, regular_price: 20, actual_charge: 0,
+      kind: 'product', label: 'Locker Rental', product_id: 7, regular_price: 20, actual_charge: 0,
     });
     // #896 stage 3 — the line reports the treatment the grant actually applies
     // (`waive`) rather than the pre-ticket `included`, which meant the same
@@ -296,9 +296,9 @@ describe('computeBillingSimulation — products granted by a promotion', () => {
       assignments: [assignment({
         promotions: [promotion({
           grants: [
-            grant({ gymChargeId: 1, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once', unitPrice: 50, quantity: 1 }),
-            grant({ gymChargeId: 2, name: 'Annual Insurance', category: 'periodical', billingFrequency: 'year', unitPrice: 120, quantity: 1 }),
-            grant({ gymChargeId: 3, name: 'Training Service', category: 'periodical', billingFrequency: 'four_weeks', unitPrice: 40, quantity: 1 }),
+            grant({ productId: 1, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once', unitPrice: 50, quantity: 1 }),
+            grant({ productId: 2, name: 'Annual Insurance', category: 'periodical', billingFrequency: 'year', unitPrice: 120, quantity: 1 }),
+            grant({ productId: 3, name: 'Training Service', category: 'periodical', billingFrequency: 'four_weeks', unitPrice: 40, quantity: 1 }),
           ],
         })],
       })],
@@ -312,7 +312,7 @@ describe('computeBillingSimulation — horizon across mixed frequencies (#629 §
     const result = computeBillingSimulation({
       assignments: [assignment({
         promotions: [promotion({
-          grants: [grant({ gymChargeId: 9, name: 'Annual Insurance', billingFrequency: 'year', unitPrice: 120, quantity: 1 })],
+          grants: [grant({ productId: 9, name: 'Annual Insurance', billingFrequency: 'year', unitPrice: 120, quantity: 1 })],
         })],
       })],
     });
@@ -327,7 +327,7 @@ describe('computeBillingSimulation — horizon across mixed frequencies (#629 §
     const result = computeBillingSimulation({
       assignments: [assignment({
         promotions: [promotion({
-          grants: [grant({ gymChargeId: 9, name: 'Annual Insurance', billingFrequency: 'year', unitPrice: 120, quantity: 1 })],
+          grants: [grant({ productId: 9, name: 'Annual Insurance', billingFrequency: 'year', unitPrice: 120, quantity: 1 })],
         })],
       })],
     });
@@ -432,7 +432,7 @@ describe('computeBillingSimulation — additional periodic services (#631)', () 
     expect(monthly.events).toHaveLength(1);
     expect(monthly.events[0].lines.map((l) => [l.kind, l.label, l.actual_charge])).toEqual([
       ['membership_fee', 'Standard', 100],
-      ['sellable_item', 'Locker Rental', 20],
+      ['product', 'Locker Rental', 20],
     ]);
     expect(monthly.events[0].total).toBe(120);
     expect(result.total).toBe(120);
@@ -483,12 +483,12 @@ describe('computeBillingSimulation — additional periodic services (#631)', () 
   it('charges the regular price during a promotional period — services are not promotion benefits (#631 §7)', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({
-        promotions: [promotion({ freeMonths: 1, grants: [grant({ gymChargeId: 42, billingFrequency: 'month' })] })],
+        promotions: [promotion({ freeMonths: 1, grants: [grant({ productId: 42, billingFrequency: 'month' })] })],
         services: [service()],
       })],
     });
     const first = section(result, 'month')!.events[0];
-    const serviceLine = first.lines.find((l) => l.kind === 'sellable_item' && l.benefits.length === 0)!;
+    const serviceLine = first.lines.find((l) => l.kind === 'product' && l.benefits.length === 0)!;
     expect(serviceLine).toMatchObject({ label: 'Locker Rental', actual_charge: 20, benefits: [] });
     // The membership fee is waived by the free month; the service still bills.
     expect(first.lines.find((l) => l.kind === 'membership_fee')!.actual_charge).toBe(0);
@@ -546,8 +546,8 @@ describe('computeBillingSimulation — Membership Plan benefits (#635)', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({
         planBenefits: [
-          planBenefit({ gymChargeId: 11, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once', unitPrice: 50 }),
-          planBenefit({ gymChargeId: 12, name: 'Personal Training', category: 'session', billingFrequency: 'per_session', unitPrice: 30, quantity: 10 }),
+          planBenefit({ productId: 11, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once', unitPrice: 50 }),
+          planBenefit({ productId: 12, name: 'Personal Training', category: 'session', billingFrequency: 'per_session', unitPrice: 30, quantity: 10 }),
         ],
       })],
     });
@@ -563,22 +563,22 @@ describe('computeBillingSimulation — Membership Plan benefits (#635)', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({
         planBenefits: [planBenefit()],
-        promotions: [promotion({ grants: [grant({ gymChargeId: 7, billingFrequency: 'month', quantity: 2 })] })],
+        promotions: [promotion({ grants: [grant({ productId: 7, billingFrequency: 'month', quantity: 2 })] })],
       })],
     });
     const monthly = section(result, 'month')!;
     // One locker line per event, free for the two granted months.
-    expect(monthly.events.map((e) => e.lines.filter((l) => l.gym_charge_id === 7).length)).toEqual([1, 1, 1]);
-    expect(monthly.events.map((e) => e.lines.find((l) => l.gym_charge_id === 7)!.actual_charge)).toEqual([0, 0, 20]);
+    expect(monthly.events.map((e) => e.lines.filter((l) => l.product_id === 7).length)).toEqual([1, 1, 1]);
+    expect(monthly.events.map((e) => e.lines.find((l) => l.product_id === 7)!.actual_charge)).toEqual([0, 0, 20]);
     expect(monthly.events[0].lines[1].benefits[0]).toMatchObject({ action: 'waive', name: 'October Promotion' });
   });
 
   it('charges the units a Promotion does not cover on a session benefit', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({
-        planBenefits: [planBenefit({ gymChargeId: 12, name: 'Personal Training', category: 'session', billingFrequency: 'per_session', unitPrice: 30, quantity: 10 })],
+        planBenefits: [planBenefit({ productId: 12, name: 'Personal Training', category: 'session', billingFrequency: 'per_session', unitPrice: 30, quantity: 10 })],
         promotions: [promotion({
-          grants: [grant({ gymChargeId: 12, name: 'Personal Training', category: 'session', billingFrequency: 'per_session', unitPrice: 30, quantity: 4 })],
+          grants: [grant({ productId: 12, name: 'Personal Training', category: 'session', billingFrequency: 'per_session', unitPrice: 30, quantity: 4 })],
         })],
       })],
     });
@@ -590,9 +590,9 @@ describe('computeBillingSimulation — Membership Plan benefits (#635)', () => {
   it('never charges a negative amount when the grant exceeds the Plan quantity', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({
-        planBenefits: [planBenefit({ gymChargeId: 12, category: 'oneoff', billingFrequency: 'once', unitPrice: 50, quantity: 1 })],
+        planBenefits: [planBenefit({ productId: 12, category: 'oneoff', billingFrequency: 'once', unitPrice: 50, quantity: 1 })],
         promotions: [promotion({
-          grants: [grant({ gymChargeId: 12, category: 'oneoff', billingFrequency: 'once', unitPrice: 50, quantity: 5 })],
+          grants: [grant({ productId: 12, category: 'oneoff', billingFrequency: 'once', unitPrice: 50, quantity: 5 })],
         })],
       })],
     });
@@ -646,7 +646,7 @@ describe('computeBillingSimulation — Product benefit actions (#896)', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({
         planBenefits: [planBenefit({
-          gymChargeId: 11, name: 'Registration Fee', category: 'oneoff',
+          productId: 11, name: 'Registration Fee', category: 'oneoff',
           billingFrequency: 'once', unitPrice: 50,
           benefit: { action: 'percentage_discount', value: 50 },
         })],
@@ -663,14 +663,14 @@ describe('computeBillingSimulation — Product benefit actions (#896)', () => {
         planBenefits: [planBenefit()],
         promotions: [promotion({
           grants: [grant({
-            gymChargeId: 7, billingFrequency: 'month', quantity: 2,
+            productId: 7, billingFrequency: 'month', quantity: 2,
             benefit: { action: 'percentage_discount', value: 25 },
           })],
         })],
       })],
     });
     const monthly = section(result, 'month')!;
-    expect(monthly.events.map((e) => e.lines.find((l) => l.gym_charge_id === 7)!.actual_charge))
+    expect(monthly.events.map((e) => e.lines.find((l) => l.product_id === 7)!.actual_charge))
       .toEqual([15, 15, 20]);
     expect(monthly.events[0].lines[1].benefits[0]).toMatchObject({
       source: 'promotion', name: 'October Promotion', action: 'percentage_discount', value: 25,
@@ -683,7 +683,7 @@ describe('computeBillingSimulation — Product benefit actions (#896)', () => {
         planBenefits: [planBenefit({ benefit: { action: 'percentage_discount', value: 50 } })],
         promotions: [promotion({
           grants: [grant({
-            gymChargeId: 7, billingFrequency: 'month', quantity: 1,
+            productId: 7, billingFrequency: 'month', quantity: 1,
             benefit: { action: 'percentage_discount', value: 50 },
           })],
         })],
@@ -691,7 +691,7 @@ describe('computeBillingSimulation — Product benefit actions (#896)', () => {
     });
     const monthly = section(result, 'month')!;
     // EUR 20 -> EUR 10 (the Plan's) -> EUR 5 (the Promotion's, on the covered period).
-    expect(monthly.events.map((e) => e.lines.find((l) => l.gym_charge_id === 7)!.actual_charge))
+    expect(monthly.events.map((e) => e.lines.find((l) => l.product_id === 7)!.actual_charge))
       .toEqual([5, 10]);
     expect(monthly.events[0].lines[1].benefits.map((b) => b.source)).toEqual(['membership_plan', 'promotion']);
   });
@@ -702,7 +702,7 @@ describe('computeBillingSimulation — Product benefit actions (#896)', () => {
         planBenefits: [planBenefit()],
         promotions: [promotion({
           grants: [grant({
-            gymChargeId: 7, billingFrequency: 'month', quantity: 2,
+            productId: 7, billingFrequency: 'month', quantity: 2,
             benefit: { action: 'no_benefit', value: null },
           })],
         })],
@@ -719,12 +719,12 @@ describe('computeBillingSimulation — Product benefit actions (#896)', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({
         planBenefits: [planBenefit({
-          gymChargeId: 12, name: 'Personal Training', category: 'session',
+          productId: 12, name: 'Personal Training', category: 'session',
           billingFrequency: 'per_session', unitPrice: 30, quantity: 10,
         })],
         promotions: [promotion({
           grants: [grant({
-            gymChargeId: 12, name: 'Personal Training', category: 'session',
+            productId: 12, name: 'Personal Training', category: 'session',
             billingFrequency: 'per_session', unitPrice: 30, quantity: 4,
             benefit: { action: 'fixed_price', value: 20 },
           })],
@@ -742,12 +742,12 @@ describe('computeBillingSimulation — Product benefit actions (#896)', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({
         planBenefits: [planBenefit({
-          gymChargeId: 11, name: 'Registration Fee', category: 'oneoff',
+          productId: 11, name: 'Registration Fee', category: 'oneoff',
           billingFrequency: 'once', unitPrice: 50, quantity: 1,
         })],
         promotions: [promotion({
           grants: [grant({
-            gymChargeId: 11, category: 'oneoff', billingFrequency: 'once',
+            productId: 11, category: 'oneoff', billingFrequency: 'once',
             unitPrice: 50, quantity: 1, benefit: { action: 'fixed_discount', value: 80 },
           })],
         })],
@@ -760,21 +760,21 @@ describe('computeBillingSimulation — Product benefit actions (#896)', () => {
     const result = computeBillingSimulation({
       assignments: [assignment({
         planBenefits: [planBenefit({
-          gymChargeId: 12, name: 'Personal Training', category: 'session',
+          productId: 12, name: 'Personal Training', category: 'session',
           billingFrequency: 'per_session', unitPrice: 30, quantity: 6,
         })],
         promotions: [
           promotion({
             name: 'First',
             grants: [grant({
-              gymChargeId: 12, category: 'session', billingFrequency: 'per_session',
+              productId: 12, category: 'session', billingFrequency: 'per_session',
               unitPrice: 30, quantity: 4, benefit: { action: 'waive', value: null },
             })],
           }),
           promotion({
             name: 'Second',
             grants: [grant({
-              gymChargeId: 12, category: 'session', billingFrequency: 'per_session',
+              productId: 12, category: 'session', billingFrequency: 'per_session',
               unitPrice: 30, quantity: 4, benefit: { action: 'percentage_discount', value: 50 },
             })],
           }),
@@ -966,7 +966,7 @@ describe('computeBillingSimulation — Billing & Duration (#635 §7)', () => {
 describe('computeBillingSimulation — a renewing session allowance (#918)', () => {
   function sessions(over: Partial<SimulationPlanBenefit> = {}): SimulationPlanBenefit {
     return planBenefit({
-      gymChargeId: 12, name: 'Personal Training Class', category: 'session',
+      productId: 12, name: 'Personal Training Class', category: 'session',
       billingFrequency: 'per_session', unitPrice: 50, quantity: 2,
       ...over,
     });
@@ -1029,7 +1029,7 @@ describe('computeBillingSimulation — a renewing session allowance (#918)', () 
         // first cycle is covered, 2 units of the second, and nothing after.
         promotions: [promotion({
           grants: [grant({
-            gymChargeId: 12, name: 'Personal Training Class', category: 'session',
+            productId: 12, name: 'Personal Training Class', category: 'session',
             billingFrequency: 'per_session', unitPrice: 50, quantity: 10,
           })],
         })],

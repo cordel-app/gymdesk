@@ -427,7 +427,7 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       — no IP restriction), `/themes`, and the two `/webhooks/*` routes
       (signature-verified). Re-audit this list before launch.
 - [ ] Decide whether `/docs` (Swagger UI) should be exposed in production.
-- [ ] **Close out `js/missing-rate-limiting`** (#767): `/sellable-items` and `/taxes`
+- [ ] **Close out `js/missing-rate-limiting`** (#767): `/products` and `/taxes`
       carried `// lgtm[js/missing-rate-limiting]` comments that suppressed nothing (inline
       suppression is inert here — see *Code scanning* in `docs/architecture.md`), and
       removing them leaves the alerts, if any are open, visible again. They are false
@@ -771,6 +771,26 @@ runbook is how.
       migrations 175, 189 and 192. Capture
       `SELECT promotion_id, quantity, frequency_interval, frequency_unit FROM promotion_membership_fee_benefits`
       before the deploy if any gym's values are worth keeping for reference.
+- [ ] **Migration 214 and the API build that renames the entity must ship together**
+      (#949 stage 3): the migration renames `gym_charges` → `products`, its FK column and
+      the two tables and three stored values beside it, and the same PR moves the API root
+      to `/products`. There is no ordering that keeps *both* builds working, because this
+      is a rename and not an add or a drop: the old build 500s with `ER_NO_SUCH_TABLE` /
+      `ER_BAD_FIELD_ERROR` against the new schema, and the new build does the same against
+      the old one. `deploy.yml` migrates inside the job that restarts the API, which is
+      the right shape here — the window is the few seconds of the container restart, and
+      the Financials pages are the only thing in it. Deploy the admin app in the same pass
+      (it calls `/products` now; a stale bundle calling `/sellable-items` gets a 404), and
+      expect `financials/sellable-items` and `financials/gym-charges` to keep redirecting
+      to `financials/products` for older links.
+- [ ] **Migration 214 rewrites `audit_logs.entity_type` for Products** (#949 stage 3,
+      `Q1 C` on the thread): every historical row written as `gym_charge` becomes
+      `product`, because that column is the key `AUDIT_ENTITY_REGISTRY` and the Audit
+      Log's entity-type filter are built from — a registry with no `gym_charge` entry would
+      leave those rows unnamed in the filter. The audited values (`previous_values` /
+      `new_values`) are not touched. `down()` reverses it, so this is recoverable either
+      way; capture `SELECT COUNT(*) FROM audit_logs WHERE entity_type = 'gym_charge'`
+      before the deploy so the count can be compared afterwards.
 - [ ] **Check who loses a session cap before migrating 177** (#635 stage 4, part 2):
       `activity_type_eligible_plans` grants access without a per-window limit, so a plan
       with `allowance_type = 'session_count'` silently becomes unlimited for that

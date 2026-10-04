@@ -1384,7 +1384,7 @@ const MEMBER_BENEFIT_ORDER: Record<ProductBenefitCategory, number> = {
 
 export interface MemberMembershipBenefit {
   category: ProductBenefitCategory;
-  gym_charge_id: number;
+  product_id: number;
   name: string;
   quantity: number;
   billing_frequency: string | null;
@@ -1403,7 +1403,7 @@ async function loadMembershipBenefits(
   return (byAssignment.get(assignment.id) ?? [])
     .map((b) => ({
       category: b.category,
-      gym_charge_id: b.gymChargeId,
+      product_id: b.productId,
       name: b.name,
       quantity: b.quantity,
       billing_frequency: b.billingFrequency,

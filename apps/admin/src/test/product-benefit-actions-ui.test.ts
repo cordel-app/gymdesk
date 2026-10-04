@@ -63,8 +63,8 @@ const assignedPlanSrc = stripComments(readFileSync(ASSIGNED_PLAN, 'utf-8'));
 
 function row(over: Partial<ProductBenefitRow> = {}): ProductBenefitRow {
   return {
-    gym_charge_id: 1, quantity: 1, gym_charge_name: 'Personal Training', gym_charge_type: 'fee',
-    gym_charge_billing_frequency: null, gym_charge_status: 'active', ...over,
+    product_id: 1, quantity: 1, product_name: 'Personal Training', product_type: 'fee',
+    product_billing_frequency: null, product_status: 'active', ...over,
   };
 }
 
@@ -129,21 +129,21 @@ describe('toBenefitItems', () => {
     // The Assigned Plan snapshot sections: their endpoint takes quantity only,
     // and `parseProductBenefitInput()` reads an unnamed action as "keep
     // what is stored" — sending a default here would clear a real discount.
-    expect(toBenefitItems([row()])).toEqual([{ gym_charge_id: 1, quantity: 1 }]);
+    expect(toBenefitItems([row()])).toEqual([{ product_id: 1, quantity: 1 }]);
   });
 
   it('sends the pair once the line carries one', () => {
     expect(toBenefitItems([row({ action: 'percentage_discount', value: 20 })]))
-      .toEqual([{ gym_charge_id: 1, quantity: 1, action: 'percentage_discount', value: 20 }]);
+      .toEqual([{ product_id: 1, quantity: 1, action: 'percentage_discount', value: 20 }]);
   });
 
   it('submits only the value the selected action takes (§16)', () => {
     // The editor keeps a typed number while the action changes, so switching
     // back restores it; this is where the one that no longer applies is dropped.
     expect(toBenefitItems([row({ action: 'waive', value: 20 })]))
-      .toEqual([{ gym_charge_id: 1, quantity: 1, action: 'waive', value: null }]);
+      .toEqual([{ product_id: 1, quantity: 1, action: 'waive', value: null }]);
     expect(toBenefitItems([row({ action: 'no_benefit', value: 20 })]))
-      .toEqual([{ gym_charge_id: 1, quantity: 1, action: 'no_benefit', value: null }]);
+      .toEqual([{ product_id: 1, quantity: 1, action: 'no_benefit', value: null }]);
   });
 });
 
@@ -283,8 +283,8 @@ describe('who names a context', () => {
   it('both pages refuse a Save that the API would 400 (§6)', () => {
     expect(plansSrc).toContain('invalidBenefitValueRow(benefitDraft)');
     expect(promotionsSrc).toContain('invalidBenefitValueRow(draft)');
-    expect(plansSrc).toContain("t('plans.benefit_value_required', { item: incomplete.gym_charge_name })");
-    expect(promotionsSrc).toContain("t('benefit_value_required', { item: incomplete.gym_charge_name })");
+    expect(plansSrc).toContain("t('plans.benefit_value_required', { item: incomplete.product_name })");
+    expect(promotionsSrc).toContain("t('benefit_value_required', { item: incomplete.product_name })");
   });
 });
 

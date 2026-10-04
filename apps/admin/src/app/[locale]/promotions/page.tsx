@@ -80,7 +80,7 @@ interface MembershipPlan {
   enrollment_status?: string | null;
 }
 interface AssociatedPlan { id: number; name: string }
-interface GymCharge {
+interface Product {
   id: number;
   name: string;
   type: string;
@@ -90,7 +90,7 @@ interface GymCharge {
   // truth for which Promotion benefit section a Product belongs to.
   benefit_category: 'session' | 'oneoff' | 'periodical';
 }
-interface ChargeType { id: number; code: string; name: string; is_gym_charge: number }
+interface ChargeType { id: number; code: string; name: string; is_product: number }
 // The Membership Fee Benefit singleton (#551). #635 stage 5 gave it a table
 // of its own (`promotion_membership_fee_benefits`), so it no longer carries a
 // `charge_type_*` triplet: there is exactly one per Promotion and the item is
@@ -112,8 +112,8 @@ interface MembershipFeeBenefit {
 
 // #550 stage 3: Session / One-off / Periodical Benefits — replaces the old
 // Included Benefits + generic Period Benefits sections, keyed to a real
-// Product (`gym_charges`) instead of the old `charge_types`
-// pseudo-catalog. `gym_charge_*` fields come straight off GET
+// Product (`products`) instead of the old `charge_types`
+// pseudo-catalog. `product_*` fields come straight off GET
 // /promotions/:id/{session,oneoff,periodical}-benefits (joined server-side),
 // which is why an item that has since gone inactive still resolves to its
 // real name/status here instead of falling back to "#<id>" — same pattern as
@@ -269,7 +269,7 @@ export default function PromotionsPage() {
   // show its own loading/empty/error state independent of the other lookups.
   const [plans, setPlans] = useState<MembershipPlan[]>([]);
   const [plansStatus, setPlansStatus] = useState<'loading' | 'ready' | 'error'>('loading');
-  const [gymCharges, setGymCharges] = useState<GymCharge[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [chargeTypes, setChargeTypes] = useState<ChargeType[]>([]);
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -330,9 +330,9 @@ export default function PromotionsPage() {
   // from these three lists; an item already associated with a promotion but
   // since deactivated is merged in separately per-row by the shared editor's
   // benefitRowOptions().
-  const activeSessionItems = gymCharges.filter((gc) => gc.benefit_category === 'session');
-  const activeOneoffItems = gymCharges.filter((gc) => gc.benefit_category === 'oneoff');
-  const activePeriodicalItems = gymCharges.filter((gc) => gc.benefit_category === 'periodical');
+  const activeSessionItems = products.filter((gc) => gc.benefit_category === 'session');
+  const activeOneoffItems = products.filter((gc) => gc.benefit_category === 'oneoff');
+  const activePeriodicalItems = products.filter((gc) => gc.benefit_category === 'periodical');
 
   function defaultMfDraft(): MembershipFeeBenefit {
     return {
@@ -474,10 +474,10 @@ export default function PromotionsPage() {
   async function loadOtherLookups() {
     try {
       const [gc, ct] = await Promise.all([
-        apiFetch<GymCharge[]>('/sellable-items?availability=available'),
+        apiFetch<Product[]>('/products?availability=available'),
         apiFetch<ChargeType[]>('/charge-types'),
       ]);
-      setGymCharges(gc);
+      setProducts(gc);
       setChargeTypes(ct);
     } catch { /* non-critical */ }
   }
@@ -789,7 +789,7 @@ export default function PromotionsPage() {
         const draft = productSectionDraft(section);
         const incomplete = invalidBenefitValueRow(draft);
         if (incomplete) {
-          setSectionError(t('benefit_value_required', { item: incomplete.gym_charge_name }));
+          setSectionError(t('benefit_value_required', { item: incomplete.product_name }));
           return;
         }
         await apiFetch(`/promotions/${promoId}/${PRODUCT_BENEFIT_ENDPOINT[section]}`, {
@@ -876,7 +876,7 @@ export default function PromotionsPage() {
     return setPeriodicalDraft;
   }
 
-  function productSectionItems(section: ProductBenefitSection): GymCharge[] {
+  function productSectionItems(section: ProductBenefitSection): Product[] {
     if (section === 'session') return activeSessionItems;
     if (section === 'oneoff') return activeOneoffItems;
     return activePeriodicalItems;
@@ -980,7 +980,7 @@ export default function PromotionsPage() {
     addKey: string;
     draft: ProductBenefit[];
     setDraft: (fn: (prev: ProductBenefit[]) => ProductBenefit[]) => void;
-    categoryItems: GymCharge[];
+    categoryItems: Product[];
     showFrequency: boolean;
   }) {
     return (
@@ -1175,7 +1175,7 @@ export default function PromotionsPage() {
             it. Switching back shows them again with what was stored — nothing
             is migrated or cleared on a switch (§4), which is also why
             `handleSaveMain` leaves `promotion_membership_plans` alone while the
-            target is `sellable_item` instead of writing an empty list. */}
+            target is `product` instead of writing an empty list. */}
         <div style={subSectionSt}>
           <CardSectionHeader title={t('section_applies_to')} />
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>

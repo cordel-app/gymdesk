@@ -48,13 +48,13 @@ import {
  * active catalogue instead, which is what `fallback` is for.
  */
 export interface BenefitPricingRow {
-  gym_charge_id: number | string;
+  product_id: number | string;
   quantity: number | string;
   action?: unknown;
   value?: unknown;
-  gym_charge_amount?: string | number | null;
-  gym_charge_tax_behavior?: string | null;
-  gym_charge_tax_rate_percent?: string | number | null;
+  product_amount?: string | number | null;
+  product_tax_behavior?: string | null;
+  product_tax_rate_percent?: string | number | null;
 }
 
 /** The catalogue row a benefit row with no joined price falls back to. */
@@ -79,12 +79,12 @@ export interface BenefitPricingFallback {
 export function grossBenefitUnitPrice(
   row: BenefitPricingRow, fallback?: BenefitPricingFallback,
 ): number | null {
-  const amount = row.gym_charge_amount ?? fallback?.amount ?? null;
+  const amount = row.product_amount ?? fallback?.amount ?? null;
   if (amount == null) return null;
   return computePriceFields({
     amount,
-    tax_rate_percent: row.gym_charge_tax_rate_percent ?? fallback?.tax_rate_percent ?? null,
-    tax_behavior: row.gym_charge_tax_behavior ?? fallback?.tax_behavior ?? 'inclusive',
+    tax_rate_percent: row.product_tax_rate_percent ?? fallback?.tax_rate_percent ?? null,
+    tax_behavior: row.product_tax_behavior ?? fallback?.tax_behavior ?? 'inclusive',
   }).amount_incl_tax ?? Number(amount);
 }
 
@@ -132,6 +132,6 @@ export function withProductBenefitPrices<T extends BenefitPricingRow>(
   const byId = new Map((catalogue ?? []).map((item) => [Number(item.id), item]));
   return rows.map((row) => ({
     ...row,
-    ...productBenefitPrices(context, row, byId.get(Number(row.gym_charge_id))),
+    ...productBenefitPrices(context, row, byId.get(Number(row.product_id))),
   }));
 }

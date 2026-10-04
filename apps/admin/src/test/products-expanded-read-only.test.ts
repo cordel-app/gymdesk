@@ -86,7 +86,7 @@ describe('the field set is declared once (#974 §1)', () => {
   it('declares every field exactly once across the sections', () => {
     const keys = PRODUCT_SECTIONS.flatMap((s) => s.fields.map((f) => f.key));
     expect(new Set(keys).size).toBe(keys.length);
-    // The whole of what `PUT /sellable-items/:id` carries, plus the Name the
+    // The whole of what `PUT /products/:id` carries, plus the Name the
     // read-only half used to omit.
     expect(keys).toEqual([
       'name', 'type', 'description', 'units', 'status', 'enrollment_status', 'mandatory',
@@ -185,7 +185,7 @@ describe('both halves see the same sections (#974 §1/§3)', () => {
   });
 
   it('reports a System row\'s frozen columns as values, not as missing fields', () => {
-    // `PUT /sellable-items/:id` writes name/type/units only inside its
+    // `PUT /products/:id` writes name/type/units only inside its
     // `is_system` guard, so the form must not offer a control — but the card
     // still has to report them, as it did before #974.
     const general = visibleProductSections({ isSystem: true, isSessionType: false })
@@ -273,7 +273,7 @@ describe('the layout owns the structure and neither half restates it (#974 §1)'
     // #806's rule: the module's permission gate and its labels stay the page's.
     expect(layoutSrc).not.toContain('useTranslations');
     expect(layoutSrc).not.toContain('apiFetch');
-    expect(layoutSrc).not.toContain('/sellable-items');
+    expect(layoutSrc).not.toContain('/products');
   });
 
   it('reflows the same way in both modes instead of a fixed two-column form', () => {
@@ -386,7 +386,7 @@ describe('nothing about the item itself changed (#974 §6)', () => {
 
   it('leaves the Details modal as the home of the audit metadata (#974 §7)', () => {
     expect(pageSrc).toContain("<ModalSection title={t('section_audit')} />");
-    expect(pageSrc).toContain('<ViewAuditLogButton entityType="gym_charge"');
+    expect(pageSrc).toContain('<ViewAuditLogButton entityType="product"');
     // …and keeps it out of the expanded card, in either mode.
     expect(cardBodySrc).not.toContain("t('audit_created_by')");
     expect(cardBodySrc).not.toContain('ViewAuditLogButton');
@@ -401,7 +401,7 @@ describe('nothing about the item itself changed (#974 §6)', () => {
     // calls them by the names they really have. The retired *identifiers* are
     // gated across all three source trees by
     // `api/src/test/product-identifiers.unit.test.ts`.
-    expect(pageSrc).toContain("apiFetch<Product>('/sellable-items'");
-    expect(pageSrc).toContain('entityType="gym_charge"');
+    expect(pageSrc).toContain("apiFetch<Product>('/products'");
+    expect(pageSrc).toContain('entityType="product"');
   });
 });

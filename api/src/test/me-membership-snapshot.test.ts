@@ -38,7 +38,7 @@ async function createItem(
   gymId: string, name: string, type: string, amount: number, billingFrequency: string,
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
      VALUES (?, ?, ?, ?, 'EUR', ?, 'active', 'available', 0)`,
     [gymId, name, type, amount, billingFrequency],
@@ -87,7 +87,7 @@ async function snapshotBenefit(gymId: string, umId: number, category: string, ro
 }) {
   await db.query(
     `INSERT INTO ${CATEGORY_TABLE[category]}
-       (gym_id, user_membership_id, gym_charge_id, quantity, item_name, item_type,
+       (gym_id, user_membership_id, product_id, quantity, item_name, item_type,
         unit_price, item_billing_frequency, currency)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'EUR')`,
     [gymId, umId, row.itemId, row.quantity, row.name, row.type, row.price, row.frequency],
@@ -102,7 +102,7 @@ const PLAN_TABLE: Record<string, string> = {
 
 async function planBenefit(gymId: string, planId: number, category: string, itemId: number, quantity: number) {
   await db.query(
-    `INSERT INTO ${PLAN_TABLE[category]} (gym_id, membership_plan_id, gym_charge_id, quantity)
+    `INSERT INTO ${PLAN_TABLE[category]} (gym_id, membership_plan_id, product_id, quantity)
      VALUES (?, ?, ?, ?)`,
     [gymId, planId, itemId, quantity],
   );
@@ -186,15 +186,15 @@ describe('GET /me/membership — benefits come from the assignment snapshot', ()
     expect(res.status).toBe(200);
     expect(res.body.membership.benefits).toEqual([
       {
-        category: 'oneoff', gym_charge_id: joiningFeeId, name: 'Joining Fee',
+        category: 'oneoff', product_id: joiningFeeId, name: 'Joining Fee',
         quantity: 1, billing_frequency: 'once', unit_price: 50,
       },
       {
-        category: 'session', gym_charge_id: ptId, name: 'Personal Training Pack',
+        category: 'session', product_id: ptId, name: 'Personal Training Pack',
         quantity: 10, billing_frequency: 'per_session', unit_price: 200,
       },
       {
-        category: 'periodical', gym_charge_id: lockerId, name: 'Locker Rental',
+        category: 'periodical', product_id: lockerId, name: 'Locker Rental',
         quantity: 1, billing_frequency: 'month', unit_price: 10,
       },
     ]);
@@ -220,9 +220,9 @@ describe('GET /me/membership — benefits come from the assignment snapshot', ()
   });
 
   it('keeps the frozen price when the Product is repriced (§17)', async () => {
-    await db.query('UPDATE gym_charges SET amount = 99 WHERE id = ?', [lockerId]);
+    await db.query('UPDATE products SET amount = 99 WHERE id = ?', [lockerId]);
     const { body } = await getMembership(gymId);
-    const locker = body.membership.benefits.find((b: any) => b.gym_charge_id === lockerId);
+    const locker = body.membership.benefits.find((b: any) => b.product_id === lockerId);
     expect(locker.unit_price).toBe(10);
   });
 
@@ -230,7 +230,7 @@ describe('GET /me/membership — benefits come from the assignment snapshot', ()
     const newItem = await createItem(gymId, 'Towel Service', 'service', 5, 'month');
     await planBenefit(gymId, planId, 'periodical', newItem, 1);
     const { body } = await getMembership(gymId);
-    expect(body.membership.benefits.map((b: any) => b.gym_charge_id)).not.toContain(newItem);
+    expect(body.membership.benefits.map((b: any) => b.product_id)).not.toContain(newItem);
     expect(body.membership.benefits).toHaveLength(3);
   });
 });
@@ -260,7 +260,7 @@ describe('GET /me/membership — an assignment that captured no snapshot', () =>
     expect(res.body.membership.billing_interval).toBe(3);
     expect(res.body.membership.billing_unit).toBe('month');
     expect(res.body.membership.benefits).toEqual([{
-      category: 'periodical', gym_charge_id: itemId, name: 'Insurance Fee',
+      category: 'periodical', product_id: itemId, name: 'Insurance Fee',
       quantity: 1, billing_frequency: 'year', unit_price: 25,
     }]);
   });

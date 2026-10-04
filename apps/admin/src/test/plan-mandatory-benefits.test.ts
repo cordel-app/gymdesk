@@ -40,17 +40,17 @@ const promotionsSrc = stripComments(readFileSync(PROMOTIONS_PAGE, 'utf-8'));
 
 function row(over: Partial<ProductBenefitRow> = {}): ProductBenefitRow {
   return {
-    gym_charge_id: 1, quantity: 1, gym_charge_name: 'Insurance Fee', gym_charge_type: 'fee',
-    gym_charge_billing_frequency: 'year', gym_charge_status: 'active', ...over,
+    product_id: 1, quantity: 1, product_name: 'Insurance Fee', product_type: 'fee',
+    product_billing_frequency: 'year', product_status: 'active', ...over,
   };
 }
 
 describe('isMandatoryBenefitRow', () => {
   it('reads a tinyint, a boolean, and an absent field', () => {
-    expect(isMandatoryBenefitRow(row({ gym_charge_mandatory: 1 }))).toBe(true);
-    expect(isMandatoryBenefitRow(row({ gym_charge_mandatory: true }))).toBe(true);
-    expect(isMandatoryBenefitRow(row({ gym_charge_mandatory: 0 }))).toBe(false);
-    expect(isMandatoryBenefitRow(row({ gym_charge_mandatory: false }))).toBe(false);
+    expect(isMandatoryBenefitRow(row({ product_mandatory: 1 }))).toBe(true);
+    expect(isMandatoryBenefitRow(row({ product_mandatory: true }))).toBe(true);
+    expect(isMandatoryBenefitRow(row({ product_mandatory: 0 }))).toBe(false);
+    expect(isMandatoryBenefitRow(row({ product_mandatory: false }))).toBe(false);
     // A Promotion's rows do not carry the field at all — never mandatory.
     expect(isMandatoryBenefitRow(row())).toBe(false);
   });

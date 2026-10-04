@@ -20,9 +20,9 @@ export interface BillingEventSimulationBenefit {
 }
 
 export interface BillingEventSimulationLine {
-  kind: 'membership_fee' | 'sellable_item';
+  kind: 'membership_fee' | 'product';
   label: string;
-  gym_charge_id: number | null;
+  product_id: number | null;
   /** #832 — the line exists because the Product is Mandatory. */
   mandatory: boolean;
   quantity: number;

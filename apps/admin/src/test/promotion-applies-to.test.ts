@@ -32,7 +32,7 @@ const detailSrc = stripComments(
 
 describe('the target itself', () => {
   it('offers the two mutually exclusive options the ticket names', () => {
-    expect(PROMOTION_TARGET_OPTIONS.map((o) => o.value)).toEqual(['membership_plan', 'sellable_item']);
+    expect(PROMOTION_TARGET_OPTIONS.map((o) => o.value)).toEqual(['membership_plan', 'product']);
   });
 
   it('defaults to the behaviour every Promotion had before the flag', () => {
@@ -54,7 +54,7 @@ describe('the target itself', () => {
     expect(promotionsSrc).toContain('targetsMembershipPlan(');
     // A literal comparison against the stored value would be the second
     // implementation this module exists to prevent.
-    expect(promotionsSrc).not.toContain("=== 'sellable_item'");
+    expect(promotionsSrc).not.toContain("=== 'product'");
     expect(promotionsSrc).not.toContain("applies_to === 'membership_plan'");
   });
 });

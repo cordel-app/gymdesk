@@ -23,7 +23,7 @@ type TaxStatus = typeof STATUSES[number];
 type ActorType = 'staff' | 'superadmin';
 
 interface TaxImpact {
-  sellable_items: number;
+  products: number;
   membership_plans: number;
 }
 
@@ -490,7 +490,7 @@ export default function TaxesPage() {
           <div>
             <p style={{ margin: '0 0 8px', fontWeight: 600 }}>{t('impact_title')}</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '0 0 8px' }}>
-              <span>{t('impact_products')}: {t('impact_affected', { count: pendingImpact.impact.sellable_items })}</span>
+              <span>{t('impact_products')}: {t('impact_affected', { count: pendingImpact.impact.products })}</span>
               <span>{t('impact_membership_plans')}: {t('impact_affected', { count: pendingImpact.impact.membership_plans })}</span>
             </div>
             <p style={{ margin: 0 }}>{t('impact_body')}</p>

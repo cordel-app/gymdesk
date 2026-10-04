@@ -83,7 +83,7 @@ describe('#918 — the list and the CHECK agree (two places)', () => {
 
 describe('#918 — the replace-all input rule', () => {
   it('keeps the stored Frequency when the request names none', () => {
-    expect(parseSessionBenefitFrequencyInput({ gym_charge_id: 1, quantity: 2 }))
+    expect(parseSessionBenefitFrequencyInput({ product_id: 1, quantity: 2 }))
       .toEqual({ keep: true });
   });
 

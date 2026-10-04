@@ -72,26 +72,6 @@ async function addCoveredMember(
   );
 }
 
-// Creates a gym-scoped charge (borrowing an existing gym-charge charge_type,
-// seeded by migration 090) so a Benefit row can reference it. Picks a
-// charge_type not yet used by this gym, since gym_charges has a unique constraint
-// on (gym_id, charge_type_id) and this helper may be called more than once per gym.
-async function createGymCharge(gymId: string): Promise<number> {
-  const { rows } = await db.query(
-    `SELECT ct.id FROM charge_types ct
-     WHERE ct.is_gym_charge = 1
-     AND NOT EXISTS (SELECT 1 FROM gym_charges gc WHERE gc.gym_id = ? AND gc.charge_type_id = ct.id)
-     LIMIT 1`,
-    [gymId],
-  );
-  const chargeTypeId = rows[0].id;
-  const { insertId } = await db.query(
-    `INSERT INTO gym_charges (gym_id, charge_type_id, availability) VALUES (?, ?, 'available')`,
-    [gymId, chargeTypeId],
-  );
-  return insertId;
-}
-
 // #512: creates a promotion and links it to a plan via promotion_membership_plans,
 // so enrichPlan()'s promotion_count can be exercised.
 async function createPromoTargetingPlan(gymId: string, planId: number): Promise<number> {
@@ -109,11 +89,11 @@ async function createPromoTargetingPlan(gymId: string, planId: number): Promise<
 }
 
 // #409: a custom (non-system) product, created the same way POST
-// /sellable-items does — no charge_type_id (only system items backed by a
+// /products does — no charge_type_id (only system items backed by a
 // charge_types row have one).
-async function createCustomGymCharge(gymId: string, name: string, status = 'active'): Promise<number> {
+async function createCustomProduct(gymId: string, name: string, status = 'active'): Promise<number> {
   const { insertId } = await db.query(
-    'INSERT INTO gym_charges (gym_id, name, type, status) VALUES (?, ?, ?, ?)',
+    'INSERT INTO products (gym_id, name, type, status) VALUES (?, ?, ?, ?)',
     [gymId, name, 'fee', status],
   );
   return insertId;
@@ -936,7 +916,7 @@ describe('PUT /membership-plans/:id/enrollment', () => {
 
 // ─── #409: products catalog + charge benefits in plan enrichment ───────
 
-describe('sellable_items in enriched plan response', () => {
+describe('products in enriched plan response', () => {
   let gymId: string;
   let planId: number;
 
@@ -947,37 +927,37 @@ describe('sellable_items in enriched plan response', () => {
   });
 
   it('includes the full catalog of active products for the gym', async () => {
-    const activeId = await createCustomGymCharge(gymId, 'Active Custom Item');
+    const activeId = await createCustomProduct(gymId, 'Active Custom Item');
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(Array.isArray(res.body.sellable_items)).toBe(true);
-    const ids = res.body.sellable_items.map((si: any) => si.id);
+    expect(Array.isArray(res.body.products)).toBe(true);
+    const ids = res.body.products.map((si: any) => si.id);
     expect(ids).toContain(activeId);
   });
 
   it('excludes inactive products from the catalog', async () => {
-    const inactiveId = await createCustomGymCharge(gymId, 'Inactive Custom Item', 'inactive');
+    const inactiveId = await createCustomProduct(gymId, 'Inactive Custom Item', 'inactive');
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    const ids = res.body.sellable_items.map((si: any) => si.id);
+    const ids = res.body.products.map((si: any) => si.id);
     expect(ids).not.toContain(inactiveId);
   });
 
   it('is scoped to the requesting gym (tenant isolation)', async () => {
     const otherGym = await createTestGym('Products Other Gym');
-    const otherItemId = await createCustomGymCharge(otherGym, 'Other Gym Item');
+    const otherItemId = await createCustomProduct(otherGym, 'Other Gym Item');
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    const ids = res.body.sellable_items.map((si: any) => si.id);
+    const ids = res.body.products.map((si: any) => si.id);
     expect(ids).not.toContain(otherItemId);
   });
 });
@@ -2070,7 +2050,7 @@ async function createProduct(
   overrides: { mandatory?: boolean } = {},
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges (gym_id, name, type, billing_frequency, amount, status, is_system, currency, mandatory, tax_behavior)
+    `INSERT INTO products (gym_id, name, type, billing_frequency, amount, status, is_system, currency, mandatory, tax_behavior)
      VALUES (?, ?, ?, ?, ?, 'active', 0, 'EUR', ?, 'inclusive')`,
     [gymId, name, type, billingFrequency, amount, overrides.mandatory ? 1 : 0],
   );
@@ -2127,12 +2107,12 @@ describe('GET /membership-plans/:id/billing-event-simulation', () => {
       .put(`/membership-plans/${planId}/oneoff-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: registration, quantity: 1 }] });
+      .send({ items: [{ product_id: registration, quantity: 1 }] });
     await request
       .put(`/membership-plans/${planId}/periodical-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: locker, quantity: 1, action: 'waive' }] });
+      .send({ items: [{ product_id: locker, quantity: 1, action: 'waive' }] });
 
     const { rows: before } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
     const res = await request
@@ -2149,7 +2129,7 @@ describe('GET /membership-plans/:id/billing-event-simulation', () => {
     // waived periodical and the Membership Fee.
     const first = res.body.dates[0];
     expect(first.date).toBe(res.body.anchor_date);
-    const byCharge = new Map<number | null, any>(first.lines.map((l: any) => [l.gym_charge_id, l]));
+    const byCharge = new Map<number | null, any>(first.lines.map((l: any) => [l.product_id, l]));
     expect(byCharge.get(registration).actual_charge).toBe(100);
     // `Waive` still produces an event, at €0 (the ticket's §Waive).
     expect(byCharge.get(locker).regular_price).toBe(15);
@@ -2161,7 +2141,7 @@ describe('GET /membership-plans/:id/billing-event-simulation', () => {
     // A `Once` item is billed once and never repeats.
     const repeats = res.body.dates
       .slice(1)
-      .flatMap((g: any) => g.lines.map((l: any) => l.gym_charge_id));
+      .flatMap((g: any) => g.lines.map((l: any) => l.product_id));
     expect(repeats).not.toContain(registration);
 
     // Read-only: no billing event, payment request or charge is created.
@@ -2186,7 +2166,7 @@ describe('GET /membership-plans/:id/billing-event-simulation', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', mandatoryGymId);
     expect(res.status).toBe(200);
-    const line = res.body.dates[0].lines.find((l: any) => l.gym_charge_id === insuranceId);
+    const line = res.body.dates[0].lines.find((l: any) => l.product_id === insuranceId);
     expect(line).toBeTruthy();
     expect(line.mandatory).toBe(true);
     expect(line.actual_charge).toBe(20);

@@ -48,7 +48,7 @@ describe('Applied Promotion grant prices (#924 stage 2)', () => {
     taxBehavior?: 'inclusive' | 'exclusive';
   }): Promise<number> {
     const { insertId } = await db.query(
-      `INSERT INTO gym_charges
+      `INSERT INTO products
          (gym_id, name, type, amount, currency, billing_frequency, status, availability,
           is_system, tax_rate_id, tax_behavior)
        VALUES (?, ?, ?, ?, 'EUR', ?, 'active', 'available', 0, ?, ?)`,
@@ -80,7 +80,7 @@ describe('Applied Promotion grant prices (#924 stage 2)', () => {
   ) {
     await db.query(
       `INSERT INTO promotion_${category}
-         (gym_id, promotion_id, gym_charge_id, quantity, \`action\`, \`value\`)
+         (gym_id, promotion_id, product_id, quantity, \`action\`, \`value\`)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [gymId, promotionId, chargeId, opts.quantity ?? 1,
         opts.action ?? 'no_benefit', opts.value ?? null],
@@ -248,7 +248,7 @@ describe('Applied Promotion grant prices (#924 stage 2)', () => {
     await applyPromotion(umId, promotionId);
 
     // Everything the catalogue and the Promotion could say afterwards changes.
-    await db.query('UPDATE gym_charges SET amount = 999 WHERE id = ?', [locker]);
+    await db.query('UPDATE products SET amount = 999 WHERE id = ?', [locker]);
     await db.query(
       "UPDATE promotion_periodical SET `action` = 'no_benefit', `value` = NULL WHERE promotion_id = ?",
       [promotionId],
@@ -269,13 +269,13 @@ describe('Applied Promotion grant prices (#924 stage 2)', () => {
     });
     await grant(promotionId, 'periodical', locker, { action: 'percentage_discount', value: 50 });
     await applyPromotion(umId, promotionId);
-    // `gym_charge_id` is ON DELETE SET NULL on the snapshot: the identity goes,
+    // `product_id` is ON DELETE SET NULL on the snapshot: the identity goes,
     // the agreement stays, and the frozen amount is the honest gross.
-    await db.query('DELETE FROM promotion_periodical WHERE gym_charge_id = ?', [locker]);
-    await db.query('DELETE FROM gym_charges WHERE id = ?', [locker]);
+    await db.query('DELETE FROM promotion_periodical WHERE product_id = ?', [locker]);
+    await db.query('DELETE FROM products WHERE id = ?', [locker]);
 
     const row = await grantRow(umId, promotionId, 'periodical');
-    expect(row.gym_charge_id).toBeNull();
+    expect(row.product_id).toBeNull();
     expect(row.original_price_incl_tax).toBe(18);
     expect(row.final_price_incl_tax).toBe(9);
   });

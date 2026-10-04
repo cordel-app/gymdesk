@@ -446,3 +446,91 @@ describe('Member in POST /recycle-bin/member/:id/recover', () => {
     expect(res.status).toBe(404);
   });
 });
+
+// ─── Products (#949 stage 3) ────────────────────────────────────────────────
+//
+// The entity type is **`product`**. It carried the entity's previous name until
+// stage 3, and `class_package` before #271 — and nothing here ever asserted it,
+// which is how the admin's own filter came to send `class_package` long after
+// the API had stopped accepting it. These cases pin the wire value on all three
+// routes, so a fourth rename has to move the test with it. (Only the oldest
+// retired value is spelled below: `product-identifiers.unit.test.ts` bans the
+// one stage 3 replaced, which is the point of that gate.)
+
+async function createDeletedProduct(gymId: string, name: string): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO products
+       (gym_id, name, type, units, amount, currency, billing_frequency, status, availability,
+        is_system, validity_days, notes, deleted_at, deleted_by_name)
+     VALUES (?, ?, 'sessions', 5, 50.00, 'EUR', 'once', 'inactive', 'available', 0, 182, 'Kept for the record', NOW(), 'Test Admin')`,
+    [gymId, name],
+  );
+  return insertId;
+}
+
+describe('Product in the recycle bin', () => {
+  let gymId: string;
+  let deletedId: number;
+  let liveId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Recycle Bin Product Gym');
+    await createTestMembership(gymId, 'admin');
+    deletedId = await createDeletedProduct(gymId, `Deleted Product ${Date.now()}`);
+    const { insertId } = await db.query(
+      `INSERT INTO products (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
+       VALUES (?, ?, 'service', 10.00, 'EUR', 'month', 'active', 'available', 0)`,
+      [gymId, `Live Product ${Date.now()}`],
+    );
+    liveId = insertId;
+  });
+
+  it('lists it under entity_type=product, and not the live one', async () => {
+    const res = await request
+      .get('/recycle-bin?entity_type=product')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.items.every((i: any) => i.entity_type === 'product')).toBe(true);
+    const ids = res.body.items.map((i: any) => Number(i.id));
+    expect(ids).toContain(deletedId);
+    expect(ids).not.toContain(liveId);
+  });
+
+  it('refuses the entity type the admin used to send', async () => {
+    const res = await request
+      .get('/recycle-bin?entity_type=class_package')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toContain('product');
+  });
+
+  it('serves its detail with the Product\'s own columns', async () => {
+    const res = await request
+      .get(`/recycle-bin/product/${deletedId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    // The three the admin's detail rows read: `units`, `amount`, `validity_days`
+    // — a class package's `number_of_sessions`/`price` were never columns here.
+    expect(Number(res.body.units)).toBe(5);
+    expect(Number(res.body.amount)).toBe(50);
+    expect(Number(res.body.validity_days)).toBe(182);
+    expect(res.body.deleted_by_name).toBe('Test Admin');
+  });
+
+  it('recovers it, which clears deleted_at and reactivates the row', async () => {
+    const res = await request
+      .post(`/recycle-bin/product/${deletedId}/recover`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(204);
+    const { rows } = await db.query(
+      'SELECT deleted_at, status FROM products WHERE id = ? AND gym_id = ?',
+      [deletedId, gymId],
+    );
+    expect(rows[0].deleted_at).toBeNull();
+    expect(rows[0].status).toBe('active');
+  });
+});

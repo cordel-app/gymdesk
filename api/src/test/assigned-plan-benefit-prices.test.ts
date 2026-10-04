@@ -58,7 +58,7 @@ describe('Assigned Plan Benefit prices (#924 stage 1)', () => {
     taxBehavior?: 'inclusive' | 'exclusive';
   }): Promise<number> {
     const { insertId } = await db.query(
-      `INSERT INTO gym_charges
+      `INSERT INTO products
          (gym_id, name, type, billing_frequency, status, is_system, currency,
           amount, tax_rate_id, tax_behavior)
        VALUES (?, ?, ?, ?, 'active', 0, 'EUR', ?, ?, ?)`,
@@ -94,7 +94,7 @@ describe('Assigned Plan Benefit prices (#924 stage 1)', () => {
     const sessionFrequency = table === 'membership_plan_session';
     await db.query(
       `INSERT INTO ${table}
-         (gym_id, membership_plan_id, gym_charge_id, quantity, \`action\`, \`value\`
+         (gym_id, membership_plan_id, product_id, quantity, \`action\`, \`value\`
           ${sessionFrequency ? ', frequency' : ''})
        VALUES (?, ?, ?, ?, ?, ?${sessionFrequency ? ', ?' : ''})`,
       [gymId, planId, chargeId, opts.quantity ?? 1, opts.action ?? 'no_benefit', opts.value ?? null,
@@ -225,7 +225,7 @@ describe('Assigned Plan Benefit prices (#924 stage 1)', () => {
       quantity: 2, action: 'percentage_discount', value: 50,
     });
     const umId = await assignPlan(planId);
-    await db.query('UPDATE gym_charges SET amount = 999 WHERE id = ? AND gym_id = ?', [feeId, gymId]);
+    await db.query('UPDATE products SET amount = 999 WHERE id = ? AND gym_id = ?', [feeId, gymId]);
     const row = await snapshotRow(umId, 'oneoff');
     expect(row.unit_price).toBe(100);
     expect(row.original_price_incl_tax).toBe(100);
@@ -242,7 +242,7 @@ describe('Assigned Plan Benefit prices (#924 stage 1)', () => {
     await addPlanBenefit('membership_plan_periodical', planId, lockerId, { action: 'waive' });
     const umId = await assignPlan(planId);
     await db.query(
-      'UPDATE membership_plan_periodical SET `action` = ?, `value` = NULL WHERE membership_plan_id = ? AND gym_charge_id = ?',
+      'UPDATE membership_plan_periodical SET `action` = ?, `value` = NULL WHERE membership_plan_id = ? AND product_id = ?',
       ['no_benefit', planId, lockerId],
     );
     const row = await snapshotRow(umId, 'periodical');
@@ -290,7 +290,7 @@ describe('Assigned Plan Benefit prices (#924 stage 1)', () => {
       .put(`/user-memberships/${umId}/periodical-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: lockerId, quantity: 3 }] });
+      .send({ items: [{ product_id: lockerId, quantity: 3 }] });
     expect(put.status).toBe(200);
 
     for (const field of PRICE_FIELDS) {
@@ -315,7 +315,7 @@ describe('Assigned Plan Benefit prices (#924 stage 1)', () => {
     await addPlanBenefit('membership_plan_periodical', planId, itemId, { action: 'waive' });
     const umId = await assignPlan(planId);
     await db.query(
-      'UPDATE gym_charges SET status = ?, deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?',
+      'UPDATE products SET status = ?, deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?',
       ['inactive', itemId, gymId],
     );
     const row = await snapshotRow(umId, 'periodical');

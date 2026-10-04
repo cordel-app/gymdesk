@@ -13,11 +13,11 @@
  * `applies_to_<target>` key in `apps/admin/locales/base/{en,es,ca}.json`.
  */
 
-export type PromotionTarget = 'membership_plan' | 'sellable_item';
+export type PromotionTarget = 'membership_plan' | 'product';
 
 export const PROMOTION_TARGET_OPTIONS: readonly { value: PromotionTarget; labelKey: string }[] = [
   { value: 'membership_plan', labelKey: 'applies_to_membership_plan' },
-  { value: 'sellable_item', labelKey: 'applies_to_product' },
+  { value: 'product', labelKey: 'applies_to_product' },
 ];
 
 /**

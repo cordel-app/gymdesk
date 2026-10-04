@@ -71,7 +71,7 @@ describe('#942 sessionPackageNote: which sentence belongs beside a price', () =>
   });
 
   it('falls back to the package wording when a session item has no Units', () => {
-    // `gym_charges.units` is nullable and the form accepts an empty value.
+    // `products.units` is nullable and the form accepts an empty value.
     // Saying nothing there would leave exactly the ambiguity the ticket is about.
     expect(sessionPackageNote({ type: SESSION_ITEM_TYPE, units: null }))
       .toEqual({ key: 'price_total_for_package' });

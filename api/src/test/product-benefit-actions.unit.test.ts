@@ -226,7 +226,7 @@ describe('#896 — migration 203 says the same thing as the module', () => {
     ]);
     // §12: the global Product is not one of them.
     for (const table of [...migration.PROMOTION_TABLES, ...migration.PLAN_TABLES]) {
-      expect(table).not.toBe('gym_charges');
+      expect(table).not.toBe('products');
     }
   });
 
@@ -312,8 +312,8 @@ describe('#896 stage 2 — reading one submitted line', () => {
 
 describe('#896 stage 2 — reporting one stored row', () => {
   it('turns the DECIMAL string mysql2 hands back into a number', () => {
-    expect(shapeProductBenefitRow('promotion', { gym_charge_id: 7, action: 'percentage_discount', value: '20.00' }))
-      .toEqual({ gym_charge_id: 7, action: 'percentage_discount', value: 20 });
+    expect(shapeProductBenefitRow('promotion', { product_id: 7, action: 'percentage_discount', value: '20.00' }))
+      .toEqual({ product_id: 7, action: 'percentage_discount', value: 20 });
   });
 
   it('reports an action the context may not configure as the neutral default', () => {
@@ -337,7 +337,7 @@ describe('#896 stage 2 — the mandatory rule carries the pair (#893)', () => {
     const merged = mergeMandatoryBenefits([], [item]);
     expect(merged).toHaveLength(1);
     expect(merged[0]).toMatchObject({
-      gym_charge_id: 9, implicit: true, action: DEFAULT_BENEFIT_ACTION, value: null,
+      product_id: 9, implicit: true, action: DEFAULT_BENEFIT_ACTION, value: null,
     });
   });
 
@@ -345,12 +345,12 @@ describe('#896 stage 2 — the mandatory rule carries the pair (#893)', () => {
     // Naming none is what makes the route keep whatever the row was configured
     // with: preserving an item the client dropped must not reprice it.
     const written = withMandatoryBenefits([], [item]);
-    expect(written).toEqual([{ gym_charge_id: 9, quantity: MANDATORY_BENEFIT_QUANTITY }]);
+    expect(written).toEqual([{ product_id: 9, quantity: MANDATORY_BENEFIT_QUANTITY }]);
     expect(written[0].benefit).toBeUndefined();
   });
 
   it('passes a submitted mandatory item through with its own pair', () => {
-    const submitted = [{ gym_charge_id: 9, quantity: 3, benefit: { action: 'waive' as const, value: null } }];
+    const submitted = [{ product_id: 9, quantity: 3, benefit: { action: 'waive' as const, value: null } }];
     expect(withMandatoryBenefits(submitted, [item])).toEqual(submitted);
   });
 });

@@ -101,14 +101,14 @@ import {
 
 export type BillingUnit = 'day' | 'week' | 'month' | 'year';
 
-/** `gym_charges.billing_frequency` (migrations 090/102/123). */
+/** `products.billing_frequency` (migrations 090/102/123). */
 export type ProductFrequency = 'once' | 'per_session' | 'week' | 'four_weeks' | 'month' | 'year';
 
 /**
  * The simulation's groups, in the order #629 §3 fixes them: one-off charges
  * first, then year, then monthly, then 4-week. `week`, `session` and `other`
  * are appended after those four because the catalogue can produce them
- * (`gym_charges.billing_frequency` also allows `week`/`per_session`, and a
+ * (`products.billing_frequency` also allows `week`/`per_session`, and a
  * Plan's `billing_policies` cadence is a free (interval, unit) pair) and the
  * ticket's four sections have nowhere to put them.
  */
@@ -141,7 +141,7 @@ export interface SimulationPromotion extends AppliedPromotionForBilling {
 }
 
 export interface SimulationGrant {
-  gymChargeId: number;
+  productId: number;
   name: string;
   category: ProductBenefitCategory;
   billingFrequency: ProductFrequency | null;
@@ -175,7 +175,7 @@ export interface SimulationGrant {
  */
 export interface SimulationService {
   id: number;
-  gymChargeId: number;
+  productId: number;
   name: string;
   billingFrequency: ProductFrequency | null;
   unitPrice: number;
@@ -193,7 +193,7 @@ export interface SimulationService {
  * Plan decides the member gets a locker, not that the locker is free.
  */
 export interface SimulationPlanBenefit {
-  gymChargeId: number;
+  productId: number;
   name: string;
   category: ProductBenefitCategory;
   billingFrequency: ProductFrequency | null;
@@ -359,11 +359,11 @@ export interface SimulationBenefit {
 }
 
 export interface SimulationLine {
-  kind: 'membership_fee' | 'sellable_item';
+  kind: 'membership_fee' | 'product';
   label: string;
   user_membership_id: number;
   plan_name: string | null;
-  gym_charge_id: number | null;
+  product_id: number | null;
   quantity: number;
   unit_price: number;
   regular_price: number;
@@ -886,7 +886,7 @@ function buildMembershipFeeStream(a: SimulationAssignment): Stream | null {
         label: a.planName ?? 'Membership Fee',
         user_membership_id: a.userMembershipId,
         plan_name: a.planName,
-        gym_charge_id: null,
+        product_id: null,
         quantity: periods,
         unit_price: regular,
         regular_price: round2(regular * periods),
@@ -909,12 +909,12 @@ interface GrantCoverage {
 
 /**
  * One Product the assignment bills, with every Promotion grant that
- * covers it. Merging on `gymChargeId` is what keeps a Plan's Period Benefit
+ * covers it. Merging on `productId` is what keeps a Plan's Period Benefit
  * and a Promotion granting the same item one charge — the Promotion covers
  * periods of it rather than adding a second locker.
  */
 interface BillableItem {
-  gymChargeId: number;
+  productId: number;
   name: string;
   category: ProductBenefitCategory;
   billingFrequency: ProductFrequency | null;
@@ -953,11 +953,11 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
   // id (0). Those never merge with each other — two forgotten items are still
   // two items — so each takes a key of its own.
   let orphan = 0;
-  const keyOf = (gymChargeId: number) => (gymChargeId > 0 ? `item:${gymChargeId}` : `orphan:${orphan++}`);
+  const keyOf = (productId: number) => (productId > 0 ? `item:${productId}` : `orphan:${orphan++}`);
 
   for (const benefit of a.planBenefits) {
-    byCharge.set(keyOf(benefit.gymChargeId), {
-      gymChargeId: benefit.gymChargeId,
+    byCharge.set(keyOf(benefit.productId), {
+      productId: benefit.productId,
       name: benefit.name,
       category: benefit.category,
       billingFrequency: benefit.billingFrequency,
@@ -973,13 +973,13 @@ function collectBillableItems(a: SimulationAssignment): BillableItem[] {
 
   for (const promo of a.promotions) {
     for (const grant of promo.grants) {
-      const existing = grant.gymChargeId > 0 ? byCharge.get(`item:${grant.gymChargeId}`) : undefined;
+      const existing = grant.productId > 0 ? byCharge.get(`item:${grant.productId}`) : undefined;
       if (existing) {
         existing.coverage.push({ promo, grant });
         continue;
       }
-      byCharge.set(keyOf(grant.gymChargeId), {
-        gymChargeId: grant.gymChargeId,
+      byCharge.set(keyOf(grant.productId), {
+        productId: grant.productId,
         name: grant.name,
         category: grant.category,
         billingFrequency: grant.billingFrequency,
@@ -1072,11 +1072,11 @@ function buildItemStream(a: SimulationAssignment, item: BillableItem): Stream | 
       return { amount, benefits, promotional: false, pending };
     },
     line: (date, resolved) => ({
-      kind: 'sellable_item',
+      kind: 'product',
       label: item.name,
       user_membership_id: a.userMembershipId,
       plan_name: a.planName,
-      gym_charge_id: item.gymChargeId > 0 ? item.gymChargeId : null,
+      product_id: item.productId > 0 ? item.productId : null,
       quantity: item.quantity,
       unit_price: unit,
       regular_price: regular,
@@ -1122,11 +1122,11 @@ function buildServiceStream(a: SimulationAssignment, service: SimulationService)
     end,
     resolve: () => ({ amount: regular, benefits: [], promotional: false, pending: false }),
     line: (date) => ({
-      kind: 'sellable_item',
+      kind: 'product',
       label: service.name,
       user_membership_id: a.userMembershipId,
       plan_name: a.planName,
-      gym_charge_id: service.gymChargeId,
+      product_id: service.productId,
       quantity,
       unit_price: unit,
       regular_price: regular,
@@ -1218,11 +1218,11 @@ function buildItemSingleCharge(a: SimulationAssignment, item: BillableItem): Sin
     section: item.category === 'session' ? 'session' : 'one_off',
     date: a.startsAt,
     line: {
-      kind: 'sellable_item',
+      kind: 'product',
       label: item.name,
       user_membership_id: a.userMembershipId,
       plan_name: a.planName,
-      gym_charge_id: item.gymChargeId > 0 ? item.gymChargeId : null,
+      product_id: item.productId > 0 ? item.productId : null,
       quantity: item.quantity,
       unit_price: unit,
       regular_price: round2(unit * item.quantity),
@@ -1292,11 +1292,11 @@ function buildSessionAllowanceStream(a: SimulationAssignment, item: BillableItem
     line: (date, resolved) => {
       const quantity = resolved.quantity ?? item.quantity;
       return {
-        kind: 'sellable_item',
+        kind: 'product',
         label: item.name,
         user_membership_id: a.userMembershipId,
         plan_name: a.planName,
-        gym_charge_id: item.gymChargeId > 0 ? item.gymChargeId : null,
+        product_id: item.productId > 0 ? item.productId : null,
         quantity,
         unit_price: unit,
         regular_price: round2(unit * quantity),

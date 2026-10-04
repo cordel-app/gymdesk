@@ -39,11 +39,11 @@ interface SimulationBenefit {
 }
 
 interface SimulationLine {
-  kind: 'membership_fee' | 'sellable_item';
+  kind: 'membership_fee' | 'product';
   label: string;
   user_membership_id: number;
   plan_name: string | null;
-  gym_charge_id: number | null;
+  product_id: number | null;
   quantity: number;
   unit_price: number;
   regular_price: number;
@@ -197,7 +197,7 @@ export function MemberBillingSimulation({ memberId }: { memberId: number }) {
                 <span>{fmtMoney(event.total)}</span>
               </div>
               {event.lines.map((line, i) => (
-                <div key={`${line.user_membership_id}-${line.gym_charge_id ?? 'fee'}-${i}`} style={lineRow}>
+                <div key={`${line.user_membership_id}-${line.product_id ?? 'fee'}-${i}`} style={lineRow}>
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <div style={{ fontSize: 13 }}>
                       {line.label}

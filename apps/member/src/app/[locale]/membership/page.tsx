@@ -19,7 +19,7 @@ type BenefitCategory = 'oneoff' | 'session' | 'periodical';
  */
 interface Benefit {
   category: BenefitCategory;
-  gym_charge_id: number;
+  product_id: number;
   name: string;
   quantity: number;
   billing_frequency: string | null;
@@ -415,7 +415,7 @@ export default function MembershipPage() {
                 <h3 style={styles.h3}>{t(`membership.benefit_group.${group}`)}</h3>
                 <ul style={styles.benefitList}>
                   {rows.map((b) => (
-                    <li key={`${b.category}-${b.gym_charge_id}`} style={styles.benefitItem}>
+                    <li key={`${b.category}-${b.product_id}`} style={styles.benefitItem}>
                       <span>{b.name}</span>
                       <span style={styles.benefitMeta}>× {b.quantity}</span>
                       {/* The frozen price, not the catalogue's: what this
