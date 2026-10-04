@@ -29,6 +29,29 @@ function stubDocument(): Record<string, string> {
   return written;
 }
 
+// #975 gave the Admin calendar two rules Member Web has no counterpart for. An
+// Admin event now carries the gym's configured colour as an inline background
+// (`admin/src/lib/calendarEventPaint.ts`), which beats the themed hover rule
+// and makes the themed focus ring unreliable, so those two restore the
+// affordances for that case only. They key on a class Admin's paint module
+// sets and nothing in this app does, which is why Member Web is unaffected and
+// must not mirror them — #976 decides an event's colour here, in its own
+// module. Everything else in the sheet must still match byte for byte, which
+// is what this strips and the assertion below then checks.
+const COLORED_EVENT_CLASS = 'gd-event-colored';
+
+function stripAdminOnlyEventColorRules(css: string): string {
+  return css.replace(
+    new RegExp(
+      String.raw`\n/\*[^*]*(?:\*(?!/)[^*]*)*\*/\n\.gd-calendar [^{]*` +
+        COLORED_EVENT_CLASS +
+        String.raw`[^{]*\{[^}]*\}\n`,
+      'g',
+    ),
+    '',
+  );
+}
+
 describe('Member Web calendar theming (#559 stage 2)', () => {
   let written: Record<string, string>;
 
@@ -72,8 +95,14 @@ describe('Member Web calendar theming (#559 stage 2)', () => {
       expect(adminTokensSrc, `Admin's default for ${key} is not ${value}`).toContain(String(value));
     }
     const adminCss = readFileSync(join(ADMIN_DIR, 'components', 'CalendarThemeStyles.tsx'), 'utf-8');
-    expect(adminCss, "Admin's calendar stylesheet and Member Web's have drifted")
+    expect(stripAdminOnlyEventColorRules(adminCss), "Admin's calendar stylesheet and Member Web's have drifted")
       .toContain(CALENDAR_THEME_CSS);
+    // The divergence is deliberate and stays visible: the class those rules key
+    // on is Admin's alone, so Member Web must not be quietly carrying it.
+    expect(adminCss, 'Admin no longer has the #975 rules this mirror check excludes')
+      .toContain(COLORED_EVENT_CLASS);
+    expect(CALENDAR_THEME_CSS, 'Member Web has grown an Admin-only #975 rule')
+      .not.toContain(COLORED_EVENT_CLASS);
   });
 
   it('falls back to the default when a persisted value is not usable (#559 stage 4)', () => {
