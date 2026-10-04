@@ -5,9 +5,9 @@
  *
  * Those routes are authenticated by one thing only — the `X-Internal-Secret`
  * header, compared by each router's `checkInternalSecret()`. Until #783 the
- * `/billing/` half also sat behind an nginx allowlist of GitHub Actions IPs;
- * that allowlist was removed (it covered one of the two endpoints, guarded
- * nothing the secret does not, and decayed by hand). What it did incidentally
+ * repo carried an nginx allowlist of GitHub Actions IPs for `/billing/`; it
+ * was removed (it covered one of the two endpoints, guarded nothing the secret
+ * does not, and no server ever ran it — nginx is not in the request path). What it did incidentally
  * provide — an attacker could not reach the route at all — is replaced here by
  * a budget small enough that the secret cannot be ground from one address at
  * the global limiter's 500 requests per 15 minutes.

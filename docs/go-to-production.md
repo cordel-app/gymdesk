@@ -452,15 +452,6 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       open alerts, dismiss them with that reasoning rather than bolting a second limiter
       onto two routes; if it has none, nothing is owed. Worth deciding before launch either
       way, since 500/15 min is a *global* default nobody has tuned per route.
-- [ ] nginx on the production host matches `infra/nginx/corback.conf`. **No workflow ships
-      that file** — `deploy.yml` only pulls the API image, migrates, rewrites the quadlet
-      and restarts `fitness-api`; it never copies `corback.conf` or reloads nginx — so a
-      change to it reaches a server only when someone installs it by hand
-      (`nginx -t && systemctl reload nginx`). In particular #783 removed the
-      `location /billing/` GitHub Actions IP allowlist from the file, but **until the conf is
-      deployed by hand the old allowlist stays live on the server** (and, once GitHub's
-      ranges drift, keeps refusing the nightly run). Deploy it, then delete
-      `/etc/nginx/github-actions-allowlist.conf`, which nothing references any more.
 - [ ] Re-point every live website integration at the `{gymId}-{gym-name}` registration
       endpoint (#645) and decide whether to keep accepting the legacy `{gym-slug}` form.
       The fallback exists only so sites configured before #645 keep working; each gym's
@@ -508,7 +499,7 @@ hardening:
 - [ ] **A freshness alert** when no run has completed in 26 hours (#782) — the only signal
       that covers "nothing reached the API at all", which no red workflow can report
       because there is no run. The repo half is done: `GET /health/runs` (unauthenticated,
-      outside `/billing/`, served by nginx's unrestricted `location /`) answers
+      outside `/billing/`, so with no IP restriction) answers
       `{ billing, recurring_bookings }` with `{ last_completed_at, age_hours, stale }` each
       (threshold `RUN_FRESHNESS_THRESHOLD_HOURS`, default 26). Still to do, by hand in
       Grafana Cloud — nothing in the repo provisions Grafana:
@@ -528,9 +519,10 @@ hardening:
       Instructions sent to Oscar on Slack on 2026-09-27.
       Full rationale in `docs/payments.md` → Observability today.
 - [x] **Decide the `/billing/` GitHub Actions IP allowlist** (#783): removed, not
-      automated — replaced by a per-route limiter on the internal run routes. Two things
-      are still owed before launch: installing the new `corback.conf` on the server (the
-      nginx item in §4) and rotating both internal secrets (§1).
+      automated — replaced by a per-route limiter on the internal run routes. The
+      allowlist never ran (no nginx on corback), so nothing needs undoing on a server; what is
+      still owed before launch is generating fresh values for both internal secrets in the
+      `production` environment (§1).
 - [ ] **A `production` GitHub environment** for the scheduled and deploy workflows (#784).
       The workflows are parametrised; the environment itself and the one-line switch are
       the owner steps in §1.
