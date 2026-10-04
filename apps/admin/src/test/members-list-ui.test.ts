@@ -84,7 +84,7 @@ const filterBarUsageSrc = pageSrc.match(/<FilterBar>[\s\S]*?<\/FilterBar>/)?.[0]
 
 /** The collapsed row — one cell per LIST_COLUMNS entry. */
 const collapsedRowSrc = pageSrc.match(
-  /<div\n\s*style=\{headerRowStyle\}[\s\S]*?\n {8}<\/div>\n/,
+  /<div\n\s*className=\{LIST_GRID_ROW_CLASS\}\n\s*style=\{headerRowStyle\}[\s\S]*?\n {8}<\/div>\n/,
 )?.[0] ?? '';
 
 const locales = Object.fromEntries(
@@ -106,7 +106,10 @@ describe('Members list: one list with Products (#928)', () => {
     expect(declared.map((m) => m[2])).toEqual([...EXPECTED_COLUMN_LABELS]);
     // Exactly one flexible track: the name column absorbs the leftover width.
     expect([...pageSrc.matchAll(/grow: \d+/g)]).toHaveLength(1);
-    expect(pageSrc).toMatch(/\{ key: 'name', labelKey: 'col_name', width: \d+, grow: \d+ \}/);
+    // #1011 stage 2 added `mobile` to the same declaration — the column still
+    // carries its own width and grow, so #928's grid is unchanged above the
+    // breakpoint and what a phone shows is read from here rather than guessed.
+    expect(pageSrc).toMatch(/\{ key: 'name', labelKey: 'col_name', width: \d+, grow: \d+, mobile: 'name' \}/);
   });
 
   it('derives the grid template and the scroll threshold from that one list', () => {
@@ -134,6 +137,10 @@ describe('Members list: one list with Products (#928)', () => {
       /style=\{(?:cellStyle|nameCellStyle|mutedCellStyle|badgeCellStyle|actionsCellStyle)\}/g,
     )];
     expect(cells).toHaveLength(EXPECTED_COLUMNS.length);
+    // …and each of them carries its own column's mobile class (#1011 stage 2),
+    // so a cell and its header cannot answer the question differently.
+    expect([...collapsedRowSrc.matchAll(/className=\{CELL_CLASS\.[a-z_]+\}/g)])
+      .toHaveLength(EXPECTED_COLUMNS.length);
     // The chevron and the ⋮ menu share the Actions cell, as on Products,
     // rather than sitting in tracks of their own.
     expect(collapsedRowSrc).toMatch(/style=\{actionsCellStyle\}[\s\S]*?<ContextMenu/);
@@ -145,14 +152,19 @@ describe('Members list: one list with Products (#928)', () => {
     expect(collapsedRowSrc).not.toMatch(/minWidth: \d/);
     expect(collapsedRowSrc).not.toMatch(/flexShrink/);
     expect(collapsedRowSrc).not.toMatch(/flex: \d/);
-    // An ellipsised address stays readable.
+    // An ellipsised address stays readable, and so does a name a phone
+    // truncates (#1011 §3).
     expect(collapsedRowSrc).toMatch(/title=\{m\.email\}/);
+    expect(collapsedRowSrc).toMatch(/className=\{CELL_CLASS\.name\}[^>]*title=\{m\.name\}/);
   });
 
   it('scrolls horizontally instead of dropping columns when the viewport is narrow', () => {
-    const scroller = pageSrc.match(/<div style=\{\{ overflowX: 'auto' \}\}>[\s\S]*?\{members\.map\(renderRow\)\}/)?.[0] ?? '';
+    const scroller = pageSrc.match(/<div className=\{listScrollerClass\('collapse'\)\} style=\{\{ overflowX: 'auto' \}\}>[\s\S]*?\{members\.map\(renderRow\)\}/)?.[0] ?? '';
     expect(scroller, 'the rows are not inside the scrolling wrapper').not.toBe('');
     expect(scroller).toMatch(/minWidth: LIST_MIN_WIDTH/);
+    // …which #1011 stage 2 releases below the breakpoint, where the row carries
+    // only the columns a phone has room for and nothing has to scroll (`Q3`).
+    expect(scroller).toMatch(/className=\{LIST_MIN_WIDTH_CLASS\}/);
     // The header band scrolls with them, so the two cannot drift apart.
     expect(scroller).toMatch(/style=\{colHeaderStyle\}/);
   });
@@ -191,6 +203,7 @@ describe('Members list: one list with Products (#928)', () => {
       ['a scroll threshold derived from it', /const LIST_MIN_WIDTH =/],
       ['one shared grid style', /const listGridStyle: React\.CSSProperties = \{/],
       ['a scrolling wrapper', /overflowX: 'auto'/],
+      ['one mobile class map', /const CELL_CLASS = listCellClasses\(LIST_COLUMNS\);/],
     ] as const) {
       expect(productsSrc, `Products no longer has ${label}`).toMatch(pattern);
       expect(pageSrc, `the Members list has no ${label}`).toMatch(pattern);

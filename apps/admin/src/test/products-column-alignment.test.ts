@@ -45,7 +45,7 @@ const pageSrc = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
 
 // The collapsed row: everything between the row container and the inline editor.
 const collapsedRowSrc = pageSrc.match(
-  /<div style={rowStyle}[\s\S]*?\n {8}<\/div>\n/,
+  /<div className={LIST_GRID_ROW_CLASS} style={rowStyle}[\s\S]*?\n {8}<\/div>\n/,
 )?.[0] ?? '';
 
 const locales = Object.fromEntries(
@@ -70,7 +70,10 @@ describe('Products: column alignment (#637)', () => {
     // Exactly one flexible track: the name column absorbs the leftover width.
     const flexible = [...pageSrc.matchAll(/grow: \d+/g)];
     expect(flexible).toHaveLength(1);
-    expect(pageSrc).toMatch(/\{ labelKey: 'col_name', width: \d+, grow: \d+ \}/);
+    // #1011 stage 2 added the column's own key and what it is on a phone to the
+    // same declaration; its width and grow are untouched, so the desktop grid
+    // is exactly what #637 made it.
+    expect(pageSrc).toMatch(/\{ key: 'name', labelKey: 'col_name', width: \d+, grow: \d+, mobile: 'name' \}/);
   });
 
   it('lays the header and the rows out on the same grid', () => {
@@ -91,6 +94,12 @@ describe('Products: column alignment (#637)', () => {
   it('gives the collapsed row exactly one cell per column', () => {
     const cells = [...collapsedRowSrc.matchAll(/style=\{(?:\{ \.\.\.cellStyle|cellStyle|badgeCellStyle|actionsCellStyle)/g)];
     expect(cells).toHaveLength(EXPECTED_COLUMNS.length);
+    // …and each carries its own column's mobile class (#1011 stage 2), so a
+    // cell and its header cannot answer the question differently.
+    expect([...collapsedRowSrc.matchAll(/className=\{CELL_CLASS\.[a-z_]+\}/g)])
+      .toHaveLength(EXPECTED_COLUMNS.length);
+    // A name a phone truncates stays readable in full.
+    expect(collapsedRowSrc).toMatch(/className=\{CELL_CLASS\.name\}[^>]*title=\{item\.name\}/);
     // The chevron and the context menu share the Actions cell rather than
     // sitting in tracks of their own.
     expect(collapsedRowSrc).toMatch(/style=\{actionsCellStyle\}[\s\S]*?<ContextMenu/);
@@ -108,9 +117,12 @@ describe('Products: column alignment (#637)', () => {
     expect(pageSrc).toMatch(/overflowX: 'auto'/);
     expect(pageSrc).toMatch(/minWidth: LIST_MIN_WIDTH/);
     // The headers and the rows scroll as one, so they cannot drift apart.
-    const scroller = pageSrc.match(/<div style=\{\{ overflowX: 'auto' \}\}>[\s\S]*?\{items\.map\(renderRow\)\}/)?.[0] ?? '';
+    const scroller = pageSrc.match(/<div className=\{listScrollerClass\('collapse'\)\} style=\{\{ overflowX: 'auto' \}\}>[\s\S]*?\{items\.map\(renderRow\)\}/)?.[0] ?? '';
     expect(scroller, 'the rows are not inside the scrolling wrapper').not.toBe('');
     expect(scroller).toMatch(/style=\{colHeaderStyle\}/);
+    // …and below the breakpoint that minimum is released, because the row then
+    // carries only the columns a phone has room for (#1011 stage 2, `Q3`).
+    expect(scroller).toMatch(/className=\{LIST_MIN_WIDTH_CLASS\}/);
   });
 
   it('translates every column header, Actions included, in all locales', () => {

@@ -69,7 +69,7 @@ const filterBarUsageSrc = pageSrc.match(/<FilterBar>[\s\S]*?<\/FilterBar>/)?.[0]
 
 /** The collapsed row — one cell per LIST_COLUMNS entry. */
 const collapsedRowSrc = pageSrc.match(
-  /<div onClick=\{onToggleExpand\} style=\{headerRowStyle\}[\s\S]*?\n {8}<\/div>\n/,
+  /<div onClick=\{onToggleExpand\} className=\{LIST_GRID_ROW_CLASS\} style=\{headerRowStyle\}[\s\S]*?\n {8}<\/div>\n/,
 )?.[0] ?? '';
 
 const locales = Object.fromEntries(
@@ -139,7 +139,10 @@ describe('Training Plans: filters and list header (#724)', () => {
     expect(declared).toEqual([...EXPECTED_COLUMNS]);
     // Exactly one flexible track: the name column absorbs the leftover width.
     expect([...pageSrc.matchAll(/grow: \d+/g)]).toHaveLength(1);
-    expect(pageSrc).toMatch(/\{ key: 'name', labelKey: 'col_name', sortKey: 'name', width: \d+, grow: \d+ \}/);
+    // #1011 stage 2 added `mobile` to the same declaration — the width and the
+    // grow are untouched, so the desktop grid is what it was and what a phone
+    // keeps is read from here rather than guessed.
+    expect(pageSrc).toMatch(/\{ key: 'name', labelKey: 'col_name', sortKey: 'name', width: \d+, grow: \d+, mobile: 'name' \}/);
   });
 
   it('derives the grid template and the scroll threshold from that one list', () => {
@@ -182,6 +185,13 @@ describe('Training Plans: filters and list header (#724)', () => {
   it('gives the collapsed row exactly one cell per column', () => {
     const cells = [...collapsedRowSrc.matchAll(/style=\{(?:\{ \.\.\.cellStyle|cellStyle|badgeCellStyle|actionsCellStyle)/g)];
     expect(cells).toHaveLength(EXPECTED_COLUMNS.length);
+    // …and each carries its own column's mobile class (#1011 stage 2), so a
+    // cell and its header cannot answer the question differently.
+    expect([...collapsedRowSrc.matchAll(/className=\{CELL_CLASS\.[a-z_]+\}/g)])
+      .toHaveLength(EXPECTED_COLUMNS.length);
+    // The plan's name and whose plan it is are one cell, so a phone keeps both
+    // and the `title` carries them in full when the cell truncates.
+    expect(collapsedRowSrc).toMatch(/className=\{CELL_CLASS\.name\}[^>]*title=\{`\$\{row\.name\} · \$\{row\.member_name\}`\}/);
   });
 
   it('keeps a long value inside its own column', () => {
@@ -193,9 +203,12 @@ describe('Training Plans: filters and list header (#724)', () => {
   });
 
   it('scrolls horizontally instead of dropping columns when the viewport is narrow', () => {
-    const scroller = pageSrc.match(/<div style=\{\{ overflowX: 'auto' \}\}>[\s\S]*?\{rows\.map\(\(row\) => \(/)?.[0] ?? '';
+    const scroller = pageSrc.match(/<div className=\{listScrollerClass\('collapse'\)\} style=\{\{ overflowX: 'auto' \}\}>[\s\S]*?\{rows\.map\(\(row\) => \(/)?.[0] ?? '';
     expect(scroller, 'the rows are not inside the scrolling wrapper').not.toBe('');
     expect(scroller).toMatch(/minWidth: LIST_MIN_WIDTH/);
+    // …which #1011 stage 2 releases below the breakpoint, where the row carries
+    // only the columns a phone has room for and nothing has to scroll (`Q3`).
+    expect(scroller).toMatch(/className=\{LIST_MIN_WIDTH_CLASS\}/);
     // The headers scroll with them, so they cannot drift apart.
     expect(scroller).toMatch(/style=\{colHeaderStyle\}/);
   });

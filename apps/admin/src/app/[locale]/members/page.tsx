@@ -12,8 +12,9 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import {
-  LIST_PADDING_X, listCellStyle, listExpandedStyle, listHeaderCellStyle,
-  listHeaderRowStyle, listNameBadgeAccentStyle, listRowDividerStyle, listSurfaceStyle,
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, LIST_PADDING_X, type ListGridColumn, listCellClasses,
+  listCellStyle, listExpandedStyle, listHeaderCellStyle, listHeaderRowStyle,
+  listNameBadgeAccentStyle, listRowDividerStyle, listScrollerClass, listSurfaceStyle,
 } from '@/components/listChrome';
 import { btnStyle, primaryBtnStyle } from '@/components/ui';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
@@ -77,8 +78,7 @@ const ENROLLMENT_STATUSES = ['active', 'paused', 'cancelled', 'expired'] as cons
 // Same columns, same order and same values as the `DataTable` this replaces —
 // #928 is presentation only.
 
-interface ListColumn {
-  key: string;
+interface ListColumn extends ListGridColumn {
   /** Column title, a key in the `members` namespace. */
   labelKey: string;
   /** Fixed track width in px — also the minimum for the flexible column. */
@@ -87,16 +87,26 @@ interface ListColumn {
   grow?: number;
 }
 
+// #1011 stage 2: `mobile` says what each column is on a phone, in the one
+// vocabulary `listChrome` declares — the Member's name is the row's identity,
+// their standing with the gym is the status that rides beside it, and the rest
+// are read in the expanded card (`⋮ → Details` carries the email, the Profile
+// tab the document). Payment status is the state of a payment request rather
+// than of the Member, so it is the one of the two badges that gives way: two
+// of them plus the name leave a phone row with nothing legible in it.
 const LIST_COLUMNS: ListColumn[] = [
-  { key: 'name', labelKey: 'col_name', width: 180, grow: 2 },
-  { key: 'email', labelKey: 'col_email', width: 200 },
-  { key: 'document', labelKey: 'col_document', width: 150 },
-  { key: 'payment_status', labelKey: 'col_payment_status', width: 110 },
-  { key: 'enrollment_status', labelKey: 'col_enrollment_status', width: 110 },
+  { key: 'name', labelKey: 'col_name', width: 180, grow: 2, mobile: 'name' },
+  { key: 'email', labelKey: 'col_email', width: 200, mobile: 'secondary' },
+  { key: 'document', labelKey: 'col_document', width: 150, mobile: 'secondary' },
+  { key: 'payment_status', labelKey: 'col_payment_status', width: 110, mobile: 'secondary' },
+  { key: 'enrollment_status', labelKey: 'col_enrollment_status', width: 110, mobile: 'keep' },
   // Wide enough for the longest translated title ("ACCIONES") next to the
   // chevron and the ⋮ menu the cell also holds.
-  { key: 'actions', labelKey: 'col_actions', width: 84 },
+  { key: 'actions', labelKey: 'col_actions', width: 84, mobile: 'actions' },
 ];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
 
 const LIST_COLUMN_GAP = 10;
 
@@ -520,6 +530,7 @@ export default function MembersPage() {
     return (
       <div key={m.id} style={listRowDividerStyle}>
         <div
+          className={LIST_GRID_ROW_CLASS}
           style={headerRowStyle}
           onClick={toggle}
           role="button"
@@ -529,7 +540,7 @@ export default function MembersPage() {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
           }}
         >
-          <div style={nameCellStyle}>
+          <div className={CELL_CLASS.name} style={nameCellStyle} title={m.name}>
             {m.name}
             {/* #927 §2: the calculated New Member status, so a member can be
                 identified without expanding them. Read-only, and read from the
@@ -543,19 +554,19 @@ export default function MembersPage() {
           </div>
           {/* The track is fixed now, so an over-long address ellipsises inside
               its own column; `title` keeps the whole of it reachable. */}
-          <div style={cellStyle} title={m.email}>{m.email}</div>
-          <div style={mutedCellStyle}>{m.nif_nie_passport || '—'}</div>
-          <div style={badgeCellStyle}>
+          <div className={CELL_CLASS.email} style={cellStyle} title={m.email}>{m.email}</div>
+          <div className={CELL_CLASS.document} style={mutedCellStyle}>{m.nif_nie_passport || '—'}</div>
+          <div className={CELL_CLASS.payment_status} style={badgeCellStyle}>
             {m.payment_status
               ? <StatusBadge status={m.payment_status} label={t(`members.payment_status_${m.payment_status}`) || m.payment_status} />
               : <span style={noStatusStyle}>{t('members.payment_status_none')}</span>}
           </div>
-          <div style={badgeCellStyle}>
+          <div className={CELL_CLASS.enrollment_status} style={badgeCellStyle}>
             {m.enrollment_status
               ? <StatusBadge status={m.enrollment_status} label={t(`members.enrollment_status_${m.enrollment_status}`) || m.enrollment_status} />
               : <span style={noStatusStyle}>{t('members.enrollment_status_none')}</span>}
           </div>
-          <div style={actionsCellStyle} onClick={(e) => e.stopPropagation()}>
+          <div className={CELL_CLASS.actions} style={actionsCellStyle} onClick={(e) => e.stopPropagation()}>
             {/* Decorative: the row itself carries the expanded state and the
                 keyboard affordance, so a second control would only be a nested
                 button inside it. */}
@@ -700,11 +711,13 @@ export default function MembersPage() {
            LIST_GRID_COLUMNS and scroll together, so they cannot fall out of
            line, and a narrow viewport scrolls the list instead of the page. */
         <div style={listSurfaceStyle}>
-          <div style={{ overflowX: 'auto' }}>
-            <div style={{ minWidth: LIST_MIN_WIDTH }}>
-              <div style={colHeaderStyle}>
+          <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+            <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+              <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
                 {LIST_COLUMNS.map((col) => (
-                  <div key={col.key} style={cellStyle}>{t(`members.${col.labelKey}`)}</div>
+                  <div key={col.key} className={CELL_CLASS[col.key]} style={cellStyle}>
+                    {t(`members.${col.labelKey}`)}
+                  </div>
                 ))}
               </div>
 
