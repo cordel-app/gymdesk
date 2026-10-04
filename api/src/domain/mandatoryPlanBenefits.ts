@@ -1,6 +1,6 @@
 // #893: a **Mandatory** Product is always part of every Membership Plan.
 //
-// #832 (migration 200) added `gym_charges.mandatory` and deliberately left it
+// #832 (migration 200) added `products.mandatory` and deliberately left it
 // unread: "automatic inclusion in a Billing Plan, refusing its removal from
 // one, Billing Plan pricing, Membership Plan Benefits and any Insurance Fee
 // special case were all declared out of scope, so a path that acts on the flag
@@ -97,14 +97,14 @@ export function mandatoryItemsForCategory(
 
 /** One row of a Plan benefit section, as the API serves it. */
 export interface PlanBenefitRow {
-  gym_charge_id: number;
+  product_id: number;
   quantity: number;
-  gym_charge_name: string;
-  gym_charge_type: string;
-  gym_charge_billing_frequency: string | null;
-  gym_charge_status: string;
-  /** `gym_charges.mandatory`, joined — what the editor hides Remove on. */
-  gym_charge_mandatory: boolean | number;
+  product_name: string;
+  product_type: string;
+  product_billing_frequency: string | null;
+  product_status: string;
+  /** `products.mandatory`, joined — what the editor hides Remove on. */
+  product_mandatory: boolean | number;
   /**
    * True for a mandatory item this Plan has no stored row for yet: the section
    * shows it (§1, §5) and the next save of the section persists it.
@@ -130,26 +130,26 @@ export interface PlanBenefitRow {
 export function mergeMandatoryBenefits<T extends PlanBenefitRow>(
   stored: T[], mandatory: MandatoryProduct[],
 ): (T | PlanBenefitRow)[] {
-  const present = new Set(stored.map((row) => Number(row.gym_charge_id)));
+  const present = new Set(stored.map((row) => Number(row.product_id)));
   const missing = mandatory
     .filter((item) => !present.has(Number(item.id)))
     .map((item): PlanBenefitRow => ({
-      gym_charge_id: item.id,
+      product_id: item.id,
       quantity: MANDATORY_BENEFIT_QUANTITY,
-      gym_charge_name: item.name,
-      gym_charge_type: item.type,
-      gym_charge_billing_frequency: item.billing_frequency,
-      gym_charge_status: item.status,
-      gym_charge_mandatory: 1,
+      product_name: item.name,
+      product_type: item.type,
+      product_billing_frequency: item.billing_frequency,
+      product_status: item.status,
+      product_mandatory: 1,
       // #918: no row exists, so no renewal Frequency was configured — the
       // allowance is a one-time one until someone saves the section and sets one.
       frequency: null,
       // #916: the same three price columns a stored row carries from its own
       // join, under the same names, so one pricing pass serves both kinds of
       // row and an implicit item cannot end up quoted differently.
-      gym_charge_amount: item.amount ?? null,
-      gym_charge_tax_behavior: item.tax_behavior ?? null,
-      gym_charge_tax_rate_percent: item.tax_rate_percent ?? null,
+      product_amount: item.amount ?? null,
+      product_tax_behavior: item.tax_behavior ?? null,
+      product_tax_rate_percent: item.tax_rate_percent ?? null,
       implicit: true,
       // #896 stage 2: no row exists, so nothing was configured — the item is
       // included at its own price until someone saves the section and edits it.
@@ -161,7 +161,7 @@ export function mergeMandatoryBenefits<T extends PlanBenefitRow>(
 
 /** What a replace-all `PUT` is about to write. */
 export interface PlanBenefitWrite {
-  gym_charge_id: number;
+  product_id: number;
   quantity: number;
   /**
    * #896 stage 2 — the pricing treatment the request named for this line.
@@ -194,11 +194,11 @@ export interface PlanBenefitWrite {
 export function withMandatoryBenefits(
   submitted: PlanBenefitWrite[], mandatory: MandatoryProduct[],
 ): PlanBenefitWrite[] {
-  const present = new Set(submitted.map((item) => Number(item.gym_charge_id)));
+  const present = new Set(submitted.map((item) => Number(item.product_id)));
   return [
     ...submitted,
     ...mandatory
       .filter((item) => !present.has(Number(item.id)))
-      .map((item) => ({ gym_charge_id: item.id, quantity: MANDATORY_BENEFIT_QUANTITY })),
+      .map((item) => ({ product_id: item.id, quantity: MANDATORY_BENEFIT_QUANTITY })),
   ];
 }

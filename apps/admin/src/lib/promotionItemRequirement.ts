@@ -11,7 +11,7 @@
 // module, its CHECK, *and* here — `promotion-item-requirement-ui.test.ts` fails
 // if this copy drifts.
 //
-// Deliberately **not** `gym_charges.mandatory` (#832/#893), which is a different
+// Deliberately **not** `products.mandatory` (#832/#893), which is a different
 // flag on a different row: that one is a property of the gym's catalogue item
 // and means "this item is forced into every Membership Plan benefit section".
 // This one is a property of one Promotion's line. The two never share a grid —

@@ -90,7 +90,7 @@ describe('#924 §1/§4: the snapshot sections render from the shared grid', () =
   });
 
   it('leaves the editor on quantity alone — no Benefit column, no Frequency control', () => {
-    // #896 stage 4 / #918: the assignment's section `PUT` takes `gym_charge_id`
+    // #896 stage 4 / #918: the assignment's section `PUT` takes `product_id`
     // + `quantity`, and keeps a kept line's stored pair and Frequency. A
     // control the save cannot carry would be one that silently changes nothing,
     // so the editor renders neither — which is also why the read-only mapping

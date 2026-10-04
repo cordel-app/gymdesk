@@ -18,7 +18,7 @@ type EntityType =
   | 'promotion'
   | 'center'
   | 'space'
-  | 'class_package'
+  | 'product'
   | 'exercise'
   | 'workout_template'
   | 'training_plan_template'
@@ -31,7 +31,7 @@ const ENTITY_TYPES: EntityType[] = [
   'promotion',
   'center',
   'space',
-  'class_package',
+  'product',
   'exercise',
   'workout_template',
   'training_plan_template',
@@ -437,9 +437,15 @@ function EntityDetailContent({
       if (detail.notes) rows.push({ label: t('details_notes'), value: detail.notes as string });
       break;
 
-    case 'class_package':
-      if (detail.number_of_sessions != null) rows.push({ label: t('details_sessions'), value: String(detail.number_of_sessions) });
-      if (detail.price != null) rows.push({ label: t('details_price'), value: String(detail.price) });
+    // #949 stage 3: the API calls this entity type `product`. It carried the
+    // entity's previous name through two renames, and this branch still said
+    // `class_package` — the name before both — which is why filtering by it
+    // 400d and no detail row ever matched. The fields are the Product's own:
+    // `units` is the sessions a Session-type package contains, `amount` its
+    // price.
+    case 'product':
+      if (detail.units != null) rows.push({ label: t('details_sessions'), value: String(detail.units) });
+      if (detail.amount != null) rows.push({ label: t('details_price'), value: String(detail.amount) });
       if (detail.validity_days != null) rows.push({ label: t('details_validity_days'), value: String(detail.validity_days) });
       if (detail.status) rows.push({ label: t('details_status'), value: <StatusBadge status={detail.status as string} label={tStatus(detail.status as string)} /> });
       if (detail.notes) rows.push({ label: t('details_notes'), value: detail.notes as string });
@@ -517,7 +523,7 @@ const ENTITY_COLORS: Record<EntityType, string> = {
   promotion: '#fdf3e8',
   center: '#e8fdf0',
   space: '#f3e8fd',
-  class_package: '#fdeaea',
+  product: '#fdeaea',
   exercise: '#e8f0fd',
   workout_template: '#fdf9e8',
   training_plan_template: '#e8fdfc',
@@ -531,7 +537,7 @@ const ENTITY_TEXT_COLORS: Record<EntityType, string> = {
   promotion: '#a8721a',
   center: '#1a8a4a',
   space: '#721aa8',
-  class_package: '#a81a1a',
+  product: '#a81a1a',
   exercise: '#1a4ea8',
   workout_template: '#8a7a1a',
   training_plan_template: '#1a8a88',

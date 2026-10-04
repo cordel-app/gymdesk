@@ -22,7 +22,7 @@ const WAIVE = { action: 'waive' as const, value: null };
 
 function grant(over: Partial<PromotionSimulationGrant> = {}): PromotionSimulationGrant {
   return {
-    gymChargeId: 1,
+    productId: 1,
     name: 'Insurance Fee',
     category: 'periodical',
     billingFrequency: 'month',
@@ -113,8 +113,8 @@ describe('computePromotionBillingEventSimulation', () => {
     // monthly one along with it — the length is derived from the frequencies
     // present, never from a fixed month count.
     const result = simulate([
-      grant({ gymChargeId: 1, name: 'Insurance Fee', billingFrequency: 'month', quantity: 3 }),
-      grant({ gymChargeId: 2, name: 'Annual Pass', billingFrequency: 'year', quantity: 1 }),
+      grant({ productId: 1, name: 'Insurance Fee', billingFrequency: 'month', quantity: 3 }),
+      grant({ productId: 2, name: 'Annual Pass', billingFrequency: 'year', quantity: 1 }),
     ]);
     expect(result.horizon_date).toBe('2028-09-30');
     expect(result.truncated).toBe(false);
@@ -129,8 +129,8 @@ describe('computePromotionBillingEventSimulation', () => {
 
   it('keeps frequencies independent and groups only the dates that coincide', () => {
     const result = simulate([
-      grant({ gymChargeId: 1, name: 'Insurance Fee', billingFrequency: 'month', quantity: 3 }),
-      grant({ gymChargeId: 2, name: 'Locker Rental', billingFrequency: 'four_weeks', quantity: 3 }),
+      grant({ productId: 1, name: 'Insurance Fee', billingFrequency: 'month', quantity: 3 }),
+      grant({ productId: 2, name: 'Locker Rental', billingFrequency: 'four_weeks', quantity: 3 }),
     ]);
     // Both start on the anchor, then diverge: 28 days vs one calendar month.
     expect(labels(result, '2026-09-30').sort()).toEqual(['Insurance Fee', 'Locker Rental']);
@@ -141,12 +141,12 @@ describe('computePromotionBillingEventSimulation', () => {
   it('bills a One-off or Session grant exactly once, for its whole quantity', () => {
     const result = simulate([
       grant({
-        gymChargeId: 3, name: 'Registration Fee', category: 'oneoff',
+        productId: 3, name: 'Registration Fee', category: 'oneoff',
         billingFrequency: 'once', unitPriceInclTax: 100, quantity: 1,
         benefit: { action: 'percentage_discount', value: 20 },
       }),
       grant({
-        gymChargeId: 4, name: 'Personal Training', category: 'session',
+        productId: 4, name: 'Personal Training', category: 'session',
         billingFrequency: 'per_session', unitPriceInclTax: 25, quantity: 2,
       }),
     ]);
@@ -161,13 +161,13 @@ describe('computePromotionBillingEventSimulation', () => {
 
   it("totals each date from its lines' final prices", () => {
     const result = simulate([
-      grant({ gymChargeId: 1, name: 'Insurance Fee', unitPriceInclTax: 20, benefit: WAIVE }),
+      grant({ productId: 1, name: 'Insurance Fee', unitPriceInclTax: 20, benefit: WAIVE }),
       grant({
-        gymChargeId: 2, name: 'Locker Rental', unitPriceInclTax: 15,
+        productId: 2, name: 'Locker Rental', unitPriceInclTax: 15,
         benefit: { action: 'percentage_discount', value: 20 },
       }),
       grant({
-        gymChargeId: 3, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once',
+        productId: 3, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once',
         unitPriceInclTax: 100, quantity: 1, benefit: { action: 'fixed_discount', value: 20 },
       }),
     ]);
@@ -186,7 +186,7 @@ describe('computePromotionBillingEventSimulation', () => {
   it('never projects a Membership Fee: a Promotion carries no price of its own', () => {
     const result = simulate([grant()]);
     const kinds = new Set(result.dates.flatMap((g) => g.lines.map((l) => l.kind)));
-    expect([...kinds]).toEqual(['sellable_item']);
+    expect([...kinds]).toEqual(['product']);
   });
 
   it('anchors a Promotion that has not started yet on its own start date', () => {

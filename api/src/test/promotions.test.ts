@@ -1105,7 +1105,7 @@ describe('Suitable Membership Plans', () => {
 
 // ─── Session / One-off / Periodical benefits (#550 stage 2) ───────────────────
 // Replaces the "quantity granted" half of Period/Included Benefits with three
-// tables keyed to a real Product (`gym_charges`) instead of the old
+// tables keyed to a real Product (`products`) instead of the old
 // `charge_types` pseudo-catalog, classified via `classifyProduct()`.
 
 async function createProduct(
@@ -1116,7 +1116,7 @@ async function createProduct(
   status: 'active' | 'inactive' = 'active',
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges (gym_id, name, type, billing_frequency, status, is_system, currency)
+    `INSERT INTO products (gym_id, name, type, billing_frequency, status, is_system, currency)
      VALUES (?, ?, ?, ?, ?, 0, 'EUR')`,
     [gymId, name, type, billingFrequency, status],
   );
@@ -1169,12 +1169,12 @@ describe.each([
       .put(`/promotions/${promoId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: matchingItemId, quantity: 3 }] });
+      .send({ items: [{ product_id: matchingItemId, quantity: 3 }] });
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
-    expect(res.body[0].gym_charge_id).toBe(matchingItemId);
+    expect(res.body[0].product_id).toBe(matchingItemId);
     expect(res.body[0].quantity).toBe(3);
-    expect(res.body[0].gym_charge_name).toBeDefined();
+    expect(res.body[0].product_name).toBeDefined();
   });
 
   it(`GET /${path} returns saved items`, async () => {
@@ -1191,7 +1191,7 @@ describe.each([
       .put(`/promotions/${promoId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: mismatchedItemId, quantity: 1 }] });
+      .send({ items: [{ product_id: mismatchedItemId, quantity: 1 }] });
     expect(res.status).toBe(400);
   });
 
@@ -1200,7 +1200,7 @@ describe.each([
       .put(`/promotions/${promoId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: inactiveItemId, quantity: 1 }] });
+      .send({ items: [{ product_id: inactiveItemId, quantity: 1 }] });
     expect(res.status).toBe(400);
   });
 
@@ -1221,21 +1221,21 @@ describe.each([
       .put(`/promotions/${goesInactivePromo}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: itemId, quantity: 2 }] });
+      .send({ items: [{ product_id: itemId, quantity: 2 }] });
     expect(firstSave.status).toBe(200);
 
-    await db.query("UPDATE gym_charges SET status = 'inactive' WHERE id = ?", [itemId]);
+    await db.query("UPDATE products SET status = 'inactive' WHERE id = ?", [itemId]);
 
     const resave = await request
       .put(`/promotions/${goesInactivePromo}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: itemId, quantity: 3 }] });
+      .send({ items: [{ product_id: itemId, quantity: 3 }] });
     expect(resave.status).toBe(200);
     expect(resave.body).toHaveLength(1);
-    expect(resave.body[0].gym_charge_id).toBe(itemId);
+    expect(resave.body[0].product_id).toBe(itemId);
     expect(resave.body[0].quantity).toBe(3);
-    expect(resave.body[0].gym_charge_status).toBe('inactive');
+    expect(resave.body[0].product_status).toBe('inactive');
 
     const getRes = await request
       .get(`/promotions/${goesInactivePromo}/${path}`)
@@ -1243,7 +1243,7 @@ describe.each([
       .set('x-gym-id', gymId);
     expect(getRes.status).toBe(200);
     expect(getRes.body).toHaveLength(1);
-    expect(getRes.body[0].gym_charge_status).toBe('inactive');
+    expect(getRes.body[0].product_status).toBe('inactive');
   });
 
   it(`PUT /${path} rejects a non-positive quantity`, async () => {
@@ -1251,19 +1251,19 @@ describe.each([
       .put(`/promotions/${promoId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: matchingItemId, quantity: 0 }] });
+      .send({ items: [{ product_id: matchingItemId, quantity: 0 }] });
     expect(res.status).toBe(400);
   });
 
-  it(`PUT /${path} rejects a duplicate gym_charge_id within the same request`, async () => {
+  it(`PUT /${path} rejects a duplicate product_id within the same request`, async () => {
     const res = await request
       .put(`/promotions/${promoId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({
         items: [
-          { gym_charge_id: matchingItemId, quantity: 1 },
-          { gym_charge_id: matchingItemId, quantity: 2 },
+          { product_id: matchingItemId, quantity: 1 },
+          { product_id: matchingItemId, quantity: 2 },
         ],
       });
     expect(res.status).toBe(400);
@@ -1306,7 +1306,7 @@ describe('Session / One-off / Periodical benefits — duplicate', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({
-        items: [{ gym_charge_id: sessionItemId, quantity: 2, action: 'fixed_price', value: 25 }],
+        items: [{ product_id: sessionItemId, quantity: 2, action: 'fixed_price', value: 25 }],
       });
   });
 
@@ -1324,7 +1324,7 @@ describe('Session / One-off / Periodical benefits — duplicate', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
-    expect(res.body[0].gym_charge_id).toBe(sessionItemId);
+    expect(res.body[0].product_id).toBe(sessionItemId);
     expect(res.body[0].quantity).toBe(2);
     // #896 stage 2: Duplicate is a copy, so the pricing treatment travels too.
     expect(res.body[0].action).toBe('fixed_price');
@@ -1426,7 +1426,7 @@ describe('Promotion benefit actions', () => {
   });
 
   it('defaults a brand new grant to the neutral action', async () => {
-    const res = await putSession([{ gym_charge_id: itemId, quantity: 3 }]);
+    const res = await putSession([{ product_id: itemId, quantity: 3 }]);
     expect(res.status).toBe(200);
     expect(res.body[0]).toMatchObject({ quantity: 3, action: 'no_benefit', value: null });
   });
@@ -1438,8 +1438,8 @@ describe('Promotion benefit actions', () => {
     ] as const) {
       const res = await putSession([
         value == null
-          ? { gym_charge_id: itemId, quantity: 3, action }
-          : { gym_charge_id: itemId, quantity: 3, action, value },
+          ? { product_id: itemId, quantity: 3, action }
+          : { product_id: itemId, quantity: 3, action, value },
       ]);
       expect(res.status).toBe(200);
       // The value comes back a number, not mysql2's DECIMAL string.
@@ -1451,22 +1451,22 @@ describe('Promotion benefit actions', () => {
     // This is what protects migration 203's `waive` backfill: a grant configured
     // before stage 4's editor exists must not be rewritten to "charge the normal
     // price" by an unrelated quantity edit.
-    await putSession([{ gym_charge_id: itemId, quantity: 3, action: 'waive' }]);
-    const res = await putSession([{ gym_charge_id: itemId, quantity: 8 }]);
+    await putSession([{ product_id: itemId, quantity: 3, action: 'waive' }]);
+    const res = await putSession([{ product_id: itemId, quantity: 8 }]);
     expect(res.status).toBe(200);
     expect(res.body[0]).toMatchObject({ quantity: 8, action: 'waive', value: null });
   });
 
   it('refuses a missing, out-of-range or superfluous value', async () => {
-    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'fixed_price' }])).status)
+    expect((await putSession([{ product_id: itemId, quantity: 1, action: 'fixed_price' }])).status)
       .toBe(400);
-    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'percentage_discount', value: 120 }])).status)
+    expect((await putSession([{ product_id: itemId, quantity: 1, action: 'percentage_discount', value: 120 }])).status)
       .toBe(400);
-    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'no_benefit', value: 5 }])).status)
+    expect((await putSession([{ product_id: itemId, quantity: 1, action: 'no_benefit', value: 5 }])).status)
       .toBe(400);
-    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'nonsense' }])).status)
+    expect((await putSession([{ product_id: itemId, quantity: 1, action: 'nonsense' }])).status)
       .toBe(400);
-    const orphanValue = await putSession([{ gym_charge_id: itemId, quantity: 1, value: 20 }]);
+    const orphanValue = await putSession([{ product_id: itemId, quantity: 1, value: 20 }]);
     expect(orphanValue.status).toBe(400);
     expect(orphanValue.body.error).toBe('value requires an action');
   });
@@ -1476,7 +1476,7 @@ describe('Promotion benefit actions', () => {
       .get(`/promotions/${promoId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'percentage_discount', value: -1 }]);
+    await putSession([{ product_id: itemId, quantity: 1, action: 'percentage_discount', value: -1 }]);
     const after = await request
       .get(`/promotions/${promoId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -1533,7 +1533,7 @@ describe('applies_to', () => {
   });
 
   it('GET list and GET /:id both report the stored target', async () => {
-    const created = await post({ applies_to: 'sellable_item' });
+    const created = await post({ applies_to: 'product' });
     const id = created.body.id;
 
     const list = await request
@@ -1541,14 +1541,14 @@ describe('applies_to', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(list.status).toBe(200);
-    expect(list.body.find((p: any) => p.id === id)?.applies_to).toBe('sellable_item');
+    expect(list.body.find((p: any) => p.id === id)?.applies_to).toBe('product');
 
     const one = await request
       .get(`/promotions/${id}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(one.status).toBe(200);
-    expect(one.body.applies_to).toBe('sellable_item');
+    expect(one.body.applies_to).toBe('product');
   });
 
   it('PUT switches the target, and rejects an unknown one', async () => {
@@ -1566,13 +1566,13 @@ describe('applies_to', () => {
       .put(`/promotions/${id}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ applies_to: 'sellable_item' });
+      .send({ applies_to: 'product' });
     expect(ok.status).toBe(200);
-    expect(ok.body.applies_to).toBe('sellable_item');
+    expect(ok.body.applies_to).toBe('product');
   });
 
   it('PUT leaves the target alone when the body does not name it', async () => {
-    const created = await post({ applies_to: 'sellable_item' });
+    const created = await post({ applies_to: 'product' });
     const id = created.body.id;
     const res = await request
       .put(`/promotions/${id}`)
@@ -1580,13 +1580,13 @@ describe('applies_to', () => {
       .set('x-gym-id', gymId)
       .send({ description: 'renamed, target untouched' });
     expect(res.status).toBe(200);
-    expect(res.body.applies_to).toBe('sellable_item');
+    expect(res.body.applies_to).toBe('product');
   });
 
   // §4: "Changing the target should not silently migrate or reinterpret
   // existing configuration." The two Membership-Plan-specific sub-resources are
   // the Membership Fee Benefit and Suitable Membership Plans, and a round trip
-  // through sellable_item has to leave both exactly as they were — that is what
+  // through product has to leave both exactly as they were — that is what
   // makes hiding the sections safe rather than destructive.
   it('switching the target keeps the Membership-Plan-specific configuration', async () => {
     const created = await post({ paid_months: 3 });
@@ -1607,7 +1607,7 @@ describe('applies_to', () => {
       .send({ duration_months: 2, enabled: true, action: 'percentage_discount', value: 25 });
     expect(mf.status).toBe(200);
 
-    for (const target of ['sellable_item', 'membership_plan']) {
+    for (const target of ['product', 'membership_plan']) {
       const res = await request
         .put(`/promotions/${id}`)
         .set('Authorization', TEST_AUTH_HEADER)
@@ -1634,13 +1634,13 @@ describe('applies_to', () => {
   });
 
   it('POST /:id/duplicate copies the target verbatim', async () => {
-    const created = await post({ applies_to: 'sellable_item' });
+    const created = await post({ applies_to: 'product' });
     const res = await request
       .post(`/promotions/${created.body.id}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(201);
-    expect(res.body.applies_to).toBe('sellable_item');
+    expect(res.body.applies_to).toBe('product');
   });
 
   it('refuses a target the CHECK would reject, rather than letting the database answer', async () => {

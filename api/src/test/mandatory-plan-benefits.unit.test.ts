@@ -25,10 +25,10 @@ function item(
   };
 }
 
-function row(over: Partial<PlanBenefitRow> & { gym_charge_id: number }): PlanBenefitRow {
+function row(over: Partial<PlanBenefitRow> & { product_id: number }): PlanBenefitRow {
   return {
-    quantity: 1, gym_charge_name: `Item ${over.gym_charge_id}`, gym_charge_type: 'fee',
-    gym_charge_billing_frequency: null, gym_charge_status: 'active', gym_charge_mandatory: 0,
+    quantity: 1, product_name: `Item ${over.product_id}`, product_type: 'fee',
+    product_billing_frequency: null, product_status: 'active', product_mandatory: 0,
     ...over,
   };
 }
@@ -76,18 +76,18 @@ describe('mergeMandatoryBenefits', () => {
   const insurance = item({ id: 1, name: 'Insurance Fee', type: 'fee', billing_frequency: 'year' });
 
   it('adds a mandatory item the Plan has no row for, at the default quantity', () => {
-    const merged = mergeMandatoryBenefits([row({ gym_charge_id: 7 })], [insurance]);
-    expect(merged.map((r) => r.gym_charge_id)).toEqual([7, 1]);
+    const merged = mergeMandatoryBenefits([row({ product_id: 7 })], [insurance]);
+    expect(merged.map((r) => r.product_id)).toEqual([7, 1]);
     const added = merged[1];
     expect(added.quantity).toBe(MANDATORY_BENEFIT_QUANTITY);
     expect(added.implicit).toBe(true);
-    expect(added.gym_charge_mandatory).toBe(1);
-    expect(added.gym_charge_name).toBe('Insurance Fee');
-    expect(added.gym_charge_billing_frequency).toBe('year');
+    expect(added.product_mandatory).toBe(1);
+    expect(added.product_name).toBe('Insurance Fee');
+    expect(added.product_billing_frequency).toBe('year');
   });
 
   it('does not duplicate an item the Plan already carries (§8)', () => {
-    const stored = [row({ gym_charge_id: 1, quantity: 4, gym_charge_mandatory: 1 })];
+    const stored = [row({ product_id: 1, quantity: 4, product_mandatory: 1 })];
     const merged = mergeMandatoryBenefits(stored, [insurance]);
     expect(merged).toHaveLength(1);
     // §4: mandatory says the item must exist, never what its quantity is.
@@ -96,17 +96,17 @@ describe('mergeMandatoryBenefits', () => {
   });
 
   it('compares ids numerically — a string id from the driver still matches', () => {
-    const stored = [row({ gym_charge_id: '1' as unknown as number })];
+    const stored = [row({ product_id: '1' as unknown as number })];
     expect(mergeMandatoryBenefits(stored, [insurance])).toHaveLength(1);
   });
 
   it('leaves the stored rows alone, and their order, when nothing is mandatory', () => {
-    const stored = [row({ gym_charge_id: 5 }), row({ gym_charge_id: 3 })];
-    expect(mergeMandatoryBenefits(stored, []).map((r) => r.gym_charge_id)).toEqual([5, 3]);
+    const stored = [row({ product_id: 5 }), row({ product_id: 3 })];
+    expect(mergeMandatoryBenefits(stored, []).map((r) => r.product_id)).toEqual([5, 3]);
   });
 
   it('is the whole section for a Plan with no rows at all', () => {
-    expect(mergeMandatoryBenefits([], [insurance]).map((r) => r.gym_charge_id)).toEqual([1]);
+    expect(mergeMandatoryBenefits([], [insurance]).map((r) => r.product_id)).toEqual([1]);
   });
 });
 
@@ -114,26 +114,26 @@ describe('withMandatoryBenefits', () => {
   const insurance = item({ id: 1, name: 'Insurance Fee', type: 'fee', billing_frequency: 'year' });
 
   it('re-adds a mandatory item the client dropped (§7)', () => {
-    expect(withMandatoryBenefits([{ gym_charge_id: 7, quantity: 2 }], [insurance])).toEqual([
-      { gym_charge_id: 7, quantity: 2 },
-      { gym_charge_id: 1, quantity: MANDATORY_BENEFIT_QUANTITY },
+    expect(withMandatoryBenefits([{ product_id: 7, quantity: 2 }], [insurance])).toEqual([
+      { product_id: 7, quantity: 2 },
+      { product_id: 1, quantity: MANDATORY_BENEFIT_QUANTITY },
     ]);
   });
 
   it('passes a submitted mandatory item through untouched, quantity included (§4)', () => {
-    expect(withMandatoryBenefits([{ gym_charge_id: 1, quantity: 12 }], [insurance])).toEqual([
-      { gym_charge_id: 1, quantity: 12 },
+    expect(withMandatoryBenefits([{ product_id: 1, quantity: 12 }], [insurance])).toEqual([
+      { product_id: 1, quantity: 12 },
     ]);
   });
 
   it('turns an empty save into the mandatory items alone, never an empty section', () => {
     expect(withMandatoryBenefits([], [insurance])).toEqual([
-      { gym_charge_id: 1, quantity: MANDATORY_BENEFIT_QUANTITY },
+      { product_id: 1, quantity: MANDATORY_BENEFIT_QUANTITY },
     ]);
   });
 
   it('changes nothing when the gym has no mandatory items', () => {
-    const submitted = [{ gym_charge_id: 7, quantity: 2 }];
+    const submitted = [{ product_id: 7, quantity: 2 }];
     expect(withMandatoryBenefits(submitted, [])).toEqual(submitted);
   });
 });

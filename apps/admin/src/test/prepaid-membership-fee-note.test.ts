@@ -32,7 +32,7 @@ const locales = Object.fromEntries(
 const line = (over: Partial<PlanSimulationLine> = {}): PlanSimulationLine => ({
   kind: 'membership_fee',
   label: 'Full Access',
-  gym_charge_id: null,
+  product_id: null,
   mandatory: false,
   quantity: 3,
   unit_price: 70,

@@ -7,7 +7,7 @@ import { db } from '../infra/db';
 import { invalidateFeatureFlagsCache } from '../infra/featureFlags';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 
-const KEYS = ['organization.professional_services', 'financials.assigned_plans', 'financials.taxes', 'financials.gym_charges'];
+const KEYS = ['organization.professional_services', 'financials.assigned_plans', 'financials.taxes', 'financials.products'];
 let original: Record<string, number> = {};
 let gymId: string;
 
@@ -56,9 +56,9 @@ describe('feature flag coverage (#609, #610)', () => {
     expect(res.status).toBe(403);
   });
 
-  it('disabling Products (financials.gym_charges) no longer breaks the Tax dropdown other forms use', async () => {
-    await setFlag('financials.gym_charges', false);
-    expect((await get('/sellable-items')).status).toBe(403);
+  it('disabling Products (financials.products) no longer breaks the Tax dropdown other forms use', async () => {
+    await setFlag('financials.products', false);
+    expect((await get('/products')).status).toBe(403);
     expect((await get('/taxes')).status).toBe(200);
   });
 

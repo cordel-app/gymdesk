@@ -44,22 +44,22 @@ import {
   toSessionBenefitFrequency,
 } from '@/lib/sessionBenefitFrequency';
 
-/** One saved/drafted benefit row. `gym_charge_*` is joined server-side, so an
+/** One saved/drafted benefit row. `product_*` is joined server-side, so an
  *  item that has since gone inactive still renders with its real name. */
 export interface ProductBenefitRow {
-  gym_charge_id: number;
+  product_id: number;
   quantity: number;
-  gym_charge_name: string;
-  gym_charge_type: string;
-  gym_charge_billing_frequency: string | null;
-  gym_charge_status: string;
+  product_name: string;
+  product_type: string;
+  product_billing_frequency: string | null;
+  product_status: string;
   /**
-   * #893: `gym_charges.mandatory`, joined server-side. Present only where the
+   * #893: `products.mandatory`, joined server-side. Present only where the
    * caller enforces the rule (the Membership Plan sections) — a Promotion's
    * benefit rows do not carry it, which is why `enforceMandatory` is an
    * explicit prop rather than something inferred from the field being there.
    */
-  gym_charge_mandatory?: boolean | number;
+  product_mandatory?: boolean | number;
   /**
    * #893: a mandatory item the Plan has no stored row for yet. The section
    * shows it and the next save of the section persists it — the server decides
@@ -101,7 +101,7 @@ export interface ProductBenefitRow {
    * section, the Assigned Plan snapshot editor) must keep submitting payloads
    * without the key rather than resetting an optional item to mandatory.
    *
-   * Not `gym_charge_mandatory` above, which is the catalogue item's own #893
+   * Not `product_mandatory` above, which is the catalogue item's own #893
    * flag and answers a different question on a different row.
    */
   requirement?: PromotionItemRequirement;
@@ -124,7 +124,7 @@ export interface ProductBenefitRow {
 
 /** #893: `tinyint(1)` from MySQL, `boolean` from a literal. */
 export function isMandatoryBenefitRow(row: ProductBenefitRow): boolean {
-  return row.gym_charge_mandatory === true || Number(row.gym_charge_mandatory) === 1;
+  return row.product_mandatory === true || Number(row.product_mandatory) === 1;
 }
 
 /** A Product offered by the picker. `benefit_category` is computed
@@ -136,7 +136,7 @@ export interface ProductOption {
   billing_frequency: string | null;
   status: string;
   benefit_category: 'session' | 'oneoff' | 'periodical';
-  /** #893: `gym_charges.mandatory` — served by `GET /sellable-items` since #832. */
+  /** #893: `products.mandatory` — served by `GET /products` since #832. */
   mandatory?: boolean | number;
 }
 
@@ -151,8 +151,8 @@ type SetDraft = (fn: (prev: ProductBenefitRow[]) => ProductBenefitRow[]) => void
  */
 export function benefitRowOptions(categoryItems: ProductOption[], row: ProductBenefitRow) {
   const opts = categoryItems.map((c) => ({ id: c.id, name: c.name, inactive: false }));
-  if (!opts.some((o) => o.id === row.gym_charge_id)) {
-    opts.unshift({ id: row.gym_charge_id, name: row.gym_charge_name, inactive: true });
+  if (!opts.some((o) => o.id === row.product_id)) {
+    opts.unshift({ id: row.product_id, name: row.product_name, inactive: true });
   }
   return opts;
 }
@@ -173,14 +173,14 @@ export function addBenefitRow(
   draft: ProductBenefitRow[],
   seed?: Partial<ProductBenefitRow>,
 ) {
-  const next = categoryItems.find((c) => !draft.some((d) => d.gym_charge_id === c.id));
+  const next = categoryItems.find((c) => !draft.some((d) => d.product_id === c.id));
   if (!next) return;
   setDraft((prev) => [
     ...prev,
     {
-      gym_charge_id: next.id, quantity: 1, gym_charge_name: next.name,
-      gym_charge_type: next.type, gym_charge_billing_frequency: next.billing_frequency,
-      gym_charge_status: next.status, gym_charge_mandatory: next.mandatory ?? 0,
+      product_id: next.id, quantity: 1, product_name: next.name,
+      product_type: next.type, product_billing_frequency: next.billing_frequency,
+      product_status: next.status, product_mandatory: next.mandatory ?? 0,
       // #896 §13: a new line starts neutral — it is included at the Product
       // Item's own price, and only an explicit choice can make it cheaper.
       action: DEFAULT_BENEFIT_ACTION, value: null,
@@ -199,14 +199,14 @@ export function updateBenefitRow(
   setDraft((prev) => prev.map((r, i) => {
     if (i !== idx) return r;
     const next = { ...r, ...patch };
-    if (patch.gym_charge_id != null) {
-      const item = categoryItems.find((c) => c.id === patch.gym_charge_id);
+    if (patch.product_id != null) {
+      const item = categoryItems.find((c) => c.id === patch.product_id);
       if (item) {
-        next.gym_charge_name = item.name;
-        next.gym_charge_type = item.type;
-        next.gym_charge_billing_frequency = item.billing_frequency;
-        next.gym_charge_status = item.status;
-        next.gym_charge_mandatory = item.mandatory ?? 0;
+        next.product_name = item.name;
+        next.product_type = item.type;
+        next.product_billing_frequency = item.billing_frequency;
+        next.product_status = item.status;
+        next.product_mandatory = item.mandatory ?? 0;
       }
     }
     return next;
@@ -233,7 +233,7 @@ export const toBenefitItems = (draft: ProductBenefitRow[]) =>
     // #918: the Frequency travels under the same rule as the pair — only when
     // the draft row actually carries the key, so a section that does not
     // configure it cannot clear what is stored.
-    const line: Record<string, unknown> = { gym_charge_id: b.gym_charge_id, quantity: b.quantity };
+    const line: Record<string, unknown> = { product_id: b.product_id, quantity: b.quantity };
     if ('frequency' in b) line.frequency = b.frequency ?? null;
     // #959: and the Requirement, under the same rule — only when the draft row
     // carries the key, so a section that does not configure it cannot reset what
@@ -496,7 +496,7 @@ export function ProductBenefitEditor({
    */
   showRequirement?: boolean;
 }) {
-  const hasMoreToAdd = categoryItems.some((c) => !draft.some((d) => d.gym_charge_id === c.id));
+  const hasMoreToAdd = categoryItems.some((c) => !draft.some((d) => d.product_id === c.id));
   // #893 §3: the user must not have to guess why a row has no Remove control.
   // A form's explanatory sentence stays in the form (#797), so it is rendered
   // here and never beside the read-only values.
@@ -531,16 +531,16 @@ export function ProductBenefitEditor({
             const mandatory = enforceMandatory && isMandatoryBenefitRow(row);
             const action = benefitContext ? benefitActionOf(benefitContext, row.action) : null;
             return (
-              <div key={row.gym_charge_id} style={{ display: 'contents' }}>
+              <div key={row.product_id} style={{ display: 'contents' }}>
                 {mandatory ? (
                   <span style={{ fontSize: 13 }}>
-                    {row.gym_charge_name}
+                    {row.product_name}
                     <span style={mandatoryTagStyle}>{t('mandatory_item_tag')}</span>
                   </span>
                 ) : (
                   <select
-                    value={row.gym_charge_id}
-                    onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { gym_charge_id: parseInt(e.target.value, 10) })}
+                    value={row.product_id}
+                    onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { product_id: parseInt(e.target.value, 10) })}
                     style={inlineSelectSt}
                   >
                     {benefitRowOptions(categoryItems, row).map((o) => (
@@ -571,7 +571,7 @@ export function ProductBenefitEditor({
                   </select>
                 ) : (
                   <span style={{ fontSize: 13, color: '#666' }}>
-                    {row.gym_charge_billing_frequency ? t(`frequency_${row.gym_charge_billing_frequency}`) : '—'}
+                    {row.product_billing_frequency ? t(`frequency_${row.product_billing_frequency}`) : '—'}
                   </span>
                 ))}
                 {benefitContext && action && (
@@ -746,7 +746,7 @@ export function ProductBenefitView({
       case 'item':
         return (
           <>
-            {row.gym_charge_name}{row.gym_charge_status !== 'active' && ` ${t('inactive_item_tag')}`}
+            {row.product_name}{row.product_status !== 'active' && ` ${t('inactive_item_tag')}`}
             {enforceMandatory && isMandatoryBenefitRow(row) && (
               <span style={mandatoryTagStyle}>{t('mandatory_item_tag')}</span>
             )}
@@ -759,8 +759,8 @@ export function ProductBenefitView({
         // configured; every other section shows the item's own. Either way the
         // cell stays, and a row with no frequency reads "—".
         if (frequencyColumn === 'benefit') return t(sessionFrequencyLabelKey(row.frequency));
-        return row.gym_charge_billing_frequency
-          ? t(`frequency_${row.gym_charge_billing_frequency}`)
+        return row.product_billing_frequency
+          ? t(`frequency_${row.product_billing_frequency}`)
           : '—';
       case 'action':
         return benefitContext ? benefitTreatmentLabel(t, benefitContext, row) : null;
@@ -808,7 +808,7 @@ export function ProductBenefitView({
               grants keep the item's identity after it is deleted, and two such
               lines would otherwise share one key. */}
           {rows.map((r, idx) => (
-            <tr key={`${r.gym_charge_id}-${idx}`}>
+            <tr key={`${r.product_id}-${idx}`}>
               {columns.map((col) => (
                 <td key={col.key} style={{ ...tdSt, textAlign: col.align }}>{cell(col, r)}</td>
               ))}

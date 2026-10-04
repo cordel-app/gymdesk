@@ -116,8 +116,8 @@ describe('#896 — the pair reaches all twelve relationship tables', () => {
   it('adds nothing to the global Product (§12)', async () => {
     // The configuration belongs to the relationship; the same item may be
     // waived by one Plan and discounted by a Promotion.
-    expect(await columnInfo('gym_charges', 'action')).toBeUndefined();
-    expect(await columnInfo('gym_charges', 'value')).toBeUndefined();
+    expect(await columnInfo('products', 'action')).toBeUndefined();
+    expect(await columnInfo('products', 'value')).toBeUndefined();
   });
 });
 
@@ -143,7 +143,7 @@ describe('#896 — what the database accepts', () => {
     );
     promotionId = promotion.insertId;
     const item = await db.query(
-      `INSERT INTO gym_charges (gym_id, name, type, billing_frequency, status, is_system, currency)
+      `INSERT INTO products (gym_id, name, type, billing_frequency, status, is_system, currency)
        VALUES (?, 'Benefit Action Sessions', 'sessions', 'per_session', 'active', 0, 'EUR')`,
       [gymId],
     );
@@ -153,11 +153,11 @@ describe('#896 — what the database accepts', () => {
   const insertPromotionGrant = (action?: string, value?: number | null) => (
     action === undefined
       ? db.query(
-        'INSERT INTO promotion_session (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, 1)',
+        'INSERT INTO promotion_session (gym_id, promotion_id, product_id, quantity) VALUES (?, ?, ?, 1)',
         [gymId, promotionId, itemId],
       )
       : db.query(
-        `INSERT INTO promotion_session (gym_id, promotion_id, gym_charge_id, quantity, action, value)
+        `INSERT INTO promotion_session (gym_id, promotion_id, product_id, quantity, action, value)
          VALUES (?, ?, ?, 1, ?, ?)`,
         [gymId, promotionId, itemId, action, value ?? null],
       )
@@ -166,11 +166,11 @@ describe('#896 — what the database accepts', () => {
   const insertPlanBenefit = (action?: string, value?: number | null) => (
     action === undefined
       ? db.query(
-        'INSERT INTO membership_plan_session (gym_id, membership_plan_id, gym_charge_id, quantity) VALUES (?, ?, ?, 1)',
+        'INSERT INTO membership_plan_session (gym_id, membership_plan_id, product_id, quantity) VALUES (?, ?, ?, 1)',
         [gymId, planId, itemId],
       )
       : db.query(
-        `INSERT INTO membership_plan_session (gym_id, membership_plan_id, gym_charge_id, quantity, action, value)
+        `INSERT INTO membership_plan_session (gym_id, membership_plan_id, product_id, quantity, action, value)
          VALUES (?, ?, ?, 1, ?, ?)`,
         [gymId, planId, itemId, action, value ?? null],
       )
@@ -255,7 +255,7 @@ describe('#896 — a save that names no treatment writes the neutral default', (
     );
     planId = plan.insertId;
     const item = await db.query(
-      `INSERT INTO gym_charges (gym_id, name, type, billing_frequency, status, is_system, currency)
+      `INSERT INTO products (gym_id, name, type, billing_frequency, status, is_system, currency)
        VALUES (?, 'Routes Sessions', 'sessions', 'per_session', 'active', 0, 'EUR')`,
       [gymId],
     );
@@ -267,7 +267,7 @@ describe('#896 — a save that names no treatment writes the neutral default', (
       .put(`/membership-plans/${planId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: itemId, quantity: 4 }] });
+      .send({ items: [{ product_id: itemId, quantity: 4 }] });
     expect(put.status).toBe(200);
 
     const { rows } = await db.query(
@@ -308,7 +308,7 @@ describe('#896 — a snapshot carries the treatment it was agreed with', () => {
       [gymId, planId],
     );
     const item = await db.query(
-      `INSERT INTO gym_charges
+      `INSERT INTO products
          (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
        VALUES (?, 'Snapshot Sessions', 'sessions', 10, 'EUR', 'per_session', 'active', 'available', 0)`,
       [gymId],
@@ -316,7 +316,7 @@ describe('#896 — a snapshot carries the treatment it was agreed with', () => {
     sessionItemId = item.insertId;
     // The Plan's own Session Benefit, configured as a waive.
     await db.query(
-      `INSERT INTO membership_plan_session (gym_id, membership_plan_id, gym_charge_id, quantity, action, value)
+      `INSERT INTO membership_plan_session (gym_id, membership_plan_id, product_id, quantity, action, value)
        VALUES (?, ?, ?, 2, 'waive', NULL)`,
       [gymId, planId, sessionItemId],
     );
@@ -338,7 +338,7 @@ describe('#896 — a snapshot carries the treatment it was agreed with', () => {
       [gymId, promotionId, planId],
     );
     await db.query(
-      `INSERT INTO promotion_session (gym_id, promotion_id, gym_charge_id, quantity, action, value)
+      `INSERT INTO promotion_session (gym_id, promotion_id, product_id, quantity, action, value)
        VALUES (?, ?, ?, 4, 'percentage_discount', 20)`,
       [gymId, promotionId, sessionItemId],
     );

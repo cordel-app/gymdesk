@@ -41,7 +41,7 @@ async function createProduct(
   gymId: string, name: string, type: string, amount: number, frequency: string | null,
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
      VALUES (?, ?, ?, ?, 'EUR', ?, 'active', 'available', 0)`,
     [gymId, name, type, amount, frequency],
@@ -120,11 +120,11 @@ async function setMembershipFeeBenefit(
 
 async function grantProduct(
   gymId: string, promotionId: number, category: 'session' | 'oneoff' | 'periodical',
-  gymChargeId: number, quantity: number,
+  productId: number, quantity: number,
 ) {
   await db.query(
-    `INSERT INTO promotion_${category} (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)`,
-    [gymId, promotionId, gymChargeId, quantity],
+    `INSERT INTO promotion_${category} (gym_id, promotion_id, product_id, quantity) VALUES (?, ?, ?, ?)`,
+    [gymId, promotionId, productId, quantity],
   );
 }
 
@@ -240,8 +240,8 @@ describe('GET /user-memberships/:id/promotions — the expandable card (#635 §1
 
     // Everything the catalogue could say afterwards is changed: prices,
     // names, and the Promotion's own grant rows.
-    await db.query('UPDATE gym_charges SET amount = 999, name = ? WHERE id = ?', ['Renamed Pack', sessionItem]);
-    await db.query('UPDATE gym_charges SET amount = 777 WHERE id = ?', [periodicalItem]);
+    await db.query('UPDATE products SET amount = 999, name = ? WHERE id = ?', ['Renamed Pack', sessionItem]);
+    await db.query('UPDATE products SET amount = 777 WHERE id = ?', [periodicalItem]);
     await db.query('DELETE FROM promotion_oneoff WHERE promotion_id = ?', [promotionId]);
 
     const res = await listPromotions(gymId, umId);

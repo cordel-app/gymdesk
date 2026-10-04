@@ -41,7 +41,7 @@ async function createMember(gymId: string, name: string): Promise<number> {
 
 async function createProduct(gymId: string, name: string): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges (gym_id, name, type, billing_frequency, amount, status, is_system, currency)
+    `INSERT INTO products (gym_id, name, type, billing_frequency, amount, status, is_system, currency)
      VALUES (?, ?, 'service', 'month', 20.00, 'active', 0, 'EUR')`,
     [gymId, name],
   );
@@ -170,7 +170,7 @@ describe('Charge Benefits are retired (#635 stage 4)', () => {
       .put(`/membership-plans/${planId}/periodical-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: itemId, quantity: 1 }] });
+      .send({ items: [{ product_id: itemId, quantity: 1 }] });
 
     const assign = await request
       .post(`/membership-plans/${planId}/assign`)

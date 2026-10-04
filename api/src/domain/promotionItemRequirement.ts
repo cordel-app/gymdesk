@@ -10,14 +10,14 @@
 // reads "both are discounted 50%, and the locker is the one the member may say
 // no to".
 //
-// **What this is not.** `gym_charges.mandatory` (#832/#893) already exists and
+// **What this is not.** `products.mandatory` (#832/#893) already exists and
 // answers a different question on a different row: it is a property of the
 // gym's **catalogue** item, and its one meaning is that the item is forced into
 // every *Membership Plan* benefit section (`domain/mandatoryPlanBenefits.ts`).
 // This column is a property of the **relationship** between one Promotion and
 // one Product, exactly as #896's `(action, value)` pair is and for the
 // same reason: the same item may be mandatory in one Promotion and optional in
-// another, and `gym_charges` learns nothing from either. The two never appear
+// another, and `products` learns nothing from either. The two never appear
 // in one grid — a Promotion section passes no `enforceMandatory`, so the
 // catalogue flag's `Mandatory` pill belongs to the Plans page alone.
 //
@@ -90,7 +90,7 @@ export function describePromotionItemRequirements(): string {
  *
  * The three answers are #896's and #918's, for their reason: the three Promotion
  * benefit section `PUT`s delete and re-insert the whole section on every save,
- * so a client that sends `gym_charge_id` + `quantity` alone — any client written
+ * so a client that sends `product_id` + `quantity` alone — any client written
  * before this ticket, and every test that predates it — must keep the
  * Requirement the line is stored with rather than silently resetting it to the
  * default. Clearing is not a thing you can do to this column (it is NOT NULL);

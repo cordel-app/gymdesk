@@ -139,7 +139,7 @@ function BillingEventTable({
             const tone = simulationLineTone(line);
             return (
               <tr
-                key={`${line.gym_charge_id ?? 'fee'}-${i}`}
+                key={`${line.product_id ?? 'fee'}-${i}`}
                 style={{ background: TIMELINE_TONE_BACKGROUND[tone] }}
               >
                 <td style={timelineTdStyle}>{i === 0 ? formatDate(group.date) : ''}</td>

@@ -80,7 +80,7 @@ async function createTaxRate(
 /**
  * Returns `n` fresh charge_types ids — a global lookup table, always pre-seeded.
  * Hands out ids from a shared cursor so repeated calls (even across tests sharing
- * one gym) never collide with gym_charges' unique (gym_id, charge_type_id) index.
+ * one gym) never collide with products' unique (gym_id, charge_type_id) index.
  */
 let _chargeTypeIdsCache: number[] | null = null;
 let _chargeTypeCursor = 0;
@@ -95,10 +95,10 @@ async function chargeTypeIds(n: number): Promise<number[]> {
   return ids;
 }
 
-/** Inserts a gym_charges (Product) row referencing the given tax rate. */
-async function createGymCharge(gymId: string, chargeTypeId: number, taxRateId: number): Promise<number> {
+/** Inserts a products (Product) row referencing the given tax rate. */
+async function createProduct(gymId: string, chargeTypeId: number, taxRateId: number): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges (gym_id, charge_type_id, tax_rate_id) VALUES (?, ?, ?)`,
+    `INSERT INTO products (gym_id, charge_type_id, tax_rate_id) VALUES (?, ?, ?)`,
     [gymId, chargeTypeId, taxRateId],
   );
   return insertId;
@@ -562,7 +562,7 @@ describe('PUT /taxes/:id — impact confirmation', () => {
   it('returns 409 with impact counts when products reference the tax rate and confirmImpact is not sent', async () => {
     const taxId = await createTaxRate(gymId, { name: 'Product Impact Tax', rate_percent: 5 });
     const [chargeTypeId] = await chargeTypeIds(1);
-    await createGymCharge(gymId, chargeTypeId, taxId);
+    await createProduct(gymId, chargeTypeId, taxId);
 
     const res = await request
       .put(`/taxes/${taxId}`)
@@ -572,7 +572,7 @@ describe('PUT /taxes/:id — impact confirmation', () => {
     expect(res.status).toBe(409);
     expect(res.body).toEqual({
       error: 'confirmation_required',
-      impact: { sellable_items: 1, membership_plans: 0 },
+      impact: { products: 1, membership_plans: 0 },
     });
 
     // The rename must not have persisted.
@@ -595,15 +595,15 @@ describe('PUT /taxes/:id — impact confirmation', () => {
     expect(res.status).toBe(409);
     expect(res.body).toEqual({
       error: 'confirmation_required',
-      impact: { sellable_items: 0, membership_plans: 1 },
+      impact: { products: 0, membership_plans: 1 },
     });
   });
 
   it('returns 409 with combined counts when both products and membership plans reference the tax rate', async () => {
     const taxId = await createTaxRate(gymId, { name: 'Combined Impact Tax', rate_percent: 5 });
     const [ct1, ct2] = await chargeTypeIds(2);
-    await createGymCharge(gymId, ct1, taxId);
-    await createGymCharge(gymId, ct2, taxId);
+    await createProduct(gymId, ct1, taxId);
+    await createProduct(gymId, ct2, taxId);
     await createMembershipPlan(gymId, taxId);
 
     const res = await request
@@ -612,13 +612,13 @@ describe('PUT /taxes/:id — impact confirmation', () => {
       .set('x-gym-id', gymId)
       .send({ rate_percent: 9 });
     expect(res.status).toBe(409);
-    expect(res.body.impact).toEqual({ sellable_items: 2, membership_plans: 1 });
+    expect(res.body.impact).toEqual({ products: 2, membership_plans: 1 });
   });
 
   it('persists the change when confirmImpact: true is sent despite non-zero impact', async () => {
     const taxId = await createTaxRate(gymId, { name: 'Confirmed Impact Tax', rate_percent: 5 });
     const [chargeTypeId] = await chargeTypeIds(1);
-    await createGymCharge(gymId, chargeTypeId, taxId);
+    await createProduct(gymId, chargeTypeId, taxId);
 
     const res = await request
       .put(`/taxes/${taxId}`)
@@ -638,8 +638,8 @@ describe('PUT /taxes/:id — impact confirmation', () => {
   it('does not count a soft-deleted product towards the impact', async () => {
     const taxId = await createTaxRate(gymId, { name: 'Deleted Charge Impact Tax', rate_percent: 5 });
     const [chargeTypeId] = await chargeTypeIds(1);
-    const chargeId = await createGymCharge(gymId, chargeTypeId, taxId);
-    await db.query('UPDATE gym_charges SET deleted_at = UTC_TIMESTAMP() WHERE id = ?', [chargeId]);
+    const chargeId = await createProduct(gymId, chargeTypeId, taxId);
+    await db.query('UPDATE products SET deleted_at = UTC_TIMESTAMP() WHERE id = ?', [chargeId]);
 
     const res = await request
       .put(`/taxes/${taxId}`)

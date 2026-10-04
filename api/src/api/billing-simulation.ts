@@ -129,7 +129,7 @@ function assignmentPlanDuration(row: AssignmentRow): PlanDuration {
  * (`loadPromotionGrantSnapshots`), so editing or deleting the Promotion leaves
  * it alone (§16). Applications that predate the snapshot flow have nothing to
  * read, and still simulate from the Promotion as it stands today.
- * `gym_charges` is deliberately not filtered on `deleted_at`, so a granted
+ * `products` is deliberately not filtered on `deleted_at`, so a granted
  * item still displays after it is retired.
  */
 async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promise<Map<number, SimulationGrant[]>> {
@@ -138,11 +138,11 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
 
   const marks = promotionIds.map(() => '?').join(',');
   const select = (table: string, category: ProductBenefitCategory) => `
-    SELECT '${category}' AS category, b.promotion_id, b.gym_charge_id, b.quantity,
+    SELECT '${category}' AS category, b.promotion_id, b.product_id, b.quantity,
            b.\`action\`, b.\`value\`,
            gc.name, gc.amount, gc.billing_frequency
     FROM ${table} b
-    JOIN gym_charges gc ON gc.id = b.gym_charge_id
+    JOIN products gc ON gc.id = b.product_id
     WHERE b.gym_id = ? AND b.promotion_id IN (${marks})`;
 
   const params = [gymId, ...promotionIds, gymId, ...promotionIds, gymId, ...promotionIds];
@@ -157,7 +157,7 @@ async function loadPromotionGrants(gymId: string, promotionIds: number[]): Promi
 
   for (const row of rows as any[]) {
     const grant: SimulationGrant = {
-      gymChargeId: row.gym_charge_id,
+      productId: row.product_id,
       name: row.name ?? 'Product',
       category: row.category as ProductBenefitCategory,
       billingFrequency: (row.billing_frequency ?? null) as ProductFrequency | null,

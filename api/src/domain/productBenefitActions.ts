@@ -7,7 +7,7 @@
 // carried a `quantity` and nothing else. §15 adds the pair — a type and, when
 // the type asks for one, a value — to the *relationship*, never to the global
 // Product (§12): the same item may be waived by one Plan and discounted
-// 20% by a Promotion, and `gym_charges` learns nothing from either.
+// 20% by a Promotion, and `products` learns nothing from either.
 //
 // Two rules make this module the only place that decides any of it:
 //
@@ -204,7 +204,7 @@ export function applyLineBenefit(
  * mention the pair at all", which is a different thing and the reason this is
  * three states rather than two. The six replace-all `PUT`s delete and re-insert
  * the whole section on every save, so a client that only knows about
- * `gym_charge_id` and `quantity` (every client until stage 4) would otherwise
+ * `product_id` and `quantity` (every client until stage 4) would otherwise
  * rewrite a configured treatment to the neutral default on an unrelated edit —
  * and on the Promotion side that default is not what the row means, since
  * migration 203 backfilled those rows to `waive`. A line the request did not

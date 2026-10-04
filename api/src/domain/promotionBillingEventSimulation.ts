@@ -71,7 +71,7 @@ import { ProductBenefitCategory } from './productClassification';
  * the item's **gross** unit price.
  */
 export interface PromotionSimulationGrant {
-  gymChargeId: number;
+  productId: number;
   name: string;
   category: ProductBenefitCategory;
   billingFrequency: ProductFrequency | null;
@@ -129,7 +129,7 @@ export function computePromotionBillingEventSimulation(
   input: PromotionBillingEventSimulationInput,
 ): PromotionBillingEventSimulationResult {
   const grants: SimulationGrant[] = input.grants.map((grant) => ({
-    gymChargeId: grant.gymChargeId,
+    productId: grant.productId,
     name: grant.name,
     category: grant.category,
     billingFrequency: grant.billingFrequency,

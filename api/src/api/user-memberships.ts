@@ -1402,7 +1402,7 @@ userMembershipsRouter.put('/:id/fee-benefit', requireModuleWrite('PAYMENTS'), as
   }
 });
 
-// One route per benefit kind, with the replace-all `{ items: [{ gym_charge_id,
+// One route per benefit kind, with the replace-all `{ items: [{ product_id,
 // quantity }] }` payload the Plan and Promotion sections already take — the
 // admin editors are shared, so the contract has to be the same one. What
 // differs is what a row means: on a Plan it points at the live Product,
@@ -1435,20 +1435,20 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
       return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${um.status}'` });
     }
 
-    const parsed: { gym_charge_id: number; quantity: number }[] = [];
+    const parsed: { product_id: number; quantity: number }[] = [];
     const seen = new Set<number>();
     for (const item of items) {
-      const gymChargeId = parseInt(item?.gym_charge_id, 10);
+      const productId = parseInt(item?.product_id, 10);
       const quantity = parseInt(item?.quantity, 10);
-      if (!Number.isInteger(gymChargeId) || gymChargeId <= 0) {
-        return res.status(400).json({ error: 'gym_charge_id is required' });
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({ error: 'product_id is required' });
       }
       if (!Number.isInteger(quantity) || quantity <= 0) {
         return res.status(400).json({ error: 'quantity must be a positive integer' });
       }
-      if (seen.has(gymChargeId)) return res.status(400).json({ error: `Duplicate gym_charge_id: ${gymChargeId}` });
-      seen.add(gymChargeId);
-      parsed.push({ gym_charge_id: gymChargeId, quantity });
+      if (seen.has(productId)) return res.status(400).json({ error: `Duplicate product_id: ${productId}` });
+      seen.add(productId);
+      parsed.push({ product_id: productId, quantity });
     }
 
     // A line already in this section is part of what was agreed, so it stays
@@ -1456,12 +1456,12 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
     // deactivated or reclassified. Only a *newly* added item is held to the
     // catalogue's current state, and to the section's own category.
     const current = await loadAssignedPlanBenefitSection(gymId, Number(um.id), category);
-    const alreadyAttached = new Set(current.map((row) => row.gym_charge_id));
-    const added = parsed.filter((item) => !alreadyAttached.has(item.gym_charge_id)).map((i) => i.gym_charge_id);
+    const alreadyAttached = new Set(current.map((row) => row.product_id));
+    const added = parsed.filter((item) => !alreadyAttached.has(item.product_id)).map((i) => i.product_id);
     if (added.length > 0) {
       const marks = added.map(() => '?').join(',');
       const { rows: products } = await db.query(
-        `SELECT id, type, billing_frequency, status FROM gym_charges
+        `SELECT id, type, billing_frequency, status FROM products
          WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${marks})`,
         [gymId, ...added],
       );
@@ -1511,7 +1511,7 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
 
       recordAudit(req, {
         action: 'update', entityType: 'user_membership', entityId: req.params.id,
-        previous: { [`${category}_benefits`]: current.map((r) => ({ gym_charge_id: r.gym_charge_id, quantity: r.quantity })) },
+        previous: { [`${category}_benefits`]: current.map((r) => ({ product_id: r.product_id, quantity: r.quantity })) },
         next: { [`${category}_benefits`]: parsed },
       });
       res.json(await loadAssignedPlanBenefitSection(gymId, Number(um.id), category));

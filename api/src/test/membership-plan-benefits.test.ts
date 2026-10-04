@@ -39,7 +39,7 @@ async function createProduct(
   status: 'active' | 'inactive' = 'active',
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges (gym_id, name, type, billing_frequency, status, is_system, currency)
+    `INSERT INTO products (gym_id, name, type, billing_frequency, status, is_system, currency)
      VALUES (?, ?, ?, ?, ?, 0, 'EUR')`,
     [gymId, name, type, billingFrequency, status],
   );
@@ -218,12 +218,12 @@ describe.each([
       .put(`/membership-plans/${planId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: matchingItemId, quantity: 3 }] });
+      .send({ items: [{ product_id: matchingItemId, quantity: 3 }] });
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
-    expect(res.body[0].gym_charge_id).toBe(matchingItemId);
+    expect(res.body[0].product_id).toBe(matchingItemId);
     expect(res.body[0].quantity).toBe(3);
-    expect(res.body[0].gym_charge_name).toBeDefined();
+    expect(res.body[0].product_name).toBeDefined();
   });
 
   it('GET returns saved items', async () => {
@@ -245,7 +245,7 @@ describe.each([
     expect(res.status).toBe(200);
     const field = category === 'periodical' ? 'periodical_benefits' : `${category}_benefits`;
     expect(res.body[field]).toHaveLength(1);
-    expect(res.body[field][0].gym_charge_id).toBe(matchingItemId);
+    expect(res.body[field][0].product_id).toBe(matchingItemId);
   });
 
   it('PUT rejects a Product that classifies into a different category', async () => {
@@ -253,7 +253,7 @@ describe.each([
       .put(`/membership-plans/${planId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: mismatchedItemId, quantity: 1 }] });
+      .send({ items: [{ product_id: mismatchedItemId, quantity: 1 }] });
     expect(res.status).toBe(400);
   });
 
@@ -262,7 +262,7 @@ describe.each([
       .put(`/membership-plans/${planId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: inactiveItemId, quantity: 1 }] });
+      .send({ items: [{ product_id: inactiveItemId, quantity: 1 }] });
     expect(res.status).toBe(400);
   });
 
@@ -276,7 +276,7 @@ describe.each([
       .put(`/membership-plans/${planId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: foreignItem, quantity: 1 }] });
+      .send({ items: [{ product_id: foreignItem, quantity: 1 }] });
     expect(res.status).toBe(400);
   });
 
@@ -296,20 +296,20 @@ describe.each([
       .put(`/membership-plans/${otherPlanId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: itemId, quantity: 2 }] });
+      .send({ items: [{ product_id: itemId, quantity: 2 }] });
     expect(firstSave.status).toBe(200);
 
-    await db.query("UPDATE gym_charges SET status = 'inactive' WHERE id = ?", [itemId]);
+    await db.query("UPDATE products SET status = 'inactive' WHERE id = ?", [itemId]);
 
     const resave = await request
       .put(`/membership-plans/${otherPlanId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: itemId, quantity: 3 }] });
+      .send({ items: [{ product_id: itemId, quantity: 3 }] });
     expect(resave.status).toBe(200);
     expect(resave.body).toHaveLength(1);
     expect(resave.body[0].quantity).toBe(3);
-    expect(resave.body[0].gym_charge_status).toBe('inactive');
+    expect(resave.body[0].product_status).toBe('inactive');
   });
 
   it('PUT rejects a non-positive quantity', async () => {
@@ -317,19 +317,19 @@ describe.each([
       .put(`/membership-plans/${planId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: matchingItemId, quantity: 0 }] });
+      .send({ items: [{ product_id: matchingItemId, quantity: 0 }] });
     expect(res.status).toBe(400);
   });
 
-  it('PUT rejects a duplicate gym_charge_id within the same request', async () => {
+  it('PUT rejects a duplicate product_id within the same request', async () => {
     const res = await request
       .put(`/membership-plans/${planId}/${path}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({
         items: [
-          { gym_charge_id: matchingItemId, quantity: 1 },
-          { gym_charge_id: matchingItemId, quantity: 2 },
+          { product_id: matchingItemId, quantity: 1 },
+          { product_id: matchingItemId, quantity: 2 },
         ],
       });
     expect(res.status).toBe(400);
@@ -414,7 +414,7 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
       .set('x-gym-id', gymId)
       .send({
         items: [{
-          gym_charge_id: sessionItemId, quantity: 4,
+          product_id: sessionItemId, quantity: 4,
           action: 'percentage_discount', value: 15,
           // #918: and the renewal Frequency, which Duplicate must carry too.
           frequency: 'week',
@@ -432,7 +432,7 @@ describe('Membership Plan duplicate — Billing & Duration and Benefits', () => 
     expect(dup.body.paid_periods).toBe(2);
     expect(dup.body.bonus_periods).toBe(2);
     expect(dup.body.session_benefits).toHaveLength(1);
-    expect(dup.body.session_benefits[0].gym_charge_id).toBe(sessionItemId);
+    expect(dup.body.session_benefits[0].product_id).toBe(sessionItemId);
     expect(dup.body.session_benefits[0].quantity).toBe(4);
     // #896 stage 2: Duplicate is a copy, so the pricing treatment travels too.
     expect(dup.body.session_benefits[0].action).toBe('percentage_discount');
@@ -494,7 +494,7 @@ describe('Membership Plan mandatory Products (#893)', () => {
   let registrationId: number; // oneoff, mandatory
 
   async function setMandatory(id: number, mandatory: 0 | 1) {
-    await db.query('UPDATE gym_charges SET mandatory = ? WHERE id = ?', [mandatory, id]);
+    await db.query('UPDATE products SET mandatory = ? WHERE id = ?', [mandatory, id]);
   }
 
   async function periodicalBenefits(plan: number, gym: string) {
@@ -521,12 +521,12 @@ describe('Membership Plan mandatory Products (#893)', () => {
   it('reports a mandatory item the Plan has no row for, flagged implicit', async () => {
     const res = await periodicalBenefits(planId, gymId);
     expect(res.status).toBe(200);
-    const insurance = res.body.find((r: any) => r.gym_charge_id === insuranceId);
+    const insurance = res.body.find((r: any) => r.product_id === insuranceId);
     expect(insurance).toBeDefined();
     expect(insurance.implicit).toBe(true);
     expect(insurance.quantity).toBe(1);
-    expect(Number(insurance.gym_charge_mandatory)).toBe(1);
-    expect(res.body.some((r: any) => r.gym_charge_id === lockerId)).toBe(false);
+    expect(Number(insurance.product_mandatory)).toBe(1);
+    expect(res.body.some((r: any) => r.product_id === lockerId)).toBe(false);
   });
 
   it('puts the mandatory item in its own section only', async () => {
@@ -539,7 +539,7 @@ describe('Membership Plan mandatory Products (#893)', () => {
       .get(`/membership-plans/${planId}/oneoff-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    expect(oneoff.body.map((r: any) => r.gym_charge_id)).toEqual([registrationId]);
+    expect(oneoff.body.map((r: any) => r.product_id)).toEqual([registrationId]);
   });
 
   it('embeds the same merged sections in the Plan itself', async () => {
@@ -548,8 +548,8 @@ describe('Membership Plan mandatory Products (#893)', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.periodical_benefits.map((r: any) => r.gym_charge_id)).toContain(insuranceId);
-    expect(res.body.oneoff_benefits.map((r: any) => r.gym_charge_id)).toContain(registrationId);
+    expect(res.body.periodical_benefits.map((r: any) => r.product_id)).toContain(insuranceId);
+    expect(res.body.oneoff_benefits.map((r: any) => r.product_id)).toContain(registrationId);
   });
 
   it('writes the mandatory item even when the save leaves it out (§7)', async () => {
@@ -557,20 +557,20 @@ describe('Membership Plan mandatory Products (#893)', () => {
       .put(`/membership-plans/${planId}/periodical-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: lockerId, quantity: 1 }] });
+      .send({ items: [{ product_id: lockerId, quantity: 1 }] });
     expect(res.status).toBe(200);
-    const ids = res.body.map((r: any) => r.gym_charge_id);
+    const ids = res.body.map((r: any) => r.product_id);
     expect(ids).toContain(insuranceId);
     expect(ids).toContain(lockerId);
     // Persisted, not merely reported: the row exists and is no longer implicit.
     const { rows } = await db.query(
-      'SELECT gym_charge_id, quantity FROM membership_plan_periodical WHERE membership_plan_id = ? AND gym_charge_id = ?',
+      'SELECT product_id, quantity FROM membership_plan_periodical WHERE membership_plan_id = ? AND product_id = ?',
       [planId, insuranceId],
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].quantity).toBe(1);
     const after = await periodicalBenefits(planId, gymId);
-    expect(after.body.find((r: any) => r.gym_charge_id === insuranceId).implicit).toBeUndefined();
+    expect(after.body.find((r: any) => r.product_id === insuranceId).implicit).toBeUndefined();
   });
 
   it('cannot be emptied out of the section', async () => {
@@ -580,7 +580,7 @@ describe('Membership Plan mandatory Products (#893)', () => {
       .set('x-gym-id', gymId)
       .send({ items: [] });
     expect(res.status).toBe(200);
-    expect(res.body.map((r: any) => r.gym_charge_id)).toEqual([insuranceId]);
+    expect(res.body.map((r: any) => r.product_id)).toEqual([insuranceId]);
   });
 
   it('keeps the quantity the Plan configured (§4)', async () => {
@@ -588,7 +588,7 @@ describe('Membership Plan mandatory Products (#893)', () => {
       .put(`/membership-plans/${planId}/periodical-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: insuranceId, quantity: 3 }] });
+      .send({ items: [{ product_id: insuranceId, quantity: 3 }] });
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
     expect(res.body[0].quantity).toBe(3);
@@ -599,9 +599,9 @@ describe('Membership Plan mandatory Products (#893)', () => {
       .put(`/membership-plans/${planId}/periodical-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: insuranceId, quantity: 2 }, { gym_charge_id: lockerId, quantity: 1 }] });
+      .send({ items: [{ product_id: insuranceId, quantity: 2 }, { product_id: lockerId, quantity: 1 }] });
     const { rows } = await db.query(
-      'SELECT gym_charge_id FROM membership_plan_periodical WHERE membership_plan_id = ? AND gym_charge_id = ?',
+      'SELECT product_id FROM membership_plan_periodical WHERE membership_plan_id = ? AND product_id = ?',
       [planId, insuranceId],
     );
     expect(rows).toHaveLength(1);
@@ -613,9 +613,9 @@ describe('Membership Plan mandatory Products (#893)', () => {
       .put(`/membership-plans/${planId}/periodical-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: lockerId, quantity: 1 }] });
+      .send({ items: [{ product_id: lockerId, quantity: 1 }] });
     expect(res.status).toBe(200);
-    expect(res.body.map((r: any) => r.gym_charge_id)).toEqual([lockerId]);
+    expect(res.body.map((r: any) => r.product_id)).toEqual([lockerId]);
     await setMandatory(insuranceId, 1);
   });
 
@@ -624,10 +624,10 @@ describe('Membership Plan mandatory Products (#893)', () => {
       .put(`/membership-plans/${planId}/periodical-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: insuranceId, quantity: 5 }] });
+      .send({ items: [{ product_id: insuranceId, quantity: 5 }] });
     await setMandatory(insuranceId, 0);
     const res = await periodicalBenefits(planId, gymId);
-    const row = res.body.find((r: any) => r.gym_charge_id === insuranceId);
+    const row = res.body.find((r: any) => r.product_id === insuranceId);
     expect(row).toBeDefined();
     expect(row.quantity).toBe(5);
     await setMandatory(insuranceId, 1);
@@ -639,10 +639,10 @@ describe('Membership Plan mandatory Products (#893)', () => {
     await setMandatory(inactive, 1);
     const deleted = await createProduct(gymId, 'Deleted Mandatory', 'fee', 'month');
     await setMandatory(deleted, 1);
-    await db.query('UPDATE gym_charges SET deleted_at = NOW() WHERE id = ?', [deleted]);
+    await db.query('UPDATE products SET deleted_at = NOW() WHERE id = ?', [deleted]);
 
     const res = await periodicalBenefits(plan, gymId);
-    const ids = res.body.map((r: any) => r.gym_charge_id);
+    const ids = res.body.map((r: any) => r.product_id);
     expect(ids).not.toContain(inactive);
     expect(ids).not.toContain(deleted);
     expect(ids).toContain(insuranceId);
@@ -652,7 +652,7 @@ describe('Membership Plan mandatory Products (#893)', () => {
     const planB = await createPlan(gymB, 'MPB Mandatory Plan B');
     const res = await periodicalBenefits(planB, gymB);
     expect(res.status).toBe(200);
-    expect(res.body.map((r: any) => r.gym_charge_id)).not.toContain(insuranceId);
+    expect(res.body.map((r: any) => r.product_id)).not.toContain(insuranceId);
   });
 
   it('404s a plan from another gym rather than reporting its mandatory items', async () => {
@@ -682,14 +682,14 @@ describe('Membership Plan benefit actions', () => {
   });
 
   it('defaults a brand new line to the neutral action', async () => {
-    const res = await putSession([{ gym_charge_id: itemId, quantity: 4 }]);
+    const res = await putSession([{ product_id: itemId, quantity: 4 }]);
     expect(res.status).toBe(200);
     expect(res.body[0]).toMatchObject({ quantity: 4, action: 'no_benefit', value: null });
   });
 
   it('stores a percentage discount and reports the value as a number', async () => {
     const res = await putSession([
-      { gym_charge_id: itemId, quantity: 4, action: 'percentage_discount', value: 20 },
+      { product_id: itemId, quantity: 4, action: 'percentage_discount', value: 20 },
     ]);
     expect(res.status).toBe(200);
     // Not the "20.00" string mysql2 hands back for a DECIMAL column.
@@ -704,32 +704,32 @@ describe('Membership Plan benefit actions', () => {
 
   it('keeps a stored treatment when the save does not mention it', async () => {
     // The replace-all `PUT` is how every other field of the section is edited,
-    // so a client that only knows `gym_charge_id` + `quantity` must not reset
+    // so a client that only knows `product_id` + `quantity` must not reset
     // what someone configured. Clearing it stays possible, explicitly.
-    const res = await putSession([{ gym_charge_id: itemId, quantity: 9 }]);
+    const res = await putSession([{ product_id: itemId, quantity: 9 }]);
     expect(res.status).toBe(200);
     expect(res.body[0]).toMatchObject({ quantity: 9, action: 'percentage_discount', value: 20 });
 
-    const cleared = await putSession([{ gym_charge_id: itemId, quantity: 9, action: 'no_benefit' }]);
+    const cleared = await putSession([{ product_id: itemId, quantity: 9, action: 'no_benefit' }]);
     expect(cleared.body[0]).toMatchObject({ action: 'no_benefit', value: null });
   });
 
   it('refuses the two actions §16 keeps out of a Membership Plan', async () => {
     for (const action of ['fixed_discount', 'fixed_price']) {
-      const res = await putSession([{ gym_charge_id: itemId, quantity: 1, action, value: 10 }]);
+      const res = await putSession([{ product_id: itemId, quantity: 1, action, value: 10 }]);
       expect(res.status).toBe(400);
       expect(res.body.error).toContain('action must be one of');
     }
   });
 
   it('refuses a missing, out-of-range or superfluous value', async () => {
-    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'percentage_discount' }])).status)
+    expect((await putSession([{ product_id: itemId, quantity: 1, action: 'percentage_discount' }])).status)
       .toBe(400);
-    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'percentage_discount', value: 120 }])).status)
+    expect((await putSession([{ product_id: itemId, quantity: 1, action: 'percentage_discount', value: 120 }])).status)
       .toBe(400);
-    expect((await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'waive', value: 5 }])).status)
+    expect((await putSession([{ product_id: itemId, quantity: 1, action: 'waive', value: 5 }])).status)
       .toBe(400);
-    const orphanValue = await putSession([{ gym_charge_id: itemId, quantity: 1, value: 20 }]);
+    const orphanValue = await putSession([{ product_id: itemId, quantity: 1, value: 20 }]);
     expect(orphanValue.status).toBe(400);
     expect(orphanValue.body.error).toBe('value requires an action');
   });
@@ -739,7 +739,7 @@ describe('Membership Plan benefit actions', () => {
       .get(`/membership-plans/${planId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    await putSession([{ gym_charge_id: itemId, quantity: 1, action: 'fixed_price', value: 10 }]);
+    await putSession([{ product_id: itemId, quantity: 1, action: 'fixed_price', value: 10 }]);
     const after = await request
       .get(`/membership-plans/${planId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -751,26 +751,26 @@ describe('Membership Plan benefit actions', () => {
     // #893: the item is part of the section whether or not it is stored, and
     // Mandatory says nothing about what it costs.
     const mandatoryId = await createProduct(gymId, 'Action Mandatory Class', 'sessions', null);
-    await db.query('UPDATE gym_charges SET mandatory = 1 WHERE id = ?', [mandatoryId]);
+    await db.query('UPDATE products SET mandatory = 1 WHERE id = ?', [mandatoryId]);
 
     const get = await request
       .get(`/membership-plans/${planId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    const implicit = get.body.find((row: any) => row.gym_charge_id === mandatoryId);
+    const implicit = get.body.find((row: any) => row.product_id === mandatoryId);
     expect(implicit).toMatchObject({ implicit: true, action: 'no_benefit', value: null });
   });
 
   it('preserves a dropped mandatory item without repricing it', async () => {
     const mandatoryId = await createProduct(gymId, 'Action Waived Class', 'sessions', null);
-    await db.query('UPDATE gym_charges SET mandatory = 1 WHERE id = ?', [mandatoryId]);
-    await putSession([{ gym_charge_id: mandatoryId, quantity: 2, action: 'waive' }]);
+    await db.query('UPDATE products SET mandatory = 1 WHERE id = ?', [mandatoryId]);
+    await putSession([{ product_id: mandatoryId, quantity: 2, action: 'waive' }]);
 
     // The client drops it; #893 puts it back, and #896 must not turn the waive
     // it was configured with into a charge on the way.
     const res = await putSession([]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === mandatoryId);
+    const row = res.body.find((r: any) => r.product_id === mandatoryId);
     expect(row).toMatchObject({ action: 'waive', value: null });
   });
 });
@@ -799,7 +799,7 @@ describe('Membership Plan Benefit prices (#916)', () => {
     taxBehavior?: 'inclusive' | 'exclusive';
   }): Promise<number> {
     const { insertId } = await db.query(
-      `INSERT INTO gym_charges
+      `INSERT INTO products
          (gym_id, name, type, billing_frequency, status, is_system, currency,
           amount, tax_rate_id, tax_behavior)
        VALUES (?, ?, ?, ?, 'active', 0, 'EUR', ?, ?, ?)`,
@@ -852,9 +852,9 @@ describe('Membership Plan Benefit prices (#916)', () => {
     const classId = await createPricedItem({
       name: 'Prices Class', type: 'sessions', frequency: null, amount: '25.00',
     });
-    const res = await putSection('session-benefits', [{ gym_charge_id: classId, quantity: 1 }]);
+    const res = await putSection('session-benefits', [{ product_id: classId, quantity: 1 }]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === classId);
+    const row = res.body.find((r: any) => r.product_id === classId);
     expect(row.original_price_incl_tax).toBe(25);
     expect(row.final_price_incl_tax).toBe(25);
   });
@@ -864,10 +864,10 @@ describe('Membership Plan Benefit prices (#916)', () => {
       name: 'Prices Insurance', type: 'fee', frequency: 'year', amount: '20.00',
     });
     const res = await putSection('periodical-benefits', [
-      { gym_charge_id: insuranceId, quantity: 1, action: 'waive' },
+      { product_id: insuranceId, quantity: 1, action: 'waive' },
     ]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === insuranceId);
+    const row = res.body.find((r: any) => r.product_id === insuranceId);
     expect(row.original_price_incl_tax).toBe(20);
     expect(row.final_price_incl_tax).toBe(0);
   });
@@ -877,10 +877,10 @@ describe('Membership Plan Benefit prices (#916)', () => {
       name: 'Prices Package', type: 'fee', frequency: 'once', amount: '70.00',
     });
     const res = await putSection('oneoff-benefits', [
-      { gym_charge_id: packageId, quantity: 1, action: 'percentage_discount', value: 20 },
+      { product_id: packageId, quantity: 1, action: 'percentage_discount', value: 20 },
     ]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === packageId);
+    const row = res.body.find((r: any) => r.product_id === packageId);
     expect(row.original_price_incl_tax).toBe(70);
     expect(row.final_price_incl_tax).toBe(56);
   });
@@ -890,10 +890,10 @@ describe('Membership Plan Benefit prices (#916)', () => {
       name: 'Prices Bulk Class', type: 'sessions', frequency: null, amount: '25.00',
     });
     const res = await putSection('session-benefits', [
-      { gym_charge_id: classId, quantity: 5, action: 'percentage_discount', value: 10 },
+      { product_id: classId, quantity: 5, action: 'percentage_discount', value: 10 },
     ]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === classId);
+    const row = res.body.find((r: any) => r.product_id === classId);
     expect(row.original_price_incl_tax).toBe(25);
     expect(row.final_price_incl_tax).toBe(22.5);
     expect(row.original_line_price_incl_tax).toBe(125);
@@ -905,9 +905,9 @@ describe('Membership Plan Benefit prices (#916)', () => {
       name: 'Prices Locker', type: 'service', frequency: 'month', amount: '15.00',
       taxRateId, taxBehavior: 'exclusive',
     });
-    const res = await putSection('periodical-benefits', [{ gym_charge_id: lockerId, quantity: 1 }]);
+    const res = await putSection('periodical-benefits', [{ product_id: lockerId, quantity: 1 }]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === lockerId);
+    const row = res.body.find((r: any) => r.product_id === lockerId);
     expect(row.original_price_incl_tax).toBe(16.5);
     expect(row.final_price_incl_tax).toBe(16.5);
   });
@@ -916,9 +916,9 @@ describe('Membership Plan Benefit prices (#916)', () => {
     const unpricedId = await createPricedItem({
       name: 'Prices Unpriced', type: 'other', frequency: null, amount: null,
     });
-    const res = await putSection('oneoff-benefits', [{ gym_charge_id: unpricedId, quantity: 2 }]);
+    const res = await putSection('oneoff-benefits', [{ product_id: unpricedId, quantity: 2 }]);
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === unpricedId);
+    const row = res.body.find((r: any) => r.product_id === unpricedId);
     expect(row.original_price_incl_tax).toBeNull();
     expect(row.final_price_incl_tax).toBeNull();
     expect(row.original_line_price_incl_tax).toBeNull();
@@ -930,14 +930,14 @@ describe('Membership Plan Benefit prices (#916)', () => {
       name: 'Prices Embedded', type: 'service', frequency: 'month', amount: '30.00',
     });
     await putSection('periodical-benefits', [
-      { gym_charge_id: itemId, quantity: 2, action: 'percentage_discount', value: 50 },
+      { product_id: itemId, quantity: 2, action: 'percentage_discount', value: 50 },
     ]);
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    const row = res.body.periodical_benefits.find((r: any) => r.gym_charge_id === itemId);
+    const row = res.body.periodical_benefits.find((r: any) => r.product_id === itemId);
     expect(row.original_price_incl_tax).toBe(30);
     expect(row.final_price_incl_tax).toBe(15);
     expect(row.original_line_price_incl_tax).toBe(60);
@@ -950,14 +950,14 @@ describe('Membership Plan Benefit prices (#916)', () => {
     const mandatoryId = await createPricedItem({
       name: 'Prices Mandatory', type: 'fee', frequency: 'year', amount: '40.00',
     });
-    await db.query('UPDATE gym_charges SET mandatory = 1 WHERE id = ?', [mandatoryId]);
+    await db.query('UPDATE products SET mandatory = 1 WHERE id = ?', [mandatoryId]);
     const res = await getSection('periodical-benefits');
     expect(res.status).toBe(200);
-    const row = res.body.find((r: any) => r.gym_charge_id === mandatoryId);
+    const row = res.body.find((r: any) => r.product_id === mandatoryId);
     expect(row.implicit).toBe(true);
     expect(row.original_price_incl_tax).toBe(40);
     expect(row.final_price_incl_tax).toBe(40);
-    await db.query('UPDATE gym_charges SET mandatory = 0 WHERE id = ?', [mandatoryId]);
+    await db.query('UPDATE products SET mandatory = 0 WHERE id = ?', [mandatoryId]);
   });
 
   // The ticket's central requirement: the section and the Billing Event
@@ -968,16 +968,16 @@ describe('Membership Plan Benefit prices (#916)', () => {
       name: 'Prices Agreement', type: 'service', frequency: 'month', amount: '12.50',
     });
     await putSection('periodical-benefits', [
-      { gym_charge_id: itemId, quantity: 4, action: 'percentage_discount', value: 25 },
+      { product_id: itemId, quantity: 4, action: 'percentage_discount', value: 25 },
     ]);
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    const row = res.body.periodical_benefits.find((r: any) => r.gym_charge_id === itemId);
+    const row = res.body.periodical_benefits.find((r: any) => r.product_id === itemId);
     const line = res.body.billing_event_simulation.dates
       .flatMap((g: any) => g.lines)
-      .find((l: any) => l.gym_charge_id === itemId);
+      .find((l: any) => l.product_id === itemId);
     expect(line).toBeDefined();
     expect(line.regular_price).toBe(row.original_line_price_incl_tax);
     expect(line.actual_charge).toBe(row.final_line_price_incl_tax);
@@ -1019,9 +1019,9 @@ describe('Membership Plan Session Benefit Frequency (#918)', () => {
     .set('x-gym-id', gymId);
 
   it('stores and reports a Frequency beside the quantity', async () => {
-    const res = await putSession([{ gym_charge_id: sessionItemId, quantity: 2, frequency: 'week' }]);
+    const res = await putSession([{ product_id: sessionItemId, quantity: 2, frequency: 'week' }]);
     expect(res.status).toBe(200);
-    expect(res.body[0]).toMatchObject({ gym_charge_id: sessionItemId, quantity: 2, frequency: 'week' });
+    expect(res.body[0]).toMatchObject({ product_id: sessionItemId, quantity: 2, frequency: 'week' });
 
     const read = await getSession();
     expect(read.body[0]).toMatchObject({ quantity: 2, frequency: 'week' });
@@ -1029,11 +1029,11 @@ describe('Membership Plan Session Benefit Frequency (#918)', () => {
 
   it('configures it per benefit, not per section', async () => {
     const res = await putSession([
-      { gym_charge_id: sessionItemId, quantity: 2, frequency: 'week' },
-      { gym_charge_id: secondSessionItemId, quantity: 5, frequency: 'month' },
+      { product_id: sessionItemId, quantity: 2, frequency: 'week' },
+      { product_id: secondSessionItemId, quantity: 5, frequency: 'month' },
     ]);
     expect(res.status).toBe(200);
-    const byItem = Object.fromEntries(res.body.map((r: any) => [r.gym_charge_id, r.frequency]));
+    const byItem = Object.fromEntries(res.body.map((r: any) => [r.product_id, r.frequency]));
     expect(byItem[sessionItemId]).toBe('week');
     expect(byItem[secondSessionItemId]).toBe('month');
   });
@@ -1042,38 +1042,38 @@ describe('Membership Plan Session Benefit Frequency (#918)', () => {
     // The section `PUT` is replace-all, so a quantity-only save — which is what
     // every client written before #918 sends — must not clear the Frequency.
     const res = await putSession([
-      { gym_charge_id: sessionItemId, quantity: 4 },
-      { gym_charge_id: secondSessionItemId, quantity: 5 },
+      { product_id: sessionItemId, quantity: 4 },
+      { product_id: secondSessionItemId, quantity: 5 },
     ]);
     expect(res.status).toBe(200);
-    const byItem = Object.fromEntries(res.body.map((r: any) => [r.gym_charge_id, r.frequency]));
+    const byItem = Object.fromEntries(res.body.map((r: any) => [r.product_id, r.frequency]));
     expect(byItem[sessionItemId]).toBe('week');
     expect(byItem[secondSessionItemId]).toBe('month');
-    expect(res.body.find((r: any) => r.gym_charge_id === sessionItemId).quantity).toBe(4);
+    expect(res.body.find((r: any) => r.product_id === sessionItemId).quantity).toBe(4);
   });
 
   it('clears it for an explicit null — the dropdown\'s `—`', async () => {
-    const res = await putSession([{ gym_charge_id: sessionItemId, quantity: 4, frequency: null }]);
+    const res = await putSession([{ product_id: sessionItemId, quantity: 4, frequency: null }]);
     expect(res.status).toBe(200);
     expect(res.body[0].frequency).toBeNull();
   });
 
   it('accepts the empty string as the same `—`', async () => {
-    await putSession([{ gym_charge_id: sessionItemId, quantity: 4, frequency: 'month' }]);
-    const res = await putSession([{ gym_charge_id: sessionItemId, quantity: 4, frequency: '' }]);
+    await putSession([{ product_id: sessionItemId, quantity: 4, frequency: 'month' }]);
+    const res = await putSession([{ product_id: sessionItemId, quantity: 4, frequency: '' }]);
     expect(res.status).toBe(200);
     expect(res.body[0].frequency).toBeNull();
   });
 
   it('reads back as null for a benefit that never configured one', async () => {
-    await putSession([{ gym_charge_id: secondSessionItemId, quantity: 1 }]);
+    await putSession([{ product_id: secondSessionItemId, quantity: 1 }]);
     const res = await getSession();
-    expect(res.body.find((r: any) => r.gym_charge_id === secondSessionItemId).frequency).toBeNull();
+    expect(res.body.find((r: any) => r.product_id === secondSessionItemId).frequency).toBeNull();
   });
 
   it('accepts every offered period', async () => {
     for (const frequency of ['once', 'week', 'four_weeks', 'month', 'year']) {
-      const res = await putSession([{ gym_charge_id: sessionItemId, quantity: 1, frequency }]);
+      const res = await putSession([{ product_id: sessionItemId, quantity: 1, frequency }]);
       expect(res.status, `frequency ${frequency}`).toBe(200);
       expect(res.body[0].frequency).toBe(frequency);
     }
@@ -1081,7 +1081,7 @@ describe('Membership Plan Session Benefit Frequency (#918)', () => {
 
   it('→ 400 for a value outside the set, rather than coercing it', async () => {
     for (const frequency of ['per_session', 'weekly', 'day']) {
-      const res = await putSession([{ gym_charge_id: sessionItemId, quantity: 1, frequency }]);
+      const res = await putSession([{ product_id: sessionItemId, quantity: 1, frequency }]);
       expect(res.status, `frequency ${frequency}`).toBe(400);
       expect(res.body.error).toMatch(/frequency must be one of/);
     }
@@ -1092,19 +1092,19 @@ describe('Membership Plan Session Benefit Frequency (#918)', () => {
       .put(`/membership-plans/${planId}/periodical-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: periodicalItemId, quantity: 1, frequency: 'week' }] });
+      .send({ items: [{ product_id: periodicalItemId, quantity: 1, frequency: 'week' }] });
     expect(res.status).toBe(200);
     expect(res.body[0].frequency).toBeUndefined();
   });
 
   it('embeds the Frequency in the Plan the card reads', async () => {
-    await putSession([{ gym_charge_id: sessionItemId, quantity: 2, frequency: 'week' }]);
+    await putSession([{ product_id: sessionItemId, quantity: 2, frequency: 'week' }]);
     const res = await request
       .get(`/membership-plans/${planId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.session_benefits.find((b: any) => b.gym_charge_id === sessionItemId))
+    expect(res.body.session_benefits.find((b: any) => b.product_id === sessionItemId))
       .toMatchObject({ quantity: 2, frequency: 'week' });
   });
 });

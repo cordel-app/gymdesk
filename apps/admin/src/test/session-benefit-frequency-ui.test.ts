@@ -55,9 +55,9 @@ const promotionsSrc = stripComments(readFileSync(PROMOTIONS_PAGE, 'utf-8'));
 
 function row(over: Partial<ProductBenefitRow> = {}): ProductBenefitRow {
   return {
-    gym_charge_id: 1, quantity: 2, gym_charge_name: 'Personal Training Class',
-    gym_charge_type: 'sessions', gym_charge_billing_frequency: null,
-    gym_charge_status: 'active', ...over,
+    product_id: 1, quantity: 2, product_name: 'Personal Training Class',
+    product_type: 'sessions', product_billing_frequency: null,
+    product_status: 'active', ...over,
   };
 }
 
@@ -115,20 +115,20 @@ describe('the Frequency column stays one column', () => {
 
 describe('the payload keeps the API\'s replace-all rule', () => {
   it('submits the Frequency only when the draft row carries the key', () => {
-    expect(toBenefitItems([row()])).toEqual([{ gym_charge_id: 1, quantity: 2 }]);
+    expect(toBenefitItems([row()])).toEqual([{ product_id: 1, quantity: 2 }]);
     expect(toBenefitItems([row({ frequency: 'week' })]))
-      .toEqual([{ gym_charge_id: 1, quantity: 2, frequency: 'week' }]);
+      .toEqual([{ product_id: 1, quantity: 2, frequency: 'week' }]);
   });
 
   it('submits an explicit null for `—`, which is what clears a stored value', () => {
     expect(toBenefitItems([row({ frequency: null })]))
-      .toEqual([{ gym_charge_id: 1, quantity: 2, frequency: null }]);
+      .toEqual([{ product_id: 1, quantity: 2, frequency: null }]);
   });
 
   it('keeps carrying the treatment pair beside it (#896)', () => {
     expect(toBenefitItems([row({ frequency: 'month', action: 'percentage_discount', value: 50 })]))
       .toEqual([{
-        gym_charge_id: 1, quantity: 2, frequency: 'month',
+        product_id: 1, quantity: 2, frequency: 'month',
         action: 'percentage_discount', value: 50,
       }]);
   });

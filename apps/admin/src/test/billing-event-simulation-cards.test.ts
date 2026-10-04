@@ -53,9 +53,9 @@ const benefit = (over: Partial<BillingEventSimulationBenefit>): BillingEventSimu
 
 function line(over: Partial<BillingEventSimulationLine> = {}): BillingEventSimulationLine {
   return {
-    kind: 'sellable_item',
+    kind: 'product',
     label: 'Locker Rental',
-    gym_charge_id: 4,
+    product_id: 4,
     mandatory: false,
     quantity: 1,
     unit_price: 15,
@@ -91,7 +91,7 @@ describe('#955 — a line’s tone is the Example Timeline’s own semantics', (
       actual_charge: 10, benefits: [benefit({ action: 'fixed_price', value: 10 })],
     }))).toBe('benefit');
     expect(simulationLineTone(line({
-      kind: 'membership_fee', label: 'Membership Fee', gym_charge_id: null,
+      kind: 'membership_fee', label: 'Membership Fee', product_id: null,
       regular_price: 210, actual_charge: 210, prepaid_periods: 3,
     }))).toBe('benefit');
   });

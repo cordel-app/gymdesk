@@ -171,7 +171,7 @@ describe('resolveMembershipFee — a Pre-paid Duration', () => {
 /* ── The projection the ticket names ──────────────────────────────────────── */
 
 const item = (over: Partial<PlanSimulationItem> = {}): PlanSimulationItem => ({
-  gymChargeId: 1,
+  productId: 1,
   name: 'Item',
   category: 'periodical',
   billingFrequency: 'month',
@@ -231,8 +231,8 @@ describe('computePlanBillingEventSimulation — the ticket\'s example', () => {
 
   it('includes the prepaid amount in that billing event\'s total', () => {
     const withItems = simulate({ paid: 3, prepaid: 3 }, [
-      item({ gymChargeId: 2, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once', unitPriceInclTax: 100 }),
-      item({ gymChargeId: 3, name: 'Locker Rental', unitPriceInclTax: 15 }),
+      item({ productId: 2, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once', unitPriceInclTax: 100 }),
+      item({ productId: 3, name: 'Locker Rental', unitPriceInclTax: 15 }),
     ]);
     const first = withItems.dates.find((g) => g.date === START)!;
     expect(first.total).toBe(325); // 210 + 100 + 15
