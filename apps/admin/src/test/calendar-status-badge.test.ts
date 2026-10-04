@@ -25,15 +25,20 @@ const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 // configured event background.
 const BADGE_STATUSES = ['draft', 'scheduled', 'not_used', 'completed', 'cancelled', 'full'] as const;
 
-describe('Calendar event colors come from the theme (#559 stage 3)', () => {
-  it('sets no per-event background or border on the admin calendar', () => {
-    // FullCalendar writes these as inline styles, which beat the theme's CSS —
-    // so a per-event color here would silently disable the Event background /
-    // Event border tokens.
-    expect(calendarPage, 'the calendar page sets a per-event backgroundColor again')
+describe('Calendar event colors come from the theme (#559 stage 3) or the event (#975)', () => {
+  it('paints an event only through the one paint module', () => {
+    // FullCalendar writes background/border/text as inline styles, which beat
+    // the theme's CSS — so #559 stage 3 forbade them outright. #975 allows
+    // exactly one source for them, `lib/calendarEventPaint.ts`, which answers
+    // from the event's configured colour and `null` when there is none (the
+    // theme's tokens then paint the box). What stays forbidden is the page
+    // spelling a colour of its own.
+    const page = stripComments(calendarPage);
+    expect(page, 'the calendar page sets a per-event backgroundColor again')
       .not.toMatch(/^\s*backgroundColor:/m);
-    expect(calendarPage, 'the calendar page sets a per-event borderColor again')
+    expect(page, 'the calendar page sets a per-event borderColor again')
       .not.toMatch(/^\s*borderColor:/m);
+    expect(page).toContain('calendarEventPaint(');
   });
 
   it('maps the event tokens onto FullCalendar\'s own event variables', () => {

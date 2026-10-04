@@ -59,14 +59,26 @@ describe('The execution status is read, not re-derived (#977)', () => {
 });
 
 describe('Status never becomes the event colour (#977 §8)', () => {
-  it('sets no per-event background or border on the admin calendar', () => {
-    // FullCalendar writes these as inline styles, which beat the theme's
-    // Calendar tokens (#559 stage 3) — and the ticket's own §8 is that the
-    // execution status must never change what an event is painted with.
-    // Whether an admin event should instead take its configured
-    // activity/event colour is #975's open question, not this one's.
-    expect(calendarPage).not.toMatch(/^\s*backgroundColor:/m);
-    expect(calendarPage).not.toMatch(/^\s*borderColor:/m);
+  it('paints the event from its configured colour alone, never from a status', () => {
+    // §8 is that the execution status must never change what an event is
+    // painted with. #975 since answered the question this test used to park
+    // ("whether an admin event should instead take its configured
+    // activity/event colour") with yes — so the guard is no longer "no inline
+    // colour at all", it is that the only inline colour comes from
+    // `calendarEventPaint()`, which cannot see a status: the page must not
+    // spell a `backgroundColor`/`borderColor`/`textColor` of its own, and must
+    // not feed the status palette into the event object.
+    const page = stripComments(calendarPage);
+    expect(page, 'the calendar page sets a per-event backgroundColor again')
+      .not.toMatch(/^\s*backgroundColor:/m);
+    expect(page, 'the calendar page sets a per-event borderColor again')
+      .not.toMatch(/^\s*borderColor:/m);
+    expect(page, 'the calendar page sets a per-event textColor again')
+      .not.toMatch(/^\s*textColor:/m);
+    expect(page).toContain('calendarEventPaint(');
+    // The status palette belongs to the badge; reaching it from the event
+    // mapping is #541 coming back.
+    expect(page).not.toContain('getCalendarEventStatusBadgeColors');
   });
 
   it("gives not_used the palette's existing neutral tone rather than a new hue", () => {

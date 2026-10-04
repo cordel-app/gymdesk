@@ -16,17 +16,19 @@
  * unthemed page (no gym resolved yet, or a theme saved before #559) renders
  * exactly as it did before this ticket.
  *
- * Stage 3 added the event rules. Every event now takes its background, border
- * and text from the theme; what tells the statuses apart is the pill badge
- * rendered inside the event (`components/CalendarStatusBadge.tsx`), which
- * still gets its colors from the status alone (#541 /
+ * Stage 3 added the event rules, and what tells the statuses apart is the pill
+ * badge rendered inside the event (`components/CalendarStatusBadge.tsx`),
+ * which gets its colors from the status alone (#541 /
  * `lib/calendarEventColors.ts`).
  *
- * Member Web keeps setting a per-event `backgroundColor`, because there an
- * event's color means the session's *availability* to that member, not a
- * booking status. FullCalendar writes that as an inline style, which wins over
- * these rules — so the event variables act as the base for any event that
- * doesn't ask for its own color, and Member Web is unaffected.
+ * Since #975 the event variables are the **base**, not the only answer: an
+ * event whose gym configured a colour (`calendar_events.color`, or its
+ * Activity Type's) is painted with it, inline, by `lib/calendarEventPaint.ts`
+ * — exactly as the Members app paints the same event (#976). FullCalendar
+ * writes that as an inline style, which wins over these rules, so an event
+ * that asks for no colour of its own is the one these variables paint. The two
+ * rules marked `.gd-event-colored` below are the hover and focus affordances
+ * for the other case, which an inline background would otherwise swallow.
  *
  * Rendered inside the page body (same pattern as `Toast`/`AppShell`), which
  * places it after the stylesheet FullCalendar injects into `<head>` — so
@@ -97,6 +99,17 @@ export const CALENDAR_THEME_CSS = `
   background-color: var(--gd-calendar-event-hover-bg, #5a52d5);
 }
 
+/* #975 — an event carrying its own configured colour is painted by
+   FullCalendar as an inline background, which beats the rule above, so the
+   hover affordance has to come from somewhere that an inline style cannot
+   win against. It darkens whatever colour the gym configured rather than
+   replacing it with the theme's hover colour: the event's identity is that
+   colour, and swapping it under the pointer is the status-as-colour mistake
+   in another guise. Uncoloured events are untouched and keep the token. */
+.gd-calendar .fc .fc-event.gd-event-colored:not(.fc-bg-event):not(.fc-event-selected):hover {
+  filter: brightness(0.92);
+}
+
 /* Selected / keyboard-focused event. FullCalendar paints a translucent
    rgba(0,0,0,.25) sheet over the event through an ::after pseudo-element; the
    token is a plain color (it's a color picker), so the .25 is applied here as
@@ -116,6 +129,17 @@ export const CALENDAR_THEME_CSS = `
 .gd-calendar .fc .fc-event:focus-visible {
   outline: 2px solid var(--gd-calendar-event-text, #ffffff);
   outline-offset: -2px;
+}
+
+/* The same ring on an event painted with its own colour (#975). The theme's
+   event text colour is scored against the theme's *event background*, so it
+   is not guaranteed to read over a per-event hue — currentColor is, because
+   FullCalendar sets the event's text colour inline from
+   readableEventTextColor(), which picked it against this very background.
+   One class more specific than the rule above, so it wins on specificity
+   rather than on document order. */
+.gd-calendar .fc .fc-event.gd-event-colored:focus-visible {
+  outline-color: currentColor;
 }
 
 /* The nav buttons' only focus affordance in FullCalendar is a box-shadow baked
