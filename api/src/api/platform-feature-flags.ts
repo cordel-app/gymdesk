@@ -12,6 +12,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { db } from '../infra/db';
 import { invalidateFeatureFlagsCache } from '../infra/featureFlags';
+import { PERMISSION_MATRIX, PROFILE_ROLE_MAP, AppModule, AppRole, PermissionLevel } from '../infra/permissions';
 
 export const platformFeatureFlagsRouter = Router();
 export const featureFlagsPublicRouter = Router();
@@ -28,6 +29,45 @@ platformFeatureFlagsRouter.get(
       );
       res.json(rows.map(r => ({ ...r, enabled: r.enabled === 1 })));
     } catch (err) { next(err); }
+  },
+);
+
+// ─── Superadmin: role access matrix (#1059) ───────────────────────────────────
+// Read-only view of PERMISSION_MATRIX keyed by the first segment of a feature
+// key. It is not a second source of truth and changes no permission. A root
+// with no module (member_web.*, served via /me/*) is simply absent.
+
+export const FEATURE_ROOT_MODULE: Record<string, AppModule> = {
+  membership: 'MEMBERS',
+  calendar: 'CALENDAR',
+  organization: 'ORGANIZATION',
+  training: 'TRAINING',
+  nutrition: 'NUTRITION',
+  payments: 'PAYMENTS',
+  financials: 'FINANCIALS',
+  system: 'SYSTEM',
+};
+
+export type RoleAccess = '-' | 'R' | 'RW';
+
+export function roleAccessOf(level: PermissionLevel): RoleAccess {
+  if (level === 'RW' || level === 'RW_ASSIGNED') return 'RW';
+  if (level === 'NONE') return '-';
+  return 'R';
+}
+
+platformFeatureFlagsRouter.get(
+  '/role-access',
+  requireSuperadmin,
+  (_req: Request, res: Response) => {
+    const roles = Object.keys(PERMISSION_MATRIX.MEMBERS) as AppRole[];
+    const labelFor = (role: AppRole) =>
+      Object.keys(PROFILE_ROLE_MAP).find(p => PROFILE_ROLE_MAP[p] === role) ?? role;
+    const access: Record<string, Record<string, RoleAccess>> = {};
+    for (const [root, mod] of Object.entries(FEATURE_ROOT_MODULE)) {
+      access[root] = Object.fromEntries(roles.map(r => [r, roleAccessOf(PERMISSION_MATRIX[mod][r])]));
+    }
+    res.json({ roles: roles.map(role => ({ role, label: labelFor(role) })), access });
   },
 );
 

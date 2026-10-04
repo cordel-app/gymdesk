@@ -3866,6 +3866,9 @@
     "system_delete_blocked": "Los servicios profesionales del sistema no se pueden eliminar."
   },
   "feature_flags": {
+    "col_feature": "Funcionalidad",
+    "col_enabled": "Activada",
+    "role_access_hint": "Acceso por rol: - ninguno, R lectura, RW lectura + escritura. Solo informativo; no cambia los permisos.",
     "title": "Flags de características",
     "description": "Controla qué secciones de navegación son visibles para los usuarios del gimnasio. Desactivar una sección también oculta todos sus subelementos.",
     "on": "Activado",
