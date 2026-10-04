@@ -18,7 +18,7 @@ const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const PLANS_PAGE = join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx');
 const PROMOTIONS_PAGE = join(__dirname, '..', 'app', '[locale]', 'promotions', 'page.tsx');
 const ASSIGNED_PLAN_ROW = join(
-  __dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans', 'AssignedPlanExpandedRow.tsx',
+  __dirname, '..', 'components', 'assignedPlan', 'AssignedPlanExpandedRow.tsx',
 );
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 

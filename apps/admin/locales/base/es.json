@@ -297,7 +297,10 @@
     "additional_services_needs_plan": "Añade un plan de membresía antes de añadir un producto.",
     "event_waived_billing": "Cuota exenta",
     "billing_simulation_plan_prepaid": "Duración prepagada del plan",
-    "billing_simulation_benefit_personal": "Beneficio personal"
+    "billing_simulation_benefit_personal": "Beneficio personal",
+    "membership_created_by": "Creado por",
+    "membership_created_at": "Creado el",
+    "membership_plan_snapshot": "Detalles del Plan de Suscripción Asignado"
   },
   "member_payments": {
     "title": "Pagos del socio",

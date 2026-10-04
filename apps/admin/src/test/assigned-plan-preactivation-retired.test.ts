@@ -14,12 +14,15 @@ import { join } from 'path';
 // `apps/admin` has no component test infrastructure, so this is a source scan,
 // the same shape as `spaces-activities-removed.test.ts`.
 
-const DIR = join(__dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans');
-const FILES = [
-  'AssignedPlanExpandedRow.tsx',
-  'AssignedPlanConfiguration.tsx',
-  'AdditionalPeriodicServices.tsx',
-  'page.tsx',
+// #958 moved the card body into `components/assignedPlan/`, shared with the
+// Member card; the page that lists the assignments stayed where it was.
+const CARD_DIR = join(__dirname, '..', 'components', 'assignedPlan');
+const PAGE_DIR = join(__dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans');
+const FILES: [string, string][] = [
+  ['AssignedPlanExpandedRow.tsx', CARD_DIR],
+  ['AssignedPlanConfiguration.tsx', CARD_DIR],
+  ['AdditionalPeriodicServices.tsx', CARD_DIR],
+  ['page.tsx', PAGE_DIR],
 ];
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
@@ -29,11 +32,11 @@ function stripComments(src: string): string {
 }
 
 const sources = Object.fromEntries(
-  FILES.map((f) => [f, stripComments(readFileSync(join(DIR, f), 'utf-8'))]),
+  FILES.map(([f, dir]) => [f, stripComments(readFileSync(join(dir, f), 'utf-8'))]),
 ) as Record<string, string>;
 
 describe('#786 — no pre-activation Assigned Plan status in the admin', () => {
-  it.each(FILES)('%s names neither retired status', (file) => {
+  it.each(FILES.map(([f]) => f))('%s names neither retired status', (file) => {
     expect(sources[file]).not.toMatch(/'draft'|'awaiting_payment'/);
   });
 

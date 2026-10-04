@@ -297,7 +297,10 @@
     "additional_services_needs_plan": "Add a membership plan before adding a product.",
     "event_waived_billing": "Fee waived",
     "billing_simulation_plan_prepaid": "Plan pre-paid duration",
-    "billing_simulation_benefit_personal": "Personal benefit"
+    "billing_simulation_benefit_personal": "Personal benefit",
+    "membership_created_by": "Created by",
+    "membership_created_at": "Created at",
+    "membership_plan_snapshot": "Assigned Membership Plan details"
   },
   "member_payments": {
     "title": "Member Payments",

@@ -4,7 +4,7 @@ import { join } from 'path';
 import {
   ASSIGNED_PLAN_CONFIGURATION_SECTIONS,
   ASSIGNED_PLAN_SECTION_ORDER,
-} from '../app/[locale]/financials/assigned-plans/assignedPlanProfile';
+} from '../components/assignedPlan/assignedPlanProfile';
 import {
   cardDetailLabelStyle,
   cardDetailRowStyle,
@@ -31,7 +31,7 @@ import {
 
 const SRC = join(__dirname, '..');
 const LOCALES_DIR = join(SRC, '..', 'locales', 'base');
-const ASSIGNED_PLANS_DIR = join(SRC, 'app', '[locale]', 'financials', 'assigned-plans');
+const ASSIGNED_PLANS_DIR = join(SRC, 'components', 'assignedPlan');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 function stripComments(src: string): string {
@@ -67,7 +67,10 @@ describe('#924 stage 5: the section order is a declaration, not the JSX', () => 
     // another copy of the chrome and never be noticed.
     const present = readdirSync(ASSIGNED_PLANS_DIR).filter((f) => f.endsWith('.tsx'));
     const unlisted = present.filter(
-      (f) => f !== 'page.tsx' && !f.endsWith('Modal.tsx') && !CARD_FILES.includes(f as any),
+      // #958 moved these out of the page directory into
+      // `components/assignedPlan/`, shared with the Member card. A modal and
+      // the dialog that loads one are not sections of the card.
+      (f) => !f.endsWith('Modal.tsx') && !f.endsWith('Dialog.tsx') && !CARD_FILES.includes(f as any),
     );
     expect(unlisted, 'Assigned Plan card file not covered by this test').toEqual([]);
   });
@@ -248,9 +251,13 @@ describe('#924 stage 5: expanding reads, ⋮ → Edit writes (#797/#897)', () =>
   });
 
   it('hands the card\'s flag to every section that can write', () => {
-    expect(rowSrc).toContain('cardEditing={isEditing}');
-    expect((rowSrc.match(/cardEditing=\{isEditing\}/g) ?? []).length).toBe(2);
-    expect(rowSrc).toContain('editing={isEditing}');
+    // #958: the one flag every writable section asks is `editing`, which is
+    // `isEditing` only when the body is not embedded — the Member card's
+    // expansion renders no ⋮, so it can never be in Edit mode.
+    expect(rowSrc).toContain('const editing = !embedded && isEditing');
+    expect(rowSrc).toContain('cardEditing={editing}');
+    expect((rowSrc.match(/cardEditing=\{editing\}/g) ?? []).length).toBe(2);
+    expect(rowSrc).toContain('editing={editing}');
   });
 
   it('has no section Edit button outside Edit mode — absent, not disabled', () => {

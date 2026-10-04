@@ -23,7 +23,7 @@
 
 import React from 'react';
 import { useTranslations } from 'next-intl';
-import { AdditionalPeriodicServices } from '../financials/assigned-plans/AdditionalPeriodicServices';
+import { AdditionalPeriodicServices } from '@/components/assignedPlan/AdditionalPeriodicServices';
 import type { MemberPlanRow, MemberServiceRow } from './membershipConfiguration';
 import { cardMutedTextStyle, cardSubLabelStyle } from '@/components/formChrome';
 

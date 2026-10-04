@@ -16,6 +16,30 @@
 //
 // Inline throughout (§15): "+ Add Membership Plan" opens a draft below the
 // list, saved or discarded in place. No modal, no wizard, no separate page.
+//
+// #958 redesigns the section around one card per Assigned Membership Plan. Four
+// of its answers are the rule rather than the implementation:
+//
+//  * **The card is a summary, the expansion is the snapshot.** Plan name, price,
+//    Created by, Created at, Start date, End date and Status are on the card;
+//    expanding it renders the shared Assigned Plan card body
+//    (`components/assignedPlan/AssignedPlanExpandedRow`, `embedded`), which is
+//    the very component the Assigned Plans page expands — so the sections, their
+//    order and their terminology are one declaration and this card cannot grow a
+//    simplified second rendering of a frozen configuration (Q3 `share`, #806).
+//  * **Created by / Created at are columns** (migration 215), not an `audit_logs`
+//    read: the ticket's Q4 answer is that key metadata belongs on the entity, and
+//    it is what lets every card carry the actor without a subquery per row.
+//  * **The actions stay in the `⋮` menu** (Q2 `menu`) — `Assign New Plan`,
+//    `Details`, `Cancel Plan` — because that is the app's single entry point into
+//    a row's actions (#797) and three buttons per card on a member with five past
+//    plans is chrome, not clarity. A historical card offers `Details` alone: the
+//    other two only make sense for a plan that is still live.
+//  * **`+ Add Membership Plan` is absent while a live plan exists**, because
+//    under #956 adding one *replaces* it, and that operation is named on the plan
+//    it replaces rather than offered as a generic add. The replacement
+//    confirmation stays the server's 409 either way: a Member covered by a family
+//    plan somebody else owns still has one (#956 Q4).
 
 import React, { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
@@ -24,7 +48,12 @@ import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanCon
 import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
+import { CardDetailRow } from '@/components/CardDetailRow';
+import { AssignedPlanExpandedRow } from '@/components/assignedPlan/AssignedPlanExpandedRow';
+import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPlanDetailsDialog';
 import {
+  cardExpandCaretStyle,
+  cardExpandToggleStyle,
   cardHintStyle,
   cardMutedTextStyle,
   cardSubLabelStyle,
@@ -93,6 +122,9 @@ export function MemberMembershipPlans({
   // #956 stage 2: the replacement the admin has not confirmed yet. Holding the
   // 409 rather than a boolean is what lets the dialog name the plan it cancels.
   const [conflict, setConflict] = useState<ActivePlanConflict | null>(null);
+  // #958: the Assigned Plan whose Details are open, if any — one dialog for the
+  // whole section rather than one mounted per card.
+  const [detailsPlanId, setDetailsPlanId] = useState<number | null>(null);
 
   // §2: only Active + Public Membership Plans may be offered. The server
   // enforces the same rule on assignment, so this filter only keeps the picker
@@ -183,6 +215,8 @@ export function MemberMembershipPlans({
             assignBusy={assignBusy}
             onAssignNewPlan={onAssignNewPlan}
             onCancelPlan={onCancelPlan}
+            onShowDetails={() => setDetailsPlanId(m.id)}
+            onChanged={onChanged}
             t={t}
             statusLabel={(s) => tStatus(s as never)}
           >
@@ -191,7 +225,9 @@ export function MemberMembershipPlans({
         ))
       )}
 
-      {canWrite && !adding && (
+      {/* #958: no generic add while the Member holds a plan — replacing it is
+          `Assign New Plan` on the card of the plan being replaced. */}
+      {canWrite && live.length === 0 && !adding && (
         <button onClick={startAdding} style={addBtn}>{t('add_membership_plan')}</button>
       )}
 
@@ -255,77 +291,144 @@ export function MemberMembershipPlans({
         <div style={{ marginTop: 12 }}>
           <div style={subLabel}>{t('membership_plans_history')}</div>
           {history.map((m) => (
-            <PlanCard key={m.id} plan={m} canWrite={false} assignBusy={assignBusy} t={t} statusLabel={(s) => tStatus(s as never)} dimmed />
+            <PlanCard
+              key={m.id}
+              plan={m}
+              canWrite={false}
+              assignBusy={assignBusy}
+              onShowDetails={() => setDetailsPlanId(m.id)}
+              onChanged={onChanged}
+              t={t}
+              statusLabel={(s) => tStatus(s as never)}
+              dimmed
+            />
           ))}
         </div>
+      )}
+
+      {/* The app's existing Assigned Plan Details modal, shared rather than
+          re-drawn (§"Reuse existing Details UI"): what it shows is this
+          assignment's own record, including the actor and the audit link. */}
+      {detailsPlanId != null && (
+        <AssignedPlanDetailsDialog assignedPlanId={detailsPlanId} onClose={() => setDetailsPlanId(null)} />
       )}
     </div>
   );
 }
 
+/**
+ * One Assigned Membership Plan, as the ticket's card: its name and price in the
+ * header, the seven summary fields under them, its actions in the `⋮`, and the
+ * assignment's own frozen configuration one click away.
+ *
+ * The expansion is the shared Assigned Plan card body and not a rendering of its
+ * own, so what an admin reads here is what they read on the Assigned Plans page:
+ * the frozen benefit sections, the applied Promotions' snapshots, the Membership
+ * Fee Simulation, the Billing Event Forecast and the Billing Events ledger. It
+ * reads, it does not write — every control in that body belongs to the Edit mode
+ * of its own card (#797/#897), which an `embedded` body has no `⋮` to enter.
+ */
 function PlanCard({
-  plan, canWrite, assignBusy, onAssignNewPlan, onCancelPlan, t, statusLabel, dimmed, children,
+  plan, canWrite, assignBusy, onAssignNewPlan, onCancelPlan, onShowDetails, onChanged, t, statusLabel, dimmed, children,
 }: {
   plan: MemberPlanRow;
   canWrite: boolean;
   assignBusy: boolean;
   onAssignNewPlan?: (plan: MemberPlanRow) => void;
   onCancelPlan?: (plan: MemberPlanRow) => void;
+  onShowDetails: () => void;
+  onChanged: () => void;
   t: ReturnType<typeof useTranslations>;
   statusLabel: (status: string) => string;
   dimmed?: boolean;
   children?: React.ReactNode;
 }) {
+  const [expanded, setExpanded] = useState(false);
+
+  // `Assign New Plan` and `Cancel Plan` are the live plan's lifecycle actions,
+  // so a historical card carries neither — "the exact available actions should
+  // follow the plan's status". `Details` is every card's: reading what a past
+  // assignment was agreed with is the whole point of keeping it.
+  const lifecycleItems = canWrite && onAssignNewPlan && onCancelPlan
+    ? [
+      {
+        label: t('action_assign_new_plan'),
+        onClick: () => onAssignNewPlan(plan),
+        // #628: only one inline assignment editor at a time — they share a
+        // single draft state.
+        disabled: assignBusy,
+        title: assignBusy ? t('assign_new_plan_busy_hint') : undefined,
+      },
+      ...(plan.status !== 'cancelled'
+        ? [{ label: t('action_cancel_plan'), onClick: () => onCancelPlan(plan), danger: true }]
+        : []),
+    ]
+    : [];
+
   return (
     <div style={{ ...card, opacity: dimmed ? 0.75 : 1 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontWeight: 500, fontSize: 14 }}>{plan.plan_name ?? '—'}</div>
-          <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <StatusBadge status={plan.status} label={statusLabel(plan.status)} />
-            <span style={{ fontSize: 13 }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, justifyContent: 'space-between' }}>
+            <div style={{ fontWeight: 500, fontSize: 14 }}>{plan.plan_name ?? '—'}</div>
+            {/* The price the assignment pays for the cycle it is next charged
+                for (#635 stage 15) — a computed field, never a column. */}
+            <div style={{ fontSize: 14 }}>
               {plan.membership_fee != null ? `€${plan.membership_fee.toFixed(2)}` : '—'}
-            </span>
+            </div>
           </div>
-          {plan.starts_at && <Field label={t('membership_start')}>{fmtDate(plan.starts_at)}</Field>}
-          {plan.ends_at && <Field label={t('membership_end')}>{fmtDate(plan.ends_at)}</Field>}
-          {plan.is_live && plan.next_billing_date && (
-            <Field label={t('membership_next_billing')}>{fmtDate(plan.next_billing_date)}</Field>
-          )}
+
+          <div style={{ marginTop: 6 }}>
+            <CardDetailRow label={t('membership_created_by')} value={plan.created_by_name ?? '—'} />
+            <CardDetailRow
+              label={t('membership_created_at')}
+              value={plan.created_at ? fmtDate(plan.created_at) : '—'}
+            />
+            <CardDetailRow
+              label={t('membership_start')}
+              value={plan.starts_at ? fmtDate(plan.starts_at) : '—'}
+            />
+            <CardDetailRow
+              label={t('membership_end')}
+              value={plan.ends_at ? fmtDate(plan.ends_at) : '—'}
+            />
+            <CardDetailRow
+              label={t('membership_status')}
+              value={<StatusBadge status={plan.status} label={statusLabel(plan.status)} />}
+            />
+            {plan.is_live && plan.next_billing_date && (
+              <CardDetailRow
+                label={t('membership_next_billing')}
+                value={fmtDate(plan.next_billing_date)}
+              />
+            )}
+          </div>
           {/* #635 stage 4: the card listed the Plan's Included Services here
               (#511/#634) until the concept was retired (migration 177). Which
               activities the Member may book is the Activity Type's own
               eligible-plan list now, edited from the Activity Types page. */}
         </div>
-        {canWrite && onAssignNewPlan && onCancelPlan && (
-          <ContextMenu
-            ariaLabel={`Actions for ${plan.plan_name ?? 'plan'}`}
-            items={[
-              {
-                label: t('action_assign_new_plan'),
-                onClick: () => onAssignNewPlan(plan),
-                // #628: only one inline assignment editor at a time — they
-                // share a single draft state.
-                disabled: assignBusy,
-                title: assignBusy ? t('assign_new_plan_busy_hint') : undefined,
-              },
-              ...(plan.status !== 'cancelled'
-                ? [{ label: t('action_cancel_plan'), onClick: () => onCancelPlan(plan), danger: true }]
-                : []),
-            ]}
-          />
+        <ContextMenu
+          ariaLabel={`Actions for ${plan.plan_name ?? 'plan'}`}
+          items={[...lifecycleItems, { label: t('action_details'), onClick: onShowDetails }]}
+        />
+      </div>
+
+      <div style={{ marginTop: 10 }}>
+        <button
+          onClick={() => setExpanded(!expanded)}
+          aria-expanded={expanded}
+          style={cardExpandToggleStyle}
+        >
+          <span style={cardExpandCaretStyle}>{expanded ? '▾' : '▸'}</span>
+          <span style={{ fontSize: 13 }}>{t('membership_plan_snapshot')}</span>
+        </button>
+        {expanded && (
+          <AssignedPlanExpandedRow assignedPlanId={plan.id} onChanged={onChanged} embedded />
         )}
       </div>
-      {children}
-    </div>
-  );
-}
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, marginTop: 4 }}>
-      <span style={{ color: '#888', minWidth: 120, fontSize: 13 }}>{label}</span>
-      <span>{children}</span>
+      {children}
     </div>
   );
 }
@@ -334,7 +437,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 // objects rather than restating them, so its cards, labels, inputs and its
 // Save/Cancel pair are the same ones the Member card's other sections wear.
 const dim = cardMutedTextStyle;
-const fieldLabel = formFieldLabelStyle;
 const hint = cardHintStyle;
 const card = innerCardStyle;
 const subLabel = cardSubLabelStyle;

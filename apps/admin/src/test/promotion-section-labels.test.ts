@@ -17,7 +17,7 @@ import { join } from 'path';
 // own promotion-scoped keys instead of sharing the configuration section's.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const ASSIGNED_PLANS_DIR = join(__dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans');
+const ASSIGNED_PLANS_DIR = join(__dirname, '..', 'components', 'assignedPlan');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 type Messages = Record<string, unknown>;

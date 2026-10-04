@@ -12,6 +12,7 @@ import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { activePlanConflictBody, supersedeStartsAtError } from '../domain/oneActivePlan';
 import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-active-plan';
 import { computePlanExampleTimeline } from '../domain/planExampleTimeline';
+import { actorSnapshot } from '../domain/nutritionLibrary';
 import {
   PlanSimulationItem,
   computePlanBillingEventSimulation,
@@ -718,7 +719,10 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
 // creation billing event as POST /user-memberships (P1.6 ledger).
 
 membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId, role } = getTenantContext(req);
+  const { gymId, userId, role, actorName, isSuperadmin } = getTenantContext(req);
+  // #958 — who assigned the plan, snapshotted onto every row this route
+  // inserts (migration 215). The third and last of the creation paths.
+  const actor = actorSnapshot({ name: actorName, isSuperadmin });
   const { member_ids, owner_member_id, starts_at } = req.body;
 
   const { rows: planRows } = await db.query(
@@ -777,9 +781,13 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
       }
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, starts_at, status)
-         VALUES (?, ?, ?, ?, ?, ?, 'active')`,
-        [ownerId, gymId, req.params.id, eff.base_price, eff.plan_price_id, starts_at],
+         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, starts_at, status,
+          created_by_name, created_by_type)
+         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+        [
+          ownerId, gymId, req.params.id, eff.base_price, eff.plan_price_id, starts_at,
+          actor.name, actor.type,
+        ],
       );
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: ownerId,

@@ -813,6 +813,35 @@ Reference implementation: `components/exercises/` + both pages. Regression tests
 `apps/admin/src/test/exercise-editor-unification.test.ts` and
 `exercise-read-only-expansion.test.ts`.
 
+**The same rule holds for a card body two different screens expand (#958).** An
+Assigned Plan is not *edited* from two pages, but it is *read* from two: its own
+card on `[locale]/financials/assigned-plans`, and the Member page's MEMBERSHIP
+PLANS section, where each plan card expands into the same sections. So the body
+moved up the same way — `components/assignedPlan/` now holds
+`AssignedPlanExpandedRow` and the four sections, the profile declaration and the
+types — and both hosts render it. One section list, one set of locale keys, one
+`GET /user-memberships/:id`, and every later stage of the card reaches both
+screens at once; the alternative is the second, simplified rendering of a frozen
+configuration that drifts from what the assignment actually bills.
+
+**Express the host's difference as one prop about chrome, never about content.**
+The Member card already carries the plan's name, status, dates and its own `⋮`,
+so it passes `embedded`, which drops the body's own summary header and context
+menu — and therefore its Edit mode, since `⋮ → Edit` is the single entry point
+into one (#797). That is why the flag every writable section asks is `editing`
+(`!embedded && isEditing`) rather than `isEditing`: a host with no menu cannot be
+in the mode, so the sections' controls are absent there for the same reason they
+are absent outside the mode on the page that does have one. A prop that changed
+what a section *says* — a shorter field list, a different price — would be the
+second rendering again, wearing one component's name.
+
+**A modal fed from a detail the host does not have gets a loader, not a copy.**
+The Member card lists plans through the configuration read (one row per plan), so
+its `⋮ → Details` cannot hand the existing `AssignedPlanDetailsModal` a detail.
+`AssignedPlanDetailsDialog` fetches one and renders that same modal — it declares
+no field, no label and no layout, which is what keeps "reuse the existing Details
+UI" true rather than nearly true.
+
 **A gym-wide section and a Member card section are two pages too (#948 §4).**
 Assigned Personal Goals is administered from `[locale]/assigned-personal-goals`
 and from the Member card's own PERSONAL GOALS section, which look nothing alike —
@@ -1419,7 +1448,7 @@ When a catalog item is attached to a record that is *already billing* (an Additi
 - **The projection does the rest**: the forecast (`domain/billingSimulation.ts`) treats each attachment as a stream from `max(parent.start, starts_at)` to `min(parent.end, ends_at)`. Removal needs no other code path — the window is the whole mechanism.
 - **Frontend**: inline row CRUD (no modal), the action column keyed on `ends_at == null` rather than a derived `active` flag — a row removed today is still billable today, but must not offer Remove twice.
 
-Reference implementation: `api/src/api/user-membership-services.ts` + migration 164 + `apps/admin/src/app/[locale]/financials/assigned-plans/AdditionalPeriodicServices.tsx`.
+Reference implementation: `api/src/api/user-membership-services.ts` + migration 164 + `apps/admin/src/components/assignedPlan/AdditionalPeriodicServices.tsx`.
 
 ---
 

@@ -25,7 +25,7 @@ const PLAN_PROFILE = join(__dirname, '..', 'app', '[locale]', 'plans', 'planProf
 const DETAIL_MODAL = join(__dirname, '..', 'app', '[locale]', 'plans', 'PlanDetailModal.tsx');
 const PROMOTIONS_PAGE = join(__dirname, '..', 'app', '[locale]', 'promotions', 'page.tsx');
 const ASSIGNED_CONFIG = join(
-  __dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans', 'AssignedPlanConfiguration.tsx',
+  __dirname, '..', 'components', 'assignedPlan', 'AssignedPlanConfiguration.tsx',
 );
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 

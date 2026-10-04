@@ -11,7 +11,7 @@
 // this payload nor the Member card carries them. The applications an Assigned
 // Plan was agreed with are read from the Assigned Plans card instead.
 
-import type { AssignedPlanService } from '../financials/assigned-plans/types';
+import type { AssignedPlanService } from '@/components/assignedPlan/types';
 
 export interface MemberPlanRow {
   /** The Assigned Plan (user_memberships) id — what every write is addressed to. */
@@ -20,6 +20,18 @@ export interface MemberPlanRow {
   plan_name: string | null;
   status: string;
   membership_fee: number | null;
+  /**
+   * #958 — who created the assignment and when, shown on every Assigned
+   * Membership Plan card. Both are columns of `user_memberships` (migration
+   * 215) rather than an `audit_logs` read, per the ticket's Q4 answer: key
+   * metadata belongs on the entity. `created_at` is a bare `YYYY-MM-DD` like
+   * every other date in this payload; the actor is NULL for an assignment
+   * created before the snapshot existed and no audit row survived to backfill
+   * it from, which the card renders as an em dash.
+   */
+  created_at: string | null;
+  created_by_name: string | null;
+  created_by_type: 'staff' | 'superadmin' | null;
   starts_at: string | null;
   ends_at: string | null;
   next_billing_date: string | null;

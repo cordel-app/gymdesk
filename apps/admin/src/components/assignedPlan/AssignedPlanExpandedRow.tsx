@@ -67,9 +67,28 @@ function fmtMoney(v: string | number | null) {
   return v != null ? `€${parseFloat(String(v)).toFixed(2)}` : '—';
 }
 
-export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
+/**
+ * #958 (Q3 `share`) — the Assigned Plan card body, rendered by both hosts:
+ * the Assigned Plans page's own list and the Member card's MEMBERSHIP PLANS
+ * section, which expands a plan card into exactly these sections. That is
+ * #806's rule applied to a read surface — one section list, one set of locale
+ * keys, one snapshot read — and the reason the ticket's §"Snapshot structure"
+ * can promise that `Membership Plan → Details` and
+ * `Member → Assigned plan → Expanded` are understood through the same shape.
+ *
+ * `embedded` is the only difference between the two hosts, and it is about the
+ * chrome around the sections rather than about any of their contents: the
+ * Member's plan card already carries the plan's name, its status, its dates and
+ * its own `⋮` (Assign new plan · Cancel · Details), so an embedded body renders
+ * neither a second summary header nor a second context menu — and therefore
+ * holds no Edit mode either, since `⋮ → Edit` is the single entry point into one
+ * (#797). Expanding a plan on the Member page reads it; editing the assignment
+ * stays on the Assigned Plans page, which is where its own card lives.
+ */
+export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false }: {
   assignedPlanId: number;
   onChanged: () => void;
+  embedded?: boolean;
 }) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
@@ -173,6 +192,11 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
     );
   }
 
+  // An embedded body has no `⋮`, so it can never be in Edit mode — every
+  // section's controls are absent rather than disabled, exactly as they are on
+  // the Assigned Plans page outside the mode (#897).
+  const editing = !embedded && isEditing;
+
   const canPause = detail.status === 'active';
   const canReactivate = detail.status === 'paused';
   const canClose = CLOSEABLE_STATUSES.includes(detail.status);
@@ -199,15 +223,17 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
 
   return (
     <div style={panel}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 16 }}>
-        <div>
-          <div style={{ fontWeight: 600, fontSize: 15 }}>{detail.plan_name ?? '—'}</div>
-          <div style={{ marginTop: 4 }}>
-            <StatusBadge status={detail.lifecycle_status} label={tStatus(detail.lifecycle_status as any)} />
+      {!embedded && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 16 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>{detail.plan_name ?? '—'}</div>
+            <div style={{ marginTop: 4 }}>
+              <StatusBadge status={detail.lifecycle_status} label={tStatus(detail.lifecycle_status as any)} />
+            </div>
           </div>
+          <ContextMenu ariaLabel={t('actions_for', { plan: detail.plan_name ?? '' })} items={menuItems} />
         </div>
-        <ContextMenu ariaLabel={t('actions_for', { plan: detail.plan_name ?? '' })} items={menuItems} />
-      </div>
+      )}
 
       {/* The sections below are ASSIGNED_PLAN_SECTION_ORDER, in that order
           (assignedPlanProfile.ts) — the Membership Plan card's own order with
@@ -253,7 +279,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
         assignedPlanId={assignedPlanId}
         planStatus={detail.status}
         snapshot={detail.snapshot}
-        cardEditing={isEditing}
+        cardEditing={editing}
         canWrite={canWritePayments}
         readOnlyTitle={readOnlyTitle}
         onChanged={() => { loadDetail(); onChanged(); }}
@@ -267,7 +293,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
         <AssignedPlanPromotions
           assignedPlanId={assignedPlanId}
           promotions={detail.promotions}
-          cardEditing={isEditing}
+          cardEditing={editing}
           canWrite={canWritePayments}
           readOnlyTitle={readOnlyTitle}
           onChanged={() => { loadDetail(); onChanged(); }}
@@ -365,7 +391,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged }: {
           planStartsAt={detail.starts_at}
           planStatus={detail.status}
           services={detail.additional_services ?? []}
-          editing={isEditing}
+          editing={editing}
           canWrite={canWritePayments}
           readOnlyTitle={readOnlyTitle}
           onChanged={() => { loadDetail(); onChanged(); }}

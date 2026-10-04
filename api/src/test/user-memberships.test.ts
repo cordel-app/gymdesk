@@ -2177,15 +2177,19 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    // createUserMembershipDirect is a raw DB insert (no 'create' audit row),
-    // so created_by_name has no audit history to report -- only the
-    // modified_* fields from the PUT are exercised here.
+    // createUserMembershipDirect is a raw DB insert, so it snapshots no creation
+    // actor (#958, migration 215) -- only the modified_* fields from the PUT are
+    // exercised here.
     expect(res.body.created_by_name).toBeNull();
     expect(res.body.modified_by_name).toBe('Test User');
     expect(res.body.modified_at).not.toBeNull();
   });
 
-  it('does not include audit metadata fields on the list endpoint', async () => {
+  // #958 moved the creation actor onto the row (migration 215), so the list
+  // carries it like any other column — that is the whole point: the Member's
+  // plan cards show *Created by* without one `audit_logs` subquery per row. What
+  // stays off the list is the *modified* pair, which is still derived.
+  it('carries the stored creation actor on the list endpoint, but no derived modification metadata', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
@@ -2197,7 +2201,9 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
     expect(res.status).toBe(200);
     const row = res.body.find((r: any) => r.id === umId);
     expect(row).toBeDefined();
-    expect(row.created_by_name).toBeUndefined();
+    // A raw DB insert snapshots no actor, so the column is present and null.
+    expect(row.created_by_name).toBeNull();
+    expect(row.created_by_type).toBeNull();
     expect(row.modified_by_name).toBeUndefined();
     expect(row.modified_at).toBeUndefined();
   });
