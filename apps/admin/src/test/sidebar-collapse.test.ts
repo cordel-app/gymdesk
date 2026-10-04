@@ -31,7 +31,7 @@ const shellSrc = stripComments(readFileSync(join(COMPONENTS, 'AppShell.tsx'), 'u
 
 describe('the two widths and the preference (#1003 §1, §3, §5)', () => {
   it('keeps the expanded width and narrows to icons only', () => {
-    expect(SIDEBAR_EXPANDED_WIDTH).toBe(220);
+    expect(SIDEBAR_EXPANDED_WIDTH).toBe(250);
     expect(SIDEBAR_COLLAPSED_WIDTH).toBeLessThan(SIDEBAR_EXPANDED_WIDTH);
     expect(sidebarWidth(false)).toBe(SIDEBAR_EXPANDED_WIDTH);
     expect(sidebarWidth(true)).toBe(SIDEBAR_COLLAPSED_WIDTH);

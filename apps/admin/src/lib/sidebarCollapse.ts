@@ -17,8 +17,13 @@ import type { NavGroup, NavItem } from '@/config/navigationGroups';
  * it navigates nowhere — it expands the sidebar again and opens the group.
  */
 
-/** The sidebar's width with labels — unchanged from before #1003. */
-export const SIDEBAR_EXPANDED_WIDTH = 220;
+/**
+ * The sidebar's width with labels. 250 since #1033: at 220 the longest section
+ * headers ("NUTRITION & GOALS" beside its icon and chevron) were clipped. It is
+ * also the mobile drawer's width, and AppShell parks the closed drawer at
+ * `-SIDEBAR_EXPANDED_WIDTH`, so the two cannot drift apart.
+ */
+export const SIDEBAR_EXPANDED_WIDTH = 250;
 
 /**
  * Icons only. Wide enough for the 16px icon in its own 10px-padded button plus
