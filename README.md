@@ -139,7 +139,7 @@ Route prefixes by area:
 | Themes | `/themes` (incl. public logo), `/system/themes` |
 | Profile & team | `/me`, `/me/gym`, `/me/gyms`, `/me/link`, `/staff`, `/staff/link`, `/staff/:staffId/centers` |
 | Members & memberships | `/members`, `/membership-plans`, `/user-memberships` (incl. `/:id/promotions`, `/:id/services`, `/member/:memberId/{configuration,billing-simulation}`), `/members/:memberId/{centers,professional-services}` |
-| Catalogue | `/sellable-items`, `/taxes`, `/benefit-types`, `/charge-types`, `/professional-services`, `/result-types` |
+| Catalogue | `/products`, `/taxes`, `/benefit-types`, `/charge-types`, `/professional-services`, `/result-types` |
 | Promotions | `/promotions`, `/action-types` |
 | Calendar & booking | `/calendar-events`, `/class-sessions`, `/activity-types` (incl. `/:activityTypeId/schedule-rules`), `/bookings`, `/recurring-bookings`, `/class-packages`, `/members/:memberId/{class-packages,personal-training-slots}` |
 | Organization | `/centers`, `/spaces`, `/operating-hours`, `/trainers`, `/trainer-availability` |
