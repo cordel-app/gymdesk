@@ -100,17 +100,21 @@ export default function SystemUsersPage() {
   const columns: Column<Superadmin>[] = [
     {
       header: t('col_name'),
+      mobile: 'name',
+      title: (r) => [r.first_name, r.last_name].filter(Boolean).join(' ') || undefined,
       render: (r) => [r.first_name, r.last_name].filter(Boolean).join(' ') || '—',
     },
-    { header: t('col_email'), render: (r) => r.email ?? '—' },
+    { header: t('col_email'), mobile: 'secondary', render: (r) => r.email ?? '—' },
     {
       header: t('col_created'),
       width: 140,
+      mobile: 'secondary',
       render: (r) => (r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'),
     },
     {
       header: t('col_actions'),
       width: 140,
+      mobile: 'actions',
       render: (r) => (
         <button onClick={() => setRevoking(r)} style={btnSmall('#c0392b')}>{t('revoke')}</button>
       ),

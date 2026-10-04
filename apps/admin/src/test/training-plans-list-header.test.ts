@@ -165,9 +165,13 @@ describe('Training Plans: filters and list header (#724)', () => {
       expect(dataTableSrc, `DataTable no longer uses ${token}`).toContain(token);
       expect(pageSrc, `Training Plans no longer uses ${token}`).toContain(token);
     }
-    // The header band's colour and the row divider live in one place only.
-    expect(listChromeSrc).toMatch(/background: 'var\(--gd-app-bg, #f0f0f0\)'/);
-    expect(listChromeSrc).toMatch(/borderTop: '1px solid var\(--gd-border, #e5e7eb\)'/);
+    // The header band's colour and the row divider live in one place only —
+    // named constants since #1011, so the responsive sheet beside them reads the
+    // same values rather than respelling them.
+    expect(listChromeSrc).toMatch(/export const LIST_HEADER_BACKGROUND = 'var\(--gd-app-bg, #f0f0f0\)'/);
+    expect(listChromeSrc).toMatch(/export const LIST_DIVIDER_COLOR = 'var\(--gd-border, #e5e7eb\)'/);
+    expect(listChromeSrc).toMatch(/background: LIST_HEADER_BACKGROUND/);
+    expect(listChromeSrc).toMatch(/borderTop: `1px solid \$\{LIST_DIVIDER_COLOR\}`/);
     expect(pageSrc).not.toMatch(/background: 'var\(--gd-app-bg/);
     expect(pageSrc).not.toMatch(/var\(--gd-border/);
     // Header band and rows are one surface, as in the ticket's diagram.

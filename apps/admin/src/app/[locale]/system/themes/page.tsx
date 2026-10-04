@@ -735,6 +735,7 @@ export default function ThemesPage() {
     {
       header: t('col_color_preview'),
       width: 80,
+      mobile: 'secondary',
       render: (th) => {
         if (th.id === NEW_ID) return null;
         const c = th.tokens?.colors;
@@ -749,6 +750,8 @@ export default function ThemesPage() {
     },
     {
       header: t('col_name'),
+      mobile: 'name',
+      title: (th) => (th.id === NEW_ID ? undefined : th.name),
       render: (th) => (
         <div>
           <span style={{ fontWeight: 600 }}>{th.name}</span>
@@ -766,21 +769,25 @@ export default function ThemesPage() {
     {
       header: t('col_type'),
       width: 100,
+      mobile: 'secondary',
       render: (th) => (th.id !== NEW_ID ? <span style={badgeStyle('#4b45c6')}>{t('badge_system')}</span> : null),
     },
     {
       header: t('col_usage'),
       width: 140,
+      mobile: 'secondary',
       render: (th) => (th.id !== NEW_ID ? <span style={{ color: '#555', fontSize: 13.5 }}>{usageLabel(th)}</span> : null),
     },
     {
       header: t('col_status'),
       width: 110,
+      mobile: 'keep',
       render: (th) => (th.id !== NEW_ID ? <StatusBadge status={th.status} label={tStatus(th.status)} /> : null),
     },
     {
       header: t('col_actions'),
       width: 60,
+      mobile: 'actions',
       render: (th) => {
         if (th.id === NEW_ID) return null;
         const items = [];

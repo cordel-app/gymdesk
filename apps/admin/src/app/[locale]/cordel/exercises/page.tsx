@@ -378,21 +378,22 @@ export default function CordelExercisesPage() {
   // the same entity reads the same way on both screens.
   const columns: Column<Exercise>[] = [
     // #967 §6: the list shows the name in the application's language.
-    { header: t('col_name'), render: (row) => <strong>{row.display_name ?? row.name}</strong> },
+    { header: t('col_name'), mobile: 'name', title: (row) => row.display_name ?? row.name, render: (row) => <strong>{row.display_name ?? row.name}</strong> },
     {
       header: t('col_description'),
+      mobile: 'secondary',
       render: (row) => row.description
         ? <span style={{ color: '#666' }}>{row.description}</span>
         : <span style={{ color: 'var(--text-muted, #9ca3af)' }}>—</span>,
     },
-    { header: t('col_created_at'), width: 120, render: (row) => <span style={{ color: '#888' }}>{formatExerciseDate(row.created_at)}</span> },
+    { header: t('col_created_at'), width: 120, mobile: 'secondary', render: (row) => <span style={{ color: '#888' }}>{formatExerciseDate(row.created_at)}</span> },
     {
-      header: t('col_created_by'), width: 150,
+      header: t('col_created_by'), width: 150, mobile: 'secondary',
       render: (row) => <span style={{ color: '#555' }}>{exerciseDisplayValue(row.created_by_name)}</span>,
     },
-    { header: t('col_status'), width: 100, render: (row) => <StatusBadge status={row.status} label={tStatus(row.status)} /> },
+    { header: t('col_status'), width: 100, mobile: 'keep', render: (row) => <StatusBadge status={row.status} label={tStatus(row.status)} /> },
     {
-      header: '', width: 40,
+      header: '', width: 40, mobile: 'actions',
       render: (row) => (
         <ContextMenu items={[
           // §11: Details is the modal, not a second way to expand the row — the

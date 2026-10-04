@@ -175,7 +175,10 @@ export default function AssignedPlansPage() {
 
   const columns: Column<AssignedPlan>[] = [
     {
+      // #1011: the Member identifies the row, so it is the name cell here.
       header: t('assigned_plans_page.col_member'),
+      mobile: 'name',
+      title: (row) => row.member_name,
       render: (row) => (
         <>
           <div style={{ fontWeight: 500 }}>{row.member_name}</div>
@@ -185,10 +188,11 @@ export default function AssignedPlansPage() {
         </>
       ),
     },
-    { header: t('assigned_plans_page.col_plan'), render: (row) => <span style={{ color: '#6b7280' }}>{row.plan_name ?? '—'}</span> },
-    { header: t('assigned_plans_page.col_starts_at'), render: (row) => <span style={{ whiteSpace: 'nowrap' }}>{fmtDate(row.starts_at)}</span> },
+    { header: t('assigned_plans_page.col_plan'), mobile: 'secondary', render: (row) => <span style={{ color: '#6b7280' }}>{row.plan_name ?? '—'}</span> },
+    { header: t('assigned_plans_page.col_starts_at'), mobile: 'secondary', render: (row) => <span style={{ whiteSpace: 'nowrap' }}>{fmtDate(row.starts_at)}</span> },
     {
       header: t('assigned_plans_page.col_ends_at'),
+      mobile: 'secondary',
       render: (row) => (
         <span style={{ whiteSpace: 'nowrap' }}>
           {row.ends_at ? fmtDate(row.ends_at) : t('assigned_plans_page.open_ended')}
@@ -197,6 +201,7 @@ export default function AssignedPlansPage() {
     },
     {
       header: t('assigned_plans_page.col_status'),
+      mobile: 'keep',
       render: (row) => <StatusBadge status={row.lifecycle_status} label={t(`status.${row.lifecycle_status}`)} />,
     },
   ];

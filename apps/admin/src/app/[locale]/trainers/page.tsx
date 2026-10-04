@@ -104,10 +104,10 @@ export default function TrainersPage() {
   if (gymLoading || !isAdmin) return null;
 
   const columns: Column<Trainer>[] = [
-    { header: t('trainers.col_id'), render: (r) => r.user_id.slice(0, 12) + '…' },
-    { header: t('trainers.col_name'), render: (r) => r.name ?? '—' },
+    { header: t('trainers.col_id'), mobile: 'secondary', render: (r) => r.user_id.slice(0, 12) + '…' },
+    { header: t('trainers.col_name'), mobile: 'name', title: (r) => r.name ?? undefined, render: (r) => r.name ?? '—' },
     {
-      header: t('trainers.col_actions'), width: 180,
+      header: t('trainers.col_actions'), width: 180, mobile: 'actions',
       render: (r) => (
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => openAvailability(r)} style={btnSmall('#444')}>{t('trainers.availability')}</button>

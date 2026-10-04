@@ -2,14 +2,28 @@
 
 import React from 'react';
 import {
-  listCellStyle, listExpandedStyle, listHeaderCellStyle, listHeaderRowStyle,
-  listRowDividerStyle, listSurfaceStyle,
+  LIST_NAME_VALUE_CLASS, type ListColumnMobile, listCellClass, listCellStyle,
+  listExpandedStyle, listHeaderCellStyle, listHeaderRowStyle, listRowDividerStyle,
+  listScrollerClass, listSurfaceStyle,
 } from './listChrome';
 
 export interface Column<T> {
   header: React.ReactNode;
   width?: number | string;
   render: (row: T) => React.ReactNode;
+  /**
+   * #1011 — what this column is below the mobile breakpoint. Every column
+   * declares it: the default (`secondary`, i.e. hidden or scrolled) is what a
+   * column that says nothing gets, and the gate in
+   * `api/src/test/admin-list-mobile-columns.unit.test.ts` is what stops a new
+   * column from saying nothing by accident.
+   */
+  mobile?: ListColumnMobile;
+  /**
+   * The full value a truncated `mobile: 'name'` cell keeps in its `title`, so a
+   * name clipped on a phone is still readable. Ignored for every other column.
+   */
+  title?: (row: T) => string | undefined;
 }
 
 interface DataTableProps<T> {
@@ -37,50 +51,75 @@ export function DataTable<T>({
 
   const expandable = !!renderExpanded;
   const totalCols = columns.length + (expandable ? 1 : 0);
+  // #1011: a row that expands reads its hidden columns one tap below itself, so
+  // they are hidden on a phone; a flat row has nowhere to read them, so they
+  // stay and the block between the pinned cells scrolls instead (`Q2 scroll`).
+  const scroller = listScrollerClass(expandable ? 'collapse' : 'scroll');
 
   return (
-    <table style={tableStyle}>
-      <thead>
-        <tr style={listHeaderRowStyle}>
-          {expandable && <th style={{ ...th, width: 44 }} aria-hidden />}
-          {columns.map((col, i) => (
-            <th key={i} style={col.width !== undefined ? { ...th, width: col.width } : th}>{col.header}</th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((row) => {
-          const key = rowKey(row);
-          const isExpanded = expandable && !!expandedRowKeys?.has(key);
-          return (
-            <React.Fragment key={key}>
-              <tr style={listRowDividerStyle}>
-                {expandable && (
-                  <td style={{ ...td, textAlign: 'center' }}>
-                    <button
-                      onClick={() => onToggleExpand?.(row)}
-                      aria-label={isExpanded ? 'Collapse' : 'Expand'}
-                      aria-expanded={isExpanded}
-                      style={chevronStyle}
-                    >
-                      <span style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
-                    </button>
-                  </td>
-                )}
-                {columns.map((col, i) => (
-                  <td key={i} style={td}>{col.render(row)}</td>
-                ))}
-              </tr>
-              {isExpanded && (
-                <tr>
-                  <td colSpan={totalCols} style={expandedCell}>{renderExpanded!(row)}</td>
+    <div className={scroller}>
+      <table style={tableStyle}>
+        <thead>
+          <tr style={listHeaderRowStyle}>
+            {expandable && <th style={{ ...th, width: 44 }} aria-hidden />}
+            {columns.map((col, i) => (
+              <th
+                key={i}
+                className={listCellClass(col.mobile)}
+                style={col.width !== undefined ? { ...th, width: col.width } : th}
+              >
+                {col.header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => {
+            const key = rowKey(row);
+            const isExpanded = expandable && !!expandedRowKeys?.has(key);
+            return (
+              <React.Fragment key={key}>
+                <tr style={listRowDividerStyle}>
+                  {expandable && (
+                    <td style={{ ...td, textAlign: 'center' }}>
+                      <button
+                        onClick={() => onToggleExpand?.(row)}
+                        aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                        aria-expanded={isExpanded}
+                        style={chevronStyle}
+                      >
+                        <span style={{ display: 'inline-block', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }}>▶</span>
+                      </button>
+                    </td>
+                  )}
+                  {columns.map((col, i) => {
+                    const value = col.render(row);
+                    return (
+                      <td
+                        key={i}
+                        className={listCellClass(col.mobile)}
+                        // The full name, for the cell a phone truncates.
+                        title={col.mobile === 'name' ? col.title?.(row) : undefined}
+                        style={td}
+                      >
+                        {col.mobile === 'name'
+                          ? <div className={LIST_NAME_VALUE_CLASS}>{value}</div>
+                          : value}
+                      </td>
+                    );
+                  })}
                 </tr>
-              )}
-            </React.Fragment>
-          );
-        })}
-      </tbody>
-    </table>
+                {isExpanded && (
+                  <tr>
+                    <td colSpan={totalCols} style={expandedCell}>{renderExpanded!(row)}</td>
+                  </tr>
+                )}
+              </React.Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

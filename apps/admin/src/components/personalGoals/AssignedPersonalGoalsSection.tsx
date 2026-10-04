@@ -230,11 +230,16 @@ export function AssignedPersonalGoalsSection({
 
   const columns: Column<AssignedPersonalGoalRow>[] = [
     {
+      // #1011: the Member identifies the row; the goal itself is read in the
+      // expanded body, which is where every other hidden column is read too.
       header: label('col_member'),
+      mobile: 'name',
+      title: (row) => row.member_name,
       render: (row) => <strong>{row.member_name}</strong>,
     },
     {
       header: label('col_goal'),
+      mobile: 'secondary',
       render: (row) => (
         <span>
           {nameOfGoal(row)}
@@ -243,20 +248,23 @@ export function AssignedPersonalGoalsSection({
         </span>
       ),
     },
-    { header: label('col_target'), width: 140, render: (row) => <span style={cellStyle}>{formatTarget(row)}</span> },
+    { header: label('col_target'), width: 140, mobile: 'secondary', render: (row) => <span style={cellStyle}>{formatTarget(row)}</span> },
     {
       header: label('col_period'),
       width: 220,
+      mobile: 'secondary',
       render: (row) => <span style={cellStyle}>{formatGoalPeriod(row, locale)}</span>,
     },
     {
       header: label('col_status'),
       width: 140,
+      mobile: 'keep',
       render: (row) => <StatusBadge status={row.status} label={label(`status_${row.status}`)} />,
     },
     {
       header: '',
       width: 40,
+      mobile: 'actions',
       render: (row) => (
         <ContextMenu items={[
           { label: label('edit'), onClick: () => openInlineEdit(row), disabled: !canWrite, title: readOnlyTitle },

@@ -246,6 +246,8 @@ export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label
   const columns: Column<GoalRow>[] = [
     {
       header: label('label_name'),
+      mobile: 'name',
+      title: (goal) => nameOf(goal),
       render: (goal) => (
         <span>
           <strong>{nameOf(goal)}</strong>
@@ -257,6 +259,7 @@ export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label
     {
       header: label('col_type'),
       width: 120,
+      mobile: 'secondary',
       render: (goal) => (
         <span style={{ fontSize: 13 }}>
           {goal.gym_id === null ? label('ownership_system') : label('ownership_gym')}
@@ -266,11 +269,13 @@ export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label
     {
       header: label('col_status'),
       width: 120,
+      mobile: 'keep',
       render: (goal) => <StatusBadge status={goal.status} label={label(`status_${goal.status}`)} />,
     },
     {
       header: '',
       width: 40,
+      mobile: 'actions',
       render: (goal) => {
         // A gym may not edit or delete a System row; Cordel administers those.
         const writable = scope === 'platform' || !isSystemGoal(goal);

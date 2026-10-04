@@ -88,13 +88,13 @@ export default function ClassTypesPage() {
   if (gymLoading || !isAdmin) return null;
 
   const columns: Column<ClassType>[] = [
-    { header: t('class_types.col_name'), render: (r) => r.name },
-    { header: t('class_types.col_duration'), width: 100, render: (r) => `${r.duration_minutes} min` },
-    { header: t('class_types.col_capacity'), width: 100, render: (r) => r.max_capacity },
-    { header: t('class_types.col_intensity'), width: 100, render: (r) => r.intensity_level ?? '—' },
-    { header: t('class_types.col_status'), width: 110, render: (r) => <StatusBadge status={r.status} label={t(`status.${r.status}`)} /> },
+    { header: t('class_types.col_name'), mobile: 'name', title: (r) => r.name, render: (r) => r.name },
+    { header: t('class_types.col_duration'), width: 100, mobile: 'secondary', render: (r) => `${r.duration_minutes} min` },
+    { header: t('class_types.col_capacity'), width: 100, mobile: 'secondary', render: (r) => r.max_capacity },
+    { header: t('class_types.col_intensity'), width: 100, mobile: 'secondary', render: (r) => r.intensity_level ?? '—' },
+    { header: t('class_types.col_status'), width: 110, mobile: 'keep', render: (r) => <StatusBadge status={r.status} label={t(`status.${r.status}`)} /> },
     {
-      header: t('class_types.col_actions'), width: 180,
+      header: t('class_types.col_actions'), width: 180, mobile: 'actions',
       render: (r) => (
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => { setEditing(r); setForm({ name: r.name, description: r.description ?? '', duration_minutes: String(r.duration_minutes), intensity_level: r.intensity_level ? String(r.intensity_level) : '', max_capacity: String(r.max_capacity), status: r.status }); setError(null); setModalOpen(true); }} style={btnSmall('#444')}>{t('class_types.edit')}</button>
