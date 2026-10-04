@@ -73,7 +73,12 @@ beforeAll(async () => {
     membershipId: inactiveMembershipId, employment: 'inactive',
   });
 
-  await insertMembership(gymId, 'Dana Removed', 'trainer_perf_nutrition').then((id) =>
+  // The login role is deliberately `nutritionist` and not `trainer_perf_nutrition`:
+  // `gym_memberships.role` is VARCHAR(20) (migration 001) and migration 075 added
+  // the 22-character value to the CHECK without widening the column, so it cannot
+  // be stored at all. Which role this row carries is irrelevant to the rule under
+  // test — #986 is precisely that the role is not read.
+  await insertMembership(gymId, 'Dana Removed', 'nutritionist').then((id) =>
     insertStaff(gymId, {
       first: 'Dana', last: 'Removed', profile: 'Personal Trainer & Nutritionist',
       membershipId: id, deleted: true,
