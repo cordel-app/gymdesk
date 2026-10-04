@@ -18,11 +18,20 @@ export type MembersImages = Partial<Record<`${MemberBackgroundSlot}_url`, string
  * Path → slot. The first segment after the locale decides; everything the table
  * does not name (home, profile, notifications, packages, payment…) takes the
  * general `background` slot, which is what "General Members background" is for.
+ *
+ * `calendar` is deliberately **absent** (#984): the Calendar tile's artwork is
+ * the dashboard tile's alone, and the Calendar page falls through to the
+ * general `background` slot like any other unnamed route. A 512×512 tile image
+ * stretched to `cover` behind a dense time grid is not a page background — it
+ * reads as the tile leaking onto the page — and the Calendar's own theme
+ * settings (header, buttons, time column, modal) stay what paint that screen.
+ * So changing the tile image cannot move the page, and changing the general
+ * Members App background moves it along with every other page. The slot itself
+ * stays one of the six: `MembersSectionCard` still paints the tile with it.
  */
 const SECTION_SLOTS: Record<string, MemberBackgroundSlot> = {
   training: 'training',
   nutrition: 'nutrition',
-  calendar: 'calendar',
   // "My Bookings" is the member app's `/schedule` route.
   schedule: 'bookings',
   membership: 'membership',
