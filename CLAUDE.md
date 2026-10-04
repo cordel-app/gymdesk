@@ -6,6 +6,8 @@ Multi-tenant Gym Management SaaS. Express backend + Next.js frontend + MySQL 8 (
 
 For any issue that involves new API surface, DB schema changes, or significant UI work, write a plan first and get approval before coding. A plan should cover: migrations, API endpoints, frontend sections, tests, and doc updates. Keep it concise — bullet points per layer, not prose.
 
+**Issue type `Task` is the marker for work that needs no plan.** A GitHub issue of type **Task** (created from `.github/ISSUE_TEMPLATE/task.yml`) is a small, self-contained fix or change whose author confirmed it needs no new API surface, no migration and no significant UI, so the plan-first rule above does not apply to it. Tasks are consumed only by the `gymdesk-tasks` routine (`skills/routines/gymdesk-tasks.md`); every other issue is the `gymdesk-issues` routine's, which searches with `-type:Task`. If a Task turns out to need any of those after all, it is not implemented: comment and retype it as a normal issue. Do not mark such work with a label or a `fix:` title prefix — the type is the one signal both routines filter on.
+
 Read these files first — they contain the full context needed to implement correctly:
 
 - `docs/architecture.md` — starts with a TL;DR; full codebase structure, auth, roles, DB conventions below it
