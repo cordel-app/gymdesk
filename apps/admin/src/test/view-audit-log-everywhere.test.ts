@@ -54,7 +54,9 @@ const DETAILS_VIEWS: {
   // #965: one Details modal for both Exercise screens, scoped by the page that
   // opens it — the gym Exercises list and Cordel's Base Exercises list.
   { file: 'components/exercises/ExerciseDetailModal.tsx',                  entityType: 'exercise', root: 'src', scopeFromProp: true },
-  { file: 'financials/assigned-plans/AssignedPlanDetailsModal.tsx',       entityType: 'user_membership' },
+  // #958: one Details modal for the Assigned Plan, opened from the Assigned
+  // Plans page and from the Member card's MEMBERSHIP PLANS section.
+  { file: 'components/assignedPlan/AssignedPlanDetailsModal.tsx',          entityType: 'user_membership', root: 'src' },
   { file: 'financials/taxes/page.tsx',                                    entityType: 'tax_rate' },
   { file: 'financials/products/page.tsx',                           entityType: 'product' },
   { file: 'workout-templates/page.tsx',                                   entityType: 'workout_template' },

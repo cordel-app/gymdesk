@@ -14,7 +14,7 @@ import { join } from 'path';
 
 const SRC = join(__dirname, '..');
 const LOCALES_DIR = join(SRC, '..', 'locales', 'base');
-const ASSIGNED_PLANS_DIR = join(SRC, 'app', '[locale]', 'financials', 'assigned-plans');
+const ASSIGNED_PLANS_DIR = join(SRC, 'components', 'assignedPlan');
 const MEMBERS_DIR = join(SRC, 'app', '[locale]', 'members');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 

@@ -16,7 +16,7 @@ import { join } from 'path';
 // structure is pinned by scanning the component source and the locale files.
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
-const ASSIGNED_PLANS_DIR = join(__dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans');
+const ASSIGNED_PLANS_DIR = join(__dirname, '..', 'components', 'assignedPlan');
 const PROMOTIONS = join(ASSIGNED_PLANS_DIR, 'AssignedPlanPromotions.tsx');
 const EXPANDED_ROW = join(ASSIGNED_PLANS_DIR, 'AssignedPlanExpandedRow.tsx');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;

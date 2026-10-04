@@ -23,7 +23,7 @@ import { join } from 'path';
 
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const MEMBERS_DIR = join(__dirname, '..', 'app', '[locale]', 'members');
-const ASSIGNED_PLANS_DIR = join(__dirname, '..', 'app', '[locale]', 'financials', 'assigned-plans');
+const ASSIGNED_PLANS_DIR = join(__dirname, '..', 'components', 'assignedPlan');
 const PROMOTIONS_DIR = join(__dirname, '..', 'app', '[locale]', 'promotions');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 

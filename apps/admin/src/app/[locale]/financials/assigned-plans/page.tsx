@@ -8,7 +8,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar, FilterField, filterButtonStyle, filterControlStyle } from '@/components/FilterBar';
-import { AssignedPlanExpandedRow } from './AssignedPlanExpandedRow';
+import { AssignedPlanExpandedRow } from '@/components/assignedPlan/AssignedPlanExpandedRow';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 

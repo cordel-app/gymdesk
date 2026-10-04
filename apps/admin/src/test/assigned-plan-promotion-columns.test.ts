@@ -20,7 +20,7 @@ import { PROMOTION_ITEM_ACTIONS } from '@/lib/productBenefitActions';
 const SRC = join(__dirname, '..');
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
-const ASSIGNED_PLANS_DIR = join(SRC, 'app', '[locale]', 'financials', 'assigned-plans');
+const ASSIGNED_PLANS_DIR = join(SRC, 'components', 'assignedPlan');
 
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');

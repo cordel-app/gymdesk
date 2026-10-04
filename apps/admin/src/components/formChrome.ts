@@ -286,3 +286,25 @@ export const cardTextLinkStyle: React.CSSProperties = {
   padding: 0,
   textDecoration: 'underline',
 };
+
+/**
+ * The affordance that expands a card in place — a borderless button carrying a
+ * `▸`/`▾` caret and its own label, inheriting the surrounding type and colour so
+ * expanding never reads as a second action beside the card's own.
+ *
+ * #958: two cards wear it now — an applied Promotion inside the Assigned Plan
+ * card, and an Assigned Membership Plan inside the Member card — so it is
+ * declared here rather than twice in two pages (#929). It is deliberately not
+ * `cardTextLinkStyle`: a link navigates, and this reveals what is already on the
+ * card.
+ */
+export const cardExpandToggleStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 6, background: 'none',
+  border: 'none', padding: 0, textAlign: 'left', color: 'inherit',
+  cursor: 'pointer', font: 'inherit',
+};
+
+/** The caret inside {@link cardExpandToggleStyle}. */
+export const cardExpandCaretStyle: React.CSSProperties = {
+  color: '#888', fontSize: 11,
+};
