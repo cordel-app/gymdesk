@@ -34,7 +34,7 @@ import {
 } from '../domain/mandatoryPlanBenefits';
 
 const require = createRequire(__filename);
-const migration = require('../infra/migrations/203_product_benefit_actions.js') as {
+const migration = require('../infra/migrations/203_sellable_item_benefit_actions.js') as {
   PROMOTION_ACTIONS: string[];
   PLAN_ACTIONS: string[];
   PROMOTION_TABLES: string[];

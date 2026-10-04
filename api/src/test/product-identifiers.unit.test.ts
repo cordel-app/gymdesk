@@ -96,7 +96,16 @@ function sources(root: string): string[] {
   return out;
 }
 
-const says = (text: string) => RETIRED.some((re) => re.test(text));
+/**
+ * A migration's own **file name** is history and is never renamed — the schema
+ * really did carry those names, and `require()`ing one by a different name
+ * would simply fail. So a line naming a migration file is read with that name
+ * taken out of it rather than exempting the whole file, which is what keeps the
+ * rest of a test like `product-benefit-actions.unit.test.ts` under the ban.
+ */
+const MIGRATION_FILE = /infra\/migrations\/\d+_[a-z0-9_]+\.js/g;
+
+const says = (text: string) => RETIRED.some((re) => re.test(text.replace(MIGRATION_FILE, '')));
 
 const offenders = (file: string): string[] => {
   const at = relative(REPO, file);
@@ -108,7 +117,7 @@ const offenders = (file: string): string[] => {
     .map(([line, n]) => `${at}:${n}: ${line.trim()}`);
 };
 
-describe('the retired identifier is gone from the code (#949 stage 2)', () => {
+describe('the retired identifier is gone from the code, the wire and the schema (#949)', () => {
   const files = ROOTS.flatMap(sources);
 
   it('reads the trees it claims to check', () => {
@@ -182,6 +191,8 @@ describe('the retired identifier is gone from the code (#949 stage 2)', () => {
       "requireFeatureEnabled('financials.products')",
       "permanentRedirect(`/${locale}/financials/products`)",
       '// `financials/gym-charges` is kept for the name before that',
+      "require('../infra/migrations/203_sellable_item_benefit_actions.js')",
+      "createRequire(__filename)('../infra/migrations/153_sellable_item_professional_services.js')",
       "for (const junk of ['plan', 'products', 'MEMBERSHIP_PLAN'])",
     ]) {
       expect(says(kept), `false positive on ${kept}`).toBe(false);
