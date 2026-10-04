@@ -69,9 +69,9 @@ describe('#959 — the option set', () => {
 describe('#959 — what a replace-all PUT does with one line', () => {
   it('keeps the stored value when the request names none', () => {
     // The load-bearing case: the three section `PUT`s are replace-all, so a
-    // client that sends `gym_charge_id` + `quantity` alone — anything written
+    // client that sends `product_id` + `quantity` alone — anything written
     // before this ticket — must not reset an optional item to mandatory.
-    expect(parsePromotionItemRequirementInput({ gym_charge_id: 1, quantity: 2 }))
+    expect(parsePromotionItemRequirementInput({ product_id: 1, quantity: 2 }))
       .toEqual({ keep: true });
     expect(parsePromotionItemRequirementInput({ requirement: undefined })).toEqual({ keep: true });
     expect(parsePromotionItemRequirementInput(null)).toEqual({ keep: true });

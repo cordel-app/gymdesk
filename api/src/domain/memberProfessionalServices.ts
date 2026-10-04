@@ -15,7 +15,7 @@ import { db } from '../infra/db';
  *   > will have 14 sessions of personal training
  *
  * Three sources hold session-type Products today, and each resolves to
- * Professional Services through `sellable_item_professional_services` (#546,
+ * Professional Services through `product_professional_services` (#546,
  * migration 153):
  *
  *   1. `user_class_packages` — a purchased package. `sessions_remaining` is
@@ -54,16 +54,16 @@ export interface ProfessionalServiceGrantRow {
   kind: ProfessionalServiceGrantKind;
   /** Row id of the granting record — `user_class_packages.id`, `user_membership_promotions.id`, `user_membership_services.id`. */
   reference_id: number;
-  sellable_item_id: number;
-  sellable_item_name: string;
+  product_id: number;
+  product_name: string;
   sessions: number | string;
 }
 
 export interface ProfessionalServiceGrant {
   kind: ProfessionalServiceGrantKind;
   reference_id: number;
-  sellable_item_id: number;
-  sellable_item_name: string;
+  product_id: number;
+  product_name: string;
   sessions: number;
 }
 
@@ -81,9 +81,9 @@ export interface MemberProfessionalService {
  * Pure — the SQL lives in `loadMemberProfessionalServiceGrants` below, so the
  * counting rules are unit-testable without a database.
  *
- * A grant is identified by (kind, reference_id, sellable_item_id) and counted
+ * A grant is identified by (kind, reference_id, product_id) and counted
  * once per Professional Service. The de-duplication is what makes the result
- * independent of JOIN fan-out: two `gym_charges` rows tracing back to the same
+ * independent of JOIN fan-out: two `products` rows tracing back to the same
  * `class_packages` row, or a grant row returned twice by a widening join, must
  * not double the Member's session count.
  *
@@ -101,7 +101,7 @@ export function aggregateProfessionalServiceGrants(
     const sessions = Number(row.sessions);
     if (!Number.isFinite(sessions) || sessions <= 0) continue;
 
-    const key = `${row.professional_service_id}:${row.kind}:${row.reference_id}:${row.sellable_item_id}`;
+    const key = `${row.professional_service_id}:${row.kind}:${row.reference_id}:${row.product_id}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
@@ -119,8 +119,8 @@ export function aggregateProfessionalServiceGrants(
     entry.sources.push({
       kind: row.kind,
       reference_id: row.reference_id,
-      sellable_item_id: row.sellable_item_id,
-      sellable_item_name: row.sellable_item_name,
+      product_id: row.product_id,
+      product_name: row.product_name,
       sessions,
     });
   }
@@ -137,7 +137,7 @@ export function aggregateProfessionalServiceGrants(
  * `validateProfessionalServiceId()` in `professionalServices.ts`: a service
  * the gym has switched off must not make a slot eligible.
  *
- * `gym_charges` is not filtered on `deleted_at` — a package stays spendable
+ * `products` is not filtered on `deleted_at` — a package stays spendable
  * after the catalogue item behind it is retired, the same rule
  * `billing-simulation.ts` applies to granted items.
  */
@@ -146,7 +146,7 @@ export async function loadMemberProfessionalServiceGrants(
   memberId: number,
 ): Promise<ProfessionalServiceGrantRow[]> {
   // Resolving the Product behind a purchased package through
-  // MIN(gc.id) rather than a plain join: `gym_charges.class_package_id` (the
+  // MIN(gc.id) rather than a plain join: `products.class_package_id` (the
   // traceability FK added by migration 103) carries no uniqueness
   // constraint, so a join could return the same package once per
   // duplicated catalogue row.
@@ -155,15 +155,15 @@ export async function loadMemberProfessionalServiceGrants(
             ps.name         AS professional_service_name,
             'class_package' AS kind,
             ucp.id          AS reference_id,
-            gc.id           AS sellable_item_id,
-            gc.name         AS sellable_item_name,
+            gc.id           AS product_id,
+            gc.name         AS product_name,
             ucp.sessions_remaining AS sessions
      FROM user_class_packages ucp
-     JOIN gym_charges gc
-       ON gc.id = (SELECT MIN(gc2.id) FROM gym_charges gc2
+     JOIN products gc
+       ON gc.id = (SELECT MIN(gc2.id) FROM products gc2
                    WHERE gc2.class_package_id = ucp.class_package_id AND gc2.gym_id = ucp.gym_id)
-     JOIN sellable_item_professional_services sips
-       ON sips.sellable_item_id = gc.id AND sips.gym_id = ucp.gym_id
+     JOIN product_professional_services sips
+       ON sips.product_id = gc.id AND sips.gym_id = ucp.gym_id
      JOIN professional_services ps
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps
@@ -182,17 +182,17 @@ export async function loadMemberProfessionalServiceGrants(
             ps.name             AS professional_service_name,
             'promotion_session' AS kind,
             ump.id              AS reference_id,
-            gc.id               AS sellable_item_id,
-            gc.name             AS sellable_item_name,
+            gc.id               AS product_id,
+            gc.name             AS product_name,
             psn.quantity        AS sessions
      FROM user_memberships um
      JOIN user_membership_promotions ump
        ON ump.user_membership_id = um.id AND ump.gym_id = um.gym_id AND ump.status = 'applied'
      JOIN promotion_session psn
        ON psn.promotion_id = ump.promotion_id AND psn.gym_id = um.gym_id
-     JOIN gym_charges gc ON gc.id = psn.gym_charge_id
-     JOIN sellable_item_professional_services sips
-       ON sips.sellable_item_id = gc.id AND sips.gym_id = um.gym_id
+     JOIN products gc ON gc.id = psn.product_id
+     JOIN product_professional_services sips
+       ON sips.product_id = gc.id AND sips.gym_id = um.gym_id
      JOIN professional_services ps
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps
@@ -201,7 +201,7 @@ export async function loadMemberProfessionalServiceGrants(
     [gymId, memberId],
   );
 
-  // `gym_charges.units` is the number of sessions a Session item bundles
+  // `products.units` is the number of sessions a Session item bundles
   // (migration 103 copies `class_packages.number_of_sessions` into it), so an
   // attachment of quantity 2 of a 10-session item is 20 sessions.
   const { rows: serviceRows } = await db.query<ProfessionalServiceGrantRow>(
@@ -209,15 +209,15 @@ export async function loadMemberProfessionalServiceGrants(
             ps.name               AS professional_service_name,
             'membership_service'  AS kind,
             umsv.id               AS reference_id,
-            gc.id                 AS sellable_item_id,
-            gc.name               AS sellable_item_name,
+            gc.id                 AS product_id,
+            gc.name               AS product_name,
             umsv.quantity * COALESCE(gc.units, 1) AS sessions
      FROM user_memberships um
      JOIN user_membership_services umsv
        ON umsv.user_membership_id = um.id AND umsv.gym_id = um.gym_id
-     JOIN gym_charges gc ON gc.id = umsv.gym_charge_id AND gc.type = 'sessions'
-     JOIN sellable_item_professional_services sips
-       ON sips.sellable_item_id = gc.id AND sips.gym_id = um.gym_id
+     JOIN products gc ON gc.id = umsv.product_id AND gc.type = 'sessions'
+     JOIN product_professional_services sips
+       ON sips.product_id = gc.id AND sips.gym_id = um.gym_id
      JOIN professional_services ps
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps

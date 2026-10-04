@@ -237,7 +237,7 @@ promotionDetailsRouter.put('/membership-fee-benefit', requireRole('admin'), asyn
 /* ---------- session / one-off / periodical benefits (#550 stage 3) ---------- */
 // Replaces the "quantity granted" half of the legacy Period/Included Benefits
 // (one-time-grant shape, same as the old Included Benefits) with three tables
-// keyed to a real Product (`gym_charges`, migration 155) instead of the
+// keyed to a real Product (`products`, migration 155) instead of the
 // old `charge_types` pseudo-catalog, split by `classifyProduct()` into
 // Session / One-off / Periodical. The legacy `/period-benefits` (excluding
 // Membership Fee, #551) and `/included-benefits` endpoints were retired in
@@ -254,15 +254,15 @@ function selectProductBenefits(table: string): string {
   // the active catalogue, since a Promotion may still carry (and still grant) an
   // item that has since been deactivated — the same reason #915 joins them on
   // the Plan side.
-  return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,
-                 gc.billing_frequency AS gym_charge_billing_frequency, gc.status AS gym_charge_status,
-                 gc.amount AS gym_charge_amount, gc.tax_behavior AS gym_charge_tax_behavior,
-                 tr.rate_percent AS gym_charge_tax_rate_percent
+  return `SELECT b.*, gc.name AS product_name, gc.type AS product_type,
+                 gc.billing_frequency AS product_billing_frequency, gc.status AS product_status,
+                 gc.amount AS product_amount, gc.tax_behavior AS product_tax_behavior,
+                 tr.rate_percent AS product_tax_rate_percent
           FROM ${table} b
-          JOIN gym_charges gc ON gc.id = b.gym_charge_id
+          JOIN products gc ON gc.id = b.product_id
           LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
           WHERE b.promotion_id = ? AND b.gym_id = ?
-          ORDER BY gym_charge_name ASC`;
+          ORDER BY product_name ASC`;
 }
 
 /**
@@ -271,19 +271,19 @@ function selectProductBenefits(table: string): string {
  * the three price columns the VAT-inclusive gross-up needs.
  */
 interface PromotionBenefitRow {
-  gym_charge_id: number;
+  product_id: number;
   quantity: number;
   action: string | null;
   value: string | number | null;
   /** #959 — whether the member may decline this item when the Promotion is assigned. */
   requirement: string | null;
-  gym_charge_name: string;
-  gym_charge_type: string;
-  gym_charge_billing_frequency: string | null;
-  gym_charge_status: string;
-  gym_charge_amount: string | null;
-  gym_charge_tax_behavior: string | null;
-  gym_charge_tax_rate_percent: string | null;
+  product_name: string;
+  product_type: string;
+  product_billing_frequency: string | null;
+  product_status: string;
+  product_amount: string | null;
+  product_tax_behavior: string | null;
+  product_tax_rate_percent: string | null;
 }
 
 /**
@@ -339,9 +339,9 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
     if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
     if (!(await verifyPromotion(gymId, promotionId))) return res.status(404).json({ error: 'Promotion not found' });
 
-    const gymChargeIds: number[] = [];
+    const productIds: number[] = [];
     const submitted: {
-      gym_charge_id: number;
+      product_id: number;
       quantity: number;
       benefit: ProductBenefit | null;
       /** #959: absent means the request named none, which is *keep what is stored*. */
@@ -349,16 +349,16 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
     }[] = [];
     const seen = new Set<number>();
     for (const item of items) {
-      const gymChargeId = parseInt(item.gym_charge_id, 10);
+      const productId = parseInt(item.product_id, 10);
       const quantity = parseInt(item.quantity, 10);
-      if (!Number.isInteger(gymChargeId) || gymChargeId <= 0) {
-        return res.status(400).json({ error: 'gym_charge_id is required' });
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({ error: 'product_id is required' });
       }
       if (!Number.isInteger(quantity) || quantity <= 0) {
         return res.status(400).json({ error: 'quantity must be a positive integer' });
       }
-      if (seen.has(gymChargeId)) {
-        return res.status(400).json({ error: `Duplicate gym_charge_id: ${gymChargeId}` });
+      if (seen.has(productId)) {
+        return res.status(400).json({ error: `Duplicate product_id: ${productId}` });
       }
       // #896 stage 2 §6 — the line's own pricing treatment. A Promotion may
       // configure all five actions; the CHECK beside the table is the backstop,
@@ -371,15 +371,15 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
       // either one. The CHECK beside the table is the backstop.
       const requirement = parsePromotionItemRequirementInput(item);
       if (requirement.error) return res.status(400).json({ error: requirement.error });
-      seen.add(gymChargeId);
-      gymChargeIds.push(gymChargeId);
+      seen.add(productId);
+      productIds.push(productId);
       submitted.push({
-        gym_charge_id: gymChargeId, quantity, benefit: parsed.benefit,
+        product_id: productId, quantity, benefit: parsed.benefit,
         ...(requirement.keep ? {} : { requirement: requirement.requirement }),
       });
     }
 
-    if (gymChargeIds.length > 0) {
+    if (productIds.length > 0) {
       // Only *newly* selected items must be active — an item already
       // associated with this promotion stays selectable even if it has since
       // gone inactive elsewhere, so existing selections remain visible/
@@ -388,18 +388,18 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
       // they are now inactive"). Mirrors the Suitable Membership Plans PUT
       // pattern above (`/plans`).
       const { rows: existingAssoc } = await db.query(
-        `SELECT gym_charge_id FROM ${table} WHERE promotion_id = ? AND gym_id = ?`,
+        `SELECT product_id FROM ${table} WHERE promotion_id = ? AND gym_id = ?`,
         [promotionId, gymId],
       );
-      const existingIds = new Set<number>(existingAssoc.map((r: any) => r.gym_charge_id));
+      const existingIds = new Set<number>(existingAssoc.map((r: any) => r.product_id));
 
-      const placeholders = gymChargeIds.map(() => '?').join(',');
+      const placeholders = productIds.map(() => '?').join(',');
       const { rows: products } = await db.query(
-        `SELECT id, type, billing_frequency, status FROM gym_charges
+        `SELECT id, type, billing_frequency, status FROM products
          WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
-        [gymId, ...gymChargeIds],
+        [gymId, ...productIds],
       );
-      if (products.length !== gymChargeIds.length) {
+      if (products.length !== productIds.length) {
         return res.status(400).json({ error: 'One or more Products not found in this gym' });
       }
       const newlyInactive = products.find((si: any) => si.status !== 'active' && !existingIds.has(si.id));
@@ -421,33 +421,33 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
         // meant; rewriting them to the neutral default here would, at stage 3,
         // start charging for an item the Promotion gives away.
         const { rows: stored } = await tx.query(
-          `SELECT gym_charge_id, \`action\`, \`value\`, requirement FROM ${table}
+          `SELECT product_id, \`action\`, \`value\`, requirement FROM ${table}
             WHERE promotion_id = ? AND gym_id = ? FOR UPDATE`,
           [promotionId, gymId],
         );
         const kept = new Map<number, ProductBenefit>(
-          stored.map((r: any) => [Number(r.gym_charge_id), shapeProductBenefitRow('promotion', r)]),
+          stored.map((r: any) => [Number(r.product_id), shapeProductBenefitRow('promotion', r)]),
         );
         // #959: and the Requirement it is stored with, for the same replace-all
         // reason — a quantity-only save must not reset an item the gym made
         // optional back to mandatory.
         const keptRequirement = new Map<number, PromotionItemRequirement>(
           stored.map((r: any) => [
-            Number(r.gym_charge_id), toPromotionItemRequirement(r.requirement),
+            Number(r.product_id), toPromotionItemRequirement(r.requirement),
           ]),
         );
         await tx.query(`DELETE FROM ${table} WHERE promotion_id = ? AND gym_id = ?`, [promotionId, gymId]);
         for (const item of submitted) {
-          const benefit = item.benefit ?? kept.get(item.gym_charge_id) ?? NO_PRODUCT_BENEFIT;
+          const benefit = item.benefit ?? kept.get(item.product_id) ?? NO_PRODUCT_BENEFIT;
           const requirement = item.requirement
-            ?? keptRequirement.get(item.gym_charge_id)
+            ?? keptRequirement.get(item.product_id)
             ?? DEFAULT_PROMOTION_ITEM_REQUIREMENT;
           await tx.query(
             `INSERT INTO ${table}
-               (gym_id, promotion_id, gym_charge_id, quantity, \`action\`, \`value\`,
+               (gym_id, promotion_id, product_id, quantity, \`action\`, \`value\`,
                 requirement, created_by_membership_id)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-            [gymId, promotionId, item.gym_charge_id, item.quantity,
+            [gymId, promotionId, item.product_id, item.quantity,
              benefit.action, benefit.value, requirement, gymMembershipId ?? null],
           );
         }
@@ -506,12 +506,12 @@ promotionDetailsRouter.get('/billing-event-simulation', async (req, res, next) =
         // and is the same answer the Plan's own simulation gives (#915).
         if (gross == null) continue;
         grants.push({
-          gymChargeId: Number(row.gym_charge_id),
-          name: row.gym_charge_name,
+          productId: Number(row.product_id),
+          name: row.product_name,
           // The section the row is stored in, never a re-classification: #550's
           // `classifyProduct()` is what put it there.
           category,
-          billingFrequency: (row.gym_charge_billing_frequency as ProductFrequency | null) ?? null,
+          billingFrequency: (row.product_billing_frequency as ProductFrequency | null) ?? null,
           unitPriceInclTax: gross,
           quantity: Number(row.quantity) || 1,
           benefit: toProductBenefit('promotion', row.action, row.value),

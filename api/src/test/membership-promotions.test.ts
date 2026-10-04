@@ -29,15 +29,6 @@ async function getChargeTypeId(code: string): Promise<number> {
   return rows[0].id;
 }
 
-async function createGymCharge(gymId: string, chargeTypeId: number): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO gym_charges (gym_id, charge_type_id, amount, currency, billing_frequency, availability)
-     VALUES (?, ?, 0, 'EUR', 'month', 'available')`,
-    [gymId, chargeTypeId],
-  );
-  return insertId;
-}
-
 async function createPlan(gymId: string, name: string): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, ?, 'active', 'staff_only')`,

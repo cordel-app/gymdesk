@@ -65,7 +65,7 @@ async function createProduct(gymId: string, opts: {
 } = {}): Promise<number> {
   const { type = 'service', billingFrequency = 'month', amount = 20, status = 'active' } = opts;
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
      VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'available', 0)`,
     [gymId, `APSE-Item-${uniq()}`, type, amount, billingFrequency, status],
@@ -75,7 +75,7 @@ async function createProduct(gymId: string, opts: {
 
 async function addPlanBenefit(gymId: string, table: string, planId: number, chargeId: number, quantity = 1) {
   await db.query(
-    `INSERT INTO ${table} (gym_id, membership_plan_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)`,
+    `INSERT INTO ${table} (gym_id, membership_plan_id, product_id, quantity) VALUES (?, ?, ?, ?)`,
     [gymId, planId, chargeId, quantity],
   );
 }
@@ -210,27 +210,27 @@ describe('PUT /user-memberships/:id/{session,oneoff,periodical}-benefits', () =>
   it('replaces a section on the assignment, freezing a newly added line’s price', async () => {
     const added = await createProduct(gymId, { amount: 35, billingFrequency: 'year' });
     const res = await putBenefits(gymId, umId, 'periodical-benefits', [
-      { gym_charge_id: periodicalItem, quantity: 3 },
-      { gym_charge_id: added, quantity: 1 },
+      { product_id: periodicalItem, quantity: 3 },
+      { product_id: added, quantity: 1 },
     ]);
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(2);
-    const byItem = Object.fromEntries(res.body.map((r: any) => [r.gym_charge_id, r]));
+    const byItem = Object.fromEntries(res.body.map((r: any) => [r.product_id, r]));
     expect(byItem[periodicalItem]).toMatchObject({ quantity: 3, unit_price: 20 });
     expect(byItem[added]).toMatchObject({ quantity: 1, unit_price: 35, item_billing_frequency: 'year', currency: 'EUR' });
 
     // The Plan's own section is untouched (§15).
     const { rows } = await db.query(
-      'SELECT gym_charge_id, quantity FROM membership_plan_periodical WHERE membership_plan_id = ?', [planId],
+      'SELECT product_id, quantity FROM membership_plan_periodical WHERE membership_plan_id = ?', [planId],
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ gym_charge_id: periodicalItem, quantity: 1 });
+    expect(rows[0]).toMatchObject({ product_id: periodicalItem, quantity: 1 });
   });
 
   it('keeps a kept line at the price it was agreed at when the catalogue moves (§17)', async () => {
-    await db.query('UPDATE gym_charges SET amount = 999 WHERE id = ?', [periodicalItem]);
+    await db.query('UPDATE products SET amount = 999 WHERE id = ?', [periodicalItem]);
     const res = await putBenefits(gymId, umId, 'periodical-benefits', [
-      { gym_charge_id: periodicalItem, quantity: 5 },
+      { product_id: periodicalItem, quantity: 5 },
     ]);
     expect(res.status).toBe(200);
     expect(res.body).toHaveLength(1);
@@ -238,19 +238,19 @@ describe('PUT /user-memberships/:id/{session,oneoff,periodical}-benefits', () =>
   });
 
   it('keeps a line whose Product was since retired saveable', async () => {
-    await db.query('UPDATE gym_charges SET status = ? WHERE id = ?', ['inactive', periodicalItem]);
+    await db.query('UPDATE products SET status = ? WHERE id = ?', ['inactive', periodicalItem]);
     const res = await putBenefits(gymId, umId, 'periodical-benefits', [
-      { gym_charge_id: periodicalItem, quantity: 2 },
+      { product_id: periodicalItem, quantity: 2 },
     ]);
     expect(res.status).toBe(200);
     expect(res.body[0]).toMatchObject({ quantity: 2, unit_price: 20 });
-    await db.query('UPDATE gym_charges SET status = ?, amount = 20 WHERE id = ?', ['active', periodicalItem]);
+    await db.query('UPDATE products SET status = ?, amount = 20 WHERE id = ?', ['active', periodicalItem]);
   });
 
   it('serves the same section on its own GET', async () => {
     const res = await getBenefits(gymId, umId, 'periodical-benefits');
     expect(res.status).toBe(200);
-    expect(res.body.map((r: any) => r.gym_charge_id)).toEqual([periodicalItem]);
+    expect(res.body.map((r: any) => r.product_id)).toEqual([periodicalItem]);
   });
 
   it('empties a section when sent no items', async () => {
@@ -264,16 +264,16 @@ describe('PUT /user-memberships/:id/{session,oneoff,periodical}-benefits', () =>
     const inactive = await createProduct(gymId, { status: 'inactive' });
 
     expect((await putBenefits(gymId, umId, 'periodical-benefits', [
-      { gym_charge_id: sessionItem, quantity: 1 },
+      { product_id: sessionItem, quantity: 1 },
     ])).status).toBe(400);
     expect((await putBenefits(gymId, umId, 'periodical-benefits', [
-      { gym_charge_id: inactive, quantity: 1 },
+      { product_id: inactive, quantity: 1 },
     ])).status).toBe(400);
     expect((await putBenefits(gymId, umId, 'session-benefits', [
-      { gym_charge_id: sessionItem, quantity: 0 },
+      { product_id: sessionItem, quantity: 0 },
     ])).status).toBe(400);
     expect((await putBenefits(gymId, umId, 'session-benefits', [
-      { gym_charge_id: sessionItem, quantity: 1 }, { gym_charge_id: sessionItem, quantity: 2 },
+      { product_id: sessionItem, quantity: 1 }, { product_id: sessionItem, quantity: 2 },
     ])).status).toBe(400);
     expect((await request
       .put(`/user-memberships/${umId}/session-benefits`)
@@ -331,7 +331,7 @@ describe('editing an assignment that predates the snapshot', () => {
 
   it('captures what it resolves live before applying the first edit', async () => {
     const res = await putBenefits(gymId, umId, 'periodical-benefits', [
-      { gym_charge_id: periodicalItem, quantity: 4 },
+      { product_id: periodicalItem, quantity: 4 },
     ]);
     expect(res.status).toBe(200);
 
@@ -342,7 +342,7 @@ describe('editing an assignment that predates the snapshot', () => {
     // …and the sections the edit never mentioned were written down rather than
     // silently lost with the live fallback.
     expect(after.body.snapshot.session_benefits).toHaveLength(1);
-    expect(after.body.snapshot.session_benefits[0]).toMatchObject({ gym_charge_id: sessionItem, quantity: 10, unit_price: 30 });
+    expect(after.body.snapshot.session_benefits[0]).toMatchObject({ product_id: sessionItem, quantity: 10, unit_price: 30 });
     expect(after.body.snapshot).toMatchObject({
       free_periods: 1, paid_periods: 12, bonus_periods: 2,
       recurring_billing_interval: 1, recurring_billing_unit: 'month',
@@ -425,7 +425,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
   it("refuses an item that belongs to another gym", async () => {
     const otherGymItem = await createProduct(gymB);
     const res = await putBenefits(gymA, umId, 'periodical-benefits', [
-      { gym_charge_id: otherGymItem, quantity: 1 },
+      { product_id: otherGymItem, quantity: 1 },
     ]);
     expect(res.status).toBe(400);
   });
@@ -487,7 +487,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
     );
     await db.query(
       `INSERT INTO user_membership_periodical
-         (gym_id, user_membership_id, gym_charge_id, quantity, item_name, item_type,
+         (gym_id, user_membership_id, product_id, quantity, item_name, item_type,
           item_billing_frequency, unit_price, currency)
        VALUES (?, ?, ?, 1, 'APSE Item', 'service', 'month', 20, 'EUR')`,
       [gym, insertId, item],

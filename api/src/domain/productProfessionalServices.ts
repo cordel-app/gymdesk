@@ -2,7 +2,7 @@ import { db, Tx } from '../infra/db';
 
 /**
  * #546: links Session-type ('type' = 'sessions') Products to one or
- * more Professional Services (#484) via the `sellable_item_professional_services`
+ * more Professional Services (#484) via the `product_professional_services`
  * join table (migration 153). Many-to-many: a session package may bundle
  * sessions delivered by different Professional Services. Mirrors the shape
  * of `nutritionLibrary.ts`'s category/quality helpers (#501).
@@ -14,24 +14,24 @@ export interface LinkedProfessionalService {
   is_system: number;
 }
 
-/** Return linked Professional Services for a set of product IDs, as a map: sellable_item_id -> [{id, name, is_system}]. */
+/** Return linked Professional Services for a set of product IDs, as a map: product_id -> [{id, name, is_system}]. */
 export async function loadProfessionalServicesMap(
   productIds: number[],
 ): Promise<Record<number, LinkedProfessionalService[]>> {
   if (productIds.length === 0) return {};
   const marks = productIds.map(() => '?').join(',');
-  const { rows } = await db.query<{ sellable_item_id: number; id: number; name: string; is_system: number }>(
-    `SELECT sips.sellable_item_id, ps.id, ps.name, ps.is_system
-     FROM sellable_item_professional_services sips
+  const { rows } = await db.query<{ product_id: number; id: number; name: string; is_system: number }>(
+    `SELECT sips.product_id, ps.id, ps.name, ps.is_system
+     FROM product_professional_services sips
      JOIN professional_services ps ON ps.id = sips.professional_service_id
-     WHERE sips.sellable_item_id IN (${marks}) AND ps.deleted_at IS NULL
+     WHERE sips.product_id IN (${marks}) AND ps.deleted_at IS NULL
      ORDER BY ps.is_system DESC, ps.name ASC`,
     productIds,
   );
   const map: Record<number, LinkedProfessionalService[]> = {};
   for (const row of rows) {
-    if (!map[row.sellable_item_id]) map[row.sellable_item_id] = [];
-    map[row.sellable_item_id].push({ id: row.id, name: row.name, is_system: row.is_system });
+    if (!map[row.product_id]) map[row.product_id] = [];
+    map[row.product_id].push({ id: row.id, name: row.name, is_system: row.is_system });
   }
   return map;
 }
@@ -77,12 +77,12 @@ export async function replaceProfessionalServices(
   professionalServiceIds: number[],
   createdByMembershipId: number | null,
 ): Promise<void> {
-  await tx.query('DELETE FROM sellable_item_professional_services WHERE sellable_item_id = ?', [productId]);
+  await tx.query('DELETE FROM product_professional_services WHERE product_id = ?', [productId]);
   const uniqueIds = Array.from(new Set(professionalServiceIds));
   for (const psId of uniqueIds) {
     await tx.query(
-      `INSERT INTO sellable_item_professional_services
-         (gym_id, sellable_item_id, professional_service_id, created_by_membership_id)
+      `INSERT INTO product_professional_services
+         (gym_id, product_id, professional_service_id, created_by_membership_id)
        VALUES (?, ?, ?, ?)`,
       [gymId, productId, psId, createdByMembershipId],
     );

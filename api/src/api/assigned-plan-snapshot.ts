@@ -54,7 +54,7 @@ import type {
  */
 
 /**
- * `gym_charges.name` and `.type` are nullable — a system charge displays under
+ * `products.name` and `.type` are nullable — a system charge displays under
  * its `charge_types` name — while the snapshot columns are NOT NULL. Copying
  * them raw would 500 the assignment for any Plan carrying such an item, so
  * both are resolved here and in migration 174's backfill with the identical
@@ -82,7 +82,7 @@ export const BENEFIT_TABLE_BY_CATEGORY: Record<ProductBenefitCategory, string> =
 export interface AssignedPlanBenefitRow extends PlanBenefitPrices {
   id: number;
   user_membership_id: number;
-  gym_charge_id: number;
+  product_id: number;
   quantity: number;
   item_name: string;
   item_type: string;
@@ -156,13 +156,13 @@ const CATEGORIES: ProductBenefitCategory[] = ['session', 'oneoff', 'periodical']
  * live (LEFT JOIN: an item deleted since leaves the frozen amount as the honest
  * gross, exactly as `grossBenefitUnitPrice()` falls back for a gym with no rate
  * configured). The frozen *price* is still the frozen price — nothing here
- * reaches for `gym_charges.amount`.
+ * reaches for `products.amount`.
  */
 function selectSnapshotSection(table: string): string {
-  return `SELECT b.*, gc.tax_behavior AS gym_charge_tax_behavior,
-                 tr.rate_percent AS gym_charge_tax_rate_percent
+  return `SELECT b.*, gc.tax_behavior AS product_tax_behavior,
+                 tr.rate_percent AS product_tax_rate_percent
           FROM ${table} b
-          LEFT JOIN gym_charges gc ON gc.id = b.gym_charge_id AND gc.gym_id = b.gym_id
+          LEFT JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
           LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
           WHERE b.user_membership_id = ? AND b.gym_id = ?
           ORDER BY b.item_name ASC, b.id ASC`;
@@ -176,7 +176,7 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
   return {
     id: row.id,
     user_membership_id: row.user_membership_id,
-    gym_charge_id: row.gym_charge_id,
+    product_id: row.product_id,
     quantity: Number(row.quantity),
     item_name: row.item_name,
     item_type: row.item_type,
@@ -196,13 +196,13 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
      * `applyLineBenefit()`.
      */
     ...productBenefitPrices('plan', {
-      gym_charge_id: row.gym_charge_id,
+      product_id: row.product_id,
       quantity: row.quantity,
       action: benefit.action,
       value: benefit.value,
-      gym_charge_amount: row.unit_price,
-      gym_charge_tax_behavior: row.gym_charge_tax_behavior,
-      gym_charge_tax_rate_percent: row.gym_charge_tax_rate_percent,
+      product_amount: row.unit_price,
+      product_tax_behavior: row.product_tax_behavior,
+      product_tax_rate_percent: row.product_tax_rate_percent,
     }),
   };
 }
@@ -223,7 +223,7 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
  * Benefit rows carry the Product's price as it is now: the item itself
  * may be repriced, renamed or retired later without touching what was agreed
  * (§17). `INSERT ... SELECT` keeps each section a single statement, and
- * `gym_charges` is not filtered on `deleted_at` — an item already attached to
+ * `products` is not filtered on `deleted_at` — an item already attached to
  * the Plan is part of the agreement even if it is retired in the same breath.
  */
 export async function snapshotAssignedPlan(tx: Tx, params: {
@@ -270,16 +270,16 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
     const sessionFrequency = category === 'session';
     await tx.query(
       `INSERT INTO ${target}
-         (gym_id, user_membership_id, gym_charge_id, quantity,
+         (gym_id, user_membership_id, product_id, quantity,
           item_name, item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`
           ${sessionFrequency ? ', frequency' : ''})
-       SELECT ?, ?, b.gym_charge_id, b.quantity,
+       SELECT ?, ?, b.product_id, b.quantity,
               ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
               gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency,
               b.\`action\`, b.\`value\`
               ${sessionFrequency ? ', b.frequency' : ''}
        FROM ${source} b
-       JOIN gym_charges gc ON gc.id = b.gym_charge_id
+       JOIN products gc ON gc.id = b.product_id
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        WHERE b.membership_plan_id = ? AND b.gym_id = ?`,
       [gymId, userMembershipId, membershipPlanId, gymId],
@@ -407,7 +407,7 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
   gymId: string;
   userMembershipId: number;
   category: ProductBenefitCategory;
-  items: { gym_charge_id: number; quantity: number }[];
+  items: { product_id: number; quantity: number }[];
 }): Promise<void> {
   const { gymId, userMembershipId, category, items } = params;
   const table = BENEFIT_TABLE_BY_CATEGORY[category];
@@ -422,21 +422,21 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
     `SELECT * FROM ${table} WHERE user_membership_id = ? AND gym_id = ? FOR UPDATE`,
     [userMembershipId, gymId],
   );
-  const kept = new Map<number, any>(existing.map((r: any) => [r.gym_charge_id, r]));
+  const kept = new Map<number, any>(existing.map((r: any) => [r.product_id, r]));
 
   await tx.query(`DELETE FROM ${table} WHERE user_membership_id = ? AND gym_id = ?`, [userMembershipId, gymId]);
 
   for (const item of items) {
-    const previous = kept.get(item.gym_charge_id);
+    const previous = kept.get(item.product_id);
     if (previous) {
       await tx.query(
         `INSERT INTO ${table}
-           (gym_id, user_membership_id, gym_charge_id, quantity,
+           (gym_id, user_membership_id, product_id, quantity,
             item_name, item_type, item_billing_frequency, unit_price, currency,
             \`action\`, \`value\`${sessionFrequency ? ', frequency' : ''})
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${sessionFrequency ? ', ?' : ''})`,
         [
-          gymId, userMembershipId, item.gym_charge_id, item.quantity,
+          gymId, userMembershipId, item.product_id, item.quantity,
           previous.item_name, previous.item_type, previous.item_billing_frequency,
           previous.unit_price, previous.currency,
           // #896 stage 1: a kept line keeps its pricing treatment for the same
@@ -447,7 +447,7 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
       );
       continue;
     }
-    // A newly added line freezes the Product as it is now. `gym_charges`
+    // A newly added line freezes the Product as it is now. `products`
     // is not filtered on `deleted_at` for the same reason as at assignment
     // time: the route has already decided the item may be attached. Its
     // `(action, value)` pair is the column's own neutral default (#896): the
@@ -455,14 +455,14 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
     // no configured treatment to carry, and the item bills at its own price.
     await tx.query(
       `INSERT INTO ${table}
-         (gym_id, user_membership_id, gym_charge_id, quantity,
+         (gym_id, user_membership_id, product_id, quantity,
           item_name, item_type, item_billing_frequency, unit_price, currency)
        SELECT ?, ?, gc.id, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
               gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency
-       FROM gym_charges gc
+       FROM products gc
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        WHERE gc.id = ? AND gc.gym_id = ?`,
-      [gymId, userMembershipId, item.quantity, item.gym_charge_id, gymId],
+      [gymId, userMembershipId, item.quantity, item.product_id, gymId],
     );
   }
 }
@@ -516,7 +516,7 @@ export async function loadPlanBenefitsForSimulation(
   const marks = ids.map(() => '?').join(',');
   const { rows } = await db.query(
     CATEGORIES.map((category) => `
-      SELECT '${category}' AS category, user_membership_id, gym_charge_id, quantity,
+      SELECT '${category}' AS category, user_membership_id, product_id, quantity,
              item_name, item_billing_frequency, unit_price, \`action\`, \`value\`,
              ${category === 'session' ? 'frequency' : 'NULL'} AS session_frequency
       FROM ${BENEFIT_TABLE_BY_CATEGORY[category]}
@@ -526,7 +526,7 @@ export async function loadPlanBenefitsForSimulation(
   for (const row of rows as any[]) {
     const list = byAssignment.get(row.user_membership_id) ?? [];
     list.push({
-      gymChargeId: row.gym_charge_id,
+      productId: row.product_id,
       name: row.item_name,
       category: row.category as ProductBenefitCategory,
       billingFrequency: toFrequency(row.item_billing_frequency),
@@ -553,12 +553,12 @@ export async function loadPlanBenefitsForSimulation(
   const planMarks = planIds.map(() => '?').join(',');
   const { rows: liveRows } = await db.query(
     CATEGORIES.map((category) => `
-      SELECT '${category}' AS category, b.membership_plan_id, b.gym_charge_id, b.quantity,
+      SELECT '${category}' AS category, b.membership_plan_id, b.product_id, b.quantity,
              ${ITEM_NAME_EXPR} AS item_name, gc.billing_frequency, gc.amount,
              b.\`action\`, b.\`value\`,
              ${category === 'session' ? 'b.frequency' : 'NULL'} AS session_frequency
       FROM ${planBenefitTableForCategory(category)} b
-      JOIN gym_charges gc ON gc.id = b.gym_charge_id
+      JOIN products gc ON gc.id = b.product_id
       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
       WHERE b.gym_id = ? AND b.membership_plan_id IN (${planMarks})`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, ...planIds]),
@@ -567,7 +567,7 @@ export async function loadPlanBenefitsForSimulation(
   for (const row of liveRows as any[]) {
     const list = livePerPlan.get(row.membership_plan_id) ?? [];
     list.push({
-      gymChargeId: row.gym_charge_id,
+      productId: row.product_id,
       name: row.item_name,
       category: row.category as ProductBenefitCategory,
       billingFrequency: toFrequency(row.billing_frequency),
@@ -613,8 +613,8 @@ export async function loadPromotionGrantSnapshots(
   const marks = applicationIds.map(() => '?').join(',');
   const { rows } = await db.query(
     CATEGORIES.map((category) => `
-      SELECT '${category}' AS category, user_membership_promotion_id, gym_charge_id,
-             gym_charge_name, quantity, item_billing_frequency, unit_price,
+      SELECT '${category}' AS category, user_membership_promotion_id, product_id,
+             product_name, quantity, item_billing_frequency, unit_price,
              \`action\`, \`value\`
       FROM ${PROMOTION_GRANT_SNAPSHOT_TABLE[category]}
       WHERE gym_id = ? AND user_membership_promotion_id IN (${marks})`).join(' UNION ALL '),
@@ -624,10 +624,10 @@ export async function loadPromotionGrantSnapshots(
     const list = byApplication.get(row.user_membership_promotion_id) ?? [];
     list.push({
       // The snapshot keeps the item's identity even after it is deleted
-      // (`gym_charge_id` is ON DELETE SET NULL there); 0 groups those under a
+      // (`product_id` is ON DELETE SET NULL there); 0 groups those under a
       // line that no longer points at a catalogue row.
-      gymChargeId: row.gym_charge_id ?? 0,
-      name: row.gym_charge_name ?? 'Product',
+      productId: row.product_id ?? 0,
+      name: row.product_name ?? 'Product',
       category: row.category as ProductBenefitCategory,
       billingFrequency: toFrequency(row.item_billing_frequency),
       unitPrice: row.unit_price != null ? Number(row.unit_price) : 0,

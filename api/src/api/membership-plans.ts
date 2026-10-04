@@ -115,19 +115,19 @@ interface BillingPolicyRow {
 }
 
 // #635 stage 1: one row of a Plan's Session / One-off / Period Benefits
-// (migration 173). `gym_charge_*` comes from the join, so an item that has
+// (migration 173). `product_*` comes from the join, so an item that has
 // since gone inactive still resolves to its real name and status instead of a
 // bare id — same shape the Promotion benefit endpoints return.
 interface PlanProductBenefitRow extends PlanBenefitRow {
   id: number;
   gym_id: string;
   membership_plan_id: number;
-  gym_charge_id: number;
+  product_id: number;
   quantity: number;
-  gym_charge_name: string;
-  gym_charge_type: string;
-  gym_charge_billing_frequency: string | null;
-  gym_charge_status: string;
+  product_name: string;
+  product_type: string;
+  product_billing_frequency: string | null;
+  product_status: string;
   /**
    * #918 — the Session Benefit's renewal Frequency. Present on the session
    * section only (`membership_plan_session`), `null` for a row configured with
@@ -135,7 +135,7 @@ interface PlanProductBenefitRow extends PlanBenefitRow {
    */
   frequency?: SessionBenefitFrequency | null;
   // #893: joined so the editor can hide Remove on a mandatory item and say why.
-  gym_charge_mandatory: boolean | number;
+  product_mandatory: boolean | number;
   // #896 stage 2: the line's own pricing treatment, normalized by the loader.
   action: string;
   value: number | null;
@@ -169,9 +169,9 @@ interface ProductRow {
  * they are optional here.
  */
 interface BenefitPricingRow extends PlanBenefitRow {
-  gym_charge_amount?: string | number | null;
-  gym_charge_tax_behavior?: string | null;
-  gym_charge_tax_rate_percent?: string | number | null;
+  product_amount?: string | number | null;
+  product_tax_behavior?: string | null;
+  product_tax_rate_percent?: string | number | null;
 }
 
 /**
@@ -214,13 +214,13 @@ function planSimulationItems(
     for (const row of rows as BenefitPricingRow[]) {
       // #916: the same gross-up the Benefit sections' own Original Price uses,
       // so the two projections on one card cannot price an item differently.
-      const gross = grossBenefitUnitPrice(row, byId.get(Number(row.gym_charge_id)));
+      const gross = grossBenefitUnitPrice(row, byId.get(Number(row.product_id)));
       if (gross == null) continue; // an item with no price bills nothing
       items.push({
-        gymChargeId: Number(row.gym_charge_id),
-        name: row.gym_charge_name,
+        productId: Number(row.product_id),
+        name: row.product_name,
         category,
-        billingFrequency: (row.gym_charge_billing_frequency as ProductFrequency | null) ?? null,
+        billingFrequency: (row.product_billing_frequency as ProductFrequency | null) ?? null,
         unitPriceInclTax: gross,
         quantity: Number(row.quantity) || 1,
         // #918 — the Session Benefit's own renewal Frequency. The column only
@@ -229,7 +229,7 @@ function planSimulationItems(
         sessionFrequency: category === 'session'
           ? toSessionBenefitFrequency(row.frequency) : null,
         benefit: toProductBenefit('plan', row.action, row.value),
-        mandatory: row.gym_charge_mandatory === true || Number(row.gym_charge_mandatory) === 1,
+        mandatory: row.product_mandatory === true || Number(row.product_mandatory) === 1,
       });
     }
   }
@@ -312,7 +312,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
               gc.status, gc.availability, gc.enrollment_status, gc.is_system, gc.mandatory,
               gc.tax_behavior, tr.rate_percent AS tax_rate_percent,
               ct.code AS charge_type_code, ct.name AS charge_type_name
-       FROM gym_charges gc
+       FROM products gc
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
        LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
        WHERE gc.gym_id = ? AND gc.deleted_at IS NULL AND gc.status = 'active'
@@ -343,7 +343,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     ).then(r => Number(r.rows[0].n)),
     // #635 stage 1: the three Product-keyed Benefit sections (migration
     // 173), served with the plan so the Plans page renders them without three
-    // extra round trips per card — same reason `sellable_items` is inlined above.
+    // extra round trips per card — same reason `products` is inlined above.
     ...(['session', 'oneoff', 'periodical'] as ProductBenefitCategory[]).map(category =>
       loadPlanBenefits(planBenefitTableForCategory(category), plan.id, gymId),
     ),
@@ -469,7 +469,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     session_benefits: sessionSection,
     oneoff_benefits: oneoffSection,
     periodical_benefits: periodicalSection,
-    sellable_items: products,
+    products: products,
     tax_rate_name: taxRate ? taxRate.name : null,
     tax_rate_percent: taxRate ? taxRate.rate_percent : null,
     ...priceFields,
@@ -930,7 +930,7 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
         // a Plan granting 2 sessions a week must not read as a one-time 2.
         const sessionFrequency = category === 'session';
         const { rows: benefits } = await tx.query(
-          `SELECT gym_charge_id, quantity, \`action\`, \`value\`${sessionFrequency ? ', frequency' : ''}
+          `SELECT product_id, quantity, \`action\`, \`value\`${sessionFrequency ? ', frequency' : ''}
              FROM ${table}
             WHERE membership_plan_id = ? AND gym_id = ?`,
           [req.params.id, gymId],
@@ -938,11 +938,11 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
         for (const b of benefits) {
           await tx.query(
             `INSERT INTO ${table}
-               (gym_id, membership_plan_id, gym_charge_id, quantity, \`action\`, \`value\`,
+               (gym_id, membership_plan_id, product_id, quantity, \`action\`, \`value\`,
                 created_by_membership_id${sessionFrequency ? ', frequency' : ''})
              VALUES (?, ?, ?, ?, ?, ?, ?${sessionFrequency ? ', ?' : ''})`,
             [
-              gymId, insertId, b.gym_charge_id, b.quantity, b.action, b.value, callerMemberId,
+              gymId, insertId, b.product_id, b.quantity, b.action, b.value, callerMemberId,
               ...(sessionFrequency ? [b.frequency ?? null] : []),
             ],
           );
@@ -1460,7 +1460,7 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
 // Promotion contract in `promotion-details.ts` rather than a new one — the
 // ticket asks for sections that "behave like the existing ... Benefits in
 // Promotions", and the admin editors are shared, so the payload
-// (`{ items: [{ gym_charge_id, quantity }] }`, replace-all) and every rejection
+// (`{ items: [{ product_id, quantity }] }`, replace-all) and every rejection
 // must match what the Promotion endpoints already do.
 //
 // Since stage 3 (#714) these sections are what an assignment bills from, via
@@ -1475,16 +1475,16 @@ function selectPlanProductBenefits(table: string): string {
   // up a configured line without a second round trip — and from the benefit
   // row's own join rather than the active catalogue, since a Plan may still
   // carry (and still bill) an item that has since been deactivated.
-  return `SELECT b.*, gc.name AS gym_charge_name, gc.type AS gym_charge_type,
-                 gc.billing_frequency AS gym_charge_billing_frequency, gc.status AS gym_charge_status,
-                 gc.mandatory AS gym_charge_mandatory,
-                 gc.amount AS gym_charge_amount, gc.tax_behavior AS gym_charge_tax_behavior,
-                 tr.rate_percent AS gym_charge_tax_rate_percent
+  return `SELECT b.*, gc.name AS product_name, gc.type AS product_type,
+                 gc.billing_frequency AS product_billing_frequency, gc.status AS product_status,
+                 gc.mandatory AS product_mandatory,
+                 gc.amount AS product_amount, gc.tax_behavior AS product_tax_behavior,
+                 tr.rate_percent AS product_tax_rate_percent
           FROM ${table} b
-          JOIN gym_charges gc ON gc.id = b.gym_charge_id
+          JOIN products gc ON gc.id = b.product_id
           LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
           WHERE b.membership_plan_id = ? AND b.gym_id = ?
-          ORDER BY gym_charge_name ASC`;
+          ORDER BY product_name ASC`;
 }
 
 /**
@@ -1522,7 +1522,7 @@ async function loadMandatoryProducts(gymId: string): Promise<MandatoryProduct[]>
     // Original and Final Price like a stored one instead of reading "—".
     `SELECT gc.id, gc.name, gc.type, gc.billing_frequency, gc.status, gc.mandatory,
             gc.amount, gc.tax_behavior, tr.rate_percent AS tax_rate_percent
-       FROM gym_charges gc
+       FROM products gc
        LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
       WHERE gc.gym_id = ? AND gc.deleted_at IS NULL AND gc.status = 'active' AND gc.mandatory = 1
       ORDER BY gc.name ASC`,
@@ -1564,20 +1564,20 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
     if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
     if (!(await planExists(req.params.id, gymId))) return res.status(404).json({ error: 'Plan not found' });
 
-    const gymChargeIds: number[] = [];
+    const productIds: number[] = [];
     const submitted: PlanBenefitWrite[] = [];
     const seen = new Set<number>();
     for (const item of items) {
-      const gymChargeId = parseInt(item.gym_charge_id, 10);
+      const productId = parseInt(item.product_id, 10);
       const quantity = parseInt(item.quantity, 10);
-      if (!Number.isInteger(gymChargeId) || gymChargeId <= 0) {
-        return res.status(400).json({ error: 'gym_charge_id is required' });
+      if (!Number.isInteger(productId) || productId <= 0) {
+        return res.status(400).json({ error: 'product_id is required' });
       }
       if (!Number.isInteger(quantity) || quantity <= 0) {
         return res.status(400).json({ error: 'quantity must be a positive integer' });
       }
-      if (seen.has(gymChargeId)) {
-        return res.status(400).json({ error: `Duplicate gym_charge_id: ${gymChargeId}` });
+      if (seen.has(productId)) {
+        return res.status(400).json({ error: `Duplicate product_id: ${productId}` });
       }
       // #896 stage 2 §5/§16 — a Plan may configure three of the five actions;
       // `Fixed discount` and `Fixed Price` are a 400 here and a CHECK violation
@@ -1591,10 +1591,10 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
         ? parseSessionBenefitFrequencyInput(item)
         : { keep: true as const };
       if (frequency.error) return res.status(400).json({ error: frequency.error });
-      seen.add(gymChargeId);
-      gymChargeIds.push(gymChargeId);
+      seen.add(productId);
+      productIds.push(productId);
       submitted.push({
-        gym_charge_id: gymChargeId, quantity, benefit: parsed.benefit,
+        product_id: productId, quantity, benefit: parsed.benefit,
         // Absent means the request named none, which is *keep what is stored* —
         // the same rule the `(action, value)` pair follows, and what stops a
         // quantity-only save clearing a configured Frequency.
@@ -1602,25 +1602,25 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
       });
     }
 
-    if (gymChargeIds.length > 0) {
+    if (productIds.length > 0) {
       // Only *newly* selected items must be active — an item already attached to
       // this plan stays selectable after it goes inactive elsewhere, so an
       // unrelated catalog change never 400s the whole save or silently drops a
       // pre-existing selection. Same rule as the Promotion benefits and
       // Suitable Membership Plans.
       const { rows: existingAssoc } = await db.query(
-        `SELECT gym_charge_id FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`,
+        `SELECT product_id FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`,
         [planId, gymId],
       );
-      const existingIds = new Set<number>(existingAssoc.map((r: any) => r.gym_charge_id));
+      const existingIds = new Set<number>(existingAssoc.map((r: any) => r.product_id));
 
-      const placeholders = gymChargeIds.map(() => '?').join(',');
+      const placeholders = productIds.map(() => '?').join(',');
       const { rows: products } = await db.query(
-        `SELECT id, type, billing_frequency, status FROM gym_charges
+        `SELECT id, type, billing_frequency, status FROM products
          WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${placeholders})`,
-        [gymId, ...gymChargeIds],
+        [gymId, ...productIds],
       );
-      if (products.length !== gymChargeIds.length) {
+      if (products.length !== productIds.length) {
         return res.status(400).json({ error: 'One or more Products not found in this gym' });
       }
       const newlyInactive = products.find((si: any) => si.status !== 'active' && !existingIds.has(si.id));
@@ -1651,31 +1651,31 @@ for (const { path, category } of PLAN_BENEFIT_ROUTES) {
         // `withMandatoryBenefits()` gets, so preserving an item can never
         // change what it costs.
         const { rows: stored } = await tx.query(
-          `SELECT gym_charge_id, \`action\`, \`value\`${isSessionSection ? ', frequency' : ''} FROM ${table}
+          `SELECT product_id, \`action\`, \`value\`${isSessionSection ? ', frequency' : ''} FROM ${table}
             WHERE membership_plan_id = ? AND gym_id = ? FOR UPDATE`,
           [planId, gymId],
         );
         const kept = new Map<number, ProductBenefit>(
-          stored.map((r: any) => [Number(r.gym_charge_id), shapeProductBenefitRow('plan', r)]),
+          stored.map((r: any) => [Number(r.product_id), shapeProductBenefitRow('plan', r)]),
         );
         // #918: and the Frequency it is stored with, for the same replace-all
         // reason — a save that never mentions it must not clear it.
         const keptFrequency = new Map<number, SessionBenefitFrequency | null>(
-          stored.map((r: any) => [Number(r.gym_charge_id), toSessionBenefitFrequency(r.frequency)]),
+          stored.map((r: any) => [Number(r.product_id), toSessionBenefitFrequency(r.frequency)]),
         );
         await tx.query(`DELETE FROM ${table} WHERE membership_plan_id = ? AND gym_id = ?`, [planId, gymId]);
         for (const item of toWrite) {
-          const benefit = item.benefit ?? kept.get(item.gym_charge_id) ?? NO_PRODUCT_BENEFIT;
+          const benefit = item.benefit ?? kept.get(item.product_id) ?? NO_PRODUCT_BENEFIT;
           const frequency = item.frequency !== undefined
             ? item.frequency
-            : (keptFrequency.get(item.gym_charge_id) ?? null);
+            : (keptFrequency.get(item.product_id) ?? null);
           await tx.query(
             `INSERT INTO ${table}
-               (gym_id, membership_plan_id, gym_charge_id, quantity, \`action\`, \`value\`,
+               (gym_id, membership_plan_id, product_id, quantity, \`action\`, \`value\`,
                 created_by_membership_id${isSessionSection ? ', frequency' : ''})
              VALUES (?, ?, ?, ?, ?, ?, ?${isSessionSection ? ', ?' : ''})`,
             [
-              gymId, planId, item.gym_charge_id, item.quantity, benefit.action, benefit.value,
+              gymId, planId, item.product_id, item.quantity, benefit.action, benefit.value,
               callerMemberId,
               ...(isSessionSection ? [frequency] : []),
             ],

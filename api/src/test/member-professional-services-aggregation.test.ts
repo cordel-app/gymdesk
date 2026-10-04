@@ -14,8 +14,8 @@ function grant(overrides: Partial<ProfessionalServiceGrantRow> = {}): Profession
     professional_service_name: 'Personal Training Individual',
     kind: 'class_package',
     reference_id: 100,
-    sellable_item_id: 900,
-    sellable_item_name: 'Personal Training Class Package (10 Sessions)',
+    product_id: 900,
+    product_name: 'Personal Training Class Package (10 Sessions)',
     sessions: 10,
     ...overrides,
   };
@@ -31,7 +31,7 @@ describe('aggregateProfessionalServiceGrants', () => {
     // package plus 4 sessions granted by the assigned plan's promotion.
     const result = aggregateProfessionalServiceGrants([
       grant({ sessions: 10 }),
-      grant({ kind: 'promotion_session', reference_id: 55, sellable_item_id: 901, sessions: 4 }),
+      grant({ kind: 'promotion_session', reference_id: 55, product_id: 901, sessions: 4 }),
     ]);
 
     expect(result).toHaveLength(1);
@@ -87,7 +87,7 @@ describe('aggregateProfessionalServiceGrants', () => {
   it('accepts the string counts mysql2 returns for computed columns', () => {
     const result = aggregateProfessionalServiceGrants([
       grant({ sessions: '10' }),
-      grant({ kind: 'membership_service', reference_id: 7, sellable_item_id: 902, sessions: '20' }),
+      grant({ kind: 'membership_service', reference_id: 7, product_id: 902, sessions: '20' }),
     ]);
 
     expect(result[0].sessions).toBe(30);
@@ -95,14 +95,14 @@ describe('aggregateProfessionalServiceGrants', () => {
 
   it('records where each grant came from', () => {
     const result = aggregateProfessionalServiceGrants([
-      grant({ kind: 'membership_service', reference_id: 42, sellable_item_id: 903, sessions: 20, sellable_item_name: 'PT Pack' }),
+      grant({ kind: 'membership_service', reference_id: 42, product_id: 903, sessions: 20, product_name: 'PT Pack' }),
     ]);
 
     expect(result[0].sources[0]).toEqual({
       kind: 'membership_service',
       reference_id: 42,
-      sellable_item_id: 903,
-      sellable_item_name: 'PT Pack',
+      product_id: 903,
+      product_name: 'PT Pack',
       sessions: 20,
     });
   });

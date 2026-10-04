@@ -555,7 +555,7 @@ not editable for some rows.
    empty heading.
 3. **A frozen field is a value in *both* modes** — the mechanism #927 added for
    a calculated field, applied to a conditionally frozen one. `PUT
-   /sellable-items/:id` writes a System row's name, type and units only inside
+   /products/:id` writes a System row's name, type and units only inside
    its `is_system` guard, so the form must not offer a control the route would
    ignore; the read-only card still reports them. The layout decides it once
    (`editing && field.editable ? renderField(field) : renderValue(field)`), so
@@ -1131,7 +1131,7 @@ ALTER TABLE <entity>_centers ADD UNIQUE KEY <entity>_centers_one_default_unique 
 
 A plain many-to-many link between two already-existing gym-scoped catalog entities (not a fresh association entity in its own right — e.g. Products ↔ Professional Services, #546; also see Nutrition Library's category/quality links, #501/#293), where the relationship is only meaningful while one side's `type`/discriminator field has a specific value.
 
-1. **Join table** — `<a>_<b>`: `gym_id`, `<a>_id FK→a(id) ON DELETE CASCADE`, `<b>_id FK→b(id) ON DELETE CASCADE`, `UNIQUE (<a>_id, <b>_id)`, optional `created_at`/`created_by_membership_id`. No `status`/soft-delete column — presence of the row *is* the relationship; see migration 153 (`sellable_item_professional_services`) or 142 (`nutrition_library_item_categories`). Carries its own `gym_id` even though it's derivable from `<a>_id`, per the hard constraint that every domain table has one and every query filters by it.
+1. **Join table** — `<a>_<b>`: `gym_id`, `<a>_id FK→a(id) ON DELETE CASCADE`, `<b>_id FK→b(id) ON DELETE CASCADE`, `UNIQUE (<a>_id, <b>_id)`, optional `created_at`/`created_by_membership_id`. No `status`/soft-delete column — presence of the row *is* the relationship; see migration 153 (`product_professional_services`) or 142 (`nutrition_library_item_categories`). Carries its own `gym_id` even though it's derivable from `<a>_id`, per the hard constraint that every domain table has one and every query filters by it.
 
 2. **Domain helpers**, not inlined in the router — `load<B>Map(aIds): Record<aId, B[]>` (batched `IN (...)` read, used by list/detail GETs), `validate<B>Ids(gymId, ids)` (400 if any id doesn't belong to this gym or the global/system pool), `replace<B>s(tx, gymId, aId, bIds, actorMembershipId)` (`DELETE` then re-`INSERT`, takes the caller's `Tx` so it always runs inside the same transaction as entity A's own insert/update — never a separate round trip). Reference: `domain/productProfessionalServices.ts`, `domain/nutritionLibrary.ts`.
 
@@ -1409,7 +1409,7 @@ When a catalog item is attached to a record that is *already billing* (an Additi
 - **Store the window, not a flag**: `starts_at DATE NOT NULL` + `ends_at DATE NULL`, with a named CHECK (`chk_ums_ends_at`: `ends_at IS NULL OR ends_at >= starts_at`). `ends_at IS NULL` is "still attached"; a stamped `ends_at` is the effective removal date.
 - **DELETE stamps, or deletes only when nothing was billed**: the endpoint sets `ends_at = today` for an attachment already in force, and hard-deletes one whose `starts_at` is still in the future (an `ends_at` before `starts_at` would violate the CHECK, and nothing was ever billed). Return which of the two happened (`{ deleted, ends_at }`) so the UI doesn't have to guess.
 - **No unique key on (parent, item)** — the same item may be attached again over a later, non-overlapping window. Enforce *overlap* in the endpoint instead (`ends_at IS NULL OR ends_at >= :starts_at` → 409); quantity, not a second row, is how "two of them" is expressed. The endpoint check alone is a read-then-insert race, so back the one case that *is* expressible as a key — at most one **open** attachment per (parent, item) — with a `VIRTUAL` generated column (`IF(ends_at IS NULL, CONCAT(parent_id, ':', item_id), NULL)`) under a unique index, and map `ER_DUP_ENTRY` to the same 409 (`STORED` is rejected over FK columns; see migration 007).
-- **Flag a retired catalog row rather than hiding it**: the join must not filter `deleted_at`/`status` (the attachment keeps billing), but the read should report it (`sellable_item_retired`) so the UI can mark a row the write path would no longer accept.
+- **Flag a retired catalog row rather than hiding it**: the join must not filter `deleted_at`/`status` (the attachment keeps billing), but the read should report it (`product_retired`) so the UI can mark a row the write path would no longer accept.
 - **Never copy the catalog row's fields onto the attachment** (name, price, frequency): join them live on every read, so an item's price change shows up everywhere at once. Only snapshot when the ticket explicitly asks history to be frozen (the pattern migration 130 set for the since-retired charge-benefit snapshot; #635 asked for exactly that, so `user_membership_services` now carries both — snapshot columns written at attach time *and* the live join, see the next section). The FK to the catalog table then gets no `ON DELETE CASCADE` — items are soft-deleted, and the attachment must outlive one being retired.
 - **Gate on the parent's status**, mirroring the same list in the frontend: a record that bills nothing further (`cancelled`/`expired`) accepts no new attachments, but keeps showing the ones it had.
 - **The projection does the rest**: the forecast (`domain/billingSimulation.ts`) treats each attachment as a stream from `max(parent.start, starts_at)` to `min(parent.end, ends_at)`. Removal needs no other code path — the window is the whole mechanism.
@@ -1717,7 +1717,7 @@ When one card carries several sections listing the *same kind of row* — a Memb
 - **Money in such a table is the server's.** Two amounts per row — what the item normally costs and what it costs here — are computed once, server-side, over the *existing* pricing function (`applyLineBenefit()` through `api/src/domain/planBenefitPrices.ts`), so the table cannot quote a line differently from the simulation beside it; the page formats and does no arithmetic, tax least of all (#817). An item with no price reads `—`; €0.00 would claim it is free.
 - **A second card showing the same kind of row calls the same loader.** #920 gave the Promotion sections the pair #916 gave the Plan sections, and the way to do that is one more caller of `withProductBenefitPrices()` (`api/src/api/product-benefit-pricing.ts`) with its own `context`, never a copy of the gross-up: two cards quoting one item two ways is the same defect one level up. The *labels* still differ per namespace — the shared `col_original_price` reads *Regular Price* on the Promotion card and *Original price* on the Plan card — which is what the per-namespace label keys are for.
 - **Report the unit and the line, when a quantity can make them differ.** "The item's price" and "what the line bills" are two questions. Quote the item's own price as the column figure and the line total under it only when the quantity makes the two differ, so a quantity-5 row can never quote €25 next to a billing event charging €125.
-- **A card showing *frozen* rows hands the frozen amount to the same decider.** #924 stage 1 is the third caller, and its rows are an Assigned Plan's snapshot: the price and the `(action, value)` pair are the ones agreed at assignment time (#635 §17), so the loader passes the line's own `unit_price` as the row's amount instead of joining `gym_charges.amount`, and the shared module prices it exactly as it prices a catalogue row. The one live column such a loader may read is the **tax treatment** — a statutory rate the snapshot never captured, and the only way to answer "tax included" at all — LEFT JOINed so a deleted item leaves the frozen amount as the honest gross. Reading the frozen price from the catalogue instead is the defect: the card would quote today's price beside a billing event charging what was agreed. A read-only card can also report a column its *editor* does not configure (the Assigned Plan's section `PUT` takes quantity alone); what it must not do is render a control the save cannot carry.
+- **A card showing *frozen* rows hands the frozen amount to the same decider.** #924 stage 1 is the third caller, and its rows are an Assigned Plan's snapshot: the price and the `(action, value)` pair are the ones agreed at assignment time (#635 §17), so the loader passes the line's own `unit_price` as the row's amount instead of joining `products.amount`, and the shared module prices it exactly as it prices a catalogue row. The one live column such a loader may read is the **tax treatment** — a statutory rate the snapshot never captured, and the only way to answer "tax included" at all — LEFT JOINed so a deleted item leaves the frozen amount as the honest gross. Reading the frozen price from the catalogue instead is the defect: the card would quote today's price beside a billing event charging what was agreed. A read-only card can also report a column its *editor* does not configure (the Assigned Plan's section `PUT` takes quantity alone); what it must not do is render a control the save cannot carry.
 
 - **A column only one page configures is still part of the one declaration.** #959 adds the Promotion line's *Requirement* (Mandatory / Optional), which no Membership Plan or Assigned Plan section has — so it is one more entry in `PRODUCT_BENEFIT_COLUMNS` behind a `showRequirement` flag that **defaults to off**, passed by the Promotions page in both halves of its card through the same wrapper that names its benefit context. A flag defaulting to off is what keeps every other caller's grid byte-identical while the order stays fixed in one place; a second declaration, or a column inferred from the context prop, is how two cards start disagreeing about where a cell is. Two things come with it: the editor writes the new key into a draft row **only** where the flag is on (`addBenefitRow`'s `seed`), because `toBenefitItems()` submits a key only when the draft carries it and the replace-all `PUT` reads "not mentioned" as *keep what is stored*; and the value's own locale keys go in the owning page's namespace, so the shared cell resolves a label neither the component nor another page decides.
 
@@ -2070,10 +2070,10 @@ For a single-row catalog entity (not a hierarchy — see "Duplicate at every lev
 
 - **One endpoint**: `POST /<entity>/:id/duplicate` (`requireRole('admin')`). Reads the source row (404 if missing/soft-deleted/cross-gym), `INSERT`s a copy scoped to the *current* gym and *current* user (`created_by`/`created_by_membership_id`), and returns the new row with `201`.
 - **Name it deterministically** so the origin is obvious in the list without extra UI — e.g. `Copy of <original>` or `<original> (Copy)`; either is fine, just stay consistent within one page's own actions.
-- **Drop lineage-only fields.** Anything that exists purely to trace the row back to something else it was migrated/derived from (e.g. `gym_charges.class_package_id`) is never copied — the duplicate is a fresh, independent row. A field that only makes sense for a *system* row (e.g. `charge_type_id`) is dropped too, the same way the entity's own `POST /` (custom-create) already omits it.
+- **Drop lineage-only fields.** Anything that exists purely to trace the row back to something else it was migrated/derived from (e.g. `products.class_package_id`) is never copied — the duplicate is a fresh, independent row. A field that only makes sense for a *system* row (e.g. `charge_type_id`) is dropped too, the same way the entity's own `POST /` (custom-create) already omits it.
 - **Preserve or reset status per the entity's own rules**, not a blanket convention — check the ticket/existing behavior for the entity: some reset to a safe draft-like state (Plans: `lifecycle_status='draft'`, `enrollment_status='staff_only'`), others preserve the source's status/visibility as-is (Products, #545). Don't guess; the two existing entities below disagree on purpose.
 - **Frontend**: a plain `ContextMenu` item → `apiFetch(POST .../duplicate)` → reload the list. No confirmation dialog, no intermediate form — the duplicate is simply an new editable row the user can then Edit like any other.
-- Child/related rows (prices, allowances, benefits…) are copied alongside the parent only if the entity actually has them — a flat entity like `gym_charges` has none, so its duplicate is a single `INSERT`; an entity with child tables copies them in the same `db.transaction()`.
+- Child/related rows (prices, allowances, benefits…) are copied alongside the parent only if the entity actually has them — a flat entity like `products` has none, so its duplicate is a single `INSERT`; an entity with child tables copies them in the same `db.transaction()`.
 
 Reference implementations: `membership-plans.ts` `POST /:id/duplicate` (multi-table, transaction, resets lifecycle/enrollment) and `products.ts` `POST /:id/duplicate` (single-table, preserves status/enrollment, #545).
 
@@ -2214,6 +2214,75 @@ Two rules come with it:
   pins the order, the two `danger` flags and every handler/gate pairing together, so a later
   alignment sweep cannot quietly restore "Details first" or drop a gate while reordering.
 
+
+## Renaming an Entity, All the Way Down (#949)
+
+*Sellable Item* → **Product** was 2,179 occurrences of one word and 1,229 of the
+table it was really stored in (`gym_charges`, since migration 102). A rename of
+that size lands in **three stages, in this order**, because each one is provable
+by a different thing:
+
+1. **The copy** — locale values, headings, empty states, docs prose. Almost
+   entirely JSON and Markdown, reviewable line by line, and no identifier moves,
+   so a key still spelled the old way is correct until stage 2.
+2. **The code** — identifiers, file names, locale **keys**, the admin route
+   folder. `tsc` and the suites are the proof, and nothing crosses the wire or
+   the schema, so no migration and no deploy ordering.
+3. **The wire and the schema** — the API root, the table, its columns,
+   constraints and index names, the response fields, the stored values, the
+   feature-flag key and the audit entity type. One migration, a `db-reviewer`
+   pass, and a `go-to-production.md` note.
+
+What makes it work rather than merely sequential:
+
+- **Ask how deep before writing anything.** "Rename the table" and "rename the
+  copy" are different decisions with different blast radii, and only the owner
+  can take the first. Measure the surface, then put the tiers on the thread as
+  lettered options (here `Q1 A`–`D`) so what comes back is a diff and not a
+  direction.
+- **Each stage's boundary is a test, not a promise.** A gate that bans the
+  retired *shapes* needs no allowlist, so a later stage adds nothing to it:
+  stage 2's banned the camel/Pascal/SCREAMING identifiers and the English prose,
+  none of which a `snake_case` column or a route path can match, and stage 3
+  widened it to those. Write the boundary into the gate's own header, so the
+  next reader knows which spellings are deliberate.
+- **Name what keeps the old spelling, and why.** Old **migrations** are never
+  edited (their SQL is the history of a schema that really did carry those
+  names, and `require()`ing one by another name simply fails), and each retired
+  route stays as a `permanentRedirect` so older links still land. Both are
+  carve-outs by *rule* — a line naming a migration file is read with that name
+  removed — never by file, which is what keeps the rest of such a file inside
+  the ban.
+- **A rename has no safe deploy order, so ship it as one.** Unlike an add or a
+  drop, the old build fails against the new schema *and* the new build fails
+  against the old one. The honest answer is one PR and one deploy whose window
+  is the container restart (`deploy.yml` migrates in the job that restarts the
+  API), plus the frontend in the same pass — not an alias nobody will remove.
+- **Rename the names MySQL leaves behind.** `RENAME TABLE` rewrites a child's FK
+  *definition* and leaves its constraint and index **names** alone, and there is
+  no `RENAME CONSTRAINT` — so an FK or a CHECK is dropped and re-added, and an
+  index is `RENAME INDEX`ed. Two shapes to know: a column a **generated column**
+  reads cannot be renamed at all (drop the generated column and its index, rename,
+  rebuild both — `user_membership_services.open_service_key`), and a column
+  **participating in a foreign key** can refuse both algorithms, answering
+  "ALGORITHM=COPY is not supported … Try ALGORITHM=INPLACE" and then refusing
+  INPLACE too; dropping the constraint first works everywhere and moves its name
+  in the same pass.
+- **Write the migration as `[old, new]` pairs and walk them in both
+  directions.** `down()` is then the same code with the pair swapped rather than
+  a second transcription of eighty names, and every step is guarded by what it is
+  about to change (`hasTable`, `hasColumn`, an `information_schema` lookup), so a
+  crash resumes instead of failing on the first already-applied statement. Verify
+  **up → down → up with rows in place**, and a second `up()` against the migrated
+  schema, which must be a no-op.
+- **A stored value is data, and moving it is a decision.** `promotions.applies_to`
+  and a feature-flag key move with an UPDATE (so the gym's own choice travels with
+  the key), but `audit_logs.entity_type` is an append-only history: it moves only
+  because that column is the key the audit registry and the entity-type filter are
+  built from, and the audited *values* are left exactly as written.
+
+Reference implementation: migration 214 + `api/src/test/product-identifiers.unit.test.ts`
++ `api/src/test/product-terminology.unit.test.ts`.
 
 ## A recurring defect class gets a gate, not a fourth point fix (#1009)
 

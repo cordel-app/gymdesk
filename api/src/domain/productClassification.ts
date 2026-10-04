@@ -1,4 +1,4 @@
-// #550: shared classification of a Product (`gym_charges`) into the
+// #550: shared classification of a Product (`products`) into the
 // three Promotion benefit sections (migration 155). This is the single
 // source of truth the ticket asks for — Promotions must not re-derive this
 // from a name or a second mapping, and the API is the one place it's

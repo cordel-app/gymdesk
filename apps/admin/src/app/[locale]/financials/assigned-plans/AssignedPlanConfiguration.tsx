@@ -95,7 +95,7 @@ const BENEFIT_SECTIONS: {
    * the Product's own billing frequency, as frozen on the line.
    *
    * The **editor** stays on the item frequency (the prop's default) whichever
-   * section is open: the assignment's section `PUT` takes `gym_charge_id` +
+   * section is open: the assignment's section `PUT` takes `product_id` +
    * `quantity` alone and deliberately keeps a kept line's agreed Frequency
    * (#918), so a control here would be one that changes nothing.
    */
@@ -152,12 +152,12 @@ const numField = (v: number | null) => (v != null ? String(v) : '');
  */
 function toDraftRow(b: AssignedPlanSnapshotBenefit): ProductBenefitRow {
   return {
-    gym_charge_id: b.gym_charge_id,
+    product_id: b.product_id,
     quantity: b.quantity,
-    gym_charge_name: b.item_name,
-    gym_charge_type: b.item_type,
-    gym_charge_billing_frequency: b.item_billing_frequency,
-    gym_charge_status: 'active',
+    product_name: b.item_name,
+    product_type: b.item_type,
+    product_billing_frequency: b.item_billing_frequency,
+    product_status: 'active',
   };
 }
 
@@ -219,7 +219,7 @@ export function AssignedPlanConfiguration({
     try {
       // benefit_category is computed server-side (#550) — the same
       // classification the API validates a new line against.
-      setItems(await apiFetch<ProductOption[]>('/sellable-items'));
+      setItems(await apiFetch<ProductOption[]>('/products'));
     } catch {
       itemsLoadedRef.current = false;
       toast(t('services_items_error'));

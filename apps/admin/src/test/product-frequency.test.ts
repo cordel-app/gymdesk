@@ -19,7 +19,7 @@ import { EMPTY_VALUE } from '@/app/[locale]/financials/products/productProfile';
 // Neither retired value is deleted from the data: an item configured before the
 // ticket that retired it still stores it, still bills on it and still
 // classifies into the same benefit section. The API is what enforces the rule
-// (`api/src/domain/productFrequency.ts`, exercised by `gym-charges.test.ts`);
+// (`api/src/domain/productFrequency.ts`, exercised by `products.test.ts`);
 // this file covers the declaration and the two places the page renders it — the
 // inline create card and the inline editor, which must render the same list (#805).
 //

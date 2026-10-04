@@ -51,7 +51,7 @@ describe('My Membership — the benefits section reads the snapshot (#635 stage 
   });
 
   it('keys a line per assignment benefit, not per index', () => {
-    expect(page).toContain('key={`${b.category}-${b.gym_charge_id}`}');
+    expect(page).toContain('key={`${b.category}-${b.product_id}`}');
   });
 
   it('has no recurrence label left over from the retired vocabulary', () => {

@@ -41,9 +41,9 @@ export const SIMULATED_CYCLES = 2;
 
 /** One line of one billing event. The money fields are the engine's, verbatim. */
 export interface BillingEventLine {
-  kind: 'membership_fee' | 'sellable_item';
+  kind: 'membership_fee' | 'product';
   label: string;
-  gym_charge_id: number | null;
+  product_id: number | null;
   /** True when this line exists because the Product is Mandatory (#832). */
   mandatory: boolean;
   quantity: number;
@@ -154,8 +154,8 @@ export function groupBillingEventsByDate(
         group.lines.push({
           kind: line.kind,
           label: line.label,
-          gym_charge_id: line.gym_charge_id,
-          mandatory: line.gym_charge_id != null && mandatoryByCharge.get(line.gym_charge_id) === true,
+          product_id: line.product_id,
+          mandatory: line.product_id != null && mandatoryByCharge.get(line.product_id) === true,
           quantity: line.quantity,
           unit_price: line.unit_price,
           regular_price: line.regular_price,

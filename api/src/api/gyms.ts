@@ -55,7 +55,7 @@ const SYSTEM_PT_PACKAGE_NAME = 'Personal Training Class Package (10 Sessions)';
 
 async function seedSystemPtPackage(gymId: string) {
   await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, units, status, enrollment_status, is_system,
         validity_days, tax_rate_id, currency, tax_behavior, created_at, modified_at)
      SELECT ?, ?, 'sessions', 10, 'active', 'staff_only', 1, 182,
@@ -65,7 +65,7 @@ async function seedSystemPtPackage(gymId: string) {
        'EUR', 'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP()
      FROM DUAL
      WHERE NOT EXISTS (
-       SELECT 1 FROM gym_charges gc WHERE gc.gym_id = ? AND gc.is_system = 1 AND gc.name = ?
+       SELECT 1 FROM products gc WHERE gc.gym_id = ? AND gc.is_system = 1 AND gc.name = ?
      )`,
     [gymId, SYSTEM_PT_PACKAGE_NAME, gymId, gymId, SYSTEM_PT_PACKAGE_NAME],
   );
@@ -301,8 +301,8 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
     // the Products catalogue columns (added by migration 102 as a
     // one-time backfill), not generated from charge_type_id at read time.
     await db.query(
-      `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, name, type, is_system, created_at)
-       SELECT ?, id, name, 'fee', 1, UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
+      `INSERT IGNORE INTO products (gym_id, charge_type_id, name, type, is_system, created_at)
+       SELECT ?, id, name, 'fee', 1, UTC_TIMESTAMP() FROM charge_types WHERE is_product = 1`,
       [id],
     );
     await db.query(
@@ -469,8 +469,8 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
   // #543: name/type must be seeded from charge_types here too — see the
   // matching comment on the POST /gyms insert above.
   await db.query(
-    `INSERT IGNORE INTO gym_charges (gym_id, charge_type_id, name, type, created_at)
-     SELECT ?, id, name, 'fee', UTC_TIMESTAMP() FROM charge_types WHERE is_gym_charge = 1`,
+    `INSERT IGNORE INTO products (gym_id, charge_type_id, name, type, created_at)
+     SELECT ?, id, name, 'fee', UTC_TIMESTAMP() FROM charge_types WHERE is_product = 1`,
     [newId],
   );
   await db.query(

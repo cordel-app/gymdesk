@@ -142,8 +142,8 @@ async function createProfessionalService(
 
 /**
  * Grants `sessions` of `serviceId` to `memberId` through the stage-1 package
- * path: class_packages + its gym_charges Product +
- * sellable_item_professional_services + user_class_packages. This is what makes
+ * path: class_packages + its products Product +
+ * product_professional_services + user_class_packages. This is what makes
  * the Member "hold" the Professional Service — without it the projection is
  * empty and every assertion below would pass vacuously.
  *
@@ -162,14 +162,14 @@ async function grantSessions(
     [gymId, name, sessions],
   );
   const { insertId: productId } = await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, units, amount, currency, billing_frequency,
         status, availability, is_system, class_package_id)
      VALUES (?, ?, 'sessions', ?, 100.00, 'EUR', NULL, 'active', 'available', 0, ?)`,
     [gymId, name, sessions, classPackageId],
   );
   await db.query(
-    `INSERT INTO sellable_item_professional_services (gym_id, sellable_item_id, professional_service_id)
+    `INSERT INTO product_professional_services (gym_id, product_id, professional_service_id)
      VALUES (?, ?, ?)`,
     [gymId, productId, serviceId],
   );

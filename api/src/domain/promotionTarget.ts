@@ -13,7 +13,7 @@
  * Switching the target **reinterprets nothing** (§4): the rows of both those
  * tables stay exactly as stored, so switching back shows the configuration that
  * was there before. That is also why the frontend stops *writing* Suitable
- * Membership Plans while the target is `sellable_item` rather than writing an
+ * Membership Plans while the target is `product` rather than writing an
  * empty list — a replace-all `PUT` of `[]` would silently discard it.
  *
  * A new target goes in **two** places: `PROMOTION_TARGETS` below and the
@@ -24,7 +24,7 @@
  * and `promotion-target.unit.test.ts` asserts the two agree.
  */
 
-export const PROMOTION_TARGETS = ['membership_plan', 'sellable_item'] as const;
+export const PROMOTION_TARGETS = ['membership_plan', 'product'] as const;
 
 export type PromotionTarget = (typeof PROMOTION_TARGETS)[number];
 

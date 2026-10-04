@@ -59,9 +59,9 @@ const plansSrc = stripComments(readFileSync(PLANS_PAGE, 'utf-8'));
 
 function row(over: Partial<ProductBenefitRow> = {}): ProductBenefitRow {
   return {
-    gym_charge_id: 1, quantity: 2, gym_charge_name: 'Locker Fee',
-    gym_charge_type: 'service', gym_charge_billing_frequency: 'month',
-    gym_charge_status: 'active', ...over,
+    product_id: 1, quantity: 2, product_name: 'Locker Fee',
+    product_type: 'service', product_billing_frequency: 'month',
+    product_status: 'active', ...over,
   };
 }
 
@@ -133,16 +133,16 @@ describe('it is one more column of the shared grid, not a grid of its own', () =
 
 describe('the payload keeps the API\'s replace-all rule', () => {
   it('submits the Requirement only when the draft row carries the key', () => {
-    expect(toBenefitItems([row()])).toEqual([{ gym_charge_id: 1, quantity: 2 }]);
+    expect(toBenefitItems([row()])).toEqual([{ product_id: 1, quantity: 2 }]);
     expect(toBenefitItems([row({ requirement: 'optional' })]))
-      .toEqual([{ gym_charge_id: 1, quantity: 2, requirement: 'optional' }]);
+      .toEqual([{ product_id: 1, quantity: 2, requirement: 'optional' }]);
   });
 
   it('carries it beside the treatment pair and the Frequency', () => {
     expect(toBenefitItems([row({
       requirement: 'mandatory', action: 'percentage_discount', value: 50, frequency: 'month',
     })])).toEqual([{
-      gym_charge_id: 1, quantity: 2, frequency: 'month', requirement: 'mandatory',
+      product_id: 1, quantity: 2, frequency: 'month', requirement: 'mandatory',
       action: 'percentage_discount', value: 50,
     }]);
   });

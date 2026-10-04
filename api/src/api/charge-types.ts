@@ -9,7 +9,7 @@ export const chargeTypesRouter = Router();
 
 chargeTypesRouter.get('/', async (_req, res) => {
   const { rows } = await db.query(
-    'SELECT id, code, name, active, is_gym_charge FROM charge_types ORDER BY id ASC',
+    'SELECT id, code, name, active, is_product FROM charge_types ORDER BY id ASC',
   );
   res.json(rows);
 });

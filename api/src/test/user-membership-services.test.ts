@@ -82,7 +82,7 @@ async function createAssignedPlan(
 }
 
 /**
- * A Product (`gym_charges`). Defaults to the recurring service shape that
+ * A Product (`products`). Defaults to the recurring service shape that
  * #631 allows: type 'service', billing_frequency 'month', status 'active'.
  * `charge_type_id` stays NULL — these are custom items, not system charges.
  */
@@ -106,7 +106,7 @@ async function createProduct(
     units = null,
   } = opts;
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, units, amount, currency, billing_frequency, status, availability, is_system)
      VALUES (?, ?, ?, ?, ?, 'EUR', ?, ?, 'available', 0)`,
     [gymId, name, type, units, amount, billingFrequency, status],
@@ -115,7 +115,7 @@ async function createProduct(
 }
 
 async function softDeleteItem(itemId: number): Promise<void> {
-  await db.query('UPDATE gym_charges SET deleted_at = UTC_TIMESTAMP() WHERE id = ?', [itemId]);
+  await db.query('UPDATE products SET deleted_at = UTC_TIMESTAMP() WHERE id = ?', [itemId]);
 }
 
 // ─── Route helpers ────────────────────────────────────────────────────────────
@@ -162,7 +162,7 @@ describe('/user-memberships/:id/services — auth', () => {
     const res = await request
       .post(`/user-memberships/${umId}/services`)
       .set('x-gym-id', gymId)
-      .send({ gym_charge_id: itemId });
+      .send({ product_id: itemId });
     expect(res.status).toBe(401);
   });
 
@@ -195,7 +195,7 @@ describe('/user-memberships/:id/services — PAYMENTS module permissions', () =>
     accountantItemId = await createProduct(accountantGymId);
     // Seeded directly: an accountant cannot create one through the API.
     const { insertId } = await db.query(
-      `INSERT INTO user_membership_services (gym_id, user_membership_id, gym_charge_id, quantity, starts_at)
+      `INSERT INTO user_membership_services (gym_id, user_membership_id, product_id, quantity, starts_at)
        VALUES (?, ?, ?, 1, ?)`,
       [accountantGymId, accountantUmId, accountantItemId, dayOffset(-5)],
     );
@@ -215,7 +215,7 @@ describe('/user-memberships/:id/services — PAYMENTS module permissions', () =>
   });
 
   it('returns 403 when a read-only role (accountant) attaches a service', async () => {
-    const res = await addService(accountantGymId, accountantUmId, { gym_charge_id: accountantItemId });
+    const res = await addService(accountantGymId, accountantUmId, { product_id: accountantItemId });
     expect(res.status).toBe(403);
   });
 
@@ -237,7 +237,7 @@ describe('/user-memberships/:id/services — PAYMENTS module permissions', () =>
   });
 
   it('returns 403 on POST for a role with NONE access to PAYMENTS', async () => {
-    const res = await addService(noAccessGymId, noAccessUmId, { gym_charge_id: noAccessItemId });
+    const res = await addService(noAccessGymId, noAccessUmId, { product_id: noAccessItemId });
     expect(res.status).toBe(403);
   });
 });
@@ -262,7 +262,7 @@ describe('/user-memberships/:id/services — tenant isolation', () => {
     otherUmA = await createAssignedPlan(gymA);
     itemA = await createProduct(gymA);
 
-    const created = await addService(gymA, umA, { gym_charge_id: itemA, starts_at: dayOffset(-5) });
+    const created = await addService(gymA, umA, { product_id: itemA, starts_at: dayOffset(-5) });
     expect(created.status).toBe(201);
     serviceA = created.body.id;
   });
@@ -273,7 +273,7 @@ describe('/user-memberships/:id/services — tenant isolation', () => {
   });
 
   it('returns 404 attaching to gym A\'s Assigned Plan with gym B\'s x-gym-id', async () => {
-    const res = await addService(gymB, umA, { gym_charge_id: itemA });
+    const res = await addService(gymB, umA, { product_id: itemA });
     expect(res.status).toBe(404);
     // And gym A still sees exactly the one service it had.
     const list = await listServices(gymA, umA);
@@ -296,7 +296,7 @@ describe('/user-memberships/:id/services — tenant isolation', () => {
 
   it('returns 404 for a Product belonging to another gym', async () => {
     const itemB = await createProduct(gymB);
-    const res = await addService(gymA, umA, { gym_charge_id: itemB });
+    const res = await addService(gymA, umA, { product_id: itemB });
     expect(res.status).toBe(404);
   });
 
@@ -325,15 +325,15 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId, { name: 'Locker Rental', amount: 12.5 });
 
-    const created = await addService(gymId, umId, { gym_charge_id: itemId, quantity: 2, starts_at: today() });
+    const created = await addService(gymId, umId, { product_id: itemId, quantity: 2, starts_at: today() });
     expect(created.status).toBe(201);
     expect(created.body).toMatchObject({
       user_membership_id: umId,
-      gym_charge_id: itemId,
+      product_id: itemId,
       quantity: 2,
       starts_at: today(),
       ends_at: null,
-      sellable_item_name: 'Locker Rental',
+      product_name: 'Locker Rental',
       billing_frequency: 'month',
       currency: 'EUR',
       active: true,
@@ -347,9 +347,9 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
     expect(list.body).toHaveLength(1);
     expect(list.body[0]).toMatchObject({
       id: created.body.id,
-      gym_charge_id: itemId,
+      product_id: itemId,
       quantity: 2,
-      sellable_item_name: 'Locker Rental',
+      product_name: 'Locker Rental',
       billing_frequency: 'month',
       active: true,
     });
@@ -358,20 +358,20 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
   it('reads the name and price live from the Product after it is edited', async () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId, { name: 'Towel Service', amount: 10 });
-    const created = await addService(gymId, umId, { gym_charge_id: itemId });
+    const created = await addService(gymId, umId, { product_id: itemId });
     expect(created.status).toBe(201);
 
-    await db.query('UPDATE gym_charges SET name = ?, amount = ? WHERE id = ?', ['Towel Service Plus', 18, itemId]);
+    await db.query('UPDATE products SET name = ?, amount = ? WHERE id = ?', ['Towel Service Plus', 18, itemId]);
 
     const list = await listServices(gymId, umId);
-    expect(list.body[0].sellable_item_name).toBe('Towel Service Plus');
+    expect(list.body[0].product_name).toBe('Towel Service Plus');
     expect(Number(list.body[0].unit_price)).toBe(18);
   });
 
   it('defaults quantity to 1 and starts_at to today for a plan that already started', async () => {
     const umId = await createAssignedPlan(gymId, { startsAt: dayOffset(-30) });
     const itemId = await createProduct(gymId);
-    const res = await addService(gymId, umId, { gym_charge_id: itemId });
+    const res = await addService(gymId, umId, { product_id: itemId });
     expect(res.status).toBe(201);
     expect(res.body.quantity).toBe(1);
     expect(res.body.starts_at).toBe(today());
@@ -381,7 +381,7 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
     const futureStart = dayOffset(10);
     const umId = await createAssignedPlan(gymId, { startsAt: futureStart });
     const itemId = await createProduct(gymId);
-    const res = await addService(gymId, umId, { gym_charge_id: itemId });
+    const res = await addService(gymId, umId, { product_id: itemId });
     expect(res.status).toBe(201);
     expect(res.body.starts_at).toBe(futureStart);
     expect(res.body.active).toBe(true);
@@ -399,11 +399,11 @@ describe('POST/GET /user-memberships/:id/services — happy path', () => {
     const first = await createProduct(gymId, { name: 'Older Service' });
     const second = await createProduct(gymId, { name: 'Newer Service' });
     // Posted newest-first on purpose — ordering must come from starts_at, not insert order.
-    expect((await addService(gymId, umId, { gym_charge_id: second, starts_at: dayOffset(5) })).status).toBe(201);
-    expect((await addService(gymId, umId, { gym_charge_id: first, starts_at: dayOffset(-10) })).status).toBe(201);
+    expect((await addService(gymId, umId, { product_id: second, starts_at: dayOffset(5) })).status).toBe(201);
+    expect((await addService(gymId, umId, { product_id: first, starts_at: dayOffset(-10) })).status).toBe(201);
 
     const list = await listServices(gymId, umId);
-    expect(list.body.map((r: any) => r.sellable_item_name)).toEqual(['Older Service', 'Newer Service']);
+    expect(list.body.map((r: any) => r.product_name)).toEqual(['Older Service', 'Newer Service']);
   });
 });
 
@@ -421,28 +421,28 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
 
   it('rejects a non-recurring Product (billing_frequency \'once\') with 400', async () => {
     const itemId = await createProduct(gymId, { billingFrequency: 'once' });
-    const res = await addService(gymId, umId, { gym_charge_id: itemId });
+    const res = await addService(gymId, umId, { product_id: itemId });
     expect(res.status).toBe(400);
   });
 
   it('rejects a Product with no billing frequency with 400', async () => {
     const itemId = await createProduct(gymId, { billingFrequency: null });
-    const res = await addService(gymId, umId, { gym_charge_id: itemId });
+    const res = await addService(gymId, umId, { product_id: itemId });
     expect(res.status).toBe(400);
   });
 
   it('rejects a sessions-type Product with 400 even when its frequency is recurring', async () => {
     const itemId = await createProduct(gymId, { type: 'sessions', billingFrequency: 'month', units: 10 });
-    const res = await addService(gymId, umId, { gym_charge_id: itemId });
+    const res = await addService(gymId, umId, { product_id: itemId });
     expect(res.status).toBe(400);
   });
 
   it('accepts every other recurring frequency (week, four_weeks, year)', async () => {
-    // 'four_weeks' is a valid gym_charges.billing_frequency since migration 123.
+    // 'four_weeks' is a valid products.billing_frequency since migration 123.
     for (const frequency of ['week', 'four_weeks', 'year']) {
       const target = await createAssignedPlan(gymId);
       const itemId = await createProduct(gymId, { billingFrequency: frequency });
-      const res = await addService(gymId, target, { gym_charge_id: itemId });
+      const res = await addService(gymId, target, { product_id: itemId });
       expect(res.status).toBe(201);
       expect(res.body.billing_frequency).toBe(frequency);
     }
@@ -450,20 +450,20 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
 
   it('rejects an inactive Product with 400', async () => {
     const itemId = await createProduct(gymId, { status: 'inactive' });
-    const res = await addService(gymId, umId, { gym_charge_id: itemId });
+    const res = await addService(gymId, umId, { product_id: itemId });
     expect(res.status).toBe(400);
   });
 
   it('rejects a soft-deleted Product with 404', async () => {
     const itemId = await createProduct(gymId);
     await softDeleteItem(itemId);
-    const res = await addService(gymId, umId, { gym_charge_id: itemId });
+    const res = await addService(gymId, umId, { product_id: itemId });
     expect(res.status).toBe(404);
   });
 
-  it('rejects a missing or non-numeric gym_charge_id with 400', async () => {
-    for (const gym_charge_id of [undefined, null, 'abc', 0, -3]) {
-      const res = await addService(gymId, umId, { gym_charge_id });
+  it('rejects a missing or non-numeric product_id with 400', async () => {
+    for (const product_id of [undefined, null, 'abc', 0, -3]) {
+      const res = await addService(gymId, umId, { product_id });
       expect(res.status).toBe(400);
     }
   });
@@ -471,7 +471,7 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
   it('rejects a non-positive or fractional quantity with 400', async () => {
     const itemId = await createProduct(gymId);
     for (const quantity of [0, -1, 1.5, 'two']) {
-      const res = await addService(gymId, umId, { gym_charge_id: itemId, quantity });
+      const res = await addService(gymId, umId, { product_id: itemId, quantity });
       expect(res.status).toBe(400);
     }
   });
@@ -480,11 +480,11 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
     const planStart = dayOffset(-10);
     const target = await createAssignedPlan(gymId, { startsAt: planStart });
     const itemId = await createProduct(gymId);
-    const res = await addService(gymId, target, { gym_charge_id: itemId, starts_at: dayOffset(-11) });
+    const res = await addService(gymId, target, { product_id: itemId, starts_at: dayOffset(-11) });
     expect(res.status).toBe(400);
 
     // The plan's own start date is accepted.
-    const ok = await addService(gymId, target, { gym_charge_id: itemId, starts_at: planStart });
+    const ok = await addService(gymId, target, { product_id: itemId, starts_at: planStart });
     expect(ok.status).toBe(201);
     expect(ok.body.starts_at).toBe(planStart);
   });
@@ -492,27 +492,27 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
   it('rejects starts_at later than the Assigned Plan end date with 400', async () => {
     const target = await createAssignedPlan(gymId, { startsAt: dayOffset(-10), endsAt: dayOffset(10) });
     const itemId = await createProduct(gymId);
-    const res = await addService(gymId, target, { gym_charge_id: itemId, starts_at: dayOffset(11) });
+    const res = await addService(gymId, target, { product_id: itemId, starts_at: dayOffset(11) });
     expect(res.status).toBe(400);
   });
 
   it('rejects a malformed starts_at with 400', async () => {
     const itemId = await createProduct(gymId);
-    const res = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: '15-02-2026' });
+    const res = await addService(gymId, umId, { product_id: itemId, starts_at: '15-02-2026' });
     expect(res.status).toBe(400);
   });
 
   it('returns 409 attaching the same Product while the first attachment is still open', async () => {
     const target = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId);
-    const first = await addService(gymId, target, { gym_charge_id: itemId, starts_at: today() });
+    const first = await addService(gymId, target, { product_id: itemId, starts_at: today() });
     expect(first.status).toBe(201);
 
-    const duplicate = await addService(gymId, target, { gym_charge_id: itemId, starts_at: today() });
+    const duplicate = await addService(gymId, target, { product_id: itemId, starts_at: today() });
     expect(duplicate.status).toBe(409);
 
     // Also for a later start date, while the open attachment has no end.
-    const later = await addService(gymId, target, { gym_charge_id: itemId, starts_at: dayOffset(30) });
+    const later = await addService(gymId, target, { product_id: itemId, starts_at: dayOffset(30) });
     expect(later.status).toBe(409);
 
     const list = await listServices(gymId, target);
@@ -523,8 +523,8 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
     const target = await createAssignedPlan(gymId);
     const itemA = await createProduct(gymId);
     const itemB = await createProduct(gymId);
-    expect((await addService(gymId, target, { gym_charge_id: itemA })).status).toBe(201);
-    expect((await addService(gymId, target, { gym_charge_id: itemB })).status).toBe(201);
+    expect((await addService(gymId, target, { product_id: itemA })).status).toBe(201);
+    expect((await addService(gymId, target, { product_id: itemB })).status).toBe(201);
     const list = await listServices(gymId, target);
     expect(list.body).toHaveLength(2);
   });
@@ -533,15 +533,15 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
     const itemId = await createProduct(gymId);
     const planOne = await createAssignedPlan(gymId);
     const planTwo = await createAssignedPlan(gymId);
-    expect((await addService(gymId, planOne, { gym_charge_id: itemId })).status).toBe(201);
-    expect((await addService(gymId, planTwo, { gym_charge_id: itemId })).status).toBe(201);
+    expect((await addService(gymId, planOne, { product_id: itemId })).status).toBe(201);
+    expect((await addService(gymId, planTwo, { product_id: itemId })).status).toBe(201);
   });
 
   it('returns 409 for a cancelled or expired Assigned Plan', async () => {
     for (const status of ['cancelled', 'expired'] as const) {
       const target = await createAssignedPlan(gymId, { status });
       const itemId = await createProduct(gymId);
-      const res = await addService(gymId, target, { gym_charge_id: itemId });
+      const res = await addService(gymId, target, { product_id: itemId });
       expect(res.status).toBe(409);
     }
   });
@@ -550,7 +550,7 @@ describe('POST /user-memberships/:id/services — attach invariants', () => {
     for (const status of ['active', 'paused'] as const) {
       const target = await createAssignedPlan(gymId, { status });
       const itemId = await createProduct(gymId);
-      const res = await addService(gymId, target, { gym_charge_id: itemId });
+      const res = await addService(gymId, target, { product_id: itemId });
       expect(res.status).toBe(201);
     }
   });
@@ -569,7 +569,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
   it('deletes a service outright when its billing has not started yet', async () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId);
-    const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(7) });
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(7) });
     expect(created.status).toBe(201);
 
     const res = await removeService(gymId, umId, created.body.id);
@@ -585,7 +585,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
   it('stamps ends_at = today for a service that is already being billed, keeping the row', async () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId);
-    const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(-5) });
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-5) });
     expect(created.status).toBe(201);
 
     const res = await removeService(gymId, umId, created.body.id);
@@ -604,7 +604,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
   it('lists a service whose window has already closed as active: false', async () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId);
-    const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(-10) });
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-10) });
     expect(created.status).toBe(201);
     expect((await removeService(gymId, umId, created.body.id)).status).toBe(200);
 
@@ -620,15 +620,15 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
   it('allows re-attaching the same Product once the earlier window has closed', async () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId);
-    const first = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(-20) });
+    const first = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-20) });
     expect(first.status).toBe(201);
     expect((await removeService(gymId, umId, first.body.id)).body.ends_at).toBe(today());
 
     // Still overlapping today (ends_at = today) → 409.
-    expect((await addService(gymId, umId, { gym_charge_id: itemId, starts_at: today() })).status).toBe(409);
+    expect((await addService(gymId, umId, { product_id: itemId, starts_at: today() })).status).toBe(409);
 
     // After that end date → allowed, and both windows are listed.
-    const second = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(1) });
+    const second = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(1) });
     expect(second.status).toBe(201);
     expect(second.body.id).not.toBe(first.body.id);
 
@@ -642,7 +642,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
   it('returns 409 removing the same service twice', async () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId);
-    const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(-3) });
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-3) });
     expect(created.status).toBe(201);
 
     expect((await removeService(gymId, umId, created.body.id)).status).toBe(200);
@@ -657,7 +657,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
   it('returns 404 removing a service that was already deleted outright', async () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId);
-    const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(7) });
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(7) });
     expect((await removeService(gymId, umId, created.body.id)).body.deleted).toBe(true);
 
     const second = await removeService(gymId, umId, created.body.id);
@@ -673,7 +673,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
   it('removes a service whose Product was soft-deleted after it was attached', async () => {
     const umId = await createAssignedPlan(gymId);
     const itemId = await createProduct(gymId);
-    const created = await addService(gymId, umId, { gym_charge_id: itemId, starts_at: dayOffset(-2) });
+    const created = await addService(gymId, umId, { product_id: itemId, starts_at: dayOffset(-2) });
     expect(created.status).toBe(201);
     await softDeleteItem(itemId);
 

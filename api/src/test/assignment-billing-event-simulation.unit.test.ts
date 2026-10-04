@@ -36,7 +36,7 @@ const TODAY = '2026-10-02';
 
 function benefit(over: Partial<SimulationPlanBenefit> = {}): SimulationPlanBenefit {
   return {
-    gymChargeId: 1,
+    productId: 1,
     name: 'Locker',
     category: 'periodical',
     billingFrequency: 'month',
@@ -111,7 +111,7 @@ describe('computeAssignmentBillingEventSimulation', () => {
     // Events ledger is what shows it — so it must not be forecast again.
     const result = forecast({
       planBenefits: [benefit({
-        gymChargeId: 9, name: 'Registration Fee', category: 'oneoff',
+        productId: 9, name: 'Registration Fee', category: 'oneoff',
         billingFrequency: 'once', unitPrice: 50,
       })],
     });
@@ -125,7 +125,7 @@ describe('computeAssignmentBillingEventSimulation', () => {
     const result = forecast({
       startsAt: TODAY,
       planBenefits: [benefit({
-        gymChargeId: 9, name: 'Registration Fee', category: 'oneoff',
+        productId: 9, name: 'Registration Fee', category: 'oneoff',
         billingFrequency: 'once', unitPrice: 50,
       })],
     });
@@ -162,7 +162,7 @@ describe('computeAssignmentBillingEventSimulation', () => {
 
   it('prices an applied Promotion’s grant from the application’s own pair', () => {
     const grant: SimulationGrant = {
-      gymChargeId: 1, name: 'Locker', category: 'periodical', billingFrequency: 'month',
+      productId: 1, name: 'Locker', category: 'periodical', billingFrequency: 'month',
       unitPrice: 20, quantity: 6, benefit: { action: 'waive', value: null },
     };
     const result = forecast({
@@ -191,7 +191,7 @@ describe('computeAssignmentBillingEventSimulation', () => {
   it('bills an Additional Periodic Service of the assignment', () => {
     const result = forecast({
       services: [{
-        id: 7, gymChargeId: 5, name: 'Personal Trainer', billingFrequency: 'month',
+        id: 7, productId: 5, name: 'Personal Trainer', billingFrequency: 'month',
         unitPrice: 40, quantity: 1, startsOn: '2024-01-10', endsOn: null,
       }],
     });

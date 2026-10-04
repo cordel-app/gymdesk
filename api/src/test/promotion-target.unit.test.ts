@@ -5,10 +5,15 @@
 // the accepted set here, the radio group's mirror in
 // `apps/admin/src/lib/promotionTargets.ts`, the `applies_to_<target>` locale
 // keys the mirror interpolates (next-intl prints a missing key verbatim), and
-// the set migration 204's `chk_promotions_applies_to` admits — which the
-// migration exports for exactly this reason, as migration 203 exports its own
+// the set `chk_promotions_applies_to` admits — which the migration that last
+// defined it exports for exactly this reason, as migration 203 exports its own
 // action sets. Without that last assertion a third target added here and to the
 // mirror would pass every test and surface as a 500 from the database on save.
+//
+// Since #949 stage 3 that migration is **214**, not 204: the stored value moved
+// with the entity's name and 214 rebuilt the CHECK around the new set, so
+// reading 204's exported set here would assert against a constraint the
+// database no longer has.
 
 import { createRequire } from 'module';
 import { readFileSync } from 'fs';
@@ -22,7 +27,7 @@ import {
   targetsMembershipPlan,
 } from '../domain/promotionTarget';
 
-const migration = createRequire(__filename)('../infra/migrations/204_promotion_applies_to.js') as {
+const migration = createRequire(__filename)('../infra/migrations/214_rename_products.js') as {
   TARGETS: string[];
   TARGET_CHECK: string;
 };
@@ -32,7 +37,7 @@ const LOCALES = ['en', 'es', 'ca'] as const;
 
 describe('PROMOTION_TARGETS', () => {
   it('is exactly the two targets, in the order the radio group lists them', () => {
-    expect(PROMOTION_TARGETS).toEqual(['membership_plan', 'sellable_item']);
+    expect(PROMOTION_TARGETS).toEqual(['membership_plan', 'product']);
   });
 
   it('defaults to the Membership Plan behaviour every Promotion had before #926', () => {
@@ -41,17 +46,17 @@ describe('PROMOTION_TARGETS', () => {
   });
 
   it('rejects anything else', () => {
-    for (const junk of ['plan', 'sellable', 'MEMBERSHIP_PLAN', '', null, undefined, 1, {}, ['membership_plan']]) {
+    for (const junk of ['plan', 'products', 'MEMBERSHIP_PLAN', '', null, undefined, 1, {}, ['membership_plan']]) {
       expect(isPromotionTarget(junk)).toBe(false);
     }
   });
 
   it('names the accepted set for the 400 message', () => {
-    expect(describePromotionTargets()).toBe('membership_plan, sellable_item');
+    expect(describePromotionTargets()).toBe('membership_plan, product');
   });
 });
 
-describe('migration 204\'s CHECK', () => {
+describe('migration 214\'s CHECK', () => {
   it('admits exactly the targets this module accepts, in the same order', () => {
     expect(migration.TARGETS).toEqual([...PROMOTION_TARGETS]);
   });
@@ -64,7 +69,7 @@ describe('migration 204\'s CHECK', () => {
 describe('targetsMembershipPlan', () => {
   it('is true for the Plan target and false for the Product one', () => {
     expect(targetsMembershipPlan('membership_plan')).toBe(true);
-    expect(targetsMembershipPlan('sellable_item')).toBe(false);
+    expect(targetsMembershipPlan('product')).toBe(false);
   });
 
   it('treats an unknown or missing target as the default, never as "no Plan"', () => {

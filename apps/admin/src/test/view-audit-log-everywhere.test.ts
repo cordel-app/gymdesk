@@ -56,7 +56,7 @@ const DETAILS_VIEWS: {
   { file: 'components/exercises/ExerciseDetailModal.tsx',                  entityType: 'exercise', root: 'src', scopeFromProp: true },
   { file: 'financials/assigned-plans/AssignedPlanDetailsModal.tsx',       entityType: 'user_membership' },
   { file: 'financials/taxes/page.tsx',                                    entityType: 'tax_rate' },
-  { file: 'financials/products/page.tsx',                           entityType: 'gym_charge' },
+  { file: 'financials/products/page.tsx',                           entityType: 'product' },
   { file: 'workout-templates/page.tsx',                                   entityType: 'workout_template' },
   { file: 'training-plans/page.tsx',                                      entityType: 'training_plan' },
   { file: 'training-plan-templates/page.tsx',                             entityType: 'training_plan_template' },

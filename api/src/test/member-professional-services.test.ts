@@ -12,7 +12,7 @@
 //   2. promotion_session    — Session benefits of a Promotion applied to an
 //                             ACTIVE assignment (user_membership_promotions)
 //   3. user_membership_services — Additional Services attached to an ACTIVE
-//                             assignment (quantity * gym_charges.units)
+//                             assignment (quantity * products.units)
 //
 // aggregateProfessionalServiceGrants() — the pure folding step — is covered
 // separately by member-professional-services-aggregation.test.ts. This file
@@ -91,7 +91,7 @@ async function createProfessionalService(
 }
 
 /**
- * A Session-type Product (`gym_charges`, type='sessions'). `units` is the
+ * A Session-type Product (`products`, type='sessions'). `units` is the
  * number of sessions the item bundles — migration 103 copies
  * class_packages.number_of_sessions into it. charge_type_id stays NULL: these
  * are custom catalogue items, not system charges.
@@ -107,7 +107,7 @@ async function createSessionItem(
     classPackageId = null,
   } = opts;
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, units, amount, currency, billing_frequency,
         status, availability, is_system, class_package_id)
      VALUES (?, ?, ?, ?, 100.00, 'EUR', NULL, 'active', 'available', 0, ?)`,
@@ -119,14 +119,14 @@ async function createSessionItem(
 /** Links a Product to a Professional Service (#546, migration 153). */
 async function linkItemToService(gymId: string, itemId: number, serviceId: number): Promise<void> {
   await db.query(
-    `INSERT INTO sellable_item_professional_services (gym_id, sellable_item_id, professional_service_id)
+    `INSERT INTO product_professional_services (gym_id, product_id, professional_service_id)
      VALUES (?, ?, ?)`,
     [gymId, itemId, serviceId],
   );
 }
 
 /**
- * A class_packages catalogue row plus the gym_charges Product that
+ * A class_packages catalogue row plus the products Product that
  * traces back to it (the migration-103 shape the package loader relies on),
  * already linked to `serviceId`.
  */
@@ -224,7 +224,7 @@ async function applyPromotionWithSessionBenefit(
     [gymId, promotionId, planId],
   );
   await db.query(
-    'INSERT INTO promotion_session (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)',
+    'INSERT INTO promotion_session (gym_id, promotion_id, product_id, quantity) VALUES (?, ?, ?, ?)',
     [gymId, promotionId, productId, quantity],
   );
   const { insertId } = await db.query(
@@ -245,7 +245,7 @@ async function attachMembershipService(
   const { quantity = 1, startsAt = dayOffset(-10), endsAt = null } = opts;
   const { insertId } = await db.query(
     `INSERT INTO user_membership_services
-       (gym_id, user_membership_id, gym_charge_id, quantity, starts_at, ends_at)
+       (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [gymId, userMembershipId, productId, quantity, startsAt, endsAt],
   );
@@ -415,8 +415,8 @@ describe('GET /members/:memberId/professional-services — happy path', () => {
     expect(res.body[0].sources[0]).toMatchObject({
       kind: 'class_package',
       reference_id: userClassPackageId,
-      sellable_item_id: pkg.productId,
-      sellable_item_name: pkg.name,
+      product_id: pkg.productId,
+      product_name: pkg.name,
       sessions: 10,
     });
   });
@@ -497,7 +497,7 @@ describe('Counts add up across grant sources', () => {
     const fromPackage = sources.find((s: any) => s.kind === 'class_package');
     expect(fromPackage).toMatchObject({
       reference_id: userClassPackageId,
-      sellable_item_id: pkg.productId,
+      product_id: pkg.productId,
       sessions: 10,
     });
 
@@ -506,7 +506,7 @@ describe('Counts add up across grant sources', () => {
     const fromPromotion = sources.find((s: any) => s.kind === 'promotion_session');
     expect(fromPromotion).toMatchObject({
       reference_id: umpId,
-      sellable_item_id: promotionItemId,
+      product_id: promotionItemId,
       sessions: 4,
     });
   });
@@ -699,7 +699,7 @@ describe('Additional Services attached to an assignment', () => {
     await linkItemToService(gymId, tenSessionItemId, service.id);
   });
 
-  // gym_charges.units is the number of sessions the item bundles, so quantity 2
+  // products.units is the number of sessions the item bundles, so quantity 2
   // of a 10-session item is 20 sessions.
   it('multiplies quantity by the item units', async () => {
     const memberId = await createMember(gymId, 'MPS Attached Member');
@@ -714,7 +714,7 @@ describe('Additional Services attached to an assignment', () => {
     expect(res.body[0].sources[0]).toMatchObject({
       kind: 'membership_service',
       reference_id: umsvId,
-      sellable_item_id: tenSessionItemId,
+      product_id: tenSessionItemId,
       sessions: 20,
     });
   });

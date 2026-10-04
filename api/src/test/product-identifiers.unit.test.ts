@@ -1,22 +1,27 @@
-// #949 stage 2 — the code says **Product**, and what still says otherwise is
-// stage 3's, by shape rather than by exception.
+// #949 stage 3 — the retired entity is gone from the code, the wire and the
+// schema, and this gate is what keeps it gone.
 //
-// Stage 2 renamed the identifiers, the file names, the locale keys and the admin
-// route folder. It deliberately moved nothing that crosses the wire or the
-// schema, because that is what stage 3 (`Q1 C` on the thread) carries with a
-// migration and a `db-reviewer` pass: the `/sellable-items` API root, the
-// `gym_charges` table with its `gym_charge_id` FK column in twelve tables and
-// its eight CHECKs, `sellable_item_professional_services`, the response fields
-// (`products`, `sellable_item_id`, `sellable_item_name`, …), the stored
-// `promotions.applies_to` value and simulation line `kind` (`'sellable_item'`),
-// the `financials.gym_charges` feature flag and the `gym_charge` audit entity
-// type.
+// Stage 2 banned the retired spellings *a TypeScript reader chooses* — the
+// camel/Pascal/SCREAMING identifiers and the English prose — and said nothing
+// about `snake_case` or the route path, because those were stage 3's: the
+// `/sellable-items` API root, the `gym_charges` table with its `gym_charge_id`
+// FK column, its eight CHECKs and `sellable_item_professional_services`, the
+// response fields, the stored `promotions.applies_to` value and simulation line
+// `kind`, the `financials.gym_charges` feature flag and the `gym_charge` audit
+// entity type. Stage 3 has moved all of them (migration 214, and `/products` in
+// `app.ts`), so the ban now covers those shapes too and the gate is a flat one
+// again — no allowlist to rot, because nothing correct can match it.
 //
-// So this gate bans the *retired spellings a TypeScript reader chooses* — the
-// camel/Pascal/SCREAMING identifiers and the English prose — and says nothing
-// about `snake_case` or the route path, none of which can match the patterns
-// below. That is what lets it be a flat ban with no allowlist to rot: a stage-3
-// PR adds nothing here, because the names it moves were never matched.
+// Two things deliberately stay outside it, and both are *paths* rather than
+// code: the two legacy admin routes (`financials/sellable-items`,
+// `financials/gym-charges`), kept so a bookmark written before either rename
+// still lands on `financials/products`. The hyphenated `gym-charges` is
+// therefore not a banned shape, since that folder's name is the only place it
+// occurs; `sellable` in any casing is banned, and the assertion at the bottom
+// pins the two redirect files as the only paths that may name a retired term.
+// The old migrations are outside it too, for the reason they are never edited:
+// they are `.js`, and this gate reads `.ts`/`.tsx` only. A migration's SQL is
+// the history of a schema that really did carry those names.
 //
 // It scans the two Next apps from the API suite for the same reason
 // `migration-074-dropped-columns.unit.test.ts` does — CI runs `npm test` in
@@ -39,9 +44,20 @@ const ROOTS = [
  * (`SellableItemBenefitRow`, `createSellableItem`, `sellableItemsRouter`, …);
  * `SELLABLE_ITEM` / `SELLABLE_BENEFIT` cover the constants; `sellableSection`
  * and `SellableBenefit` cover the two the entity's name was shortened in; and
- * the prose forms cover a comment or a test description.
+ * the prose forms cover a comment or a test description. One `/sellable/i`
+ * would cover all of those, and stage 3 adds it — the narrower shapes are kept
+ * beside it because each one names what it was, which is what a failure message
+ * has to say.
+ *
+ * Stage 3's own shapes are the three the schema and the wire carried: anything
+ * spelling `sellable` at all (the API root `/sellable-items`, the
+ * `sellable_item_*` fields, the stored `'sellable_item'` value), the
+ * `gym_charge`/`gym_charges` table and column family in SQL, and its
+ * `gymCharge`/`GymCharge` camel and Pascal forms. The hyphenated `gym-charges`
+ * is not among them: see the header.
  */
 const RETIRED = [
+  /sellable/i,
   /Sellable\s*Items?/,
   /sellable\s+items?/,
   /sellableItem/,
@@ -49,6 +65,10 @@ const RETIRED = [
   /SELLABLE[_ ]ITEMS?/,
   /SELLABLE_BENEFIT/,
   /SellableBenefit/,
+  /gym_charges?/,
+  /gymCharges?/,
+  /GymCharges?/,
+  /GYM_CHARGES?/,
 ];
 
 /**
@@ -76,7 +96,16 @@ function sources(root: string): string[] {
   return out;
 }
 
-const says = (text: string) => RETIRED.some((re) => re.test(text));
+/**
+ * A migration's own **file name** is history and is never renamed — the schema
+ * really did carry those names, and `require()`ing one by a different name
+ * would simply fail. So a line naming a migration file is read with that name
+ * taken out of it rather than exempting the whole file, which is what keeps the
+ * rest of a test like `product-benefit-actions.unit.test.ts` under the ban.
+ */
+const MIGRATION_FILE = /infra\/migrations\/\d+_[a-z0-9_]+\.js/g;
+
+const says = (text: string) => RETIRED.some((re) => re.test(text.replace(MIGRATION_FILE, '')));
 
 const offenders = (file: string): string[] => {
   const at = relative(REPO, file);
@@ -88,7 +117,7 @@ const offenders = (file: string): string[] => {
     .map(([line, n]) => `${at}:${n}: ${line.trim()}`);
 };
 
-describe('the retired identifier is gone from the code (#949 stage 2)', () => {
+describe('the retired identifier is gone from the code, the wire and the schema (#949)', () => {
   const files = ROOTS.flatMap(sources);
 
   it('reads the trees it claims to check', () => {
@@ -122,36 +151,74 @@ describe('the retired identifier is gone from the code (#949 stage 2)', () => {
     }
   });
 
-  it('leaves every spelling stage 3 owns alone', () => {
-    for (const kept of [
+  it('would catch each shape stage 3 moved', () => {
+    // The wire and the schema: the API root, the response fields, the stored
+    // values, the table and its FK column, the feature flag, the audit entity
+    // type, and the camel forms of the table's name.
+    for (const retired of [
       "apiFetch('/sellable-items')",
       "await request(app).get('/sellable-items/1')",
       "kind: 'sellable_item'",
       "applies_to: 'sellable_item'",
       'row.sellable_item_name',
       'FROM sellable_item_professional_services',
-      'impact.products > 0',
+      'FROM gym_charges gc',
+      'b.gym_charge_id',
       "requireFeatureEnabled('financials.gym_charges')",
       'entityType="gym_charge"',
-      "for (const junk of ['plan', 'sellable', 'MEMBERSHIP_PLAN'])",
+      'const gymChargeId = Number(row.id)',
+      'interface GymCharge extends ProductOption {',
+      'GYM_CHARGES_PAGE',
+    ]) {
+      expect(says(retired), `missed ${retired}`).toBe(true);
+    }
+  });
+
+  it('leaves the names that are not the retired entity alone', () => {
+    // `charge_types` is a different concept that merely shares a word and keeps
+    // the name **Charge Type** (the hard constraint, and Q3 on the thread), so
+    // every spelling of it has to pass — including the column that says which
+    // Charge Types seed a per-gym Product. The legacy admin route's own folder
+    // name is the only place the hyphenated form occurs, so it passes too.
+    for (const kept of [
+      'FROM charge_types ct',
+      'charge_type_id',
+      'ct.is_product = 1',
+      "entityType: 'product'",
+      "apiFetch('/products')",
+      'FROM product_professional_services',
+      'impact.products > 0',
+      "requireFeatureEnabled('financials.products')",
+      "permanentRedirect(`/${locale}/financials/products`)",
+      '// `financials/gym-charges` is kept for the name before that',
+      "require('../infra/migrations/203_sellable_item_benefit_actions.js')",
+      "createRequire(__filename)('../infra/migrations/153_sellable_item_professional_services.js')",
+      "for (const junk of ['plan', 'products', 'MEMBERSHIP_PLAN'])",
     ]) {
       expect(says(kept), `false positive on ${kept}`).toBe(false);
     }
   });
 
-  it('keeps the retired route only as a redirect', () => {
-    // The one path that still spells the old term is the legacy admin route,
-    // kept so a bookmark written before the rename lands on
-    // `financials/products`. Its body names the term nowhere.
+  it('keeps the two retired routes only as redirects', () => {
+    // The only paths that still spell a retired name are the two legacy admin
+    // routes, kept so a bookmark written before either rename lands on
+    // `financials/products`. Neither body names the term it is called after.
     const legacy = join(
       REPO, 'apps', 'admin', 'src', 'app', '[locale]', 'financials', 'sellable-items', 'page.tsx',
     );
-    const src = readFileSync(legacy, 'utf8');
-    expect(src).toContain('permanentRedirect(`/${locale}/financials/products`)');
-    expect(src).not.toMatch(/sellable/i);
+    const charges = join(
+      REPO, 'apps', 'admin', 'src', 'app', '[locale]', 'financials', 'gym-charges', 'page.tsx',
+    );
+    for (const redirect of [legacy, charges]) {
+      const src = readFileSync(redirect, 'utf8');
+      expect(src).toContain('permanentRedirect(`/${locale}/financials/products`)');
+    }
+    expect(readFileSync(legacy, 'utf8')).not.toMatch(/sellable/i);
+    expect(readFileSync(charges, 'utf8')).not.toMatch(/gym.charges/i);
     const retiredPaths = files
-      .filter((f) => /sellable/i.test(relative(REPO, f)))
-      .map((f) => relative(REPO, f));
-    expect(retiredPaths).toEqual([relative(REPO, legacy)]);
+      .filter((f) => /sellable|gym-charges/i.test(relative(REPO, f)))
+      .map((f) => relative(REPO, f))
+      .sort();
+    expect(retiredPaths).toEqual([relative(REPO, charges), relative(REPO, legacy)].sort());
   });
 });

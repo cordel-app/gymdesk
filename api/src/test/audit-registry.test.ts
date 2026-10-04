@@ -27,7 +27,7 @@ const DETAILS_VIEW_ENTITIES: Record<string, string | null> = {
   activity_type: 'activity_types',
   theme: 'themes',
   tax_rate: 'tax_rates',
-  gym_charge: 'gym_charges',
+  product: 'products',
   professional_service: 'professional_services',
   nutrition_library_item: 'nutrition_library_items',
   nutrition_plan_template: 'nutrition_plan_templates',

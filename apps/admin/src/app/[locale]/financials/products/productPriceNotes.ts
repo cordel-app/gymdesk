@@ -26,7 +26,7 @@
 // rather than each spelling out `type === 'sessions'` for itself.
 
 /**
- * `gym_charges.type` for a session package. Mirrors the page's own
+ * `products.type` for a session package. Mirrors the page's own
  * `SESSION_TYPE`, which is the value `classifyProduct()` (#550) maps to
  * the `session` benefit category.
  */

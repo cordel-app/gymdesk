@@ -85,7 +85,7 @@ async function createProduct(gymId: string, opts: {
 } = {}): Promise<number> {
   const { type = 'service', billingFrequency = 'month', amount = 20, name = `APS-Item-${uniq()}` } = opts;
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
      VALUES (?, ?, ?, ?, 'EUR', ?, 'active', 'available', 0)`,
     [gymId, name, type, amount, billingFrequency],
@@ -98,7 +98,7 @@ async function addPlanBenefit(
   gymId: string, table: string, planId: number, chargeId: number, quantity = 1,
 ): Promise<void> {
   await db.query(
-    `INSERT INTO ${table} (gym_id, membership_plan_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)`,
+    `INSERT INTO ${table} (gym_id, membership_plan_id, product_id, quantity) VALUES (?, ?, ?, ?)`,
     [gymId, planId, chargeId, quantity],
   );
 }
@@ -131,7 +131,7 @@ async function createFullyConfiguredPlan(gymId: string) {
 }
 
 /**
- * A system Product: `gym_charges` rows created from a `charge_types` row
+ * A system Product: `products` rows created from a `charge_types` row
  * carry neither their own `name` nor `type` (both columns are nullable and the
  * display name comes from the charge type), which is the shape that would
  * otherwise write a NULL into the snapshot's NOT NULL columns.
@@ -139,13 +139,13 @@ async function createFullyConfiguredPlan(gymId: string) {
 async function createSystemProduct(gymId: string): Promise<{ id: number; chargeTypeName: string }> {
   const { rows } = await db.query(
     `SELECT ct.id, ct.name FROM charge_types ct
-     WHERE ct.is_gym_charge = 1
-       AND NOT EXISTS (SELECT 1 FROM gym_charges gc WHERE gc.gym_id = ? AND gc.charge_type_id = ct.id)
+     WHERE ct.is_product = 1
+       AND NOT EXISTS (SELECT 1 FROM products gc WHERE gc.gym_id = ? AND gc.charge_type_id = ct.id)
      LIMIT 1`,
     [gymId],
   );
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges (gym_id, charge_type_id, availability, amount, currency, billing_frequency, status, is_system)
+    `INSERT INTO products (gym_id, charge_type_id, availability, amount, currency, billing_frequency, status, is_system)
      VALUES (?, ?, 'available', 35, 'EUR', 'once', 'active', 1)`,
     [gymId, rows[0].id],
   );
@@ -193,7 +193,7 @@ describe('POST /user-memberships — captures the Plan configuration', () => {
     expect(body.snapshot.session_benefits[0]).toMatchObject({ quantity: 10, unit_price: 30, item_type: 'sessions', currency: 'EUR' });
     expect(body.snapshot.oneoff_benefits[0]).toMatchObject({ quantity: 1, unit_price: 50, item_type: 'fee' });
     expect(body.snapshot.periodical_benefits[0]).toMatchObject({
-      quantity: 2, unit_price: 20, item_billing_frequency: 'month', gym_charge_id: periodicalItem,
+      quantity: 2, unit_price: 20, item_billing_frequency: 'month', product_id: periodicalItem,
     });
   });
 
@@ -205,7 +205,7 @@ describe('POST /user-memberships — captures the Plan configuration', () => {
     );
     await db.query('UPDATE billing_policies SET recurring_billing_interval = 4, recurring_billing_unit = ? WHERE membership_plan_id = ?', ['week', planId]);
     await db.query('UPDATE membership_plan_prices SET price = 200 WHERE membership_plan_id = ?', [planId]);
-    await db.query('UPDATE gym_charges SET amount = 999, name = ? WHERE id = ?', ['Renamed Locker', periodicalItem]);
+    await db.query('UPDATE products SET amount = 999, name = ? WHERE id = ?', ['Renamed Locker', periodicalItem]);
     await db.query('DELETE FROM membership_plan_periodical WHERE membership_plan_id = ?', [planId]);
 
     const { body } = await getAssignment(gymId, umId);
@@ -220,7 +220,7 @@ describe('POST /user-memberships — captures the Plan configuration', () => {
   });
 
   it('survives the Product being retired', async () => {
-    await db.query('UPDATE gym_charges SET deleted_at = UTC_TIMESTAMP(), status = ? WHERE id = ?', ['inactive', periodicalItem]);
+    await db.query('UPDATE products SET deleted_at = UTC_TIMESTAMP(), status = ? WHERE id = ?', ['inactive', periodicalItem]);
     const { body } = await getAssignment(gymId, umId);
     expect(body.snapshot.periodical_benefits).toHaveLength(1);
     expect(body.snapshot.periodical_benefits[0].unit_price).toBe(20);
@@ -440,7 +440,7 @@ describe('applying a Promotion snapshots what it grants', () => {
     );
     grantedItem = await createProduct(gymId, { type: 'service', billingFrequency: 'month', amount: 15, name: `APS-Granted-${uniq()}` });
     await db.query(
-      'INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)',
+      'INSERT INTO promotion_periodical (gym_id, promotion_id, product_id, quantity) VALUES (?, ?, ?, ?)',
       [gymId, promotionId, grantedItem, 3],
     );
 
@@ -467,7 +467,7 @@ describe('applying a Promotion snapshots what it grants', () => {
   });
 
   it('keeps the agreed price after the Promotion and the item are edited', async () => {
-    await db.query('UPDATE gym_charges SET amount = 60 WHERE id = ?', [grantedItem]);
+    await db.query('UPDATE products SET amount = 60 WHERE id = ?', [grantedItem]);
     await db.query('UPDATE promotion_periodical SET quantity = 12 WHERE promotion_id = ?', [promotionId]);
     await db.query('DELETE FROM promotion_periodical WHERE promotion_id = ?', [promotionId]);
 
@@ -504,14 +504,14 @@ describe('attaching an Additional Periodic Service snapshots its price', () => {
       .post(`/user-memberships/${umId}/services`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ gym_charge_id: itemId, quantity: 1 });
+      .send({ product_id: itemId, quantity: 1 });
     expect(res.status).toBe(201);
     serviceId = res.body.id;
     expect(res.body.snapshot).toMatchObject({ unit_price: 40, billing_frequency: 'month', currency: 'EUR' });
   });
 
   it('keeps the attached price after the item is repriced', async () => {
-    await db.query('UPDATE gym_charges SET amount = 90 WHERE id = ?', [itemId]);
+    await db.query('UPDATE products SET amount = 90 WHERE id = ?', [itemId]);
     const res = await request
       .get(`/user-memberships/${umId}/services`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -525,7 +525,7 @@ describe('attaching an Additional Periodic Service snapshots its price', () => {
 
   it('reports no snapshot for an attachment made before migration 174', async () => {
     const { insertId } = await db.query(
-      `INSERT INTO user_membership_services (gym_id, user_membership_id, gym_charge_id, quantity, starts_at)
+      `INSERT INTO user_membership_services (gym_id, user_membership_id, product_id, quantity, starts_at)
        VALUES (?, ?, ?, 1, ?)`,
       [gymId, umId, await createProduct(gymId), dayOffset(-1)],
     );
@@ -564,7 +564,7 @@ describe('POST /user-memberships — freezes the Session Benefit Frequency (#918
     });
     await addPlanBenefit(gymId, 'membership_plan_session', planId, sessionItem, 2);
     await db.query(
-      'UPDATE membership_plan_session SET frequency = ? WHERE membership_plan_id = ? AND gym_charge_id = ?',
+      'UPDATE membership_plan_session SET frequency = ? WHERE membership_plan_id = ? AND product_id = ?',
       ['week', planId, sessionItem],
     );
     memberId = await createMember(gymId);
@@ -580,13 +580,13 @@ describe('POST /user-memberships — freezes the Session Benefit Frequency (#918
   it('copies the Frequency onto the assignment', async () => {
     const { body } = await getAssignment(gymId, umId);
     expect(body.snapshot.session_benefits[0]).toMatchObject({
-      gym_charge_id: sessionItem, quantity: 2, frequency: 'week',
+      product_id: sessionItem, quantity: 2, frequency: 'week',
     });
   });
 
   it('does not move when the Plan is reconfigured afterwards', async () => {
     await db.query(
-      'UPDATE membership_plan_session SET frequency = ? WHERE membership_plan_id = ? AND gym_charge_id = ?',
+      'UPDATE membership_plan_session SET frequency = ? WHERE membership_plan_id = ? AND product_id = ?',
       ['month', planId, sessionItem],
     );
     const { body } = await getAssignment(gymId, umId);
@@ -600,7 +600,7 @@ describe('POST /user-memberships — freezes the Session Benefit Frequency (#918
       .put(`/user-memberships/${umId}/session-benefits`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ items: [{ gym_charge_id: sessionItem, quantity: 3 }] });
+      .send({ items: [{ product_id: sessionItem, quantity: 3 }] });
     expect(res.status).toBe(200);
     const { body } = await getAssignment(gymId, umId);
     expect(body.snapshot.session_benefits[0]).toMatchObject({ quantity: 3, frequency: 'week' });
@@ -617,7 +617,7 @@ describe('POST /user-memberships — freezes the Session Benefit Frequency (#918
     const sessions = res.body.sections.find((s: any) => s.section === 'session');
     expect(sessions, 'no session section in the simulation').toBeTruthy();
     expect(sessions.events[0].lines[0]).toMatchObject({
-      gym_charge_id: sessionItem, quantity: 12, unit_price: 50, regular_price: 600,
+      product_id: sessionItem, quantity: 12, unit_price: 50, regular_price: 600,
     });
   });
 });

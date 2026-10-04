@@ -167,7 +167,7 @@ describe('#916: the read-only view renders from the declaration', () => {
   });
 
   it('keeps a missing frequency as a "—" in its own cell', () => {
-    expect(componentSrc).toMatch(/gym_charge_billing_frequency[\s\S]{0,140}: '—'/);
+    expect(componentSrc).toMatch(/product_billing_frequency[\s\S]{0,140}: '—'/);
   });
 
   it('shows "—" for an item with no price rather than €0.00', () => {

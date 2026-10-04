@@ -23,7 +23,7 @@ const ANCHOR = '2026-09-30';
 
 function item(over: Partial<PlanSimulationItem> = {}): PlanSimulationItem {
   return {
-    gymChargeId: 1,
+    productId: 1,
     name: 'Item',
     category: 'periodical',
     billingFrequency: 'month',
@@ -89,7 +89,7 @@ describe('computePlanBillingEventSimulation', () => {
 
   it('derives its length from the slowest frequency, not from a month count', () => {
     const result = simulate({
-      items: [item({ gymChargeId: 9, name: 'Insurance', billingFrequency: 'year', unitPriceInclTax: 20 })],
+      items: [item({ productId: 9, name: 'Insurance', billingFrequency: 'year', unitPriceInclTax: 20 })],
     });
     // Two complete cycles of the yearly item, so the projection runs two years —
     // and the 4-weekly fee is carried out with it rather than stopping early.
@@ -103,9 +103,9 @@ describe('computePlanBillingEventSimulation', () => {
   it('groups every line that falls on one date under that date', () => {
     const result = simulate({
       items: [
-        item({ gymChargeId: 2, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once', unitPriceInclTax: 100 }),
-        item({ gymChargeId: 3, name: 'Insurance Fee', category: 'oneoff', billingFrequency: 'once', unitPriceInclTax: 20, mandatory: true }),
-        item({ gymChargeId: 4, name: 'Locker Rental', billingFrequency: 'month', unitPriceInclTax: 15 }),
+        item({ productId: 2, name: 'Registration Fee', category: 'oneoff', billingFrequency: 'once', unitPriceInclTax: 100 }),
+        item({ productId: 3, name: 'Insurance Fee', category: 'oneoff', billingFrequency: 'once', unitPriceInclTax: 20, mandatory: true }),
+        item({ productId: 4, name: 'Locker Rental', billingFrequency: 'month', unitPriceInclTax: 15 }),
       ],
     });
     expect(labels(result, '2026-09-30')).toEqual(
@@ -119,7 +119,7 @@ describe('computePlanBillingEventSimulation', () => {
 
   it('marks a Mandatory item so the line can say so', () => {
     const result = simulate({
-      items: [item({ gymChargeId: 3, name: 'Insurance Fee', category: 'oneoff', billingFrequency: 'once', mandatory: true })],
+      items: [item({ productId: 3, name: 'Insurance Fee', category: 'oneoff', billingFrequency: 'once', mandatory: true })],
     });
     const line = result.dates[0].lines.find((l) => l.label === 'Insurance Fee')!;
     expect(line.mandatory).toBe(true);
@@ -135,7 +135,7 @@ describe('computePlanBillingEventSimulation', () => {
     const result = simulate({
       cadence: MONTHLY,
       anchorDate: '2026-09-15',
-      items: [item({ gymChargeId: 5, name: 'Insurance', billingFrequency: 'year', unitPriceInclTax: 20 })],
+      items: [item({ productId: 5, name: 'Insurance', billingFrequency: 'year', unitPriceInclTax: 20 })],
     });
     expect(labels(result, '2026-09-15').sort()).toEqual(['Full Access', 'Insurance']);
     expect(labels(result, '2026-10-15')).toEqual(['Full Access']);
@@ -147,7 +147,7 @@ describe('computePlanBillingEventSimulation', () => {
   it('still shows a waived line, at €0, with its reason attached', () => {
     const result = simulate({
       items: [item({
-        gymChargeId: 6, name: 'Locker Rental', billingFrequency: 'month',
+        productId: 6, name: 'Locker Rental', billingFrequency: 'month',
         unitPriceInclTax: 15, benefit: { action: 'waive', value: null },
       })],
     });
@@ -161,7 +161,7 @@ describe('computePlanBillingEventSimulation', () => {
   it('applies a percentage discount to the whole line', () => {
     const result = simulate({
       items: [item({
-        gymChargeId: 7, name: 'Towel', billingFrequency: 'month', unitPriceInclTax: 10, quantity: 3,
+        productId: 7, name: 'Towel', billingFrequency: 'month', unitPriceInclTax: 10, quantity: 3,
         benefit: { action: 'percentage_discount', value: 50 },
       })],
     });
@@ -197,7 +197,7 @@ describe('computePlanBillingEventSimulation', () => {
   it('summarises a weekly session allowance onto each 4-weekly billing date', () => {
     const result = simulate({
       items: [item({
-        gymChargeId: 9, name: 'Personal Training Class', category: 'session',
+        productId: 9, name: 'Personal Training Class', category: 'session',
         billingFrequency: 'per_session', unitPriceInclTax: 50, quantity: 2,
         sessionFrequency: 'week', benefit: { action: 'percentage_discount', value: 50 },
       })],
@@ -205,7 +205,7 @@ describe('computePlanBillingEventSimulation', () => {
     expect(dates(result)).toEqual(['2026-09-30', '2026-10-28', '2026-11-25']);
     for (const date of dates(result)) {
       const line = result.dates.find((g) => g.date === date)!
-        .lines.find((l) => l.gym_charge_id === 9)!;
+        .lines.find((l) => l.product_id === 9)!;
       // 4 weekly renewals x 2 = 8 sessions; 8 x EUR 50 less 50% of the line.
       expect(line).toMatchObject({ quantity: 8, regular_price: 400, actual_charge: 200 });
     }
@@ -214,12 +214,12 @@ describe('computePlanBillingEventSimulation', () => {
   it('keeps a session benefit with no Frequency on the enrollment date alone', () => {
     const result = simulate({
       items: [item({
-        gymChargeId: 9, name: 'Personal Training Class', category: 'session',
+        productId: 9, name: 'Personal Training Class', category: 'session',
         billingFrequency: 'per_session', unitPriceInclTax: 50, quantity: 2,
       })],
     });
     const sessionDates = result.dates
-      .filter((g) => g.lines.some((l) => l.gym_charge_id === 9))
+      .filter((g) => g.lines.some((l) => l.product_id === 9))
       .map((g) => g.date);
     expect(sessionDates).toEqual(['2026-09-30']);
   });

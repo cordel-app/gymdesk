@@ -79,7 +79,7 @@ export type PlanBillingEventSimulationResult = BillingEventSimulationResult;
  * configures, and its **gross** unit price.
  */
 export interface PlanSimulationItem {
-  gymChargeId: number;
+  productId: number;
   name: string;
   category: ProductBenefitCategory;
   billingFrequency: ProductFrequency | null;
@@ -94,7 +94,7 @@ export interface PlanSimulationItem {
   sessionFrequency: SessionBenefitFrequency | null;
   /** The Plan benefit row's own `(action, value)` pair (#896). */
   benefit: ProductBenefit;
-  /** `gym_charges.mandatory` — the ticket labels such a line "(Mandatory)". */
+  /** `products.mandatory` — the ticket labels such a line "(Mandatory)". */
   mandatory: boolean;
 }
 
@@ -156,7 +156,7 @@ export function computePlanBillingEventSimulation(
     promotions: [],
     services: [],
     planBenefits: input.items.map((item) => ({
-      gymChargeId: item.gymChargeId,
+      productId: item.productId,
       name: item.name,
       category: item.category,
       billingFrequency: item.billingFrequency,
@@ -179,7 +179,7 @@ export function computePlanBillingEventSimulation(
 
   const mandatoryByCharge = new Map<number, boolean>();
   for (const item of input.items) {
-    if (item.mandatory) mandatoryByCharge.set(item.gymChargeId, true);
+    if (item.mandatory) mandatoryByCharge.set(item.productId, true);
   }
 
   return {

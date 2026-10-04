@@ -100,7 +100,7 @@ describe('Assigned Plan promotions: expanding a card', () => {
     expect(src).toContain('original_price_incl_tax');
     expect(src).toContain('final_price_incl_tax');
     expect(src).toContain('function toGrantRow');
-    expect(src, 'the card re-reads the live catalogue').not.toContain('/sellable-items');
+    expect(src, 'the card re-reads the live catalogue').not.toContain('/products');
     expect(src, 'the card re-reads the live Promotion').not.toContain("apiFetch('/promotions");
   });
 

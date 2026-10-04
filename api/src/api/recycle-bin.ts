@@ -13,7 +13,7 @@ type EntityType =
   | 'promotion'
   | 'center'
   | 'space'
-  | 'sellable_item'
+  | 'product'
   | 'exercise'
   | 'workout_template'
   | 'training_plan_template'
@@ -28,7 +28,7 @@ const VALID_ENTITY_TYPES: EntityType[] = [
   'promotion',
   'center',
   'space',
-  'sellable_item',
+  'product',
   'exercise',
   'workout_template',
   'training_plan_template',
@@ -104,12 +104,12 @@ function branchFor(type: EntityType, gymId: string, locale: SupportedLocale): Un
              WHERE s.gym_id = ? AND s.deleted_at IS NOT NULL`,
         params: [gymId],
       };
-    case 'sellable_item':
+    case 'product':
       return {
-        sql: `SELECT 'sellable_item' AS entity_type, gc.id, gc.name, gc.description,
+        sql: `SELECT 'product' AS entity_type, gc.id, gc.name, gc.description,
                COALESCE(gc.deleted_by_name, gm_d.name) AS deleted_by_name, gc.deleted_at,
                gc.created_at, gm_c.name AS created_by_name
-             FROM gym_charges gc
+             FROM products gc
              LEFT JOIN gym_memberships gm_d ON gm_d.id = gc.deleted_by_membership_id
              LEFT JOIN gym_memberships gm_c ON gm_c.id = gc.created_by_membership_id
              WHERE gc.gym_id = ? AND gc.is_system = 0 AND gc.deleted_at IS NOT NULL`,
@@ -330,13 +330,13 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string, l
              LEFT JOIN gym_memberships gm_d ON gm_d.id = s.deleted_by_membership_id
              WHERE s.id = ? AND s.gym_id = ? AND s.deleted_at IS NOT NULL`;
       break;
-    case 'sellable_item':
+    case 'product':
       sql = `SELECT gc.id, gc.name, gc.description, gc.type, gc.units, gc.amount,
                     gc.billing_frequency, gc.status, gc.notes, gc.package_information, gc.validity_days,
                     gc.created_at, gc.modified_at, gc.deleted_at,
                     gm_c.name AS created_by_name, gm_m.name AS modified_by_name,
                     COALESCE(gc.deleted_by_name, gm_d.name) AS deleted_by_name
-             FROM gym_charges gc
+             FROM products gc
              LEFT JOIN gym_memberships gm_c ON gm_c.id = gc.created_by_membership_id
              LEFT JOIN gym_memberships gm_m ON gm_m.id = gc.modified_by_membership_id
              LEFT JOIN gym_memberships gm_d ON gm_d.id = gc.deleted_by_membership_id
@@ -448,8 +448,8 @@ recycleBinRouter.post('/:entityType/:id/recover', requireModuleWrite('SYSTEM'), 
     case 'space':
       sql = `UPDATE spaces SET deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
       break;
-    case 'sellable_item':
-      sql = `UPDATE gym_charges SET deleted_at = NULL, deleted_by_membership_id = NULL, deleted_by_name = NULL, status = 'active' WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NOT NULL`;
+    case 'product':
+      sql = `UPDATE products SET deleted_at = NULL, deleted_by_membership_id = NULL, deleted_by_name = NULL, status = 'active' WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NOT NULL`;
       break;
     case 'exercise':
       sql = `UPDATE exercises SET status = 'active', deleted_at = NULL, deleted_by = NULL WHERE id = ? AND gym_id = ? AND status = 'deleted'`;

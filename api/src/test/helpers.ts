@@ -78,8 +78,8 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM member_nutrition_plan_meals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plan_days WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plans WHERE gym_id IN (${marks})`, ids);
-  // #631: user_membership_services.gym_charge_id has no ON DELETE CASCADE, so
-  // these rows must go before gym_charges below (deleting members cascades them
+  // #631: user_membership_services.product_id has no ON DELETE CASCADE, so
+  // these rows must go before products below (deleting members cascades them
   // via user_memberships, but only for gyms whose members are deleted here).
   await db.query(`DELETE FROM user_membership_services WHERE gym_id IN (${marks})`, ids);
   // #647 stage 3 note: `member_recurring_slots` needs no line of its own —
@@ -128,22 +128,22 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM personal_goals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM nutrition_goals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM calendar_events WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM sellable_item_professional_services WHERE gym_id IN (${marks})`, ids);
-  // #635 stage 1: every FK on these is ON DELETE CASCADE, so the gym_charges
+  await db.query(`DELETE FROM product_professional_services WHERE gym_id IN (${marks})`, ids);
+  // #635 stage 1: every FK on these is ON DELETE CASCADE, so the products
   // delete below would clear them anyway — listed explicitly for the same
   // reason `promotion_session`/`_oneoff`/`_periodical` are, so the order stays
   // readable when a later stage adds a non-cascading FK.
   await db.query(`DELETE FROM membership_plan_session WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM membership_plan_oneoff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM membership_plan_periodical WHERE gym_id IN (${marks})`, ids);
-  // #635 stage 2: the Assigned Plan snapshot tables key to `gym_charges`
+  // #635 stage 2: the Assigned Plan snapshot tables key to `products`
   // *without* ON DELETE CASCADE (the snapshot must outlive a retired item), so
   // unlike the Plan-side tables above these genuinely have to go before
-  // gym_charges — same reason as `user_membership_services` further up.
+  // products — same reason as `user_membership_services` further up.
   await db.query(`DELETE FROM user_membership_session WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM user_membership_oneoff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM user_membership_periodical WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM gym_charges WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM products WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM tax_rates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_professional_services WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM professional_services WHERE gym_id IN (${marks})`, ids);

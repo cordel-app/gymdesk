@@ -8,11 +8,12 @@
 // key still spelled `col_sellable_item` stayed correct until stage 2 renamed it.
 // Stage 2 has renamed it, so this gate now judges the **key** as well.
 //
-// What it still cannot see is stage 3's: the `/sellable-items` API root, the
-// `gym_charges` table with its FK column and its eight CHECKs, the
-// `financials.gym_charges` feature flag and the `gym_charge` audit entity type.
-// None of those is a locale key, so none can reach this gate — the code-side
-// half of that line is `product-identifiers.unit.test.ts` beside this file.
+// Stage 3 has since moved the wire and the schema as well — the `/products`
+// API root, the `products` table with its `product_id` FK column and its eight
+// CHECKs, the `financials.products` feature flag and the `product` audit entity
+// type (migration 214) — and none of those is a locale key, so none of it
+// reaches this gate: its half of the line is the copy, and
+// `product-identifiers.unit.test.ts` beside this file is the code's.
 //
 // It lives in the API suite rather than beside the admin tests because CI runs
 // `npm test` in `api/` only (the admin job type-checks and builds), which is the

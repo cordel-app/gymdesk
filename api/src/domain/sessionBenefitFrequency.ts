@@ -70,7 +70,7 @@ export function describeSessionBenefitFrequencies(): string {
  * What a replace-all `PUT` should do with one line's Frequency.
  *
  * The three answers are #896's, for #896's reason: the six benefit section
- * `PUT`s are replace-all, so a client that sends `gym_charge_id` + `quantity`
+ * `PUT`s are replace-all, so a client that sends `product_id` + `quantity`
  * alone — the Assigned Plan snapshot editor, a mandatory item re-added by
  * `withMandatoryBenefits()`, any caller written before this ticket — must keep
  * the Frequency the line is stored with rather than silently clearing it.

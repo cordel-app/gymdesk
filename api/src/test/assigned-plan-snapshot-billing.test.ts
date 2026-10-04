@@ -89,7 +89,7 @@ async function createProduct(gymId: string, opts: {
 } = {}): Promise<number> {
   const { type = 'service', billingFrequency = 'month', amount = 20, name = `APSB-Item-${uniq()}` } = opts;
   const { insertId } = await db.query(
-    `INSERT INTO gym_charges
+    `INSERT INTO products
        (gym_id, name, type, amount, currency, billing_frequency, status, availability, is_system)
      VALUES (?, ?, ?, ?, 'EUR', ?, 'active', 'available', 0)`,
     [gymId, name, type, amount, billingFrequency],
@@ -101,7 +101,7 @@ async function addPlanBenefit(
   gymId: string, table: string, planId: number, chargeId: number, quantity = 1,
 ): Promise<void> {
   await db.query(
-    `INSERT INTO ${table} (gym_id, membership_plan_id, gym_charge_id, quantity) VALUES (?, ?, ?, ?)`,
+    `INSERT INTO ${table} (gym_id, membership_plan_id, product_id, quantity) VALUES (?, ?, ?, ?)`,
     [gymId, planId, chargeId, quantity],
   );
 }
@@ -187,7 +187,7 @@ describe('Billing Simulation — the Assigned Plan bills its frozen configuratio
       ['year', planId],
     );
     await db.query('UPDATE membership_plans SET free_periods = 6, paid_periods = 24 WHERE id = ?', [planId]);
-    await db.query('UPDATE gym_charges SET amount = 999, name = ? WHERE id = ?', ['Renamed Locker', lockerId]);
+    await db.query('UPDATE products SET amount = 999, name = ? WHERE id = ?', ['Renamed Locker', lockerId]);
     await db.query('UPDATE membership_plan_session SET quantity = 99 WHERE membership_plan_id = ?', [planId]);
     await db.query('DELETE FROM membership_plan_periodical WHERE membership_plan_id = ?', [planId]);
 
@@ -197,7 +197,7 @@ describe('Billing Simulation — the Assigned Plan bills its frozen configuratio
 
   it('keeps billing a Product that is retired afterwards', async () => {
     await db.query(
-      "UPDATE gym_charges SET deleted_at = UTC_TIMESTAMP(), status = 'inactive' WHERE id = ?",
+      "UPDATE products SET deleted_at = UTC_TIMESTAMP(), status = 'inactive' WHERE id = ?",
       [lockerId],
     );
     const lines = firstEventLines((await getSimulation(gymId, memberId)).body, 'month');
@@ -249,7 +249,7 @@ describe('Billing Simulation — an applied Promotion is frozen onto the assignm
     // #896 treatment that makes them free — the column defaults to
     // `no_benefit`, which charges the normal price.
     await db.query(
-      `INSERT INTO promotion_periodical (gym_id, promotion_id, gym_charge_id, quantity, action)
+      `INSERT INTO promotion_periodical (gym_id, promotion_id, product_id, quantity, action)
        VALUES (?, ?, ?, 2, 'waive')`,
       [gymId, promotionId, lockerId],
     );
@@ -283,7 +283,7 @@ describe('Billing Simulation — an applied Promotion is frozen onto the assignm
     const before = (await getSimulation(gymId, memberId)).body;
 
     await db.query('UPDATE promotion_periodical SET quantity = 12 WHERE promotion_id = ?', [promotionId]);
-    await db.query('UPDATE gym_charges SET amount = 777 WHERE id = ?', [lockerId]);
+    await db.query('UPDATE products SET amount = 777 WHERE id = ?', [lockerId]);
     await db.query('DELETE FROM promotion_periodical WHERE promotion_id = ?', [promotionId]);
     await db.query("UPDATE promotions SET lifecycle_status = 'deleted' WHERE id = ?", [promotionId]);
 
@@ -317,7 +317,7 @@ describe('Billing Simulation — an attached service keeps the price it was atta
     serviceItemId = await createProduct(gymId, { amount: 40, billingFrequency: 'month', name: serviceName });
     const attached = await request.post(`/user-memberships/${res.body.id}/services`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
-      .send({ gym_charge_id: serviceItemId, quantity: 2, starts_at: dayOffset(0) });
+      .send({ product_id: serviceItemId, quantity: 2, starts_at: dayOffset(0) });
     expect(attached.status).toBe(201);
   });
 
@@ -327,7 +327,7 @@ describe('Billing Simulation — an attached service keeps the price it was atta
   });
 
   it('ignores a later reprice or rename of the Product', async () => {
-    await db.query('UPDATE gym_charges SET amount = 400, name = ? WHERE id = ?', ['Renamed Service', serviceItemId]);
+    await db.query('UPDATE products SET amount = 400, name = ? WHERE id = ?', ['Renamed Service', serviceItemId]);
     const lines = firstEventLines((await getSimulation(gymId, memberId)).body, 'month');
     expect(lines[serviceName]).toMatchObject({ unit_price: 40, actual_charge: 80 });
     expect(lines['Renamed Service']).toBeUndefined();
@@ -477,7 +477,7 @@ describe('tenant isolation', () => {
     const otherItemId = await createProduct(gymB, { amount: 999, billingFrequency: 'month' });
     await db.query(
       `INSERT INTO user_membership_periodical
-         (gym_id, user_membership_id, gym_charge_id, quantity, item_name, item_type,
+         (gym_id, user_membership_id, product_id, quantity, item_name, item_type,
           item_billing_frequency, unit_price, currency)
        VALUES (?, ?, ?, 1, 'Cross-tenant Item', 'service', 'month', 999, 'EUR')`,
       [gymB, res.body.id, otherItemId],
