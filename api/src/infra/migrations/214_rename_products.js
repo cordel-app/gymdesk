@@ -45,6 +45,12 @@
  * `entity_name`. The audited *values* (`previous_values` / `new_values`) are
  * left exactly as they were written — those are the record of what changed.
  *
+ * The statements are grouped so each table is rebuilt once: `ADD CONSTRAINT`,
+ * for a foreign key or a CHECK, is `ALGORITHM=COPY` on MySQL 8 while
+ * `foreign_key_checks` is on, and a COPY blocks DML on that table for its
+ * duration. The one unbounded statement left — relabelling `audit_logs` — runs
+ * in chunks for the same reason (`relabelAuditEntity()` below).
+ *
  * ### Why this is one migration and not five
  *
  * Every statement below is a rename of the same entity. Splitting them would
@@ -148,6 +154,10 @@ const INDEXES = [
   ['user_membership_promotion_oneoff_snapshot', ['ump_oneoff_snap_gym_charge_id_fk', 'ump_oneoff_snap_product_id_fk']],
   ['user_membership_promotion_periodical_snapshot', ['ump_periodical_snap_gym_charge_id_fk', 'ump_periodical_snap_product_id_fk']],
   [PPS, ['sips_item_service_unique', 'pps_product_service_unique']],
+  [PPS, ['sips_gym_id_index', 'pps_gym_id_index']],
+  [PPS, ['sips_service_id_index', 'pps_service_id_index']],
+  [PPS, ['sips_created_by_membership_id_fk', 'pps_created_by_membership_id_fk']],
+  [PPS, ['sips_service_id_fk', 'pps_service_id_fk']],
   [UMS, ['user_membership_services_gym_charge_id_foreign', 'user_membership_services_product_id_foreign']],
 ];
 
@@ -186,14 +196,28 @@ const FOREIGN_KEYS = [
   [UMS, ['user_membership_services_gym_charge_id_foreign', 'user_membership_services_product_id_foreign'], ID, PRODUCTS, null],
   [PPS, ['sellable_item_professional_services_gym_id_foreign', 'product_professional_services_gym_id_foreign'], 'gym_id', 'gyms', 'CASCADE'],
   [PPS, ['sellable_item_professional_services_sellable_item_id_foreign', 'product_professional_services_product_id_foreign'], ['sellable_item_id', 'product_id'], PRODUCTS, 'CASCADE'],
+  // `sips_` is the retired entity's initials (migration 153 abbreviated the
+  // table it created), so these two travel with the rest rather than leaving
+  // that table wearing three prefixes at once. Their actions are 153's.
+  [PPS, ['sips_created_by_membership_id_fk', 'pps_created_by_membership_id_fk'], 'created_by_membership_id', 'gym_memberships', 'SET NULL'],
+  [PPS, ['sips_service_id_fk', 'pps_service_id_fk'], 'professional_service_id', 'professional_services', 'CASCADE'],
 ];
 
 /**
  * The table's eight CHECKs, old name → new name with the clause re-declared
- * exactly as migrations 102/112/122/123/135 left it. MySQL cannot rename a
- * CHECK either, so each is dropped and re-added — all in **one** `ALTER`, since
- * `ADD CONSTRAINT … CHECK` is `ALGORITHM=COPY` (MySQL refuses INPLACE) and one
- * statement is one rebuild rather than eight.
+ * exactly as the migration that last wrote it left it: 090 (`currency`,
+ * `availability`, `billing_frequency`), 102 (`type`, `status`, `units`), 113
+ * (`tax_behavior`), 122 (`enrollment_status`) and 123 (`billing_frequency`'s
+ * final set). MySQL cannot rename a CHECK, so each is dropped and re-added —
+ * folded into the same single `ALTER` as this table's foreign keys below, since
+ * both `ADD CONSTRAINT` forms are `ALGORITHM=COPY` (MySQL refuses INPLACE) and
+ * one statement is one rebuild rather than fifteen.
+ *
+ * Seven of the eight keep the `<table>_<column>_check` shape they were created
+ * with rather than taking the `chk_<table>_<column>` convention the eighth has.
+ * That is deliberate: this is a rename, and a convention change here would be a
+ * second decision hiding inside it. Nothing names these constraints in code —
+ * the duplicate-key paths branch on `err.code`.
  *
  * Nothing here widens or narrows a set: `billing_frequency` still admits the
  * two retired values #821 and #945 left stored (`week`, `per_session`), which
@@ -204,7 +228,7 @@ const CHECKS = [
   [['gym_charges_billing_frequency_check', 'products_billing_frequency_check'], "`billing_frequency` IS NULL OR `billing_frequency` IN ('once','per_session','four_weeks','week','month','year')"],
   [['gym_charges_status_check', 'products_status_check'], "`status` IN ('active','inactive')"],
   [['gym_charges_units_check', 'products_units_check'], '`units` IS NULL OR `units` > 0'],
-  [['gym_charges_currency_check', 'products_currency_check'], "`currency` = 'EUR'"],
+  [['gym_charges_currency_check', 'products_currency_check'], "`currency` IN ('EUR')"],
   [['gym_charges_availability_check', 'products_availability_check'], "`availability` IN ('available','unavailable')"],
   [['gym_charges_tax_behavior_check', 'products_tax_behavior_check'], "`tax_behavior` IN ('inclusive','exclusive')"],
   [['chk_gym_charges_enrollment_status', 'chk_products_enrollment_status'], "`enrollment_status` IN ('public','staff_only')"],
@@ -225,6 +249,8 @@ const RETIRED_TARGET = 'sellable_item';
 
 const FEATURE_KEY = ['financials.gym_charges', 'financials.products'];
 const AUDIT_ENTITY = ['gym_charge', 'product'];
+/** Rows per `audit_logs` UPDATE — see `relabelAuditEntity()` below. */
+const AUDIT_CHUNK = 5000;
 
 exports.TABLES = TABLES;
 exports.COLUMNS = COLUMNS;
@@ -333,26 +359,39 @@ async function applyRenames(knex, reverse) {
     }
   }
 
+  // The adds are grouped **per table**, and this table's CHECK swap is folded
+  // in with them, because `ADD CONSTRAINT` — foreign key or CHECK — is
+  // `ALGORITHM=COPY` on MySQL 8 with `foreign_key_checks` on ("Adding foreign
+  // keys needs foreign_key_checks=OFF. Try ALGORITHM=COPY"), and a COPY is a
+  // full rebuild that blocks DML on the table for its duration. One `ALTER` per
+  // table is therefore one rebuild per table: `products` carries seven foreign
+  // keys and eight CHECKs, which unbatched would be fifteen rebuilds of the
+  // table the Financials write path reads, in a migration `deploy.yml` runs
+  // while the API is up. The per-constraint guard is unchanged — a fragment is
+  // only emitted for a constraint that is really missing — so a resumed run
+  // still adds exactly what is left.
+  const adds = new Map();
+  const push = (table, fragment) => adds.set(table, [...(adds.get(table) ?? []), fragment]);
+
   for (const [table, name, column, ref, onDelete] of FOREIGN_KEYS) {
     const t = side(table);
     if (await hasConstraint(knex, t, side(name))) continue;
-    await knex.raw(
-      `ALTER TABLE \`${t}\` ADD CONSTRAINT \`${side(name)}\` ` +
-      `FOREIGN KEY (\`${side(column)}\`) REFERENCES \`${side(ref)}\` (\`id\`)` +
-      `${onDelete ? ` ON DELETE ${onDelete}` : ''}`,
-    );
+    push(t, `ADD CONSTRAINT \`${side(name)}\` FOREIGN KEY (\`${side(column)}\`) ` +
+      `REFERENCES \`${side(ref)}\` (\`id\`)${onDelete ? ` ON DELETE ${onDelete}` : ''}`);
   }
 
   const checksTable = side(PRODUCTS);
-  const drops = [];
-  const adds = [];
+  const checkDrops = [];
   for (const [name, clause] of CHECKS) {
     if (!(await hasConstraint(knex, checksTable, from(name)))) continue;
-    drops.push(`DROP CHECK \`${from(name)}\``);
-    adds.push(`ADD CONSTRAINT \`${side(name)}\` CHECK (${clause})`);
+    checkDrops.push(`DROP CHECK \`${from(name)}\``);
+    push(checksTable, `ADD CONSTRAINT \`${side(name)}\` CHECK (${clause})`);
   }
-  if (drops.length > 0) {
-    await knex.raw(`ALTER TABLE \`${checksTable}\` ${[...drops, ...adds].join(', ')}`);
+  // The drops lead, so the old and the new name never coexist in one statement.
+  if (checkDrops.length > 0) adds.set(checksTable, [...checkDrops, ...(adds.get(checksTable) ?? [])]);
+
+  for (const [table, fragments] of adds) {
+    await knex.raw(`ALTER TABLE \`${table}\` ${fragments.join(', ')}`);
   }
 }
 
@@ -389,6 +428,28 @@ async function moveTarget(knex, from, to, accepted) {
   );
 }
 
+/**
+ * The audit history's `entity_type`, in chunks.
+ *
+ * `audit_logs` has no index this predicate can use — its only cover is
+ * `audit_logs_entity_index (gym_id, entity_type, entity_id)`, where
+ * `entity_type` is not a usable prefix — so one statement is a full scan of the
+ * whole history holding a row lock on every match, inside the migration's own
+ * lock and after this file's table rebuilds. A bounded loop keeps each
+ * statement short and releases its locks between chunks (autocommit, no
+ * surrounding transaction), and it is resumable for the same reason the DDL is:
+ * the `WHERE` is what is left to do, so a re-run continues rather than redoing.
+ */
+async function relabelAuditEntity(knex, from, to) {
+  for (;;) {
+    const [result] = await knex.raw(
+      'UPDATE audit_logs SET entity_type = ? WHERE entity_type = ? LIMIT ?',
+      [to, from, AUDIT_CHUNK],
+    );
+    if (!result || result.affectedRows < AUDIT_CHUNK) return;
+  }
+}
+
 exports.up = async (knex) => {
   await applyRenames(knex, false);
   await moveTarget(knex, RETIRED_TARGET, 'product', TARGETS);
@@ -398,13 +459,25 @@ exports.up = async (knex) => {
   // enabled/disabled choice, and who last changed it, travel with the key.
   await knex('feature_flags').where({ feature_key: FEATURE_KEY[0] }).update({ feature_key: FEATURE_KEY[1] });
 
-  // The audit history's `entity_type`, per the header's note. `entity_name` and
-  // both value payloads are untouched.
-  await knex('audit_logs').where({ entity_type: AUDIT_ENTITY[0] }).update({ entity_type: AUDIT_ENTITY[1] });
+  // Per the header's note: the key the registry and the Audit Log's filter are
+  // built from moves, and `entity_name` and both value payloads do not.
+  await relabelAuditEntity(knex, AUDIT_ENTITY[0], AUDIT_ENTITY[1]);
 };
 
+/**
+ * The mirror, in reverse order.
+ *
+ * Note what this is and is not: it relabels **every** row now reading
+ * `product`, including ones the new build wrote after `up()` ran. That is right
+ * for a rollback in lockstep with the application — the old build's
+ * `AUDIT_ENTITY_REGISTRY` key is `gym_charge` and its CHECK admits
+ * `sellable_item`, so those rows have to read that way again — and the round
+ * trip loses nothing. It is **not** a data-only rollback: run it while the new
+ * API is still serving and the schema goes back under a build that names the
+ * new one.
+ */
 exports.down = async (knex) => {
-  await knex('audit_logs').where({ entity_type: AUDIT_ENTITY[1] }).update({ entity_type: AUDIT_ENTITY[0] });
+  await relabelAuditEntity(knex, AUDIT_ENTITY[1], AUDIT_ENTITY[0]);
   await knex('feature_flags').where({ feature_key: FEATURE_KEY[1] }).update({ feature_key: FEATURE_KEY[0] });
   await moveTarget(knex, 'product', RETIRED_TARGET, ['membership_plan', RETIRED_TARGET]);
   await applyRenames(knex, true);
