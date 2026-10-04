@@ -74,6 +74,10 @@ async function auditRows(entityId: number) {
   return rows;
 }
 
+// `audit_logs.previous_values` / `new_values` are JSON columns, so mysql2 hands
+// them back already parsed — a bare `JSON.parse` sees "[object Object]".
+const asObject = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v);
+
 async function createTrainer(label: string): Promise<number> {
   await db.query(
     `INSERT INTO gym_memberships (user_id, gym_id, role, status, name)
@@ -256,15 +260,20 @@ describe('PUT /class-sessions/:id — Trainer and Space on one occurrence (#980 
 
 describe('PUT /class-sessions/:id — the audit row (#980 §11)', () => {
   it('records previous → new for the fields that changed, and only those', async () => {
-    const id = await createSession();
-    await put(id, { trainer_membership_id: secondTrainerId, space_id: secondSpaceId });
+    // A slot of this case's own: the happy-path cases above move a 48h
+    // occurrence onto this very (trainer, space) pair, and `createSession`
+    // anchors on UTC_TIMESTAMP() — second precision — so sharing 48h here
+    // means sharing the exact slot `assertSlotAvailable()` refuses.
+    const id = await createSession({ startsHours: 300 });
+    const res = await put(id, { trainer_membership_id: secondTrainerId, space_id: secondSpaceId });
+    expect(res.status).toBe(200);
 
     const rows = await eventually(() => auditRows(id), (r) => r.length > 0);
     expect(rows).toHaveLength(1);
     expect(rows[0].action).toBe('update');
 
-    const previous = JSON.parse(rows[0].previous_values);
-    const next = JSON.parse(rows[0].new_values);
+    const previous = asObject(rows[0].previous_values);
+    const next = asObject(rows[0].new_values);
     // The FK is enriched to `{ id, name }`, so the log reads as names.
     expect(previous.trainer_membership.name).toBe('Coach D1');
     expect(next.trainer_membership.name).toBe('Coach D2');
@@ -290,8 +299,8 @@ describe('PUT /class-sessions/:id — the audit row (#980 §11)', () => {
 
     const rows = await eventually(() => auditRows(id), (r) => r.length > 0);
     expect(rows).toHaveLength(1);
-    const previous = JSON.parse(rows[0].previous_values);
-    const next = JSON.parse(rows[0].new_values);
+    const previous = asObject(rows[0].previous_values);
+    const next = asObject(rows[0].new_values);
     expect(previous.trainer_membership.name).toBe('Coach D1');
     expect(next.trainer_membership_id).toBeNull();
   });
@@ -308,7 +317,7 @@ describe('PUT /class-sessions/:id — the audit row (#980 §11)', () => {
 
     const rows = await eventually(() => auditRows(id), (r) => r.length > 0);
     expect(rows).toHaveLength(1);
-    expect(Object.keys(JSON.parse(rows[0].new_values)).sort()).toEqual(['ends_at', 'starts_at']);
+    expect(Object.keys(asObject(rows[0].new_values)).sort()).toEqual(['ends_at', 'starts_at']);
   });
 
   it('records the professional service when it is the only change', async () => {
@@ -330,7 +339,7 @@ describe('PUT /class-sessions/:id — the audit row (#980 §11)', () => {
 
     const rows = await eventually(() => auditRows(id), (r) => r.length > 0);
     expect(rows).toHaveLength(1);
-    expect(Object.keys(JSON.parse(rows[0].new_values))).toEqual(['professional_service']);
+    expect(Object.keys(asObject(rows[0].new_values))).toEqual(['professional_service']);
   });
 });
 
