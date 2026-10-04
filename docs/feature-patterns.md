@@ -1682,6 +1682,22 @@ Reference implementation: `apps/admin/src/components/goalLibrary/` + `api/src/ap
 
 ---
 
+## Warn Then Confirm, Across Every Path That Can Do It (#956 stage 2)
+
+A mutation that destroys something a gym will miss — cancelling the Membership Plan a Member holds, closing an Assigned Plan with unused value (#511) — answers **`409` + a code + the facts, and proceeds only on a resend carrying `confirm: true`**. The backend is the enforcement point and the frontend is the confirmation UX; the pattern is how the second half stays one thing when four screens can trigger it.
+
+- **The 409 carries what the dialog has to say.** `activePlanConflictBody()` puts both plan names, the current plan's dates and the member each conflict blocks in the body, so the dialog renders the warning with no second read of the thing it is about to cancel — and so the two can never disagree about which row Continue cancels.
+- **Recognise the conflict by shape, never by status.** `apps/admin/src/lib/activePlanConflict.ts` checks `status === 409` **and** the error code **and** that a usable `current_plan` came with it. A router answers 409 for several reasons (a duplicate key, `/close`'s `unused_value_impacted`), and a dialog raised on the status alone asks the admin to confirm something else entirely. Everything it does not recognise falls through to the caller's own error line.
+- **One dialog, one set of keys, however many entry points.** `apps/admin/src/components/ReplacePlanDialog.tsx` is rendered by all four paths that can assign a Membership Plan, and resolves its own `common.replace_plan_*` keys (en/es/ca) — a rule the backend enforces once must not be worded four ways. Contrast #879: labels stay the page's when the *entity* differs per screen; here it is the same sentence about the same rule.
+- **Reuse the existing confirmation rather than building a second one.** It draws through `ConfirmDialog`, which gained one optional `details` slot for the structure a lead sentence cannot carry. A warning that needs two labelled values and a date is still a confirmation, not a new modal — and the component declares no colour, radius or width of its own (#929: the chrome is `formChrome.ts`'s).
+- **The first attempt never confirms.** The submit function takes `confirmReplacement = false` and only the dialog's Continue passes `true`. Two things follow: a confirmed call that fails for another reason must *not* re-open the dialog (`confirmReplacement ? null : activePlanConflict(err)`), and a click handler may never be passed by reference — `onSave={handleSave}` hands the function a `MouseEvent` as that argument, which is truthy, so the very first click confirms. Always `onSave={() => handleSave()}`.
+- **Cancel changes nothing, including the draft.** It clears the conflict and does not close the form, reload the list or send a request — the ticket's own acceptance criterion ("cancelling the dialog leaves the existing plan and dates unchanged"), and it leaves the admin's input where they can edit it.
+- **A path with no `confirm` still needs its sentence read.** `POST /user-memberships/:id/members` refuses outright (coverage has no new `starts_at` to end the old plan on), so its caller shows `apiErrorMessage(err)` — `err.message` alone is `body.error`, which would put `active_plan_exists` in front of a gym owner.
+
+Reference implementation: `apps/admin/src/lib/activePlanConflict.ts` + `components/ReplacePlanDialog.tsx`, raised from `members/MemberMembershipPlans.tsx`, `members/AssignPlanInlineEditor.tsx`, `memberships/page.tsx` and `plans/AssignPlanModal.tsx`; the rule itself is `api/src/domain/oneActivePlan.ts` + `api/src/api/one-active-plan.ts`.
+
+---
+
 ## Two Screens, One Read-Only Summary (#879)
 
 When a ticket asks that one card's section "look like" another card's — same information, two presentations — the answer is the **same component**, not a second stylesheet that happens to agree today:

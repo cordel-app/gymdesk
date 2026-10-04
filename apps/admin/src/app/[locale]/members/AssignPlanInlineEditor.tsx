@@ -3,6 +3,8 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
+import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
+import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
 import {
   cardHintStyle,
   cardSectionLabelStyle,
@@ -55,6 +57,13 @@ function todayISO() {
  *   - clearing the selection re-enables everything.
  * The same rule is re-validated server-side (`validatePromotionSelection`) —
  * this is a UX affordance, not the enforcement point.
+ *
+ * #956: replacing the plan named in the URL is this editor's whole purpose, so
+ * it needs no confirmation of its own — but a Member *additionally* covered by
+ * another live assignment (a family plan somebody else owns) does, because
+ * cancelling that one takes it away from every member it covers. The server
+ * answers `409 active_plan_exists` for exactly that case and the shared
+ * `ReplacePlanDialog` is what the admin confirms it in.
  */
 export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned }: Props) {
   const t = useTranslations();
@@ -67,6 +76,7 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
   const [selectedPromotionIds, setSelectedPromotionIds] = useState<number[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflict, setConflict] = useState<ActivePlanConflict | null>(null);
 
   // Eligible promotions are scoped to the plan being assigned — the apply path
   // rejects a promotion that doesn't target it, so offering the others would
@@ -104,7 +114,7 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
     );
   }
 
-  async function handleSubmit() {
+  async function handleSubmit(confirmReplacement = false) {
     setError(null);
     if (!planId) { setError(t('members.assign_new_plan_error_no_plan')); return; }
     if (!startsAt) { setError(t('members.assign_new_plan_error_no_start')); return; }
@@ -117,11 +127,19 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
           membership_plan_id: parseInt(planId, 10),
           starts_at: startsAt,
           promotion_ids: selectedPromotionIds,
+          ...(confirmReplacement ? { confirm: true } : {}),
         }),
       });
+      setConflict(null);
       onAssigned();
     } catch (err: any) {
-      setError(apiErrorMessage(err) ?? t('members.assign_new_plan_error_generic'));
+      const replacement = confirmReplacement ? null : activePlanConflict(err);
+      if (replacement) {
+        setConflict(replacement);
+      } else {
+        setConflict(null);
+        setError(apiErrorMessage(err) ?? t('members.assign_new_plan_error_generic'));
+      }
     } finally {
       setSaving(false);
     }
@@ -196,13 +214,21 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
       {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 10px' }}>{error}</p>}
 
       <div style={{ display: 'flex', gap: 8 }}>
-        <button onClick={handleSubmit} disabled={saving} style={saveBtnStyle}>
+        <button onClick={() => handleSubmit()} disabled={saving} style={saveBtnStyle}>
           {saving ? t('members.saving') : t('members.assign_new_plan_submit')}
         </button>
         <button onClick={onCancel} disabled={saving} style={cancelBtnStyle}>
           {t('members.cancel')}
         </button>
       </div>
+
+      <ReplacePlanDialog
+        conflict={conflict}
+        newPlanName={plans.find((p) => String(p.id) === planId)?.name ?? null}
+        busy={saving}
+        onConfirm={() => handleSubmit(true)}
+        onCancel={() => setConflict(null)}
+      />
     </div>
   );
 }

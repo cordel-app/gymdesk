@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { useApiClient } from '@/lib/apiClient';
+import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 
@@ -73,7 +73,12 @@ export function MembershipMembersModal({
       setAddingId('');
       load();
     } catch (err: any) {
-      setError(err.message ?? t('memberships.error_generic'));
+      // #956: covering a Member is the fourth way they come to hold a Plan, and
+      // this is the one path with no `confirm` replacement — the server answers
+      // `409 active_plan_exists` with the sentence that says to close their own
+      // plan first, which `apiErrorMessage` is what surfaces (`err.message`
+      // alone would put the bare `active_plan_exists` code on screen).
+      setError(apiErrorMessage(err) ?? t('memberships.error_generic'));
     } finally {
       setSaving(false);
     }
@@ -84,7 +89,7 @@ export function MembershipMembersModal({
       await apiFetch(`/user-memberships/${membership.id}/members/${memberId}`, { method: 'DELETE' });
       load();
     } catch (err: any) {
-      toast(err.message ?? t('memberships.error_generic'));
+      toast(apiErrorMessage(err) ?? t('memberships.error_generic'));
     }
   }
 
