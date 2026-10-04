@@ -61,12 +61,12 @@ const es: PrivacyContent = {
   title: 'Política de privacidad',
   lastUpdated: 'Última actualización',
   intro:
-    'Cordel Fitness Pro es una plataforma de gestión de gimnasios. Esta política explica qué datos personales tratamos cuando los gimnasios, su personal y sus socios usan la plataforma, y con qué fin.',
+    'Cordel Fitness Pro es una plataforma de gestión de gimnasios. Esta política explica qué datos personales tratamos cuando los gimnasios, su personal y sus miembros usan la plataforma, y con qué fin.',
   sections: [
     {
       heading: 'Responsable',
       paragraphs: [
-        'Cada gimnasio que usa Cordel Fitness Pro es responsable de los datos de sus socios y de su personal. Cordel Fitness Pro trata esos datos por cuenta del gimnasio para prestar el servicio.',
+        'Cada gimnasio que usa Cordel Fitness Pro es responsable de los datos de sus miembros y de su personal. Cordel Fitness Pro trata esos datos por cuenta del gimnasio para prestar el servicio.',
         `Para cualquier consulta sobre esta política, escribe a ${PRIVACY_CONTACT_EMAIL}.`,
       ],
     },
@@ -109,12 +109,12 @@ const ca: PrivacyContent = {
   title: 'Política de privadesa',
   lastUpdated: 'Darrera actualització',
   intro:
-    'Cordel Fitness Pro és una plataforma de gestió de gimnasos. Aquesta política explica quines dades personals tractem quan els gimnasos, el seu personal i els seus socis fan servir la plataforma, i amb quina finalitat.',
+    'Cordel Fitness Pro és una plataforma de gestió de gimnasos. Aquesta política explica quines dades personals tractem quan els gimnasos, el seu personal i els seus membres fan servir la plataforma, i amb quina finalitat.',
   sections: [
     {
       heading: 'Responsable',
       paragraphs: [
-        'Cada gimnàs que fa servir Cordel Fitness Pro és responsable de les dades dels seus socis i del seu personal. Cordel Fitness Pro tracta aquestes dades per compte del gimnàs per prestar el servei.',
+        'Cada gimnàs que fa servir Cordel Fitness Pro és responsable de les dades dels seus membres i del seu personal. Cordel Fitness Pro tracta aquestes dades per compte del gimnàs per prestar el servei.',
         `Per a qualsevol consulta sobre aquesta política, escriu a ${PRIVACY_CONTACT_EMAIL}.`,
       ],
     },

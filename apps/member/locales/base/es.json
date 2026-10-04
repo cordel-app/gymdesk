@@ -213,7 +213,7 @@
     "loading": "Cargando…",
     "empty": "Aún no tienes una cuota asignada. Pídelo a tu gimnasio.",
     "price": "Precio mensual",
-    "member_since": "Socio desde",
+    "member_since": "Miembro desde",
     "starts": "Inicio",
     "ends": "Fin",
     "upcoming_heading": "Próximos pagos",
@@ -250,7 +250,7 @@
       "scheduled": "Programado"
     },
     "charge_type": {
-      "membership_fee": "Cuota de socio",
+      "membership_fee": "Cuota de membresía",
       "registration_fee": "Cuota de inscripción",
       "insurance_fee": "Seguro",
       "class_package": "Bono de clases"

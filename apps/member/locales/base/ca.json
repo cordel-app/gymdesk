@@ -213,7 +213,7 @@
     "loading": "Carregant…",
     "empty": "Encara no tens cap quota assignada. Demana-la al teu gimnàs.",
     "price": "Preu mensual",
-    "member_since": "Soci des de",
+    "member_since": "Membre des de",
     "starts": "Inici",
     "ends": "Fi",
     "upcoming_heading": "Propers pagaments",
@@ -250,7 +250,7 @@
       "scheduled": "Programat"
     },
     "charge_type": {
-      "membership_fee": "Quota de soci",
+      "membership_fee": "Quota de membresia",
       "registration_fee": "Matrícula",
       "insurance_fee": "Assegurança",
       "class_package": "Bo de classes"
