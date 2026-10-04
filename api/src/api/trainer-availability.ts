@@ -4,6 +4,7 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
 import { gymFetchOne, insertAndFetch } from '../infra/db-helpers';
+import { isAssignableTrainer } from '../domain/trainerAssignment';
 
 const STATUSES = ['active', 'inactive'] as const;
 
@@ -60,11 +61,11 @@ trainerAvailabilityRouter.post('/', requireModuleWrite('ORGANIZATION'), async (r
   if (shapeError) return res.status(400).json({ error: shapeError });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
 
-  const { rows: trainerRows } = await db.query(
-    "SELECT id FROM gym_memberships WHERE id = ? AND gym_id = ? AND role IN ('trainer_performance','trainer_perf_nutrition')",
-    [trainerId, gymId],
-  );
-  if (trainerRows.length === 0) return res.status(404).json({ error: 'Trainer not found' });
+  // #986: the Trainers page lists every active staff member now, so a window
+  // may be recorded for any of them — the one rule, not a role on the login.
+  if (!(await isAssignableTrainer(gymId, trainerId))) {
+    return res.status(404).json({ error: 'Trainer not found' });
+  }
 
   const isRecurring = is_recurring !== false && is_recurring !== 0;
   try {

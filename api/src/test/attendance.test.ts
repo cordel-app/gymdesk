@@ -1,12 +1,13 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
-  TEST_AUTH_HEADER,
-  TEST_USER_ID,
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
+  createTestStaffForMembership,
   request,
+  TEST_AUTH_HEADER,
+  TEST_USER_ID,
 } from './helpers';
 
 afterAll(async () => {
@@ -100,6 +101,8 @@ describe('Attendance Management (#193)', () => {
       [TRAINER_USER_ID, gymId],
     );
     trainerMembershipId = trRows[0].id;
+    // #986: a trainer is an active Staff record, not a coach role on the login.
+    await createTestStaffForMembership(gymId, trainerMembershipId, 'Test', 'Trainer');
 
     centerId = await createCenter(gymId);
     activityTypeId = await createActivityType(gymId, 5);
@@ -305,8 +308,9 @@ describe('Attendance Management (#193)', () => {
       expect(res.body.trainer_name).toBeTruthy();
     });
 
-    it('returns 404 for a non-trainer membership id', async () => {
-      // Admin membership is not a trainer role
+    it('returns 404 for a membership that is not an active staff record', async () => {
+      // #986: the admin's own login has no `staff` row behind it, so it is not
+      // assignable as a trainer — the rule is employment, not the login's role.
       const { rows } = await db.query<{ id: number }>(
         `SELECT id FROM gym_memberships WHERE user_id = ? AND gym_id = ?`,
         [TEST_USER_ID, gymId],

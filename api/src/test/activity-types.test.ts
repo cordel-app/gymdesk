@@ -3,11 +3,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
-  TEST_AUTH_HEADER,
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
+  createTestStaffForMembership,
   request,
+  TEST_AUTH_HEADER,
 } from './helpers';
 
 let gymId: string;
@@ -286,6 +287,10 @@ describe('PUT /activity-types/:id — propagate to future calendar_events (#503 
     );
     const { rows: tB } = await db.query(`SELECT id FROM gym_memberships WHERE gym_id = ? AND name = 'Trainer B'`, [propGymId]);
     trainerBId = tB[0].id;
+    // #986: a Default Trainer is an active Staff record, not a coach role on
+    // the login row, and `POST`/`PUT /activity-types` validate that now.
+    await createTestStaffForMembership(propGymId, trainerAId, 'Trainer', 'A');
+    await createTestStaffForMembership(propGymId, trainerBId, 'Trainer', 'B');
 
     const createRes = await request
       .post(BASE)
