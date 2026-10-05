@@ -148,7 +148,20 @@ describe('ExerciseImageField', () => {
   it('draws the thumbnail, never the 2048 master, and lazy-loads it (§17)', () => {
     expect(componentSrc).toContain('thumbnailUrl ?? imageUrl');
     expect(componentSrc).toContain("loading=\"lazy\"");
-    expect(componentSrc).toContain("objectFit: 'contain'");
+    // `objectFit: 'contain'` moved into the app's one image-frame module
+    // (#1035 stage 2) rather than being spelled here: the picture is still
+    // contained rather than cropped, from one declaration both upload controls
+    // read.
+    expect(componentSrc).toContain('imagePreviewImageStyle');
+    expect(componentSrc).toContain('imagePreviewFrameStyle()');
+    const frameSrc = readFileSync(
+      join(__dirname, '..', 'components/imagePreviewFrame.ts'),
+      'utf8',
+    );
+    expect(frameSrc).toContain("objectFit: 'contain'");
+    // The checkerboard travelled with it, so a transparent background still
+    // reads as transparent rather than as white.
+    expect(frameSrc).toMatch(/backgroundImage:[\s\S]*?linear-gradient/);
   });
 
   it('hands the frame only a reference the scheme guard passed', () => {

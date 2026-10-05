@@ -45,11 +45,31 @@ export const PLATFORM_STORAGE_ROOT = 'cordel';
  */
 export const THEMES_FOLDER = 'themes';
 
+/**
+ * `goals` — the gym-root (and platform-root) branch that holds a **Personal
+ * Goal**'s image (#1035 §4/§5, stage 2). Declared here beside
+ * {@link THEMES_FOLDER} for the same reason that one is: it is one of the gym's
+ * first-level folders *and* the segment a key builder writes into, so the marker
+ * {@link initializeGymBucket} creates and the key an upload lands under can
+ * never disagree in case — in R2 a case difference is a different key, so a
+ * marker spelled `Goals/` would add a folder beside the one uploads populate
+ * rather than rename it. `domain/personalGoalImages.ts` re-exports it, and that
+ * module is the only place a goal-image key is built.
+ *
+ * Lowercase, like `themes` (#829) and the tree in `docs/cloudflare_structure.md`:
+ * this string is a stored object key's own spelling and is not to be re-cased
+ * once a row points at it.
+ */
+export const GOALS_FOLDER = 'goals';
+
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 //
-// #826: the gym root carries exactly **three** first-level folders — `Nutrition/`,
-// `Exercises/` and `themes/`, the last of them lowercased by #829.
+// #826: the gym root carried exactly **three** first-level folders — `Nutrition/`,
+// `Exercises/` and `themes/`, the last of them lowercased by #829 — and #1035
+// stage 2 adds the **fourth**, `goals/`, with its writer (a Personal Goal's
+// image). #826's rule is what makes that legitimate: a first-level folder exists
+// because something uploads into it, which is why the two it removed had to go.
 // `Branding/` (with its `Logo/` and `Images/` leaves)
 // and `Members/` were dropped: nothing has written to either since #824 moved the
 // theme logo into the theme's own folder (`themes/<theme_id>-<name>/logo/`) and
@@ -58,12 +78,13 @@ export const THEMES_FOLDER = 'themes';
 // wrote are left alone, since removing objects from a gym's bucket is not this
 // ticket's business (see `docs/go-to-production.md`).
 //
-// The leaves below the three roots are unchanged (#826 §6 — that ticket was only
+// The leaves below those roots are unchanged (#826 §6 — that ticket was only
 // about what sits directly under the gym root), and the spelling of each name is
 // the key builders' own: the folder names here are the same strings the builders in
-// `domain/exerciseImages.ts`, `domain/exerciseVideos.ts`, `domain/themeFolders.ts`
-// and the nutrition upload route write into, so a marker that disagreed with them
-// in case alone would add a *fourth* first-level folder rather than rename one.
+// `domain/exerciseImages.ts`, `domain/exerciseVideos.ts`, `domain/themeFolders.ts`,
+// `domain/personalGoalImages.ts` and the nutrition upload route write into, so a
+// marker that disagreed with them in case alone would add a folder *beside* the one
+// uploads populate rather than rename it.
 const GYM_FOLDERS = [
   'Nutrition/',
   'Nutrition/Images/',
@@ -76,6 +97,14 @@ const GYM_FOLDERS = [
   // writes it at upload time (#725). Appended rather than slotted in, so every
   // folder that existed before keeps the position it was written in.
   `${THEMES_FOLDER}/`,
+  // #1035 stage 2: the gym-level `goals/` root, holding a Personal Goal's image.
+  // Appended for the reason above — a folder inserted in the middle would change
+  // the order every existing gym's markers were written in — and it has a writer
+  // from the day it appears (`POST /personal-goals/:id/image`), which is what
+  // #826 required of a first-level folder when it removed the two that had none.
+  // It has no leaf: a goal's image is all this branch holds, so the key is
+  // `goals/<goal_id>-<name>.png` directly under it.
+  `${GOALS_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;

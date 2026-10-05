@@ -7,6 +7,7 @@ import { useGym } from '@/context/GymContext';
 import { gymStorageBlock } from '@/lib/gymStorageReadiness';
 import { btnSmall, primaryBtnSmall } from './ui';
 import { ConfirmDialog } from './ConfirmDialog';
+import { imagePreviewFrameStyle, imagePreviewImageStyle } from './imagePreviewFrame';
 import {
   EXERCISE_IMAGE_MASTER_SIZE,
   ExerciseImageProblem,
@@ -163,7 +164,7 @@ export function ExerciseImageField({
       <div style={frameStyle}>
         {drawable ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={preview!} alt="" loading="lazy" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+          <img src={preview!} alt="" loading="lazy" style={imagePreviewImageStyle} />
         ) : (
           <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>{t('image_none')}</span>
         )}
@@ -230,24 +231,10 @@ export function ExerciseImageField({
 }
 
 /**
- * A 1:1 frame for the image. The checkerboard is what makes a transparent
+ * The app's one 1:1 image frame (#1035 stage 2 moved it into
+ * `imagePreviewFrame.ts`): the checkerboard is what makes a transparent
  * background legible as transparency rather than as white, and `objectFit:
- * contain` keeps the square undistorted (#715's frame, same reasoning).
+ * contain` keeps the square undistorted (#715's frame, same reasoning). Shared
+ * so a third upload control cannot invent a fourth look.
  */
-const frameStyle: React.CSSProperties = {
-  width: 140,
-  height: 140,
-  flexShrink: 0,
-  borderRadius: 8,
-  border: '1px solid var(--gd-card-border, #e5e7eb)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  overflow: 'hidden',
-  backgroundColor: '#fff',
-  backgroundImage:
-    'linear-gradient(45deg, #eee 25%, transparent 25%), linear-gradient(-45deg, #eee 25%, transparent 25%),'
-    + ' linear-gradient(45deg, transparent 75%, #eee 75%), linear-gradient(-45deg, transparent 75%, #eee 75%)',
-  backgroundSize: '16px 16px',
-  backgroundPosition: '0 0, 0 8px, 8px -8px, -8px 0px',
-};
+const frameStyle: React.CSSProperties = imagePreviewFrameStyle();
