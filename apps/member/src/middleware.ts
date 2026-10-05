@@ -1,10 +1,14 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import createIntlMiddleware from 'next-intl/middleware';
 import { NextResponse } from 'next/server';
+// #1039: the app's languages are declared once (`lib/memberLocale.ts`) — this
+// middleware, the My Profile selector and the stored-preference redirect all
+// read that one list, so there is no second language system (§2).
+import { DEFAULT_MEMBER_LOCALE, MEMBER_LOCALES } from '@/lib/memberLocale';
 
 const handleI18nRouting = createIntlMiddleware({
-  locales: ['en', 'es', 'ca'],
-  defaultLocale: 'en',
+  locales: [...MEMBER_LOCALES],
+  defaultLocale: DEFAULT_MEMBER_LOCALE,
 });
 
 const isPublicRoute = createRouteMatcher([
