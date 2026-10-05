@@ -56,25 +56,53 @@ export function withPlistString(plist: string, key: string, value: string): stri
 }
 
 /**
- * The schemes inside `CFBundleURLTypes`' single `CFBundleURLSchemes` array.
+ * The `<string>` entries of a plist `<array>` under a given `<key>`.
  *
- * The array is replaced whole rather than appended to, because the schemes a
- * build registers are exactly the ones its profile implies (`urlSchemes()`):
- * appending would leave the previous profile's Google scheme in an app that no
- * longer has that client id, which is a callback the app claims and cannot
- * answer.
+ * The array is replaced whole rather than appended to, because what a build
+ * declares is exactly what its profile implies: appending would leave the
+ * previous profile's Google scheme in an app that no longer has that client id
+ * (a callback the app claims and cannot answer), or the previous gym's domain
+ * in `associated-domains` (a link the app claims and must not open).
  */
-export function withPlistUrlSchemes(plist: string, schemes: readonly string[]): string {
-  const pattern = /(<key>CFBundleURLSchemes<\/key>\s*<array>)([\s\S]*?)(<\/array>)/;
-  requireMatches(pattern.test(plist) ? 1 : 0, 'CFBundleURLSchemes', 'Info.plist');
+export function withPlistStringArray(
+  plist: string,
+  key: string,
+  values: readonly string[],
+  file = 'Info.plist',
+): string {
+  const pattern = new RegExp(`(<key>${escapeRegExp(key)}</key>\\s*<array>)([\\s\\S]*?)(</array>)`);
+  requireMatches(pattern.test(plist) ? 1 : 0, `<key>${key}</key> with an array value`, file);
   return plist.replace(pattern, (_m, open: string, body: string, close: string) => {
     // The template indents plist values with tabs; the indent of the first
     // entry is reused so an applied file stays diff-clean against it.
     const indent = /\n([\t ]*)<string>/.exec(body)?.[1] ?? '\t\t\t\t';
-    const entries = schemes.map((scheme) => `\n${indent}<string>${escapeXml(scheme)}</string>`).join('');
+    const entries = values.map((value) => `\n${indent}<string>${escapeXml(value)}</string>`).join('');
     const closingIndent = indent.slice(0, Math.max(0, indent.length - 1));
     return `${open}${entries}\n${closingIndent}${close}`;
   });
+}
+
+/** The schemes inside `CFBundleURLTypes`' single `CFBundleURLSchemes` array. */
+export function withPlistUrlSchemes(plist: string, schemes: readonly string[]): string {
+  return withPlistStringArray(plist, 'CFBundleURLSchemes', schemes);
+}
+
+/**
+ * The `associated-domains` entitlement — `applinks:<host>` for the domain whose
+ * links this build may open (#1076, WP4).
+ *
+ * The entitlement is what turns a link on that domain into a universal link;
+ * the domain's own half is the association file `apps/member` serves. Written
+ * here rather than left to Xcode because *Associated Domains* added in the UI
+ * would carry one gym's host into every other profile's build.
+ */
+export function withAssociatedDomains(entitlements: string, domains: readonly string[]): string {
+  return withPlistStringArray(
+    entitlements,
+    'com.apple.developer.associated-domains',
+    domains,
+    'App.entitlements',
+  );
 }
 
 /**
@@ -99,10 +127,10 @@ export function withGradleApplicationId(gradle: string, applicationId: string): 
   return gradle.replace(pattern, `$1"${applicationId}"`);
 }
 
-/** The four identity strings the Android template reads from resources. */
+/** The identity strings the Android project reads from resources. */
 export function withAndroidStrings(
   xml: string,
-  values: { appName: string; packageName: string; customUrlScheme: string },
+  values: { appName: string; packageName: string; customUrlScheme: string; appLinkHost: string },
 ): string {
   let out = xml;
   for (const [name, value] of [
@@ -110,6 +138,11 @@ export function withAndroidStrings(
     ['title_activity_main', values.appName],
     ['package_name', values.packageName],
     ['custom_url_scheme', values.customUrlScheme],
+    // #1076: the host the App Links `intent-filter` accepts. A resource rather
+    // than a literal in the manifest, for design rule 1's reason — the host is
+    // the profile's (it is `serverUrl`'s), and a second profile must need no
+    // edit to `AndroidManifest.xml`.
+    ['app_link_host', values.appLinkHost],
   ] as const) {
     const pattern = new RegExp(
       `(<string name="${escapeRegExp(name)}">)([\\s\\S]*?)(</string>)`,

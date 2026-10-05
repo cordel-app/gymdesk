@@ -37,6 +37,38 @@
                 <data android:scheme="@string/custom_url_scheme" />
             </intent-filter>
 
+            <!--
+              #1076 (mobile app WP4) — App Links: an invitation link on the
+              Members App's own domain opens the app rather than the browser.
+
+              `autoVerify="true"` is what makes Android fetch
+              `https://<host>/.well-known/assetlinks.json` at install time and
+              open the link without asking; the host is
+              `@string/app_link_host`, written from the app profile by
+              `npm run profile:apply` (design rule 1), and the path is the
+              Members App's own invitation route — `/{locale}/link`, declared
+              once in `apps/member/src/lib/appAssociations.ts` and asserted
+              against this file by
+              `api/src/test/mobile-app-links.unit.test.ts`, since the two
+              platforms spell the same rule differently and a drift would open
+              the app on iOS and the browser on Android.
+
+              Only that path is claimed: a filter over the whole domain would
+              swallow the OAuth and Clerk redirects a sign-in bounces through.
+              Verification failing (no `assetlinks.json` yet, a debug build
+              signed with another certificate) costs the app the link and
+              nothing else — the browser opens it and the invitation still
+              completes.
+            -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="@string/app_link_host" />
+                <data android:pathPattern="/.*/link" />
+            </intent-filter>
+
         </activity>
 
         <provider

@@ -11,10 +11,19 @@ import {
   type AppProfileInput,
 } from '../appProfile';
 import { availableProfileIds, loadAppProfile, profilePath, readProfileFile } from '../loadAppProfile';
-import { androidIdentity, iosIdentity, reversedGoogleClientId, urlSchemes } from '../nativeIdentity';
+import {
+  NativeIdentityError,
+  androidIdentity,
+  appLinkHost,
+  associatedDomains,
+  iosIdentity,
+  reversedGoogleClientId,
+  urlSchemes,
+} from '../nativeIdentity';
 import {
   NativeProjectFileError,
   withAndroidStrings,
+  withAssociatedDomains,
   withBundleIdentifier,
   withGradleApplicationId,
   withPlistString,
@@ -183,6 +192,7 @@ describe('what a profile means for the native projects', () => {
       bundleId: 'com.example.app',
       displayName: 'Example',
       urlSchemes: urlSchemes(withGoogle),
+      associatedDomains: ['applinks:members.example.com'],
     });
   });
 
@@ -219,8 +229,8 @@ describe('writing a profile into the native projects', () => {
     );
     expect(
       withAndroidStrings(
-        '<resources><string name="app_name">Old</string><string name="title_activity_main">Old</string><string name="package_name">com.old</string><string name="custom_url_scheme">com.old</string></resources>',
-        { appName: 'Body & Mind', packageName: 'com.new', customUrlScheme: 'com.new' },
+        '<resources><string name="app_name">Old</string><string name="title_activity_main">Old</string><string name="package_name">com.old</string><string name="custom_url_scheme">com.old</string><string name="app_link_host">old.example.com</string></resources>',
+        { appName: 'Body & Mind', packageName: 'com.new', customUrlScheme: 'com.new', appLinkHost: 'h' },
       ),
     ).toContain('<string name="app_name">Body &amp; Mind</string>');
   });
@@ -236,7 +246,14 @@ describe('writing a profile into the native projects', () => {
       () => withPlistString('nothing here', 'CFBundleDisplayName', 'x'),
       () => withPlistUrlSchemes('nothing here', ['x']),
       () => withGradleApplicationId('nothing here', 'com.new'),
-      () => withAndroidStrings('<resources></resources>', { appName: 'a', packageName: 'b', customUrlScheme: 'c' }),
+      () => withAssociatedDomains('nothing here', ['applinks:example.com']),
+      () =>
+        withAndroidStrings('<resources></resources>', {
+          appName: 'a',
+          packageName: 'b',
+          customUrlScheme: 'c',
+          appLinkHost: 'd',
+        }),
     ]) {
       expect(run).toThrow(NativeProjectFileError);
     }
@@ -261,7 +278,62 @@ describe('writing a profile into the native projects', () => {
         appName: profile.appName,
         packageName: profile.appId,
         customUrlScheme: profile.customUrlScheme,
+        appLinkHost: appLinkHost(profile),
       }),
     ).toBe(strings);
+    const entitlements = readFileSync(join(WORKSPACE, 'ios/App/App/App.entitlements'), 'utf8');
+    expect(withAssociatedDomains(entitlements, ios.associatedDomains)).toBe(entitlements);
+  });
+});
+
+// #1076 (mobile app WP4) — the app-link host is derived from `serverUrl`, and
+// both platforms are written from it.
+describe('app links', () => {
+  it('takes the host from the profile’s own serverUrl', () => {
+    expect(appLinkHost(resolveAppProfile(PROFILE))).toBe('members.example.com');
+    expect(associatedDomains(resolveAppProfile(PROFILE))).toEqual(['applinks:members.example.com']);
+  });
+
+  it('follows an environment override of the URL, so a staging build claims staging', () => {
+    const profile = resolveAppProfile(PROFILE, {
+      [PROFILE_ENV_KEYS.serverUrl]: 'https://staging.example.org/members',
+    });
+    expect(appLinkHost(profile)).toBe('staging.example.org');
+  });
+
+  it('carries the host into both native identities', () => {
+    const profile = resolveAppProfile(PROFILE);
+    expect(iosIdentity(profile).associatedDomains).toEqual(['applinks:members.example.com']);
+    expect(androidIdentity(profile, 'com.template.pkg').appLinkHost).toBe('members.example.com');
+  });
+
+  it('throws rather than claiming a host it could not parse', () => {
+    // `resolveAppProfile()` requires a `serverUrl` but cannot know it is a URL,
+    // so this is where a profile holding a placeholder fails — visibly, at
+    // apply time, rather than as an entitlement no domain can verify.
+    expect(() => appLinkHost(resolveAppProfile({ ...PROFILE, serverUrl: 'members.example.com' }))).toThrow(
+      NativeIdentityError,
+    );
+  });
+
+  it('replaces the entitlement’s domains whole', () => {
+    const entitlements =
+      '<key>com.apple.developer.associated-domains</key>\n\t<array>\n\t\t<string>applinks:old.example.com</string>\n\t</array>';
+    const next = withAssociatedDomains(entitlements, ['applinks:new.example.com']);
+    expect(next).toContain('<string>applinks:new.example.com</string>');
+    expect(next).not.toContain('old.example.com');
+  });
+
+  it('writes the host as a string resource, so the manifest holds no literal', () => {
+    const strings =
+      '<resources><string name="app_name">A</string><string name="title_activity_main">A</string><string name="package_name">com.a</string><string name="custom_url_scheme">com.a</string><string name="app_link_host">old.example.com</string></resources>';
+    const next = withAndroidStrings(strings, {
+      appName: 'A',
+      packageName: 'com.a',
+      customUrlScheme: 'com.a',
+      appLinkHost: 'new.example.com',
+    });
+    expect(next).toContain('<string name="app_link_host">new.example.com</string>');
+    expect(next).not.toContain('old.example.com');
   });
 });

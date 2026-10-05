@@ -4,4 +4,5 @@
     <string name="title_activity_main">Cordel Fitness</string>
     <string name="package_name">com.cordel.fitness</string>
     <string name="custom_url_scheme">com.cordel.fitness</string>
+    <string name="app_link_host">members.vdicube.com</string>
 </resources>

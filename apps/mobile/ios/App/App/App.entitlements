@@ -23,5 +23,22 @@
 	</array>
 	<key>aps-environment</key>
 	<string>development</string>
+	<!--
+	  #1076 (mobile app WP4) — the domain whose links this build may open as
+	  universal links. `applinks:<host>` is the host of the app profile's
+	  `serverUrl` (`associatedDomains()`), written by `npm run profile:apply`
+	  rather than ticked in Xcode: *Associated Domains* added in the UI would
+	  carry this gym's host into every other profile's build.
+
+	  The other half of the grant is the file that host serves —
+	  `/.well-known/apple-app-site-association`, from `apps/member`. Until the
+	  deployment configures `MOBILE_APP_ASSOCIATIONS` with the Apple Team ID,
+	  that file is a 404 and iOS falls back to opening the link in Safari, which
+	  still completes the invitation (`docs/mobile-runbook.md` §2).
+	-->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:members.vdicube.com</string>
+	</array>
 </dict>
 </plist>
