@@ -68,6 +68,13 @@ function goal(overrides: Partial<MemberGoal> = {}): MemberGoal {
     status: 'in_progress',
     notes: null,
     deleted_at: null,
+    // #1037 — the reading summary every row of `GET /me/personal-goals` carries.
+    initial_reading: null,
+    initial_reading_at: null,
+    latest_reading: null,
+    latest_reading_at: null,
+    progress_percent: null,
+    reading_count: 0,
     ...overrides,
   };
 }
@@ -228,9 +235,11 @@ describe('the page reuses the app rather than restating it (§19, §983)', () =>
     }
   });
 
-  it('renders both dialogs through the one shared dialog rather than a second overlay', () => {
+  it('renders every dialog through the one shared shell rather than a second overlay', () => {
     expect(pageSrc).toContain('<MemberDialog');
-    expect(pageSrc.match(/<MemberDialog/g)).toHaveLength(2);
+    // Add/Edit, #1037's Add reading, and the removal confirmation — three uses
+    // of one shell, not three overlays.
+    expect(pageSrc.match(/<MemberDialog/g)).toHaveLength(3);
     expect(pageSrc).not.toContain("position: 'fixed'");
   });
 

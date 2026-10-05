@@ -27,8 +27,14 @@ export const SYSTEM_PERSONAL_GOAL_SLUGS = [
   'performance', 'recovery', 'energy',
 ] as const;
 
-/** One row of `GET /me/personal-goals` — an assignment, never a catalogue row. */
-export interface MemberGoal {
+/**
+ * One row of `GET /me/personal-goals` — an assignment, never a catalogue row.
+ *
+ * It **extends** the reading summary (#1037): the five header fields of §5 are
+ * derived on every read by `api/src/api/goal-readings.ts` and ride on the row, so
+ * the card has them without a second request and cannot compute one itself.
+ */
+export interface MemberGoal extends GoalReadingSummaryFields {
   id: number;
   personal_goal_id: number;
   /** The **snapshot** taken when it was assigned (§8), not the catalogue's current name. */
@@ -240,4 +246,214 @@ export function goalStatusToneKey(goal: Pick<MemberGoal, 'deleted_at' | 'status'
   if (goal.status === 'achieved') return 'completed';
   if (goal.status === 'abandoned') return 'cancelled';
   return 'removed';
+}
+
+/* ── #1037 stage 3: readings ──────────────────────────────────────────────────
+ * What a **reading** is on the member's side: the five header fields §5 lists,
+ * how a value, a percentage and a timestamp are written, which history rows
+ * carry the `Initial` marker, and what the Add reading dialog submits.
+ *
+ * It **computes nothing it could read**. `initial_reading`, `latest_reading` and
+ * `progress_percent` ride on every row of `GET /me/personal-goals` (stage 2),
+ * derived by `api/src/domain/goalReadings.ts` — the one place that decides a
+ * percentage, which is what keeps My Goals, the Member card and the gym-wide
+ * list from reporting one goal's progress three ways. Everything here is
+ * formatting, ordering and validation.
+ *
+ * The admin has its own copy in
+ * `apps/admin/src/components/personalGoals/goalReadings.ts`, because the two
+ * apps share no frontend module — the rule `calendarEventDisplay.ts` and
+ * `calendarEventPaint.ts` already follow. */
+
+/** §5 — the five fields of the card header, in order, as locale keys. */
+export const GOAL_HEADER_FIELDS = [
+  'goals.field_goal',
+  'goals.label_initial_reading',
+  'goals.field_target',
+  'goals.label_latest_reading',
+  'goals.label_progress',
+] as const;
+
+/** The six computed fields every assignment-shaped read reports. */
+export interface GoalReadingSummaryFields {
+  /** §8 — the **currently active** initial reading, not necessarily the first. */
+  initial_reading: number | null;
+  initial_reading_at: string | null;
+  /** §10 — the most recent reading, whatever period it falls in. */
+  latest_reading: number | null;
+  latest_reading_at: string | null;
+  /** §11 — 0..100, or `null` when it cannot be computed. */
+  progress_percent: number | null;
+  reading_count: number;
+}
+
+/** One row of `GET /me/personal-goals/:id/readings`. */
+export interface GoalReading {
+  id: number;
+  value: number | null;
+  /** ISO 8601 UTC — the one format the API reports every instant in. */
+  recorded_at: string | null;
+  /** §21 — whether this reading opens an initial-reading period. */
+  is_initial: boolean;
+  /** §38 — which period it falls in, 0-based. Read by the chart. */
+  period: number;
+}
+
+export interface GoalReadingsResponse extends GoalReadingSummaryFields {
+  readings: GoalReading[];
+}
+
+/** The two writers the API exposes, as the path each appends to the goal. */
+export const READING_ENDPOINTS = { reading: 'readings', initial: 'initial-reading' } as const;
+
+/** Which of the two the dialog is open for. Two actions, never a flag. */
+export type ReadingKind = keyof typeof READING_ENDPOINTS;
+
+/**
+ * A reading as one phrase — `75 kg`, `75` with no unit, and `null` for none at
+ * all, which the page renders as `—`.
+ *
+ * `0` is a measurement and not an absence, exactly as `formatGoalTarget()`
+ * reasons about a Maintenance target of zero, so the check is `=== null`.
+ */
+export function formatReadingValue(
+  value: number | null | undefined,
+  unit: string | null,
+): string | null {
+  if (value === null || value === undefined) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  const text = String(Number(n.toFixed(2)));
+  return unit ? `${text} ${unit}` : text;
+}
+
+/**
+ * §11/§27 — the progress figure, already clamped to 0..100 by the server.
+ *
+ * `null` means *not computable* (no readings, or no target) and reads as `—`
+ * rather than `0%`: having made no progress and having recorded nothing are
+ * different facts, and showing the second as the first tells a member they are
+ * getting nowhere when nobody has measured them yet.
+ *
+ * Printed as it comes rather than rounded to a whole number — the server rounds
+ * to one decimal, and rounding `99.9` up here would read `100%` on a goal that
+ * is not finished.
+ */
+export function formatProgressPercent(percent: number | null | undefined): string | null {
+  if (percent === null || percent === undefined) return null;
+  const n = Number(percent);
+  if (!Number.isFinite(n)) return null;
+  return `${String(Number(n.toFixed(1)))}%`;
+}
+
+/**
+ * When a reading was taken.
+ *
+ * The **time is shown only when there is one**: a reading recorded at midnight
+ * UTC is what the dialog's date field submits (the API reads a date-only value
+ * as midnight), so printing `00:00` beside it would invent a precision the
+ * member never entered — while a reading carrying a real time shows it, which is
+ * what keeps §33's two readings on one date legible as two rows. Decided per
+ * row, never by comparing one row against its neighbour.
+ */
+export function formatReadingDate(iso: string | null, locale: string): string {
+  if (!iso) return '—';
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '—';
+  const date = at.toLocaleDateString(locale, {
+    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
+  });
+  const midnight = at.getUTCHours() === 0 && at.getUTCMinutes() === 0 && at.getUTCSeconds() === 0;
+  if (midnight) return date;
+  return `${date} · ${at.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}`;
+}
+
+/** The marker a history row reads under (§20/§29), as a locale key. */
+export const READING_MARKER_KEYS = {
+  initial: 'goals.marker_initial',
+  new_initial: 'goals.marker_new_initial',
+} as const;
+
+export type ReadingMarker = keyof typeof READING_MARKER_KEYS;
+
+export interface GoalReadingHistoryRow extends GoalReading {
+  marker: ReadingMarker | null;
+}
+
+/**
+ * §19 — the history, **newest first**, each row carrying its marker.
+ *
+ * Three things are the rule rather than the implementation. The API answers
+ * oldest-first because that is the order §17's chart draws in, so this reverses
+ * it rather than asking for a second ordering. The **first** boundary is
+ * `Initial` and every later one is `New initial reading` (§20/§29) — different
+ * facts, and wording them alike would leave a member unable to tell where they
+ * started from where the baseline moved. And a history with **no** flagged
+ * reading marks its earliest row `Initial`, which is exactly what the server's
+ * `activeInitialReadingOf()` answers for that case: a header reading `80 kg`
+ * over a list in which nothing says where the 80 came from is the one way this
+ * display goes wrong.
+ */
+export function readingHistoryRows(readings: GoalReading[]): GoalReadingHistoryRow[] {
+  const chronological = [...readings].sort((a, b) => readingTime(a) - readingTime(b) || a.id - b.id);
+  const boundaries = chronological.filter((r) => r.is_initial);
+  const baselineId = boundaries.length > 0
+    ? boundaries[0].id
+    : (chronological.length > 0 ? chronological[0].id : null);
+  return chronological
+    .map((reading) => ({
+      ...reading,
+      marker: reading.id === baselineId ? 'initial' as const : (reading.is_initial ? 'new_initial' as const : null),
+    }))
+    .reverse();
+}
+
+function readingTime(reading: GoalReading): number {
+  if (!reading.recorded_at) return 0;
+  const at = new Date(reading.recorded_at).getTime();
+  return Number.isNaN(at) ? 0 : at;
+}
+
+/** What the Add reading dialog holds. The unit is the goal's and is not a field (§3). */
+export interface ReadingFormValues {
+  value: string;
+  recorded_at: string;
+}
+
+/** `DECIMAL(10,2)`'s ceiling, mirroring `READING_VALUE_MAX` on the API side. */
+export const READING_VALUE_MAX = 99999999.99;
+
+/** §32 — today, as the `YYYY-MM-DD` an `<input type="date">` takes, in UTC. */
+export function todayInputValue(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}
+
+export function emptyReadingForm(now?: Date): ReadingFormValues {
+  return { value: '', recorded_at: todayInputValue(now) };
+}
+
+/**
+ * The client half of the server's own two validators, answered as a **locale
+ * key** so the words stay the page's. A **future** date is refused for the
+ * server's reason: §32 allows historical dates only, and a mistyped year would
+ * otherwise be the "latest reading" (§10) for ever.
+ */
+export function readingFormError(form: ReadingFormValues, now: Date = new Date()): string | null {
+  const raw = form.value.trim();
+  if (raw === '') return 'goals.error_reading_required';
+  const value = Number(raw);
+  if (!Number.isFinite(value)) return 'goals.error_reading_number';
+  if (value < 0) return 'goals.error_reading_negative';
+  if (value > READING_VALUE_MAX) return 'goals.error_reading_max';
+  if (!form.recorded_at) return 'goals.error_reading_date_required';
+  if (form.recorded_at > todayInputValue(now)) return 'goals.error_reading_date_future';
+  return null;
+}
+
+/**
+ * What both writers are sent. The **kind** of reading is the route and never a
+ * field in here, so nothing a member's browser submits can re-baseline a goal.
+ */
+export function toReadingPayload(form: ReadingFormValues) {
+  return { value: Number(form.value.trim()), recorded_at: form.recorded_at || null };
 }

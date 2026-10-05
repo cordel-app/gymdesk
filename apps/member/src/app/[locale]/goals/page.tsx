@@ -8,6 +8,7 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { MemberDialog } from '@/components/MemberDialog';
+import { GoalHeaderFields, GoalReadingHistory } from '@/components/GoalReadings';
 import {
   destructiveButtonStyle,
   inputStyle,
@@ -21,9 +22,20 @@ import {
 } from '@/lib/memberChrome';
 import {
   AssignableGoal,
+  GOAL_HEADER_FIELDS,
   GoalFormValues,
+  GoalReadingsResponse,
   MemberGoal,
+  READING_ENDPOINTS,
+  READING_MARKER_KEYS,
+  ReadingFormValues,
+  ReadingKind,
   emptyGoalForm,
+  emptyReadingForm,
+  formatProgressPercent,
+  formatReadingValue,
+  readingFormError,
+  toReadingPayload,
   formForAssignableGoal,
   formForMemberGoal,
   formatGoalTarget,
@@ -56,6 +68,10 @@ type Editing =
   | { kind: 'add' }
   | { kind: 'edit'; goal: MemberGoal }
   | { kind: 'remove'; goal: MemberGoal }
+  // #1037 §3/§21 — a measurement and a new baseline. Two dialogs over two
+  // routes, never one with a flag: nothing the browser submits says which, so a
+  // member cannot re-baseline a goal by passing a field through.
+  | { kind: 'reading'; goal: MemberGoal; reading: ReadingKind }
   | null;
 
 export default function GoalsPage() {
@@ -77,6 +93,28 @@ export default function GoalsPage() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // #1037 — each goal's reading history, keyed by assignment. The five header
+  // fields are already on the row (the API derives them on every read), so this
+  // is only the list §18 unfolds.
+  const [readings, setReadings] = useState<Record<number, GoalReadingsResponse>>({});
+  const [readingForm, setReadingForm] = useState<ReadingFormValues>(() => emptyReadingForm());
+
+  const loadReadings = useCallback(async (ids: number[]) => {
+    const histories = await Promise.all(ids.map(async (id) => {
+      try {
+        return [id, await apiFetch<GoalReadingsResponse>(`/me/personal-goals/${id}/readings`)] as const;
+      } catch {
+        // A failed history read leaves the card's own figures standing: they came
+        // with the goal, and an empty accordion beats an error over a correct card.
+        return null;
+      }
+    }));
+    setReadings((prev) => {
+      const next = { ...prev };
+      for (const entry of histories) if (entry) next[entry[0]] = entry[1];
+      return next;
+    });
+  }, [apiFetch]);
 
   const load = useCallback(async () => {
     const [mine, options] = await Promise.all([
@@ -86,7 +124,9 @@ export default function GoalsPage() {
     setGoals(mine.goals ?? []);
     setPastGoals(mine.past_goals ?? []);
     setAvailable(options.goals ?? []);
-  }, [apiFetch]);
+    const live = (mine.goals ?? []).map((goal) => goal.id);
+    if (live.length > 0) await loadReadings(live);
+  }, [apiFetch, loadReadings]);
 
   useEffect(() => {
     if (appLoading) return;
@@ -124,9 +164,48 @@ export default function GoalsPage() {
     setEditing({ kind: 'edit', goal });
   }
 
+  /**
+   * §3 — the dialog that records a measurement, and §21's that moves the
+   * baseline. One form, two routes: the unit is the goal's own and is never a
+   * field, so the member types a number and a date and nothing else.
+   */
+  function openReading(goal: MemberGoal, reading: ReadingKind) {
+    setReadingForm(emptyReadingForm());
+    setFormError(null);
+    setNotice(null);
+    setEditing({ kind: 'reading', goal, reading });
+  }
+
   function closeDialog() {
     setEditing(null);
     setFormError(null);
+  }
+
+  /**
+   * §30 — a saved reading updates the header, the history and the progress with
+   * no manual refresh: the goals read re-derives the five fields and the history
+   * read re-lists the rows.
+   */
+  async function submitReading(goal: MemberGoal, kind: ReadingKind) {
+    const invalid = readingFormError(readingForm);
+    if (invalid) { setFormError(t(invalid as any)); return; }
+    setSaving(true);
+    setFormError(null);
+    try {
+      await apiFetch(`/me/personal-goals/${goal.id}/${READING_ENDPOINTS[kind]}`, {
+        method: 'POST',
+        body: JSON.stringify(toReadingPayload(readingForm)),
+      });
+      await load();
+      setEditing(null);
+      setNotice(t(kind === 'initial' ? 'goals.initial_reading_saved' : 'goals.reading_added'));
+    } catch (err: any) {
+      // The dialog stays open with the number intact, so the server's message is
+      // read beside the field that caused it.
+      setFormError(err?.message ?? t('goals.error'));
+    } finally {
+      setSaving(false);
+    }
   }
 
   /** Picking a goal pre-fills the target it carries (§5). */
@@ -181,6 +260,43 @@ export default function GoalsPage() {
 
   const nameOf = (goal: MemberGoal) => goalDisplayName(goal, t as unknown as (key: string) => string);
 
+  /**
+   * §5's five fields for one goal, resolved and formatted here so the shared
+   * component renders strings and decides nothing (`NutritionItemRow`'s rule).
+   * A figure the server could not compute reads `—`, never `0` or `0%`.
+   */
+  function headerFields(goal: MemberGoal) {
+    const values: Record<(typeof GOAL_HEADER_FIELDS)[number], string | null> = {
+      'goals.field_goal': nameOf(goal),
+      'goals.label_initial_reading': formatReadingValue(goal.initial_reading, goal.target_unit),
+      'goals.field_target': formatGoalTarget(goal),
+      'goals.label_latest_reading': formatReadingValue(goal.latest_reading, goal.target_unit),
+      'goals.label_progress': formatProgressPercent(goal.progress_percent),
+    };
+    return GOAL_HEADER_FIELDS.map((key) => ({
+      key, label: t(key as any), value: values[key] ?? '—',
+    }));
+  }
+
+  /** A past goal's one extra line: what it was last measured at, if ever. */
+  function pastSummary(goal: MemberGoal): string | null {
+    const latest = formatReadingValue(goal.latest_reading, goal.target_unit);
+    if (!latest) return null;
+    const progress = formatProgressPercent(goal.progress_percent);
+    return progress
+      ? t('goals.past_summary', { latest, progress })
+      : t('goals.past_summary_latest', { latest });
+  }
+
+  const historyLabels = {
+    title: t('goals.section_reading_history'),
+    empty: t('goals.readings_empty'),
+    markers: {
+      [READING_MARKER_KEYS.initial]: t('goals.marker_initial'),
+      [READING_MARKER_KEYS.new_initial]: t('goals.marker_new_initial'),
+    },
+  };
+
   if (loading) {
     return <main style={styles.container}><p style={styles.hint}>{t('goals.loading')}</p></main>;
   }
@@ -206,10 +322,26 @@ export default function GoalsPage() {
           <section style={styles.section}>
             {goals.map((goal) => (
               <article key={goal.id} style={styles.card}>
-                <p style={styles.goalName}>{nameOf(goal)}</p>
-                {formatGoalTarget(goal) && <p style={styles.goalTarget}>{formatGoalTarget(goal)}</p>}
+                {/* §5 — the five structured fields, not a pipe-separated line.
+                    The goal's name is one of them rather than a heading above
+                    them, so it is not rendered twice. */}
+                <GoalHeaderFields fields={headerFields(goal)} />
                 {goal.notes && <p style={styles.goalNotes}>{goal.notes}</p>}
+                {/* §12/§18 — the history under the header (the chart lands
+                    between them in stage 4), collapsed until the member asks. */}
+                <GoalReadingHistory
+                  readings={readings[goal.id]?.readings ?? []}
+                  unit={goal.target_unit}
+                  locale={locale}
+                  labels={historyLabels}
+                />
                 <div style={styles.cardActions}>
+                  <button type="button" style={styles.primarySmallBtn} onClick={() => openReading(goal, 'reading')}>
+                    {t('goals.add_reading')}
+                  </button>
+                  <button type="button" style={styles.secondaryBtn} onClick={() => openReading(goal, 'initial')}>
+                    {t('goals.set_initial_reading')}
+                  </button>
                   <button type="button" style={styles.secondaryBtn} onClick={() => openEdit(goal)}>
                     {t('goals.edit')}
                   </button>
@@ -245,7 +377,12 @@ export default function GoalsPage() {
                   {t(goalStatusKey(goal) as any)}
                 </span>
               </div>
+              {/* A past goal is read-only and has no actions, so it keeps its
+                  compact summary — the target it was agreed at and, where it was
+                  measured, where it got to. The five-field header belongs to the
+                  card the member is still working on. */}
               {formatGoalTarget(goal) && <p style={styles.goalTarget}>{formatGoalTarget(goal)}</p>}
+              {pastSummary(goal) && <p style={styles.goalTarget}>{pastSummary(goal)}</p>}
               <p style={styles.goalDates}>
                 {[
                   goal.start_date ? t('goals.started_on', { date: goal.start_date }) : null,
@@ -364,6 +501,71 @@ export default function GoalsPage() {
         </MemberDialog>
       )}
 
+      {/* §3 / §21 — Add reading, and the same dialog for a new baseline. The
+          unit is the goal's and is shown beside the input rather than asked
+          for, and the date defaults to today and cannot be in the future. */}
+      {editing && editing.kind === 'reading' && (
+        <MemberDialog
+          labelledBy="goal-reading-title"
+          title={t(editing.reading === 'initial' ? 'goals.set_initial_reading' : 'goals.add_reading')}
+          onClose={saving ? () => {} : closeDialog}
+          actions={(
+            <>
+              <button type="button" style={styles.dialogSecondary} onClick={closeDialog} disabled={saving}>
+                {t('goals.cancel')}
+              </button>
+              <button
+                type="button"
+                style={styles.dialogPrimary}
+                onClick={() => submitReading(editing.goal, editing.reading)}
+                disabled={saving}
+              >
+                {saving ? t('goals.saving') : t('goals.save')}
+              </button>
+            </>
+          )}
+        >
+          <div style={styles.field}>
+            <span style={styles.label}>{t('goals.field_goal')}</span>
+            <p style={styles.readOnlyValue}>{nameOf(editing.goal)}</p>
+          </div>
+
+          {editing.reading === 'initial' && (
+            <p style={styles.help}>{t('goals.help_initial_reading')}</p>
+          )}
+
+          <div style={styles.fieldRow}>
+            <label style={styles.field}>
+              <span style={styles.label}>{t('goals.field_reading')}</span>
+              <div style={styles.readingInputRow}>
+                <input
+                  style={{ ...styles.control, flex: 1, minWidth: 0 }}
+                  type="number"
+                  inputMode="decimal"
+                  step="0.01"
+                  min="0"
+                  value={readingForm.value}
+                  onChange={(e) => setReadingForm({ ...readingForm, value: e.target.value })}
+                />
+                {/* §3 — the goal's own unit, as text. The member never types it. */}
+                {editing.goal.target_unit && <span style={styles.unit}>{editing.goal.target_unit}</span>}
+              </div>
+            </label>
+            <label style={styles.field}>
+              <span style={styles.label}>{t('goals.field_reading_date')}</span>
+              <input
+                style={styles.control}
+                type="date"
+                value={readingForm.recorded_at}
+                onChange={(e) => setReadingForm({ ...readingForm, recorded_at: e.target.value })}
+              />
+            </label>
+          </div>
+
+          {formError && <p style={styles.error}>{formError}</p>}
+        </MemberDialog>
+      )}
+
       {/* §11 — the confirmation a destructive action gets everywhere else in
           the app, in the app's own dialog rather than a second overlay style. */}
       {editing && editing.kind === 'remove' && (
@@ -409,6 +611,9 @@ const styles: Record<string, React.CSSProperties> = {
   goalDates:  { margin: '6px 0 0', fontSize: 12, color: memberTheme.textMuted },
   cardActions:{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' },
   primaryBtn: { ...primaryButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600 },
+  primarySmallBtn: { ...primaryButtonStyle, padding: '8px 16px', fontSize: 13, fontWeight: 600 },
+  readingInputRow: { display: 'flex', alignItems: 'center', gap: 8 },
+  unit:       { fontSize: 13, color: memberTheme.textMuted, flexShrink: 0 },
   secondaryBtn: { ...secondaryButtonStyle, padding: '8px 16px', fontSize: 13, fontWeight: 600 },
   destructiveBtn: { ...destructiveButtonStyle, padding: '8px 16px', fontSize: 13, fontWeight: 600 },
   dialogPrimary: { ...primaryButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600, flex: 1 },
