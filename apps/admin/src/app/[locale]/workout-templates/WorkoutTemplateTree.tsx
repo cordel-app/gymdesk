@@ -10,6 +10,15 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
+import {
+  TREE_COMBO_ITEM_SELECTED_BG, treeAddBtnStyle, treeBlockCardStyle, treeCellInputStyle,
+  treeComboCaretStyle, treeComboDropdownStyle, treeComboItemEmptyStyle, treeComboItemStyle,
+  treeComboListStyle, treeComboPlaceholderStyle, treeComboSearchStyle, treeComboTriggerStyle,
+  treeControlLabelStyle, treeControlUnitStyle, treeDragHandleStyle, treeDraftRemoveBtnStyle,
+  treeDropTargetStyle, treeEmptyTextStyle, treeHeaderInputStyle, treeHeaderSelectStyle,
+  treeNestedEmptyTextStyle, treeRowDragHandleStyle, treeSeparatorTextStyle, treeSummaryTextStyle,
+  treeTableStyle, treeTdStyle, treeThStyle,
+} from '@/components/workoutChrome';
 import { HierBlock, HierExercise } from './summaries';
 import { exerciseMatchesQuery, exerciseName } from '@/lib/exerciseNames';
 import {
@@ -33,15 +42,7 @@ export function TemplateDropTarget({ templateId, children }: { templateId: numbe
   const activeId = active != null ? String(active.id) : '';
   const foreignBlock = activeId.startsWith('block:') && !activeId.startsWith(`block:${templateId}:`);
   return (
-    <div
-      ref={setNodeRef}
-      style={{
-        margin: '-6px -8px', padding: '6px 8px', borderRadius: 6,
-        background: isOver && foreignBlock ? '#eef0ff' : undefined,
-        outline: isOver && foreignBlock ? '2px dashed #6c63ff' : 'none',
-        transition: 'background 0.1s',
-      }}
-    >
+    <div ref={setNodeRef} style={treeDropTargetStyle(isOver && foreignBlock)}>
       {children}
     </div>
   );
@@ -103,33 +104,33 @@ function ExerciseCombobox({ value, options, placeholder, onChange }: {
       <button
         type="button"
         onClick={handleOpen}
-        style={comboTrigger}
+        style={treeComboTriggerStyle}
       >
-        {selected ? exerciseName(selected) : <span style={{ color: '#aaa' }}>{placeholder}</span>}
-        <span style={{ marginLeft: 4, fontSize: 10, color: '#888' }}>▾</span>
+        {selected ? exerciseName(selected) : <span style={treeComboPlaceholderStyle}>{placeholder}</span>}
+        <span style={treeComboCaretStyle}>▾</span>
       </button>
       {open && (
-        <div style={comboDropdown}>
+        <div style={treeComboDropdownStyle}>
           <input
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={placeholder}
-            style={comboSearch}
+            style={treeComboSearchStyle}
             onKeyDown={(e) => {
               if (e.key === 'Escape') { setOpen(false); setQuery(''); }
               if (e.key === 'Enter' && filtered.length === 1) pick(filtered[0]);
             }}
           />
-          <ul style={comboList}>
+          <ul style={treeComboListStyle}>
             {filtered.length === 0 && (
-              <li style={comboItemEmpty}>—</li>
+              <li style={treeComboItemEmptyStyle}>—</li>
             )}
             {filtered.map((opt) => (
               <li
                 key={opt.id}
                 onMouseDown={() => pick(opt)}
-                style={{ ...comboItem, background: opt.id === value ? '#f0eeff' : undefined }}
+                style={{ ...treeComboItemStyle, background: opt.id === value ? TREE_COMBO_ITEM_SELECTED_BG : undefined }}
               >
                 {exerciseName(opt)}
               </li>
@@ -215,13 +216,13 @@ export function WorkoutTemplateTree({ templateId, hierarchy, canWrite, onChanged
   return (
     <div style={{ marginTop: 4 }}>
       {canWrite && (
-        <button onClick={addBlock} style={inlineAddStyle}>
+        <button onClick={addBlock} style={treeAddBtnStyle}>
           {t('workout_templates.tree_add_block')}
         </button>
       )}
 
       {blocks.length === 0 ? (
-        <p style={{ color: '#888', fontSize: 14, margin: '8px 0 4px' }}>{t('workout_templates.tree_no_blocks')}</p>
+        <p style={treeEmptyTextStyle}>{t('workout_templates.tree_no_blocks')}</p>
       ) : (
         <SortableContext items={blocks.map((b) => blockDragId(templateId, b.id))} strategy={verticalListSortingStrategy}>
           {blocks.map((b) => (
@@ -315,11 +316,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0.6 : 1,
-    border: '1px solid #ececf0',
-    borderRadius: 8,
-    padding: '10px 14px',
-    marginBottom: 10,
-    background: 'var(--gd-card-bg, #ffffff)',
+    ...treeBlockCardStyle,
   };
 
   const config = getBlockConfig(type);
@@ -334,7 +331,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
             {...attributes}
             {...listeners}
             aria-label={t('workout_templates.tree_drag_handle')}
-            style={{ cursor: 'grab', color: '#bbb', fontSize: 16, userSelect: 'none', touchAction: 'none', flexShrink: 0 }}
+            style={treeDragHandleStyle}
           >
             ⠿
           </span>
@@ -348,7 +345,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
               onBlur={() => patchBlock({ name: name.trim() || null })}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
               placeholder={t(`workout_template_blocks.type_${type.toLowerCase()}`)}
-              style={headerInput}
+              style={treeHeaderInputStyle}
             />
             <select
               value={type}
@@ -357,7 +354,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
                 setType(newType);
                 patchBlock({ type: newType });
               }}
-              style={headerSelect}
+              style={treeHeaderSelectStyle}
             >
               {BLOCK_TYPES.map((ty) => (
                 <option key={ty} value={ty}>{t(`workout_template_blocks.type_${ty.toLowerCase()}`)}</option>
@@ -365,7 +362,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
             </select>
             {config && (
               <>
-                <span style={{ color: '#aaa', fontSize: 13 }}>•</span>
+                <span style={treeSeparatorTextStyle}>•</span>
                 <input
                   type="number"
                   min="1"
@@ -374,9 +371,9 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
                   onBlur={() => patchBlock(blockConfigPatch(config, configInput))}
                   onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
                   placeholder="—"
-                  style={{ ...headerInput, width: 56, textAlign: 'center' }}
+                  style={{ ...treeHeaderInputStyle, width: 56, textAlign: 'center' }}
                 />
-                <span style={{ color: '#666', fontSize: 13 }}>{t(config.labelKey)}</span>
+                <span style={treeControlLabelStyle}>{t(config.labelKey)}</span>
               </>
             )}
           </>
@@ -384,7 +381,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
           <span style={{ fontWeight: 600, fontSize: 14 }}>
             {block.name || t(`workout_template_blocks.type_${block.type.toLowerCase()}`)}
             {savedConfig && blockConfigInput(block) !== '' && (
-              <span style={{ fontWeight: 400, color: '#888', fontSize: 12.5, marginLeft: 6 }}>
+              <span style={treeSummaryTextStyle}>
                 {t(`workout_template_blocks.type_${block.type.toLowerCase()}`)} • {t(savedConfig.summaryKey, { n: blockConfigInput(block) })}
               </span>
             )}
@@ -481,9 +478,9 @@ function ExerciseTable({ templateId, block, canWrite, exercises, atLimit, onDele
   if (blockExercises.length === 0 && pendingRows.length === 0) {
     return (
       <>
-        <p style={{ color: '#bbb', fontSize: 12.5, margin: '4px 0 4px' }}>{t('workout_templates.tree_no_exercises')}</p>
+        <p style={treeNestedEmptyTextStyle}>{t('workout_templates.tree_no_exercises')}</p>
         {canWrite && !atLimit && (
-          <button onClick={addExerciseRow} style={inlineAddStyle}>{t('workout_templates.tree_add_exercise')}</button>
+          <button onClick={addExerciseRow} style={treeAddBtnStyle}>{t('workout_templates.tree_add_exercise')}</button>
         )}
       </>
     );
@@ -491,18 +488,18 @@ function ExerciseTable({ templateId, block, canWrite, exercises, atLimit, onDele
 
   return (
     <div style={{ overflowX: 'auto' }}>
-      <table style={tableStyle}>
+      <table style={treeTableStyle}>
         <thead>
           <tr>
-            {canWrite && <th style={thStyle} />}
-            <th style={{ ...thStyle, minWidth: 180 }}>{t('block_exercises.col_exercise')}</th>
-            <th style={{ ...thStyle, width: 64 }}>{t('block_exercises.col_sets')}</th>
-            <th style={{ ...thStyle, width: 90 }}>{t('block_exercises.col_target')}</th>
-            <th style={{ ...thStyle, width: 56 }}>{t('block_exercises.col_unit')}</th>
-            <th style={{ ...thStyle, width: 80 }}>{t('block_exercises.col_rest_min')}</th>
+            {canWrite && <th style={treeThStyle} />}
+            <th style={{ ...treeThStyle, minWidth: 180 }}>{t('block_exercises.col_exercise')}</th>
+            <th style={{ ...treeThStyle, width: 64 }}>{t('block_exercises.col_sets')}</th>
+            <th style={{ ...treeThStyle, width: 90 }}>{t('block_exercises.col_target')}</th>
+            <th style={{ ...treeThStyle, width: 56 }}>{t('block_exercises.col_unit')}</th>
+            <th style={{ ...treeThStyle, width: 80 }}>{t('block_exercises.col_rest_min')}</th>
             {/* #720: media column — header stays empty, the thumbnails label themselves. */}
-            <th style={{ ...thStyle, width: 72 }} />
-            {canWrite && <th style={thStyle} />}
+            <th style={{ ...treeThStyle, width: 72 }} />
+            {canWrite && <th style={treeThStyle} />}
           </tr>
         </thead>
         <tbody>
@@ -526,6 +523,7 @@ function ExerciseTable({ templateId, block, canWrite, exercises, atLimit, onDele
               key={key}
               exercises={exercises}
               placeholder={t('block_exercises.search_placeholder')}
+              cancelLabel={t('block_exercises.cancel')}
               onCommit={(opt) => commitPending(key, opt)}
               onCancel={() => cancelPending(key)}
             />
@@ -533,22 +531,24 @@ function ExerciseTable({ templateId, block, canWrite, exercises, atLimit, onDele
         </tbody>
       </table>
       {canWrite && !atLimit && (
-        <button onClick={addExerciseRow} style={{ ...inlineAddStyle, marginTop: 6 }}>{t('workout_templates.tree_add_exercise')}</button>
+        <button onClick={addExerciseRow} style={{ ...treeAddBtnStyle, marginTop: 6 }}>{t('workout_templates.tree_add_exercise')}</button>
       )}
     </div>
   );
 }
 
 /* ---- Pending (new) exercise row ---- */
-function PendingExerciseRow({ exercises, placeholder, onCommit, onCancel }: {
+function PendingExerciseRow({ exercises, placeholder, cancelLabel, onCommit, onCancel }: {
   exercises: ExerciseOption[];
   placeholder: string;
+  /** #1031: the `✕` is one glyph, so its accessible name is the caller's. */
+  cancelLabel: string;
   onCommit: (opt: ExerciseOption) => void;
   onCancel: () => void;
 }) {
   return (
     <tr>
-      <td style={tdStyle} colSpan={2}>
+      <td style={treeTdStyle} colSpan={2}>
         <ExerciseCombobox
           value={null}
           options={exercises}
@@ -556,8 +556,8 @@ function PendingExerciseRow({ exercises, placeholder, onCommit, onCancel }: {
           onChange={onCommit}
         />
       </td>
-      <td style={tdStyle} colSpan={4}>
-        <button onClick={onCancel} style={cancelBtnStyle}>✕</button>
+      <td style={treeTdStyle} colSpan={4}>
+        <button onClick={onCancel} style={treeDraftRemoveBtnStyle} aria-label={cancelLabel}>✕</button>
       </td>
     </tr>
   );
@@ -667,7 +667,7 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
       onChange={(e) => onChange(e.target.value)}
       onBlur={onBlur}
       onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-      style={{ ...cellInput, width }}
+      style={{ ...treeCellInputStyle, width }}
       disabled={!canWrite}
     />
   );
@@ -675,12 +675,12 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
   return (
     <tr ref={setNodeRef} style={rowStyle}>
       {canWrite && (
-        <td style={{ ...tdStyle, width: 20, paddingRight: 2 }}>
+        <td style={{ ...treeTdStyle, width: 20, paddingRight: 2 }}>
           <span
             {...attributes}
             {...listeners}
             aria-label={t('workout_templates.tree_drag_handle')}
-            style={{ cursor: 'grab', color: '#ccc', fontSize: 13, userSelect: 'none', touchAction: 'none' }}
+            style={treeRowDragHandleStyle}
           >
             ⠿
           </span>
@@ -688,7 +688,7 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
       )}
 
       {/* Exercise selector */}
-      <td style={tdStyle}>
+      <td style={treeTdStyle}>
         {canWrite ? (
           <ExerciseCombobox
             value={exerciseId}
@@ -702,51 +702,51 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
       </td>
 
       {/* Sets */}
-      <td style={tdStyle}>{numInput(sets, setSets, handleBlurSets)}</td>
+      <td style={treeTdStyle}>{numInput(sets, setSets, handleBlurSets)}</td>
 
       {/* Target value: reps range for rep-based types, numeric value otherwise */}
       {slug === 'repetitions' || slug === 'weight' || slug == null ? (
-        <td style={tdStyle}>
+        <td style={treeTdStyle}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
             {numInput(minReps, setMinReps, handleBlurMinReps, 44)}
-            <span style={{ color: '#aaa', fontSize: 12 }}>–</span>
+            <span style={treeSeparatorTextStyle}>–</span>
             {numInput(maxReps, setMaxReps, handleBlurMaxReps, 44)}
           </div>
         </td>
       ) : (
-        <td style={tdStyle}>{numInput(targetValue, setTargetValue, handleBlurTarget, 72)}</td>
+        <td style={treeTdStyle}>{numInput(targetValue, setTargetValue, handleBlurTarget, 72)}</td>
       )}
 
       {/* Unit */}
-      <td style={tdStyle}>
+      <td style={treeTdStyle}>
         {canWrite ? (
           <input
             value={unit}
             onChange={(e) => setUnit(e.target.value)}
             onBlur={handleBlurUnit}
             onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-            style={{ ...cellInput, width: 48 }}
+            style={{ ...treeCellInputStyle, width: 48 }}
             placeholder="—"
           />
         ) : <span style={{ fontSize: 13 }}>{exercise.unit ?? '—'}</span>}
       </td>
 
       {/* Rest (minutes) */}
-      <td style={tdStyle}>
+      <td style={treeTdStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
           {numInput(restMin, setRestMin, handleBlurRest, 48)}
-          <span style={{ color: '#888', fontSize: 12 }}>min</span>
+          <span style={treeControlUnitStyle}>min</span>
         </div>
       </td>
 
       {/* Media (#720) — whatever image/video the exercise carries, at the right of the row. */}
-      <td style={{ ...tdStyle, textAlign: 'right' }}>
+      <td style={{ ...treeTdStyle, textAlign: 'right' }}>
         <ExerciseMediaThumbnails exercise={exercise} />
       </td>
 
       {/* Context menu */}
       {canWrite && (
-        <td style={{ ...tdStyle, width: 32 }}>
+        <td style={{ ...treeTdStyle, width: 32 }}>
           <ContextMenu
             ariaLabel={t('workout_templates.col_actions')}
             items={[
@@ -759,72 +759,3 @@ function ExerciseRow({ templateId, block, exercise, canWrite, exercises, onDelet
     </tr>
   );
 }
-
-/* ---- Styles ---- */
-const inlineAddStyle: React.CSSProperties = {
-  background: 'none', border: '1px dashed #b9b5ee', color: '#6c63ff', borderRadius: 6,
-  padding: '3px 10px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', marginBottom: 6,
-};
-
-const headerInput: React.CSSProperties = {
-  padding: '4px 8px', borderRadius: 5, border: '1px solid #ddd', fontSize: 13.5,
-  background: '#fafafa', minWidth: 90, maxWidth: 200,
-};
-
-const headerSelect: React.CSSProperties = {
-  padding: '4px 8px', borderRadius: 5, border: '1px solid #ddd', fontSize: 13,
-  background: '#fafafa', cursor: 'pointer',
-};
-
-const tableStyle: React.CSSProperties = {
-  width: '100%', borderCollapse: 'collapse', fontSize: 13,
-};
-
-const thStyle: React.CSSProperties = {
-  textAlign: 'left', padding: '4px 8px 6px', color: '#888', fontSize: 12,
-  borderBottom: '1px solid #eee', fontWeight: 500, whiteSpace: 'nowrap',
-};
-
-const tdStyle: React.CSSProperties = {
-  padding: '4px 8px', verticalAlign: 'middle',
-};
-
-const cellInput: React.CSSProperties = {
-  padding: '4px 6px', borderRadius: 5, border: '1px solid #ddd', fontSize: 13,
-  background: '#fafafa', width: 56, boxSizing: 'border-box',
-};
-
-const comboTrigger: React.CSSProperties = {
-  display: 'inline-flex', alignItems: 'center', gap: 4,
-  padding: '4px 8px', borderRadius: 5, border: '1px solid #ddd',
-  background: '#fafafa', fontSize: 13.5, cursor: 'pointer',
-  whiteSpace: 'nowrap', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis',
-};
-
-const comboDropdown: React.CSSProperties = {
-  position: 'absolute', top: '100%', left: 0, zIndex: 200,
-  background: '#fff', border: '1px solid #ddd', borderRadius: 7,
-  boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 220, marginTop: 2,
-};
-
-const comboSearch: React.CSSProperties = {
-  display: 'block', width: '100%', padding: '8px 10px', border: 'none',
-  borderBottom: '1px solid #eee', fontSize: 13.5, outline: 'none',
-  borderRadius: '7px 7px 0 0', boxSizing: 'border-box',
-};
-
-const comboList: React.CSSProperties = {
-  listStyle: 'none', margin: 0, padding: '4px 0', maxHeight: 220, overflowY: 'auto',
-};
-
-const comboItem: React.CSSProperties = {
-  padding: '7px 12px', cursor: 'pointer', fontSize: 13.5,
-};
-
-const comboItemEmpty: React.CSSProperties = {
-  padding: '7px 12px', color: '#aaa', fontSize: 13,
-};
-
-const cancelBtnStyle: React.CSSProperties = {
-  background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: 14, padding: '2px 6px',
-};

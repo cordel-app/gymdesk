@@ -65,7 +65,7 @@ Reference implementation: `apps/admin/src/components/formChrome.ts` + `apps/admi
 
 One level further in again: the **Training Plan → Workout → Day → Block → Exercises** tree is rendered by three screens — the Assigned Training Plans card (`[locale]/training-plans`), the Training Plan Templates card and Workout Templates, the last two through the shared `WorkoutBlockBuilder` — and each of them had declared the tree's two controls for itself, in a lilac (`#eef0ff` / `#4b45c6` / `#b9b5ee` / `#6c63ff`) that followed no Theme setting.
 
-**`apps/admin/src/components/workoutChrome.ts` is the one declaration**, and it holds only those two:
+**`apps/admin/src/components/workoutChrome.ts` is the one declaration.** #971 started it with the two controls every screen had copied:
 
 - `weekdayChipStyle` / `weekdaySelectStyle` — the training-day pill. **One object for both halves of the read-only/Edit split**, so the value a reader sees and the `<select>` an editor gets are the same box and switching modes does not move the row. It wears the Theme's input pair (`--gd-input-border` / `--gd-input-bg`) at a pill radius, because a weekday selector is a select.
 - `treeAddBtnStyle` — `+ Block` and `+ Exercise`. `formChrome`'s `dashedAddBtnStyle` at the tree's denser size: these are secondary actions and stay lightweight, where a filled `primaryBtnStyle()` is `+ Add Workout`, which opens the row's own editor.
@@ -74,7 +74,17 @@ Everything else in the tree reads from the modules that already existed: a worko
 
 **And the tree obeys the read-only rule like any other section.** Every control in it already keyed off the `canWrite` it was handed, so the gate is one expression on the card: `canWrite={canWrite && editing && !isCompleted}`. An expanded plan then shows the whole structure read-only — the weekday as the same chip, the workout name and each block as values, the exercise table with its sets, targets and media — and nothing that changes it; `⋮ → Edit`, which already expands the row, is the single entry point. Do not add a second weekday pill, a second add-button look, a second read-only rendering of a block beside the builder's own, or a control in the tree that is not behind that one expression.
 
-Reference implementation: `apps/admin/src/components/workoutChrome.ts` + `apps/admin/src/app/[locale]/training-plans/page.tsx`, pinned by `apps/admin/src/test/training-plan-editor-theme.test.ts`.
+**#1031: a one-place rule is only one place once the last caller is on it.** #971 swept two of the three screens; the Workout Templates card's own tree (`WorkoutTemplateTree.tsx`) was a near-duplicate of `WorkoutBlockBuilder.tsx` and kept an un-themed copy of *everything* — which is how one screen's block header followed a gym's Inputs settings and the other's did not. So the module now holds every control the tree draws and both files spread it:
+
+- `treeControlBox`, and `treeHeaderInputStyle` / `treeHeaderSelectStyle` / `treeCellInputStyle` / `treeComboTriggerStyle` built from it. **The geometry stays the tree's own** — `4px 8px` at 13.5px, where `formControlStyle` is `8px 10px` at 14px — because a block header is not a form field; only the colours are shared. A control that needs a width spreads the shared object: `{ ...treeHeaderInputStyle, width: 56 }`.
+- The exercise picker: `treeComboDropdownStyle` / `treeComboSearchStyle` / `treeComboListStyle` / `treeComboItemStyle` / `treeComboItemEmptyStyle`, plus `TREE_COMBO_ITEM_SELECTED_BG` — the Theme's `--gd-app-bg`, never a tint, so the selected option cannot go light-on-light on a themed surface.
+- The exercise table (`treeTableStyle` / `treeThStyle` / `treeTdStyle`), the two drag handles, `treeBlockCardStyle` (the app's `cardSurfaceStyle`) and the tree's small text (`treeEmptyTextStyle`, `treeNestedEmptyTextStyle`, `treeControlLabelStyle`, `treeControlUnitStyle`, `treeSeparatorTextStyle`, `treeSummaryTextStyle`).
+- `treeDropTargetStyle(active)` — the area that accepts a block dragged in from another template. Its idle and active forms share one geometry, so the box does not move when a drag starts, and the highlight is `--gd-app-bg` behind a `--gd-input-border` dashed outline: a drop affordance is not an action and must not borrow an action's colour either.
+- `treeDraftRemoveBtnStyle` — the `✕` that abandons an exercise row before it is saved. Deliberately **not** `formChrome`'s `rowRemoveBtnStyle` (#1029), which is red because it removes something that exists; it does take the `aria-label` that rule asks of a bare glyph.
+
+Everything *outside* the tree on such a screen is the ordinary card rule: the Workout Templates page's own form is `formChrome` (`formFieldLabelStyle` / `formControlStyle` / `formErrorStyle` / `secondaryBtnSmall`), its three sections and read-only rows are `CardSection` + `CardDetailRow`, its filters are `filterControlStyle`, and its `+ Add` is `primaryBtnStyle()`.
+
+Reference implementation: `apps/admin/src/components/workoutChrome.ts` + `apps/admin/src/app/[locale]/training-plans/page.tsx` and `apps/admin/src/app/[locale]/workout-templates/`, pinned by `apps/admin/src/test/training-plan-editor-theme.test.ts` and `apps/admin/src/test/workout-template-theme.test.ts`.
 
 ---
 
