@@ -17,6 +17,14 @@ import {
 } from '../domain/themeCenterAssignments';
 import { folderStageForKey, themeFolderStageForKey } from '../domain/storageFailureStage';
 import {
+  clonedLogo,
+  clonedMemberImageRows,
+  copyStageFor,
+  planThemeAssetCopies,
+  type PlannedThemeAssetCopy,
+  type ThemeAssetDestination,
+} from '../domain/themeAssetClone';
+import {
   bytesMatchImageMime,
   buildThemeMemberImageKey,
   isMemberImageSlot,
@@ -29,6 +37,7 @@ import {
 } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
 import {
+  copyStorageObject,
   deleteStorageObject,
   describeStorageError,
   ensureStorageFolders,
@@ -144,6 +153,132 @@ gymThemesRouter.get('/', async (req, res, next) => {
 
 // ─── Clone a theme (base or customer) into a customer theme ───────────────────
 
+/**
+ * Copies every asset of the source theme into the clone's own folder (#1041),
+ * returning the copies that were made — `null` means the response has already
+ * been sent.
+ *
+ * Three properties are the rule rather than the implementation.
+ *
+ * **It runs before the `themes` row exists.** A clone whose assets could not be
+ * copied must not be reported as successful (§15), and the cheapest way to make
+ * a partially cloned theme impossible is for there to be no theme yet: a
+ * failure here answers 502 and leaves nothing behind but the destination
+ * objects it already wrote, which it sweeps, and the clone's three zero-byte
+ * folder markers, which are idempotent and belong to an id no row will ever
+ * carry.
+ *
+ * **Nothing the source owns is read for writing.** The copies are
+ * `CopyObjectCommand`s whose destination is always inside the clone's own
+ * folder (`planThemeAssetCopies()` builds every key from the *clone's* id and
+ * name), so the source's objects, keys and rows are untouched (§13) — and
+ * because the destination keys are the clone's, the clone's stored references
+ * can never be the source's URLs (§7/§9).
+ *
+ * **A legacy blob logo is uploaded rather than copied.** A Base Theme's logo
+ * from before #829 lives in `themes.logo_bytes` and not in the bucket at all,
+ * so there is no object to copy: the bytes are read here and stored under the
+ * clone's own key, which is what gives such a clone a real R2 logo. The reverse
+ * is not allowed — `logo_bytes` has had no writer since #829 and gains none
+ * here.
+ */
+async function cloneThemeAssets(
+  res: express.Response,
+  sourceThemeId: string,
+  dest: ThemeAssetDestination,
+  readerGymId: string,
+  logContext: Record<string, unknown>,
+): Promise<PlannedThemeAssetCopy[] | null> {
+  // The logo columns are read here rather than taken from `SELECT_COLS`: that
+  // list deliberately omits `logo_bytes` (it is never returned to a client),
+  // and the blob is exactly what a pre-#829 source logo is.
+  const { rows: logoRows } = await db.query<{ logo_object_key: string | null; logo_mime: string | null; has_logo_bytes: number }>(
+    'SELECT logo_object_key, logo_mime, logo_bytes IS NOT NULL AS has_logo_bytes FROM themes WHERE id = ?',
+    [sourceThemeId],
+  );
+  // Naming the source theme is what lets a Base Theme's own rows
+  // (`gym_id IS NULL`, #732) come back — a gym clones a Base Theme far more
+  // often than one of its own, and its backgrounds are the platform's.
+  const memberImages = await loadThemeMemberImages(readerGymId, sourceThemeId);
+
+  const copies = planThemeAssetCopies(
+    {
+      logoObjectKey: logoRows[0]?.logo_object_key ?? null,
+      logoMime: logoRows[0]?.logo_mime ?? null,
+      hasLogoBytes: !!Number(logoRows[0]?.has_logo_bytes ?? 0),
+      memberImages,
+    },
+    dest,
+  );
+
+  const copied: PlannedThemeAssetCopy[] = [];
+  for (const copy of copies) {
+    try {
+      if (copy.origin.from === 'object') {
+        await copyStorageObject(copy.origin.key, copy.destKey);
+      } else {
+        const { rows } = await db.query<{ logo_bytes: Buffer | null }>(
+          'SELECT logo_bytes FROM themes WHERE id = ?',
+          [sourceThemeId],
+        );
+        const bytes = rows[0]?.logo_bytes;
+        // The blob disappeared between the two reads (the source's logo was
+        // replaced mid-clone). Nothing to copy, and inventing an empty object
+        // is what §4 forbids, so the clone simply has no logo.
+        if (!bytes || bytes.length === 0) continue;
+        await uploadStorageObject(copy.destKey, copy.mime as string, bytes);
+      }
+      copied.push(copy);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'copyStorageObject', key: copy.destKey });
+      logger.error(
+        { err, details, diagnostics: getStorageDiagnostics(), ...logContext, slot: copy.slot },
+        'Cloudflare R2 theme asset copy failed',
+      );
+      await sweepClonedAssets(copied, logContext);
+      res.status(502).json({
+        error: `Failed to copy the theme assets: ${details.message}`,
+        stage: copyStageFor(copy),
+        path: details.key ?? copy.destKey,
+        details,
+      });
+      return null;
+    }
+  }
+  return copied;
+}
+
+/**
+ * Removes the destination objects a failed clone had already written (§15:
+ * *"clean up already-created destination assets… where safely possible"*).
+ *
+ * Best-effort and logged rather than reported: the clone is already failing,
+ * and the keys are the clone's own — an id no `themes` row carries — so what is
+ * left behind if this cannot run is an orphan to sweep and never an object
+ * another theme points at. The source's objects are never among them, because
+ * every key here came from `planThemeAssetCopies()`' destination side.
+ */
+async function sweepClonedAssets(
+  copied: readonly PlannedThemeAssetCopy[],
+  logContext: Record<string, unknown>,
+): Promise<void> {
+  for (const copy of copied) {
+    try {
+      await deleteStorageObject(copy.destKey);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'deleteStorageObject', key: copy.destKey });
+      logger.warn(
+        { err, details, ...logContext, slot: copy.slot },
+        'Failed theme clone left an orphaned object in Cloudflare R2',
+      );
+    }
+  }
+}
+
 gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
   try {
     const { gymId, actorName, isSuperadmin } = getTenantContext(req);
@@ -189,26 +324,71 @@ gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
       // idempotent (§8) and can never overwrite a real object.
       if (!(await ensureThemeStorage(res, folderPrefix, id, baseName, { gymId, sourceThemeId: src.id }))) return;
 
-      const tokens = typeof src.tokens === 'string' ? src.tokens : JSON.stringify(src.tokens);
-      // Cloning is the only way a customer theme comes into existence, so this
-      // is where the creator snapshot is captured (#712).
-      await db.query(
-        `INSERT INTO themes (id, gym_id, name, status, logo_contains_gym_name, tokens, created_at, created_by_name, created_by_type)
-         VALUES (?, ?, ?, 'draft', ?, ?, UTC_TIMESTAMP(), ?, ?)`,
-        [id, gymId, baseName, src.logo_contains_gym_name, tokens, actorName, isSuperadmin ? 'superadmin' : 'staff'],
+      // #1041: every asset the source owns, copied into the clone's own folder
+      // *before* the row is written, so a copy failure leaves no theme behind
+      // to be half-cloned (§15/§16). The clone's references below are the keys
+      // this returns and never the source's (§7/§9), which is what makes the
+      // two independent (§12): replacing, removing or re-uploading the source's
+      // logo or any of its backgrounds touches a different object.
+      const logContext = { gymId, themeId: id, sourceThemeId: src.id };
+      const copied = await cloneThemeAssets(
+        res,
+        src.id,
+        { folderPrefix, themeId: id, themeName: baseName },
+        gymId,
+        logContext,
       );
+      if (!copied) return;
 
-      // No Members images: the clone gets its own, independent (and initially
-      // empty) configuration. Cloning has never copied a theme's R2 assets —
-      // it does not copy the logo either — and #725 makes copying them
-      // conditional on it already doing so ("*if* the existing Theme cloning
-      // mechanism copies Theme-owned R2 assets"). What it requires
-      // unconditionally is independence, and a clone that starts unconfigured
-      // shares no object path with its source and cannot be changed by it.
+      const tokens = typeof src.tokens === 'string' ? src.tokens : JSON.stringify(src.tokens);
+      const logo = clonedLogo(copied);
+      const memberRows = clonedMemberImageRows(copied);
+      try {
+        // One transaction for the row and the references to the copies: a
+        // half-written clone that has a logo but not its backgrounds is the
+        // inconsistent state §16 rules out, and the slot rows are meaningless
+        // without the theme they belong to.
+        await db.transaction(async (tx) => {
+          // Cloning is the only way a customer theme comes into existence, so
+          // this is where the creator snapshot is captured (#712).
+          await tx.query(
+            `INSERT INTO themes (id, gym_id, name, status, logo_contains_gym_name, tokens, created_at, created_by_name, created_by_type,
+                                 logo_object_key, logo_mime, logo_updated_at)
+             VALUES (?, ?, ?, 'draft', ?, ?, UTC_TIMESTAMP(), ?, ?, ?, ?, ${logo ? 'UTC_TIMESTAMP()' : 'NULL'})`,
+            [
+              id, gymId, baseName, src.logo_contains_gym_name, tokens, actorName, isSuperadmin ? 'superadmin' : 'staff',
+              logo?.objectKey ?? null, logo?.mime ?? null,
+            ],
+          );
+          for (const row of memberRows) {
+            // `gym_id` is the clone's own even when the source is a Base Theme
+            // (whose rows are the platform's, #732): the objects are in this
+            // gym's folder now, so the row that points at them is the gym's.
+            await tx.query(
+              `INSERT INTO theme_member_images (gym_id, theme_id, slot, object_key, created_at, modified_at)
+               VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+              [gymId, id, row.slot, row.objectKey],
+            );
+          }
+        });
+      } catch (err) {
+        // The theme was not created, so the copies belong to nothing: sweep
+        // them rather than leave the gym's folder carrying a clone that does
+        // not exist.
+        await sweepClonedAssets(copied, logContext);
+        throw err;
+      }
+
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [id]);
       const gymThemeId = await getGymThemeId(gymId);
-      recordAudit(req, { action: 'clone', entityType: 'theme', entityId: id, next: shapeTheme(rows[0], gymThemeId) });
-      res.status(201).json(shapeTheme(rows[0], gymThemeId));
+      const cloneImages = await loadThemeMemberImages(gymId, id);
+      recordAudit(req, {
+        action: 'clone',
+        entityType: 'theme',
+        entityId: id,
+        next: shapeTheme(rows[0], gymThemeId, cloneImages),
+      });
+      res.status(201).json(shapeTheme(rows[0], gymThemeId, cloneImages));
     });
   } catch (err) { next(err); }
 });

@@ -620,6 +620,11 @@ export default function GymThemesPage() {
     try {
       await apiFetch(`/system/themes/clone/${cloning.id}`, { method: 'POST', body: JSON.stringify({ name: cloneName.trim() }) });
       setCloning(null);
+      // #1041 §17: the clone now copies the source's logo and backgrounds, so
+      // it is a multi-step operation whose end deserves saying — and the Save
+      // button has read `clone_saving` throughout, which is what stops a second
+      // click from starting a second clone.
+      toast(t('toast_cloned'), 'success');
       load();
     } catch (err: any) {
       // The clone has a storage half now, so a storage failure gets the same
@@ -968,7 +973,7 @@ export default function GymThemesPage() {
         </>
       )}
 
-      <CrudModal open={cloning !== null} title={t('clone_title')} error={cloneError} saving={cloneSaving} cancelLabel={t('cancel')} saveLabel={cloneSaving ? t('saving') : t('clone_save')} onCancel={() => setCloning(null)} onSave={handleClone}>
+      <CrudModal open={cloning !== null} title={t('clone_title')} error={cloneError} saving={cloneSaving} cancelLabel={t('cancel')} saveLabel={cloneSaving ? t('clone_saving') : t('clone_save')} onCancel={() => setCloning(null)} onSave={handleClone}>
         <FormLabel>{t('clone_name_label')}</FormLabel>
         <FormInput value={cloneName} onChange={(e) => setCloneName(e.target.value)} autoFocus />
       </CrudModal>

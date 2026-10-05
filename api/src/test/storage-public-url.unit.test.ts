@@ -12,6 +12,7 @@ vi.mock('@aws-sdk/client-s3', () => ({
   PutObjectCommand: vi.fn().mockImplementation((input) => ({ input })),
   GetObjectCommand: vi.fn().mockImplementation((input) => ({ input })),
   DeleteObjectCommand: vi.fn().mockImplementation((input) => ({ input })),
+  CopyObjectCommand: vi.fn().mockImplementation((input) => ({ input })),
 }));
 
 vi.mock('../infra/db', () => ({ db: { query: queryMock, end: vi.fn() } }));

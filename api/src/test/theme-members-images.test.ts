@@ -24,6 +24,7 @@ vi.mock('@aws-sdk/client-s3', () => ({
   PutObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'put', input })),
   GetObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'get', input })),
   DeleteObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'delete', input })),
+  CopyObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'copy', input })),
 }));
 
 const R2_ENV_KEYS = [
@@ -518,7 +519,7 @@ describe('Members images on the theme payload (#725 §Performance, §API)', () =
     expect(res.body.members_images.training_url).toContain('/members_app/training.png');
   });
 
-  it('gives a clone its own, independent (and empty) configuration', async () => {
+  it('gives a clone its own, independent copy of the configuration (#1041)', async () => {
     expect((await upload(themeId, gymId, 'training', 'image/png', PNG_BYTES)).status).toBe(200);
 
     const clone = await request
@@ -527,16 +528,18 @@ describe('Members images on the theme payload (#725 §Performance, §API)', () =
       .set('x-gym-id', gymId)
       .send({ name: 'Members Images Clone' });
     expect(clone.status).toBe(201);
-    // Cloning has never copied a theme's R2 assets (it does not copy the logo
-    // either), so the clone starts unconfigured — and therefore shares no
-    // object path with its source.
-    expect(clone.body.members_images.training_url).toBeNull();
+    // #1041: the clone carries the source's configuration — but as copies of
+    // the objects, under its *own* keys, so the two share no object path and
+    // neither can change the other. (Until #1041 the clone started
+    // unconfigured, which was independence without the copy.)
+    expect(clone.body.members_images.training_url).toContain('/members_app/training.png');
+    expect(clone.body.members_images.training_url).not.toContain(`${themeId}-`);
 
-    expect((await upload(clone.body.id, gymId, 'training', 'image/png', PNG_BYTES)).status).toBe(200);
     const { rows } = await db.query<{ theme_id: string; object_key: string }>(
       'SELECT theme_id, object_key FROM theme_member_images WHERE gym_id = ? AND slot = ?',
       [gymId, 'training'],
     );
+    expect(rows).toHaveLength(2);
     expect(new Set(rows.map((r) => r.object_key)).size).toBe(2);
 
     // Clearing the clone leaves the source alone.

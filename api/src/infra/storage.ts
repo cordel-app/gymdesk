@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 
 /**
  * #417 stage 1: platform-wide Cloudflare R2 integration (S3-compatible).
@@ -523,6 +523,42 @@ export async function getStorageObject(key: string): Promise<{ body: Buffer; con
       err,
     );
   }
+}
+
+/**
+ * Copies one object inside the bucket, server-side — nothing is downloaded and
+ * re-uploaded, so a theme clone costs no API bandwidth whatever the asset's
+ * size (#1041).
+ *
+ * `CopySource` is `<bucket>/<key>`, and each path segment is encoded
+ * separately: the whole string encoded with `encodeURIComponent()` would escape
+ * the `/`s that separate the folders and R2 would read the result as one
+ * key-shaped name, while leaving it raw would break on any character a key may
+ * legitimately carry. The destination `Key` is sent unencoded, as every other
+ * command here sends it.
+ *
+ * The object's metadata — `Content-Type` above all — travels with the copy by
+ * default (`MetadataDirective: 'COPY'` is S3's own default), which is what
+ * makes a copied background render as the type it was uploaded as rather than
+ * as the `.png` its slot's key is named for (#725).
+ *
+ * A missing source is a failure, not a silent no-op: the caller is copying an
+ * object a row points at, so "it is not there" is exactly what it needs to be
+ * told.
+ */
+export async function copyStorageObject(sourceKey: string, destKey: string): Promise<string> {
+  const { bucket } = getConfig();
+  const client = getClient();
+  const copySource = [bucket, ...sourceKey.split('/')].map((part) => encodeURIComponent(part ?? '')).join('/');
+  try {
+    await client.send(new CopyObjectCommand({ Bucket: bucket, Key: destKey, CopySource: copySource }));
+  } catch (err) {
+    throw new StorageOperationError(
+      describeStorageError(err, { operation: 'copyStorageObject', key: destKey, bucket }),
+      err,
+    );
+  }
+  return buildStorageObjectUrl(destKey) as string;
 }
 
 /**
