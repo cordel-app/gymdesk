@@ -195,7 +195,10 @@ describe('WorkoutBlockBuilder carries no colour of its own (#971 §1, §2)', () 
 
 describe('The Training Plan Templates tree shares the same chip (#971 §1)', () => {
   it('imports it rather than declaring a second one', () => {
-    expect(templateTreeSrc).toMatch(/import \{ weekdayChipStyle \} from '@\/components\/workoutChrome'/);
+    // The import list grew with #1032's `treeSummaryTextStyle`; what this
+    // asserts is that the chip comes from the shared chrome, not that it is
+    // the only thing taken from it.
+    expect(templateTreeSrc).toMatch(/import \{[^}]*\bweekdayChipStyle\b[^}]*\} from '@\/components\/workoutChrome'/);
     expect(templateTreeSrc).not.toContain('const weekdayBadge');
     expect(templateTreeSrc).toContain("...weekdayChipStyle, cursor: canWrite ? 'pointer' : 'default'");
     expect(templateTreeSrc).toContain('primaryBtnStyle()');

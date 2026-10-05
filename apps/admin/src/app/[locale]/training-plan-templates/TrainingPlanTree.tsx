@@ -18,7 +18,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
 import { primaryBtnStyle } from '@/components/ui';
-import { weekdayChipStyle } from '@/components/workoutChrome';
+import { treeSummaryTextStyle, weekdayChipStyle } from '@/components/workoutChrome';
 import { HierBlock, blockSummary, exerciseSummary } from '../workout-templates/summaries';
 
 /* Shapes returned by GET /training-plan-templates/:id/hierarchy */
@@ -270,10 +270,15 @@ function BlockRow({ block }: { block: HierBlock }) {
   const exercises = block.exercises ?? [];
   return (
     <div style={{ marginBottom: 10 }}>
+      {/* #1032: the block's name and its execution summary share one line, as
+        * they already do in both Workout Template trees — two stacked lines per
+        * block is what made a plan with a handful of workouts so tall. They are
+        * inline spans rather than a flex row so a narrow viewport wraps the
+        * summary under the name by itself, with no horizontal overflow. */}
       <div style={{ fontWeight: 600, fontSize: 14 }}>
         {block.name || t(`workout_template_blocks.type_${block.type.toLowerCase()}`)}
+        <span style={treeSummaryTextStyle}>{blockSummary(block, t)}</span>
       </div>
-      <div style={{ color: '#888', fontSize: 12.5 }}>{blockSummary(block, t)}</div>
       <div style={{ marginTop: 4, paddingLeft: 16 }}>
         {exercises.length === 0 ? (
           <p style={{ color: '#bbb', fontSize: 12.5, margin: '2px 0' }}>{t('training_plan_templates.tree_no_exercises')}</p>
