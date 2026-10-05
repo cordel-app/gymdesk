@@ -3897,6 +3897,9 @@
   "feature_flags": {
     "col_feature": "Funcionalitat",
     "col_enabled": "Activada",
+    "col_modified_by": "Modificat per",
+    "tab_admin": "Funcions d'administració",
+    "tab_member_web": "Web de membres",
     "role_access_hint": "Accés per rol: - cap, R lectura, RW lectura + escriptura. Només informatiu; no canvia els permisos.",
     "title": "Flags de funcionalitats",
     "description": "Controla quines seccions de navegació són visibles per als usuaris del gimnàs. Desactivar una secció també amaga tots els seus subelements.",

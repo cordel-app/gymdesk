@@ -6,6 +6,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useGym } from '@/context/GymContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
+import { Tabs, type TabDescriptor } from '@/components/Tabs';
 
 interface FeatureFlag {
   feature_key: string;
@@ -20,6 +21,21 @@ interface RoleAccessData {
 }
 
 const ROLE_COL_WIDTH = 64;
+const MODIFIED_BY_COL_WIDTH = 160;
+
+// #1068: the Members App's flags live under the `member_web` root; every other
+// root belongs to the admin app. The split is derived from the key so a new
+// member_web.* flag lands in its tab without a list to maintain.
+const MEMBER_WEB_ROOT = 'member_web';
+type FlagTab = 'admin' | 'member_web';
+const FLAG_TABS: readonly TabDescriptor<FlagTab>[] = [
+  { id: 'admin', labelKey: 'tab_admin' },
+  { id: 'member_web', labelKey: 'tab_member_web' },
+];
+
+function isMemberWebFlag(key: string): boolean {
+  return key === MEMBER_WEB_ROOT || key.startsWith(`${MEMBER_WEB_ROOT}.`);
+}
 
 // Build a tree from flat dot-separated keys
 interface FlagNode {
@@ -73,6 +89,7 @@ export default function FeatureFlagsPage() {
   const [loading, setLoading] = useState(true);
   const [toggling, setToggling] = useState<string | null>(null);
   const [roleAccess, setRoleAccess] = useState<RoleAccessData | null>(null);
+  const [tab, setTab] = useState<FlagTab>('admin');
 
   useEffect(() => {
     if (!gymLoading && !isSuperadmin) router.replace(`/${locale}`);
@@ -102,7 +119,8 @@ export default function FeatureFlagsPage() {
         method: 'PUT',
         body: JSON.stringify({ enabled }),
       });
-      setFlags(prev => prev.map(f => f.feature_key === key ? { ...f, enabled } : f));
+      // Re-read so Modified by shows the name the server recorded.
+      setFlags(await apiFetch('/platform/feature-flags') as FeatureFlag[]);
       toast(
         enabled ? t('feature_flags.enabled_ok', { key }) : t('feature_flags.disabled_ok', { key }),
         'success',
@@ -116,7 +134,7 @@ export default function FeatureFlagsPage() {
 
   if (gymLoading || !isSuperadmin) return null;
 
-  const tree = buildTree(flags);
+  const tree = buildTree(flags.filter(f => isMemberWebFlag(f.feature_key) === (tab === 'member_web')));
 
   function renderNode(node: FlagNode, depth = 0) {
     const flag = node.flag;
@@ -164,12 +182,7 @@ export default function FeatureFlagsPage() {
             );
           })}
           {flag && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 230, flexShrink: 0 }}>
-              {flag.updated_by_name && (
-                <span style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>
-                  {flag.updated_by_name}
-                </span>
-              )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: 130, flexShrink: 0 }}>
               <button
                 disabled={isToggling}
                 onClick={() => toggle(node.key, !flag.enabled)}
@@ -207,6 +220,12 @@ export default function FeatureFlagsPage() {
               </span>
             </div>
           )}
+          <span style={{
+            width: MODIFIED_BY_COL_WIDTH, flexShrink: 0, fontSize: 12,
+            color: 'var(--gd-text-muted, #6b7280)',
+          }}>
+            {flag?.updated_by_name || '—'}
+          </span>
         </div>
         {node.children.map(child => renderNode(child, depth + 1))}
       </div>
@@ -221,6 +240,13 @@ export default function FeatureFlagsPage() {
       <p style={{ fontSize: 14, color: 'var(--gd-text-muted, #6b7280)', marginBottom: 24 }}>
         {t('feature_flags.description')}
       </p>
+
+      <Tabs
+        tabs={FLAG_TABS}
+        active={tab}
+        onChange={setTab}
+        label={key => t(`feature_flags.${key}`)}
+      />
 
       <div style={{
         border: '1px solid var(--gd-border, #e5e7eb)',
@@ -241,7 +267,8 @@ export default function FeatureFlagsPage() {
                 {r.label}
               </span>
             ))}
-            <div style={{ width: 230, flexShrink: 0 }}>{t('feature_flags.col_enabled')}</div>
+            <div style={{ width: 130, flexShrink: 0 }}>{t('feature_flags.col_enabled')}</div>
+            <div style={{ width: MODIFIED_BY_COL_WIDTH, flexShrink: 0 }}>{t('feature_flags.col_modified_by')}</div>
           </div>
         )}
         {loading ? (
