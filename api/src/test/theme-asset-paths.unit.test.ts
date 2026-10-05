@@ -3,7 +3,7 @@
 //
 //   {bucket}/gyms/{gym_id}-{gym_name}/themes/{theme_id}-{theme_name}/
 //     ├── logo/logo.{extension}
-//     └── members_app/{training,nutrition,calendar,bookings,membership,background}.png
+//     └── members_app/{training,nutrition,calendar,bookings,membership,personal_goals,background}.png
 //
 //   {bucket}/cordel/themes/{theme_id}-{theme_name}/   (a Base Theme: no gym root)
 //     └── … the same two leaves
@@ -80,7 +80,7 @@ describe('the logo (#829 §2)', () => {
   });
 });
 
-describe('the six Members App slots (#829 §3)', () => {
+describe('the Members App slots (#829 §3)', () => {
   it('is `members_app/<slot>.png` for every slot, for both kinds of Theme', () => {
     for (const { prefix, themeFolder } of ROOTS) {
       for (const slot of MEMBER_IMAGE_SLOTS) {
@@ -90,7 +90,7 @@ describe('the six Members App slots (#829 §3)', () => {
     }
   });
 
-  it('covers exactly the six the ticket lists, with the fixed filename the slot names', () => {
+  it('covers exactly the declared slots, with the fixed filename the slot names', () => {
     for (const { prefix, themeFolder } of ROOTS) {
       expect(MEMBER_IMAGE_SLOTS.map((slot) => buildThemeMemberImageKey(prefix, THEME_ID, THEME_NAME, slot)).sort())
         .toEqual([
@@ -99,6 +99,7 @@ describe('the six Members App slots (#829 §3)', () => {
           `${themeFolder}/members_app/calendar.png`,
           `${themeFolder}/members_app/membership.png`,
           `${themeFolder}/members_app/nutrition.png`,
+          `${themeFolder}/members_app/personal_goals.png`,
           `${themeFolder}/members_app/training.png`,
         ]);
     }

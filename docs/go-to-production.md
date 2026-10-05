@@ -272,7 +272,7 @@ Tick items off in the PR that completes them.
       keeps every key byte for byte. Until it runs, those images stay broken, but nothing is lost: a
       replaced-media sweep compares objects, not URL strings, so the mixed state never deletes an object
       that is still in use.
-- [ ] **Confirm the R2 objects under `themes/<theme>/members_app/` are publicly readable too** (#725). The six
+- [ ] **Confirm the R2 objects under `themes/<theme>/members_app/` are publicly readable too** (#725). The
       Members App backgrounds are fetched by the member's browser directly from
       the public origin and, unlike the logo, have **no API route that serves the bytes**: a missing public
       origin means a theme colour where the artwork should be, not a broken image. Setting

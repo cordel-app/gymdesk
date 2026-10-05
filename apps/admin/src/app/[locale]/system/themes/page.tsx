@@ -77,7 +77,7 @@ const EDITABLE_STATUSES = ['draft', 'active', 'inactive'] as const;
 // #678 — the same section model as the Custom Themes editor. `Assignments`
 // is the one section that has no platform-level counterpart: a theme is
 // assigned to a gym's centers, and this screen is above any gym.
-type SectionKey = 'branding' | 'members' | 'colors' | 'typography' | 'members_app';
+type SectionKey = 'branding' | 'colors' | 'typography' | 'members_app';
 
 const NEW_ID = 'new';
 
@@ -658,19 +658,6 @@ export default function ThemesPage() {
             </ThemeBrandingEditor>
           ))}
 
-          {/* #732 — the six Members App backgrounds of this Base Theme. Hidden
-              on a theme that does not exist yet, for the logo's reason: there
-              is no id to upload to until it has been created. */}
-          {!isNew && renderSection('members', t('section_members_images'), (
-            <ThemeMembersImagesEditor
-              previews={membersImagePreviews}
-              onPick={pickMembersImage}
-              onRemove={queueMembersImageRemove}
-              t={t}
-              slotErrors={failedMembersImageSlots(assetFailures)}
-            />
-          ))}
-
           {!isNew && renderSection('colors', t('section_colors'), (
             <ThemeColorsEditor tokens={editForm.tokens} onChange={updateTokens} namespace="themes" t={t} />
           ))}
@@ -681,9 +668,28 @@ export default function ThemesPage() {
 
           {/* #833 — the same Members App editor the Custom Themes screen
               renders: one set of settings, one inheritance system, both Theme
-              kinds. */}
+              kinds.
+
+              #1038 — this Base Theme's Members App backgrounds (#732) are the
+              `Images` subsection inside it now, rather than a top-level section
+              of their own. Still hidden on a theme that does not exist yet, for
+              the logo's reason: there is no id to upload to until it has been
+              created. */}
           {!isNew && renderSection('members_app', t('section_members_app'), (
-            <ThemeMembersAppEditor tokens={editForm.tokens} onChange={updateTokens} t={t} />
+            <ThemeMembersAppEditor
+              tokens={editForm.tokens}
+              onChange={updateTokens}
+              t={t}
+              images={(
+                <ThemeMembersImagesEditor
+                  previews={membersImagePreviews}
+                  onPick={pickMembersImage}
+                  onRemove={queueMembersImageRemove}
+                  t={t}
+                  slotErrors={failedMembersImageSlots(assetFailures)}
+                />
+              )}
+            />
           ))}
         </div>
 

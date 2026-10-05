@@ -6,12 +6,16 @@
 // theme or asset source — a slot that is `null` means the theme background
 // colour, and that is the end of the rule.
 
-/** The six slots the API sends, one per Members section. */
-export const MEMBER_BACKGROUND_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'background'] as const;
+/**
+ * The slots the API sends, one per Members section. Mirrors
+ * `MEMBER_IMAGE_SLOTS` on the API side; `personal_goals` is #1038's seventh,
+ * for the My Goals section.
+ */
+export const MEMBER_BACKGROUND_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background'] as const;
 
 export type MemberBackgroundSlot = (typeof MEMBER_BACKGROUND_SLOTS)[number];
 
-/** `theme.members_images` — one nullable URL per slot, always all six. */
+/** `theme.members_images` — one nullable URL per slot, always all of them. */
 export type MembersImages = Partial<Record<`${MemberBackgroundSlot}_url`, string | null>>;
 
 /**
@@ -35,6 +39,11 @@ const SECTION_SLOTS: Record<string, MemberBackgroundSlot> = {
   // "My Bookings" is the member app's `/schedule` route.
   schedule: 'bookings',
   membership: 'membership',
+  // `personal_goals` is deliberately absent: #1038 adds the slot so a Theme
+  // can carry the My Goals artwork, and the section that renders it is #1036's.
+  // A page is added to this map when it exists — never by a page reading
+  // `members_images` for itself — so until then the slot is the tile's alone,
+  // exactly as `calendar` is (#984).
 };
 
 export function slotForPathname(pathname: string | null | undefined): MemberBackgroundSlot {

@@ -4,8 +4,10 @@ import { useRef } from 'react';
 import { btnSmall, readOnlyStyle } from '@/components/ui';
 import type { GymStorageBlock } from '@/lib/gymStorageReadiness';
 
-// #725: the Members App background images of one Custom Theme — six fixed
-// slots, one per Members section, edited inside the existing Theme editor.
+// #725: the Members App background images of one Custom Theme — one fixed slot
+// per Members section, edited inside the existing Theme editor. Since #1038 it
+// renders as the `Images` subsection of **Members App** rather than as a
+// top-level Theme section, and it carries My Goals (`personal_goals`) too.
 //
 // Presentational, like the rest of `ThemeSectionEditor`: it never fetches,
 // never uploads and never persists. The page owns the draft (a picked file, a
@@ -13,8 +15,13 @@ import type { GymStorageBlock } from '@/lib/gymStorageReadiness';
 // "Upload + Cancel does not persist" and "Remove + Cancel preserves the
 // existing reference" true — the same lifecycle the logo has had since #188.
 
-/** The six slots, in the order the Members App presents the sections. */
-export const MEMBER_IMAGE_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'background'] as const;
+/**
+ * The slots, in the order the Members App presents the sections — which is also
+ * the order #1038 lists them in, My Goals between My Membership and the general
+ * background. Mirrors `MEMBER_IMAGE_SLOTS` on the API side (the stored values
+ * are the same set; only the order here is the UI's).
+ */
+export const MEMBER_IMAGE_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background'] as const;
 
 export type MemberImageSlot = (typeof MEMBER_IMAGE_SLOTS)[number];
 
@@ -52,7 +59,7 @@ interface ThemeMembersImagesEditorProps {
   storageBlock?: GymStorageBlock;
   /**
    * #830: per slot, whether the last Save failed on it. The diagnostic is
-   * rendered once above the sections; this marks which of the six it belongs to,
+   * rendered once above the sections; this marks which slot it belongs to,
    * which is the visible half of "each upload handles its own errors
    * independently" — one rejected slot no longer keeps the other five from being
    * saved, so the admin has to be able to tell which one is still pending.

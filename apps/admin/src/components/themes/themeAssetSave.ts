@@ -1,4 +1,4 @@
-// Saving a Theme's assets — the logo and the six Members App backgrounds —
+// Saving a Theme's assets — the logo and the Members App backgrounds —
 // declared once for the two screens that edit a Theme (#830).
 //
 // Custom Themes (`[locale]/themes`) and Base Themes (`[locale]/system/themes`)
@@ -47,7 +47,7 @@ export interface ThemeAssetDraft {
 
 /**
  * What the draft asks for, in the order it is performed: the logo first, then
- * the six slots in the order the editor shows them.
+ * the slots in the order the editor shows them.
  *
  * A picked file wins over a queued removal for the same asset — picking clears
  * the removal in both editors, so the two are already exclusive; encoding it
@@ -109,9 +109,9 @@ export function themeAssetOpStage(op: ThemeAssetOp): string {
 
 /**
  * The `storage_error_title_<value>` heading for this operation, and the slot to
- * interpolate into it when there is one — a Members failure says *which* of the
- * six it was, since six identical headings would not tell the admin which
- * upload to retry.
+ * interpolate into it when there is one — a Members failure says *which* slot
+ * it was, since identical headings would not tell the admin which upload to
+ * retry.
  */
 export function themeAssetOpTitle(op: ThemeAssetOp): { key: string; slot: MemberImageSlot | null } {
   switch (op.kind) {

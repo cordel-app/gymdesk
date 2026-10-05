@@ -1,4 +1,4 @@
-// #732: the six Members App background images of a **Base Theme**, stored in
+// #732: the Members App background images of a **Base Theme**, stored in
 // the platform's own Cloudflare R2 folder under
 // `cordel/themes/<theme_id>-<name>/members_app/<slot>.png`.
 // Covers the upload and remove routes (`/platform/themes/:id/members-images/:slot`),
@@ -389,14 +389,14 @@ describe('DELETE /platform/themes/:id/members-images/:slot', () => {
 // ─── The theme payload ────────────────────────────────────────────────────────
 
 describe('Base Theme payloads carry the Members configuration', () => {
-  it('GET /platform/themes returns all six fields per theme', async () => {
+  it('GET /platform/themes returns every field per theme', async () => {
     await upload(baseThemeId, 'membership', 'image/png', PNG_BYTES);
     const res = await request.get('/platform/themes').set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(200);
 
     const theme = res.body.find((t: any) => t.id === baseThemeId);
     expect(Object.keys(theme.members_images).sort()).toEqual(
-      ['background_url', 'bookings_url', 'calendar_url', 'membership_url', 'nutrition_url', 'training_url'],
+      ['background_url', 'bookings_url', 'calendar_url', 'membership_url', 'nutrition_url', 'personal_goals_url', 'training_url'],
     );
     expect(theme.members_images.membership_url).toContain(keyFor(baseThemeId, THEME_NAME, 'membership'));
     expect(theme.members_images.training_url).toBeNull();
@@ -462,7 +462,7 @@ describe('A Base Theme\'s images reach the gym and the Members App', () => {
     expect(write.status).toBe(404);
   });
 
-  it('/me/gyms resolves the six URLs for a gym running a Base Theme', async () => {
+  it('/me/gyms resolves the slot URLs for a gym running a Base Theme', async () => {
     await upload(baseThemeId, 'training', 'image/png', PNG_BYTES);
     await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [baseThemeId, gymId]);
     mockAsNonSuperadmin();

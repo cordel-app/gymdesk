@@ -75,11 +75,16 @@ describe('Base Theme editor unified with the Custom Theme editor (#678)', () => 
   it('gives the Base Theme editor the Custom editor’s applicable sections', () => {
     // Assignments is gym-level (centers), so it has no platform counterpart.
     // `members` joined them with #732 — the Base Theme's own Members App
-    // background images, the platform counterpart of #725's section.
-    expect(basePage).toContain("type SectionKey = 'branding' | 'members' | 'colors' | 'typography'");
-    for (const section of ['branding', 'members', 'colors', 'typography']) {
+    // background images — and left again with #1038, which made those images
+    // the `Images` subsection of `members_app` rather than a section of their
+    // own. Both screens lost the same section at the same time, so the two
+    // editors are still the same set.
+    expect(basePage).toContain("type SectionKey = 'branding' | 'colors' | 'typography' | 'members_app'");
+    for (const section of ['branding', 'colors', 'typography', 'members_app']) {
       expect(basePage, `the ${section} section is missing`).toContain(`renderSection('${section}'`);
     }
+    expect(basePage, 'the Members App images are no longer inside Members App')
+      .toMatch(/<ThemeMembersAppEditor[\s\S]*?images=\{\([\s\S]*?<ThemeMembersImagesEditor/);
     expect(basePage, 'Colors is no longer the only thing the expanded card exposes')
       .toContain('ThemeTypographyEditor');
     expect(basePage).toContain('ThemeBrandingEditor');
