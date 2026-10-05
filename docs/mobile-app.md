@@ -1,6 +1,7 @@
 # Mobile app (iOS / Android)
 
-**Status: planned, nothing is built.** Epic: [#1078](https://github.com/cordel-app/gymdesk/issues/1078).
+**Status: WP1 and WP2 done; the shell itself is not built.** Epic:
+[#1078](https://github.com/cordel-app/gymdesk/issues/1078).
 This file is the plan and the record of what a feasibility spike (2026-10-04) proved. Decisions that are settled live in
 `docs/decisions.md` (#18); what must be true before launch lives in
 `docs/go-to-production.md` §6. Update this file as each work package lands.
@@ -141,19 +142,78 @@ beyond the bullet list, because WP2 and WP5 both depend on it.
 **Not verified here**, and WP5's to close: a real delivery. Nothing in this repository has FCM
 credentials, so no notification has reached a physical device yet.
 
-### WP2 — Members App changes (`apps/member`) (#1073)
-- Create `public/` with `manifest.json` and icons (the layout already links `/manifest.json`, which
-  404s today).
-- `lib/native.ts` (`isNative()`, `@capacitor/core` in the bundle); `safe-area-inset` on `TopBar`
-  and the navigation; a splash/loading state and an error screen with retry.
-- `NativeGoogleButton`, visible only when native: calls the plugin
-  (`@capgo/capacitor-social-login`) and hands the token to Clerk. The default Google button of
-  `<SignIn />` is hidden in the app through `appearance`.
-- Register/unregister the push token; `appUrlOpen` routes invitation links to `/link` and a tapped
-  notification to `/notifications`.
-- First sign-in with Google by an invited member under restricted mode: verify, and if it needs a
-  change, make it in `POST /me/link` (match by email + `gym_id`), never in the frontend.
-- Tests (vitest): `isNative()`, which button renders, the token-registration payload.
+### WP2 — Members App changes (`apps/member`) (#1073) — **done**
+
+Everything in the bullet list landed; what follows is what the implementation decided beyond it,
+because WP3 builds the shell against these choices.
+
+- **Two modules, not one.** `lib/native.ts` is the *decision* half — pure, no React, no plugin
+  import, no `t()` — and holds `isNative()`, the platform, the registration body, the link rule,
+  the Google configuration and the token extraction. `lib/nativePlugins.ts` is the *access* half
+  and is the only module in the app that imports a Capacitor package. That split is what makes
+  design rule 3 assertable: `native.test.ts` fails the build if any other file under `src`
+  mentions `@capacitor/` or `@capgo/`.
+- **Every plugin import is dynamic.** The app is server-rendered, so a plugin evaluated at module
+  scope would run during SSR and in every browser. `await import()` still ships the package (the
+  spike's finding — a remote page gets no `registerPlugin` from the injected bridge, so
+  `@capacitor/core` has to be in the web build), and the web never downloads the chunk. A plugin
+  the shell does not have loads as `null` rather than throwing: a web release newer than the shell
+  on a member's phone must not take the page down.
+- **Detection and the registered platform are one answer.** `isNative()` is true for exactly the
+  platforms `member_device_tokens.platform` accepts, read from the bridge's own platform string —
+  so a future Capacitor target (`electron`) reads as *not* native rather than registering a value
+  `chk_mdt_platform` refuses, which is a refusal nobody would ever see (the registration is
+  fire-and-forget).
+- **A component that renders differently resolves it after mount** (`lib/useIsNative.ts`,
+  `false` on the server and on the first client render). Asking during render is a hydration
+  mismatch, and React resolves those by discarding the client tree. A component that merely *acts*
+  natively calls `isNative()` inside its own effect.
+- **Safe areas are not behind `isNative()`.** `env(safe-area-inset-*)` is `0px` wherever there is
+  no inset, so `memberChrome.ts`'s `safeArea`/`withSafeArea()` are correct in both builds and no
+  new surface has to remember a runtime branch. The top inset is `TopBar`'s **own padding**, so
+  the strip under the status bar carries the header's themed background rather than the page
+  behind it; the bottom inset is the layout's, once, for every route's last control. The two
+  superadmin bars (`AdminBar`, `ImpersonationBanner`) are deliberately untouched — they are
+  support chrome, outside the Theme and outside this.
+- **The native Google button does not exist unless it can work.** No bridge, or no Google client
+  ids in the build, renders nothing at all and leaves the ordinary email-and-password form —
+  rather than a control that fails when tapped. The ids are build args
+  (`NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID`, wired through
+  `apps/member/Dockerfile` and `deploy-member.yml`), per design rule 1. A dismissed sheet returns
+  no token and is not an error; only the plugin throwing or Clerk refusing the token says so.
+- **Clerk's own Google button is hidden through `appearance`**, both button shapes and the
+  divider with them, *only* when native — on the web `appearance` is `undefined` and the sign-in
+  screen is unchanged. WP3b adds the Apple button below the card beside the Google one and
+  revisits that one set.
+- **Push registers on sign-in and unregisters before sign-out.** `NativeShell` (mounted once by
+  the locale layout, like `MemberLocalePreference`) registers when a *linked member* is known,
+  which is this app's definition of signed in; re-registering is free, since the API's upsert
+  refreshes the row and takes a shared handset over. The delete is authenticated as the member
+  whose device it is, so it has to run **before** `signOut()` — `lib/nativePush.ts` keeps the
+  token in `localStorage` for exactly that, and the one sign-out in the app today (the invitation
+  page's, #759) calls it. A tapped notification opens `/notifications` and **no per-type route**:
+  the `data` block carries the type and entity for a later ticket, and guessing a destination
+  would answer the wrong screen. A push arriving in the foreground refreshes the unread badge.
+- **A splash and an error screen with a retry** (`NativeAppState`, native-only so web behaviour is
+  unchanged): the first WebView load on a clean install is close to a minute, and an unreachable
+  API used to render as "you have no gym". `AppContext` gained `loadError` (a thrown `fetch` or a
+  5xx — never a 401/403, which is an answer about who the caller is) and `reload()`, which re-runs
+  the load rather than reloading the WebView, so the member keeps their session.
+- **`public/`** holds `manifest.json` (standalone, portrait, the `#18181b` of the layout's static
+  `theme-color` — both are read before any gym is resolved, so neither can follow a Theme) and
+  three PNG icons. `next build` does not fold `public/` into the standalone output, so
+  `apps/member/Dockerfile` copies it explicitly: without that line the manifest 404s in production
+  exactly as it did before the directory existed.
+- Tests: `apps/member/src/test/native.test.ts` (41 — `isNative()` across both bridge shapes and
+  both refusals, the registration payload and its four refusals, the link rule for web and
+  custom-scheme URLs, the Google configuration per platform, the token extraction, the safe-area
+  values, which sign-in button renders, and the one-module rule). The app's own suite is green at
+  18 files / 367 tests and `next build` passes.
+
+**Still not verified, and WP3's to close:** the *first-time* Google sign-in by an invited member
+under Clerk's restricted mode. It needs a Clerk instance and an invitation, not a code path, and
+the §6 checklist still carries it. If it turns out to need a change, that change belongs in
+`POST /me/link` (match by email + `gym_id`), never in the frontend.
 
 ### WP3 — Mobile shell (`apps/mobile`, new workspace) (#1074)
 - Capacitor 8, `ios/` and `android/` in the repo. `capacitor.config.ts` reads `server.url` and

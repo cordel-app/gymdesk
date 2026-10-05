@@ -67,6 +67,16 @@ interface AppContextValue {
   updateMember: (profile: MemberProfile) => void;
   isLinked: boolean;
   loading: boolean;
+  /**
+   * #1073 (mobile app WP2): the member's context could not be loaded — the API
+   * was unreachable or answered a server error. It is deliberately **not** set by
+   * an authorization answer (a bare superadmin's 403 on `/me/profile`, a visitor
+   * with no gyms): those are states the app already renders. `NativeAppState` is
+   * the one consumer, and `reload()` is the only way out of it.
+   */
+  loadError: boolean;
+  /** Re-runs the context load, keeping the Clerk session. */
+  reload: () => void;
   centers: MemberCenter[];
   activeCenterId: number | null;
   setActiveCenterId: (id: number) => void;
@@ -85,6 +95,8 @@ const AppContext = createContext<AppContextValue>({
   updateMember: () => {},
   isLinked: false,
   loading: true,
+  loadError: false,
+  reload: () => {},
   centers: [],
   activeCenterId: null,
   setActiveCenterId: () => {},
@@ -108,6 +120,8 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   const [member, setMember] = useState<MemberProfile | null>(null);
   const [isLinked, setIsLinked] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [centers, setCenters] = useState<MemberCenter[]>([]);
   const [activeCenterId, setActiveCenterIdState] = useState<number | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -168,6 +182,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     // target — otherwise Home stays permanently stuck on the previous identity's Loading state.
     let cancelled = false;
     setLoading(true);
+    setLoadError(false);
     setIsLinked(false);
     setMember(null);
     setCenters([]);
@@ -189,6 +204,9 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
         const gymsRes = await fetch('/api/proxy/me/gyms', { headers: authHeaders });
         if (cancelled) return;
         if (!gymsRes.ok) {
+          // A 5xx is the gym being unreachable; a 401/403 is an answer about who
+          // the caller is, and the app has screens for that already (#1073).
+          if (gymsRes.status >= 500) setLoadError(true);
           setLoading(false);
           return;
         }
@@ -215,6 +233,10 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
         if (impersonateAs || !isSuperadmin) {
           await loadMemberData(token, defaultGym.id, () => cancelled);
         }
+      } catch {
+        // A thrown `fetch` is the network, not a status: the API is not
+        // reachable from the WebView at all (#1073).
+        if (!cancelled) setLoadError(true);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -224,7 +246,15 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     return () => {
       cancelled = true;
     };
-  }, [impersonationReady, isSignedIn, user?.id, impersonateAs, impersonationSession?.gymId, isSuperadmin]);
+  }, [impersonationReady, isSignedIn, user?.id, impersonateAs, impersonationSession?.gymId, isSuperadmin, reloadKey]);
+
+  /** #1073: retry the load itself rather than reloading the WebView, so the
+   * member keeps their session and the app does not pay the slow first load
+   * again. */
+  const reload = useCallback(() => {
+    setLoadError(false);
+    setReloadKey((key) => key + 1);
+  }, []);
 
   const switchGym = useCallback(async (id: string) => {
     const gym = gyms.find((g) => g.id === id);
@@ -265,7 +295,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   }
 
   return (
-    <AppContext.Provider value={{ gymId, gymName, gyms, switchGym, member, updateMember: setMember, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
+    <AppContext.Provider value={{ gymId, gymName, gyms, switchGym, member, updateMember: setMember, isLinked, loading, loadError, reload, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
       {children}
     </AppContext.Provider>
   );

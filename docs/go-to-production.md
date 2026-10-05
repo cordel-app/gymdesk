@@ -1041,8 +1041,8 @@ runbook is how.
 
 ## 6. Mobile app (iOS / Android)
 
-Planned, nothing built yet: plan and spike findings in `docs/mobile-app.md`, decision in
-`docs/decisions.md` #18. Stage 1 is **one generic app** ("Cordel Fitness",
+WP1 (push API) and WP2 (the Members App's native half) are done; the shell itself is not built.
+Plan and spike findings in `docs/mobile-app.md`, decision in `docs/decisions.md` #18. Stage 1 is **one generic app** ("Cordel Fitness",
 `com.cordel.fitness`); items marked *(stage 2)* only matter when a gym asks for its own app.
 Tick items off in the PR that completes them.
 
@@ -1063,6 +1063,11 @@ Tick items off in the PR that completes them.
 ### Sign-in
 
 - [ ] Clerk Production exists (§2) and the Members App is built with its `pk_live_…` key.
+- [ ] Set `NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID` as GitHub
+      secrets (#1073 — they are build args of `apps/member/Dockerfile`, baked into the bundle, so
+      a change needs a rebuild). Until both are set the native Google button is not rendered at
+      all and the app signs in with email and password; neither value is a secret, but both have
+      to be the **production** project's.
 - [ ] Google Cloud project `cordel-fitness-pro`: create the **iOS** OAuth client (Bundle ID
       `com.cordel.fitness`) and the **Android** client (package name + SHA-1 of the debug key
       *and* of the Google Play signing key). The existing web client *Clerk sign-in* stays the
