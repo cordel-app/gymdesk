@@ -320,12 +320,26 @@ themesRouter.post(
   requireSuperadmin,
   express.raw({ type: (req: any) => (req.headers['content-type'] ?? '').startsWith('image/'), limit: '600kb' }),
   async (req, res) => {
-    const mime = req.headers['content-type']?.split(';')[0]?.trim();
+    // A request can repeat the header, so what Node leaves here is not
+    // necessarily the string its type says: an array would reach
+    // `buildThemeLogoKey()` below as the stored object's extension
+    // (CodeQL `js/type-confusion-through-parameter-tampering`), so it is
+    // narrowed here rather than asserted.
+    const rawContentType: unknown = req.headers['content-type'];
+    const mime = typeof rawContentType === 'string' ? rawContentType.split(';')[0]?.trim() : undefined;
     if (!mime || !ALLOWED_MIME_TYPES.includes(mime)) {
       return res.status(415).json({ error: `Unsupported image type. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}`, cause: 'invalid_file' });
     }
-    const body = req.body as Buffer;
-    if (!Buffer.isBuffer(body) || body.length === 0) return res.status(400).json({ error: 'Request body is empty', cause: 'invalid_file' });
+    // `req.body` is whatever a parser left there, and a request can make that a
+    // string or an array — both of which carry a `length` and numeric indices,
+    // so they would flow into the size check and the stored object below as if
+    // they were bytes (CodeQL `js/type-confusion-through-parameter-tampering`).
+    const raw: unknown = req.body;
+    if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
+      return res.status(400).json({ error: 'Request body must be raw image bytes', cause: 'invalid_file' });
+    }
+    const body: Buffer = raw;
+    if (body.length === 0) return res.status(400).json({ error: 'Request body is empty', cause: 'invalid_file' });
     if (body.length > LOGO_MAX_BYTES) {
       return res.status(413).json({ error: 'Logo exceeds 512 KB limit', cause: 'invalid_file' });
     }
