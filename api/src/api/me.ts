@@ -1145,7 +1145,7 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
  * For member impersonation (effectiveType === 'member'), effectiveUserId is already members.id.
  * For all other cases, resolves via clerk_user_id.
  */
-async function resolveMemberId(gymId: string, ctx: TenantContext): Promise<number> {
+export async function resolveMemberId(gymId: string, ctx: TenantContext): Promise<number> {
   if (ctx.effectiveType === 'member') {
     const id = Number(ctx.effectiveUserId);
     const { rows } = await db.query(

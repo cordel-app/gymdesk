@@ -37,15 +37,16 @@ describe('which background a page uses (#725)', () => {
     );
   });
 
-  // #1038 adds the slot so a Theme can carry the My Goals artwork; the section
-  // that renders it is #1036's. Until that page exists `/goals` is an unnamed
-  // route and takes the general background, exactly as the Calendar page does
-  // (#984) — a page is added to `SECTION_SLOTS` when it exists, never by a page
-  // resolving `members_images` for itself.
-  it('does not map a My Goals page yet', () => {
-    expect(slotForPathname('/en/goals')).toBe('background');
+  // #1038 added the slot so a Theme could carry the My Goals artwork; #1036
+  // is the section that renders it, so `/goals` is a named route now. The rule
+  // it was pinned by is unchanged: a page is added to `SECTION_SLOTS` when it
+  // exists, never by a page resolving `members_images` for itself — which is
+  // why a path the map does not name still takes the general background.
+  it('maps the My Goals page to the personal_goals slot (#1036)', () => {
+    expect(slotForPathname('/en/goals')).toBe('personal_goals');
+    expect(slotForPathname('/ca/goals')).toBe('personal_goals');
+    // The route is `/goals`; nothing else resolves to that slot.
     expect(slotForPathname('/en/personal-goals')).toBe('background');
-    expect(libSrc).not.toMatch(/goals:\s*'personal_goals'/);
   });
 
   it('maps each Members section to its own slot', () => {

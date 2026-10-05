@@ -146,3 +146,90 @@ export function buildAssignmentListWhere(
   }
   return { where: where.join(' AND '), params };
 }
+
+/* ── #1036: the member's own half ─────────────────────────────────────────── */
+
+/**
+ * Who an assignment's actor pair may say acted (#799's snapshot columns),
+ * mirrored by `chk_mpgoal_{created,modified,deleted}_by_type` — migration 222
+ * widened all three, so a new actor kind goes in **two** places: this list and
+ * the three CHECKs beside it.
+ *
+ * `member` is #1036's: a member assigning a goal to themselves is a third kind
+ * of actor, and leaving the pair NULL for them would make a member-created row
+ * indistinguishable from one written before the columns existed.
+ */
+export const ASSIGNMENT_ACTOR_TYPES = ['staff', 'superadmin', 'member'] as const;
+export type AssignmentActorType = (typeof ASSIGNMENT_ACTOR_TYPES)[number];
+
+/**
+ * The actor pair a **member-initiated** write records, the counterpart of
+ * `actorSnapshot()` (`domain/nutritionLibrary.ts`) for the staff routers.
+ *
+ * A superadmin impersonating a member still records `superadmin`: the person
+ * acting is whoever's login it is, which is the rule `actorSnapshot()` already
+ * applies one router over — and `/me` is reachable by an impersonating
+ * superadmin, so this is not a hypothetical.
+ */
+export function memberActorSnapshot(actor: { name?: string | null; isSuperadmin: boolean }): {
+  name: string | null;
+  type: AssignmentActorType;
+} {
+  const name = actor.name?.trim();
+  return { name: name ? name : null, type: actor.isSuperadmin ? 'superadmin' : 'member' };
+}
+
+/**
+ * Whether an assignment is one the member is **currently pursuing**: not
+ * removed, and still in progress.
+ *
+ * It is the very predicate `mpgoal_live_goal_key` (migration 212) generates its
+ * unique key from, written once here so the member's Past Goals list, the
+ * `Add goal` selector's exclusions and the 409 the database answers cannot
+ * disagree about which goals a member already holds (#1036 §7, `Q3 live`).
+ */
+export function isLiveAssignment(row: { deleted_at: unknown; status: unknown }): boolean {
+  return (row.deleted_at === null || row.deleted_at === undefined) && row.status === 'in_progress';
+}
+
+/**
+ * #1036 `Q4` — **when an assignment ended.** The one place `end_date` is
+ * decided; it is never submitted by a client (migration 222's header says why).
+ *
+ * The rule is the whole of it: an assignment that stops being live-and-in-
+ * progress records the day it stopped, and one that becomes live again clears
+ * it. So removing a goal stamps today, staff marking one `achieved` stamps
+ * today, removing a goal that was *already* achieved keeps the day it was
+ * achieved — the first end is the real one — and moving an abandoned goal back
+ * to `in_progress` clears the stamp rather than leaving an end date on a goal
+ * that is running again.
+ *
+ * Answers `undefined` for "do not write the column", which is what keeps an
+ * unrelated edit (a new target, a note) from touching it.
+ */
+export function endDateTransition(input: {
+  nextLive: boolean;
+  storedEndDate: string | null;
+  today: string;
+}): string | null | undefined {
+  if (input.nextLive) return input.storedEndDate === null ? undefined : null;
+  return input.storedEndDate === null ? input.today : undefined;
+}
+
+/**
+ * A DATE column reaches the application as a `Date` or as a string depending on
+ * the driver's `dateStrings`, and every rule above compares `YYYY-MM-DD`
+ * strings — which sort lexicographically. One normaliser, so no caller writes a
+ * second one.
+ */
+export function toDateOnly(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  const text = String(value).slice(0, 10);
+  return DATE_PATTERN.test(text) ? text : null;
+}
+
+/** Today in UTC, as the `YYYY-MM-DD` the DATE columns store. */
+export function utcToday(now: Date = new Date()): string {
+  return now.toISOString().slice(0, 10);
+}

@@ -521,6 +521,16 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       current URL is on **Cordel → Gyms → [Gym] → Website Integration** (#1052), and the health check
       (`{"name":"test","email":""}` → `200`) confirms a site after it is updated.
 
+- [ ] **Migration 222 is migrate-before-deploy and not safely reversible afterwards**
+      (#1036). It widens the three `chk_mpgoal_*_by_type` CHECKs to admit `member`, which
+      is what lets a member assign a Personal Goal to themselves, so deploying
+      `/me/personal-goals` ahead of it makes every member write fail the CHECK (a bare 500
+      via the global handler, #966). Rolling it back once that route is serving traffic
+      does the same **and** clears the actor type of every goal a member recorded, while
+      dropping `end_date` destroys every stamp taken since deploy — `up()` re-adds an empty
+      column, so every Past Goal silently reads `—` again. If it has to come out, take the
+      route out first.
+
 - [ ] If a Content-Security-Policy is ever added in front of the **admin** app (only
       `apps/payment/nginx.conf` sets one today), its `img-src` must allow
       `https://img.youtube.com` — workout exercise rows load a YouTube poster from there

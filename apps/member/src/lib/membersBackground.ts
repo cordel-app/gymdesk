@@ -39,11 +39,11 @@ const SECTION_SLOTS: Record<string, MemberBackgroundSlot> = {
   // "My Bookings" is the member app's `/schedule` route.
   schedule: 'bookings',
   membership: 'membership',
-  // `personal_goals` is deliberately absent: #1038 adds the slot so a Theme
-  // can carry the My Goals artwork, and the section that renders it is #1036's.
-  // A page is added to this map when it exists — never by a page reading
-  // `members_images` for itself — so until then the slot is the tile's alone,
-  // exactly as `calendar` is (#984).
+  // "My Goals" is the member app's `/goals` route (#1036), and #1038's seventh
+  // slot is what it paints with: the page exists now, so it is named here
+  // rather than read by the page itself — one map, as `calendar`'s deliberate
+  // absence (#984) is also decided here and nowhere else.
+  goals: 'personal_goals',
 };
 
 export function slotForPathname(pathname: string | null | undefined): MemberBackgroundSlot {

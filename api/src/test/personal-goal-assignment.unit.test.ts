@@ -8,8 +8,14 @@ import {
   PERSONAL_GOAL_ASSIGNMENT_STATUSES,
   TARGET_UNIT_MAX_LENGTH,
   TARGET_VALUE_MAX,
+  ASSIGNMENT_ACTOR_TYPES,
   buildAssignmentListWhere,
+  endDateTransition,
   goalAssignmentFieldError,
+  isLiveAssignment,
+  memberActorSnapshot,
+  toDateOnly,
+  utcToday,
   isPersonalGoalAssignmentStatus,
   normalizeGoalDate,
   normalizeNotes,
@@ -181,5 +187,98 @@ describe('buildAssignmentListWhere', () => {
     buildAssignmentListWhere('x', base, params);
     expect(base).toEqual(['mpg.gym_id = ?']);
     expect(params).toEqual(['g1']);
+  });
+});
+
+/* ── #1036: the member's own half ─────────────────────────────────────────── */
+
+describe('memberActorSnapshot (#1036)', () => {
+  it('records a member acting on their own goals', () => {
+    expect(memberActorSnapshot({ name: 'Ada Lovelace', isSuperadmin: false }))
+      .toEqual({ name: 'Ada Lovelace', type: 'member' });
+  });
+
+  // The person acting is whoever's login it is, which is `actorSnapshot()`'s
+  // own rule one router over — and `/me` is reachable while impersonating.
+  it('records a superadmin impersonating a member as a superadmin', () => {
+    expect(memberActorSnapshot({ name: 'Root', isSuperadmin: true }))
+      .toEqual({ name: 'Root', type: 'superadmin' });
+  });
+
+  it('answers a null name rather than an empty string', () => {
+    expect(memberActorSnapshot({ name: '   ', isSuperadmin: false }).name).toBeNull();
+    expect(memberActorSnapshot({ name: null, isSuperadmin: false }).name).toBeNull();
+  });
+
+  it('only ever answers a type the CHECK admits', () => {
+    for (const actor of [{ name: 'x', isSuperadmin: false }, { name: 'x', isSuperadmin: true }]) {
+      expect(ASSIGNMENT_ACTOR_TYPES).toContain(memberActorSnapshot(actor).type);
+    }
+  });
+
+  it('declares the three kinds migration 222 widened the CHECKs to', () => {
+    expect([...ASSIGNMENT_ACTOR_TYPES]).toEqual(['staff', 'superadmin', 'member']);
+  });
+
+  // The migration mirrors this list in SQL, so the two are compared rather
+  // than trusted: adding a kind here without widening the CHECK makes every
+  // write of it fail (CLAUDE.md's "goes in two places").
+  it('agrees with the migration that writes the CHECK', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const migration = require('../infra/migrations/222_member_personal_goal_end_date.js');
+    expect(migration.ACTOR_TYPES).toEqual([...ASSIGNMENT_ACTOR_TYPES]);
+  });
+});
+
+describe('isLiveAssignment (#1036 §7)', () => {
+  it('is the predicate mpgoal_live_goal_key generates from', () => {
+    expect(isLiveAssignment({ deleted_at: null, status: 'in_progress' })).toBe(true);
+    expect(isLiveAssignment({ deleted_at: '2026-01-01', status: 'in_progress' })).toBe(false);
+    expect(isLiveAssignment({ deleted_at: null, status: 'achieved' })).toBe(false);
+    expect(isLiveAssignment({ deleted_at: null, status: 'abandoned' })).toBe(false);
+  });
+});
+
+describe('endDateTransition (#1036 Q4)', () => {
+  const today = '2026-06-15';
+
+  it('stamps the day an assignment stops being pursued', () => {
+    expect(endDateTransition({ nextLive: false, storedEndDate: null, today })).toBe(today);
+  });
+
+  // The first end is the real one: a goal achieved in March and removed in June
+  // ended in March.
+  it('keeps an end date that is already recorded', () => {
+    expect(endDateTransition({ nextLive: false, storedEndDate: '2026-03-01', today })).toBeUndefined();
+  });
+
+  it('clears the stamp when the goal is pursued again', () => {
+    expect(endDateTransition({ nextLive: true, storedEndDate: '2026-03-01', today })).toBeNull();
+  });
+
+  // An edit that does not change whether the goal is live writes nothing, so a
+  // new target or a note cannot touch the column.
+  it('writes nothing for an assignment that was and stays live', () => {
+    expect(endDateTransition({ nextLive: true, storedEndDate: null, today })).toBeUndefined();
+  });
+});
+
+describe('toDateOnly / utcToday', () => {
+  it('normalises whatever the driver hands over to YYYY-MM-DD', () => {
+    expect(toDateOnly(new Date('2026-06-15T22:30:00Z'))).toBe('2026-06-15');
+    expect(toDateOnly('2026-06-15')).toBe('2026-06-15');
+    expect(toDateOnly('2026-06-15T00:00:00.000Z')).toBe('2026-06-15');
+    expect(toDateOnly(null)).toBeNull();
+    expect(toDateOnly(undefined)).toBeNull();
+  });
+
+  it('answers null for something that is not a date rather than a truncated string', () => {
+    expect(toDateOnly('not a date')).toBeNull();
+  });
+
+  it('reads today in UTC, the timezone the DATE columns are written in', () => {
+    expect(utcToday(new Date('2026-06-15T23:59:00Z'))).toBe('2026-06-15');
+    expect(utcToday(new Date('2026-06-16T00:01:00Z'))).toBe('2026-06-16');
+    expect(utcToday()).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
