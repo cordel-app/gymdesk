@@ -88,6 +88,33 @@ export function isMeasurableGoalKind(kind: GoalLibraryKind): boolean {
 }
 
 /**
+ * #1035 stage 2 — which kinds carry an **image** (`image_url`, migration 225).
+ * Exactly one does, for the same reason exactly one is measurable: the ticket's
+ * bucket tree (`docs/cloudflare_structure.md`) names
+ * `goals/{personal_goal_id}-{personal_goal_name}.png` and nothing for a
+ * Nutrition Goal, and the two catalogues are two tables precisely so they can
+ * diverge (migration 206's header).
+ *
+ * It is a declaration rather than a branch on the kind in each router because
+ * one factory serves both: the list's projection, the single-row read and the
+ * two image routes all ask this, so a kind cannot have the column in one
+ * statement and not in the next — and `nutrition_goals` has no such column, so
+ * a router that projected it anyway would answer ER_BAD_FIELD_ERROR, which the
+ * global handler turns into a bare 500 (#966). The image **routes** are
+ * registered only for a kind that has one, so a Nutrition Goal's `/:id/image`
+ * is a 404 rather than a control that writes nowhere.
+ *
+ * Giving a second kind an image therefore goes in **three** places: this list,
+ * the column on that kind's table, and the admin's own mirror
+ * (`IMAGE_GOAL_KINDS` in `apps/admin/src/components/goalLibrary/goalProfile.ts`).
+ */
+export const IMAGE_GOAL_KINDS: readonly GoalLibraryKind[] = ['personal'];
+
+export function goalKindHasImage(kind: GoalLibraryKind): boolean {
+  return IMAGE_GOAL_KINDS.includes(kind);
+}
+
+/**
  * The System rows migration 206 seeds, in display order.
  *
  * The slugs are the ones the Nutrition Plan routers already validate a plan
