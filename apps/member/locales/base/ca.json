@@ -288,18 +288,6 @@
     "submitting": "Redirigint…",
     "rate_limited": "Massa sol·licituds. Torna-ho a intentar més tard."
   },
-  "payment_method": {
-    "heading": "Mètode de pagament",
-    "card": "Targeta",
-    "none": "No hi ha cap targeta guardada. Afegeix-ne una perquè la quota es cobri automàticament.",
-    "since": "Guardada el {date}",
-    "add": "Afegir targeta",
-    "replace": "Canviar targeta",
-    "remove": "Eliminar targeta",
-    "remove_confirm": "Vols eliminar la targeta guardada per a la teva membresia?",
-    "remove_blocked": "No pots eliminar la targeta mentre la teva membresia tingui cobraments previstos. Canvia-la o demana al gimnàs que cancel·li la membresia.",
-    "rate_limited": "Massa sol·licituds. Torna-ho a provar més tard."
-  },
   "payment_success": {
     "processing": "Pagament en procés…",
     "done": "✓ Pagament completat",

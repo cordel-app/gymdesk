@@ -288,18 +288,6 @@
     "submitting": "Redirigiendo…",
     "rate_limited": "Demasiadas solicitudes. Inténtalo más tarde."
   },
-  "payment_method": {
-    "heading": "Método de pago",
-    "card": "Tarjeta",
-    "none": "No hay ninguna tarjeta guardada. Añade una para que tu cuota se cobre automáticamente.",
-    "since": "Guardada el {date}",
-    "add": "Añadir tarjeta",
-    "replace": "Cambiar tarjeta",
-    "remove": "Eliminar tarjeta",
-    "remove_confirm": "¿Eliminar la tarjeta guardada para tu membresía?",
-    "remove_blocked": "No puedes eliminar la tarjeta mientras tu membresía tenga cobros previstos. Cámbiala o pide al gimnasio que cancele la membresía.",
-    "rate_limited": "Demasiadas solicitudes. Inténtalo de nuevo más tarde."
-  },
   "payment_success": {
     "processing": "Pago en proceso…",
     "done": "✓ Pago completado",

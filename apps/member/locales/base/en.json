@@ -288,18 +288,6 @@
     "submitting": "Redirecting…",
     "rate_limited": "Too many requests. Please try again later."
   },
-  "payment_method": {
-    "heading": "Payment method",
-    "card": "Card",
-    "none": "No card stored. Add one so your membership fee can be charged automatically.",
-    "since": "Stored on {date}",
-    "add": "Add card",
-    "replace": "Replace card",
-    "remove": "Remove card",
-    "remove_confirm": "Remove the card stored for your membership?",
-    "remove_blocked": "Your card cannot be removed while a membership is still scheduled to be charged. Replace it, or ask the gym to cancel the membership.",
-    "rate_limited": "Too many requests. Please try again later."
-  },
   "payment_success": {
     "processing": "Payment processing…",
     "done": "✓ Payment complete",
