@@ -22,8 +22,8 @@
 │               ├── calendar.png                                           — tamaño definido por el diseño
 │               ├── bookings.png                                           — tamaño definido por el diseño
 │               ├── background.png                                         — tamaño definido por el diseño
-│               ├── personal_goals.png                                      — tamaño definido por el diseño
-│               └── membership.png                                         — tamaño definido por el diseño
+│               ├── goals.png                                              — tamaño definido por el diseño
+│               └── products_services.png                                  — tamaño definido por el diseño
 │
 └── gyms/
     └── {gym_id}-{sanitized_gym_name}/
@@ -52,8 +52,8 @@
                     ├── calendar.png                                       — tamaño definido por el diseño
                     ├── bookings.png                                       — tamaño definido por el diseño
                     ├── background.png                                     — tamaño definido por el diseño
-                    ├── personal_goals.png                                 — tamaño definido por el diseño                    
-                    └── membership.png                                     — tamaño definido por el diseño
+                    ├── goals.png                                          — tamaño definido por el diseño                    
+                    └── products_services.png                            — tamaño definido por el diseño
 
 ---
 
@@ -84,6 +84,14 @@ own markers on first use.
 **`goals/` is stage 2.** Nothing writes a Personal Goal image yet, so initialization
 does not create that folder: a first-level folder no writer populates is what #826
 removed from this tree. It arrives with the column, the routes and the editor control.
+
+**The `members_app/` slot names above are the target, not the code.** The seven slots
+`MEMBER_IMAGE_SLOTS` (`api/src/domain/themeMemberImages.ts`) and the
+`chk_theme_member_images_slot` CHECK accept are still `training`, `nutrition`,
+`calendar`, `bookings`, `background`, `membership` and `personal_goals` (#1038), so
+`goals.png` and `products_services.png` are two renames nobody has ticketed yet — a
+slot name is a stored object key, so changing one is a migration plus a sweep, not a
+line in this file.
 
 **Nothing moved.** Objects stored under the pre-#1035 names — `Nutrition/`,
 `Nutrition/Images/<uuid>.<ext>`, `Exercises/Images/`, `Exercises/Videos/`,

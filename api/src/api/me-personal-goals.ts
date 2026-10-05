@@ -16,6 +16,12 @@ import {
   toDateOnly,
   utcToday,
 } from '../domain/personalGoalAssignment';
+import {
+  initialReadingTimestamp, normalizeReadingValue, normalizeRecordedAt,
+} from '../domain/goalReadings';
+import {
+  insertGoalReading, loadGoalReadings, withReadingSummaries, withReadingSummary,
+} from './goal-readings';
 
 /**
  * #1036 — **My Goals**: the Personal Goals a member manages for themselves.
@@ -99,12 +105,18 @@ function shape(row: any) {
   };
 }
 
+/**
+ * #1037 §5–§11 — the member sees the same five computed header fields the staff
+ * card does (`initial_reading`, `latest_reading`, `progress_percent`, …), from
+ * the same summary module, so My Goals and the Member card cannot report one
+ * goal's progress two ways.
+ */
 async function loadOwn(id: unknown, gymId: string, memberId: number) {
   const { rows } = await db.query(
     `SELECT ${COLUMNS} ${FROM} WHERE mpg.id = ? AND mpg.gym_id = ? AND mpg.member_id = ?`,
     [id, gymId, memberId],
   );
-  return rows[0] ? shape(rows[0]) : undefined;
+  return rows[0] ? withReadingSummary(shape(rows[0]), gymId) : undefined;
 }
 
 /* ── The member's goals ───────────────────────────────────────────────────── */
@@ -133,7 +145,7 @@ mePersonalGoalsRouter.get('/', async (req, res, next) => {
        ORDER BY mpg.created_at DESC, mpg.id DESC`,
       [gymId, memberId],
     );
-    const all = rows.map(shape);
+    const all = await withReadingSummaries(rows.map(shape), gymId);
     res.json({
       goals: all.filter((r: any) => r.deleted_at === null && r.status === 'in_progress'),
       past_goals: all.filter((r: any) => !(r.deleted_at === null && r.status === 'in_progress')),
@@ -205,6 +217,16 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
   const notes = normalizeNotes(req.body?.notes);
   if ('error' in notes) return res.status(400).json({ error: notes.error });
 
+  // #1037 §4 — the member may record where they are starting from as they add
+  // the goal. Optional: a goal added before they have measured anything simply
+  // reports no readings and `—` for progress until they record one.
+  const initialReading = req.body?.initial_reading === undefined || req.body?.initial_reading === null || req.body?.initial_reading === ''
+    ? undefined
+    : normalizeReadingValue(req.body?.initial_reading);
+  if (initialReading && 'error' in initialReading) return res.status(400).json({ error: initialReading.error });
+  const initialReadingAt = normalizeRecordedAt(req.body?.initial_reading_at);
+  if ('error' in initialReadingAt) return res.status(400).json({ error: initialReadingAt.error });
+
   const actor = memberActorSnapshot({ name: actorName, isSuperadmin });
 
   try {
@@ -241,18 +263,37 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
     // `status` takes the column's own default (`in_progress`) and is not
     // accepted from the member (§14), and `end_date` stays NULL because the
     // assignment is live the moment it is created.
-    const { insertId } = await db.query(
-      `INSERT INTO member_personal_goals
-         (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit,
-          start_date, target_date, notes, created_by_name, created_by_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        gymId, memberId, goalId, catalogue.name,
-        effectiveValue, effectiveUnit,
-        startDate.value ?? null, targetDate.value ?? null,
-        notes.value ?? null, actor.name, actor.type,
-      ],
-    );
+    // The goal and its initial reading commit together, exactly as the staff
+    // assign does (#1037 §4).
+    const insertId = await db.transaction(async (tx) => {
+      const { insertId: assignmentId } = await tx.query(
+        `INSERT INTO member_personal_goals
+           (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit,
+            start_date, target_date, notes, created_by_name, created_by_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          gymId, memberId, goalId, catalogue.name,
+          effectiveValue, effectiveUnit,
+          startDate.value ?? null, targetDate.value ?? null,
+          notes.value ?? null, actor.name, actor.type,
+        ],
+      );
+      if (initialReading && 'value' in initialReading) {
+        await insertGoalReading(tx, {
+          gymId,
+          assignmentId,
+          value: initialReading.value,
+          recordedAt: initialReadingTimestamp({
+            explicit: initialReadingAt.value,
+            startDate: startDate.value ?? null,
+          }),
+          isInitial: true,
+          actorName: actor.name,
+          actorType: actor.type,
+        });
+      }
+      return assignmentId;
+    });
 
     res.status(201).json(await loadOwn(insertId, gymId, memberId));
   } catch (err) {
@@ -328,6 +369,92 @@ mePersonalGoalsRouter.put('/:id', async (req, res, next) => {
     );
 
     res.json(await loadOwn(id, gymId, memberId));
+  } catch (err) { next(err); }
+});
+
+/* ── My readings ──────────────────────────────────────────────────────────────
+ * #1037 §35 — the member's half of the reading history. Every route resolves
+ * the caller through `resolveMemberId()` and constrains the assignment on
+ * `(gym_id, member_id)`, so another member's goal is a 404 whatever id the URL
+ * carries and no body names a member.
+ *
+ * They are the same two writers the staff router has, over the same helpers: a
+ * measurement, and a new baseline (§21). There is no edit and no delete (§34),
+ * and the member sets no progress status here either — that is still staff's
+ * (#1036 §14). */
+
+async function requireOwn(id: unknown, gymId: string, memberId: number, res: any) {
+  const assignment = await loadOwn(id, gymId, memberId);
+  if (!assignment || assignment.deleted_at !== null) {
+    res.status(404).json({ error: 'Goal not found' });
+    return undefined;
+  }
+  return assignment;
+}
+
+mePersonalGoalsRouter.get('/:id/readings', async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const assignment = await requireOwn(req.params.id, gymId, memberId, res);
+    if (!assignment) return;
+    res.json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false }));
+  } catch (err) { next(err); }
+});
+
+mePersonalGoalsRouter.post('/:id/readings', async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId, actorName, isSuperadmin } = ctx;
+  const value = normalizeReadingValue(req.body?.value);
+  if ('error' in value) return res.status(400).json({ error: value.error });
+  const recordedAt = normalizeRecordedAt(req.body?.recorded_at);
+  if ('error' in recordedAt) return res.status(400).json({ error: recordedAt.error });
+  const actor = memberActorSnapshot({ name: actorName, isSuperadmin });
+
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const assignment = await requireOwn(req.params.id, gymId, memberId, res);
+    if (!assignment) return;
+
+    await insertGoalReading(db, {
+      gymId,
+      assignmentId: assignment.id,
+      value: value.value,
+      recordedAt: recordedAt.value,
+      isInitial: false,
+      actorName: actor.name,
+      actorType: actor.type,
+    });
+    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false }));
+  } catch (err) { next(err); }
+});
+
+/** §21 — the member's own re-baseline: an added period boundary, nothing overwritten. */
+mePersonalGoalsRouter.post('/:id/initial-reading', async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId, actorName, isSuperadmin } = ctx;
+  const value = normalizeReadingValue(req.body?.value);
+  if ('error' in value) return res.status(400).json({ error: value.error });
+  const recordedAt = normalizeRecordedAt(req.body?.recorded_at);
+  if ('error' in recordedAt) return res.status(400).json({ error: recordedAt.error });
+  const actor = memberActorSnapshot({ name: actorName, isSuperadmin });
+
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const assignment = await requireOwn(req.params.id, gymId, memberId, res);
+    if (!assignment) return;
+
+    await insertGoalReading(db, {
+      gymId,
+      assignmentId: assignment.id,
+      value: value.value,
+      recordedAt: recordedAt.value,
+      isInitial: true,
+      actorName: actor.name,
+      actorType: actor.type,
+    });
+    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false }));
   } catch (err) { next(err); }
 });
 

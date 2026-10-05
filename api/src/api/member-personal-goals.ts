@@ -22,6 +22,12 @@ import {
   toDateOnly,
   utcToday,
 } from '../domain/personalGoalAssignment';
+import {
+  initialReadingTimestamp, normalizeReadingValue, normalizeRecordedAt,
+} from '../domain/goalReadings';
+import {
+  insertGoalReading, loadGoalReadings, withReadingSummaries, withReadingSummary,
+} from './goal-readings';
 
 /**
  * #948 §4 — **Assigned Personal Goals**: the Personal Goals a gym's members
@@ -124,12 +130,25 @@ function shapeAssignment<T extends { target_value: unknown }>(row: T) {
   };
 }
 
-async function loadAssignment(id: unknown, gymId: string) {
+/**
+ * #1037 §5–§11 — every assignment-shaped response carries the reading summary
+ * (`initial_reading`, `latest_reading`, `progress_percent`, …), computed from
+ * `member_personal_goal_readings` on each read rather than stored beside the
+ * target: a card that showed a target with nothing to compare it against is
+ * what the ticket is about, and a stored copy would need a writer in every path
+ * that records a measurement.
+ */
+async function loadAssignmentRow(id: unknown, gymId: string) {
   const { rows } = await db.query(
     `SELECT ${COLUMNS} ${FROM} WHERE mpg.id = ? AND mpg.gym_id = ?`,
     [id, gymId],
   );
   return rows[0] ? shapeAssignment(rows[0]) : undefined;
+}
+
+async function loadAssignment(id: unknown, gymId: string) {
+  const row = await loadAssignmentRow(id, gymId);
+  return row ? withReadingSummary(row, gymId) : undefined;
 }
 
 /* ── Statuses ─────────────────────────────────────────────────────────────────
@@ -187,7 +206,8 @@ memberPersonalGoalsRouter.get('/', async (req, res, next) => {
        LIMIT ${limit} OFFSET ${offset}`,
       params,
     );
-    res.json({ items: rows.map(shapeAssignment), total: countRows[0]?.total ?? 0, limit, offset });
+    const items = await withReadingSummaries(rows.map(shapeAssignment), gymId);
+    res.json({ items, total: countRows[0]?.total ?? 0, limit, offset });
   } catch (err) { next(err); }
 });
 
@@ -230,6 +250,18 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
   if ('error' in notes) return res.status(400).json({ error: notes.error });
   const status = normalizeStatus(req.body?.status, { required: false });
   if ('error' in status) return res.status(400).json({ error: status.error });
+
+  // #1037 §4 — assigning a goal may establish its **initial reading**, the
+  // first row of the reading history and the baseline progress is measured
+  // from. Optional, because an assignment made before the member has been
+  // measured is a real case: it then reports no readings and `—` for progress
+  // until somebody records one.
+  const initialReading = req.body?.initial_reading === undefined || req.body?.initial_reading === null || req.body?.initial_reading === ''
+    ? undefined
+    : normalizeReadingValue(req.body?.initial_reading);
+  if (initialReading && 'error' in initialReading) return res.status(400).json({ error: initialReading.error });
+  const initialReadingAt = normalizeRecordedAt(req.body?.initial_reading_at);
+  if ('error' in initialReadingAt) return res.status(400).json({ error: initialReadingAt.error });
 
   // The cross-field rules are deliberately **not** checked here: since #1034 an
   // unmentioned target inherits the catalogue's, so the pair that gets stored is
@@ -283,23 +315,47 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     });
     if (pairError) return res.status(400).json({ error: pairError });
 
-    const { insertId } = await db.query(
-      `INSERT INTO member_personal_goals
-         (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit,
-          start_date, target_date, status, notes, created_by_name, created_by_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?, ?)`,
-      [
-        gymId, memberId, goalId, catalogue.name,
-        effectiveValue, effectiveUnit,
-        startDate.value ?? null, targetDate.value ?? null,
-        status.value ?? null, notes.value ?? null,
-        actor.name, actor.type,
-      ],
-    );
+    // The assignment and its initial reading commit together (#1037 §4): an
+    // initial reading that landed without its assignment, or an assignment
+    // whose baseline was lost, are both states no read could explain.
+    const insertId = await db.transaction(async (tx) => {
+      const { insertId: assignmentId } = await tx.query(
+        `INSERT INTO member_personal_goals
+           (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit,
+            start_date, target_date, status, notes, created_by_name, created_by_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?, ?)`,
+        [
+          gymId, memberId, goalId, catalogue.name,
+          effectiveValue, effectiveUnit,
+          startDate.value ?? null, targetDate.value ?? null,
+          status.value ?? null, notes.value ?? null,
+          actor.name, actor.type,
+        ],
+      );
+      if (initialReading && 'value' in initialReading) {
+        await insertGoalReading(tx, {
+          gymId,
+          assignmentId,
+          value: initialReading.value,
+          // §4's "reuse the existing timestamp rather than creating an
+          // unnecessary duplicate": the baseline was measured when the goal
+          // started, so an explicit `initial_reading_at` wins, then the
+          // assignment's own `start_date`, then now.
+          recordedAt: initialReadingTimestamp({
+            explicit: initialReadingAt.value,
+            startDate: startDate.value ?? null,
+          }),
+          isInitial: true,
+          actorName: actor.name,
+          actorType: actor.type,
+        });
+      }
+      return assignmentId;
+    });
 
-    const assignment = await loadAssignment(insertId, gymId);
-    recordAudit(req, { action: 'assign', entityType: 'member_personal_goal', entityId: insertId, next: assignment });
-    res.status(201).json(assignment);
+    const stored = await loadAssignmentRow(insertId, gymId);
+    recordAudit(req, { action: 'assign', entityType: 'member_personal_goal', entityId: insertId, next: stored });
+    res.status(201).json(stored ? await withReadingSummary(stored, gymId) : stored);
   } catch (err) {
     // `mpgoal_live_goal_key` (migration 212) is the one unique index here: one
     // live, in-progress assignment per (member, goal). The 409 and the index say
@@ -330,7 +386,10 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
   const actor = actorSnapshot({ name: actorName, isSuperadmin });
 
   try {
-    const previous = await loadAssignment(id, gymId);
+    // The audit pair is the **stored** row, without the computed reading
+    // summary (#1037): `progress_percent` is derived on read, so including it
+    // would make a reading recorded between two edits read as an edit.
+    const previous = await loadAssignmentRow(id, gymId);
     if (!previous || previous.deleted_at !== null) {
       return res.status(404).json({ error: 'Assigned personal goal not found' });
     }
@@ -380,17 +439,119 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
       params,
     );
 
-    const assignment = await loadAssignment(id, gymId);
+    const stored = await loadAssignmentRow(id, gymId);
     recordAudit(req, {
       action: 'update', entityType: 'member_personal_goal', entityId: id,
-      previous, next: assignment,
+      previous, next: stored,
     });
-    res.json(assignment);
+    res.json(stored ? await withReadingSummary(stored, gymId) : stored);
   } catch (err) {
     // Moving an achieved assignment back to `in_progress` can collide with the
     // one that replaced it, which is the same rule as on create.
     handleDupEntry(err, res, next, 'This goal is already assigned to this member');
   }
+});
+
+/* ── Readings ─────────────────────────────────────────────────────────────────
+ * #1037 — the measurement history of one assignment. Two writers, deliberately
+ * separate: a reading is a measurement, and an **initial** reading is a new
+ * baseline every later percentage is computed from (§21/§25). A single route
+ * taking an `initial` flag would let a client re-baseline a member's goal by
+ * passing a field through, and the audit row could not say which happened.
+ *
+ * There is no edit and no delete (§34): the history is append-only, and
+ * correcting a measurement — which would move a chart point and could orphan an
+ * initial-reading period — is its own decision and its own ticket. */
+
+async function requireAssignment(id: unknown, gymId: string, res: any) {
+  const assignment = await loadAssignment(id, gymId);
+  if (!assignment || assignment.deleted_at !== null) {
+    res.status(404).json({ error: 'Assigned personal goal not found' });
+    return undefined;
+  }
+  return assignment;
+}
+
+memberPersonalGoalsRouter.get('/:id/readings', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const assignment = await requireAssignment(req.params.id, gymId, res);
+    if (!assignment) return;
+    res.json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true }));
+  } catch (err) { next(err); }
+});
+
+memberPersonalGoalsRouter.post('/:id/readings', requireWrite, async (req, res, next) => {
+  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const value = normalizeReadingValue(req.body?.value);
+  if ('error' in value) return res.status(400).json({ error: value.error });
+  const recordedAt = normalizeRecordedAt(req.body?.recorded_at);
+  if ('error' in recordedAt) return res.status(400).json({ error: recordedAt.error });
+  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+
+  try {
+    const assignment = await requireAssignment(req.params.id, gymId, res);
+    if (!assignment) return;
+
+    const readingId = await insertGoalReading(db, {
+      gymId,
+      assignmentId: assignment.id,
+      value: value.value,
+      recordedAt: recordedAt.value,
+      isInitial: false,
+      actorName: actor.name,
+      actorType: actor.type,
+    });
+
+    // Audited against the **assignment**, which is the entity the Audit Log
+    // already knows (`AUDIT_ENTITY_REGISTRY`'s `member_personal_goal`): a
+    // reading is not an entity a gym administers on its own, and giving it a
+    // registry entry of its own would put a measurement in the entity-type
+    // filter beside the goals themselves.
+    recordAudit(req, {
+      action: 'add_reading', entityType: 'member_personal_goal', entityId: assignment.id,
+      next: { reading_id: readingId, value: value.value, recorded_at: recordedAt.value ?? null },
+    });
+    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true }));
+  } catch (err) { next(err); }
+});
+
+/**
+ * §21/§22 — changing the initial reading. It **adds** a reading flagged as a
+ * new period boundary and changes nothing that is already stored: the
+ * superseded initial reading keeps its value and its date, every measurement
+ * stays where it is (§28), and the chart gains a period rather than losing one
+ * (§23).
+ */
+memberPersonalGoalsRouter.post('/:id/initial-reading', requireWrite, async (req, res, next) => {
+  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const value = normalizeReadingValue(req.body?.value);
+  if ('error' in value) return res.status(400).json({ error: value.error });
+  const recordedAt = normalizeRecordedAt(req.body?.recorded_at);
+  if ('error' in recordedAt) return res.status(400).json({ error: recordedAt.error });
+  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+
+  try {
+    const assignment = await requireAssignment(req.params.id, gymId, res);
+    if (!assignment) return;
+
+    const readingId = await insertGoalReading(db, {
+      gymId,
+      assignmentId: assignment.id,
+      value: value.value,
+      recordedAt: recordedAt.value,
+      isInitial: true,
+      actorName: actor.name,
+      actorType: actor.type,
+    });
+
+    recordAudit(req, {
+      action: 'set_initial_reading', entityType: 'member_personal_goal', entityId: assignment.id,
+      previous: { initial_reading: assignment.initial_reading },
+      next: { reading_id: readingId, value: value.value, recorded_at: recordedAt.value ?? null },
+    });
+    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true }));
+  } catch (err) { next(err); }
 });
 
 /* ── Unassign (soft delete) ───────────────────────────────────────────────── */
@@ -401,7 +562,7 @@ memberPersonalGoalsRouter.delete('/:id', requireWrite, async (req, res, next) =>
   const actor = actorSnapshot({ name: actorName, isSuperadmin });
 
   try {
-    const previous = await loadAssignment(id, gymId);
+    const previous = await loadAssignmentRow(id, gymId);
     if (!previous) return res.status(404).json({ error: 'Assigned personal goal not found' });
     if (previous.deleted_at !== null) return res.status(409).json({ error: 'Assigned personal goal is already deleted' });
 

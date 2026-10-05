@@ -121,6 +121,11 @@ export async function cleanupTestGyms() {
   // clear these anyway — listed first for the reason the goal catalogues below
   // are, so a later ticket pointing a non-cascading FK at them finds the order
   // already written down.
+  // #1037 stage 2: both FKs are ON DELETE CASCADE and the assignment delete
+  // below reaches these through its own, so this line is only about keeping the
+  // order readable — a later ticket pointing a non-cascading FK at the readings
+  // finds it already written down.
+  await db.query(`DELETE FROM member_personal_goal_readings WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_personal_goals WHERE gym_id IN (${marks})`, ids);
   // #1072: both FKs are ON DELETE CASCADE, so the `members` delete below would
   // clear these too — listed for the same readable-order reason.
