@@ -11,6 +11,10 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
@@ -114,6 +118,60 @@ type InlineNew = {
 };
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 3 — the row and the header band are laid out from one declaration
+ * rather than restating widths at each other (#637's shape). This list is why
+ * the declaration is worth having: the header collapsed the chevron and the `⋮`
+ * into one 68px cell while the row rendered two, so every title after Colour sat
+ * a few pixels off its own values.
+ *
+ * `mobile` says what each column is on a phone. The Activity Type's name is the
+ * row's identity and its status is the one state worth seeing without tapping;
+ * the colour, the author, the date and the two defaults are read in the
+ * expanded card.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `activity_types` namespace. Absent = no title. */
+  labelKey?: string;
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { key: 'name', labelKey: 'col_name', width: 140, grow: 2, mobile: 'name' },
+  { key: 'description', labelKey: 'col_description', width: 160, grow: 3, mobile: 'secondary' },
+  { key: 'color', labelKey: 'col_color', width: 90, mobile: 'secondary' },
+  { key: 'created_by', labelKey: 'col_created_by', width: 110, mobile: 'secondary' },
+  { key: 'created_at', labelKey: 'col_created_at', width: 100, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', width: 90, mobile: 'keep' },
+  { key: 'default_center', labelKey: 'col_default_center', width: 120, mobile: 'secondary' },
+  { key: 'default_trainer', labelKey: 'col_default_trainer', width: 120, mobile: 'secondary' },
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 14, mobile: 'keep' },
+  { key: 'actions', width: 44, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 10;
+/** This list's own horizontal inset — a card row. */
+const ROW_PADDING_X = 16;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
 
 export default function ActivityTypesPage() {
   const t = useTranslations('activity_types');
@@ -801,14 +859,14 @@ export default function ActivityTypesPage() {
     return (
       <div key={row.id} style={cardStyle}>
         {/* Collapsed header */}
-        <div style={rowStyle} onClick={() => toggleExpand(row.id)}>
-          <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(row.id)}>
+          <div className={CELL_CLASS.name} title={row.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.name}
           </div>
-          <div style={{ flex: 3, fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description ?? undefined}>
+          <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.description ?? undefined}>
             {row.description ?? '—'}
           </div>
-          <div style={{ width: 90, minWidth: 90, fontSize: 13, color: '#888', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
+          <div className={CELL_CLASS.color} style={{ fontSize: 13, color: '#888', display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, overflow: 'hidden' }}>
             {row.color ? (
               <>
                 <span
@@ -821,23 +879,23 @@ export default function ActivityTypesPage() {
               '—'
             )}
           </div>
-          <div style={{ minWidth: 110, fontSize: 13, color: '#888', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.created_by_name ?? '—'}
           </div>
-          <div style={{ minWidth: 100, fontSize: 13, color: '#888', flexShrink: 0 }}>
+          <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>
             {fmtDate(row.created_at)}
           </div>
-          <div style={{ minWidth: 90, flexShrink: 0 }}>
+          <div className={CELL_CLASS.status}>
             <StatusBadge status={row.status} label={tStatus(row.status)} />
           </div>
-          <div style={{ minWidth: 120, fontSize: 13, color: '#888', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className={CELL_CLASS.default_center} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.default_center_name ?? '—'}
           </div>
-          <div style={{ minWidth: 120, fontSize: 13, color: '#888', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className={CELL_CLASS.default_trainer} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.default_trainer_name ?? '—'}
           </div>
-          <span style={{ fontSize: 14, color: '#aaa', flexShrink: 0, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-          <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+          <span className={CELL_CLASS.expand} style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          <div className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu items={menuItems} ariaLabel={`Actions for ${row.name}`} />
           </div>
         </div>
@@ -1086,32 +1144,35 @@ export default function ActivityTypesPage() {
         </div>
       </div>
 
-      {/* Column headers */}
-      {(rows.length > 0 || inlineNew) && (
-        <div style={colHeaderStyle}>
-          <div style={{ flex: 2 }}>{t('col_name')}</div>
-          <div style={{ flex: 3 }}>{t('col_description')}</div>
-          <div style={{ width: 90, minWidth: 90 }}>{t('col_color')}</div>
-          <div style={{ minWidth: 110 }}>{t('col_created_by')}</div>
-          <div style={{ minWidth: 100 }}>{t('col_created_at')}</div>
-          <div style={{ minWidth: 90 }}>{t('col_status')}</div>
-          <div style={{ minWidth: 120 }}>{t('col_default_center')}</div>
-          <div style={{ minWidth: 120 }}>{t('col_default_trainer')}</div>
-          <div style={{ minWidth: 68 }} />
-        </div>
-      )}
-
-      {/* Inline new row */}
-      {renderInlineNewRow()}
-
-      {/* List */}
       {loading ? (
         <p style={{ color: '#888' }}>{t('loading')}</p>
       ) : rows.length === 0 && !inlineNew ? (
-        <p style={{ color: '#888' }}>{t('empty')}</p>
+        <>
+          {renderInlineNewRow()}
+          <p style={{ color: '#888' }}>{t('empty')}</p>
+        </>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {rows.map(renderRow)}
+        /* The header band and the cards share LIST_GRID_COLUMNS and scroll
+           together, so they cannot fall out of line, and a narrow viewport
+           scrolls the list instead of the page (#1011). */
+        <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+          <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+            {/* Column headers */}
+            <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
+              {LIST_COLUMNS.map((col) => (
+                <div key={col.key} className={CELL_CLASS[col.key]}>
+                  {col.labelKey ? t(col.labelKey) : null}
+                </div>
+              ))}
+            </div>
+
+            {/* Inline new row */}
+            {renderInlineNewRow()}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {rows.map(renderRow)}
+            </div>
+          </div>
         </div>
       )}
 
@@ -1272,12 +1333,14 @@ function ModalDetail({ label, value }: { label: string; value: string }) {
 const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, overflow: 'hidden' };
 
 const rowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `12px ${ROW_PADDING_X}px`,
   cursor: 'pointer', userSelect: 'none',
 };
 
 const colHeaderStyle: React.CSSProperties = {
-  display: 'flex', padding: '6px 16px', gap: 10,
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', padding: `6px ${ROW_PADDING_X}px`, gap: LIST_COLUMN_GAP,
   fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
   marginBottom: 4,
 };

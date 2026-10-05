@@ -27,6 +27,10 @@ import {
   invalidBenefitValueRow,
   toBenefitItems,
 } from '@/components/ProductBenefits';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 import { PromotionDetailModal } from './PromotionDetailModal';
 import { mfDurationOptions, promotionTimelineMonths } from './membershipFeeDuration';
 import { isAllSelected, isIndeterminate, toggleSelectAll } from '@/lib/suitablePlansSelection';
@@ -37,6 +41,57 @@ import {
   promotionTargetOrDefault,
   targetsMembershipPlan,
 } from '@/lib/promotionTargets';
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 3 — the row and the header band are laid out from one declaration
+ * rather than restating widths at each other, exactly as the three grid lists of
+ * stage 2 do (#637's shape).
+ *
+ * `mobile` says what each column is on a phone, in the one vocabulary
+ * `listChrome` declares. The Promotion's name is the row's identity and its
+ * lifecycle status is the one state worth seeing without tapping; the two dates,
+ * the author and the description are read in the expanded card.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `promotions` namespace. Absent = no title. */
+  labelKey?: string;
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { key: 'name', labelKey: 'col_name', width: 140, grow: 2, mobile: 'name' },
+  { key: 'description', labelKey: 'col_description', width: 160, grow: 3, mobile: 'secondary' },
+  { key: 'created_by', labelKey: 'col_created_by', width: 120, mobile: 'secondary' },
+  { key: 'created_at', labelKey: 'col_created_at', width: 90, mobile: 'secondary' },
+  { key: 'starts', labelKey: 'col_starts', width: 90, mobile: 'secondary' },
+  { key: 'ends', labelKey: 'col_ends', width: 90, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', width: 80, mobile: 'keep' },
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 13, mobile: 'keep' },
+  { key: 'actions', width: 32, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 12;
+/** This list's own horizontal inset — a card row, wider than a table cell's. */
+const ROW_PADDING_X = 20;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1644,24 +1699,24 @@ export default function PromotionsPage() {
 
     return (
       <div key={promo.id} style={cardSt}>
-        <div style={rowSt} onClick={() => toggleExpand(promo.id)}>
-          <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div className={LIST_GRID_ROW_CLASS} style={rowSt} onClick={() => toggleExpand(promo.id)}>
+          <div className={CELL_CLASS.name} title={promo.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {promo.name}
           </div>
-          <div style={{ flex: 3, fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {truncate(promo.description)}
           </div>
-          <div style={{ minWidth: 120, flexShrink: 0, fontSize: 13, color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#555', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {promo.created_by_name ?? '—'}
           </div>
-          <div style={{ minWidth: 90, flexShrink: 0, fontSize: 13, color: '#888' }}>{iso(promo.created_at)}</div>
-          <div style={{ minWidth: 90, flexShrink: 0, fontSize: 13, color: '#888' }}>{iso(promo.starts_at)}</div>
-          <div style={{ minWidth: 90, flexShrink: 0, fontSize: 13, color: '#888' }}>{iso(promo.ends_at)}</div>
-          <div style={{ minWidth: 80, flexShrink: 0 }}>
+          <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>{iso(promo.created_at)}</div>
+          <div className={CELL_CLASS.starts} style={{ fontSize: 13, color: '#888' }}>{iso(promo.starts_at)}</div>
+          <div className={CELL_CLASS.ends} style={{ fontSize: 13, color: '#888' }}>{iso(promo.ends_at)}</div>
+          <div className={CELL_CLASS.status}>
             <StatusBadge status={promo.lifecycle_status} label={tStatus(promo.lifecycle_status)} />
           </div>
-          <span style={{ fontSize: 13, color: '#aaa', flexShrink: 0, display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-          <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+          <span className={CELL_CLASS.expand} style={{ fontSize: 13, color: '#aaa', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          <div className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu items={menuItems} />
           </div>
         </div>
@@ -1673,16 +1728,13 @@ export default function PromotionsPage() {
   function renderNewRow() {
     return (
       <div key="new" style={{ ...cardSt, borderColor: '#6c63ff' }}>
-        <div style={rowSt}>
-          <div style={{ flex: 2, fontWeight: 600, fontSize: 15, color: '#6c63ff' }}>{t('add')}</div>
-          <div style={{ flex: 3 }} />
-          <div style={{ minWidth: 120, flexShrink: 0 }} />
-          <div style={{ minWidth: 90, flexShrink: 0 }} />
-          <div style={{ minWidth: 90, flexShrink: 0 }} />
-          <div style={{ minWidth: 90, flexShrink: 0 }} />
-          <div style={{ minWidth: 80, flexShrink: 0 }} />
-          <span style={{ minWidth: 13, flexShrink: 0 }}>▾</span>
-          <div style={{ minWidth: 32, flexShrink: 0 }} />
+        <div className={LIST_GRID_ROW_CLASS} style={rowSt}>
+          {LIST_COLUMNS.map((col) => (
+            <div key={col.key} className={CELL_CLASS[col.key]}
+              style={col.key === 'name' ? { fontWeight: 600, fontSize: 15, color: '#6c63ff' } : undefined}>
+              {col.key === 'name' ? t('add') : null}
+            </div>
+          ))}
         </div>
         {renderCreateSection()}
       </div>
@@ -1691,16 +1743,12 @@ export default function PromotionsPage() {
 
   function renderHeader() {
     return (
-      <div style={{ display: 'flex', padding: '6px 20px', marginBottom: 4, color: '#999', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', gap: 12 }}>
-        <span style={{ flex: 2 }}>{t('col_name')}</span>
-        <span style={{ flex: 3 }}>{t('col_description')}</span>
-        <span style={{ minWidth: 120, flexShrink: 0 }}>{t('col_created_by')}</span>
-        <span style={{ minWidth: 90, flexShrink: 0 }}>{t('col_created_at')}</span>
-        <span style={{ minWidth: 90, flexShrink: 0 }}>{t('col_starts')}</span>
-        <span style={{ minWidth: 90, flexShrink: 0 }}>{t('col_ends')}</span>
-        <span style={{ minWidth: 80, flexShrink: 0 }}>{t('col_status')}</span>
-        <span style={{ minWidth: 13, flexShrink: 0 }} />
-        <span style={{ minWidth: 32, flexShrink: 0 }} />
+      <div className={LIST_GRID_ROW_CLASS} style={headerBandSt}>
+        {LIST_COLUMNS.map((col) => (
+          <span key={col.key} className={CELL_CLASS[col.key]}>
+            {col.labelKey ? t(col.labelKey) : null}
+          </span>
+        ))}
       </div>
     );
   }
@@ -1731,10 +1779,19 @@ export default function PromotionsPage() {
         <p style={{ color: '#888' }}>{t('loading')}</p>
       ) : (
         <>
-          {(rows.length > 0 || hasNewRow) && renderHeader()}
-          {hasNewRow && renderNewRow()}
           {rows.length === 0 && !hasNewRow && <p style={{ color: '#888' }}>{t('empty')}</p>}
-          {rows.map(renderRow)}
+          {(rows.length > 0 || hasNewRow) && (
+            /* The header band and the cards share LIST_GRID_COLUMNS and scroll
+               together, so they cannot fall out of line, and a narrow viewport
+               scrolls the list instead of the page (#1011). */
+            <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+              <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+                {renderHeader()}
+                {hasNewRow && renderNewRow()}
+                {rows.map(renderRow)}
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -1761,7 +1818,27 @@ export default function PromotionsPage() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const cardSt: React.CSSProperties = { ...cardSurfaceStyle, marginBottom: 8, overflow: 'hidden' };
-const rowSt: React.CSSProperties = { display: 'flex', alignItems: 'center', padding: '12px 20px', gap: 12, cursor: 'pointer' };
+const rowSt: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center',
+  padding: `12px ${ROW_PADDING_X}px`,
+  gap: LIST_COLUMN_GAP,
+  cursor: 'pointer',
+};
+const headerBandSt: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center',
+  padding: `6px ${ROW_PADDING_X}px`,
+  gap: LIST_COLUMN_GAP,
+  marginBottom: 4,
+  color: '#999',
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};
 const inlineLabelSt: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' };
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
 const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };

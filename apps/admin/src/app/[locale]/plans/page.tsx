@@ -15,6 +15,10 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { CardSectionHeader, cardSectionTitleStyle } from '@/components/CardSectionHeader';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 import { AssignPlanModal } from './AssignPlanModal';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
@@ -244,6 +248,57 @@ function fmtTimelineDate(dateStr: string, locale: string) {
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 3 — the row and the header band are laid out from one declaration
+ * rather than restating widths at each other, as the three grid lists of stage 2
+ * do (#637's shape).
+ *
+ * `mobile` says what each column is on a phone. The Plan's name is the row's
+ * identity; of its two badges the **lifecycle** status is the Plan's own
+ * standing and rides beside the name, while Enrollment — who may be assigned it
+ * — is read in the expanded card, for the reason Members keeps one of its two
+ * (stage 2): a name and two badges leave a 390px row with nothing legible in it.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `plans` namespace. Absent = no title. */
+  labelKey?: string;
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { key: 'name', labelKey: 'col_name', width: 140, grow: 2, mobile: 'name' },
+  { key: 'description', labelKey: 'col_description', width: 160, grow: 3, mobile: 'secondary' },
+  { key: 'created_by', labelKey: 'col_created_by', width: 120, grow: 2, mobile: 'secondary' },
+  { key: 'created_at', labelKey: 'col_created_at', width: 100, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', width: 90, mobile: 'keep' },
+  { key: 'enrollment', labelKey: 'col_enrollment', width: 90, mobile: 'secondary' },
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 13, mobile: 'keep' },
+  { key: 'actions', width: 32, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 12;
+/** This list's own horizontal inset — a card row, wider than a table cell's. */
+const ROW_PADDING_X = 20;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
 
 export default function PlansPage() {
   const t = useTranslations();
@@ -920,29 +975,31 @@ export default function PlansPage() {
         </div>
       </div>
 
-      {/* Column headers */}
-      {!loading && (plans.length > 0 || inlineNew) && (
-        <div style={colHeaderStyle}>
-          <div style={{ flex: 2 }}>{t('plans.col_name')}</div>
-          <div style={{ flex: 3 }}>{t('plans.col_description')}</div>
-          <div style={{ flex: 2 }}>{t('plans.col_created_by')}</div>
-          <div style={{ minWidth: 100 }}>{t('plans.col_created_at')}</div>
-          <div style={{ minWidth: 90 }}>{t('plans.col_status')}</div>
-          <div style={{ minWidth: 90 }}>{t('plans.col_enrollment')}</div>
-          <div style={{ minWidth: 13, flexShrink: 0 }} />
-          <div style={{ minWidth: 32, flexShrink: 0 }} />
-        </div>
-      )}
-
-      {/* Inline create */}
-      {renderInlineNewRow()}
-
-      {/* Plan list */}
       {loading ? (
         <p style={{ color: '#888' }}>{t('plans.loading')}</p>
       ) : plans.length === 0 && !inlineNew ? (
-        <p style={{ color: '#888' }}>{t('plans.empty')}</p>
+        <>
+          {renderInlineNewRow()}
+          <p style={{ color: '#888' }}>{t('plans.empty')}</p>
+        </>
       ) : (
+        /* The header band and the cards share LIST_GRID_COLUMNS and scroll
+           together, so they cannot fall out of line, and a narrow viewport
+           scrolls the list instead of the page (#1011). */
+        <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+        <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+        {/* Column headers */}
+        <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
+          {LIST_COLUMNS.map((col) => (
+            <div key={col.key} className={CELL_CLASS[col.key]}>
+              {col.labelKey ? t(`plans.${col.labelKey}`) : null}
+            </div>
+          ))}
+        </div>
+
+        {/* Inline create */}
+        {renderInlineNewRow()}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {plans.map((plan) => {
             const isEditing = editingId === plan.id;
@@ -964,30 +1021,30 @@ export default function PlansPage() {
             return (
               <div key={plan.id} style={cardStyle(false)}>
                 {/* Row header */}
-                <div style={rowStyle} onClick={() => toggleExpand(plan.id)}>
-                  <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(plan.id)}>
+                  <div className={CELL_CLASS.name} title={plan.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {plan.name}
                   </div>
-                  <div style={{ flex: 3, fontSize: 13.5, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div className={CELL_CLASS.description} style={{ fontSize: 13.5, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {descText}
                   </div>
-                  <div style={{ flex: 2, fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {plan.created_by_name ?? '—'}
                   </div>
-                  <div style={{ minWidth: 100, fontSize: 13, color: '#888', flexShrink: 0 }}>
+                  <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>
                     {fmtDate(plan.created_at)}
                   </div>
-                  <div style={{ minWidth: 90, flexShrink: 0 }}>
+                  <div className={CELL_CLASS.status}>
                     <StatusBadge status={plan.lifecycle_status} label={t(`status.${plan.lifecycle_status}`)} />
                   </div>
-                  <div style={{ minWidth: 90, flexShrink: 0 }}>
+                  <div className={CELL_CLASS.enrollment}>
                     <StatusBadge
                       status={plan.enrollment_status === 'public' ? 'active' : plan.enrollment_status === 'staff_only' ? 'paused' : 'inactive'}
                       label={t(`status.${plan.enrollment_status}`)}
                     />
                   </div>
-                  <span style={{ fontSize: 13, color: '#aaa', flexShrink: 0, display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-                  <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+                  <span className={CELL_CLASS.expand} style={{ fontSize: 13, color: '#aaa', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+                  <div className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
                     <ContextMenu items={menuItems} ariaLabel={`Actions for ${plan.name}`} />
                   </div>
                 </div>
@@ -1507,6 +1564,8 @@ export default function PlansPage() {
             );
           })}
         </div>
+        </div>
+        </div>
       )}
 
       {/* Confirm delete */}
@@ -1646,12 +1705,14 @@ const cardStyle = (highlighted: boolean): React.CSSProperties => ({
 });
 
 const rowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px',
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `12px ${ROW_PADDING_X}px`,
   cursor: 'pointer', userSelect: 'none',
 };
 
 const colHeaderStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', padding: '6px 20px', marginBottom: 4, gap: 12,
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', padding: `6px ${ROW_PADDING_X}px`, marginBottom: 4, gap: LIST_COLUMN_GAP,
   fontSize: 11, fontWeight: 600, color: '#999', textTransform: 'uppercase', letterSpacing: '0.04em',
 };
 

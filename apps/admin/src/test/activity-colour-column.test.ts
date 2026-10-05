@@ -37,29 +37,31 @@ const pageSrc = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
 
 // The collapsed header: the clickable row that expands the card.
 const collapsedRowSrc = pageSrc.match(
-  /<div style=\{rowStyle\} onClick=\{\(\) => toggleExpand\(row\.id\)\}>[\s\S]*?\n {8}<\/div>\n/,
+  /<div className=\{LIST_GRID_ROW_CLASS\} style=\{rowStyle\} onClick=\{\(\) => toggleExpand\(row\.id\)\}>[\s\S]*?\n {8}<\/div>\n/,
 )?.[0] ?? '';
 
-// The column header strip above the list.
-const colHeaderSrc = pageSrc.match(/<div style=\{colHeaderStyle\}>[\s\S]*?<\/div>\n {8}\)\}/)?.[0] ?? '';
+// #1011 stage 3: the column strip is one cell per LIST_COLUMNS entry rather
+// than a hand-written list, so the order the ticket asks for is read from that
+// declaration — which is also what the row's own cells are keyed by.
+const columnsSrc = pageSrc.match(/const LIST_COLUMNS: ListColumn\[\] = \[[\s\S]*?\n\];/)?.[0] ?? '';
 
 const locales = Object.fromEntries(
   LOCALE_CODES.map((c) => [c, JSON.parse(readFileSync(join(LOCALES_DIR, `${c}.json`), 'utf-8'))]),
 ) as Record<(typeof LOCALE_CODES)[number], Record<string, Record<string, unknown>>>;
 
 describe('Activities: colour in the card header (#676)', () => {
-  it('extracts the collapsed header and the column strip to scan', () => {
+  it('extracts the collapsed header and the column declaration to scan', () => {
     expect(collapsedRowSrc, 'the collapsed header could not be located').not.toBe('');
-    expect(colHeaderSrc, 'the column header strip could not be located').not.toBe('');
+    expect(columnsSrc, 'the column declaration could not be located').not.toBe('');
   });
 
   it('lists the column headers in the ticket\'s order', () => {
-    const declared = [...colHeaderSrc.matchAll(/t\('(col_[a-z_]+)'\)/g)].map((m) => m[1]);
+    const declared = [...columnsSrc.matchAll(/labelKey: '(col_[a-z_]+)'/g)].map((m) => m[1]);
     expect(declared).toEqual([...EXPECTED_COLUMNS]);
   });
 
   it('no longer draws the colour bullet next to the name', () => {
-    const nameCell = collapsedRowSrc.match(/<div style=\{\{ flex: 2, fontWeight: 600[\s\S]*?<\/div>/)?.[0] ?? '';
+    const nameCell = collapsedRowSrc.match(/<div className=\{CELL_CLASS\.name\}[\s\S]*?<\/div>/)?.[0] ?? '';
     expect(nameCell, 'the name cell could not be located').not.toBe('');
     expect(nameCell).toContain('{row.name}');
     expect(nameCell, 'the colour bullet is still inside the name cell').not.toContain('row.color');
@@ -86,7 +88,7 @@ describe('Activities: colour in the card header (#676)', () => {
   });
 
   it('truncates a long description instead of widening its column', () => {
-    const descriptionCell = collapsedRowSrc.match(/<div style=\{\{ flex: 3[\s\S]*?<\/div>/)?.[0] ?? '';
+    const descriptionCell = collapsedRowSrc.match(/<div className=\{CELL_CLASS\.description\}[\s\S]*?<\/div>/)?.[0] ?? '';
     expect(descriptionCell, 'the description cell could not be located').not.toBe('');
     expect(descriptionCell).toContain("textOverflow: 'ellipsis'");
     expect(descriptionCell).toContain("whiteSpace: 'nowrap'");
