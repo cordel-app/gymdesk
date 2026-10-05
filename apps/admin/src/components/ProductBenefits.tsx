@@ -21,6 +21,7 @@
 
 import React from 'react';
 import { primaryBtnSmall } from '@/components/ui';
+import { rowRemoveBtnStyle } from '@/components/formChrome';
 import {
   DEFAULT_BENEFIT_ACTION,
   ProductBenefitAction,
@@ -662,7 +663,7 @@ export function ProductBenefitEditor({
                 {mandatory ? <span /> : (
                   <button
                     onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#c0392b', fontSize: 14, padding: 0 }}
+                    style={rowRemoveBtnStyle}
                   >✕</button>
                 )}
               </div>
