@@ -22,6 +22,12 @@ cd apps/mobile
 npm run profile:show              # which app this build is for
 ```
 
+**Node 22 or newer**, because `@capacitor/cli` declares `engines.node >= 22`.
+`npm ci` only warns about it (there is no `engine-strict` in this repository, and
+CI's Node 20 never runs `cap`), but every `cap` command below needs it — and
+`profile:show` / `profile:apply` run on Node 20 happily, since they are plain
+`tsx`.
+
 `profile:show` prints the resolved profile: the app id, the display name, the
 URL the shell loads, the navigation allow-list and the URL schemes. It is
 `profiles/<MOBILE_APP_PROFILE>.json` (default `cordel-fitness`, the stage-1
