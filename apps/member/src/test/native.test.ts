@@ -324,28 +324,11 @@ describe('the native wiring lives in one place', () => {
     expect(layout).toContain('<NativeAppState />');
   });
 
-  it('is the only module that imports a Capacitor plugin', () => {
-    // `docs/mobile-app.md` design rule 3. A plugin imported from a page would be
-    // evaluated during SSR and in every browser, which is the whole of what
-    // "a plain browser never executes native code" rules out.
-    const offenders: string[] = [];
-    const walk = (dir: string, prefix: string) => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { readdirSync, statSync } = require('fs');
-      for (const entry of readdirSync(join(SRC, dir))) {
-        const rel = prefix ? `${prefix}/${entry}` : entry;
-        if (statSync(join(SRC, dir, entry)).isDirectory()) walk(`${dir}/${entry}`, rel);
-        else if (/\.tsx?$/.test(entry)) {
-          const src = stripComments(readFileSync(join(SRC, dir, entry), 'utf-8'));
-          if (/@capacitor\/|@capgo\//.test(src) && rel !== 'nativePlugins.ts') offenders.push(`${dir}/${entry}`);
-        }
-      }
-    };
-    walk('lib', '');
-    walk('app', '');
-    walk('components', '');
-    expect(offenders).toEqual([]);
-  });
+  // The scan that proves it — no other file under `src` imports a Capacitor
+  // package — lives in the API suite as
+  // `api/src/test/members-app-native.unit.test.ts`, because CI runs `npm test`
+  // in `api/` only and a rule that has to hold on every push belongs where every
+  // push runs it (#1009's reason, and #983's gate for the same app).
 
   it('registers the device for the signed-in member and nobody else', () => {
     const shell = read('components', 'NativeShell.tsx');

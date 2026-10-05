@@ -204,10 +204,15 @@ because WP3 builds the shell against these choices.
   three PNG icons. `next build` does not fold `public/` into the standalone output, so
   `apps/member/Dockerfile` copies it explicitly: without that line the manifest 404s in production
   exactly as it did before the directory existed.
-- Tests: `apps/member/src/test/native.test.ts` (41 — `isNative()` across both bridge shapes and
+- Tests: `apps/member/src/test/native.test.ts` (39 — `isNative()` across both bridge shapes and
   both refusals, the registration payload and its four refusals, the link rule for web and
   custom-scheme URLs, the Google configuration per platform, the token extraction, the safe-area
-  values, which sign-in button renders, and the one-module rule). The app's own suite is green at
+  values and which sign-in button renders) plus `api/src/test/members-app-native.unit.test.ts`
+  (6 — the two-module rule itself: one importer, every import dynamic, the decision half pure, the
+  platform list equal to the API's `DEVICE_PLATFORMS`, and no render-time `isNative()`). That one
+  is in the **API** suite for #1009's reason, the same that put #983's theme gate there: CI runs
+  `npm test` in `api/` only, so a scan that has to hold on every push belongs where every push
+  runs it. The app's own suite is green at
   18 files / 367 tests and `next build` passes.
 
 **Still not verified, and WP3's to close:** the *first-time* Google sign-in by an invited member
