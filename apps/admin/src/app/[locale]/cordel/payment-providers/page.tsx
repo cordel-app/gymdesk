@@ -14,6 +14,10 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -68,6 +72,54 @@ function fmtDate(iso: string | null) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 4 — the row and the header band are laid out from one declaration
+ * rather than restating widths at each other (#637's shape, which stage 3's
+ * eight card lists already adopted). The header folded the chevron and the `⋮`
+ * into one 68px cell while the row rendered two.
+ *
+ * `mobile` says what each column is on a phone. The provider's name is the row's
+ * identity and its status is the one state worth seeing without tapping; the
+ * adapter key and the gym count are read in the expanded card.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `payment_providers` namespace. Absent = no title. */
+  labelKey?: string;
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { key: 'name', labelKey: 'col_name', width: 160, grow: 2, mobile: 'name' },
+  { key: 'provider_key', labelKey: 'col_provider_key', width: 120, grow: 1, mobile: 'secondary' },
+  { key: 'gyms', labelKey: 'col_gyms', width: 80, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', width: 90, mobile: 'keep' },
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 14, mobile: 'keep' },
+  { key: 'actions', width: 44, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 10;
+/** This list's own horizontal inset — a card row. */
+const ROW_PADDING_X = 16;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
@@ -346,18 +398,18 @@ export default function CordelPaymentProvidersPage() {
     return (
       <div key={provider.id} style={cardStyle}>
         {/* Collapsed header */}
-        <div style={rowStyle} onClick={() => toggleExpand(provider.id)}>
-          <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(provider.id)}>
+          <div className={CELL_CLASS.name} title={provider.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider.name}</span>
             {provider.is_default && <span style={defaultBadgeStyle}>{t('badge_default')}</span>}
           </div>
-          <div style={{ flex: 1, fontSize: 13, color: '#666' }}>{provider.provider_key}</div>
-          <div style={{ minWidth: 80, fontSize: 13, color: '#888', flexShrink: 0 }}>{provider.gym_count}</div>
-          <div style={{ minWidth: 90, flexShrink: 0 }}>
+          <div className={CELL_CLASS.provider_key} style={{ fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{provider.provider_key}</div>
+          <div className={CELL_CLASS.gyms} style={{ fontSize: 13, color: '#888' }}>{provider.gym_count}</div>
+          <div className={CELL_CLASS.status}>
             <StatusBadge status={provider.status} label={tStatus(provider.status)} />
           </div>
-          <span style={{ fontSize: 14, color: '#aaa', flexShrink: 0, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-          <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+          <span className={CELL_CLASS.expand} style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          <div className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu items={menuItems} ariaLabel={`Actions for ${provider.name}`} />
           </div>
         </div>
@@ -481,25 +533,33 @@ export default function CordelPaymentProvidersPage() {
 
       {renderDeployment()}
 
-      {(providers.length > 0 || inlineNew) && (
-        <div style={colHeaderStyle}>
-          <div style={{ flex: 2 }}>{t('col_name')}</div>
-          <div style={{ flex: 1 }}>{t('col_provider_key')}</div>
-          <div style={{ minWidth: 80 }}>{t('col_gyms')}</div>
-          <div style={{ minWidth: 90 }}>{t('col_status')}</div>
-          <div style={{ minWidth: 68 }} />
-        </div>
-      )}
-
-      {renderInlineNewRow()}
-
       {loading ? (
         <p style={{ color: '#888' }}>{t('loading')}</p>
       ) : providers.length === 0 && !inlineNew ? (
-        <p style={{ color: '#888' }}>{t('empty')}</p>
+        <>
+          {renderInlineNewRow()}
+          <p style={{ color: '#888' }}>{t('empty')}</p>
+        </>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {providers.map(renderRow)}
+        /* The header band and the cards share LIST_GRID_COLUMNS and scroll
+           together, so they cannot fall out of line, and a narrow viewport
+           scrolls the list instead of the page (#1011). */
+        <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+          <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+            <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
+              {LIST_COLUMNS.map((col) => (
+                <div key={col.key} className={CELL_CLASS[col.key]}>
+                  {col.labelKey ? t(col.labelKey) : null}
+                </div>
+              ))}
+            </div>
+
+            {renderInlineNewRow()}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {providers.map(renderRow)}
+            </div>
+          </div>
         </div>
       )}
 
@@ -613,12 +673,14 @@ function DetailRow({ label, value }: { label: string; value: string }) {
 const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, overflow: 'hidden' };
 
 const rowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `12px ${ROW_PADDING_X}px`,
   cursor: 'pointer', userSelect: 'none',
 };
 
 const colHeaderStyle: React.CSSProperties = {
-  display: 'flex', padding: '6px 16px', gap: 10,
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', padding: `6px ${ROW_PADDING_X}px`, gap: LIST_COLUMN_GAP,
   fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
   marginBottom: 4,
 };

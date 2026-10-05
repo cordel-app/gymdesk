@@ -41,6 +41,10 @@ import {
 } from '@/components/ThemeMembersImagesEditor';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall } from '@/components/ui';
 import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
+import {
   allCentersChecked,
   assignedCenterIds,
   centerKey,
@@ -91,6 +95,62 @@ const emptyForm = { name: '', description: '', logoContainsGymName: false, token
 function bySlot<T>(value: T): Record<MemberImageSlot, T> {
   return Object.fromEntries(MEMBER_IMAGE_SLOTS.map((slot) => [slot, value])) as Record<MemberImageSlot, T>;
 }
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 4 — the row is laid out from one declaration rather than from
+ * per-cell `flex`/`flexShrink` guesses (#637's shape, which stage 3's eight card
+ * lists already adopted). This list carries no header band, so there is nothing
+ * for the tracks to fall out of line *with* — adding one would be a desktop
+ * change §4 rules out — but the row still needs each cell to say what it is on
+ * a phone.
+ *
+ * The theme's name is the row's identity and its status is the one state worth
+ * seeing without tapping. The 56px logo box and the three colour swatches are
+ * `secondary` for the reason stage 3 gave up Staff's 36px avatar: on a 390px row
+ * they are the difference between a readable name and a truncated one, and both
+ * are read in the expanded editor.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { key: 'logo', width: 56, mobile: 'secondary' },
+  { key: 'name', width: 160, grow: 1, mobile: 'name' },
+  { key: 'swatches', width: 62, mobile: 'secondary' },
+  { key: 'status', width: 90, mobile: 'keep' },
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 14, mobile: 'keep' },
+  { key: 'actions', width: 44, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 12;
+/** This list's own horizontal inset — a card row. */
+const ROW_PADDING_X = 16;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
+
+/** The collapsed row of a theme card, laid out from that declaration. */
+const themeRowStyle: React.CSSProperties = {
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `12px ${ROW_PADDING_X}px`,
+};
 
 export default function GymThemesPage() {
   const t = useTranslations('gym_themes');
@@ -788,13 +848,14 @@ export default function GymThemesPage() {
     return (
       <div key={theme.id} style={{ ...cardSurfaceStyle, marginBottom: 10, overflow: 'hidden' }}>
         <div
-          style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: isDeleted ? 'default' : 'pointer' }}
+          className={LIST_GRID_ROW_CLASS}
+          style={{ ...themeRowStyle, cursor: isDeleted ? 'default' : 'pointer' }}
           onClick={() => !isDeleted && openExpand(theme)}
         >
           {/* #1040: one fixed logo box for every row. The image is fitted inside it
               (contain keeps the aspect ratio), so a wide or tall logo can never
               spill into the name or badges, and a row without a logo lines up. */}
-          <div style={{ width: 56, height: 28, flexShrink: 0, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className={CELL_CLASS.logo} style={{ height: 28, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             {theme.has_logo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={logoUrl(theme)} alt={theme.name} style={{ maxWidth: '100%', maxHeight: '100%', width: 'auto', height: 'auto', borderRadius: 4, objectFit: 'contain' }} />
@@ -803,9 +864,11 @@ export default function GymThemesPage() {
             )}
           </div>
 
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontWeight: 600, fontSize: 15 }}>{theme.name}</span>
+          <div className={CELL_CLASS.name} title={theme.name} style={{ minWidth: 0, overflow: 'hidden' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+              {/* The name is the cell that gives way, so the badges beside it stay
+                  legible rather than being pushed out of the row (#1011). */}
+              <span style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{theme.name}</span>
               {theme.is_base && (
                 <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 10, background: '#f0f0f0', color: '#666', fontWeight: 500 }}>{t('badge_system')}</span>
               )}
@@ -828,19 +891,23 @@ export default function GymThemesPage() {
             )}
           </div>
 
-          <div style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
+          <div className={CELL_CLASS.swatches} style={{ display: 'flex', gap: 3, alignItems: 'center' }}>
             {([colors?.sidebarSelectedItemBackground, colors?.headerBackground, colors?.pageBackground] as (string | undefined)[]).map((c, i) => (
               <div key={i} title={['Primary', 'Secondary', 'Background'][i]} style={{ width: 18, height: 18, borderRadius: 3, background: c ?? '#ccc', border: '1px solid #ddd' }} />
             ))}
           </div>
 
-          <StatusBadge status={theme.status} label={tStatus(theme.status)} />
+          <span className={CELL_CLASS.status}>
+            <StatusBadge status={theme.status} label={tStatus(theme.status)} />
+          </span>
 
-          {!isDeleted && (
-            <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-          )}
+          {/* The cell is always rendered, glyph or not: a track dropped from one
+              row would slide every cell after it out of line with the others. */}
+          <span className={CELL_CLASS.expand} style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>
+            {isDeleted ? null : '▾'}
+          </span>
 
-          <div onClick={(e) => e.stopPropagation()}>
+          <div className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu items={menuItems} />
           </div>
         </div>
@@ -864,16 +931,26 @@ export default function GymThemesPage() {
         <p style={{ color: '#888' }}>{t('loading')}</p>
       ) : (
         <>
+          {/* Each section's cards share LIST_GRID_COLUMNS and scroll together,
+              so a narrow viewport scrolls the list instead of the page (#1011). */}
           {basethemes.length > 0 && (
             <div style={{ marginBottom: 24 }}>
               <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('section_system')}</p>
-              {basethemes.map(renderThemeRow)}
+              <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+                <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+                  {basethemes.map(renderThemeRow)}
+                </div>
+              </div>
             </div>
           )}
           {myThemes.length > 0 && (
             <div>
               <p style={{ margin: '0 0 10px', fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('section_mine')}</p>
-              {myThemes.map(renderThemeRow)}
+              <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+                <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+                  {myThemes.map(renderThemeRow)}
+                </div>
+              </div>
             </div>
           )}
           {themes.length === 0 && <p style={{ color: '#888' }}>{t('empty')}</p>}

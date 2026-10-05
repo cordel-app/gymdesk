@@ -14,6 +14,10 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 import { secondaryBtnSmall } from '@/components/formChrome';
 import { TrainingPlanTree, Hierarchy } from './TrainingPlanTree';
 import { NewTrainingPlanDialog } from '../training-plans/NewTrainingPlanDialog';
@@ -50,6 +54,59 @@ const emptyEditForm = { name: '', description: '', status: 'active' as TrainingP
 type EditForm = typeof emptyEditForm;
 
 type InlineNew = { name: string; description: string; saving: boolean; error: string | null };
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 4 — the row and the header band are laid out from one declaration
+ * rather than restating widths at each other (#637's shape, which stage 3's
+ * eight card lists already adopted). The header's chevron spacer was 20px wide
+ * against the row's 14px chevron, so every title after it sat 6px off its own
+ * values.
+ *
+ * `mobile` says what each column is on a phone. The template's name is the row's
+ * identity and its status is the one state worth seeing without tapping; the
+ * description, its Base/Gym type, the workout count, the author and the date are
+ * read in the expanded card.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `training_plan_templates` namespace. Absent = no title. */
+  labelKey?: string;
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 14, mobile: 'keep' },
+  { key: 'name', labelKey: 'col_name', width: 140, grow: 2, mobile: 'name' },
+  { key: 'description', labelKey: 'col_description', width: 160, grow: 3, mobile: 'secondary' },
+  { key: 'type', labelKey: 'col_type', width: 64, mobile: 'secondary' },
+  { key: 'workout_count', labelKey: 'col_workout_count', width: 90, mobile: 'secondary' },
+  { key: 'created_at', labelKey: 'col_created_at', width: 100, mobile: 'secondary' },
+  { key: 'created_by', labelKey: 'col_created_by', width: 110, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', width: 80, mobile: 'keep' },
+  { key: 'actions', width: 44, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 12;
+/** This list's own horizontal inset — a card row. */
+const ROW_PADDING_X = 14;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
 
 export default function TrainingPlanTemplatesPage() {
   const t = useTranslations('training_plan_templates');
@@ -344,20 +401,28 @@ export default function TrainingPlanTemplatesPage() {
         ))}
       </div>
 
-      {/* Column headers */}
-      {(rows.length > 0 || inlineNew !== null) && (
-        <div style={colHeaderStyle}>
-          <div style={{ width: 20, flexShrink: 0 }} />
-          <div style={{ flex: 2 }}>{t('col_name')}</div>
-          <div style={{ flex: 3 }}>{t('col_description')}</div>
-          <div style={{ minWidth: 64 }}>{t('col_type')}</div>
-          <div style={{ minWidth: 90 }}>{t('col_workout_count')}</div>
-          <div style={{ minWidth: 100 }}>{t('col_created_at')}</div>
-          <div style={{ minWidth: 110 }}>{t('col_created_by')}</div>
-          <div style={{ minWidth: 80 }}>{t('col_status')}</div>
-          <div style={{ minWidth: 68 }} />
-        </div>
+      {loading && <p style={{ color: '#888' }}>{t('loading')}</p>}
+      {!loading && rows.length === 0 && inlineNew === null && (
+        <p style={{ color: '#888' }}>{t('empty')}</p>
       )}
+
+      {/* The header band, the inline new card and the cards share
+          LIST_GRID_COLUMNS and scroll together, so they cannot fall out of
+          line, and a narrow viewport scrolls the list instead of the page
+          (#1011). The wrapper exists only when there is a list to lay out, so
+          an empty state is not pinned to the track sum. */}
+      {(rows.length > 0 || inlineNew !== null) && (
+      <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+      <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+
+      {/* Column headers */}
+      <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
+        {LIST_COLUMNS.map((col) => (
+          <div key={col.key} className={CELL_CLASS[col.key]}>
+            {col.labelKey ? t(col.labelKey) : null}
+          </div>
+        ))}
+      </div>
 
       {/* Inline new row */}
       {inlineNew !== null && (
@@ -396,11 +461,7 @@ export default function TrainingPlanTemplatesPage() {
       )}
 
       {/* Template list */}
-      {loading ? (
-        <p style={{ color: '#888' }}>{t('loading')}</p>
-      ) : rows.length === 0 && !inlineNew ? (
-        <p style={{ color: '#888' }}>{t('empty')}</p>
-      ) : (
+      {rows.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {rows.map((row) => (
             <TemplateCard
@@ -434,6 +495,10 @@ export default function TrainingPlanTemplatesPage() {
             />
           ))}
         </div>
+      )}
+
+      </div>
+      </div>
       )}
 
       {/* Pagination */}
@@ -528,38 +593,39 @@ function TemplateCard({
     <div style={cardStyle(editing)}>
       {/* Collapsed header — always visible */}
       <div
+        className={LIST_GRID_ROW_CLASS}
         style={headerRowStyle}
         onClick={onToggleExpand}
         role="button"
         tabIndex={0}
         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleExpand(); }}
       >
-        <span style={{ fontSize: 13, color: '#aaa', flexShrink: 0, display: 'inline-block', width: 14, transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-        <span style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span className={CELL_CLASS.expand} style={{ fontSize: 13, color: '#aaa', display: 'inline-block', transform: expanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+        <span className={CELL_CLASS.name} title={template.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {template.name}
         </span>
-        <span style={{ flex: 3, fontSize: 13.5, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span className={CELL_CLASS.description} style={{ fontSize: 13.5, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {descText}
         </span>
-        <span style={{ minWidth: 64, flexShrink: 0 }}>
+        <span className={CELL_CLASS.type}>
           {isBase
             ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_base')}</span>
             : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_gym')}</span>
           }
         </span>
-        <span style={{ minWidth: 90, fontSize: 13, color: '#666', flexShrink: 0 }}>
+        <span className={CELL_CLASS.workout_count} style={{ fontSize: 13, color: '#666' }}>
           {t('n_workouts', { count: template.workout_count })}
         </span>
-        <span style={{ minWidth: 100, fontSize: 13, color: '#888', flexShrink: 0 }}>
+        <span className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>
           {fmtDate(template.created_at)}
         </span>
-        <span style={{ minWidth: 110, fontSize: 13, color: '#888', flexShrink: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <span className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {template.created_by_name ?? '—'}
         </span>
-        <span style={{ minWidth: 80, flexShrink: 0 }}>
+        <span className={CELL_CLASS.status}>
           <StatusBadge status={template.status} label={tStatus(template.status)} />
         </span>
-        <span onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+        <span className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
           <ContextMenu ariaLabel={t('col_actions')} items={menuItems} />
         </span>
       </div>
@@ -725,7 +791,8 @@ const sortBtnStyle = (active: boolean): React.CSSProperties => ({
   borderRadius: 4,
 });
 const colHeaderStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 12, padding: '4px 14px 6px',
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `4px ${ROW_PADDING_X}px 6px`,
   fontSize: 11, fontWeight: 700, color: '#aaa', letterSpacing: '0.05em', textTransform: 'uppercase',
 };
 const cardStyle = (editing: boolean): React.CSSProperties => ({
@@ -734,7 +801,8 @@ const cardStyle = (editing: boolean): React.CSSProperties => ({
   overflow: 'hidden',
 });
 const headerRowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `12px ${ROW_PADDING_X}px`,
   cursor: 'pointer', userSelect: 'none',
 };
 const inlineLabelStyle: React.CSSProperties = {

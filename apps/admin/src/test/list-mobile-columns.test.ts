@@ -308,3 +308,85 @@ describe('the flex-row lists stage 3 converted are on it', () => {
     }
   });
 });
+
+// #1011 stage 4 — the remaining eight card lists, which completes the adoption:
+// every list in the Admin app lays its rows out from one `LIST_COLUMNS`
+// declaration now. Three of these eight carry **no header band** (Themes and the
+// two Nutrition plan lists), so there is nothing for their tracks to fall out of
+// line with — adding one would be the desktop change §4 rules out — and the
+// batch therefore says per page whether a band exists rather than assuming one.
+describe('the flex-row lists stage 4 converted are on it', () => {
+  interface Stage4Page {
+    name: string;
+    src: string;
+    /** A list with a header band lays both halves out from the declaration. */
+    headerBand: boolean;
+  }
+
+  const PAGES: Stage4Page[] = [
+    { name: 'Training Plan Templates', src: readPage('training-plan-templates'), headerBand: true },
+    { name: 'Workout Templates', src: readPage('workout-templates'), headerBand: true },
+    { name: 'Gyms', src: readPage('system', 'gyms'), headerBand: true },
+    { name: 'Taxes', src: readPage('financials', 'taxes'), headerBand: true },
+    { name: 'Payment Providers', src: readPage('cordel', 'payment-providers'), headerBand: true },
+    { name: 'Themes', src: readPage('themes'), headerBand: false },
+    { name: 'Nutrition Plans', src: readPage('nutrition', 'nutrition-plans'), headerBand: false },
+    { name: 'Nutrition Plan Templates', src: readPage('nutrition', 'nutrition-plan-templates'), headerBand: false },
+  ];
+
+  const each = PAGES.map((p) => [p.name, p] as [string, Stage4Page]);
+
+  it.each(each)('%s declares what every column is on a phone', (_name, { src }) => {
+    const columns = src.match(/const LIST_COLUMNS: ListColumn\[\] = \[[\s\S]*?\n\];/)?.[0] ?? '';
+    expect(columns).not.toBe('');
+    const keys = [...columns.matchAll(/\bkey: '/g)].length;
+    expect(keys).toBeGreaterThan(0);
+    expect([...columns.matchAll(/\bmobile: '/g)]).toHaveLength(keys);
+    // One identity per row: never none, never two.
+    expect([...columns.matchAll(/mobile: 'name'/g)]).toHaveLength(1);
+    expect([...columns.matchAll(/mobile: 'actions'/g)]).toHaveLength(1);
+  });
+
+  it.each(each)('%s reads its classes from listChrome rather than spelling them', (_name, { src }) => {
+    expect(src).toContain('const CELL_CLASS = listCellClasses(LIST_COLUMNS);');
+    expect(src).not.toMatch(/gd-list-/);
+  });
+
+  it.each(each)('%s lays its rows out from the declaration\u2019s own tracks', (_name, { src, headerBand }) => {
+    expect(src).toContain('const LIST_GRID_COLUMNS = LIST_COLUMNS');
+    // A band is the second half of the same declaration, so a list that has one
+    // wears the row class and the tracks twice — which is the drift these
+    // conversions removed. A list with no band has one of each and no second
+    // place to disagree with.
+    const expected = headerBand ? 2 : 1;
+    expect([...src.matchAll(/className=\{LIST_GRID_ROW_CLASS\}/g)].length).toBeGreaterThanOrEqual(expected);
+    expect([...src.matchAll(/gridTemplateColumns: LIST_GRID_COLUMNS/g)].length).toBeGreaterThanOrEqual(expected);
+  });
+
+  it.each(each)('%s collapses rather than scrolls, because its rows expand', (_name, { src }) => {
+    expect(src).toContain("listScrollerClass('collapse')");
+    expect(src).toContain('className={LIST_MIN_WIDTH_CLASS}');
+    expect(src).toContain('const LIST_MIN_WIDTH =');
+  });
+
+  it.each(each)('%s keeps the full name reachable where it truncates', (_name, { src }) => {
+    expect(src).toMatch(/className=\{CELL_CLASS\.name\}[^>]*title=\{/);
+  });
+
+  it.each(each)('%s gives every declared column a cell that reaches it', (_name, { src }) => {
+    const columns = src.match(/const LIST_COLUMNS: ListColumn\[\] = \[[\s\S]*?\n\];/)?.[0] ?? '';
+    const keys = [...columns.matchAll(/\bkey: '([a-z_]+)'/g)].map((m) => m[1]);
+    for (const key of keys) {
+      expect(src, `no cell is keyed to the ${key} column`).toContain(`CELL_CLASS.${key}`);
+    }
+  });
+
+  it('keeps the Member beside the name where the list is member-related (`Q1`)', () => {
+    // Nutrition Plans is the one list in this batch assigned to a Member, and
+    // `Q1`'s own exception keeps that name on the phone beside the plan's.
+    const src = readPage('nutrition', 'nutrition-plans');
+    const columns = src.match(/const LIST_COLUMNS: ListColumn\[\] = \[[\s\S]*?\n\];/)?.[0] ?? '';
+    expect(columns).toMatch(/key: 'member', width: \d+, grow: \d+, mobile: 'keep'/);
+  });
+});
+
