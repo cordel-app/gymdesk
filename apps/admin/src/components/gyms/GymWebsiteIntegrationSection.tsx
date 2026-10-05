@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
@@ -42,6 +42,13 @@ type PendingAction = 'rotate' | 'revoke' | null;
 
 const ROOT = '/system/website-integration';
 
+/**
+ * `canWrite` defaults to offering the write actions, the way a shared section
+ * takes its gate as a prop: its one host is Cordel → Gyms, which is already
+ * superadmin-only (the page redirects anybody else), so there is no permission
+ * for this component to decide — and the server decides it anyway, through
+ * `requireModuleWrite('SYSTEM')` on both key routes.
+ */
 export function GymWebsiteIntegrationSection({ gymId, canWrite = true }: { gymId: string; canWrite?: boolean }) {
   const t = useTranslations('website_integration');
   const { apiFetch } = useApiClient();
@@ -54,21 +61,33 @@ export function GymWebsiteIntegrationSection({ gymId, canWrite = true }: { gymId
   const [newKey, setNewKey] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    try {
-      setStatus(await apiFetch<WebsiteIntegrationStatus>(ROOT, { gymId }));
-    } catch (err: any) {
-      toast(err.message ?? t('error_generic'));
-    } finally {
-      setLoading(false);
-    }
-  }, [apiFetch, gymId, toast, t]);
+  // The load effect is keyed on the gym, not on these two: a toast function and
+  // a translator are not reasons to re-read a gym's key state.
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+  const errorRef = useRef(t('error_generic'));
+  errorRef.current = t('error_generic');
 
+  // Keyed on the gym and the client alone: a card expanded on another row is a
+  // different gym's status, and nothing else here is worth a second read. The
+  // writes below update the status from their own response, so this is the one
+  // place that loads it.
   useEffect(() => {
+    let cancelled = false;
     setNewKey(null);
-    load();
-  }, [load]);
+    setLoading(true);
+    (async () => {
+      try {
+        const next = await apiFetch<WebsiteIntegrationStatus>(ROOT, { gymId });
+        if (!cancelled) setStatus(next);
+      } catch (err: any) {
+        if (!cancelled) toastRef.current(err.message ?? errorRef.current);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [apiFetch, gymId]);
 
   async function generate() {
     setBusy(true);

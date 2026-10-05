@@ -100,6 +100,14 @@ describe('#1052: the section keeps the existing functionality', () => {
     for (const call of calls) expect(call).toContain('gymId');
   });
 
+  it('reads once per gym — the effect is keyed on the gym and the client', () => {
+    expect(sectionSrc).toContain('}, [apiFetch, gymId]);');
+    // A toast function and a translator are not reasons to re-read: they are
+    // reached through refs so they cannot key the effect.
+    expect(sectionSrc).toContain('toastRef.current(');
+    expect(sectionSrc).toContain('let cancelled = false;');
+  });
+
   it('shows the plaintext key once and never persists it', () => {
     expect(sectionSrc).toContain("const [newKey, setNewKey] = useState<string | null>(null)");
     expect(sectionSrc).toContain("t('key_shown_once')");
