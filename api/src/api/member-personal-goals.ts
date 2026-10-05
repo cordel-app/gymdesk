@@ -11,12 +11,16 @@ import { GOAL_LIBRARY_FEATURE_KEYS } from '../domain/goalLibrary';
 import {
   PERSONAL_GOAL_ASSIGNMENT_STATUSES,
   buildAssignmentListWhere,
+  endDateTransition,
   goalAssignmentFieldError,
+  isLiveAssignment,
   normalizeGoalDate,
   normalizeNotes,
   normalizeStatus,
   normalizeTargetUnit,
   normalizeTargetValue,
+  toDateOnly,
+  utcToday,
 } from '../domain/personalGoalAssignment';
 
 /**
@@ -78,6 +82,7 @@ const requireWrite = requireFeatureWrite(GOAL_LIBRARY_FEATURE_KEYS.personal, 'NU
 const COLUMNS = `
   mpg.id, mpg.gym_id, mpg.member_id, mpg.personal_goal_id,
   mpg.target_value, mpg.target_unit, mpg.start_date, mpg.target_date,
+  mpg.end_date,
   mpg.status, mpg.notes,
   mpg.created_at, mpg.modified_at, mpg.deleted_at,
   mpg.created_by_name, mpg.created_by_type,
@@ -336,11 +341,25 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
     const next = {
       targetValue: targetValue.value === undefined ? previous.target_value : targetValue.value,
       targetUnit: targetUnit.value === undefined ? previous.target_unit : targetUnit.value,
-      startDate: startDate.value === undefined ? dateOnly(previous.start_date) : startDate.value,
-      targetDate: targetDate.value === undefined ? dateOnly(previous.target_date) : targetDate.value,
+      startDate: startDate.value === undefined ? toDateOnly(previous.start_date) : startDate.value,
+      targetDate: targetDate.value === undefined ? toDateOnly(previous.target_date) : targetDate.value,
     };
     const fieldError = goalAssignmentFieldError(next);
     if (fieldError) return res.status(400).json({ error: fieldError });
+
+    // #1036 `Q4` — **when the assignment ended.** A status this write moves out
+    // of `in_progress` stamps today; one it moves back clears the stamp. The
+    // rule is `endDateTransition()`'s alone, so the staff edit, the staff
+    // removal and the member's own two writes cannot date the same transition
+    // differently — and an edit that does not touch the status writes nothing.
+    const endDate = endDateTransition({
+      nextLive: isLiveAssignment({
+        deleted_at: null,
+        status: status.value === undefined ? previous.status : status.value,
+      }),
+      storedEndDate: toDateOnly(previous.end_date),
+      today: utcToday(),
+    });
 
     // The actor pair moves with every edit, so `modified_by_name` always names
     // whoever `modified_at` refers to (#799 §13).
@@ -353,6 +372,7 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
     if (targetDate.value !== undefined) { updates.push('target_date = ?'); params.push(targetDate.value); }
     if (notes.value !== undefined) { updates.push('notes = ?'); params.push(notes.value); }
     if (status.value !== undefined) { updates.push('status = ?'); params.push(status.value); }
+    if (endDate !== undefined) { updates.push('end_date = ?'); params.push(endDate); }
     params.push(id, gymId);
 
     await db.query(
@@ -388,30 +408,32 @@ memberPersonalGoalsRouter.delete('/:id', requireWrite, async (req, res, next) =>
     // `deleted_at` is the live predicate every query filters on, and the progress
     // `status` is deliberately left where it was: a goal deleted after being
     // achieved still records that it was achieved (migration 212).
+    // The same `end_date` rule the edit above applies: a removal ends the
+    // assignment, and one that already ended (achieved in March, removed in
+    // June) keeps the day it ended — the first end is the real one.
+    const endDate = endDateTransition({
+      nextLive: false,
+      storedEndDate: toDateOnly(previous.end_date),
+      today: utcToday(),
+    });
+    const updates = [
+      'deleted_at = UTC_TIMESTAMP()',
+      'deleted_by_name = ?', 'deleted_by_type = ?',
+      'modified_at = UTC_TIMESTAMP()',
+    ];
+    const params: unknown[] = [actor.name, actor.type];
+    if (endDate !== undefined) { updates.push('end_date = ?'); params.push(endDate); }
+    params.push(id, gymId);
+
     await db.query(
-      `UPDATE member_personal_goals
-       SET deleted_at = UTC_TIMESTAMP(), deleted_by_name = ?, deleted_by_type = ?,
-           modified_at = UTC_TIMESTAMP()
-       WHERE id = ? AND gym_id = ?`,
-      [actor.name, actor.type, id, gymId],
+      `UPDATE member_personal_goals SET ${updates.join(', ')} WHERE id = ? AND gym_id = ?`,
+      params,
     );
     recordAudit(req, { action: 'delete', entityType: 'member_personal_goal', entityId: id, previous });
     res.status(204).send();
   } catch (err) { next(err); }
 });
 
-/**
- * A DATE column comes back from mysql2 as a `Date` (or already as a string,
- * depending on the driver's `dateStrings`), and the cross-field comparison above
- * is a string one — `YYYY-MM-DD` sorts lexicographically. Normalising here keeps
- * that true whichever the driver hands over.
- */
 function toNumberOrNull(value: unknown): number | null {
   return value === null || value === undefined ? null : Number(value);
-}
-
-function dateOnly(value: unknown): string | null {
-  if (value === null || value === undefined) return null;
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
-  return String(value).slice(0, 10);
 }

@@ -300,6 +300,9 @@ export default function HomePage() {
         {featureEnabled('member_web.my_nutrition') && (
           <NavTile slot="nutrition" icon="🥗" label={t('nav.nutrition')} onClick={() => router.push(`/${locale}/nutrition`)} />
         )}
+        {featureEnabled('member_web.my_goals') && (
+          <NavTile slot="personal_goals" icon="🎯" label={t('nav.goals')} onClick={() => router.push(`/${locale}/goals`)} />
+        )}
       </section>
 
       {/* My Membership */}

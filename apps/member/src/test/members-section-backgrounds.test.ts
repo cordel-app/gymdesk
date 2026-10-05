@@ -36,6 +36,8 @@ describe('the home sections map to their own images (#728 §Home Page Mapping)',
     ['nav.training', 'training'],
     ['nav.bookings', 'bookings'],
     ['nav.nutrition', 'nutrition'],
+    // #1036's section, painted by #1038's seventh slot.
+    ['nav.goals', 'personal_goals'],
   ];
 
   for (const [label, slot] of MAPPING) {
@@ -49,9 +51,9 @@ describe('the home sections map to their own images (#728 §Home Page Mapping)',
     expect(homeSrc).toContain('<MembersSectionCard slot="membership"');
   });
 
-  it('leaves the Next Booking card alone — it is not one of the six sections', () => {
-    // The only surfaces that take artwork are the four tiles and My Membership.
-    expect(homeSrc.match(/slot="/g)).toHaveLength(5);
+  it('leaves the Next Booking card alone — it is not one of the sections', () => {
+    // The only surfaces that take artwork are the five tiles and My Membership.
+    expect(homeSrc.match(/slot="/g)).toHaveLength(6);
   });
 
   it('keeps the general page background on #725\'s component rather than restating it here', () => {

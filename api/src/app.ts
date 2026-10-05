@@ -86,6 +86,7 @@ import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
 // #948 §4: the Personal Goals a member actually holds. The catalogue says which
 // goals exist; this says who holds which.
 import { memberPersonalGoalsRouter } from './api/member-personal-goals';
+import { mePersonalGoalsRouter } from './api/me-personal-goals';
 import { nutritionDashboardRouter } from './api/nutrition-dashboard';
 import { calendarEventsRouter } from './api/calendar-events';
 import { sharedTrainingRequestsRouter } from './api/shared-training-requests';
@@ -259,6 +260,11 @@ app.use('/staff/link', requireAuth(), staffLinkRouter);
 // /me/gym and /me/gyms must come BEFORE /me to avoid being swallowed by tenantContext
 app.use('/me/gym',  requireAuth(), meGymRouter);
 app.use('/me/gyms', requireAuth(), meGymsRouter);
+// #1036 — My Goals. Mounted BEFORE /me so Express reaches it rather than
+// falling through meRouter's own 404, and with the same middleware chain:
+// the two feature flags it needs are declared on the router itself, beside
+// the rules that read them.
+app.use('/me/personal-goals', requireAuth(), tenantContext, centerContext, mePersonalGoalsRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
 // ORGANIZATION module — admin=RW, trainer*/front_desk/nutritionist=R, accountant/member=NONE
