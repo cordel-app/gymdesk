@@ -4,35 +4,24 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
-import { StatusBadge } from '@/components/StatusBadge';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
-import { DataTable, type Column } from '@/components/DataTable';
 import { FilterBar, FilterField, filterButtonStyle, filterControlStyle } from '@/components/FilterBar';
-import { AssignedPlanExpandedRow } from '@/components/assignedPlan/AssignedPlanExpandedRow';
+import { AssignedPlansTable, type AssignedPlanTableRow } from '@/components/assignedPlan/AssignedPlansTable';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type LifecycleStatus = 'pending' | 'active' | 'paused' | 'expired' | 'cancelled';
 
-interface AssignedPlan {
-  id: number;
+interface AssignedPlan extends AssignedPlanTableRow {
   member_name: string;
   member_nif_nie_passport: string | null;
-  plan_name: string | null;
   starts_at: string;
-  ends_at: string | null;
   lifecycle_status: LifecycleStatus;
 }
 
 interface MemberHit { id: number; name: string; email: string }
 
 const LIFECYCLE_STATUSES: LifecycleStatus[] = ['pending', 'active', 'paused', 'expired', 'cancelled'];
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
-}
 
 // ── Member search (inline filter — mirrors payments/billing-events' MemberFilter) ──
 
@@ -129,8 +118,6 @@ export default function AssignedPlansPage() {
   const [rows, setRows] = useState<AssignedPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
-
   // Filter state (#411)
   const [statusFilter, setStatusFilter] = useState<string[]>([]);
   const [memberId, setMemberId] = useState<number | null>(null);
@@ -164,47 +151,6 @@ export default function AssignedPlansPage() {
   useEffect(() => { if (!gymLoading) load(); }, [gymLoading, load]);
 
   const hasFilters = statusFilter.length > 0 || !!memberId || !!startDate || !!endDate || !!documentFilter;
-
-  function toggleExpand(row: AssignedPlan) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(row.id)) next.delete(row.id); else next.add(row.id);
-      return next;
-    });
-  }
-
-  const columns: Column<AssignedPlan>[] = [
-    {
-      // #1011: the Member identifies the row, so it is the name cell here.
-      header: t('assigned_plans_page.col_member'),
-      mobile: 'name',
-      title: (row) => row.member_name,
-      render: (row) => (
-        <>
-          <div style={{ fontWeight: 500 }}>{row.member_name}</div>
-          <div style={{ fontWeight: 400, fontSize: 12, color: '#6b7280' }}>
-            {t('assigned_plans_page.label_document')}: {row.member_nif_nie_passport || '—'}
-          </div>
-        </>
-      ),
-    },
-    { header: t('assigned_plans_page.col_plan'), mobile: 'secondary', render: (row) => <span style={{ color: '#6b7280' }}>{row.plan_name ?? '—'}</span> },
-    { header: t('assigned_plans_page.col_starts_at'), mobile: 'secondary', render: (row) => <span style={{ whiteSpace: 'nowrap' }}>{fmtDate(row.starts_at)}</span> },
-    {
-      header: t('assigned_plans_page.col_ends_at'),
-      mobile: 'secondary',
-      render: (row) => (
-        <span style={{ whiteSpace: 'nowrap' }}>
-          {row.ends_at ? fmtDate(row.ends_at) : t('assigned_plans_page.open_ended')}
-        </span>
-      ),
-    },
-    {
-      header: t('assigned_plans_page.col_status'),
-      mobile: 'keep',
-      render: (row) => <StatusBadge status={row.lifecycle_status} label={t(`status.${row.lifecycle_status}`)} />,
-    },
-  ];
 
   function clearFilters() {
     setStatusFilter([]);
@@ -273,16 +219,14 @@ export default function AssignedPlansPage() {
       {error && <p style={{ color: 'red', fontSize: 14 }}>{error}</p>}
 
       {!error && (
-        <DataTable
-          columns={columns}
+        // #1051: the list, its columns and the body it expands into are the
+        // shared component now — this page supplies the rows and the filters.
+        <AssignedPlansTable
           rows={rows}
-          rowKey={(row) => row.id}
           loading={loading}
           loadingText={t('assigned_plans_page.loading')}
           emptyText={hasFilters ? t('assigned_plans_page.no_matches') : t('assigned_plans_page.empty')}
-          expandedRowKeys={expandedIds}
-          onToggleExpand={toggleExpand}
-          renderExpanded={(row) => <AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={load} />}
+          onChanged={load}
         />
       )}
     </div>
