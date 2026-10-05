@@ -4,6 +4,7 @@ import { getTenantContext } from '../infra/tenantContext';
 import { loadServicesForAssignments } from './user-membership-services';
 import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligibility';
 import { currentMembershipFees } from './membership-fee-pricing';
+import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -82,6 +83,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
             um.closed_at, um.created_at,
             um.created_by_name, um.created_by_type,
             p.name AS plan_name,
+            ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
             um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live
      FROM user_memberships um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
@@ -116,6 +118,13 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       membership_plan_id: p.membership_plan_id,
       plan_name: p.plan_name,
       status: p.status,
+      // #1051 — the Member's plans are shown with the Assigned Plans page's own
+      // table, so they carry the same date-aware projection of `status` that
+      // page's Status column reads (`LIFECYCLE_STATUS_SQL`, decided once in
+      // user-memberships.ts). It is read-only and overrides nothing: `status`
+      // above is still the stored column every write path acts on, and
+      // `is_live` below is still what splits Active from Past.
+      lifecycle_status: p.lifecycle_status,
       membership_fee: fees.get(Number(p.id)) ?? null,
       // #958 — the Assigned Membership Plan card shows who created the
       // assignment and when, beside its dates and status. Both are columns of

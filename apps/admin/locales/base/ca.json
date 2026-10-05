@@ -295,6 +295,7 @@
     "pt_slots_unmatched": "{count} franges seleccionades ja no estan disponibles per a aquest membre i no es reservaran: {slots}",
     "section_membership_plans": "Plans de Membresia",
     "no_active_membership_plans": "Sense plans de membresia actius",
+    "membership_plans_active": "Plans actius",
     "membership_plans_history": "Plans anteriors",
     "add_membership_plan": "+ Afegir Pla de Membresia",
     "add_membership_plan_title": "Afegir Pla de Membresia",

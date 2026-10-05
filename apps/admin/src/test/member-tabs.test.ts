@@ -73,15 +73,17 @@ describe('Member card tabs: the declaration (#961)', () => {
     expect(DEFAULT_MEMBER_TAB).toBe('profile');
   });
 
-  it('keeps Membership Plans in Profile and sends the rest to Products & Services', () => {
-    // §1: Profile is who the Member is — their fields, their login and the
-    // plan they hold.
+  it('keeps Profile to who the Member is and sends the rest to Products & Services', () => {
+    // §1: Profile is who the Member is — their fields and their login. #1051
+    // moved the plans they hold out of it.
     expect(sectionsForTab('profile')).toEqual([
-      'section_profile', 'section_account', 'section_membership_plans',
+      'section_profile', 'section_account',
     ]);
     // The thread's `Q2` answer: every section the ticket's own table left
-    // unassigned goes to Products & Services, in the order the card had them.
+    // unassigned goes to Products & Services, in the order the card had them —
+    // with Membership Plans first, per #1051.
     expect(sectionsForTab('products_services')).toEqual([
+      'section_membership_plans',
       'section_additional_services',
       'section_billing_simulation',
       'section_pt_slots',
