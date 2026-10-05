@@ -14,6 +14,12 @@ export interface MemberProfile {
   phone: string | null;
   fare_name: string | null;
   clerk_user_id: string;
+  /**
+   * #1039: the member's own default language for the Members App, or `null` for
+   * "no preference" — in which case the app's own default applies and nothing
+   * is written. `MemberLocalePreference` is the one consumer.
+   */
+  preferred_locale: string | null;
 }
 
 export interface MemberCenter {
@@ -52,6 +58,13 @@ interface AppContextValue {
   gyms: GymOption[];
   switchGym: (id: string) => Promise<void>;
   member: MemberProfile | null;
+  /**
+   * #1039: replaces the cached profile with the row a write returned. The
+   * Language selector needs it because the stored preference is what
+   * `MemberLocalePreference` redirects on — leaving the cache stale would have
+   * it bounce the member straight back to the language they just left.
+   */
+  updateMember: (profile: MemberProfile) => void;
   isLinked: boolean;
   loading: boolean;
   centers: MemberCenter[];
@@ -69,6 +82,7 @@ const AppContext = createContext<AppContextValue>({
   gyms: [],
   switchGym: async () => {},
   member: null,
+  updateMember: () => {},
   isLinked: false,
   loading: true,
   centers: [],
@@ -251,7 +265,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   }
 
   return (
-    <AppContext.Provider value={{ gymId, gymName, gyms, switchGym, member, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
+    <AppContext.Provider value={{ gymId, gymName, gyms, switchGym, member, updateMember: setMember, isLinked, loading, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
       {children}
     </AppContext.Provider>
   );

@@ -11,6 +11,7 @@ import { GymSwitcher } from '@/components/GymSwitcher';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { MembersBackground } from '@/components/MembersBackground';
 import { AdminBar } from '@/components/AdminBar';
+import { MemberLocalePreference } from '@/components/MemberLocalePreference';
 import { memberTheme } from '@/lib/memberChrome';
 
 export const metadata: Metadata = {
@@ -52,6 +53,7 @@ export default async function LocaleLayout({
               <AppProvider>
                 <FeatureFlagsProvider>
                   <ThemeProvider>
+                    <MemberLocalePreference />
                     <MembersBackground />
                     <AdminBar />
                     <TopBar />

@@ -18,6 +18,7 @@ import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
 import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
+import { parseMemberPreferredLocaleInput, toMemberPreferredLocale } from '../domain/memberPreferredLocale';
 import { themeLogoUrl } from '../domain/themeLogo';
 import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
@@ -462,6 +463,18 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
   }
 });
 
+/**
+ * #1039: what a profile read reports. The row is projected as `m.*`, so the new
+ * `preferred_locale` column arrives by itself — but it is narrowed through
+ * `toMemberPreferredLocale()` rather than reported raw, so a locale that is no
+ * longer configured reads as "no preference" instead of pointing the Members
+ * App at a route segment it cannot render (see that module's note). The stored
+ * column is untouched.
+ */
+function shapeMemberProfile<T extends { preferred_locale?: unknown }>(row: T) {
+  return { ...row, preferred_locale: toMemberPreferredLocale(row.preferred_locale) };
+}
+
 meRouter.get('/profile', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
@@ -476,7 +489,7 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
       [gymId, memberId],
     );
     if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
-    res.json(rows[0]);
+    res.json(shapeMemberProfile(rows[0]));
   } catch (err) {
     next(err);
   }
@@ -486,12 +499,31 @@ meRouter.patch('/profile', requireRole('member'), async (req: Request, res: Resp
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
   const { phone } = req.body as { phone?: string };
+  // #1039: the member's own default language. `parseMemberPreferredLocaleInput()`
+  // is the only place the value is judged (and the only place that knows which
+  // locales exist), so an unsupported tag is a 400 here rather than a coerced
+  // `en` the member never asked for.
+  const localeInput = parseMemberPreferredLocaleInput(req.body);
+  if (localeInput.error) return res.status(400).json({ error: localeInput.error });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rowCount } = await db.query(
-      `UPDATE members SET phone = COALESCE(?, phone)
+      // `preferred_locale` is written keyed on whether the request *supplied*
+      // the field, never with a `COALESCE` on the value: NULL is a legitimate
+      // value here ("no preference", follow the application default), so
+      // `COALESCE(?, preferred_locale)` would make clearing the selector
+      // unpersistable — the one way a nullable column of this shape goes wrong
+      // (CLAUDE.md, `products.mandatory`).
+      `UPDATE members SET phone = COALESCE(?, phone),
+              preferred_locale = IF(?, ?, preferred_locale)
        WHERE gym_id = ? AND id = ? AND deleted_at IS NULL`,
-      [phone ?? null, gymId, memberId],
+      [
+        phone ?? null,
+        localeInput.keep ? 0 : 1,
+        localeInput.locale ?? null,
+        gymId,
+        memberId,
+      ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Member not found' });
     const { rows } = await db.query(
@@ -502,7 +534,7 @@ meRouter.patch('/profile', requireRole('member'), async (req: Request, res: Resp
        WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
       [gymId, memberId],
     );
-    res.json(rows[0]);
+    res.json(shapeMemberProfile(rows[0]));
   } catch (err) {
     next(err);
   }

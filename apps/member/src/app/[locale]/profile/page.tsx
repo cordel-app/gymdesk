@@ -7,6 +7,7 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { MEMBER_LOCALES, isMemberLocale, memberLocaleLabel } from '@/lib/memberLocale';
 import {
   inputStyle,
   memberTheme,
@@ -21,6 +22,8 @@ interface Profile {
   name: string;
   email: string;
   phone: string | null;
+  /** #1039: the member's stored default language, or `null` for no preference. */
+  preferred_locale: string | null;
 }
 
 interface Membership {
@@ -41,6 +44,7 @@ export default function ProfilePage() {
     gyms, gymId, switchGym,
     centers, activeCenterId, setActiveCenterId,
     isSuperadmin,
+    member, updateMember,
   } = useApp();
   const { isImpersonating } = useImpersonation();
   const { flags: featureFlags } = useFeatureFlags();
@@ -57,6 +61,12 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+
+  // #1039: the Language selector persists on change rather than behind the
+  // phone field's Edit/Save pair — it is one value, and the app switches to it
+  // as soon as it is stored.
+  const [savingLocale, setSavingLocale] = useState(false);
+  const [localeError, setLocaleError] = useState<string | null>(null);
 
   useEffect(() => {
     if (appLoading) return;
@@ -113,6 +123,28 @@ export default function ProfilePage() {
       setSaveError(err.message ?? t('common.error'));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function changeLanguage(next: string) {
+    setSavingLocale(true);
+    setLocaleError(null);
+    try {
+      const updated = await apiFetch<Profile>('/me/profile', {
+        method: 'PATCH',
+        body: JSON.stringify({ preferred_locale: next }),
+      });
+      setProfile(updated);
+      // The redirect is `MemberLocalePreference`'s, off the context's copy of
+      // the profile (#1039, §5: one switching mechanism for the whole app) —
+      // so the only thing left to do here is stop that copy being stale.
+      if (member) updateMember({ ...member, preferred_locale: updated.preferred_locale });
+      setToast(t('profile.saved'));
+      setTimeout(() => setToast(null), 3000);
+    } catch (err: any) {
+      setLocaleError(err.message ?? t('common.error'));
+    } finally {
+      setSavingLocale(false);
     }
   }
 
@@ -196,6 +228,30 @@ export default function ProfilePage() {
           ) : (
             <p style={styles.value}><span style={styles.empty}>{t('profile.no_center')}</span></p>
           )}
+        </div>
+
+        {/* #1039: the member's default language, beside Default Center and in
+            the same control, per §1/§12. A member with no stored preference
+            sees the locale the app is already rendering in selected (§11) —
+            the selector never offers "no preference", since choosing a language
+            is the whole point of it. A stored locale this app cannot render
+            (one the deployment configures and the Members App has no messages
+            for) falls back the same way, rather than leaving the control
+            showing a language that is not the one selected. */}
+        <div style={styles.editRow}>
+          <p style={styles.label}>{t('profile.language')}</p>
+          <select
+            value={isMemberLocale(profile.preferred_locale) ? profile.preferred_locale : locale}
+            onChange={(e) => changeLanguage(e.target.value)}
+            style={styles.select}
+            disabled={savingLocale}
+            aria-label={t('profile.language')}
+          >
+            {MEMBER_LOCALES.map((code) => (
+              <option key={code} value={code}>{memberLocaleLabel(code, t)}</option>
+            ))}
+          </select>
+          {localeError && <p style={styles.fieldError}>{localeError}</p>}
         </div>
 
         <div style={styles.fieldRow}>
