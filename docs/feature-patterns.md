@@ -2523,6 +2523,39 @@ not run there. A cross-app rule therefore belongs in the API suite, even though
 it scans another workspace; a copy in the app's own suite is documentation for
 local runs, not enforcement.
 
+## Rendering a Server-Derived Summary on Several Surfaces (#1037 stage 3)
+
+When the same derived figures have to appear on more than one screen — an
+Assigned Personal Goal's initial reading, latest reading and progress show up on
+the gym-wide list, on the Member card and in the Members App — the split is:
+
+1. **The API derives, on every read.** `progress_percent` and the rest ride on
+   each assignment-shaped response (`withReadingSummaries()`, one query per
+   page), so "it updates automatically" needs no writer and no cache.
+2. **The frontend formats, and only formats.** One module per app
+   (`components/personalGoals/goalReadings.ts`,
+   `apps/member/src/lib/memberGoals.ts`) owns the field declaration, the value
+   and percentage formatting, the list ordering and the form validation — and
+   no page performs the arithmetic. The two apps keep separate copies because
+   they share no frontend module (`calendarEventPaint.ts`'s rule); the drift
+   gate is a test asserting that each app's summary field list is exactly the
+   API interface's.
+3. **One component per app renders it.** A field set declared once
+   (`GOAL_READING_FIELDS`) and rendered by one component means two surfaces
+   cannot show four fields and five, and a reflowing `auto-fit` grid is the
+   whole of the responsive rule.
+4. **`—` and `0` are different facts.** A figure the server could not compute is
+   reported as `null` and rendered `—`; rendering it `0%` tells a member they
+   are getting nowhere when nobody has measured them yet.
+
+Where the *write* is offered stays each surface's own rule and is not part of
+the shared module: a `⋮` item on a list whose expanded body must stay
+control-free (#797), a button inside a card's Edit mode (#957), or a plain
+button on a screen that has no Edit mode because the data is the viewer's own.
+A dialog that appends a row does so through the route that names the action —
+never a flag in the payload, which is how a client would reach a second
+operation through the first one's endpoint.
+
 ## Tabs on an Expanded Card (#961)
 
 When an expanded card grows past the point where a reader can find anything in

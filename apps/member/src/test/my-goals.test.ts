@@ -15,6 +15,17 @@ import {
   toGoalCreatePayload,
   toGoalUpdatePayload,
   type MemberGoal,
+  GOAL_HEADER_FIELDS,
+  READING_ENDPOINTS,
+  READING_MARKER_KEYS,
+  emptyReadingForm,
+  formatProgressPercent,
+  formatReadingDate,
+  formatReadingValue,
+  readingFormError,
+  readingHistoryRows,
+  toReadingPayload,
+  type GoalReading,
 } from '../lib/memberGoals';
 import { statusTone } from '../lib/memberChrome';
 
@@ -343,5 +354,190 @@ describe('every string is translated in all three languages (§2)', () => {
     for (const code of LOCALE_CODES) {
       expect(messages[code].goals.remove_confirm, code).toContain('{name}');
     }
+  });
+});
+
+/* ── #1037 stage 3 — readings in the Members App ──────────────────────────────
+ * §5–§11's structured header, §3/§21's Add reading dialog and §18–§20's reading
+ * history on the member's own goal card.
+ *
+ * The three reading figures are the **server's** (`api/src/domain/goalReadings.ts`
+ * derives them on every read), so what is pinned here is that the page computes
+ * none of them, that the ordering and the markers are the lib's, and that every
+ * new string is translated. */
+
+const READINGS = join(SRC, 'components', 'GoalReadings.tsx');
+/** The three locale files, read once for this block's own key assertions. */
+const localeMessages: Record<string, any> = Object.fromEntries(
+  LOCALE_CODES.map((code) => [code, JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'))]),
+);
+const readingsSrc = read(READINGS);
+const API_READINGS = join(SRC, '..', '..', '..', 'api', 'src', 'domain', 'goalReadings.ts');
+
+function measurement(overrides: Partial<GoalReading> = {}): GoalReading {
+  return { id: 1, value: 80, recorded_at: '2026-09-01T00:00:00.000Z', is_initial: true, period: 0, ...overrides };
+}
+
+describe('#1037 the five header fields (§5–§11)', () => {
+  it('are §5\'s five, in §5\'s order, and all three languages say them', () => {
+    expect(GOAL_HEADER_FIELDS).toEqual([
+      'goals.field_goal', 'goals.label_initial_reading', 'goals.field_target',
+      'goals.label_latest_reading', 'goals.label_progress',
+    ]);
+    for (const code of LOCALE_CODES) {
+      for (const key of GOAL_HEADER_FIELDS) {
+        const [ns, name] = key.split('.');
+        expect(localeMessages[code][ns][name], `${code}.${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('carries exactly the summary the API reports, so a rename fails here', () => {
+    const api = readFileSync(API_READINGS, 'utf-8');
+    const declared = api.match(/export interface GoalReadingSummary \{([\s\S]*?)\n\}/);
+    expect(declared).not.toBeNull();
+    const apiFields = [...declared![1].matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort();
+    const mine = [...libSrc.match(/export interface GoalReadingSummaryFields \{([\s\S]*?)\n\}/)![1]
+      .matchAll(/^\s{2}(\w+):/gm)].map((m) => m[1]).sort();
+    expect(mine).toEqual(apiFields);
+  });
+
+  it('is rendered by the shared component, and the page derives no percentage', () => {
+    expect(pageSrc).toContain('<GoalHeaderFields');
+    expect(pageSrc).toContain('formatProgressPercent');
+    for (const [name, src] of [['page', pageSrc], ['component', readingsSrc]] as const) {
+      expect(src, name).not.toMatch(/initial_reading\s*-\s*/);
+      expect(src, name).not.toMatch(/\*\s*100/);
+    }
+  });
+});
+
+describe('#1037 how a reading reads on the member\'s card', () => {
+  it('quotes a value in the goal\'s own unit, and `null` for none', () => {
+    expect(formatReadingValue(75, 'kg')).toBe('75 kg');
+    expect(formatReadingValue(75.0, 'kg')).toBe('75 kg');
+    expect(formatReadingValue(75.5, 'kg')).toBe('75.5 kg');
+    expect(formatReadingValue(75, null)).toBe('75');
+    // Zero is a measurement, exactly as `0 kg` is a Maintenance target.
+    expect(formatReadingValue(0, 'kg')).toBe('0 kg');
+    expect(formatReadingValue(null, 'kg')).toBeNull();
+  });
+
+  it('reports progress as computed, and nothing rather than `0%` when it cannot be', () => {
+    expect(formatProgressPercent(50)).toBe('50%');
+    expect(formatProgressPercent(0)).toBe('0%');
+    expect(formatProgressPercent(100)).toBe('100%');
+    expect(formatProgressPercent(99.9)).toBe('99.9%');
+    expect(formatProgressPercent(null)).toBeNull();
+  });
+
+  it('shows a time only when one was recorded', () => {
+    expect(formatReadingDate('2026-09-22T00:00:00.000Z', 'en-GB')).toBe('22 Sept 2026');
+    expect(formatReadingDate('2026-09-22T18:30:00.000Z', 'en-GB')).toContain('·');
+    expect(formatReadingDate(null, 'en-GB')).toBe('—');
+  });
+});
+
+describe('#1037 the reading history (§18–§20)', () => {
+  const sep1 = measurement({ id: 1, value: 80, recorded_at: '2026-09-01T00:00:00.000Z', is_initial: true });
+  const sep8 = measurement({ id: 2, value: 78, recorded_at: '2026-09-08T00:00:00.000Z', is_initial: false });
+  const sep22 = measurement({ id: 3, value: 75, recorded_at: '2026-09-22T00:00:00.000Z', is_initial: false });
+
+  it('lists newest first whatever order it is handed (§19)', () => {
+    expect(readingHistoryRows([sep22, sep1, sep8]).map((r) => r.id)).toEqual([3, 2, 1]);
+  });
+
+  it('marks the first boundary `Initial` and a later one `New initial reading` (§20/§29)', () => {
+    const rebaselined = measurement({ id: 4, value: 76, recorded_at: '2026-09-22T09:00:00.000Z', is_initial: true, period: 1 });
+    expect(readingHistoryRows([sep1, sep8, sep22, rebaselined]).map((r) => r.marker))
+      .toEqual(['new_initial', null, null, 'initial']);
+  });
+
+  it('marks the earliest row `Initial` when nothing is flagged, as the server\'s baseline does', () => {
+    expect(readingHistoryRows([{ ...sep1, is_initial: false }, sep8]).map((r) => r.marker))
+      .toEqual([null, 'initial']);
+  });
+
+  it('keeps two readings on one date apart (§33)', () => {
+    const morning = measurement({ id: 5, recorded_at: '2026-09-22T09:00:00.000Z', is_initial: false });
+    const evening = measurement({ id: 6, recorded_at: '2026-09-22T18:00:00.000Z', is_initial: false });
+    expect(readingHistoryRows([morning, evening]).map((r) => r.id)).toEqual([6, 5]);
+    expect(readingHistoryRows([])).toEqual([]);
+  });
+
+  it('both markers are translated in all three languages', () => {
+    for (const code of LOCALE_CODES) {
+      for (const key of Object.values(READING_MARKER_KEYS)) {
+        const [ns, name] = key.split('.');
+        expect(localeMessages[code][ns][name], `${code}.${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('is append-only on screen and takes every colour from the theme (§34, #983)', () => {
+    expect(readingsSrc).not.toMatch(/method: 'DELETE'/);
+    expect(readingsSrc).not.toMatch(/method: 'PUT'/);
+    expect(readingsSrc).toContain('aria-expanded');
+    // #983's rule: the Members App spells a visual value in one place.
+    expect(readingsSrc).not.toMatch(/#[0-9a-fA-F]{3,6}/);
+    expect(readingsSrc).toContain('memberTheme');
+    // And it resolves nothing: every label arrives already translated.
+    expect(readingsSrc).not.toMatch(/\bt\(/);
+    expect(readingsSrc).not.toContain('useTranslations');
+  });
+});
+
+describe('#1037 the Add reading dialog (§3, §21, §30, §32)', () => {
+  const now = new Date('2026-09-22T12:00:00.000Z');
+
+  it('defaults the date to today (§32)', () => {
+    expect(emptyReadingForm(now)).toEqual({ value: '', recorded_at: '2026-09-22' });
+  });
+
+  it('refuses what the server refuses, as a locale key', () => {
+    expect(readingFormError({ value: '', recorded_at: '2026-09-22' }, now)).toBe('goals.error_reading_required');
+    expect(readingFormError({ value: 'abc', recorded_at: '2026-09-22' }, now)).toBe('goals.error_reading_number');
+    expect(readingFormError({ value: '-2', recorded_at: '2026-09-22' }, now)).toBe('goals.error_reading_negative');
+    expect(readingFormError({ value: '1e12', recorded_at: '2026-09-22' }, now)).toBe('goals.error_reading_max');
+    expect(readingFormError({ value: '75', recorded_at: '' }, now)).toBe('goals.error_reading_date_required');
+    expect(readingFormError({ value: '75', recorded_at: '2126-01-01' }, now)).toBe('goals.error_reading_date_future');
+    expect(readingFormError({ value: '0', recorded_at: '2026-01-01' }, now)).toBeNull();
+  });
+
+  it('has every one of those messages in all three languages', () => {
+    const keys = [...libSrc.matchAll(/'goals\.(error_reading_\w+)'/g)].map((m) => m[1]);
+    expect(keys.length).toBeGreaterThanOrEqual(6);
+    for (const code of LOCALE_CODES) {
+      for (const key of new Set(keys)) {
+        expect(localeMessages[code].goals[key], `${code}.goals.${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('submits a value and a date, and never says which kind of reading it is', () => {
+    expect(toReadingPayload({ value: ' 75.5 ', recorded_at: '2026-09-22' }))
+      .toEqual({ value: 75.5, recorded_at: '2026-09-22' });
+    expect(toReadingPayload({ value: '75', recorded_at: '' })).toEqual({ value: 75, recorded_at: null });
+    // The kind is the route: a flag in the body would let a member re-baseline
+    // their goal through the measurement endpoint.
+    expect(libSrc).not.toMatch(/is_initial:\s*(true|form)/);
+    expect(READING_ENDPOINTS).toEqual({ reading: 'readings', initial: 'initial-reading' });
+    expect(pageSrc).toContain('READING_ENDPOINTS[kind]');
+  });
+
+  it('shows the goal\'s unit instead of asking for it (§3)', () => {
+    expect(pageSrc).toContain('{editing.goal.target_unit}');
+    // The reading dialog has no unit input of its own.
+    const dialog = pageSrc.slice(pageSrc.indexOf("labelledBy=\"goal-reading-title\""));
+    expect(dialog.slice(0, dialog.indexOf('</MemberDialog>'))).not.toContain("goals.field_unit");
+  });
+
+  it('is offered on a live goal only, and refreshes both halves after a save (§30)', () => {
+    expect(pageSrc).toContain("openReading(goal, 'reading')");
+    expect(pageSrc).toContain("openReading(goal, 'initial')");
+    // A past goal is read-only: no reading action anywhere in that section.
+    const past = pageSrc.slice(pageSrc.indexOf('pastGoals.length > 0'), pageSrc.indexOf('{/* Add / Edit */}'));
+    expect(past).not.toContain('openReading');
+    expect(pageSrc).toMatch(/await load\(\);\s*\n\s*setEditing\(null\);\s*\n\s*setNotice\(t\(kind/);
   });
 });
