@@ -59,7 +59,6 @@
     "personal_goals": "Personal Goals",
     "assigned_personal_goals": "Assigned Personal Goals",
     "operating_hours": "Operating Hours",
-    "website_integration": "Website Integration",
     "failed_payments_badge": "{count, plural, one {# failed payment awaiting action} other {# failed payments awaiting action}}",
     "collapse_sidebar": "Collapse sidebar",
     "expand_sidebar": "Expand sidebar"

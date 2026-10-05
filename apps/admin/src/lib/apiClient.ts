@@ -21,6 +21,27 @@ export function apiErrorMessage(err: any): string | undefined {
   return typeof err?.message === 'string' ? err.message : undefined;
 }
 
+/**
+ * #1052: options for `apiFetch`, plus the one way a screen addresses a gym
+ * other than the selected one.
+ *
+ * `gymId` names the gym a *tenant-scoped* route should run against, overriding
+ * the selected gym for that one request. It exists for a **Cordel** screen that
+ * administers a named gym — Cordel → Gyms → [Gym] → Website Integration — where
+ * the row, not the gym selector, says whose configuration is on screen. The
+ * permission is still the server's: `tenantContext` grants a superadmin admin
+ * access to any gym it is handed, and refuses anyone else without a
+ * `gym_memberships` row for it, so passing an id here can never widen what the
+ * caller may do.
+ *
+ * Pass it rather than spelling `x-gym-id` in a page: the header is assembled
+ * here once (#824's reason), and a page that set it by hand would be overwritten
+ * by the selected gym a line later.
+ */
+export interface ApiFetchOptions extends RequestInit {
+  gymId?: string;
+}
+
 export function useApiClient() {
   const { getToken } = useAuth();
   const locale = useLocale();
@@ -31,22 +52,26 @@ export function useApiClient() {
   // Memoized so callers can safely include apiFetch in useCallback/useEffect deps
   // without triggering re-runs on every render.
   const apiFetch = useCallback(
-    async (path: string, options: RequestInit = {}): Promise<unknown> => {
+    async (path: string, options: ApiFetchOptions = {}): Promise<unknown> => {
       const token = await getToken();
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...(options.headers as Record<string, string>),
       };
       if (token) headers['Authorization'] = `Bearer ${token}`;
-      if (activeGymId) headers['x-gym-id'] = activeGymId;
+      // #1052: the request's own gym wins over the selected one, so a Cordel
+      // screen can read and write a named gym's tenant-scoped configuration.
+      const gymId = options.gymId ?? activeGymId;
+      if (gymId) headers['x-gym-id'] = gymId;
       if (activeCenterId) headers['x-center-id'] = String(activeCenterId);
       if (impersonationSession) headers['x-impersonate-as'] = impersonationSession.effectiveUserId;
       // Tells the API which language to resolve DB-stored translated content in
       // (#643) — UI labels come from the locale files, data does not.
       if (locale) headers['x-locale'] = locale;
 
+      const { gymId: _gymId, ...init } = options;
       const res = await fetch(`/api/proxy${path}`, {
-        ...options,
+        ...init,
         headers,
       });
 
@@ -60,7 +85,7 @@ export function useApiClient() {
       return res.json();
     },
     [getToken, activeGymId, activeCenterId, impersonationSession, locale],
-  ) as <T>(path: string, options?: RequestInit) => Promise<T>;
+  ) as <T>(path: string, options?: ApiFetchOptions) => Promise<T>;
 
   /**
    * #824: the same request, for an endpoint that takes raw image bytes rather

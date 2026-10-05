@@ -289,11 +289,9 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.recycle_bin',
         featureKey: 'system.recycle_bin',
       },
-      {
-        href: '/{{locale}}/website-integration',
-        labelKey: 'nav.website_integration',
-        featureKey: 'system.website_integration',
-      },
+      // #1052: Website Integration is administered from Cordel → Gyms → [Gym]
+      // now — it is the platform's screen, on the card of the gym it belongs to,
+      // rather than an item of the gym's own Configuration group.
     ],
   },
   {

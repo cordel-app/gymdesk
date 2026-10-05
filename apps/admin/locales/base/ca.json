@@ -60,7 +60,6 @@
     "personal_goals": "Objectius Personals",
     "assigned_personal_goals": "Objectius Personals Assignats",
     "operating_hours": "Horari i Festius",
-    "website_integration": "Integració web",
     "failed_payments_badge": "{count, plural, one {# pagament fallit pendent d'acció} other {# pagaments fallits pendents d'acció}}",
     "collapse_sidebar": "Replegar menú lateral",
     "expand_sidebar": "Desplegar menú lateral"
