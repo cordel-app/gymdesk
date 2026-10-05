@@ -1,10 +1,13 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
+import { useToast } from '@/components/Toast';
 import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
+import { GoalRow, goalDisplayName } from '@/components/goalLibrary/goalProfile';
+import { AssignGoalToMemberModal } from '@/components/personalGoals/AssignGoalToMemberModal';
 
 /**
  * #948 §3/§7/§9 — a gym's **Personal Goals** library, its own section rather than
@@ -21,6 +24,11 @@ import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection'
  * (#806): the scope (which picks `/personal-goals` out of `GOAL_API_ROOTS`), the
  * NUTRITION module permissions, and the namespace its labels resolve in.
  *
+ * Since #1034 §4/§5 it also supplies the `Assign goal to member` action and the
+ * dialog behind it. That belongs here and not in the section for the reason the
+ * API root does: a **gym** page has members to assign to, and Cordel's Base
+ * Personal Goals page — which renders the very same section — does not.
+ *
  * The route is **not** under `/nutrition/`: a Personal Goal does not depend on
  * Nutrition and is a different entity (§8). It shares the *Nutrition & Goals*
  * navigation group for navigation only.
@@ -34,6 +42,10 @@ export default function PersonalGoalsPage() {
   // #613: impersonation-aware (superadmins included); read-only roles see the
   // section's controls disabled rather than hidden.
   const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION');
+  const { toast } = useToast();
+
+  /** The goal `⋮ → Assign goal to member` was launched from, or none (§5). */
+  const [assigning, setAssigning] = useState<GoalRow | null>(null);
 
   if (gymLoading) return null;
 
@@ -52,7 +64,28 @@ export default function PersonalGoalsPage() {
         readOnlyTitle={readOnlyTitle}
         label={(key) => tGoals(key as any)}
         ready={!!activeGymId}
+        onAssign={setAssigning}
       />
+
+      {assigning && (
+        <AssignGoalToMemberModal
+          goal={assigning}
+          /* Resolved here, where the namespace is: a seeded System goal reads
+             under its slug's locale key and everything else under its own name
+             (#947), and the dialog must not be a second place that decides it. */
+          goalName={goalDisplayName(assigning, 'personal', (key) => tGoals(key as any))}
+          label={(key) => tGoals(key as any)}
+          onClose={() => setAssigning(null)}
+          onAssigned={() => {
+            setAssigning(null);
+            // The catalogue itself has not changed, so there is nothing to
+            // reload here — the assignment shows up on the Assigned Personal
+            // Goals section and on the member's own card, which read it (§9: a
+            // new assignment replaces none of the member's existing ones).
+            toast(tGoals('assigned'));
+          }}
+        />
+      )}
     </div>
   );
 }

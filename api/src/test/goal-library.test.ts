@@ -27,6 +27,10 @@ const KINDS = [
     systemSlug: 'weight_loss',
     systemName: 'Weight Loss',
     systemSlugs: ['weight_loss', 'weight_gain', 'muscle_gain', 'maintenance', 'performance', 'recovery', 'energy'],
+    // #1034 §1 — a Personal Goal carries `target_value` + `target_unit`
+    // (migration 218); a Nutrition Goal's own target values are a later
+    // ticket's, so the columns are absent from that table entirely.
+    measurable: true,
   },
   {
     label: 'nutrition goals',
@@ -36,6 +40,7 @@ const KINDS = [
     systemSlug: 'protein',
     systemName: 'Protein',
     systemSlugs: ['calories', 'protein', 'carbohydrates', 'fats', 'fiber', 'water', 'fasting'],
+    measurable: false,
   },
 ] as const;
 
@@ -83,6 +88,14 @@ async function listGoals(path: string, query = '', gym = gymId) {
     .get(`${path}${query}`)
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gym);
+}
+
+async function updateGoal(path: string, id: number, body: Record<string, unknown>, gym = gymId) {
+  return request
+    .put(`${path}/${id}`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gym)
+    .send(body);
 }
 
 /** The id of one of migration 206's seeded System rows (never mutated here). */
@@ -488,6 +501,132 @@ for (const kind of KINDS) {
   // -------------------------------------------------------------------------
   // A gym row can never carry a slug
   // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // #1034 — the measurable target, on the one kind that has it
+  // -------------------------------------------------------------------------
+
+  describe(`${label} — target value and unit (#1034 §1/§2/§13)`, () => {
+    if (!kind.measurable) {
+      it('is not a field of this kind at all', async () => {
+        // `nutrition_goals` has no such columns, so the read must not project
+        // them (ER_BAD_FIELD_ERROR would reach the client as a bare 500, #966)
+        // and a submitted pair is ignored rather than refused — exactly as a
+        // submitted `slug` is.
+        const res = await listGoals(path, '?limit=5');
+        expect(res.status).toBe(200);
+        expect(res.body.items[0]).not.toHaveProperty('target_value');
+        expect(res.body.items[0]).not.toHaveProperty('target_unit');
+
+        const created = await createGoal(path, {
+          name: `GL Target Ignored ${RUN}`, target_value: 3, target_unit: 'kg',
+        });
+        expect(created.status).toBe(201);
+        expect(created.body).not.toHaveProperty('target_value');
+      });
+      return;
+    }
+
+    it('seeds a reasonable target on the System goals that have one, and none on the rest', async () => {
+      const res = await listGoals(path, '?limit=200');
+      const bySlug = new Map(res.body.items.map((g: any) => [g.slug, g]));
+      // §2: "do not apply the same generic target to every goal".
+      expect(bySlug.get('weight_loss')).toMatchObject({ target_value: 3, target_unit: 'kg' });
+      expect(bySlug.get('weight_gain')).toMatchObject({ target_value: 3, target_unit: 'kg' });
+      expect(bySlug.get('muscle_gain')).toMatchObject({ target_value: 2, target_unit: 'kg' });
+      // Maintenance *is* measurable: the target is a change of zero.
+      expect(bySlug.get('maintenance')).toMatchObject({ target_value: 0, target_unit: 'kg' });
+      // §13 requires a unit only "for measurable goals"; these three have no
+      // magnitude that follows from what they represent.
+      for (const slug of ['performance', 'recovery', 'energy']) {
+        expect(bySlug.get(slug)).toMatchObject({ target_value: null, target_unit: null });
+      }
+    });
+
+    it('reports the target as a number, not the driver\'s DECIMAL string', async () => {
+      const created = await createGoal(path, {
+        name: `GL Target Number ${RUN}`, target_value: '3.5', target_unit: ' kg ',
+      });
+      expect(created.status).toBe(201);
+      expect(created.body.target_value).toBe(3.5);
+      expect(created.body.target_unit).toBe('kg');
+
+      const listed = await listGoals(path, `?search=GL Target Number ${RUN}`);
+      expect(listed.body.items[0].target_value).toBe(3.5);
+    });
+
+    it('creates a goal with no target, and leaves it alone on an unrelated PUT', async () => {
+      const created = await createGoal(path, { name: `GL No Target ${RUN}` });
+      expect(created.status).toBe(201);
+      expect(created.body.target_value).toBeNull();
+      expect(created.body.target_unit).toBeNull();
+
+      const withTarget = await updateGoal(path, created.body.id, { target_value: 70, target_unit: 'kg' });
+      expect(withTarget.status).toBe(200);
+      expect(withTarget.body).toMatchObject({ target_value: 70, target_unit: 'kg' });
+
+      // A `PUT` that does not mention the pair keeps it (the partial-update rule
+      // every section write in this codebase follows).
+      const renamed = await updateGoal(path, created.body.id, { name: `GL No Target B ${RUN}` });
+      expect(renamed.status).toBe(200);
+      expect(renamed.body).toMatchObject({ target_value: 70, target_unit: 'kg' });
+
+      // …and an explicit null is the clear, which takes the unit with it.
+      const cleared = await updateGoal(path, created.body.id, { target_value: null, target_unit: null });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.target_value).toBeNull();
+      expect(cleared.body.target_unit).toBeNull();
+    });
+
+    it('refuses a unit with nothing to qualify, on create and on update', async () => {
+      const bad = await createGoal(path, { name: `GL Unit Only ${RUN}`, target_unit: 'kg' });
+      expect(bad.status).toBe(400);
+
+      const created = await createGoal(path, {
+        name: `GL Unit Pair ${RUN}`, target_value: 3, target_unit: 'kg',
+      });
+      expect(created.status).toBe(201);
+      // Clearing the value while the stored unit stays behind is the case a
+      // per-field check misses — a 400, never the CHECK's driver error (#966).
+      const orphaned = await updateGoal(path, created.body.id, { target_value: null });
+      expect(orphaned.status).toBe(400);
+      const stillThere = await listGoals(path, `?search=GL Unit Pair ${RUN}`);
+      expect(stillThere.body.items[0]).toMatchObject({ target_value: 3, target_unit: 'kg' });
+    });
+
+    it('refuses a negative, non-numeric or over-wide target', async () => {
+      for (const body of [
+        { target_value: -1 },
+        { target_value: 'abc' },
+        { target_value: 1, target_unit: 'x'.repeat(21) },
+        { target_value: 100000000 },
+      ]) {
+        const res = await createGoal(path, { name: `GL Bad Target ${RUN} ${JSON.stringify(body)}`, ...body });
+        expect(res.status).toBe(400);
+      }
+    });
+
+    it('is refused by the CHECK on a direct INSERT of a unit with no value', async () => {
+      await expect(db.query(
+        `INSERT INTO ${table} (gym_id, name, target_unit) VALUES (?, ?, 'kg')`,
+        [gymId, `GL Check Target ${RUN}`],
+      )).rejects.toThrow();
+      await expect(db.query(
+        `INSERT INTO ${table} (gym_id, name, target_value) VALUES (?, ?, -1)`,
+        [gymId, `GL Check Negative ${RUN}`],
+      )).rejects.toThrow();
+    });
+
+    it('is read-only on a System goal here — Cordel administers those', async () => {
+      const id = await systemGoalId(table, kind.systemSlug);
+      const res = await updateGoal(path, id, { target_value: 99 });
+      expect(res.status).toBe(403);
+      const { rows } = await db.query<{ target_value: string | null }>(
+        `SELECT target_value FROM ${table} WHERE id = ?`, [id],
+      );
+      expect(Number(rows[0].target_value)).toBe(3);
+    });
+  });
 
   describe(`${label} — a gym row carries no slug`, () => {
     it('ignores a slug submitted on create', async () => {

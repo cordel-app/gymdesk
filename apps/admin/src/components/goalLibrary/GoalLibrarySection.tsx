@@ -10,15 +10,16 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import { listNameBadgeStyle } from '@/components/listChrome';
 import {
-  cardSectionLabelStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, formValueStyle,
-  inlineActionsRowStyle, secondaryBtnSmall,
+  cardSectionLabelStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, formHelpTextStyle,
+  formValueStyle, inlineActionsRowStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
 import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { displayValue } from '@/components/nutritionLibrary/nutritionItemProfile';
 import { GoalDetailsModal } from './GoalDetailsModal';
 import {
   GOAL_API_ROOTS, GoalFormValues, GoalKind, GoalListResponse, GoalRow, GoalScope,
-  emptyGoalForm, goalDisplayName, isSystemGoal, toGoalFormValues, toGoalPayload,
+  emptyGoalForm, formatGoalTarget, goalDisplayName, goalFormError, isMeasurableGoalKind,
+  isSystemGoal, toGoalFormValues, toGoalPayload,
 } from './goalProfile';
 
 const LIMIT = 20;
@@ -43,7 +44,9 @@ const LIMIT = 20;
  * administered from Cordel — so it offers Details and nothing else there. On the
  * platform side every row is a System row and every one of them is editable.
  */
-export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label, ready = true }: {
+export function GoalLibrarySection({
+  kind, scope, canWrite, readOnlyTitle, label, ready = true, onAssign,
+}: {
   kind: GoalKind;
   scope: GoalScope;
   canWrite: boolean;
@@ -52,8 +55,20 @@ export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label
   label: (key: string) => string;
   /** False while the page still has no gym context to read with. */
   ready?: boolean;
+  /**
+   * #1034 §4 — an opt-in `Assign goal to member` item for the row's `⋮`. Omitted
+   * means the item is **absent**, which is what keeps Cordel's Base library out
+   * of it: a platform goal has no gym whose members it could be assigned to, so
+   * the action belongs to the page that has one and not to this component. The
+   * section only *opens* it — the modal, its request and its catalogues are the
+   * page's, exactly as `basePath` and `canWrite` are (#806).
+   */
+  onAssign?: (goal: GoalRow) => void;
 }) {
   const basePath = GOAL_API_ROOTS[scope][kind];
+  // #1034 §1: asked once, so the column, the read-only field and both halves of
+  // the form cannot disagree about whether this kind has a target.
+  const measurable = isMeasurableGoalKind(kind);
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
@@ -139,10 +154,11 @@ export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label
   }
 
   async function saveInlineNew() {
-    if (!newForm.name.trim()) { setNewError(label('error_required')); return; }
+    const invalid = goalFormError(newForm, kind);
+    if (invalid) { setNewError(label(invalid)); return; }
     setNewSaving(true); setNewError(null);
     try {
-      await apiFetch(basePath, { method: 'POST', body: JSON.stringify(toGoalPayload(newForm)) });
+      await apiFetch(basePath, { method: 'POST', body: JSON.stringify(toGoalPayload(newForm, kind)) });
       setCreating(false);
       load();
     } catch (e: any) {
@@ -163,10 +179,11 @@ export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label
   }
 
   async function saveInlineEdit(goal: GoalRow) {
-    if (!editForm.name.trim()) { setEditError(label('error_required')); return; }
+    const invalid = goalFormError(editForm, kind);
+    if (invalid) { setEditError(label(invalid)); return; }
     setEditSaving(true); setEditError(null);
     try {
-      await apiFetch(`${basePath}/${goal.id}`, { method: 'PUT', body: JSON.stringify(toGoalPayload(editForm)) });
+      await apiFetch(`${basePath}/${goal.id}`, { method: 'PUT', body: JSON.stringify(toGoalPayload(editForm, kind)) });
       setEditingId(null);
       load();
     } catch (e: any) {
@@ -210,6 +227,36 @@ export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label
             autoFocus={!autoFocusRef}
           />
         </div>
+        {/* #1034 §1/§3 — the measurable pair, on one row, in the app's own form
+            chrome (§3/§14: no custom styling, no numeric input of its own). Absent
+            for a kind that has no such columns rather than disabled, because a
+            control whose `PUT` is ignored is the thing #974 forbids. */}
+        {measurable && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, marginBottom: 12 }}>
+            <div>
+              <label style={formFieldLabelStyle}>{label('label_target_value')}</label>
+              <input
+                type="number"
+                min={0}
+                step="0.01"
+                value={form.target_value}
+                onChange={(e) => setForm({ ...form, target_value: e.target.value })}
+                style={formControlStyle}
+              />
+              <span style={formHelpTextStyle}>{label('help_target_value')}</span>
+            </div>
+            <div>
+              <label style={formFieldLabelStyle}>{label('label_target_unit')}</label>
+              <input
+                value={form.target_unit}
+                onChange={(e) => setForm({ ...form, target_unit: e.target.value })}
+                placeholder={label('placeholder_target_unit')}
+                maxLength={20}
+                style={formControlStyle}
+              />
+            </div>
+          </div>
+        )}
         <div style={{ marginBottom: 12 }}>
           <label style={formFieldLabelStyle}>{label('label_description')}</label>
           <textarea
@@ -234,6 +281,7 @@ export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label
     return (
       <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <ReadOnlyField label={label('label_name')} value={nameOf(goal)} />
+        {measurable && <ReadOnlyField label={label('label_target')} value={formatGoalTarget(goal)} />}
         <ReadOnlyField label={label('label_description')} value={displayValue(goal.description)} wrap />
         <ReadOnlyField
           label={label('ownership')}
@@ -256,6 +304,16 @@ export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label
         </span>
       ),
     },
+    // Declared conditionally rather than rendered as `—` for a kind that has no
+    // such column at all: this is not a value a Nutrition Goal is missing, it is
+    // a field that kind does not have (`Column.mobile` keeps a *present* column's
+    // cell, #1011).
+    ...(measurable ? [{
+      header: label('col_target'),
+      width: 120,
+      mobile: 'secondary' as const,
+      render: (goal: GoalRow) => <span style={{ fontSize: 13 }}>{formatGoalTarget(goal)}</span>,
+    }] : []),
     {
       header: label('col_type'),
       width: 120,
@@ -283,6 +341,19 @@ export function GoalLibrarySection({ kind, scope, canWrite, readOnlyTitle, label
           <ContextMenu items={[
             ...(writable ? [
               { label: label('edit'), onClick: () => openInlineEdit(goal), disabled: !canWrite, title: readOnlyTitle },
+            ] : []),
+            // #1034 §4 — offered for a System goal as well as the gym's own: a
+            // gym may not *edit* a platform row but may certainly assign it,
+            // which is the catalogue's own gym-facing visibility rule (#947 §5)
+            // and exactly what `POST /member-personal-goals` already accepts.
+            // It is not destructive, so it carries no `danger` flag.
+            ...(onAssign ? [{
+              label: label('assign_to_member'),
+              onClick: () => onAssign(goal),
+              disabled: !canWrite,
+              title: readOnlyTitle,
+            }] : []),
+            ...(writable ? [
               { label: label('delete'), onClick: () => setDeleting(goal), disabled: !canWrite, title: readOnlyTitle, danger: true },
             ] : []),
             // Details is always last (#802's rule for a page that fixes its order).

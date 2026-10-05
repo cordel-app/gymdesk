@@ -18,6 +18,8 @@
  * status from a measurement, is a later ticket's.
  */
 
+import { Normalized, targetPairError } from './goalTarget';
+
 /**
  * The progress of an assignment. Mirrored by `chk_mpgoal_status` (migration
  * 212), so a new value goes in **two** places: this list and the CHECK beside
@@ -36,12 +38,8 @@ export function isPersonalGoalAssignmentStatus(value: unknown): value is Persona
     && (PERSONAL_GOAL_ASSIGNMENT_STATUSES as readonly string[]).includes(value);
 }
 
-/** `target_unit` is VARCHAR(20), `notes` VARCHAR(1000) (migration 212). */
-export const TARGET_UNIT_MAX_LENGTH = 20;
+/** `notes` is VARCHAR(1000) (migration 212). */
 export const NOTES_MAX_LENGTH = 1000;
-
-/** `target_value` is DECIMAL(10,2): eight integer digits and two decimals. */
-export const TARGET_VALUE_MAX = 99999999.99;
 
 export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -52,36 +50,17 @@ export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
  * clear, and a value is a value. A normalizer that collapsed the first two would
  * make every partial update wipe the fields it did not carry — the distinction
  * CLAUDE.md draws for every replace-all section `PUT` in the codebase.
+ *
+ * The **target** pair is not declared here: since #1034 a Personal Goal in the
+ * catalogue carries one too, so what a target is lives in
+ * `api/src/domain/goalTarget.ts` and both sides read it from there (§1's "do not
+ * introduce a second, incompatible unit system"). It is re-exported so the
+ * assignment's vocabulary still reaches its callers in one import.
  */
-export type Normalized<T> = { value: T } | { error: string };
-
-export function normalizeTargetValue(input: unknown): Normalized<number | null | undefined> {
-  if (input === undefined) return { value: undefined };
-  if (input === null || input === '') return { value: null };
-  const n = typeof input === 'number' ? input : Number(input);
-  if (typeof input !== 'number' && typeof input !== 'string') {
-    return { error: 'target_value must be a number' };
-  }
-  if (!Number.isFinite(n)) return { error: 'target_value must be a number' };
-  if (n < 0) return { error: 'target_value must be zero or greater' };
-  if (n > TARGET_VALUE_MAX) return { error: `target_value must be at most ${TARGET_VALUE_MAX}` };
-  // Rounded to the column's own scale rather than refused: a target typed as
-  // `5.005` is a human entering a weight, not an error worth a 400, and storing
-  // it unrounded would read back as something the form never submitted.
-  return { value: Math.round(n * 100) / 100 };
-}
-
-export function normalizeTargetUnit(input: unknown): Normalized<string | null | undefined> {
-  if (input === undefined) return { value: undefined };
-  if (input === null) return { value: null };
-  if (typeof input !== 'string') return { error: 'target_unit must be a string' };
-  const trimmed = input.trim();
-  if (trimmed.length === 0) return { value: null };
-  if (trimmed.length > TARGET_UNIT_MAX_LENGTH) {
-    return { error: `target_unit must be at most ${TARGET_UNIT_MAX_LENGTH} characters` };
-  }
-  return { value: trimmed };
-}
+export {
+  TARGET_UNIT_MAX_LENGTH, TARGET_VALUE_MAX, normalizeTargetUnit, normalizeTargetValue,
+} from './goalTarget';
+export type { Normalized } from './goalTarget';
 
 export function normalizeNotes(input: unknown): Normalized<string | null | undefined> {
   if (input === undefined) return { value: undefined };
@@ -134,9 +113,8 @@ export function goalAssignmentFieldError(next: {
   startDate: string | null;
   targetDate: string | null;
 }): string | null {
-  if (next.targetUnit !== null && next.targetValue === null) {
-    return 'target_unit requires a target_value';
-  }
+  const pair = targetPairError(next);
+  if (pair) return pair;
   if (next.startDate !== null && next.targetDate !== null && next.targetDate < next.startDate) {
     return 'target_date must be on or after start_date';
   }

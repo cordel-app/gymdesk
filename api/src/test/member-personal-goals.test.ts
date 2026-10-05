@@ -417,6 +417,122 @@ describe('assigned personal goals — list', () => {
 // Tenant isolation
 // ---------------------------------------------------------------------------
 
+/**
+ * #1034 §5/§7/§8/§12 — the assignment is an **independent snapshot** of the Gym
+ * Goal it was created from: it inherits the catalogue's target and name, and
+ * neither moves when the catalogue does.
+ */
+describe('assigned personal goals — the Gym Goal snapshot (#1034)', () => {
+  /** A gym goal with a measurable target of its own. */
+  async function createMeasurableGoal(name: string, value: number, unit: string): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO personal_goals (gym_id, name, status, target_value, target_unit)
+       VALUES (?, ?, 'active', ?, ?)`,
+      [gymId, name, value, unit],
+    );
+    return insertId as number;
+  }
+
+  it('inherits the catalogue target when the request does not name one (§7)', async () => {
+    const goal = await createMeasurableGoal(`MPG Snap A ${RUN}`, 3, 'kg');
+    const member = await createMember(gymId, `MPG Snap A Member ${RUN}`);
+    const res = await post({ member_id: member, personal_goal_id: goal });
+    expect(res.status).toBe(201);
+    // The snapshot is the server's, not the form's: any client gets it.
+    expect(res.body.target_value).toBe(3);
+    expect(res.body.target_unit).toBe('kg');
+  });
+
+  it('keeps the member-specific target the request did name (§8)', async () => {
+    const goal = await createMeasurableGoal(`MPG Snap B ${RUN}`, 3, 'kg');
+    const a = await createMember(gymId, `MPG Snap B One ${RUN}`);
+    const b = await createMember(gymId, `MPG Snap B Two ${RUN}`);
+    const first = await post({ member_id: a, personal_goal_id: goal, target_value: 5 });
+    const second = await post({ member_id: b, personal_goal_id: goal, target_value: 8, target_unit: 'lb' });
+    expect(first.status).toBe(201);
+    expect(second.status).toBe(201);
+    // The same Gym Goal, three different targets — §8's own worked example.
+    expect(first.body.target_value).toBe(5);
+    // The unit still inherits beside an overridden value (§5: "the unit should
+    // normally be inherited from the Gym Goal").
+    expect(first.body.target_unit).toBe('kg');
+    expect(second.body).toMatchObject({ target_value: 8, target_unit: 'lb' });
+  });
+
+  it('takes an explicit null as a clear rather than inheriting over it', async () => {
+    const goal = await createMeasurableGoal(`MPG Snap C ${RUN}`, 3, 'kg');
+    const member = await createMember(gymId, `MPG Snap C Member ${RUN}`);
+    const res = await post({ member_id: member, personal_goal_id: goal, target_value: null });
+    expect(res.status).toBe(201);
+    expect(res.body.target_value).toBeNull();
+    // …and the unit does not come along on its own, which would be a unit with
+    // nothing to qualify — a 400 the member never asked for.
+    expect(res.body.target_unit).toBeNull();
+  });
+
+  it('is not moved by a later edit of the Gym Goal (§7, the acceptance criteria)', async () => {
+    const goal = await createMeasurableGoal(`MPG Snap D ${RUN}`, 3, 'kg');
+    const member = await createMember(gymId, `MPG Snap D Member ${RUN}`);
+    const assigned = await post({ member_id: member, personal_goal_id: goal });
+    expect(assigned.status).toBe(201);
+
+    // The gym renames the goal and doubles its target.
+    await db.query(
+      'UPDATE personal_goals SET name = ?, target_value = 5, target_unit = ? WHERE id = ?',
+      [`MPG Snap D Renamed ${RUN}`, 'lb', goal],
+    );
+
+    const after = await get(assigned.body.id);
+    expect(after.status).toBe(200);
+    expect(after.body.target_value).toBe(3);
+    expect(after.body.target_unit).toBe('kg');
+    // §12: the name is snapshotted too, so the member's record still reads what
+    // it was agreed under.
+    expect(after.body.goal_name).toBe(`MPG Snap D ${RUN}`);
+
+    const listed = await list(`?member_id=${member}`);
+    expect(listed.body.items[0].goal_name).toBe(`MPG Snap D ${RUN}`);
+  });
+
+  it('falls back to the live name only for a row assigned before the snapshot existed', async () => {
+    // Migration 218 writes no backfill: such a row has no snapshot to recover,
+    // so the catalogue's current name is its one fallback (#635 §16's shape).
+    const goal = await createGymGoal(gymId, `MPG Snap E ${RUN}`);
+    const member = await createMember(gymId, `MPG Snap E Member ${RUN}`);
+    const assigned = await post({ member_id: member, personal_goal_id: goal });
+    expect(assigned.status).toBe(201);
+    await db.query('UPDATE member_personal_goals SET goal_name = NULL WHERE id = ?', [assigned.body.id]);
+    await db.query('UPDATE personal_goals SET name = ? WHERE id = ?', [`MPG Snap E Live ${RUN}`, goal]);
+
+    const after = await get(assigned.body.id);
+    expect(after.body.goal_name).toBe(`MPG Snap E Live ${RUN}`);
+  });
+
+  it('inherits nothing from a goal that has no target', async () => {
+    const goal = await createGymGoal(gymId, `MPG Snap F ${RUN}`);
+    const member = await createMember(gymId, `MPG Snap F Member ${RUN}`);
+    const res = await post({ member_id: member, personal_goal_id: goal });
+    expect(res.status).toBe(201);
+    expect(res.body.target_value).toBeNull();
+    expect(res.body.target_unit).toBeNull();
+  });
+
+  it('snapshots a System goal\'s target and name just the same', async () => {
+    const member = await createMember(gymId, `MPG Snap G Member ${RUN}`);
+    const res = await post({ member_id: member, personal_goal_id: systemGoalId });
+    expect(res.status).toBe(201);
+    // Migration 218 seeds Weight Loss at 3 kg (§2).
+    expect(res.body).toMatchObject({ target_value: 3, target_unit: 'kg', goal_name: 'Weight Loss' });
+  });
+
+  it('still refuses a unit the inherited pair cannot support', async () => {
+    const goal = await createGymGoal(gymId, `MPG Snap H ${RUN}`);
+    const member = await createMember(gymId, `MPG Snap H Member ${RUN}`);
+    const res = await post({ member_id: member, personal_goal_id: goal, target_unit: 'kg' });
+    expect(res.status).toBe(400);
+  });
+});
+
 describe('assigned personal goals — tenant isolation', () => {
   it('refuses a member of another gym', async () => {
     const res = await post({ member_id: otherGymMemberId, personal_goal_id: gymGoalId });

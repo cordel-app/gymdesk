@@ -7,8 +7,12 @@ import {
   GOAL_LIBRARY_TABLES,
   GoalLibraryKind,
   buildGoalListWhere,
+  isMeasurableGoalKind,
   normalizeGoalName,
 } from '../domain/goalLibrary';
+// What a goal **target** is lives in one module, shared with the assignment side
+// (#1034 §1 — "do not introduce a second, incompatible unit system").
+import { normalizeTargetUnit, normalizeTargetValue, targetPairError } from '../domain/goalTarget';
 // The description rules and the actor snapshot are the Foods library's, reused
 // rather than restated: a goal row carries the same `description` + three actor
 // pairs migration 196 put on `nutrition_library_items`, for the same #799 reasons,
@@ -35,6 +39,11 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   const router = Router();
   const table = GOAL_LIBRARY_TABLES[kind];
   const entityType = GOAL_LIBRARY_AUDIT_ENTITIES[kind];
+  // #1034 §1: only a measurable kind has the pair, and `nutrition_goals` has no
+  // such columns — projecting them there would answer ER_BAD_FIELD_ERROR, which
+  // the global handler turns into a bare 500 (#966). `isMeasurableGoalKind()` is
+  // the one place that decides it, asked here rather than branched on per route.
+  const measurable = isMeasurableGoalKind(kind);
 
   /**
    * The columns every goal-shaped response returns, declared once so this router
@@ -44,12 +53,45 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
    * administered from Cordel — so their actor names are Cordel employees' and are
    * not published to every tenant. A gym's own rows carry theirs.
    */
-  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status, g.created_at, g.modified_at,
+  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit,' : ''}
+    g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g', { maskPlatformActors: true })}`;
+
+  /**
+   * `target_value` is a DECIMAL, which mysql2 hands back as a string. Every
+   * other number this API reports is a number (CLAUDE.md's rule for
+   * `shapeProductBenefitRow()`), so the conversion happens once, here, rather
+   * than in whichever page renders it. A non-measurable kind has no such key and
+   * the row passes through untouched.
+   */
+  function shapeGoal<T extends Record<string, unknown>>(row: T) {
+    if (!row || !measurable) return row;
+    return {
+      ...row,
+      target_value: row.target_value === null || row.target_value === undefined
+        ? null
+        : Number(row.target_value),
+    };
+  }
 
   async function loadGoal(id: unknown) {
     const { rows } = await db.query(`SELECT ${COLUMNS} FROM ${table} g WHERE g.id = ?`, [id]);
-    return rows[0];
+    return rows[0] ? shapeGoal(rows[0]) : undefined;
+  }
+
+  /**
+   * The submitted target pair, or the 400 that describes it. Answered for a
+   * measurable kind only: a request that names a target on a Nutrition Goal is
+   * ignored rather than refused, exactly as a submitted `slug` is — there is no
+   * column for it, and the field is not part of that kind's contract.
+   */
+  function readTarget(body: any): { value: { value: number | null | undefined; unit: string | null | undefined } } | { error: string } {
+    if (!measurable) return { value: { value: undefined, unit: undefined } };
+    const value = normalizeTargetValue(body?.target_value);
+    if ('error' in value) return { error: value.error };
+    const unit = normalizeTargetUnit(body?.target_unit);
+    if ('error' in unit) return { error: unit.error };
+    return { value: { value: value.value, unit: unit.value } };
   }
 
   /* ── List ───────────────────────────────────────────────────────────────── */
@@ -82,7 +124,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         `SELECT ${COLUMNS} FROM ${table} g WHERE ${where} ORDER BY g.name ASC LIMIT ${limit} OFFSET ${offset}`,
         params,
       );
-      res.json({ items: rows, total: countRows[0]?.total ?? 0, limit, offset });
+      res.json({ items: rows.map(shapeGoal), total: countRows[0]?.total ?? 0, limit, offset });
     } catch (err) { next(err); }
   });
 
@@ -94,6 +136,15 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     if ('error' in name) return res.status(400).json({ error: name.error });
     const description = normalizeDescription(req.body?.description);
     if ('error' in description) return res.status(400).json({ error: description.error });
+    const target = readTarget(req.body);
+    if ('error' in target) return res.status(400).json({ error: target.error });
+    // On a create an unmentioned field is simply empty, so the cross-field rule
+    // is applied to exactly what will be stored.
+    const pairError = targetPairError({
+      targetValue: target.value.value ?? null,
+      targetUnit: target.value.unit ?? null,
+    });
+    if (pairError) return res.status(400).json({ error: pairError });
     const actor = actorSnapshot({ name: actorName, isSuperadmin });
 
     try {
@@ -109,9 +160,14 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // `slug` is deliberately not written: it is a System row's label handle and
       // `chk_<prefix>_slug_system_only` refuses one on a gym row.
       const { insertId } = await db.query(
-        `INSERT INTO ${table} (gym_id, name, description, status, created_by_name, created_by_type)
-         VALUES (?, ?, ?, 'active', ?, ?)`,
-        [gymId, name.value, description.value ?? null, actor.name, actor.type],
+        `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit,' : ''}
+           status, created_by_name, created_by_type)
+         VALUES (?, ?, ?,${measurable ? ' ?, ?,' : ''} 'active', ?, ?)`,
+        [
+          gymId, name.value, description.value ?? null,
+          ...(measurable ? [target.value.value ?? null, target.value.unit ?? null] : []),
+          actor.name, actor.type,
+        ],
       );
       const goal = await loadGoal(insertId);
       recordAudit(req, { action: 'create', entityType, entityId: insertId, next: goal });
@@ -128,11 +184,14 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     if ('error' in name) return res.status(400).json({ error: name.error });
     const description = normalizeDescription(req.body?.description);
     if ('error' in description) return res.status(400).json({ error: description.error });
+    const target = readTarget(req.body);
+    if ('error' in target) return res.status(400).json({ error: target.error });
     const actor = actorSnapshot({ name: actorName, isSuperadmin });
 
     try {
       const { rows: existing } = await db.query(
-        `SELECT id, gym_id, name, description, status FROM ${table} WHERE id = ?`,
+        `SELECT id, gym_id, name, description, status${measurable ? ', target_value, target_unit' : ''}
+         FROM ${table} WHERE id = ?`,
         [id],
       );
       if (existing.length === 0) return res.status(404).json({ error: 'Goal not found' });
@@ -155,11 +214,29 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       if (name.value !== undefined) { updates.push('name = ?'); params.push(name.value); }
       // Absent from the body means "leave it alone"; an empty string means "clear it".
       if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
+      if (measurable) {
+        // Checked against the row the write produces, not against the body:
+        // clearing `target_value` while a stored `target_unit` stays behind is
+        // exactly the case a per-field check misses, and the CHECK beside the
+        // table would answer it as a driver error rather than the 400 it is.
+        const pairError = targetPairError({
+          targetValue: target.value.value === undefined
+            ? toNumberOrNull(existing[0].target_value) : target.value.value,
+          targetUnit: target.value.unit === undefined
+            ? (existing[0].target_unit ?? null) : target.value.unit,
+        });
+        if (pairError) return res.status(400).json({ error: pairError });
+        if (target.value.value !== undefined) { updates.push('target_value = ?'); params.push(target.value.value); }
+        if (target.value.unit !== undefined) { updates.push('target_unit = ?'); params.push(target.value.unit); }
+      }
       params.push(id);
       await db.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`, params);
 
       const goal = await loadGoal(id);
-      recordAudit(req, { action: 'update', entityType, entityId: id, previous: existing[0], next: goal });
+      recordAudit(req, {
+        action: 'update', entityType, entityId: id,
+        previous: shapeGoal(existing[0]), next: goal,
+      });
       res.json(goal);
     } catch (err) { next(err); }
   });
@@ -201,3 +278,8 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
 export const personalGoalsRouter = createGoalLibraryRouter('personal');
 export const nutritionGoalsRouter = createGoalLibraryRouter('nutrition');
+
+/** A DECIMAL the driver handed back as a string, as the number it is. */
+function toNumberOrNull(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value);
+}
