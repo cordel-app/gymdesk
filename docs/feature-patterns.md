@@ -2564,6 +2564,42 @@ writes or gates on, and no endpoint, payload or permission moved with them.
 
 ---
 
+## Moving a gym's configuration onto a Cordel screen (#1052)
+
+A gym's own setting sometimes turns out to be platform-side setup — Website
+Integration is the gym's registration endpoint and website API key, touched once
+when its site is connected. When such a section moves from the gym's navigation
+to **Cordel → Gyms → [Gym]**, move the *placement* and nothing else.
+
+1. **The section becomes a section of the expanded gym card**, beside
+   Configuration and Storage, not a page of its own:
+   `components/gyms/GymWebsiteIntegrationSection.tsx`. The page renders its own
+   `SectionHeader` and the component renders the body, so the card's chrome
+   stays the card's.
+2. **Nothing about the feature changes.** The same routes, validation, audit
+   rows, feature flag and copy — the section titles itself with the feature's
+   own `title` key rather than a second wording, which is also why a relocation
+   needs no new string in three languages. Delete the old page and its nav item
+   (and the now-dead `nav.*` label), and leave the API alone: a ticket that says
+   "only about changing where it is accessed from" is one with no migration and
+   no new endpoint.
+3. **A tenant-scoped route called from a Cordel screen names its gym.** The row,
+   not the gym selector, says whose configuration is on screen, so pass
+   `apiFetch(path, { gymId })` (`lib/apiClient.ts`) — the one place `x-gym-id`
+   is assembled (#824). A page that set the header itself would be overwritten
+   by the selected gym a line later, and the option cannot widen anything:
+   `tenantContext` gives a superadmin admin on any gym it is handed and refuses
+   anybody else without a `gym_memberships` row for it.
+4. **Load it when the card is expanded**, not with the list, when what it shows
+   is not what the list's row is for — here the key state plus an endpoint URL
+   the API builds (#645), so `GET /platform/gyms` stays one request.
+5. **Say what the placement costs.** Cordel is superadmin-only, so a gym admin
+   no longer reaches the section from the UI. That is the move's consequence
+   rather than a permission change — the route answers a gym admin exactly as
+   before — and it belongs in the PR body and the docs, not in a silent diff.
+
+---
+
 ## Testing a payment-provider call (#773, #791)
 
 Any new code path that charges, tokenises or refunds through `PaymentProvider` is tested

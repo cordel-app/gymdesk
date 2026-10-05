@@ -518,7 +518,7 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
 - [ ] Re-point every live website integration at the `{gymId}-{gym-name}` registration
       endpoint (#645) and decide whether to keep accepting the legacy `{gym-slug}` form.
       The fallback exists only so sites configured before #645 keep working; each gym's
-      current URL is on **System → Website Integration**, and the health check
+      current URL is on **Cordel → Gyms → [Gym] → Website Integration** (#1052), and the health check
       (`{"name":"test","email":""}` → `200`) confirms a site after it is updated.
 
 - [ ] If a Content-Security-Policy is ever added in front of the **admin** app (only

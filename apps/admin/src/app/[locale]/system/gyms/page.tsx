@@ -13,6 +13,7 @@ import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
+import { GymWebsiteIntegrationSection } from '@/components/gyms/GymWebsiteIntegrationSection';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
 import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
@@ -177,6 +178,9 @@ const LIST_MIN_WIDTH =
 export default function SystemGymsPage() {
   const t = useTranslations('system_gyms');
   const tStatus = useTranslations('status');
+  // #1052: Website Integration keeps its own copy — the section moved from the
+  // gym's Configuration group to this card, the words did not change.
+  const tWebsite = useTranslations('website_integration');
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
@@ -622,6 +626,12 @@ export default function SystemGymsPage() {
                 t={t}
               />
             )}
+
+            {/* #1052: Cordel → Gyms → [Gym] → Website Integration. The section
+                reads this row's gym, not the selected one, and is loaded when
+                the card is expanded. */}
+            <SectionHeader title={tWebsite('title')} />
+            <GymWebsiteIntegrationSection gymId={gym.id} />
 
             <SectionHeader title={t('section_notes')} />
             <p style={{ margin: '4px 0 0', fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>{t('notes_placeholder')}</p>
