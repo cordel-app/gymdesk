@@ -10,6 +10,10 @@ import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
@@ -166,6 +170,75 @@ const subsectionLabelStyle: React.CSSProperties = {
   textTransform: 'uppercase',
   letterSpacing: '0.06em',
   color: '#aaa',
+};
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 3 — the row and the header band are laid out from one declaration
+ * rather than restating widths at each other (#637's shape). The header had two
+ * spacer cells (36px, 40px) standing in for the row's avatar, chevron and `⋮`,
+ * which is three cells against two: every title after Name sat off its values.
+ *
+ * `mobile` says what each column is on a phone. The staff member's name is the
+ * row's identity — it carries the employee number under it — and of its two
+ * badges the **employment** status is the one that says whether this person
+ * works here, so it rides beside the name while Current status (available, on
+ * vacation) is read in the expanded profile, for the reason Members keeps one
+ * of its two (stage 2). The avatar goes with them: 36px of a 390px row is the
+ * difference between a readable name and a truncated one.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `staff` namespace. Absent = no title. */
+  labelKey?: string;
+  /** Selecting the title sorts by this key. Absent = not sortable. */
+  sortKey?: string;
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { key: 'avatar', width: 36, mobile: 'secondary' },
+  { key: 'name', labelKey: 'col_name', sortKey: 'name', width: 160, grow: 2, mobile: 'name' },
+  { key: 'hire_date', labelKey: 'col_hire_date', sortKey: 'hire_date', width: 110, mobile: 'secondary' },
+  { key: 'contract_end', labelKey: 'col_contract_end', sortKey: 'contract_end_date', width: 160, mobile: 'secondary' },
+  { key: 'profile', labelKey: 'col_profile', sortKey: 'profile', width: 180, mobile: 'secondary' },
+  { key: 'employment', labelKey: 'col_employment', sortKey: 'employment_status', width: 90, mobile: 'keep' },
+  { key: 'current_status', labelKey: 'col_current_status', sortKey: 'current_status', width: 110, grow: 1, mobile: 'secondary' },
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 14, mobile: 'keep' },
+  { key: 'actions', width: 44, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 12;
+/** This list's own horizontal inset — a card row. */
+const ROW_PADDING_X = 16;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
+
+const listRowStyle = (editing: boolean): React.CSSProperties => ({
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', padding: `12px ${ROW_PADDING_X}px`, gap: LIST_COLUMN_GAP,
+  cursor: editing ? 'default' : 'pointer',
+});
+
+const colHeaderStyle: React.CSSProperties = {
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `6px ${ROW_PADDING_X}px`,
+  fontSize: 12, color: '#888', fontWeight: 500,
 };
 
 export default function StaffPage() {
@@ -897,14 +970,15 @@ export default function StaffPage() {
     return (
       <div key={member.id} style={{ ...cardSurfaceStyle, marginBottom: 10, overflow: 'hidden' }}>
         <div
-          style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: isEditing ? 'default' : 'pointer' }}
+          className={LIST_GRID_ROW_CLASS}
+          style={listRowStyle(isEditing)}
           onClick={() => { if (!isEditing) openExpand(member); }}
         >
           {/* Avatar */}
-          {avatar(member)}
+          <div className={CELL_CLASS.avatar}>{avatar(member)}</div>
 
           {/* Name */}
-          <div style={{ flex: '0 0 200px', minWidth: 0 }}>
+          <div className={CELL_CLASS.name} title={`${member.first_name} ${member.last_name}`} style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {member.first_name} {member.last_name}
             </div>
@@ -914,12 +988,12 @@ export default function StaffPage() {
           </div>
 
           {/* Hire date */}
-          <div style={{ flex: '0 0 110px', fontSize: 13, color: '#555' }}>
+          <div className={CELL_CLASS.hire_date} style={{ fontSize: 13, color: '#555' }}>
             {member.hire_date ? new Date(member.hire_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
           </div>
 
           {/* Contract end */}
-          <div style={{ flex: '0 0 160px', display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+          <div className={CELL_CLASS.contract_end} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, minWidth: 0 }}>
             {member.contract_end_date
               ? new Date(member.contract_end_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
               : <span style={{ color: '#aaa' }}>—</span>}
@@ -927,27 +1001,27 @@ export default function StaffPage() {
           </div>
 
           {/* Profile badge */}
-          <div style={{ flex: '0 0 180px' }}>
+          <div className={CELL_CLASS.profile} style={{ minWidth: 0 }}>
             <span style={{ background: '#f0f4ff', color: '#4c6ef5', borderRadius: 999, padding: '3px 10px', fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap' }}>
               {member.profile}
             </span>
           </div>
 
           {/* Employment status */}
-          <div style={{ flex: '0 0 90px' }}>
+          <div className={CELL_CLASS.employment}>
             <StatusBadge status={member.employment_status} label={t(`employment_status_${member.employment_status}`)} />
           </div>
 
           {/* Current status */}
-          <div style={{ flex: 1 }}>
+          <div className={CELL_CLASS.current_status}>
             <StatusBadge status={member.current_status === 'available' ? 'active' : 'paused'} label={t(`current_status_${member.current_status}`)} />
           </div>
 
           {/* Expand chevron */}
-          <span style={{ fontSize: 14, color: '#aaa', transform: isExpanded || isEditing ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          <span className={CELL_CLASS.expand} style={{ fontSize: 14, color: '#aaa', transform: isExpanded || isEditing ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
 
           {/* Context menu */}
-          <div onClick={(e) => e.stopPropagation()}>
+          <div className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu items={menuItems} />
           </div>
         </div>
@@ -1040,41 +1114,38 @@ export default function StaffPage() {
         </select>
       </div>
 
-      {/* Column headers */}
-      <div style={{ display: 'flex', gap: 12, padding: '6px 16px', fontSize: 12, color: '#888', fontWeight: 500 }}>
-        <div style={{ flex: '0 0 36px' }} />
-        <div style={{ flex: '0 0 200px', cursor: 'pointer' }} onClick={() => toggleSort('name')}>
-          {t('col_name')}{sortArrow('name')}
+      {/* The header band and the cards share LIST_GRID_COLUMNS and scroll
+          together, so they cannot fall out of line, and a narrow viewport
+          scrolls the list instead of the page (#1011). */}
+      <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+        <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+          {/* Column headers */}
+          <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
+            {LIST_COLUMNS.map((col) => (
+              <div
+                key={col.key}
+                className={CELL_CLASS[col.key]}
+                style={col.sortKey ? { cursor: 'pointer' } : undefined}
+                onClick={col.sortKey ? () => toggleSort(col.sortKey!) : undefined}
+              >
+                {col.labelKey ? <>{t(col.labelKey)}{col.sortKey ? sortArrow(col.sortKey) : null}</> : null}
+              </div>
+            ))}
+          </div>
+
+          {/* New row */}
+          {editingId === 'new' && renderNewRow()}
+
+          {/* Rows */}
+          {loading ? (
+            <p style={{ color: '#888' }}>{t('loading')}</p>
+          ) : rows.length === 0 ? (
+            <p style={{ color: '#888' }}>{t('empty')}</p>
+          ) : (
+            rows.map((m) => renderMemberRow(m))
+          )}
         </div>
-        <div style={{ flex: '0 0 110px', cursor: 'pointer' }} onClick={() => toggleSort('hire_date')}>
-          {t('col_hire_date')}{sortArrow('hire_date')}
-        </div>
-        <div style={{ flex: '0 0 160px', cursor: 'pointer' }} onClick={() => toggleSort('contract_end_date')}>
-          {t('col_contract_end')}{sortArrow('contract_end_date')}
-        </div>
-        <div style={{ flex: '0 0 180px', cursor: 'pointer' }} onClick={() => toggleSort('profile')}>
-          {t('col_profile')}{sortArrow('profile')}
-        </div>
-        <div style={{ flex: '0 0 90px', cursor: 'pointer' }} onClick={() => toggleSort('employment_status')}>
-          {t('col_employment')}{sortArrow('employment_status')}
-        </div>
-        <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => toggleSort('current_status')}>
-          {t('col_current_status')}{sortArrow('current_status')}
-        </div>
-        <div style={{ flex: '0 0 40px' }} />
       </div>
-
-      {/* New row */}
-      {editingId === 'new' && renderNewRow()}
-
-      {/* Rows */}
-      {loading ? (
-        <p style={{ color: '#888' }}>{t('loading')}</p>
-      ) : rows.length === 0 ? (
-        <p style={{ color: '#888' }}>{t('empty')}</p>
-      ) : (
-        rows.map((m) => renderMemberRow(m))
-      )}
 
       {/* Details modal */}
       {detailsMember && renderDetailsModal(detailsMember)}

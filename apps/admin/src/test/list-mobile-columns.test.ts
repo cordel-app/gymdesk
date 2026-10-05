@@ -243,3 +243,68 @@ describe('the three grid lists are on it', () => {
     expect(src).toContain('className={LIST_MIN_WIDTH_CLASS}');
   });
 });
+
+// #1011 stage 3 — the first batch of card lists, each of which restated its
+// column widths in two places (a `rowStyle` flex row and a header band) until it
+// adopted the one declaration the three grid lists of stage 2 already use. They
+// are asserted as a batch rather than one bespoke test apiece, because the whole
+// point of the stage is that they are no longer eight different shapes.
+describe('the flex-row lists stage 3 converted are on it', () => {
+  const PAGES: Array<[string, string]> = [
+    ['Promotions', readPage('promotions')],
+    ['Membership Plans', readPage('plans')],
+    ['Activities', readPage('activity-types')],
+    ['Exercises', readPage('exercises')],
+    ['Spaces', readPage('spaces')],
+    ['Centers', readPage('centers')],
+    ['Staff', readPage('staff')],
+    ['Professional Services', readPage('professional-services')],
+  ];
+
+  it.each(PAGES)('%s declares what every column is on a phone', (_name, src) => {
+    const columns = src.match(/const LIST_COLUMNS: ListColumn\[\] = \[[\s\S]*?\n\];/)?.[0] ?? '';
+    expect(columns).not.toBe('');
+    const keys = [...columns.matchAll(/\bkey: '/g)].length;
+    expect(keys).toBeGreaterThan(0);
+    expect([...columns.matchAll(/\bmobile: '/g)]).toHaveLength(keys);
+    // One identity per row: never none, never two.
+    expect([...columns.matchAll(/mobile: 'name'/g)]).toHaveLength(1);
+    expect([...columns.matchAll(/mobile: 'actions'/g)]).toHaveLength(1);
+  });
+
+  it.each(PAGES)('%s reads its classes from listChrome rather than spelling them', (_name, src) => {
+    expect(src).toContain('const CELL_CLASS = listCellClasses(LIST_COLUMNS);');
+    expect(src).not.toMatch(/gd-list-/);
+  });
+
+  it.each(PAGES)('%s lays the header band and the row out from the same tracks', (_name, src) => {
+    // Both halves wear the row class, and both grids are the declaration's —
+    // the drift this stage removed was a header that sized its cells by hand.
+    expect([...src.matchAll(/className=\{LIST_GRID_ROW_CLASS\}/g)].length).toBeGreaterThanOrEqual(2);
+    expect([...src.matchAll(/gridTemplateColumns: LIST_GRID_COLUMNS/g)].length).toBeGreaterThanOrEqual(2);
+    expect(src).toContain('const LIST_GRID_COLUMNS = LIST_COLUMNS');
+  });
+
+  it.each(PAGES)('%s collapses rather than scrolls, because its rows expand', (_name, src) => {
+    expect(src).toContain("listScrollerClass('collapse')");
+    expect(src).toContain('className={LIST_MIN_WIDTH_CLASS}');
+    expect(src).toContain('const LIST_MIN_WIDTH =');
+  });
+
+  it.each(PAGES)('%s keeps the full name reachable where it truncates', (_name, src) => {
+    // A pinned, truncated identity is only readable if the cell carries the
+    // whole value — the API-side gate gives the same rule to every grid list.
+    expect(src).toMatch(/className=\{CELL_CLASS\.name\}[^>]*title=\{/);
+  });
+
+  it.each(PAGES)('%s gives every declared column a cell that reaches it', (_name, src) => {
+    // The failure mode this stage removed was a row whose cells had never been
+    // asked what they are: a cell with no class is a cell the sheet cannot
+    // hide, so it would survive on a phone and squeeze the name back to zero.
+    const columns = src.match(/const LIST_COLUMNS: ListColumn\[\] = \[[\s\S]*?\n\];/)?.[0] ?? '';
+    const keys = [...columns.matchAll(/\bkey: '([a-z_]+)'/g)].map((m) => m[1]);
+    for (const key of keys) {
+      expect(src, `no cell is keyed to the ${key} column`).toContain(`CELL_CLASS.${key}`);
+    }
+  });
+});

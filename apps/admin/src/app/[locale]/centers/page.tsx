@@ -11,6 +11,10 @@ import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { CrudModal } from '@/components/CrudModal';
@@ -83,6 +87,68 @@ function formatDateShort(locale: string, iso: string | null | undefined): string
   if (!iso) return EMPTY_VALUE;
   return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso));
 }
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 3 — the row and the header band are laid out from one declaration
+ * rather than restating widths at each other (#637's shape). The header band
+ * carried a hand-measured 44px left inset to clear the row's chevron; the
+ * chevron is a column now, so the two share one inset by construction.
+ *
+ * `mobile` says what each column is on a phone. The Center's name is the row's
+ * identity and its status is the one state worth seeing without tapping; the
+ * description, the author and the date are read in the expanded profile.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `centers` namespace. Absent = no title. */
+  labelKey?: string;
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 14, mobile: 'keep' },
+  { key: 'name', labelKey: 'col_name', width: 140, grow: 2, mobile: 'name' },
+  { key: 'description', labelKey: 'col_description', width: 120, grow: 2, mobile: 'secondary' },
+  { key: 'created_by', labelKey: 'col_created_by', width: 120, grow: 2, mobile: 'secondary' },
+  { key: 'created_at', labelKey: 'col_created_at', width: 110, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', width: 90, mobile: 'keep' },
+  { key: 'actions', width: 44, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 12;
+/** This list's own horizontal inset — a card row. */
+const ROW_PADDING_X = 16;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
+
+const listRowStyle = (editing: boolean): React.CSSProperties => ({
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', padding: `12px ${ROW_PADDING_X}px`, gap: LIST_COLUMN_GAP,
+  cursor: editing ? 'default' : 'pointer',
+});
+
+const colHeaderStyle: React.CSSProperties = {
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `6px ${ROW_PADDING_X}px`,
+  fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em',
+  marginBottom: 4,
+};
 
 export default function CentersPage() {
   const t = useTranslations('centers');
@@ -401,36 +467,37 @@ export default function CentersPage() {
     return (
       <div key={center.id} style={{ ...cardSurfaceStyle, marginBottom: 8, overflow: 'hidden' }}>
         <div
-          style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', gap: 12, cursor: isEditing ? 'default' : 'pointer' }}
+          className={LIST_GRID_ROW_CLASS}
+          style={listRowStyle(isEditing)}
           onClick={() => { if (!isEditing) openExpand(center); }}
         >
-          <span style={{ fontSize: 13, color: '#aaa', marginRight: 2, transform: isExpanded || isEditing ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block', flexShrink: 0 }}>▶</span>
+          <span className={CELL_CLASS.expand} style={{ fontSize: 13, color: '#aaa', transform: isExpanded || isEditing ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', display: 'inline-block' }}>▶</span>
 
           {/* Name */}
-          <div style={{ flex: 2, minWidth: 0 }}>
+          <div className={CELL_CLASS.name} title={center.name} style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             <span style={{ fontWeight: 600, fontSize: 15 }}>{center.name}</span>
           </div>
 
           {/* Description */}
-          <div style={{ flex: 2, minWidth: 0, fontSize: 13, color: '#aaa' }}>{EMPTY_VALUE}</div>
+          <div className={CELL_CLASS.description} style={{ minWidth: 0, fontSize: 13, color: '#aaa' }}>{EMPTY_VALUE}</div>
 
           {/* Created By */}
-          <div style={{ flex: 2, minWidth: 0, fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className={CELL_CLASS.created_by} style={{ minWidth: 0, fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {center.created_by_name ?? EMPTY_VALUE}
           </div>
 
           {/* Created At */}
-          <div style={{ minWidth: 110, fontSize: 13, color: '#666', flexShrink: 0 }}>
+          <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#666' }}>
             {formatDateShort(locale, center.created_at)}
           </div>
 
           {/* Status badge */}
-          <div style={{ minWidth: 90, flexShrink: 0 }}>
+          <div className={CELL_CLASS.status}>
             <StatusBadge status={center.status} label={tStatus(center.status)} />
           </div>
 
           {/* Actions */}
-          <div onClick={(e) => e.stopPropagation()}>
+          <div className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu items={menuItems} ariaLabel={`Actions for ${center.name}`} />
           </div>
         </div>
@@ -457,22 +524,27 @@ export default function CentersPage() {
         </div>
       </div>
 
-      {/* Column header */}
-      <div style={{ display: 'flex', gap: 12, padding: '6px 16px 6px 44px', fontSize: 11, fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>
-        <div style={{ flex: 2 }}>{t('col_name')}</div>
-        <div style={{ flex: 2 }}>{t('col_description')}</div>
-        <div style={{ flex: 2 }}>{t('col_created_by')}</div>
-        <div style={{ minWidth: 110 }}>{t('col_created_at')}</div>
-        <div style={{ minWidth: 90 }}>{t('col_status')}</div>
-        <div style={{ minWidth: 36 }} />
-      </div>
-
       {loading ? (
         <p style={{ color: '#aaa', padding: 16 }}>{t('loading')}</p>
       ) : centers.length === 0 ? (
         <p style={{ color: '#aaa', padding: 16 }}>{t('empty')}</p>
       ) : (
-        centers.map(renderRow)
+        /* The header band and the cards share LIST_GRID_COLUMNS and scroll
+           together, so they cannot fall out of line, and a narrow viewport
+           scrolls the list instead of the page (#1011). */
+        <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+          <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+            {/* Column header */}
+            <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
+              {LIST_COLUMNS.map((col) => (
+                <div key={col.key} className={CELL_CLASS[col.key]}>
+                  {col.labelKey ? t(col.labelKey) : null}
+                </div>
+              ))}
+            </div>
+            {centers.map(renderRow)}
+          </div>
+        </div>
       )}
 
       {/* Details modal */}

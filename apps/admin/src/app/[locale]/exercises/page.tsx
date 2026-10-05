@@ -10,6 +10,10 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DependencyDialog, ReferenceReport } from '@/components/DependencyDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ExerciseImageField } from '@/components/ExerciseImageField';
 import { ExerciseVideoField } from '@/components/ExerciseVideoField';
@@ -71,6 +75,56 @@ interface Exercise {
 const truncate = (s: string | null, n = 55) => s ? (s.length > n ? s.slice(0, n) + '…' : s) : '—';
 
 // ─── Component ────────────────────────────────────────────────────────────────
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 3 — the row and the header band are laid out from one declaration
+ * rather than restating widths at each other (#637's shape).
+ *
+ * `mobile` says what each column is on a phone. The exercise's name is the row's
+ * identity and its status is the one state worth seeing without tapping; the
+ * muscles, the author, the date and the System-sourced/Custom tag are read in
+ * the expanded card (#965).
+ */
+interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `exercises` namespace. Absent = no title. */
+  labelKey?: string;
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { key: 'name', labelKey: 'col_name', width: 140, grow: 2, mobile: 'name' },
+  { key: 'description', labelKey: 'col_description', width: 160, grow: 3, mobile: 'secondary' },
+  { key: 'primary_muscles', labelKey: 'col_primary_muscles', width: 140, mobile: 'secondary' },
+  { key: 'created_at', labelKey: 'col_created_at', width: 90, mobile: 'secondary' },
+  { key: 'created_by', labelKey: 'col_created_by', width: 120, mobile: 'secondary' },
+  { key: 'type', labelKey: 'col_type', width: 110, mobile: 'secondary' },
+  { key: 'status', labelKey: 'col_status', width: 80, mobile: 'keep' },
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 13, mobile: 'keep' },
+  { key: 'actions', width: 32, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 12;
+/** This list's own horizontal inset — a card row. */
+const ROW_PADDING_X = 20;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
 
 export default function ExercisesPage() {
   const t = useTranslations('exercises');
@@ -541,35 +595,35 @@ export default function ExercisesPage() {
 
     return (
       <div key={ex.id} style={cardSt}>
-        <div style={rowSt} onClick={() => toggleExpand(ex.id)}>
-          <div style={{ flex: 2, fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div className={LIST_GRID_ROW_CLASS} style={rowSt} onClick={() => toggleExpand(ex.id)}>
+          <div className={CELL_CLASS.name} title={ex.display_name ?? ex.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {/* #967 §6: the list shows the name in the application's language —
                 the server resolved it, falling back to the base name. */}
             {ex.display_name ?? ex.name}
           </div>
-          <div style={{ flex: 3, fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {truncate(ex.description)}
           </div>
-          <div style={{ minWidth: 140, flexShrink: 0, fontSize: 13, color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className={CELL_CLASS.primary_muscles} style={{ fontSize: 13, color: '#555', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {principalMuscles}
           </div>
-          <div style={{ minWidth: 90, flexShrink: 0, fontSize: 13, color: '#888' }}>
+          <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>
             {ex.created_at?.slice(0, 10) ?? '—'}
           </div>
-          <div style={{ minWidth: 120, flexShrink: 0, fontSize: 13, color: '#555', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#555', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {ex.created_by_name ?? '—'}
           </div>
-          <div style={{ minWidth: 110, flexShrink: 0 }}>
+          <div className={CELL_CLASS.type}>
             {isSystemSourced
               ? <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#e8f4fd', color: '#1a6da8' }}>{t('type_system_sourced')}</span>
               : <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 7px', borderRadius: 4, background: '#f0f9eb', color: '#3a7c3a' }}>{t('type_custom')}</span>
             }
           </div>
-          <div style={{ minWidth: 80, flexShrink: 0 }}>
+          <div className={CELL_CLASS.status}>
             <StatusBadge status={ex.status} label={tStatus(ex.status)} />
           </div>
-          <span style={{ fontSize: 13, color: '#aaa', flexShrink: 0, display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-          <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+          <span className={CELL_CLASS.expand} style={{ fontSize: 13, color: '#aaa', display: 'inline-block', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          <div className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu items={menuItems} />
           </div>
         </div>
@@ -580,16 +634,12 @@ export default function ExercisesPage() {
 
   function renderHeader() {
     return (
-      <div style={{ display: 'flex', padding: '6px 20px', marginBottom: 4, color: '#999', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', gap: 12 }}>
-        <span style={{ flex: 2 }}>{t('col_name')}</span>
-        <span style={{ flex: 3 }}>{t('col_description')}</span>
-        <span style={{ minWidth: 140, flexShrink: 0 }}>{t('col_primary_muscles')}</span>
-        <span style={{ minWidth: 90, flexShrink: 0 }}>{t('col_created_at')}</span>
-        <span style={{ minWidth: 120, flexShrink: 0 }}>{t('col_created_by')}</span>
-        <span style={{ minWidth: 110, flexShrink: 0 }}>{t('col_type')}</span>
-        <span style={{ minWidth: 80, flexShrink: 0 }}>{t('col_status')}</span>
-        <span style={{ minWidth: 13, flexShrink: 0 }} />
-        <span style={{ minWidth: 32, flexShrink: 0 }} />
+      <div className={LIST_GRID_ROW_CLASS} style={headerBandSt}>
+        {LIST_COLUMNS.map((col) => (
+          <span key={col.key} className={CELL_CLASS[col.key]}>
+            {col.labelKey ? t(col.labelKey) : null}
+          </span>
+        ))}
       </div>
     );
   }
@@ -631,9 +681,18 @@ export default function ExercisesPage() {
         <p style={{ color: '#888' }}>{t('loading')}</p>
       ) : (
         <>
-          {rows.length > 0 && renderHeader()}
           {rows.length === 0 && !addOpen && <p style={{ color: '#888' }}>{t('empty')}</p>}
-          {rows.map(renderRow)}
+          {rows.length > 0 && (
+            /* The header band and the cards share LIST_GRID_COLUMNS and scroll
+               together, so they cannot fall out of line, and a narrow viewport
+               scrolls the list instead of the page (#1011). */
+            <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+              <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+                {renderHeader()}
+                {rows.map(renderRow)}
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -681,4 +740,24 @@ export default function ExercisesPage() {
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const cardSt: React.CSSProperties = { ...cardSurfaceStyle, marginBottom: 8, overflow: 'hidden' };
-const rowSt: React.CSSProperties = { display: 'flex', alignItems: 'center', padding: '12px 20px', gap: 12, cursor: 'pointer' };
+const rowSt: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center',
+  padding: `12px ${ROW_PADDING_X}px`,
+  gap: LIST_COLUMN_GAP,
+  cursor: 'pointer',
+};
+const headerBandSt: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center',
+  padding: `6px ${ROW_PADDING_X}px`,
+  gap: LIST_COLUMN_GAP,
+  marginBottom: 4,
+  color: '#999',
+  fontSize: 11,
+  fontWeight: 600,
+  textTransform: 'uppercase',
+  letterSpacing: '0.04em',
+};

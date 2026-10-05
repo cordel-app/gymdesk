@@ -10,6 +10,10 @@ import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 import { CrudModal } from '@/components/CrudModal';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -58,6 +62,51 @@ function fmtDate(iso: string | null) {
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 3 — the row and the header band are laid out from one declaration
+ * rather than restating widths at each other (#637's shape). The header folded
+ * the chevron and the `⋮` into one 68px cell while the row rendered two.
+ *
+ * `mobile` says what each column is on a phone. The service's name is the row's
+ * identity — it carries its description and its `System` pill under it — and its
+ * status rides beside it, which is this list's whole width on a phone.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Header label, a key in the `professional_services` namespace. */
+  labelKey?: string;
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  { key: 'name', labelKey: 'col_name', width: 180, grow: 2, mobile: 'name' },
+  { key: 'status', labelKey: 'col_status', width: 100, mobile: 'keep' },
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 14, mobile: 'keep' },
+  { key: 'actions', width: 44, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 10;
+/** This list's own horizontal inset — a card row. */
+const ROW_PADDING_X = 16;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
 
 export default function ProfessionalServicesPage() {
   const t = useTranslations('professional_services');
@@ -285,8 +334,8 @@ export default function ProfessionalServicesPage() {
     return (
       <div key={item.id} style={cardStyle}>
         {/* Collapsed header */}
-        <div style={rowStyle} onClick={() => toggleExpand(item.id)}>
-          <div style={{ flex: 2, minWidth: 0 }}>
+        <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(item.id)}>
+          <div className={CELL_CLASS.name} title={item.name} style={{ minWidth: 0 }}>
             <div style={{ fontWeight: 600, fontSize: 15, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {item.name}
               {isSystem && (
@@ -301,11 +350,11 @@ export default function ProfessionalServicesPage() {
               </div>
             )}
           </div>
-          <div style={{ minWidth: 100, flexShrink: 0 }}>
+          <div className={CELL_CLASS.status}>
             <StatusBadge status={item.status} label={tStatus(item.status)} />
           </div>
-          <span style={{ fontSize: 14, color: '#aaa', flexShrink: 0, transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
-          <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0 }}>
+          <span className={CELL_CLASS.expand} style={{ fontSize: 14, color: '#aaa', transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          <div className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu items={menuItems} ariaLabel={`Actions for ${item.name}`} />
           </div>
         </div>
@@ -362,25 +411,35 @@ export default function ProfessionalServicesPage() {
         <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
       </div>
 
-      {/* Column headers */}
-      {(items.length > 0 || inlineNew) && (
-        <div style={colHeaderStyle}>
-          <div style={{ flex: 2 }}>{t('col_name')}</div>
-          <div style={{ minWidth: 100 }}>{t('col_status')}</div>
-          <div style={{ minWidth: 68 }} />
-        </div>
-      )}
-
-      {/* Inline new */}
-      {renderInlineNewRow()}
-
       {loading ? (
         <p style={{ color: '#888' }}>{t('loading')}</p>
       ) : items.length === 0 && !inlineNew ? (
-        <p style={{ color: '#888' }}>{t('empty')}</p>
+        <>
+          {renderInlineNewRow()}
+          <p style={{ color: '#888' }}>{t('empty')}</p>
+        </>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {items.map(renderRow)}
+        /* The header band and the cards share LIST_GRID_COLUMNS and scroll
+           together, so they cannot fall out of line, and a narrow viewport
+           scrolls the list instead of the page (#1011). */
+        <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+          <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
+            {/* Column headers */}
+            <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
+              {LIST_COLUMNS.map((col) => (
+                <div key={col.key} className={CELL_CLASS[col.key]}>
+                  {col.labelKey ? t(col.labelKey) : null}
+                </div>
+              ))}
+            </div>
+
+            {/* Inline new */}
+            {renderInlineNewRow()}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {items.map(renderRow)}
+            </div>
+          </div>
         </div>
       )}
 
@@ -449,12 +508,14 @@ function ModalField({ label, value }: { label: string; value: string }) {
 const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, overflow: 'hidden' };
 
 const rowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 10, padding: '12px 16px',
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `12px ${ROW_PADDING_X}px`,
   cursor: 'pointer', userSelect: 'none',
 };
 
 const colHeaderStyle: React.CSSProperties = {
-  display: 'flex', padding: '6px 16px', gap: 10,
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', padding: `6px ${ROW_PADDING_X}px`, gap: LIST_COLUMN_GAP,
   fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
   marginBottom: 4,
 };
