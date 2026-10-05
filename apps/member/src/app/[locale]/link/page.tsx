@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useAuth, useSignUp } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
+import { unregisterPushToken } from '@/lib/nativePush';
 import { memberTheme } from '@/lib/memberChrome';
 
 const ACTIVE_GYM_KEY = 'activeGymId';
@@ -91,6 +92,14 @@ export default function LinkPage() {
         // linking that session instead left the invitation unused. Sign it out
         // and reload the same URL, so the ticket is redeemed below with fresh
         // Clerk state. The callback replaces Clerk's post-sign-out redirect.
+        //
+        // #1073: the device's push token goes **before** the session does — the
+        // delete is authenticated as the member whose device it is, so after
+        // `signOut()` there is nothing to call it with, and the alerts of the
+        // member signing out would keep arriving on this handset until somebody
+        // else signed in on it. A no-op on the web and on a device that never
+        // registered one.
+        await unregisterPushToken(apiFetch);
         await signOut(() => window.location.replace(window.location.href));
         return;
       }

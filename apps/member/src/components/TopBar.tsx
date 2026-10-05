@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
-import { memberTheme } from '@/lib/memberChrome';
+import { memberTheme, withSafeArea } from '@/lib/memberChrome';
 
 /**
  * #361: replaces the old bottom tab bar. Home is reached via its own
@@ -42,7 +42,17 @@ export function TopBar() {
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: '10px 16px',
+      // #1073 (mobile app WP2): inside the native shell this bar is the top of
+      // the screen, and it rendered *under* the status bar — the one layout
+      // defect the 2026-10-04 spike reported. The inset is padding on the bar
+      // itself rather than a spacer above it, so the strip under the status bar
+      // is filled with the header's own themed background; `env()` resolves to
+      // 0px on the web, so nothing moves there. The horizontal insets are the
+      // same answer for a landscape notch.
+      paddingTop: withSafeArea(10, 'top'),
+      paddingBottom: 10,
+      paddingLeft: withSafeArea(16, 'left'),
+      paddingRight: withSafeArea(16, 'right'),
       // #833 §2 — the Members App header's own colour, text colour, font and
       // separator. Each follows the Admin Header setting it inherits from
       // unless the active Theme overrides it; lib/membersAppTokens.ts writes
