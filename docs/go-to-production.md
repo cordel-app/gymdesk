@@ -331,6 +331,28 @@ Tick items off in the PR that completes them.
       Only then delete the old `Themes/` trees (and the gym-level `Themes/` marker, replaced by `themes/`
       on the next **Initialize Cloudflare Bucket**) — deleting an object a row still points at is what turns
       a working logo into a broken image.
+- [ ] **Move the gym media onto the #1035 lowercase folder names, then delete the old trees** (#1035).
+      Gym Bucket Initialization writes `nutrition/`, `exercises/`, `exercises/images/`, `exercises/videos/`
+      and `themes/` now, and in R2 a case difference is a different key — so, exactly as #829's theme item
+      above, nothing moved on its own: an exercise image under `Exercises/Images/…`, a video under
+      `Exercises/Videos/…` and a food image under `Nutrition/Images/<uuid>.<ext>` all keep rendering,
+      because the URL is derived from the key the row still holds. Two ways to land them on the new names,
+      per row: re-upload the asset from the Exercises or Nutrition Library page (the upload writes the new
+      key and best-effort deletes the one it replaced — including the `<uuid>` food images, whose key now
+      carries the food's id and name), or copy the objects to the new keys in the bucket and rewrite the
+      columns to match. List what is still on the old names with
+      `SELECT id, gym_id, name, image_url, image_thumbnail_url, video_url, video_thumbnail_url FROM exercises
+      WHERE image_url LIKE '%/Exercises/%' OR video_url LIKE '%/Exercises/%'` and
+      `SELECT id, gym_id, name, image_url FROM nutrition_library_items WHERE image_url LIKE '%/Nutrition/%'`
+      (the second also finds the base foods still under `cordel/Nutrition/`). Only then delete the old
+      `Nutrition/`, `Nutrition/Images/` and `Exercises/` trees and their markers — deleting an object a row
+      still points at is what turns a working image into a broken one. The ticket's §6 is explicit that
+      nothing in the application may do this for you.
+- [ ] **Create the `cordel/` tree by hand in the Cloudflare console** (#1035 §2/§10). Gym Bucket
+      Initialization has never written it and must not: the platform tree — `cordel/nutrition/`,
+      `cordel/goals/`, `cordel/exercises/images/` and `cordel/themes/` — is yours to create. Nothing breaks
+      without it, because R2 has no directories and the platform upload routes write their own markers on
+      first use; this is so the bucket browser shows the tree before anything has been uploaded.
 - [ ] **Sweep the Members image objects of themes that were renamed or deleted** (#725). Remove clears the
       row and deliberately leaves the object (the ticket requires it), and a theme renamed between two
       uploads leaves its old folder behind — the next upload sweeps that one object best-effort, nothing

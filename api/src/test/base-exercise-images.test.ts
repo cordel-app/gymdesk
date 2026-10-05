@@ -136,8 +136,8 @@ function remove(id: number | string) {
     .set('Authorization', TEST_AUTH_HEADER);
 }
 
-const masterKey = (id: number, name: string) => `cordel/Exercises/Images/${id}-${name}.png`;
-const thumbnailKey = (id: number, name: string) => `cordel/Exercises/Images/${id}-${name}-thumbnail.png`;
+const masterKey = (id: number, name: string) => `cordel/exercises/images/${id}-${name}.png`;
+const thumbnailKey = (id: number, name: string) => `cordel/exercises/images/${id}-${name}-thumbnail.png`;
 
 const BASE_SLUG = 'Test-Base-Image-Barbell-Back-Squat';
 const SECOND_BASE_SLUG = 'Test-Base-Image-Cable-Row-Seated';
@@ -235,7 +235,7 @@ describe('POST /platform/exercises/:id/image — auth', () => {
 // ─── Happy path ───────────────────────────────────────────────────────────────
 
 describe('POST /platform/exercises/:id/image', () => {
-  it('stores both files under cordel/Exercises/Images/ and persists both URLs', async () => {
+  it('stores both files under cordel/exercises/images/ and persists both URLs', async () => {
     const res = await upload(baseExerciseId, { image: MASTER, thumbnail: THUMBNAIL });
     expect(res.status).toBe(200);
 
@@ -260,7 +260,7 @@ describe('POST /platform/exercises/:id/image', () => {
   it('writes the platform folder markers, never a gym tree', async () => {
     await upload(baseExerciseId, { image: MASTER, thumbnail: THUMBNAIL });
     const markers = sentCommands('put').map((c: any) => c.input.Key).filter((k: string) => k.endsWith('/'));
-    expect(markers).toEqual(['cordel/', 'cordel/Exercises/', 'cordel/Exercises/Images/']);
+    expect(markers).toEqual(['cordel/', 'cordel/exercises/', 'cordel/exercises/images/']);
   });
 
   it('sanitizes the exercise name in both keys (§14)', async () => {
@@ -402,7 +402,7 @@ describe('POST /platform/exercises/:id/image — replacement', () => {
   });
 
   it("never deletes a gym's object, whatever the row points at", async () => {
-    const gymObject = url(`${gymPrefix}/Exercises/Images/${baseExerciseId}-Old-Name.png`);
+    const gymObject = url(`${gymPrefix}/exercises/images/${baseExerciseId}-Old-Name.png`);
     await setMedia(baseExerciseId, gymObject, null);
     const res = await upload(baseExerciseId, { image: MASTER, thumbnail: THUMBNAIL });
     expect(res.status).toBe(200);
@@ -479,7 +479,7 @@ describe('DELETE /platform/exercises/:id/image', () => {
   });
 
   it("returns 404 for a gym's own exercise and leaves its media in place", async () => {
-    await setMedia(gymExerciseId, url(`${gymPrefix}/Exercises/Images/${gymExerciseId}-Gym.png`), null);
+    await setMedia(gymExerciseId, url(`${gymPrefix}/exercises/images/${gymExerciseId}-Gym.png`), null);
     const res = await remove(gymExerciseId);
     expect(res.status).toBe(404);
     expect(deletedKeys()).toHaveLength(0);

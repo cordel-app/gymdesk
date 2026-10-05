@@ -3132,6 +3132,7 @@
     "label_description": "Descripción",
     "label_translations": "Traducciones",
     "label_media": "Multimedia",
+    "image_after_create": "Crea primero el alimento y después sube su imagen desde Editar.",
     "no_image": "Sin imagen",
     "section_audit": "Auditoría",
     "created_by": "Creado por",

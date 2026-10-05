@@ -93,9 +93,9 @@ describe('sanitizeExerciseImageName', () => {
 describe('object keys (#719 §5, §18)', () => {
   it('puts the master and its thumbnail in the gym folder, keyed by id and name', () => {
     expect(buildGymExerciseImageKey(GYM_PREFIX, 42, 'Barbell Press'))
-      .toBe(`${GYM_PREFIX}/Exercises/Images/42-Barbell-Press.png`);
+      .toBe(`${GYM_PREFIX}/exercises/images/42-Barbell-Press.png`);
     expect(buildGymExerciseImageThumbnailKey(GYM_PREFIX, 42, 'Barbell Press'))
-      .toBe(`${GYM_PREFIX}/Exercises/Images/42-Barbell-Press-thumbnail.png`);
+      .toBe(`${GYM_PREFIX}/exercises/images/42-Barbell-Press-thumbnail.png`);
   });
 
   it('never writes into the platform root (§18)', () => {
@@ -124,31 +124,31 @@ describe('object keys (#719 §5, §18)', () => {
     expect(thumbnail.length).toBeLessThanOrEqual(1024);
   });
 
-  it('names every folder marker between the bucket root and Exercises/Images', () => {
+  it('names every folder marker between the bucket root and exercises/images', () => {
     expect(gymExerciseImageFolderKeys(GYM_PREFIX)).toEqual([
       `${GYM_PREFIX}/`,
-      `${GYM_PREFIX}/Exercises/`,
-      `${GYM_PREFIX}/Exercises/Images/`,
+      `${GYM_PREFIX}/exercises/`,
+      `${GYM_PREFIX}/exercises/images/`,
     ]);
   });
 });
 
 describe('isGymOwnedImageUrl (#719 §19)', () => {
   it('owns an object under this gym’s own prefix', () => {
-    expect(isGymOwnedImageUrl(url(`${GYM_PREFIX}/Exercises/Images/42-Barbell-Press.png`), GYM_PREFIX)).toBe(true);
+    expect(isGymOwnedImageUrl(url(`${GYM_PREFIX}/exercises/images/42-Barbell-Press.png`), GYM_PREFIX)).toBe(true);
   });
 
   it('owns the legacy <uuid>.png shape the #417 upload route writes', () => {
-    expect(isGymOwnedImageUrl(url(`${GYM_PREFIX}/Exercises/Images/6f1b-uuid.png`), GYM_PREFIX)).toBe(true);
+    expect(isGymOwnedImageUrl(url(`${GYM_PREFIX}/exercises/images/6f1b-uuid.png`), GYM_PREFIX)).toBe(true);
   });
 
   it('never owns a System object, so a gym operation cannot delete one', () => {
-    expect(isGymOwnedImageUrl(url('cordel/Exercises/Images/123-Barbell-Press.png'), GYM_PREFIX)).toBe(false);
+    expect(isGymOwnedImageUrl(url('cordel/exercises/images/123-Barbell-Press.png'), GYM_PREFIX)).toBe(false);
   });
 
   it('never owns another gym’s object, even one whose prefix starts the same way', () => {
-    expect(isGymOwnedImageUrl(url('gyms/99999999-0000-0000-0000-000000000000-Other/Exercises/Images/1.png'), GYM_PREFIX)).toBe(false);
-    expect(isGymOwnedImageUrl(url(`${GYM_PREFIX}Plus/Exercises/Images/1.png`), GYM_PREFIX)).toBe(false);
+    expect(isGymOwnedImageUrl(url('gyms/99999999-0000-0000-0000-000000000000-Other/exercises/images/1.png'), GYM_PREFIX)).toBe(false);
+    expect(isGymOwnedImageUrl(url(`${GYM_PREFIX}Plus/exercises/images/1.png`), GYM_PREFIX)).toBe(false);
   });
 
   it('never owns an external URL or a URL from another deployment', () => {

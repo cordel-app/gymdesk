@@ -6,7 +6,7 @@
 // belongs to no gym and its media cannot hang off `gyms.storage_folder_prefix`
 // (#717 §1). It goes in the platform's own folder instead —
 // `PLATFORM_STORAGE_ROOT`, the `cordel` sibling of the `gyms/` root — under the
-// same `Exercises/Videos` leaf a gym uses inside its own tree (#719 §18).
+// same `exercises/videos` leaf a gym uses inside its own tree (#719 §18).
 //
 // Everything here is pure: the object keys and the ownership test. What counts
 // as a *valid* upload is not duplicated — a Base Exercise video is the same MP4
@@ -15,11 +15,11 @@
 // (#717 Q3: reuse `domain/mp4Video.ts`, no `ffprobe` in the API image).
 
 import { PLATFORM_STORAGE_ROOT, storageKeyFromObjectUrl } from '../infra/storage';
-import { sanitizeExerciseImageName } from './exerciseImages';
+import { EXERCISE_FOLDER, sanitizeExerciseImageName } from './exerciseImages';
 import { EXERCISE_VIDEOS_FOLDER } from './exerciseVideos';
 
 /**
- * `cordel/Exercises/Videos` — the one folder every Base Exercise video is stored
+ * `cordel/exercises/videos` — the one folder every Base Exercise video is stored
  * in (#717 §1). The leaf is spelled once, in `exerciseVideos.ts`: a gym's
  * `<prefix>/Exercises/Videos/` and this are the same branch of two different
  * roots, and they must never be confused for one another.
@@ -27,7 +27,7 @@ import { EXERCISE_VIDEOS_FOLDER } from './exerciseVideos';
 export const PLATFORM_EXERCISE_VIDEOS_PREFIX = `${PLATFORM_STORAGE_ROOT}/${EXERCISE_VIDEOS_FOLDER}`;
 
 /**
- * `cordel/Exercises/Videos/<exercise_id>-<sanitized name>.mp4` — the key a Base
+ * `cordel/exercises/videos/<exercise_id>-<sanitized name>.mp4` — the key a Base
  * Exercise's video is stored under (#717 §1).
  *
  * The id leads, so two exercises whose names sanitize alike never share an
@@ -52,7 +52,7 @@ export function buildBaseExerciseVideoPosterKey(exerciseId: number | string, nam
 }
 
 /**
- * Every folder marker between the bucket root and `cordel/Exercises/Videos/`,
+ * Every folder marker between the bucket root and `cordel/exercises/videos/`,
  * outermost first. R2 has no directories, so these are the zero-byte `…/`
  * objects `ensureStorageFolders()` writes; Gym Bucket Initialization only writes
  * a *gym's* tree, so the platform root is created by the first upload that needs
@@ -61,7 +61,7 @@ export function buildBaseExerciseVideoPosterKey(exerciseId: number | string, nam
 export function baseExerciseVideoFolderKeys(): string[] {
   return [
     `${PLATFORM_STORAGE_ROOT}/`,
-    `${PLATFORM_STORAGE_ROOT}/Exercises/`,
+    `${PLATFORM_STORAGE_ROOT}/${EXERCISE_FOLDER}/`,
     `${PLATFORM_EXERCISE_VIDEOS_PREFIX}/`,
   ];
 }
@@ -73,13 +73,13 @@ export function baseExerciseVideoFolderKeys(): string[] {
  * The mirror of `isPlatformOwnedExerciseImageUrl()` (#716) one folder over: true
  * only for a URL this deployment built (`storageKeyFromObjectUrl()` — a
  * different endpoint or bucket is already "not ours") whose key sits under
- * `cordel/Exercises/Videos/`. So:
+ * `cordel/exercises/videos/`. So:
  *
- *  - `…/cordel/Exercises/Videos/…` → true, the platform's own upload.
+ *  - `…/cordel/exercises/videos/…` → true, the platform's own upload.
  *  - `…/gyms/<a gym>/…` → **false**: a gym's object, which a platform operation
  *    must never delete. A `PUT` that sets `video_url` to any string is exactly
  *    what could put one on a base row.
- *  - `…/cordel/Exercises/Images/…` → false. The image sweep owns that folder;
+ *  - `…/cordel/exercises/images/…` → false. The image sweep owns that folder;
  *    neither is the other's to delete, however platform-owned both are.
  *  - a YouTube link, or any other external URL → false; there is no object of
  *    ours to delete.

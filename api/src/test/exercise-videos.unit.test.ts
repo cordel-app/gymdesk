@@ -39,7 +39,7 @@ afterEach(() => {
 // ─── Object keys (#719 §7, §18) ───────────────────────────────────────────────
 
 describe('gym exercise video keys', () => {
-  it('puts the video under the gym’s own Exercises/Videos folder', () => {
+  it('puts the video under the gym’s own exercises/videos folder', () => {
     expect(buildGymExerciseVideoKey(PREFIX, 12, 'Barbell Press'))
       .toBe(`${PREFIX}/${EXERCISE_VIDEOS_FOLDER}/12-Barbell-Press.mp4`);
   });
@@ -74,7 +74,7 @@ describe('gym exercise video keys', () => {
   it('writes every folder marker from the gym root down, outermost first', () => {
     expect(gymExerciseVideoFolderKeys(PREFIX)).toEqual([
       `${PREFIX}/`,
-      `${PREFIX}/Exercises/`,
+      `${PREFIX}/exercises/`,
       `${PREFIX}/${EXERCISE_VIDEOS_FOLDER}/`,
     ]);
   });

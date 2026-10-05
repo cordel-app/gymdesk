@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-// #788 — My Membership carries a Payment method section, and the payment return
-// page can tell a replaced card from a paid fee.
+// #788 — the payment return page can tell a replaced card from a paid fee.
+// #1117 — My Membership no longer carries a Payment method section.
 //
 // The Member app has no component-test infra (no testing-library, no jsdom — the
 // same note as membership-benefits-snapshot.test.ts), so both pages are pinned
@@ -29,30 +29,13 @@ function locale(code: string): any {
   return JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
 }
 
-describe('My Membership — Payment method section (#788)', () => {
-  it('reads the card from the API rather than the payment history', () => {
-    expect(membershipPage).toContain("apiFetch<PaymentMethodState>('/me/payment-method')");
-    expect(membershipPage).toContain("t('payment_method.heading')");
-  });
-
-  it('offers Replace card through the verification route, not a payment', () => {
-    expect(membershipPage).toContain("'/me/payment-method/replace-requests'");
-    // The old way to store a card was to raise a full membership fee, which is
-    // the defect this ticket removed — the replace action must never go there.
-    expect(membershipPage).not.toMatch(/replaceCard[\s\S]{0,400}\/me\/payment-requests/);
-  });
-
-  it('shows Remove card only when the server says it is allowed', () => {
-    expect(membershipPage).toContain('card.can_remove');
-    expect(membershipPage).toContain("t('payment_method.remove_blocked')");
-    // The decision is the API's (`cardRemovalBlock()`); the page must not
-    // re-derive it from the membership it happens to be rendering.
-    expect(membershipPage).not.toMatch(/can_remove\s*=\s*membership/);
-  });
-
-  it('never renders the token that charges the card', () => {
-    expect(membershipPage).not.toContain('payment_token');
-    expect(membershipPage).not.toContain('sequence_id');
+describe('My Membership — no Payment method section (#1117)', () => {
+  // Card management belongs to the Payments App; the Members App never offers it.
+  it('does not read, replace or remove a stored card', () => {
+    expect(membershipPage).not.toContain('/me/payment-method');
+    expect(membershipPage).not.toContain('payment_method.');
+    expect(membershipPage).not.toContain('replaceCard');
+    expect(membershipPage).not.toContain('removeCard');
   });
 });
 
@@ -73,19 +56,10 @@ describe('Payment return page — a replaced card is not a payment (#788)', () =
 });
 
 describe('Translations', () => {
-  const KEYS = [
-    'heading', 'card', 'none', 'since', 'add', 'replace', 'remove',
-    'remove_confirm', 'remove_blocked', 'rate_limited',
-  ];
-
-  // next-intl has no locale fallback here, so a key missing from es/ca renders
-  // as its raw dotted path.
   for (const code of LOCALE_CODES) {
-    it(`${code}.json carries every payment_method label and the card variants`, () => {
+    it(`${code}.json keeps the card-update return-page labels and drops payment_method`, () => {
       const messages = locale(code);
-      for (const key of KEYS) {
-        expect(messages.payment_method?.[key], `${code}: payment_method.${key}`).toBeTruthy();
-      }
+      expect(messages.payment_method).toBeUndefined();
       for (const key of ['card_processing', 'card_done', 'card_timeout']) {
         expect(messages.payment_success?.[key], `${code}: payment_success.${key}`).toBeTruthy();
       }

@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -9,7 +9,24 @@ import {
   buildListWhere, clampLimit, clampOffset,
   actorSnapshot, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
+import {
+  buildGymNutritionImageKey,
+  gymNutritionFolderKeys,
+} from '../domain/baseNutritionImages';
 import { getRequestLocale } from '../infra/locale';
+import {
+  buildStorageObjectUrl,
+  deleteStorageObject,
+  describeStorageError,
+  ensureStorageFolders,
+  getMissingStorageConfigKeys,
+  getStorageDiagnostics,
+  isStorageConfigured,
+  storageKeyFromObjectUrl,
+  StorageOperationError,
+  uploadStorageObject,
+} from '../infra/storage';
+import { logger } from '../lib/logger';
 
 export const nutritionLibraryRouter = Router();
 
@@ -149,6 +166,164 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
     res.status(201).json(item);
   } catch (err) { next(err); }
 });
+
+/* ── Image upload (#1035 §4/§5) ───────────────────────────────────────────── */
+//
+// A gym food's image is an object in the gym's own folder, at the key the row's
+// own id and name give it: `<storage_folder_prefix>/nutrition/<food_id>-<name>.<ext>`
+// (`buildGymNutritionImageKey()`). It replaces `POST /storage/uploads/nutrition-image`,
+// whose `<prefix>/Nutrition/Images/<uuid>.<ext>` key could carry neither the food's
+// id nor its name — which is why this is a per-row route at all, and why the
+// Nutrition Library's create form has no image control: the food exists first,
+// then its image is uploaded from Edit (Cordel's Base library already works this
+// way).
+//
+// The route takes neither the folder nor the key from the request: the prefix is
+// the gym's own column, the food is looked up under this gym, and the name comes
+// from the row. A client cannot reach another gym's folder, or another food's
+// object, by changing anything it sends — and a System row (`gym_id IS NULL`) is
+// 403 here exactly as it is on the `PUT`, because its image is Cordel's.
+//
+// What counts as valid is deliberately unchanged from the route this replaces:
+// the same four MIME types at the same 5 MB ceiling, so the JPEGs a gym uploads
+// today keep working. The extension therefore comes from the validated MIME type
+// rather than being a fixed `.png`.
+
+const IMAGE_MIME_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+const IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+nutritionLibraryRouter.post(
+  '/:id/image',
+  requireModuleWrite('NUTRITION'),
+  express.raw({
+    type: (req: any) => (req.headers['content-type'] ?? '').startsWith('image/'),
+    limit: IMAGE_MAX_BYTES + 64 * 1024,
+  }),
+  async (req, res, next) => {
+    const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+    const { id } = req.params;
+    try {
+      const mime = req.headers['content-type']?.split(';')[0]?.trim();
+      if (!mime || !IMAGE_MIME_TYPES.includes(mime)) {
+        return res.status(415).json({ error: `Unsupported image type. Allowed: ${IMAGE_MIME_TYPES.join(', ')}` });
+      }
+      // `req.body` is whatever a parser left there, and a request can make that a
+      // string or an array — both carry a `length` and numeric indices, so they
+      // would flow into the size check as if they were bytes (CodeQL
+      // `js/type-confusion-through-parameter-tampering`).
+      const raw: unknown = req.body;
+      if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
+        return res.status(400).json({ error: 'Request body must be raw image bytes' });
+      }
+      const body: Buffer = raw;
+      if (body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
+      if (body.length > IMAGE_MAX_BYTES) {
+        return res.status(413).json({ error: `Image exceeds ${IMAGE_MAX_BYTES / (1024 * 1024)}MB limit` });
+      }
+
+      if (!isStorageConfigured()) {
+        const missingConfig = getMissingStorageConfigKeys();
+        return res.status(503).json({
+          error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+          missingConfig,
+        });
+      }
+
+      const { rows: existing } = await db.query<{ id: number; gym_id: string | null; name: string; status: string; image_url: string | null }>(
+        'SELECT id, gym_id, name, status, image_url FROM nutrition_library_items WHERE id = ?',
+        [id],
+      );
+      if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
+      if (existing[0].gym_id === null) return res.status(403).json({ error: 'System library items are read-only' });
+      if (existing[0].gym_id !== gymId) return res.status(404).json({ error: 'Item not found' });
+      if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
+
+      const { rows: gymRows } = await db.query<{ storage_folder_prefix: string | null }>(
+        'SELECT storage_folder_prefix FROM gyms WHERE id = ? AND deleted_at IS NULL',
+        [gymId],
+      );
+      const folderPrefix = gymRows[0]?.storage_folder_prefix ?? null;
+      if (!folderPrefix) {
+        return res.status(409).json({ error: 'Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.' });
+      }
+
+      const food = existing[0];
+      const key = buildGymNutritionImageKey(folderPrefix, food.id, food.name, mime);
+      const url = buildStorageObjectUrl(key);
+
+      try {
+        await ensureStorageFolders(gymNutritionFolderKeys(folderPrefix));
+        await uploadStorageObject(key, mime, body);
+      } catch (err: any) {
+        const details = err instanceof StorageOperationError
+          ? err.details
+          : describeStorageError(err, { operation: 'uploadStorageObject', key });
+        logger.error(
+          { err, details, diagnostics: getStorageDiagnostics(), gymId, itemId: food.id },
+          'Cloudflare R2 nutrition image upload failed',
+        );
+        // The row still points at whatever it pointed at before, so the previous
+        // image stays visible — nothing was written.
+        return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
+      }
+
+      // The key is deterministic, so a replacement normally writes the same
+      // object and there is nothing to remove. `staleKey !== key` is what a
+      // rename, a different format, or an image still under the pre-#1035
+      // `Nutrition/Images/<uuid>` shape answers true for. Best-effort and after
+      // the new object is stored: a failure here leaves an orphan to sweep, not
+      // a failed save. Only an object under *this gym's* prefix is ever deleted,
+      // so a food pointing at a `cordel/` System image (or an external URL) is
+      // left alone — #719 §19's rule, one table over.
+      const staleUrl = food.image_url;
+      const staleKey = staleUrl ? storageKeyFromObjectUrl(staleUrl) : null;
+      if (staleKey && staleKey !== key && staleKey.startsWith(`${folderPrefix}/`)) {
+        try {
+          await deleteStorageObject(staleKey);
+        } catch (err: any) {
+          const details = err instanceof StorageOperationError
+            ? err.details
+            : describeStorageError(err, { operation: 'deleteStorageObject', key: staleKey });
+          logger.warn(
+            { err, details, gymId, itemId: food.id },
+            'Replaced nutrition image left an orphaned object in Cloudflare R2',
+          );
+        }
+      }
+
+      const actor = actorSnapshot({ name: actorName, isSuperadmin });
+      await db.query(
+        `UPDATE nutrition_library_items
+         SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by_name = ?, modified_by_type = ?
+         WHERE id = ?`,
+        [url, actor.name, actor.type, food.id],
+      );
+
+      const { rows } = await db.query(
+        `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name
+         FROM nutrition_library_items nli WHERE nli.id = ?`,
+        [food.id],
+      );
+      const [categoriesMap, qualitiesMap, translationsMap] = await Promise.all([
+        loadCategoriesMap([food.id]), loadQualitiesMap([food.id]), loadTranslationsMap([food.id]),
+      ]);
+      const item = {
+        ...rows[0],
+        categories: categoriesMap[food.id] ?? [],
+        qualities: qualitiesMap[food.id] ?? [],
+        translations: translationsMap[food.id] ?? {},
+      };
+      recordAudit(req, {
+        action: 'update',
+        entityType: 'nutrition_library_item',
+        entityId: food.id,
+        previous: { image_url: staleUrl },
+        next: { image_url: url },
+      });
+      res.json(item);
+    } catch (err) { next(err); }
+  },
+);
 
 /* ── Update (gym-owned items only — system items are read-only here) ─────── */
 

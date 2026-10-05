@@ -147,8 +147,8 @@ beforeAll(async () => {
   baseExerciseId = await createExercise(null, 'Test Video Base Exercise');
   otherGymExerciseId = await createExercise(otherGymId, 'Test Video Other Gym Exercise');
 
-  videoKey = `${gymPrefix}/Exercises/Videos/${exerciseId}-Test-Video-Barbell-Press.mp4`;
-  posterKey = `${gymPrefix}/Exercises/Videos/${exerciseId}-Test-Video-Barbell-Press-thumbnail.png`;
+  videoKey = `${gymPrefix}/exercises/videos/${exerciseId}-Test-Video-Barbell-Press.mp4`;
+  posterKey = `${gymPrefix}/exercises/videos/${exerciseId}-Test-Video-Barbell-Press-thumbnail.png`;
 });
 
 afterAll(async () => {
