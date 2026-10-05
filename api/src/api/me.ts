@@ -19,6 +19,7 @@ import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary'
 import { localizedExerciseNameExpr } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
 import { parseMemberPreferredLocaleInput, toMemberPreferredLocale } from '../domain/memberPreferredLocale';
+import { parseDeviceRegistration } from '../domain/deviceTokens';
 import { themeLogoUrl } from '../domain/themeLogo';
 import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
@@ -1628,6 +1629,84 @@ meRouter.put('/notifications/:id/read', requireRole('member'), async (req: Reque
       [req.params.id, gymId, memberId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Notification not found or already read' });
+    res.status(204).send();
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+// ── Push device tokens ──────────────────────────────────────────────────────
+
+/**
+ * #1072 (mobile app WP1): register this device for push.
+ *
+ * An **upsert**, because the native shell registers on every sign-in (WP2) and a
+ * token that has not changed must not accumulate rows — the repeat call simply
+ * refreshes `last_seen_at`. It is also what takes a shared device over: the
+ * unique key is `(platform, token)` and not the member, so a second member
+ * signing in on the same phone re-points the row at themselves rather than
+ * leaving the first member's alerts going to a device that is no longer theirs
+ * (migration 221's note).
+ *
+ * The member is the authenticated one and is never read from the request
+ * (`resolveMemberId()`), so there is no member id to tamper with, and the write
+ * carries `gym_id` like every other query here.
+ */
+meRouter.post('/devices', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  // `parseDeviceRegistration()` is the only place the body is judged, so an
+  // unknown platform or a blank token is a 400 here rather than a row that can
+  // never be delivered to (and that would hold the unique key).
+  const parsed = parseDeviceRegistration(req.body);
+  if (!parsed.registration) return res.status(400).json({ error: parsed.error });
+  const { platform, token, appId } = parsed.registration;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    await db.query(
+      `INSERT INTO member_device_tokens (gym_id, member_id, platform, app_id, token)
+       VALUES (?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE gym_id = VALUES(gym_id), member_id = VALUES(member_id),
+                               app_id = VALUES(app_id), last_seen_at = UTC_TIMESTAMP()`,
+      [gymId, memberId, platform, appId, token],
+    );
+    const { rows } = await db.query(
+      // Scoped by gym and member although the upsert above has just re-pointed
+      // both at this caller: the unique key is global, so an unscoped read
+      // would be relying on that write for its safety rather than saying it
+      // (CLAUDE.md — every query filters by `gym_id`).
+      `SELECT id, platform, app_id, last_seen_at, created_at
+         FROM member_device_tokens
+        WHERE gym_id = ? AND member_id = ? AND platform = ? AND token = ?`,
+      [gymId, memberId, platform, token],
+    );
+    // The token itself is not echoed: the caller already has it, and it is the
+    // one value here that identifies a device.
+    res.status(201).json(rows[0]);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/**
+ * #1072: unregister this device (WP2 calls it on sign-out).
+ *
+ * Scoped to the authenticated member's own rows, so another member's token is a
+ * 404 rather than a silent deletion — which is the whole of this route's
+ * authorization, since the token is the only thing the path names.
+ */
+meRouter.delete('/devices/:token', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const { rowCount } = await db.query(
+      'DELETE FROM member_device_tokens WHERE gym_id = ? AND member_id = ? AND token = ?',
+      [gymId, memberId, req.params.token],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Device token not found' });
     res.status(204).send();
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });

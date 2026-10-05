@@ -1,4 +1,5 @@
 import { db } from './db';
+import { deliverPushNotifications, type PushTarget } from './push';
 
 export type NotificationType =
   | 'booking_confirmed'
@@ -39,6 +40,22 @@ export interface NotificationPayload {
   [key: string]: unknown;
 }
 
+/**
+ * #1072 (mobile app WP1): the push copy of a notification.
+ *
+ * Every writer below ends here, and all of it is deliberately *after* the
+ * insert and never awaited. The durable fact is the `member_notifications` row
+ * the Members App reads; a push is a courtesy copy of it, so a deployment with
+ * no FCM credentials, an unreachable Firebase or a member with no registered
+ * device all cost the push and nothing else — never the row, and never the
+ * request that wrote it. `deliverPushNotifications()` returns immediately (and
+ * does not touch the database at all) when this deployment has no credentials,
+ * which is what keeps it inert in tests and in local development.
+ */
+function push(gymId: string, targets: PushTarget[]): void {
+  deliverPushNotifications(gymId, targets);
+}
+
 export function sendNotification(
   gymId: string,
   memberId: number,
@@ -51,7 +68,10 @@ export function sendNotification(
     `INSERT INTO member_notifications (gym_id, member_id, type, entity_type, entity_id, payload)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [gymId, memberId, type, entityType, entityId, JSON.stringify(payload)],
-  ).catch((err: any) => console.error('[notifications] insert failed:', err));
+  ).then(
+    () => push(gymId, [{ memberId, type, entityType, entityId, payload }]),
+    (err: any) => console.error('[notifications] insert failed:', err),
+  );
 }
 
 /** One row for `recordNotifications`. */
@@ -87,6 +107,12 @@ export async function recordNotifications(gymId: string, rows: NotificationRow[]
      VALUES ${placeholders}`,
     params,
   );
+  // #1072: the push copy is still fire-and-forget even though the insert is
+  // awaited — the caller is a nightly job that reports how many alerts it
+  // raised, and that count is about the rows, not about Firebase.
+  push(gymId, rows.map((r) => ({
+    memberId: r.memberId, type: r.type, entityType: r.entityType, entityId: r.entityId, payload: r.payload,
+  })));
   return rowCount;
 }
 
@@ -104,5 +130,8 @@ export function sendBulkNotification(
   db.query(
     `INSERT INTO member_notifications (gym_id, member_id, type, entity_type, entity_id, payload) VALUES ${placeholders}`,
     params,
-  ).catch((err: any) => console.error('[notifications] bulk insert failed:', err));
+  ).then(
+    () => push(gymId, memberIds.map((memberId) => ({ memberId, type, entityType, entityId, payload }))),
+    (err: any) => console.error('[notifications] bulk insert failed:', err),
+  );
 }
