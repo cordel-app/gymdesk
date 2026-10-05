@@ -108,27 +108,17 @@ describe('Membership Plans: every subsection action is beside its title (#963)',
     expect(plansSrc).toContain('const sectionLabelSt: React.CSSProperties = cardSectionTitleStyle;');
   });
 
-  it('puts each section editor\'s Save/Cancel in that section\'s header', () => {
-    for (const open of [
-      'isEditing && pricingForPlanId === plan.id ? sectionSaveActions({',
-      'isEditing && durationEditForPlanId === plan.id ? sectionSaveActions({',
-      'isEditing && isEditingBenefit(plan.id, section) ? sectionSaveActions({',
-      'isEditing && centersForPlanId === plan.id ? sectionSaveActions({',
+  it('renders each section editor\'s Save/Cancel at the bottom of its editor (#1131)', () => {
+    // Exactly one call per section that has an editor, and none of them in a header.
+    expect(plansSrc.match(/\? sectionSaveActions\(\{/g) ?? []).toHaveLength(0);
+    expect(plansSrc.match(/\{sectionSaveActions\(\{/g) ?? []).toHaveLength(4);
+    for (const handler of [
+      'onCancel: closePricingForm,',
+      'onCancel: cancelDurationEdit,',
+      'onCancel: cancelBenefitEdit,',
+      'onCancel: () => setCentersForPlanId(null),',
     ]) {
-      expect(plansSrc, `${open} — this section's actions are not in its header`).toContain(open);
-    }
-    // One pair per open section, and the four sections that have an editor.
-    expect(plansSrc.match(/\? sectionSaveActions\(\{/g) ?? []).toHaveLength(4);
-  });
-
-  it('leaves no Save/Cancel pair at the far right under a section editor', () => {
-    for (const gone of [
-      'onClick={closePricingForm} style={btnSmall(',
-      'onClick={cancelDurationEdit} style={btnSmall(',
-      'onClick={cancelBenefitEdit} style={btnSmall(',
-      'onClick={handleSaveCenters} style={btnSmall(',
-    ]) {
-      expect(plansSrc, `${gone} — a section's buttons are still under its fields`).not.toContain(gone);
+      expect(plansSrc, handler).toContain(handler);
     }
   });
 
