@@ -789,16 +789,12 @@ export default function PlansPage() {
     );
   }
 
-  // #963 — a section-level editor's Save/Cancel pair, rendered in that section's
-  // own header beside its title, where its `Edit` button was a moment ago. The
-  // pair used to sit at `justifyContent: 'flex-end'` under the fields, so the
-  // controls that commit a section appeared at the far right of the card and a
-  // section header read as empty while its editor was open.
-  //
-  // The buttons themselves are unchanged — the same `btnSmall` pair, the same
-  // handlers, the same `disabled`-while-saving state and the same labels (PRICING
-  // says `Save`, every other section `Save changes`). Only the error line stays
-  // in the body, under the fields it belongs to.
+  // #1131 — a section-level editor's Save/Cancel pair, rendered at the bottom of
+  // that editor, after all of its fields and help text, left-aligned like the
+  // card's other inline editors (#1028). The section's `Edit` button stays in
+  // its header beside the title (#963); only the form actions live down here.
+  // Buttons, handlers, saving state and labels are unchanged (PRICING says
+  // `Save`, every other section `Save changes`).
   function sectionSaveActions({ onCancel, onSave, saving, saveLabel }: {
     onCancel: () => void;
     onSave: () => void;
@@ -806,12 +802,12 @@ export default function PlansPage() {
     saveLabel: string;
   }) {
     return (
-      <>
+      <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
         <button onClick={onCancel} style={btnSmall('#888')}>{t('plans.cancel')}</button>
         <button onClick={onSave} disabled={saving} style={btnSmall()}>
           {saving ? t('plans.saving') : saveLabel}
         </button>
-      </>
+      </div>
     );
   }
 
@@ -1127,12 +1123,7 @@ export default function PlansPage() {
                             </button>
                           )}
                         </>
-                      ) : isEditing && pricingForPlanId === plan.id ? sectionSaveActions({
-                        onCancel: closePricingForm,
-                        onSave: () => handleSavePricing(plan.id),
-                        saving: pricingSaving,
-                        saveLabel: t('plans.save'),
-                      }) : null}
+                      ) : null}
                     />
                     {isEditing && pricingForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px', padding: 10, background: 'rgba(0,0,0,0.02)', borderRadius: 6 }}>
@@ -1188,8 +1179,14 @@ export default function PlansPage() {
                             </p>
                           );
                         })()}
-                        {/* #963: Save/Cancel moved up beside the PRICING title. */}
                         <p style={{ ...fieldDescStyle, margin: '0 0 8px' }}>{t('plans.pricing_save_hint')}</p>
+                        {/* #1131: the actions close the editor, after all its content. */}
+                        {sectionSaveActions({
+                          onCancel: closePricingForm,
+                          onSave: () => handleSavePricing(plan.id),
+                          saving: pricingSaving,
+                          saveLabel: t('plans.save'),
+                        })}
                       </div>
                     ) : (
                       <>
@@ -1263,12 +1260,7 @@ export default function PlansPage() {
                           disabled={!canWrite}
                           title={readOnlyTitle}
                         />
-                      ) : isEditing && durationEditForPlanId === plan.id ? sectionSaveActions({
-                        onCancel: cancelDurationEdit,
-                        onSave: () => saveDurationEdit(plan.id),
-                        saving: durationSaving,
-                        saveLabel: t('plans.save_changes'),
-                      }) : null}
+                      ) : null}
                     />
                     {isEditing && durationEditForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
@@ -1341,6 +1333,12 @@ export default function PlansPage() {
                           </div>
                           <div style={{ ...fieldDescStyle, marginLeft: 26 }}>{t('plans.desc_auto_renew')}</div>
                         </div>
+                        {sectionSaveActions({
+                          onCancel: cancelDurationEdit,
+                          onSave: () => saveDurationEdit(plan.id),
+                          saving: durationSaving,
+                          saveLabel: t('plans.save_changes'),
+                        })}
                       </div>
                     ) : (
                       <>
@@ -1398,12 +1396,7 @@ export default function PlansPage() {
                               disabled={!canWrite}
                               title={readOnlyTitle}
                             />
-                          ) : isEditing && isEditingBenefit(plan.id, section) ? sectionSaveActions({
-                            onCancel: cancelBenefitEdit,
-                            onSave: () => saveBenefitEdit(plan.id, endpoint),
-                            saving: benefitSaving,
-                            saveLabel: t('plans.save_changes'),
-                          }) : null}
+                          ) : null}
                         />
                         {isEditing && isEditingBenefit(plan.id, section) ? (
                           <div style={{ margin: '6px 0 10px' }}>
@@ -1418,6 +1411,12 @@ export default function PlansPage() {
                               enforceMandatory
                               benefitContext="plan"
                             />
+                            {sectionSaveActions({
+                              onCancel: cancelBenefitEdit,
+                              onSave: () => saveBenefitEdit(plan.id, endpoint),
+                              saving: benefitSaving,
+                              saveLabel: t('plans.save_changes'),
+                            })}
                           </div>
                         ) : (
                           <ProductBenefitView
@@ -1447,11 +1446,7 @@ export default function PlansPage() {
                           disabled={!canWrite}
                           title={readOnlyTitle}
                         />
-                      ) : isEditing && centersForPlanId === plan.id ? sectionSaveActions({
-                        onCancel: () => setCentersForPlanId(null),
-                        onSave: handleSaveCenters,
-                        saveLabel: t('plans.save_changes'),
-                      }) : null}
+                      ) : null}
                     />
                     {isEditing && centersForPlanId === plan.id ? (
                       <div style={{ margin: '6px 0 10px' }}>
@@ -1470,6 +1465,11 @@ export default function PlansPage() {
                             <label htmlFor={`center_${plan.id}_${c.id}`} style={{ fontSize: 13, cursor: 'pointer' }}>{c.name}</label>
                           </div>
                         ))}
+                        {sectionSaveActions({
+                          onCancel: () => setCentersForPlanId(null),
+                          onSave: handleSaveCenters,
+                          saveLabel: t('plans.save_changes'),
+                        })}
                       </div>
                     ) : (plan.centers ?? []).length === 0 ? (
                       <DetailRow label="" value={t('plans.all_centers')} />
