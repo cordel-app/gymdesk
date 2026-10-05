@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useGym } from '@/context/GymContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
-import { AppModule, canAccessModule, canWriteModule } from '@/config/permissions';
+import { AppModule, canAccessFeature, canWriteFeature } from '@/config/permissions';
 
 /**
  * #613: the one place a page asks "may this user read / write this module?".
@@ -22,14 +22,21 @@ export function useReadOnlyTitle(canWrite: boolean): string | undefined {
   return canWrite ? undefined : t('read_only_hint');
 }
 
-export function useModuleAccess(module: AppModule) {
+/**
+ * `featureKey` (#1070): the `feature_flags` key of the screen asking, when that
+ * feature declares a permission override. It is optional and changes nothing for
+ * a module with no override declared for the key — a page passes the same key it
+ * is gated by in `app.ts`, so the control it renders and the route it calls read
+ * one answer.
+ */
+export function useModuleAccess(module: AppModule, featureKey?: string) {
   const t = useTranslations('common');
   const { activeGym, isSuperadmin, loading } = useGym();
   const { isImpersonating } = useImpersonation();
   const actsAsSuperadmin = isSuperadmin && !isImpersonating;
   const role = activeGym?.role;
-  const canRead = actsAsSuperadmin || (!!role && canAccessModule(role, module));
-  const canWrite = actsAsSuperadmin || (!!role && canWriteModule(role, module));
+  const canRead = actsAsSuperadmin || (!!role && canAccessFeature(role, module, featureKey));
+  const canWrite = actsAsSuperadmin || (!!role && canWriteFeature(role, module, featureKey));
   return {
     loading,
     canRead,

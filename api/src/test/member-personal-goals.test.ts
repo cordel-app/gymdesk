@@ -18,16 +18,19 @@ const RUN = `${Date.now()}`;
 let gymId: string;
 let otherGymId: string;
 let frontDeskGymId: string;
+let trainerGymId: string;
 
 let memberId: number;
 let otherMemberId: number;
 let otherGymMemberId: number;
+let trainerMemberId: number;
 
 /** This gym's own catalogue row, and one of migration 206's System seeds. */
 let gymGoalId: number;
 let secondGymGoalId: number;
 let systemGoalId: number;
 let otherGymGoalId: number;
+let trainerGymGoalId: number;
 
 async function createMember(gym: string, name: string): Promise<number> {
   const { insertId } = await db.query(
@@ -86,11 +89,20 @@ beforeAll(async () => {
   frontDeskGymId = await createTestGym('MPG Front Desk Gym');
   await createTestMembership(frontDeskGymId, 'front_desk');
 
+  // #1070 §2: trainer_performance has 'R_ASSIGNED' on NUTRITION and an 'RW'
+  // override on `nutrition.personal_goals` — the key this router is mounted
+  // behind, so the goals a member holds are writable by that role too.
+  trainerGymId = await createTestGym('MPG Trainer Gym');
+  await createTestMembership(trainerGymId, 'trainer_performance');
+
   memberId = await createMember(gymId, `MPG Member ${RUN}`);
   otherMemberId = await createMember(gymId, `MPG Second Member ${RUN}`);
   otherGymMemberId = await createMember(otherGymId, `MPG Foreign Member ${RUN}`);
 
+  trainerMemberId = await createMember(trainerGymId, `MPG Trainer Member ${RUN}`);
+
   gymGoalId = await createGymGoal(gymId, `MPG Gym Goal ${RUN}`);
+  trainerGymGoalId = await createGymGoal(trainerGymId, `MPG Trainer Goal ${RUN}`);
   secondGymGoalId = await createGymGoal(gymId, `MPG Gym Goal Two ${RUN}`);
   otherGymGoalId = await createGymGoal(otherGymId, `MPG Foreign Goal ${RUN}`);
 
@@ -570,5 +582,30 @@ describe('assigned personal goals — statuses', () => {
     const res = await request.get(`${PATH}/statuses`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.statuses).toEqual(['in_progress', 'achieved', 'abandoned']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1070 §2 — the Personal Trainer's feature-level override
+// ---------------------------------------------------------------------------
+
+describe('assigned personal goals — Personal Trainer access (#1070)', () => {
+  it('lets a Personal Trainer assign, edit and remove a goal', async () => {
+    const created = await post(
+      { member_id: trainerMemberId, personal_goal_id: trainerGymGoalId, target_value: 3, target_unit: 'kg' },
+      trainerGymId,
+    );
+    expect(created.status).toBe(201);
+
+    const edited = await put(created.body.id, { target_value: 5 }, trainerGymId);
+    expect(edited.status).toBe(200);
+    expect(Number(edited.body.target_value)).toBe(5);
+
+    expect((await del(created.body.id, trainerGymId)).status).toBe(204);
+  });
+
+  it('still refuses a role the override was not declared for', async () => {
+    const res = await post({ member_id: memberId, personal_goal_id: gymGoalId }, frontDeskGymId);
+    expect(res.status).toBe(403);
   });
 });

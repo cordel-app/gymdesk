@@ -101,7 +101,7 @@ import { billingRouter } from './api/billing';
 import { recurringBookingsRouter } from './api/recurring-bookings';
 import { promotionLifecycleRouter } from './api/promotion-lifecycle';
 import { healthRouter } from './api/health';
-import { tenantContext, requireModuleAccess } from './infra/tenantContext';
+import { tenantContext, requireFeatureAccess, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
 import { publicRegistrationsRouter } from './api/public-registrations';
 import { websiteIntegrationRouter } from './api/website-integration';
@@ -316,12 +316,16 @@ app.use('/nutrition-library', requireAuth(), tenantContext, requireModuleAccess(
 // current value, so nothing changes on deploy): gated on the Library's key, hiding
 // Foods would 403 a section that is a different domain, and the nav item beside it
 // would be the only thing left pointing at it.
-app.use('/personal-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.personal_goals'), personalGoalsRouter);
-app.use('/nutrition-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), nutritionGoalsRouter);
+// #1070: `requireFeatureAccess` rather than `requireModuleAccess` on all three,
+// so a feature-level permission override (`FEATURE_PERMISSION_OVERRIDES`) is read
+// from the same key `requireFeatureEnabled` is given beside it. With no override
+// declared for a key the guard answers exactly what the module gate did.
+app.use('/personal-goals', requireAuth(), tenantContext, requireFeatureAccess('nutrition.personal_goals', 'NUTRITION'), requireFeatureEnabled('nutrition.personal_goals'), personalGoalsRouter);
+app.use('/nutrition-goals', requireAuth(), tenantContext, requireFeatureAccess('nutrition.nutrition_library', 'NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library'), nutritionGoalsRouter);
 // #948 §4: Assigned Personal Goals. Behind the **Personal Goals** flag and not a
 // Nutrition one — the assignments are the catalogue's own domain (§8), and a gym
 // that hid Personal Goals hid the goals its members hold with them.
-app.use('/member-personal-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.personal_goals'), memberPersonalGoalsRouter);
+app.use('/member-personal-goals', requireAuth(), tenantContext, requireFeatureAccess('nutrition.personal_goals', 'NUTRITION'), requireFeatureEnabled('nutrition.personal_goals'), memberPersonalGoalsRouter);
 // #809: mounted on the Nutrition group flag, so turning the Nutrition Plans page off leaves the Dashboard readable.
 app.use('/nutrition/dashboard', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition'), nutritionDashboardRouter);
 

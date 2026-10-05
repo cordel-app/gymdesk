@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { alertTextColor } from './formChrome';
 
 export interface ContextMenuItem {
   label: string;
@@ -82,7 +83,7 @@ export function ContextMenu({ items, ariaLabel }: { items: ContextMenuItem[]; ar
               onClick={() => { if (item.disabled) return; setOpen(false); item.onClick(); }}
               style={{
                 ...itemStyle,
-                color: item.danger ? '#c0392b' : 'var(--gd-dropdown-text, #111827)',
+                color: item.danger ? alertTextColor : 'var(--gd-dropdown-text, #111827)',
                 ...(item.disabled ? { opacity: 0.45, cursor: 'not-allowed' } : {}),
               }}
               onMouseEnter={(e) => { if (item.disabled) return; (e.currentTarget.style.background = 'var(--gd-dropdown-hover-bg, #f5f5f5)'); }}

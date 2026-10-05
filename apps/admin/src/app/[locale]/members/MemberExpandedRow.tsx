@@ -97,7 +97,7 @@ export function MemberExpandedRow({
   editing,
   canManageTraining,
   canManagePackages,
-  canManageNutrition,
+  canManagePersonalGoals,
   isAdmin,
   plans,
 }: {
@@ -125,8 +125,12 @@ export function MemberExpandedRow({
   editing: boolean;
   canManageTraining: boolean;
   canManagePackages: boolean;
-  /** #948 §4: write access to NUTRITION, which the PERSONAL GOALS section needs. */
-  canManageNutrition: boolean;
+  /**
+   * #948 §4: write access to the PERSONAL GOALS section — NUTRITION, read
+   * through `nutrition.personal_goals`'s own permission override (#1070), which
+   * is what `/member-personal-goals` enforces.
+   */
+  canManagePersonalGoals: boolean;
   isAdmin: boolean;
   plans: Plan[];
 }) {
@@ -606,7 +610,7 @@ export function MemberExpandedRow({
               for Promotions and why this section carries its own controls; they all
               belong to Edit mode (#957), so the read-only view has none of them. */}
           <Section label={t('members.section_personal_goals')} divider={false}>
-            <MemberPersonalGoals memberId={memberId} canWrite={canManageNutrition} editing={editing} />
+            <MemberPersonalGoals memberId={memberId} canWrite={canManagePersonalGoals} editing={editing} />
           </Section>
         </>
       )}

@@ -199,18 +199,26 @@ export const formHelpTextStyle: React.CSSProperties = {
   color: '#888',
 };
 
+/**
+ * The app's one red: a failed save's line, a validation message, a destructive
+ * `⋮` item (`ContextMenu`'s `danger`) and, since #1070, an explicitly overridden
+ * permission on the Feature Flags page. It is exported so a surface that needs
+ * that red spreads this value rather than spelling the hex again.
+ */
+export const alertTextColor = '#c0392b';
+
 /** A validation message under the field it belongs to. */
 export const formFieldErrorStyle: React.CSSProperties = {
   margin: '4px 0 0',
   fontSize: 12,
-  color: '#c0392b',
+  color: alertTextColor,
 };
 
 /** A form-level error: the one line a failed save reports itself on. */
 export const formErrorStyle: React.CSSProperties = {
   margin: '10px 0 0',
   fontSize: 13,
-  color: '#c0392b',
+  color: alertTextColor,
 };
 
 /**

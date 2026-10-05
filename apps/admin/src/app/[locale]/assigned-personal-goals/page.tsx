@@ -31,7 +31,9 @@ export default function AssignedPersonalGoalsPage() {
 
   // #613: impersonation-aware (superadmins included); read-only roles see the
   // section's controls disabled rather than hidden.
-  const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION');
+  // #1070: gated on `nutrition.personal_goals`, the key this section is mounted
+  // behind, so a Personal Trainer's `RW` override reaches the assignments too.
+  const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION', 'nutrition.personal_goals');
 
   if (gymLoading) return null;
 

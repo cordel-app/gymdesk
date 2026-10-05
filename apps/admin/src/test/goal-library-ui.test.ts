@@ -506,7 +506,9 @@ describe('Personal Goals is its own section (#948 §1, §3, §5, §6, §8, §9)'
 
   it('keeps the gym page on the NUTRITION module and the platform page on none', () => {
     // #806: the permission is the page's, never the shared section's.
-    expect(personalPageSrc).toContain("useModuleAccess('NUTRITION')");
+    // #1070: the module, read through Personal Goals' own feature key, whose
+    // permission override the API enforces on the very routes this page calls.
+    expect(personalPageSrc).toContain("useModuleAccess('NUTRITION', 'nutrition.personal_goals')");
     expect(personalPageSrc).toContain('canWrite={canWrite}');
     expect(cordelPersonalPageSrc).not.toContain('useModuleAccess');
     expect(cordelPersonalPageSrc).toMatch(/canWrite\s*$/m);
@@ -569,13 +571,15 @@ describe('Personal Goals is its own section (#948 §1, §3, §5, §6, §8, §9)'
 
   it('gates the gym list on its own feature flag, not the Nutrition Library\'s', () => {
     // A section of a different domain must not be hidden by hiding Foods.
+    // #1070: the module gate reads the same key beside it, so a feature-level
+    // permission override applies to exactly this section.
     expect(apiAppSrc).toContain(
-      "app.use('/personal-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.personal_goals')",
+      "app.use('/personal-goals', requireAuth(), tenantContext, requireFeatureAccess('nutrition.personal_goals', 'NUTRITION'), requireFeatureEnabled('nutrition.personal_goals')",
     );
     expect(navSrc).toContain("featureKey: 'nutrition.personal_goals'");
     // Nutrition Goals is still a tab of the Nutrition Library, so it keeps its key.
     expect(apiAppSrc).toContain(
-      "app.use('/nutrition-goals', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library')",
+      "app.use('/nutrition-goals', requireAuth(), tenantContext, requireFeatureAccess('nutrition.nutrition_library', 'NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library')",
     );
   });
 });

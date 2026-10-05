@@ -172,3 +172,66 @@ export function canWrite(role: AppRole, module: AppModule): boolean {
   const p = getPermission(role, module);
   return p === 'RW' || p === 'RW_ASSIGNED';
 }
+
+/**
+ * #1070 — a **feature-level permission override**.
+ *
+ * The matrix above is per *module*, and a module is coarse on purpose: one cell
+ * answers for every screen of that section. An override is the exception to
+ * that, declared per **feature key** (the same dot-separated keys
+ * `feature_flags` and the navigation are built from), and it says: whatever the
+ * module gives this role, on *this* feature the role has that level instead.
+ *
+ * It is one declaration — mirrored for menus and page controls in
+ * `apps/admin/src/config/permissions.ts`, which
+ * `api/src/test/feature-permission-overrides.unit.test.ts` keeps in step —
+ * because an override that reached only one side would show a write control the
+ * API rejects, or hide one it allows (#611's defect, which is why the module
+ * matrix is mirrored at all).
+ *
+ * Two properties are the rule rather than the implementation. It is matched on
+ * the **exact** key a guard is given and never on an ancestor, so granting
+ * `nutrition.personal_goals` says nothing about the rest of `nutrition` — that
+ * narrowness is the whole point of overriding at the feature level. And it
+ * replaces the module's level rather than widening it, in both directions: a
+ * `NONE` override takes a feature away from a role the module admits.
+ *
+ * The one override today is #1070's: a **Personal Trainer**
+ * (`trainer_performance`) has `RW` on Personal Goals, where `NUTRITION` gives
+ * them `R_ASSIGNED`. It is deliberately not a change to the `NUTRITION` cell —
+ * that would hand them the Nutrition Library, the plan templates and every
+ * member's nutrition plan with it.
+ */
+export const FEATURE_PERMISSION_OVERRIDES: Record<string, Partial<Record<AppRole, PermissionLevel>>> = {
+  'nutrition.personal_goals': { trainer_performance: 'RW' },
+};
+
+/** The level a feature key overrides for a role, or `null` when it inherits. */
+export function featurePermissionOverride(
+  featureKey: string | undefined,
+  role: AppRole,
+): PermissionLevel | null {
+  if (!featureKey) return null;
+  return FEATURE_PERMISSION_OVERRIDES[featureKey]?.[role] ?? null;
+}
+
+/** The level that actually applies: the feature's own override, else the module's. */
+export function getFeaturePermission(
+  role: AppRole,
+  module: AppModule,
+  featureKey?: string,
+): PermissionLevel {
+  return featurePermissionOverride(featureKey, role) ?? getPermission(role, module);
+}
+
+/** `canAccess` for a single feature of a module (#1070). */
+export function canAccessFeature(role: AppRole, module: AppModule, featureKey?: string): boolean {
+  const p = getFeaturePermission(role, module, featureKey);
+  return p !== 'NONE' && p !== 'R_OWN';
+}
+
+/** `canWrite` for a single feature of a module (#1070). */
+export function canWriteFeature(role: AppRole, module: AppModule, featureKey?: string): boolean {
+  const p = getFeaturePermission(role, module, featureKey);
+  return p === 'RW' || p === 'RW_ASSIGNED';
+}

@@ -41,7 +41,11 @@ export default function PersonalGoalsPage() {
 
   // #613: impersonation-aware (superadmins included); read-only roles see the
   // section's controls disabled rather than hidden.
-  const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION');
+  // #1070: the key is this section's own (`nutrition.personal_goals`), so the
+  // Personal Trainer override the API enforces also decides the controls this
+  // page offers — a page that asked for the module alone would hide the `+ Add`
+  // from a role whose writes the route accepts.
+  const { canWrite, readOnlyTitle } = useModuleAccess('NUTRITION', 'nutrition.personal_goals');
   const { toast } = useToast();
 
   /** The goal `⋮ → Assign goal to member` was launched from, or none (§5). */

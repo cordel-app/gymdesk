@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
+import { getTenantContext, requireFeatureWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
 import { actorSnapshot, clampLimit, clampOffset } from '../domain/nutritionLibrary';
+// The catalogue's own feature key, so this router and `/personal-goals` are
+// gated by one declaration (#1070 — a feature-level permission override applies
+// to the key, so the two halves of Personal Goals cannot be granted apart).
+import { GOAL_LIBRARY_FEATURE_KEYS } from '../domain/goalLibrary';
 import {
   PERSONAL_GOAL_ASSIGNMENT_STATUSES,
   buildAssignmentListWhere,
@@ -44,6 +48,12 @@ import {
  *   client sending only `{ status }` cannot wipe a target the gym typed.
  */
 export const memberPersonalGoalsRouter = Router();
+
+// #1070: writes are gated on `nutrition.personal_goals` rather than on the
+// NUTRITION module alone, so a Personal Trainer's `RW` override reaches the
+// goals a member holds and nothing else of Nutrition. With no override declared
+// it answers exactly what `requireModuleWrite('NUTRITION')` did.
+const requireWrite = requireFeatureWrite(GOAL_LIBRARY_FEATURE_KEYS.personal, 'NUTRITION');
 
 /**
  * The columns every assignment-shaped response returns, declared once so the
@@ -191,7 +201,7 @@ memberPersonalGoalsRouter.get('/:id', async (req, res, next) => {
 
 /* ── Assign ───────────────────────────────────────────────────────────────── */
 
-memberPersonalGoalsRouter.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
   const { gymId, actorName, isSuperadmin } = getTenantContext(req);
 
   const memberId = Number(req.body?.member_id);
@@ -295,7 +305,7 @@ memberPersonalGoalsRouter.post('/', requireModuleWrite('NUTRITION'), async (req,
 
 /* ── Edit ─────────────────────────────────────────────────────────────────── */
 
-memberPersonalGoalsRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
   const { gymId, actorName, isSuperadmin } = getTenantContext(req);
   const { id } = req.params;
 
@@ -365,7 +375,7 @@ memberPersonalGoalsRouter.put('/:id', requireModuleWrite('NUTRITION'), async (re
 
 /* ── Unassign (soft delete) ───────────────────────────────────────────────── */
 
-memberPersonalGoalsRouter.delete('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+memberPersonalGoalsRouter.delete('/:id', requireWrite, async (req, res, next) => {
   const { gymId, actorName, isSuperadmin } = getTenantContext(req);
   const { id } = req.params;
   const actor = actorSnapshot({ name: actorName, isSuperadmin });

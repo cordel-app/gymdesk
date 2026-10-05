@@ -140,6 +140,19 @@ Access is governed by a static `PERMISSION_MATRIX` in `api/src/infra/permissions
 | SYSTEM | RW | NONE | NONE | NONE | NONE | NONE | NONE |
 | CORDEL | NONE | NONE | NONE | NONE | NONE | NONE | NONE |
 
+#### Feature-level permission overrides (#1070)
+
+A module cell answers for every screen of its section, which is coarse on purpose. `FEATURE_PERMISSION_OVERRIDES` (`api/src/infra/permissions.ts`, mirrored in `apps/admin/src/config/permissions.ts`) is the exception: one entry per **feature key** — the same dot-separated keys `feature_flags` and the navigation use — saying that a role has that level on *that* feature whatever its module gives it.
+
+* Resolution is `getFeaturePermission(role, module, featureKey)` = the override, else the module cell. It matches the **exact** key and never an ancestor, so `nutrition.personal_goals` says nothing about the rest of `nutrition`, and it *replaces* the module level in both directions (a `NONE` override takes a feature away from a role the module admits).
+* Enforcement is `requireFeatureAccess(featureKey, module)` / `requireFeatureWrite(featureKey, module)` (`infra/tenantContext.ts`), given the same key the route is already mounted behind with `requireFeatureEnabled`. A route with no override declared for its key behaves exactly as the module guards did.
+* The frontend asks `useModuleAccess(module, featureKey)`; the parity between the two declarations is `api/src/test/feature-permission-overrides.unit.test.ts` (in the API suite, since CI runs `npm test` in `api/` only).
+* Cordel → Feature Flags reports them: `GET /platform/feature-flags/role-access` answers `access` (the module matrix, keyed by the key's first segment) **and** `overrides` (keyed by the full feature key), and the page draws an overridden value in the app's red with the inherited ones unchanged.
+
+The same page names a flag after the section it gates (#1070 §1): `apps/admin/src/lib/featureFlagLabels.ts` resolves a feature key to the **navigation's own** `labelKey` (`config/navigationGroups.ts`), so `nutrition` reads *Nutrition & Goals* because #948 renamed that group — there is no second spelling of a section name, the stored key is untouched and still printed beside the label, and a key the navigation does not gate (the `member_web.*` flags) keeps the short key the page always showed.
+
+The one override today: **`nutrition.personal_goals` × `trainer_performance` = `RW`** (#1070 §2). It covers the Personal Goals catalogue (`/personal-goals`) and the assignments (`/member-personal-goals`), both of which are mounted on that key, and deliberately not the rest of NUTRITION — changing the `NUTRITION` cell would hand a Personal Trainer the Nutrition Library, the plan templates and every member's nutrition plan.
+
 **CALENDAR (#614, from #247)** gates `/calendar-events` and `/class-sessions` (mount + all their write routes); it used to ride on TRAINING, where front desk was read-only, so the admin app offered front desk calendar editing that the API rejected. Front desk now creates and edits events; nutritionist is read-only.
 
 Routers are mounted with `requireModuleAccess(module)` (non-NONE, non-R_OWN gate); write routes inside them add `requireModuleWrite(module)` (RW or RW_ASSIGNED). Use `requireRole('admin')` only for explicit last-admin guards or admin-only operations within a module.
