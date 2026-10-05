@@ -112,7 +112,14 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
 
   const goalOptions: GoalOption[] = useMemo(
     () => goals
-      .map((g) => ({ id: g.id, name: goalDisplayName(g, 'personal', (key) => tGoals(key as any)), gym_id: g.gym_id }))
+      .map((g) => ({
+        id: g.id,
+        name: goalDisplayName(g, 'personal', (key) => tGoals(key as any)),
+        gym_id: g.gym_id,
+        // #1034: the catalogue's own target, so the picker pre-fills it.
+        target_value: g.target_value ?? null,
+        target_unit: g.target_unit ?? null,
+      }))
       .sort((a, b) => a.name.localeCompare(b.name, locale)),
     [goals, tGoals, locale],
   );

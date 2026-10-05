@@ -12,8 +12,11 @@
  *
  * They are deliberately **two tables** and not one with a `kind` column: §8 of
  * the ticket keeps the concepts separate in the data model as well as the UI,
- * and §9 already has a Nutrition Goal eventually carrying a target value
- * ("150 g protein") that a Personal Goal never will.
+ * and the two are on diverging paths — since #1034 a **Personal** Goal carries a
+ * measurable target (migration 218) while a Nutrition Goal's own target values
+ * ("2,000 kcal") are still a later ticket's, which is exactly the divergence a
+ * discriminator column could not express. `MEASURABLE_GOAL_KINDS` below is the
+ * one place that says which kinds have the pair.
  *
  * Ownership is the Foods library's, unchanged (§5): `gym_id IS NULL` is a
  * **System** row, administered from Cordel and read-only to every gym; a
@@ -45,6 +48,28 @@ export const GOAL_STATUSES = ['active', 'deleted'] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];
 
 /**
+ * #1034 §1 — which kinds carry a **target** (`target_value` + `target_unit`,
+ * migration 218). Exactly one does.
+ *
+ * It is a declaration rather than a branch on the kind in each router because
+ * the two catalogues are served by one factory: the list's projection, the
+ * create and the update all ask this, so a kind cannot have the pair in one
+ * statement and not in the next — and `nutrition_goals` has no such columns, so
+ * a router that projected them anyway would answer ER_BAD_FIELD_ERROR, which the
+ * global handler turns into a bare 500 (#966).
+ *
+ * Making a second kind measurable therefore goes in **three** places: this list,
+ * the two columns plus their CHECKs on that kind's table, and the admin's own
+ * mirror (`MEASURABLE_GOAL_KINDS` in
+ * `apps/admin/src/components/goalLibrary/goalProfile.ts`).
+ */
+export const MEASURABLE_GOAL_KINDS: readonly GoalLibraryKind[] = ['personal'];
+
+export function isMeasurableGoalKind(kind: GoalLibraryKind): boolean {
+  return MEASURABLE_GOAL_KINDS.includes(kind);
+}
+
+/**
  * The System rows migration 206 seeds, in display order.
  *
  * The slugs are the ones the Nutrition Plan routers already validate a plan
@@ -68,6 +93,27 @@ export const SYSTEM_PERSONAL_GOALS = [
   { slug: 'recovery', name: 'Recovery' },
   { slug: 'energy', name: 'Energy' },
 ] as const;
+
+/**
+ * #1034 §2 — the target migration 218 seeds onto each System **Personal** Goal,
+ * keyed by slug. A slug absent from the map deliberately has none: Performance,
+ * Recovery and Energy carry no magnitude or unit that follows from what they
+ * represent, and a number invented for them would be the "same generic target"
+ * §2 forbids wearing a different value (§13 requires a unit only "for measurable
+ * goals", which is the same concession). `—` is a legitimate target, and a gym
+ * may set one on its own copy of the goal or per assignment.
+ *
+ * It mirrors `SEED_TARGETS` in that migration — the migration is plain JS and
+ * cannot import this module — and `goal-library-domain.unit.test.ts` asserts the
+ * two agree, so a default changed in one place fails the build rather than
+ * drifting.
+ */
+export const SYSTEM_PERSONAL_GOAL_TARGETS: Record<string, { value: number; unit: string }> = {
+  weight_loss: { value: 3, unit: 'kg' },
+  weight_gain: { value: 3, unit: 'kg' },
+  muscle_gain: { value: 2, unit: 'kg' },
+  maintenance: { value: 0, unit: 'kg' },
+};
 
 export const SYSTEM_NUTRITION_GOALS = [
   { slug: 'calories', name: 'Calories' },
