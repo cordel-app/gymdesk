@@ -369,12 +369,18 @@ Tick items off in the PR that completes them.
       destination objects, but if that sweep itself could not run (the log line is
       *"Failed theme clone left an orphaned object in Cloudflare R2"*) the keys it names sit under a
       `themes/<theme_id>-…/` folder whose id no `themes` row carries, so they are safe to delete by hand.
-- [ ] **Import the Base Exercise catalogue** (#964): `cd api && npm run exercises:import-free-db`
-      against the real database. It needs no `CLOUDFLARE_R2_*` credentials — the import stores no image
-      at all — but it does need outbound HTTPS to fetch the dataset, or a local copy passed with
-      `--from <file>` (set `FREE_EXERCISE_DB_URL` if you mirror it). Run `--dry-run` first: it prints the
-      same report without writing. The run is idempotent (a second pass reports every exercise
-      *unchanged*), never aborts on one record, and exits non-zero if anything failed. **Read the report**:
+- [ ] **Import the Base Exercise catalogue** (#964): run the **Import Base Exercises** workflow
+      (`.github/workflows/exercises-import.yml`, `workflow_dispatch`), picking the environment. It runs the
+      importer from the VPS against that environment's database — the same reason migrations run there, since
+      the database is VCN-private and a GitHub runner cannot reach it — using the API image already deployed,
+      so deploy first if the host has none. Locally the same thing is `cd api && npm run exercises:import-free-db`
+      against whatever `api/.env` points at. It needs no `CLOUDFLARE_R2_*` credentials — the import stores no
+      image at all — but it does need outbound HTTPS to fetch the dataset, or a local copy passed with
+      `--from <file>` (set `FREE_EXERCISE_DB_URL`, or the workflow's `dataset_url` input, if you mirror it).
+      The workflow's `dry_run` defaults to **true**: it prints the same report without writing, so the first
+      dispatch is always a rehearsal and the real import is a second one with the box unticked.
+      The run is idempotent (a second pass reports every exercise *unchanged*), never aborts on one
+      record, and exits non-zero if anything failed. **Read the report**:
       `Potential duplicates` are Base Exercises whose name or slug the dataset claims but which carry
       another source id — nothing is merged, they are yours to reconcile — and `New muscles created` lists
       any muscle key stored on a link that `MUSCLE_KEYS` does not offer yet, which needs a code change

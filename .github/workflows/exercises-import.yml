@@ -1,0 +1,109 @@
+name: Import Base Exercises
+
+# #964 — runs the Free Exercise DB importer against a real database.
+#
+# The importer itself is `api/src/scripts/import-free-exercise-db.ts`, merged in
+# #1001; this workflow is only how it gets *executed*, and it exists because
+# there was no way to do that at all: the database is VCN-private, so a GitHub
+# runner cannot reach it, which is the same reason `deploy.yml` runs migrations
+# from the VPS rather than from CI. Without this, "import the catalogue" was a
+# checklist line in docs/go-to-production.md that nobody could carry out without
+# an SSH session and knowledge of where the compiled script lives in the image.
+#
+# Manual dispatch only, never a schedule: a catalogue import is an operator
+# action taken when the dataset has moved, not a nightly job. It is safe to run
+# repeatedly — the import is idempotent by construction (`(source, source_id)`
+# first, then slug, then an exact name), so a second run reports every exercise
+# *unchanged* and writes nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment whose database to import into
+        type: choice
+        options: [dev, production]
+        default: dev
+      dry_run:
+        description: Print the report without writing anything
+        type: boolean
+        # Defaults to true for the reason billing-run.yml defaults to `dev`: a
+        # dispatch nobody thought about should report, not write.
+        default: true
+      dataset_url:
+        description: Dataset URL (blank = the importer's own default)
+        type: string
+        default: ''
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/fitness-api
+
+jobs:
+  import:
+    name: Free Exercise DB import
+    runs-on: ubuntu-24.04-arm
+    environment: ${{ inputs.environment }}
+
+    steps:
+      - name: Import on the VPS
+        uses: appleboy/ssh-action@v1
+        # The same four runtime DB variables the API itself is deployed with —
+        # the importer writes `gym_id IS NULL` rows through the ordinary runtime
+        # user, not the DDL-privileged migrations one, because it runs no DDL.
+        # No CLOUDFLARE_R2_* : the import stores no image at all (§10).
+        env:
+          CORDEL_FITNESS_DB_HOST: ${{ secrets.CORDEL_FITNESS_DB_HOST }}
+          CORDEL_FITNESS_DB_USER: ${{ secrets.CORDEL_FITNESS_DB_USER }}
+          CORDEL_FITNESS_DB_PASSWORD: ${{ secrets.CORDEL_FITNESS_DB_PASSWORD }}
+          CORDEL_FITNESS_DB_NAME: ${{ secrets.CORDEL_FITNESS_DB_NAME }}
+          FREE_EXERCISE_DB_URL: ${{ inputs.dataset_url }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        with:
+          host: ${{ secrets.CORBACK_SSH_HOST }}
+          username: podman
+          key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
+          envs: CORDEL_FITNESS_DB_HOST,CORDEL_FITNESS_DB_USER,CORDEL_FITNESS_DB_PASSWORD,CORDEL_FITNESS_DB_NAME,FREE_EXERCISE_DB_URL,DRY_RUN
+          # ssh-action's default is 10m and the run fetches ~1MB and writes 876
+          # rows one transaction each; 20m leaves room without hiding a hang.
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+
+            for v in CORDEL_FITNESS_DB_HOST CORDEL_FITNESS_DB_USER \
+                     CORDEL_FITNESS_DB_PASSWORD CORDEL_FITNESS_DB_NAME; do
+              if [ -z "${!v:-}" ]; then
+                echo "ERROR: $v is not set for this GitHub environment. Nothing was imported."
+                exit 1
+              fi
+            done
+
+            # Deliberately no `podman pull`: this runs the image that is
+            # *deployed*, so the catalogue is written by the same code serving
+            # the API rather than by whatever :latest happens to be in GHCR.
+            IMAGE=ghcr.io/${{ env.IMAGE_NAME }}:latest
+            if ! podman image exists "$IMAGE"; then
+              echo "ERROR: $IMAGE is not present on this host — deploy the API first (Deploy API workflow)."
+              exit 1
+            fi
+
+            ARGS=""
+            if [ "${DRY_RUN}" = "true" ]; then ARGS="--dry-run"; fi
+            # Blank means the importer's own FREE_EXERCISE_DB_DEFAULT_URL; an
+            # empty variable would otherwise be passed as an empty URL.
+            if [ -z "${FREE_EXERCISE_DB_URL:-}" ]; then unset FREE_EXERCISE_DB_URL; fi
+
+            # `tsx` is a devDependency and `src/` is not in the runner image, so
+            # the compiled script is what runs here — `api/package.json`'s
+            # `exercises:import-free-db` is the same entry point for local use.
+            # The script exits non-zero if any exercise failed, so a red run is
+            # the notification; read the report for `Potential duplicates` and
+            # `New muscles created`, which are reported and never acted on.
+            podman run --rm \
+              ${FREE_EXERCISE_DB_URL:+-e FREE_EXERCISE_DB_URL="$FREE_EXERCISE_DB_URL"} \
+              -e CORDEL_FITNESS_DB_HOST="$CORDEL_FITNESS_DB_HOST" \
+              -e CORDEL_FITNESS_DB_USER="$CORDEL_FITNESS_DB_USER" \
+              -e CORDEL_FITNESS_DB_PASSWORD="$CORDEL_FITNESS_DB_PASSWORD" \
+              -e CORDEL_FITNESS_DB_NAME="$CORDEL_FITNESS_DB_NAME" \
+              "$IMAGE" \
+              node dist/scripts/import-free-exercise-db.js $ARGS

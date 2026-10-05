@@ -51,10 +51,19 @@
  * catalogue is platform data, so there is no gym request to hang an endpoint off
  * and no `tenantCtx` actor to record an audit row with — the run's own report is
  * the record, exactly as the nutrition backfill's is.
+ *
+ * Two things about *running* it, both #964's reopen. `import 'dotenv/config'`
+ * comes before `../infra/db`, which builds its pool at module scope: the
+ * deferred `config()` this file used to call in its body was reached only after
+ * that pool had already thrown, so the documented `npm run` invocation failed on
+ * a correct `api/.env`. And against a deployed database it runs from the VPS
+ * through `.github/workflows/exercises-import.yml`, as
+ * `node dist/scripts/import-free-exercise-db.js` — `tsx` is a devDependency and
+ * `src/` is not in the runner image.
  */
 
 import { readFileSync } from 'node:fs';
-import { config } from 'dotenv';
+import 'dotenv/config';
 import { db } from '../infra/db';
 import {
   ExistingBaseExercise,
@@ -71,8 +80,6 @@ import {
   planExerciseImport,
   slugifyExerciseName,
 } from '../domain/freeExerciseDb';
-
-config();
 
 interface Options {
   dryRun: boolean;
