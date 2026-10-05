@@ -10,6 +10,7 @@ import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -307,7 +308,7 @@ export default function OperatingHoursPage() {
                 );
               })}
               {weeklyError && <p style={errorStyle}>{weeklyError}</p>}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+              <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
                 <button onClick={saveWeekly} disabled={!canWrite || weeklySaving} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)}>
                   {weeklySaving ? t('saving') : t('save_weekly')}
                 </button>
@@ -326,7 +327,7 @@ export default function OperatingHoursPage() {
               <div style={{ padding: '16px 20px' }}>
                 {renderHolidayForm(inlineNew, setInlineNew, t)}
                 {inlineNewError && <p style={errorStyle}>{inlineNewError}</p>}
-                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
                   <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
                   <button onClick={saveInlineNew} disabled={inlineNewSaving} style={primaryBtnSmall()}>
                     {inlineNewSaving ? t('saving') : t('save_changes')}
@@ -355,7 +356,7 @@ export default function OperatingHoursPage() {
                     <div style={{ padding: '16px 20px' }}>
                       {renderHolidayForm(editForm, setEditForm, t)}
                       {editError && <p style={errorStyle}>{editError}</p>}
-                      <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12 }}>
+                      <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
                         <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
                         <button onClick={() => saveEdit(h.id)} disabled={editSaving} style={primaryBtnSmall()}>
                           {editSaving ? t('saving') : t('save_changes')}

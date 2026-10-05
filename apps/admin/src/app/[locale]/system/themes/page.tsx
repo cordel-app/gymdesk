@@ -41,6 +41,7 @@ import {
 } from '@/components/ThemeMembersImagesEditor';
 import { btnSmall, primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
+import { formActionsRowStyle } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -686,7 +687,7 @@ export default function ThemesPage() {
           ))}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end', borderTop: '1px solid var(--gd-border, #eee)', paddingTop: 16 }}>
+        <div style={{ ...formActionsRowStyle, marginTop: 20 }}>
           <button onClick={closeEditor} style={btnSmall('#888')}>{t('cancel')}</button>
           <button
             onClick={() => handleSave(id)}

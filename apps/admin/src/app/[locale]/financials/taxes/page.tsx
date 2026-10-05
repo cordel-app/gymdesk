@@ -18,6 +18,7 @@ import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
   listCellClasses, listNameBadgeStyle, listScrollerClass,
 } from '@/components/listChrome';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -353,7 +354,7 @@ export default function TaxesPage() {
             </div>
           </div>
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div style={inlineActionsRowStyle}>
             <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
             <button onClick={saveInlineNew} disabled={inlineNew.saving} style={primaryBtnSmall()}>
               {inlineNew.saving ? t('saving') : t('save')}
@@ -452,7 +453,7 @@ export default function TaxesPage() {
               />
             </div>
             {editError && <p style={errorStyle}>{editError}</p>}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <div style={inlineActionsRowStyle}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
               <button onClick={() => handleSave(item)} disabled={editSaving} style={primaryBtnSmall()}>
                 {editSaving ? t('saving') : t('save')}

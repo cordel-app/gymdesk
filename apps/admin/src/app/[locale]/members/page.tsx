@@ -35,6 +35,7 @@ import {
 } from './memberTabs';
 import { Tabs } from '@/components/Tabs';
 import { validateDocumentId } from '@/lib/documentId';
+import { modalActionsRowStyle } from '@/components/formChrome';
 
 interface Plan {
   id: number;
@@ -783,7 +784,7 @@ export default function MembersPage() {
 
             {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
 
-            <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+            <div style={{ ...modalActionsRowStyle, marginTop: 20 }}>
               <button onClick={closeModal} style={btnStyle('#aaa')} disabled={saving}>{t('members.cancel')}</button>
               <button onClick={handleAdd} style={primaryBtnStyle()} disabled={saving}>
                 {saving ? t('members.saving') : t('members.modal_add')}

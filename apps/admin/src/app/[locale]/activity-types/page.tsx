@@ -22,6 +22,7 @@ import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyS
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
 import { WAITLIST_MODES } from '@/lib/waitlistModes';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -747,7 +748,7 @@ export default function ActivityTypesPage() {
           />
         </div>
         {ruleError && <p style={errorStyle}>{ruleError}</p>}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <div style={inlineActionsRowStyle}>
           <button onClick={onCancel} style={btnSmall('#888')}>{ts('cancel')}</button>
           <button onClick={onSave} disabled={ruleSaving} style={primaryBtnSmall()}>
             {ruleSaving ? ts('saving') : saveLabel}
@@ -1025,7 +1026,7 @@ export default function ActivityTypesPage() {
             )}
 
             {editError && <p style={errorStyle}>{editError}</p>}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginBottom: 16 }}>
+            <div style={{ ...inlineActionsRowStyle, marginBottom: 16 }}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
               <button onClick={() => handleSave(row)} disabled={editSaving} style={primaryBtnSmall()}>
                 {editSaving ? t('saving') : t('save_changes')}
@@ -1120,7 +1121,7 @@ export default function ActivityTypesPage() {
             </div>
           </div>
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div style={inlineActionsRowStyle}>
             <button onClick={() => setInlineNew(null)} style={btnSmall('#888')}>{t('cancel')}</button>
             <button onClick={saveInlineNew} disabled={inlineNew.saving} style={primaryBtnSmall()}>
               {inlineNew.saving ? t('saving') : t('save_changes')}

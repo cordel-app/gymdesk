@@ -16,6 +16,7 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 /**
  * A Nutrition Library food as the food pickers need it. `categories` is a list
@@ -657,7 +658,7 @@ function MealRow({
             onChanged={onChanged}
           />
 
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+          <div style={{ ...inlineActionsRowStyle, marginTop: 14 }}>
             <button onClick={cancelEdit} style={cancelBtnStyle}>{t('nutrition_plan_templates.cancel')}</button>
             <button onClick={saveMeal} disabled={saving} style={btnSmall()}>
               {saving ? t('nutrition_plan_templates.saving') : t('nutrition_plan_templates.save_changes')}

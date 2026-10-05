@@ -24,6 +24,7 @@ import {
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
 import { WorkoutTemplateTree, WtHierarchy, TemplateDropTarget } from './WorkoutTemplateTree';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -488,7 +489,7 @@ export default function WorkoutTemplatesPage() {
             </div>
           </div>
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div style={inlineActionsRowStyle}>
             <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
             <button onClick={saveInlineNew} disabled={inlineNew.saving} style={primaryBtnSmall()}>
               {inlineNew.saving ? t('saving') : t('save_changes')}
@@ -613,7 +614,7 @@ export default function WorkoutTemplatesPage() {
             />
 
             {editError && <p style={errorStyle}>{editError}</p>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+            <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
               <button onClick={() => handleSave(wt)} disabled={editSaving} style={primaryBtnSmall()}>
                 {editSaving ? t('saving') : t('save_changes')}

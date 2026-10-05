@@ -213,21 +213,48 @@ export const formErrorStyle: React.CSSProperties = {
   color: '#c0392b',
 };
 
-/** The row a form's Cancel/Save pair sits on, separated from the fields above. */
+/**
+ * The row a form's Cancel/Save pair sits on, separated from the fields above.
+ *
+ * #1028: **left-aligned**, like every other action group of a form in this app.
+ * It sat at `justifyContent: 'flex-end'` until then, so the two buttons that
+ * commit a card-level form ended up at the far right of the card while the
+ * fields they commit, and the pair of every section-level editor beside them
+ * (`inlineActionsRowStyle`), start at the content margin. Which row a pair sits
+ * on is still this module's decision and not the form's — what changed is that
+ * all three rows below answer the alignment question the same way, by declaring
+ * no `justifyContent` at all, so flex's own default is the rule and a form
+ * cannot pick a side by spelling one of its own.
+ */
 export const formActionsRowStyle: React.CSSProperties = {
   display: 'flex',
-  justifyContent: 'flex-end',
   gap: 10,
   marginTop: 16,
   paddingTop: 14,
   borderTop: '1px solid var(--gd-card-border, #ececf0)',
 };
 
-/** The same pair inside a section-level editor: left-aligned, no rule above. */
+/** The same pair inside a section-level or inline editor: no rule above it. */
 export const inlineActionsRowStyle: React.CSSProperties = {
   display: 'flex',
   gap: 8,
   marginTop: 10,
+};
+
+/**
+ * And the same pair in a dialog — the footer of the Modal CRUD form shape
+ * (`CrudModal`) and of the hand-rolled `New <entity>` dialogs beside it.
+ *
+ * #1028: a third row rather than a `formActionsRowStyle` with its hairline
+ * removed, because a dialog's footer carries the modal's own spacing (a wider
+ * gap, more room above it) and no separator — the modal's edge already is one.
+ * Left-aligned for the reason above: it is a form's action group.
+ */
+export const modalActionsRowStyle: React.CSSProperties = {
+  display: 'flex',
+  gap: 10,
+  marginTop: 24,
+  alignItems: 'center',
 };
 
 /**
