@@ -53,4 +53,4 @@
                     ├── bookings.png                                       — tamaño definido por el diseño
                     ├── background.png                                     — tamaño definido por el diseño
                     ├── goals.png                                          — tamaño definido por el diseño                    
-                    └── products_membership.png                            — tamaño definido por el diseño
+                    └── products_services.png                            — tamaño definido por el diseño
