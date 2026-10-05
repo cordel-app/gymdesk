@@ -3159,6 +3159,7 @@
     "label_description": "Descripció",
     "label_translations": "Traduccions",
     "label_media": "Multimèdia",
+    "image_after_create": "Crea primer l'aliment i després puja la seva imatge des d'Editar.",
     "no_image": "Sense imatge",
     "section_audit": "Auditoria",
     "created_by": "Creat per",

@@ -209,8 +209,8 @@ describe('POST /exercises/:id/image', () => {
     const res = await upload(exerciseId, { image: MASTER, thumbnail: THUMBNAIL });
     expect(res.status).toBe(200);
 
-    const imageKey = `${gymPrefix}/Exercises/Images/${exerciseId}-Test-Image-Barbell-Press.png`;
-    const thumbKey = `${gymPrefix}/Exercises/Images/${exerciseId}-Test-Image-Barbell-Press-thumbnail.png`;
+    const imageKey = `${gymPrefix}/exercises/images/${exerciseId}-Test-Image-Barbell-Press.png`;
+    const thumbKey = `${gymPrefix}/exercises/images/${exerciseId}-Test-Image-Barbell-Press-thumbnail.png`;
     expect(putKeys()).toEqual([imageKey, thumbKey]);
     for (const command of sentCommands('put')) {
       expect(command.input).toMatchObject({ Bucket: R2_BUCKET });
@@ -400,8 +400,8 @@ describe('POST /exercises/:id/image — replacement', () => {
     expect(res.status).toBe(200);
     expect(res.body.image_url).toContain('Barbell-Press-Renamed.png');
     expect(deletedKeys().sort()).toEqual([
-      `${gymPrefix}/Exercises/Images/${exerciseId}-Test-Image-Barbell-Press-thumbnail.png`,
-      `${gymPrefix}/Exercises/Images/${exerciseId}-Test-Image-Barbell-Press.png`,
+      `${gymPrefix}/exercises/images/${exerciseId}-Test-Image-Barbell-Press-thumbnail.png`,
+      `${gymPrefix}/exercises/images/${exerciseId}-Test-Image-Barbell-Press.png`,
     ]);
     expect(before.image_url).not.toBe(res.body.image_url);
   });
@@ -429,8 +429,8 @@ describe('POST /exercises/:id/image — legacy URL forms', () => {
   afterEach(() => { delete process.env.CLOUDFLARE_R2_PUBLIC_URL; });
 
   it('writes the public URL and does not delete the object it just re-uploaded under the legacy form', async () => {
-    const masterKey = `${gymPrefix}/Exercises/Images/${exerciseId}-Test-Image-Barbell-Press.png`;
-    const thumbnailKey = `${gymPrefix}/Exercises/Images/${exerciseId}-Test-Image-Barbell-Press-thumbnail.png`;
+    const masterKey = `${gymPrefix}/exercises/images/${exerciseId}-Test-Image-Barbell-Press.png`;
+    const thumbnailKey = `${gymPrefix}/exercises/images/${exerciseId}-Test-Image-Barbell-Press-thumbnail.png`;
     await setMedia(exerciseId, url(masterKey), url(thumbnailKey));
     const res = await upload(exerciseId, { image: MASTER, thumbnail: THUMBNAIL });
     expect(res.status).toBe(200);
@@ -467,8 +467,8 @@ describe('DELETE /exercises/:id/image', () => {
     expect(res.body.image_thumbnail_url).toBeNull();
     expect(await mediaOf(exerciseId)).toEqual({ image_url: null, image_thumbnail_url: null });
     expect(deletedKeys().sort()).toEqual([
-      `${gymPrefix}/Exercises/Images/${exerciseId}-Test-Image-Barbell-Press-thumbnail.png`,
-      `${gymPrefix}/Exercises/Images/${exerciseId}-Test-Image-Barbell-Press.png`,
+      `${gymPrefix}/exercises/images/${exerciseId}-Test-Image-Barbell-Press-thumbnail.png`,
+      `${gymPrefix}/exercises/images/${exerciseId}-Test-Image-Barbell-Press.png`,
     ]);
   });
 

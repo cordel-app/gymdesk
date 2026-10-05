@@ -52,7 +52,7 @@ interface Exercise {
   status: 'active' | 'inactive';
   /**
    * The 2048×2048 master (#716). For a base exercise the object behind it always
-   * lives in `cordel/Exercises/Images/`; the column is the same one a gym-owned
+   * lives in `cordel/exercises/images/`; the column is the same one a gym-owned
    * exercise uses, and the row's ownership is what decides the folder.
    */
   image_url: string | null;
@@ -60,7 +60,7 @@ interface Exercise {
   image_thumbnail_url: string | null;
   /**
    * The demonstration video (#717). An uploaded MP4 lives in
-   * `cordel/Exercises/Videos/`; on a row that was never uploaded to, the same
+   * `cordel/exercises/videos/`; on a row that was never uploaded to, the same
    * column may still hold an external link (a YouTube URL), which is why the
    * card never assumes it can be played inline.
    */

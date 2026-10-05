@@ -216,7 +216,7 @@ describe('Happy path', () => {
     expect(sendMock).toHaveBeenCalledTimes(1);
 
     const expectedPrefix = `${gymId}-StorageUploadsGym`;
-    const expectedBase = `${R2_ENDPOINT}/${R2_BUCKET}/${expectedPrefix}/Exercises/Images/`;
+    const expectedBase = `${R2_ENDPOINT}/${R2_BUCKET}/${expectedPrefix}/exercises/images/`;
     expect(res.body.url.startsWith(expectedBase)).toBe(true);
     expect(res.body.url.slice(expectedBase.length)).toMatch(/^[0-9a-f-]{36}\.png$/);
 
@@ -256,61 +256,21 @@ describe('Happy path', () => {
   });
 });
 
-// ─── #417 stage 3: POST /storage/uploads/nutrition-image ────────────────────
-// Shares handleImageUpload() with exercise-image (validation/503/409/502 all
-// already covered above) — this route only needs its own guard + folder path.
-
-function uploadNutritionImageTo(id: string) {
-  return request
-    .post('/storage/uploads/nutrition-image')
-    .set('Authorization', TEST_AUTH_HEADER)
-    .set('x-gym-id', id);
-}
-
-describe('POST /storage/uploads/nutrition-image', () => {
-  it('returns 401 without auth', async () => {
+// #417 stage 3's `POST /storage/uploads/nutrition-image` is gone (#1035): its
+// `<prefix>/Nutrition/Images/<uuid>.<ext>` key could carry neither the food's id
+// nor its name, so it was replaced by the per-row
+// `POST /nutrition-library/:id/image` — covered by `nutrition-library-images.test.ts`,
+// with the guards it shares with the route above still pinned there.
+describe('POST /storage/uploads/nutrition-image (retired by #1035)', () => {
+  it('no longer exists', async () => {
     setStorageConfigured();
     const res = await request
       .post('/storage/uploads/nutrition-image')
+      .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .set('Content-Type', 'image/png')
       .send(Buffer.from('fake-png-bytes'));
-    expect(res.status).toBe(401);
-  });
-
-  it('returns 403 for accountant role (NUTRITION module is NONE for accountant)', async () => {
-    setStorageConfigured();
-    const accountantGym = await createTestGym('Storage Uploads Accountant Gym');
-    await createTestMembership(accountantGym, 'accountant');
-
-    const res = await uploadNutritionImageTo(accountantGym)
-      .set('Content-Type', 'image/png')
-      .send(Buffer.from('fake-png-bytes'));
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(404);
     expect(sendMock).not.toHaveBeenCalled();
-  });
-
-  it('returns 403 for front_desk role (NUTRITION module is read-only, requireModuleWrite blocks)', async () => {
-    setStorageConfigured();
-    const frontDeskGym = await createTestGym('Storage Uploads Nutrition FrontDesk Gym');
-    await createTestMembership(frontDeskGym, 'front_desk');
-
-    const res = await uploadNutritionImageTo(frontDeskGym)
-      .set('Content-Type', 'image/png')
-      .send(Buffer.from('fake-png-bytes'));
-    expect(res.status).toBe(403);
-    expect(sendMock).not.toHaveBeenCalled();
-  });
-
-  it('returns 201 with the uploaded image URL under the Nutrition/Images folder', async () => {
-    const res = await uploadNutritionImageTo(gymId)
-      .set('Content-Type', 'image/png')
-      .send(Buffer.from('fake-png-bytes'));
-    expect(res.status).toBe(201);
-    expect(sendMock).toHaveBeenCalledTimes(1);
-
-    const expectedBase = `${R2_ENDPOINT}/${R2_BUCKET}/${gymId}-StorageUploadsGym/Nutrition/Images/`;
-    expect(res.body.url.startsWith(expectedBase)).toBe(true);
-    expect(res.body.url.slice(expectedBase.length)).toMatch(/^[0-9a-f-]{36}\.png$/);
   });
 });

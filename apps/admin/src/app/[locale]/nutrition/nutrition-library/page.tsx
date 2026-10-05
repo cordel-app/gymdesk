@@ -29,7 +29,7 @@ import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/component
 import { LibraryTabs } from '@/components/goalLibrary/LibraryTabs';
 import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
 import { LibraryTabId, isGoalTab } from '@/components/goalLibrary/goalProfile';
-import { inlineActionsRowStyle } from '@/components/formChrome';
+import { formHelpTextStyle, inlineActionsRowStyle } from '@/components/formChrome';
 
 interface Category { id: number; slug: string }
 interface NutritionalQuality { id: number; slug: string }
@@ -286,6 +286,14 @@ export default function NutritionLibraryPage() {
     onCancel: () => void,
     onSave: () => void,
     saveLabel: string,
+    /**
+     * The food this form is editing, or `null` while it is creating one. #1035
+     * made a food's image an object keyed by the row's own id and name
+     * (`nutrition/<food_id>-<name>.<ext>`), so there is nothing to upload against
+     * until the row exists — the create form says so instead of offering a
+     * control, exactly as Cordel's Base library already does.
+     */
+    itemId: number | null,
     autoFocusRef?: React.RefObject<HTMLInputElement>,
   ) {
     return (
@@ -304,12 +312,18 @@ export default function NutritionLibraryPage() {
           <div>
             <label style={inlineLabelStyle}>{t('nutrition_library.label_media')}</label>
             {/* #799 §17: uploading, replacing and removing the image happens here
-                and nowhere else — the expanded card shows it read-only. */}
-            <ImageUploadField
-              uploadPath="/storage/uploads/nutrition-image"
-              value={form.imageUrl}
-              onChange={(url) => setForm({ ...form, imageUrl: url })}
-            />
+                and nowhere else — the expanded card shows it read-only. The path
+                is the food's own since #1035, because the key carries its id and
+                name. */}
+            {itemId === null ? (
+              <p style={formHelpTextStyle}>{t('nutrition_library.image_after_create')}</p>
+            ) : (
+              <ImageUploadField
+                uploadPath={`/nutrition-library/${itemId}/image`}
+                value={form.imageUrl}
+                onChange={(url) => setForm({ ...form, imageUrl: url })}
+              />
+            )}
           </div>
         </div>
         <div style={{ marginBottom: 12 }}>
@@ -442,7 +456,7 @@ export default function NutritionLibraryPage() {
       {/* Inline create row */}
       {creating && (
         <div style={cardStyle(true)}>
-          {renderInlineForm(newForm, setNewForm, newError, newSaving, cancelInlineNew, saveInlineNew, t('nutrition_library.create'), newNameRef)}
+          {renderInlineForm(newForm, setNewForm, newError, newSaving, cancelInlineNew, saveInlineNew, t('nutrition_library.create'), null, newNameRef)}
         </div>
       )}
 
@@ -455,7 +469,7 @@ export default function NutritionLibraryPage() {
         emptyText={t('nutrition_library.empty_filtered')}
         renderExpanded={(item) => (
           editingId === item.id ? (
-            renderInlineForm(editForm, setEditForm, editError, editSaving, cancelEdit, () => handleInlineSave(item), t('nutrition_library.save'))
+            renderInlineForm(editForm, setEditForm, editError, editSaving, cancelEdit, () => handleInlineSave(item), t('nutrition_library.save'), item.id)
           ) : (
             /* #799 §1–§7: expanding reads. The complete item, strictly read-only,
                with no image control and no Edit affordance — `⋮ → Edit` is the only

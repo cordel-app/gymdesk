@@ -8,20 +8,21 @@
 // module re-exports `isGymOwnedImageUrl()` rather than growing a second copy
 // that could drift from it.
 
-import { sanitizeExerciseImageName } from './exerciseImages';
+import { EXERCISE_VIDEOS_STORAGE_FOLDER } from '../infra/storage';
+import { EXERCISE_FOLDER, sanitizeExerciseImageName } from './exerciseImages';
 import { readPngMetadata } from './pngImage';
 import { isMp4Brand, readMp4Metadata, videoCodecNames } from './mp4Video';
 
 /**
- * `Exercises/Videos` — the leaf of the gym's own folder tree (`GYM_FOLDERS` in
+ * `exercises/videos` — the leaf of the gym's own folder tree (`GYM_FOLDERS` in
  * `infra/storage.ts`) that holds exercise videos. #719 §18 fixes it: a gym's
- * upload goes here and never under `cordel/Exercises/Videos/`, which stays the
- * platform's (#717).
+ * upload goes here and never under `cordel/exercises/videos/`, which stays the
+ * platform's (#717). Re-exported from `infra/storage.ts`, lowercase since #1035.
  */
-export const EXERCISE_VIDEOS_FOLDER = 'Exercises/Videos';
+export const EXERCISE_VIDEOS_FOLDER = EXERCISE_VIDEOS_STORAGE_FOLDER;
 
 /**
- * `<gym prefix>/Exercises/Videos/<exercise_id>-<sanitized name>.mp4` — the key a
+ * `<gym prefix>/exercises/videos/<exercise_id>-<sanitized name>.mp4` — the key a
  * Gym Exercise's video is stored under (#719 §7).
  *
  * Same construction as the image keys: the id leads so two exercises whose names
@@ -47,11 +48,11 @@ export function buildGymExerciseVideoPosterKey(folderPrefix: string, exerciseId:
 
 /**
  * Every folder marker between the bucket root and the gym's
- * `Exercises/Videos/`, outermost first — the same belt-and-braces
+ * `exercises/videos/`, outermost first — the same belt-and-braces
  * `gymExerciseImageFolderKeys()` applies for a gym whose tree predates a folder.
  */
 export function gymExerciseVideoFolderKeys(folderPrefix: string): string[] {
-  return [`${folderPrefix}/`, `${folderPrefix}/Exercises/`, `${folderPrefix}/${EXERCISE_VIDEOS_FOLDER}/`];
+  return [`${folderPrefix}/`, `${folderPrefix}/${EXERCISE_FOLDER}/`, `${folderPrefix}/${EXERCISE_VIDEOS_FOLDER}/`];
 }
 
 // ─── Upload rules (#719 §7, §21) ──────────────────────────────────────────────

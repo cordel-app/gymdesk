@@ -11,14 +11,14 @@ import {
   planExerciseMediaRefresh,
 } from '../domain/exerciseMediaImport';
 
-const SYSTEM_IMAGE = 'https://r2.example.com/bucket/cordel/Exercises/Images/12-Barbell-Press.png';
-const SYSTEM_THUMB = 'https://r2.example.com/bucket/cordel/Exercises/Images/12-Barbell-Press-thumbnail.png';
-const SYSTEM_VIDEO = 'https://r2.example.com/bucket/cordel/Exercises/Videos/12-Barbell-Press.mp4';
-const SYSTEM_POSTER = 'https://r2.example.com/bucket/cordel/Exercises/Videos/12-Barbell-Press-thumbnail.png';
-const GYM_IMAGE = 'https://r2.example.com/bucket/gyms/g1-Fit/Exercises/Images/44-Barbell-Press.png';
-const GYM_THUMB = 'https://r2.example.com/bucket/gyms/g1-Fit/Exercises/Images/44-Barbell-Press-thumbnail.png';
-const GYM_VIDEO = 'https://r2.example.com/bucket/gyms/g1-Fit/Exercises/Videos/44-Barbell-Press.mp4';
-const GYM_POSTER = 'https://r2.example.com/bucket/gyms/g1-Fit/Exercises/Videos/44-Barbell-Press-thumbnail.png';
+const SYSTEM_IMAGE = 'https://r2.example.com/bucket/cordel/exercises/images/12-Barbell-Press.png';
+const SYSTEM_THUMB = 'https://r2.example.com/bucket/cordel/exercises/images/12-Barbell-Press-thumbnail.png';
+const SYSTEM_VIDEO = 'https://r2.example.com/bucket/cordel/exercises/videos/12-Barbell-Press.mp4';
+const SYSTEM_POSTER = 'https://r2.example.com/bucket/cordel/exercises/videos/12-Barbell-Press-thumbnail.png';
+const GYM_IMAGE = 'https://r2.example.com/bucket/gyms/g1-Fit/exercises/images/44-Barbell-Press.png';
+const GYM_THUMB = 'https://r2.example.com/bucket/gyms/g1-Fit/exercises/images/44-Barbell-Press-thumbnail.png';
+const GYM_VIDEO = 'https://r2.example.com/bucket/gyms/g1-Fit/exercises/videos/44-Barbell-Press.mp4';
+const GYM_POSTER = 'https://r2.example.com/bucket/gyms/g1-Fit/exercises/videos/44-Barbell-Press-thumbnail.png';
 
 const NONE: ExerciseMediaRefs = {
   image_url: null, image_thumbnail_url: null, video_url: null, video_thumbnail_url: null,

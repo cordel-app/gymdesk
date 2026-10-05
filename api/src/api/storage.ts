@@ -4,6 +4,7 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import {
   describeStorageError,
+  EXERCISE_IMAGES_STORAGE_FOLDER,
   getMissingStorageConfigKeys,
   getStorageDiagnostics,
   isStorageConfigured,
@@ -85,13 +86,12 @@ storageRouter.post(
   requireModuleWrite('TRAINING'),
   requireFeatureEnabled('training.exercises'),
   imageBodyParser,
-  (req, res, next) => { handleImageUpload(req, res, 'Exercises/Images').catch(next); },
+  (req, res, next) => { handleImageUpload(req, res, EXERCISE_IMAGES_STORAGE_FOLDER).catch(next); },
 );
 
-storageRouter.post(
-  '/uploads/nutrition-image',
-  requireModuleWrite('NUTRITION'),
-  requireFeatureEnabled('nutrition.nutrition_library'),
-  imageBodyParser,
-  (req, res, next) => { handleImageUpload(req, res, 'Nutrition/Images').catch(next); },
-);
+// #417 stage 3's `POST /uploads/nutrition-image` is **gone** (#1035). It wrote
+// `<prefix>/Nutrition/Images/<uuid>.<ext>`, a key that could carry neither the
+// food's id nor its name, so §4/§5's `nutrition/<food_id>-<food_name>` shape is
+// unreachable from a route that never sees the row. Its replacement is the
+// per-row `POST /nutrition-library/:id/image`, which also keeps the gym and
+// platform sides of a food's image one key shape apart.

@@ -220,7 +220,7 @@ export async function backfillBaseNutritionImages(
   }
 
   for (const food of pending) {
-    const key = buildBaseNutritionImageKey(food.name);
+    const key = buildBaseNutritionImageKey(food.id, food.name);
     try {
       const supplied = options.fromDir ? findSuppliedImage(options.fromDir, food) : null;
       const png = supplied ?? renderNutritionImage({

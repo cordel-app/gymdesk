@@ -48,32 +48,32 @@ afterEach(() => {
 const url = (key: string) => `${R2_ENDPOINT}/${R2_BUCKET}/${key}`;
 
 describe('buildBaseExerciseImageKey', () => {
-  it('stores a base exercise under cordel/Exercises/Images/<id>-<Name>.png (§1, §13)', () => {
+  it('stores a base exercise under cordel/exercises/images/<id>-<Name>.png (§1, §13)', () => {
     expect(buildBaseExerciseImageKey(123, 'Barbell Back Squat'))
-      .toBe('cordel/Exercises/Images/123-Barbell-Back-Squat.png');
+      .toBe('cordel/exercises/images/123-Barbell-Back-Squat.png');
   });
 
   it('names the thumbnail with -thumbnail before the extension', () => {
     expect(buildBaseExerciseImageThumbnailKey(456, 'Bench Press'))
-      .toBe('cordel/Exercises/Images/456-Bench-Press-thumbnail.png');
+      .toBe('cordel/exercises/images/456-Bench-Press-thumbnail.png');
   });
 
   it('hangs off the platform root, never a gym prefix (§15)', () => {
     const key = buildBaseExerciseImageKey(7, 'Lat Pulldown');
     expect(key.startsWith(`${PLATFORM_STORAGE_ROOT}/`)).toBe(true);
     expect(key).not.toContain('gyms/');
-    expect(PLATFORM_EXERCISE_IMAGES_PREFIX).toBe('cordel/Exercises/Images');
+    expect(PLATFORM_EXERCISE_IMAGES_PREFIX).toBe('cordel/exercises/images');
   });
 
   it('sanitizes the name deterministically (§14)', () => {
     expect(buildBaseExerciseImageKey(9, 'Cable Row, Seated'))
-      .toBe('cordel/Exercises/Images/9-Cable-Row-Seated.png');
+      .toBe('cordel/exercises/images/9-Cable-Row-Seated.png');
     expect(buildBaseExerciseImageKey(9, 'Cable Row, Seated'))
       .toBe(buildBaseExerciseImageKey(9, 'Cable Row, Seated'));
     // Slashes and doubled separators collapse to single hyphens; combining marks
     // are stripped, so an accented name reads as itself rather than as a break.
     expect(buildBaseExerciseImageKey(10, 'Press  militar / máquina'))
-      .toBe('cordel/Exercises/Images/10-Press-militar-maquina.png');
+      .toBe('cordel/exercises/images/10-Press-militar-maquina.png');
   });
 
   it('keeps the id in both keys, so two names that sanitize alike never collide', () => {
@@ -88,13 +88,13 @@ describe('buildBaseExerciseImageKey', () => {
   });
 
   it('falls back to a name rather than producing "<id>-.png"', () => {
-    expect(buildBaseExerciseImageKey(4, '!!!')).toBe('cordel/Exercises/Images/4-exercise.png');
+    expect(buildBaseExerciseImageKey(4, '!!!')).toBe('cordel/exercises/images/4-exercise.png');
   });
 
   it('is the same leaf a gym uses, under a different root (§15)', () => {
     expect(buildGymExerciseImageKey(GYM_PREFIX, 5, 'Squat'))
-      .toBe(`${GYM_PREFIX}/Exercises/Images/5-Squat.png`);
-    expect(buildBaseExerciseImageKey(5, 'Squat')).toBe('cordel/Exercises/Images/5-Squat.png');
+      .toBe(`${GYM_PREFIX}/exercises/images/5-Squat.png`);
+    expect(buildBaseExerciseImageKey(5, 'Squat')).toBe('cordel/exercises/images/5-Squat.png');
   });
 });
 
@@ -102,20 +102,20 @@ describe('baseExerciseImageFolderKeys', () => {
   it('lists every marker from the platform root down, outermost first', () => {
     expect(baseExerciseImageFolderKeys()).toEqual([
       'cordel/',
-      'cordel/Exercises/',
-      'cordel/Exercises/Images/',
+      'cordel/exercises/',
+      'cordel/exercises/images/',
     ]);
   });
 });
 
 describe('isPlatformOwnedExerciseImageUrl', () => {
-  it('accepts an object under cordel/Exercises/Images/', () => {
-    expect(isPlatformOwnedExerciseImageUrl(url('cordel/Exercises/Images/12-Squat.png'))).toBe(true);
-    expect(isPlatformOwnedExerciseImageUrl(url('cordel/Exercises/Images/12-Squat-thumbnail.png'))).toBe(true);
+  it('accepts an object under cordel/exercises/images/', () => {
+    expect(isPlatformOwnedExerciseImageUrl(url('cordel/exercises/images/12-Squat.png'))).toBe(true);
+    expect(isPlatformOwnedExerciseImageUrl(url('cordel/exercises/images/12-Squat-thumbnail.png'))).toBe(true);
   });
 
   it("refuses a gym's own object — a platform operation never deletes one", () => {
-    expect(isPlatformOwnedExerciseImageUrl(url(`${GYM_PREFIX}/Exercises/Images/12-Squat.png`))).toBe(false);
+    expect(isPlatformOwnedExerciseImageUrl(url(`${GYM_PREFIX}/exercises/images/12-Squat.png`))).toBe(false);
   });
 
   it('refuses another platform feature\'s object', () => {
@@ -131,11 +131,11 @@ describe('isPlatformOwnedExerciseImageUrl', () => {
   });
 
   it('refuses a URL from another bucket or endpoint', () => {
-    expect(isPlatformOwnedExerciseImageUrl(`${R2_ENDPOINT}/other-bucket/cordel/Exercises/Images/12-Squat.png`)).toBe(false);
-    expect(isPlatformOwnedExerciseImageUrl(`https://elsewhere.example.com/${R2_BUCKET}/cordel/Exercises/Images/12-Squat.png`)).toBe(false);
+    expect(isPlatformOwnedExerciseImageUrl(`${R2_ENDPOINT}/other-bucket/cordel/exercises/images/12-Squat.png`)).toBe(false);
+    expect(isPlatformOwnedExerciseImageUrl(`https://elsewhere.example.com/${R2_BUCKET}/cordel/exercises/images/12-Squat.png`)).toBe(false);
   });
 
   it('anchors the prefix, so a sibling folder cannot pass as this one', () => {
-    expect(isPlatformOwnedExerciseImageUrl(url('cordel/Exercises/ImagesArchive/12-Squat.png'))).toBe(false);
+    expect(isPlatformOwnedExerciseImageUrl(url('cordel/exercises/imagesArchive/12-Squat.png'))).toBe(false);
   });
 });

@@ -47,12 +47,17 @@ export function ImageUploadField({ uploadPath, value, onChange, disabled }: Imag
     setUploading(true);
     setError(null);
     try {
-      const result = await apiFetch<{ url: string }>(uploadPath, {
+      // Two response shapes, because there are two kinds of upload route: the
+      // generic `POST /storage/uploads/:target` answers `{ url }`, while a
+      // per-row route (`POST /nutrition-library/:id/image`, #1035) answers the
+      // entity it just wrote, carrying the new URL as `image_url`. Reading both
+      // is what lets one control serve either without the caller declaring which.
+      const result = await apiFetch<{ url?: string; image_url?: string | null }>(uploadPath, {
         method: 'POST',
         headers: { 'Content-Type': file.type },
         body: file,
       });
-      onChange(result.url);
+      onChange(result.url ?? result.image_url ?? null);
     } catch (err: any) {
       setError(err.message ?? t('image_upload_error'));
     } finally {

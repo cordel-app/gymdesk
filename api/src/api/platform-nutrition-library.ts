@@ -354,8 +354,9 @@ platformNutritionLibraryRouter.put('/:id/translations', requireSuperadmin, async
 //
 // A Base Nutrition Library food is a `gym_id IS NULL` row and belongs to no gym,
 // so its image cannot hang off `gyms.storage_folder_prefix`. It goes in the
-// platform's own R2 folder, under a fresh key per upload,
-// `cordel/nutrition/<image_uuid>-<sanitized name>.png` (#715 §1, §9–§11).
+// platform's own R2 folder, at the key the row's own id and name give it,
+// `cordel/nutrition/<food_id>-<sanitized name>.png` (#715 §1, §9–§11; #1035 §12
+// made it the food's id rather than a UUID per upload).
 //
 // The route takes neither the folder nor the key from the request: the prefix is
 // the `cordel` constant, the food is looked up with `gym_id IS NULL` (so a
@@ -415,7 +416,7 @@ platformNutritionLibraryRouter.post(
       if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
 
       const food = existing[0];
-      const key = buildBaseNutritionImageKey(food.name);
+      const key = buildBaseNutritionImageKey(food.id, food.name);
       const url = buildStorageObjectUrl(key);
 
       try {
@@ -434,11 +435,12 @@ platformNutritionLibraryRouter.post(
         return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
       }
 
-      // Every upload gets a fresh key, so the object the row pointed at before
-      // is unreachable once the row moves. Removing it is best-effort and
+      // The key is deterministic since #1035, so a replacement normally writes
+      // the same object and there is nothing to remove — `staleKey !== key` is
+      // what a *rename* (or an image still under the pre-#1035 `cordel/Nutrition/`
+      // or `<uuid>-` shape) answers true for. Removing it is best-effort and
       // happens *after* the new object is safely stored: a failure here leaves
-      // an orphan to sweep, not a failed save. This is also what moves an image
-      // stored under the old `cordel/Nutrition/` folder into `cordel/nutrition/`.
+      // an orphan to sweep, not a failed save.
       const staleUrl = food.image_url;
       if (staleUrl && url && staleUrl !== url) {
         const staleKey = storageKeyFromObjectUrl(staleUrl);

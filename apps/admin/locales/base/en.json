@@ -3146,6 +3146,7 @@
     "label_description": "Description",
     "label_translations": "Translations",
     "label_media": "Media",
+    "image_after_create": "Create the food first, then upload its image from Edit.",
     "no_image": "No image",
     "section_audit": "Audit",
     "created_by": "Created By",

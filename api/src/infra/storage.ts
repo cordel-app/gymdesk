@@ -45,12 +45,41 @@ export const PLATFORM_STORAGE_ROOT = 'cordel';
  */
 export const THEMES_FOLDER = 'themes';
 
+/**
+ * `nutrition` — the gym root's own first-level folder for Nutrition Library food
+ * images, and the same leaf name under {@link PLATFORM_STORAGE_ROOT} for a base
+ * food's. `domain/baseNutritionImages.ts` re-exports it as `NUTRITION_FOLDER`
+ * and builds both keys from it.
+ */
+export const NUTRITION_STORAGE_FOLDER = 'nutrition';
+
+/**
+ * `exercises` and its two leaves — the first-level folder every kind of exercise
+ * media hangs off, under the gym root for a Gym Exercise and under
+ * {@link PLATFORM_STORAGE_ROOT} for a Base one.
+ *
+ * Declared here, beside {@link THEMES_FOLDER} and for its reason: `GYM_FOLDERS`
+ * below writes these very markers and the key builders in
+ * `domain/exerciseImages.ts` / `domain/exerciseVideos.ts` write *into* them, so a
+ * name spelled twice could diverge in case alone and add a folder rather than
+ * rename one. Those modules re-export these rather than restating them.
+ *
+ * Lowercase since #1035, which brought the whole bucket onto lowercase folder
+ * names. R2 has no directories, so the case *is* the folder: the objects an
+ * earlier deployment wrote under `Exercises/` are still reachable under their
+ * stored keys and are swept by hand (`docs/go-to-production.md`), exactly as
+ * #829's `Themes/` tree is — nothing in the API may rewrite a key a row still
+ * points at (#1035 §6).
+ */
+export const EXERCISE_STORAGE_FOLDER = 'exercises';
+export const EXERCISE_IMAGES_STORAGE_FOLDER = `${EXERCISE_STORAGE_FOLDER}/images`;
+export const EXERCISE_VIDEOS_STORAGE_FOLDER = `${EXERCISE_STORAGE_FOLDER}/videos`;
+
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 //
-// #826: the gym root carries exactly **three** first-level folders — `Nutrition/`,
-// `Exercises/` and `themes/`, the last of them lowercased by #829.
-// `Branding/` (with its `Logo/` and `Images/` leaves)
+// #826: the gym root carries exactly **three** first-level folders — `nutrition/`,
+// `exercises/` and `themes/`. `Branding/` (with its `Logo/` and `Images/` leaves)
 // and `Members/` were dropped: nothing has written to either since #824 moved the
 // theme logo into the theme's own folder (`themes/<theme_id>-<name>/logo/`) and
 // #725 put a theme's Members App slots under `themes/<theme_id>-<name>/members_app/`.
@@ -58,18 +87,29 @@ export const THEMES_FOLDER = 'themes';
 // wrote are left alone, since removing objects from a gym's bucket is not this
 // ticket's business (see `docs/go-to-production.md`).
 //
-// The leaves below the three roots are unchanged (#826 §6 — that ticket was only
-// about what sits directly under the gym root), and the spelling of each name is
-// the key builders' own: the folder names here are the same strings the builders in
-// `domain/exerciseImages.ts`, `domain/exerciseVideos.ts`, `domain/themeFolders.ts`
-// and the nutrition upload route write into, so a marker that disagreed with them
-// in case alone would add a *fourth* first-level folder rather than rename one.
+// #1035 lowercased every name (`themes/` already was, from #829) and dropped
+// `Nutrition/Images/`: a food's image is the only thing that folder ever held, so
+// it is `nutrition/<food_id>-<name>.<ext>` directly under the root now. The old
+// mixed-case markers an earlier initialization wrote are left exactly where they
+// are and the objects under them still render from their stored keys — R2 has no
+// directories, so re-casing a folder creates a second tree rather than renaming
+// the first, and §6 forbids moving an object a row still points at. The sweep is
+// a production step (`docs/go-to-production.md`).
+//
+// Every name here is the key builders' own constant and never a literal: the
+// strings come from `domain/exerciseImages.ts`, `domain/exerciseVideos.ts`,
+// `domain/baseNutritionImages.ts` and `domain/themeFolders.ts`, because a marker
+// that disagreed with a builder in case alone would add a *fourth* first-level
+// folder rather than rename one.
+//
+// `goals/` — the fourth folder in #1035's target tree — is deliberately absent:
+// nothing writes a Personal Goal image yet, and a first-level folder no writer
+// populates is what #826 removed. It arrives with its writer, in #1035 stage 2.
 const GYM_FOLDERS = [
-  'Nutrition/',
-  'Nutrition/Images/',
-  'Exercises/',
-  'Exercises/Images/',
-  'Exercises/Videos/',
+  `${NUTRITION_STORAGE_FOLDER}/`,
+  `${EXERCISE_STORAGE_FOLDER}/`,
+  `${EXERCISE_IMAGES_STORAGE_FOLDER}/`,
+  `${EXERCISE_VIDEOS_STORAGE_FOLDER}/`,
   // #735: the gym-level `themes/` root only. A Custom Theme's own
   // `themes/<theme_id>-<name>/members_app/` branch is deliberately *not* created
   // here — it cannot exist before the theme does, and `ensureStorageFolders()`
