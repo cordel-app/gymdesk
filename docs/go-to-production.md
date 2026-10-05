@@ -531,6 +531,21 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       column, so every Past Goal silently reads `—` again. If it has to come out, take the
       route out first.
 
+- [ ] **Migration 225 leaves objects behind if it is ever rolled back** (#1035 stage 2).
+      `personal_goals.image_url` is the only record of which object a goal's image is, so
+      a `down()` forgets every one of them while the files stay in the bucket — nothing in
+      the API deletes an object a row no longer points at. If it has to come out, list
+      `<gym prefix>/goals/` and `cordel/goals/` first and sweep them by hand; `up()`
+      re-adds an empty column, so every goal silently reads *No image* again.
+
+- [ ] **`goals/` is created for a gym from the next Initialize bucket onwards** (#1035
+      stage 2), which is also when the folder appears in the R2 browser for gyms that
+      already exist. Nothing depends on the marker — R2 has no directories, so the first
+      upload stores its object under the prefix either way — so this is a cosmetic
+      backfill: re-run **Cordel → Gyms → [Gym] → Initialize bucket** per gym when the tree
+      should read the way `docs/cloudflare_structure.md` draws it. It is idempotent and
+      touches no existing object.
+
 - [ ] If a Content-Security-Policy is ever added in front of the **admin** app (only
       `apps/payment/nginx.conf` sets one today), its `img-src` must allow
       `https://img.youtube.com` — workout exercise rows load a YouTube poster from there

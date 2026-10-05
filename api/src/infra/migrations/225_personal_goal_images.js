@@ -61,9 +61,12 @@ const GOAL_TABLE = 'personal_goals';
 exports.up = async (knex) => {
   if (!(await knex.schema.hasColumn(GOAL_TABLE, 'image_url'))) {
     // `AFTER target_unit` keeps the row readable in `DESCRIBE personal_goals`
-    // (name · description · target pair · image) on a catalogue of seven System
-    // rows plus a handful per gym, where a non-INSTANT mid-table ADD COLUMN
-    // costs nothing — the same trade migration 218 made one column over.
+    // (name · description · target pair · image). On MySQL 8.0.29+ — this
+    // project targets 8.4, and HeatWave in production — an `ADD COLUMN` at a
+    // position is still INSTANT and does not rebuild the table (migration 187's
+    // own note). The position does tie this statement to migration 218's
+    // `target_unit`: through knex that is ordered by construction, and on a
+    // hand-built schema missing 218 it would fail loudly rather than quietly.
     await knex.raw(
       `ALTER TABLE ${GOAL_TABLE} ADD COLUMN image_url VARCHAR(1024) NULL AFTER target_unit`,
     );
