@@ -1038,8 +1038,12 @@ Tick items off in the PR that completes them.
 - [ ] `apple-app-site-association` and `assetlinks.json` served from the Members App's
       production domain (`Content-Type: application/json`, no redirect) and *Associated Domains*
       enabled; check an invitation link opens the app from Notes and from Mail.
-- [ ] Push: FCM credentials in the production API environment; `member_device_tokens` migrated;
-      verify a notification reaches a physical iPhone and a physical Android phone.
+- [ ] Push: set `FCM_SERVICE_ACCOUNTS` in the production API environment (#1072 — a JSON object
+      keyed by app id; set it **base64-encoded** in GitHub, since `deploy.yml` writes the API's
+      environment as inline quadlet `Environment=` lines) and `MOBILE_DEFAULT_APP_ID` if the
+      generic app's id is not `com.cordel.fitness`; run migration 221; verify a notification
+      reaches a physical iPhone and a physical Android phone. Until the variable is set the API
+      sends no push at all and every alert still reaches the Members App — nothing fails.
 - [ ] *(stage 2)* Association files list every app profile; push credentials are resolved per
       `app_id`.
 

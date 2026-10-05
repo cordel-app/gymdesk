@@ -22,6 +22,18 @@
  * issued by two transports; it costs nothing and makes the key say what it
  * means. 2112 bytes of utf8mb4 at the declared widths, inside InnoDB's 3072.
  *
+ * The flip side of that global key, stated so a later reader does not have to
+ * rediscover it: because `POST /me/devices` takes the token from the request
+ * body, a member who *learns* another member's registration token — in this gym
+ * or any other — can re-point the row at themselves, which stops the victim's
+ * push and sends the attacker's alerts to the victim's handset. Per-gym
+ * uniqueness would confine that to one gym without removing it, while
+ * reintroducing the double delivery above, so the key stays global: a
+ * registration token is device-scoped and is not meant to leave the device
+ * (nothing in the product discloses one — it is never echoed by `POST
+ * /me/devices`, never logged, and read only by the sender). What is pushed is
+ * in any case a copy of an alert the member can already see in the app.
+ *
  * ── `app_id` exists before the second app does ──────────────────────────────
  *
  * `docs/mobile-app.md` design rule 2: the token records which app registered it
@@ -56,10 +68,30 @@
  * `app_id` and `token` carry no CHECK: the first is deployment configuration
  * (a vocabulary in SQL would refuse a gym app added tomorrow) and the second is
  * an opaque string from Google.
+ * ── Collations ─────────────────────────────────────────────────────────────
  *
- * Every statement is guarded on its own: MySQL commits DDL implicitly, so a
- * crash between two of them must not make a re-run skip one (migrations
- * 134/140/155/183/205/206/212).
+ * The table pins `utf8mb4_0900_ai_ci` like every other `CREATE TABLE` here
+ * rather than inheriting the schema default: MySQL requires a foreign key's
+ * referencing and referenced string columns to share character set *and*
+ * collation, so an inherited default that differs from the one `gyms` was
+ * created under fails `mdt_gym_fk` with errno 3780 (migrations 181/182 spell
+ * the gym column's collation out for the same reason).
+ *
+ * `platform` and `token` are `utf8mb4_bin` on top of that, because both are
+ * opaque identifiers rather than text: under an accent- and case-insensitive
+ * collation the unique key and the route's `WHERE token = ?` would match a
+ * token that differs only in case, and since the upsert deliberately does not
+ * rewrite `token`, the row would keep the old casing while the route answered
+ * 201 — then the sender would push a token FCM rejects and
+ * `pushFailureAction()` would delete the row. `app_id` stays on the table
+ * collation, because nothing compares it in SQL; the sender matches it
+ * **exactly** (a `Map` lookup against `FCM_SERVICE_ACCOUNTS`' keys), so a
+ * registration spelling a bundle id in another case is skipped rather than
+ * delivered to.
+ *
+ * `up()` is a single `CREATE TABLE`, so the implicit-DDL-commit hazard the
+ * multi-statement migrations guard against (134/140/155/183/205/206/212) does
+ * not arise: there is no second statement a crash could strand.
  */
 
 /** Mirrors `DEVICE_PLATFORMS` in `api/src/domain/deviceTokens.ts`. */
@@ -76,6 +108,13 @@ const DEFAULT_APP_ID = 'com.cordel.fitness';
 const PREFIX = 'mdt';
 const TABLE = 'member_device_tokens';
 
+// Exported so `device-tokens.unit.test.ts` can assert the values rather than
+// grep this file's text, as migrations 205/207/212 do for their own.
+exports.PLATFORMS = PLATFORMS;
+exports.DEFAULT_APP_ID = DEFAULT_APP_ID;
+exports.TABLE = TABLE;
+exports.PREFIX = PREFIX;
+
 exports.up = async (knex) => {
   const platforms = PLATFORMS.map((p) => `'${p}'`).join(', ');
 
@@ -85,9 +124,9 @@ exports.up = async (knex) => {
         id           INT UNSIGNED  NOT NULL AUTO_INCREMENT,
         gym_id       CHAR(36)      NOT NULL,
         member_id    INT UNSIGNED  NOT NULL,
-        platform     VARCHAR(16)   NOT NULL,
+        platform     VARCHAR(16)   COLLATE utf8mb4_bin NOT NULL,
         app_id       VARCHAR(191)  NOT NULL DEFAULT '${DEFAULT_APP_ID}',
-        token        VARCHAR(512)  NOT NULL,
+        token        VARCHAR(512)  COLLATE utf8mb4_bin NOT NULL,
         last_seen_at DATETIME      NOT NULL DEFAULT (UTC_TIMESTAMP()),
         created_at   DATETIME      NOT NULL DEFAULT (UTC_TIMESTAMP()),
         PRIMARY KEY (id),
@@ -102,7 +141,7 @@ exports.up = async (knex) => {
         CONSTRAINT ${PREFIX}_gym_fk FOREIGN KEY (gym_id) REFERENCES gyms(id) ON DELETE CASCADE,
         CONSTRAINT ${PREFIX}_member_fk FOREIGN KEY (member_id) REFERENCES members(id) ON DELETE CASCADE,
         CONSTRAINT chk_${PREFIX}_platform CHECK (platform IN (${platforms}))
-      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
     `);
   }
 };

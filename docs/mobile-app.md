@@ -92,19 +92,54 @@ with Apple; universal links; push.
 
 ## 5. Work packages (one PR each, in this order)
 
-### WP1 — Device tokens (API contract first) (#1072)
-- Migration (reviewed by the `db-reviewer` agent): `member_device_tokens` with `gym_id` NOT NULL,
-  `member_id`, `platform` (CHECK `ios`|`android`), `app_id`, `token`, `last_seen_at`, `created_at`;
-  `UNIQUE (platform, token)`; FKs to `members` and `gyms` with `ON DELETE CASCADE`.
-- Endpoints on the `me` router (`requireRole('member')`, every query filtered by `gym_id`):
-  `POST /me/devices` (upsert) and `DELETE /me/devices/:token`.
-- `sendNotification()` (`api/src/infra/notifications.ts`) also sends through FCM after writing
-  `member_notifications`; fire-and-forget like today, errors only logged, an invalid token is
-  deleted. No new notification type is added, so `chk_member_notifications_type` does not change.
-  FCM credentials are environment variables.
-- Tests (integration, `test-writer` agent): tenant isolation, 401/403, idempotent upsert, delete,
-  and that a failing FCM call never breaks the notification. Extend `cleanupTestGyms` with the new
-  table (before `members`).
+### WP1 — Device tokens (API contract first) (#1072) — **done**
+
+Migration 221 and the routes landed as specified; what follows is what the implementation decided
+beyond the bullet list, because WP2 and WP5 both depend on it.
+
+- **`member_device_tokens`** (migration 221): `gym_id` NOT NULL, `member_id`, `platform`
+  (`chk_mdt_platform` = `ios`|`android`), `app_id` (VARCHAR(191), default `com.cordel.fitness`),
+  `token` (VARCHAR(512)), `last_seen_at`, `created_at`; `UNIQUE (platform, token)`;
+  `KEY (gym_id, member_id)` for the delivery read; both FKs `ON DELETE CASCADE`.
+- **`POST /me/devices`** and **`DELETE /me/devices/:token`** on the `me` router
+  (`requireRole('member')`, the member resolved from the session, every query filtered by
+  `gym_id`). The `POST` is an upsert on the unique key that re-points `gym_id`/`member_id` and
+  refreshes `last_seen_at`, so re-registering on every sign-in (WP2) adds no rows and a **shared
+  handset** is taken over by whoever signed in last — the token identifies an app installation,
+  not a person. It answers 201 with the row minus the token (the caller already has it). The
+  `DELETE` is scoped by gym *and* member, so another member's token is a 404.
+  `parseDeviceRegistration()` (`api/src/domain/deviceTokens.ts`) is the only place a body is
+  judged: an unknown platform, a blank token or an over-wide value is a 400, never a coercion.
+- **Delivery** is `api/src/infra/push.ts` over the pure `api/src/domain/pushDelivery.ts`, called by
+  all three `member_notifications` writers (`sendNotification`, `sendBulkNotification`,
+  `recordNotifications`) after the insert and never awaited. No notification type was added.
+- **FCM HTTP v1, no SDK**: a service-account JWT signed with `node:crypto` is exchanged for an
+  access token (cached per project) and one POST goes out per token. `firebase-admin` would be a
+  large dependency for one signed HTTP call, and the legacy server-key API is decommissioned.
+- **Credentials are one variable**, `FCM_SERVICE_ACCOUNTS`: a JSON object keyed by **app id**
+  (design rule 2), each value a Google service-account JSON, accepted raw or **base64-encoded**
+  because `deploy.yml` writes the API's environment as inline quadlet `Environment=` lines. A
+  stage-2 per-gym app is therefore a new key, not a code change; a token whose `app_id` has no
+  entry is skipped rather than failed, which is what that app's unconfigured Firebase project
+  looks like. `MOBILE_DEFAULT_APP_ID` overrides the app id a registration defaults to.
+- **A dead token is deleted only when FCM says it is dead** — `UNREGISTERED` or
+  `SENDER_ID_MISMATCH`. `INVALID_ARGUMENT` is kept deliberately: FCM answers it for a malformed
+  *message* as well, so deleting on it would empty the table on the first bug in the message
+  builder. A 429 or a 5xx is an unknown outcome, not evidence against the token.
+- **The push carries no sentence.** It sends the payload's own `title` and a `data` block (type,
+  entity, payload) for routing; the per-type copy a member reads lives in the Members App's locale
+  files, and composing it here would be a second copy of it in a module that would have to pick a
+  language. A member's stored `preferred_locale` (#1039) makes that answerable — answering it is
+  the ticket that decides where push copy lives.
+- Tests: `me-devices.test.ts` (integration — 401/403, register, idempotent upsert, shared-device
+  takeover, platform separation, validation, delete, cross-member and cross-gym isolation, and
+  that a failing send leaves both the notification row and the token alone), plus
+  `device-tokens.unit.test.ts`, `push-delivery.unit.test.ts` and `push.unit.test.ts` (the delivery
+  loop with the database mocked and `fetch` stubbed, so FCM's whole protocol is covered offline).
+  `cleanupTestGyms` extended.
+
+**Not verified here**, and WP5's to close: a real delivery. Nothing in this repository has FCM
+credentials, so no notification has reached a physical device yet.
 
 ### WP2 — Members App changes (`apps/member`) (#1073)
 - Create `public/` with `manifest.json` and icons (the layout already links `/manifest.json`, which

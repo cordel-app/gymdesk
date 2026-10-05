@@ -128,7 +128,10 @@ describe('defaultAppId', () => {
 });
 
 describe('the SQL half of the same vocabulary', () => {
-  const migration = readFileSync(
+  // The migration exports its vocabulary, so these assert values rather than
+  // this file's text (migrations 205/207/212 do the same).
+  const migration = require('../infra/migrations/221_member_device_tokens.js');
+  const source = readFileSync(
     join(__dirname, '../infra/migrations/221_member_device_tokens.js'),
     'utf-8',
   );
@@ -136,25 +139,27 @@ describe('the SQL half of the same vocabulary', () => {
   it('the CHECK beside the column permits the same platforms', () => {
     // A platform added to the module and not to migration 221's PLATFORMS list
     // makes every insert of it fail — the `member_notifications.type` shape.
-    const match = migration.match(/const PLATFORMS = \[([^\]]+)\]/);
-    expect(match, 'migration 221 must declare PLATFORMS').toBeTruthy();
-    const mirrored = match![1].split(',').map((v) => v.trim().replace(/^'|'$/g, '')).filter(Boolean);
-    expect(mirrored).toEqual([...DEVICE_PLATFORMS]);
-    expect(migration).toContain('chk_mdt_platform');
+    expect(migration.PLATFORMS).toEqual([...DEVICE_PLATFORMS]);
+    expect(source).toContain(`CONSTRAINT chk_\${PREFIX}_platform CHECK (platform IN (\${platforms}))`);
   });
 
   it('the column default is the same generic app the domain names', () => {
-    expect(migration).toContain(`const DEFAULT_APP_ID = '${DEFAULT_APP_ID}'`);
+    expect(migration.DEFAULT_APP_ID).toBe(DEFAULT_APP_ID);
   });
 
   it('declares the widths the parser refuses beyond', () => {
-    expect(migration).toContain(`VARCHAR(${TOKEN_MAX_LENGTH})`);
-    expect(migration).toContain(`VARCHAR(${APP_ID_MAX_LENGTH})`);
+    expect(source).toContain(`VARCHAR(${TOKEN_MAX_LENGTH})`);
+    expect(source).toContain(`VARCHAR(${APP_ID_MAX_LENGTH})`);
   });
 
-  it('keys the token globally rather than per gym', () => {
+  it('keys the token globally rather than per gym, and compares it exactly', () => {
     // The device, not the person, is the identity: a shared phone produces one
-    // token and the second sign-in takes it over (migration 221's note).
-    expect(migration).toContain('UNIQUE KEY ${PREFIX}_platform_token (platform, token)');
+    // token and the second sign-in takes it over. And the token is an opaque
+    // identifier, so it is `utf8mb4_bin` — under the table's case-insensitive
+    // collation a token differing only in case would match an existing row and
+    // keep the stored casing, which the sender would then push and FCM reject.
+    expect(source).toContain('UNIQUE KEY ${PREFIX}_platform_token (platform, token)');
+    expect(source).toMatch(/token\s+VARCHAR\(512\)\s+COLLATE utf8mb4_bin NOT NULL/);
+    expect(source).toContain('COLLATE=utf8mb4_0900_ai_ci');
   });
 });

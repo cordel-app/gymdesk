@@ -65,7 +65,7 @@ export function parseServiceAccounts(raw: string | undefined | null): ParsedServ
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(raw);
+    parsed = JSON.parse(decodeConfiguredJson(raw));
   } catch (err: any) {
     errors.push(`FCM_SERVICE_ACCOUNTS is not valid JSON: ${err?.message ?? 'parse error'}`);
     return { accounts, errors };
@@ -108,6 +108,31 @@ export function parseServiceAccounts(raw: string | undefined | null): ParsedServ
   }
 
   return { accounts, errors };
+}
+
+/**
+ * The variable's value, which may be the JSON itself **or** that JSON
+ * base64-encoded — one variable with one meaning, not two mechanisms.
+ *
+ * The encoded form exists because of where this value is carried: `deploy.yml`
+ * writes the API's environment as inline `Environment=KEY=value` lines in a
+ * systemd quadlet unit, and a JSON object there would have to survive the
+ * shell, the SSH action and systemd's own quoting — double quotes, braces and a
+ * PEM's escaped newlines in one unquoted line. Base64 is a single token with
+ * none of those characters. A value starting with `{` is read as JSON directly,
+ * so a local `.env` stays readable.
+ */
+function decodeConfiguredJson(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{')) return trimmed;
+  // Not JSON-shaped: try base64, and fall back to the original so the error
+  // message is about the JSON the operator actually set.
+  try {
+    const decoded = Buffer.from(trimmed, 'base64').toString('utf8');
+    return decoded.trim().startsWith('{') ? decoded : trimmed;
+  } catch {
+    return trimmed;
+  }
 }
 
 /** FCM HTTP v1's send endpoint for one project. */

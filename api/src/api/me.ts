@@ -1672,10 +1672,14 @@ meRouter.post('/devices', requireRole('member'), async (req: Request, res: Respo
       [gymId, memberId, platform, appId, token],
     );
     const { rows } = await db.query(
+      // Scoped by gym and member although the upsert above has just re-pointed
+      // both at this caller: the unique key is global, so an unscoped read
+      // would be relying on that write for its safety rather than saying it
+      // (CLAUDE.md — every query filters by `gym_id`).
       `SELECT id, platform, app_id, last_seen_at, created_at
          FROM member_device_tokens
-        WHERE platform = ? AND token = ?`,
-      [platform, token],
+        WHERE gym_id = ? AND member_id = ? AND platform = ? AND token = ?`,
+      [gymId, memberId, platform, token],
     );
     // The token itself is not echoed: the caller already has it, and it is the
     // one value here that identifies a device.

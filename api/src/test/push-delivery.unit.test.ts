@@ -55,6 +55,13 @@ describe('parseServiceAccounts', () => {
     }
   });
 
+  it('reads the same object base64-encoded, which is how deploy.yml carries it', () => {
+    const json = JSON.stringify({ 'com.cordel.fitness': ACCOUNT });
+    const { accounts, errors } = parseServiceAccounts(Buffer.from(json, 'utf8').toString('base64'));
+    expect(errors).toEqual([]);
+    expect(accounts.get('com.cordel.fitness')!.projectId).toBe('cordel-fitness-dev');
+  });
+
   it('reports rather than throws on malformed JSON', () => {
     const { accounts, errors } = parseServiceAccounts('{not json');
     expect(accounts.size).toBe(0);
