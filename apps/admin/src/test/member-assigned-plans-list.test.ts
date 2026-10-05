@@ -104,6 +104,14 @@ describe('#1051: Active and Past are two instances of that list (§4)', () => {
     expect(sectionSrc).toContain("t('membership_plans_history')");
     expect(sectionSrc).toContain('{history.length > 0 && (');
   });
+
+  it('#1107: Past plans is a collapsible card, collapsed by default, with a count', () => {
+    expect(sectionSrc).toContain('useState(false)');
+    expect(sectionSrc).toContain('const [pastOpen, setPastOpen]');
+    expect(sectionSrc).toContain('aria-expanded={pastOpen}');
+    expect(sectionSrc).toContain('({history.length})');
+    expect(sectionSrc).toContain('{pastOpen && (');
+  });
 });
 
 describe('#958: the actions stay in the ⋮ menu (Q2)', () => {
