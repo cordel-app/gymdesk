@@ -222,3 +222,36 @@ export function noticeStyle(tone: StatusTone): CSSProperties {
     fontSize: 14,
   };
 }
+
+/**
+ * The display's safe areas (#1073, mobile app WP2).
+ *
+ * `env(safe-area-inset-*)` is `0px` in every context that has no inset to
+ * report — every desktop browser, every phone browser without a notch, and the
+ * app's own web build — so a surface that reserves one is **unchanged on the web**
+ * and inset inside the native shell. That is why none of this is behind
+ * `isNative()`: a runtime branch would have to be remembered by every new
+ * surface, and the CSS already answers correctly in both.
+ *
+ * The fallback is spelled although the spec defines one, because a WebView that
+ * does not know the variable at all must resolve the `calc()` rather than drop
+ * the whole declaration.
+ */
+export const safeArea = {
+  top: 'env(safe-area-inset-top, 0px)',
+  bottom: 'env(safe-area-inset-bottom, 0px)',
+  left: 'env(safe-area-inset-left, 0px)',
+  right: 'env(safe-area-inset-right, 0px)',
+} as const;
+
+/**
+ * A surface's own padding plus the inset on that edge.
+ *
+ * Padding rather than a margin or a spacer element, so the bar's **own
+ * background** fills the strip under the status bar — a spacer would show the
+ * page behind it, which is how a themed dark header ends up with a white band
+ * above it.
+ */
+export function withSafeArea(padding: number, side: keyof typeof safeArea): string {
+  return `calc(${padding}px + ${safeArea[side]})`;
+}

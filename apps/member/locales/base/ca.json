@@ -486,5 +486,14 @@
     "play_video_of": "Reproduir el vídeo de {name}",
     "video_of": "Vídeo de {name}",
     "close": "Tancar"
+  },
+  "native": {
+    "loading": "Carregant…",
+    "offline_title": "No podem connectar amb el teu gimnàs",
+    "offline_body": "Comprova la connexió i torna-ho a provar.",
+    "retry": "Torna-ho a provar",
+    "continue_with_google": "Continua amb Google",
+    "signing_in": "Iniciant sessió…",
+    "google_failed": "No s'ha pogut iniciar la sessió amb Google. Torna-ho a provar."
   }
 }

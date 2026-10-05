@@ -486,5 +486,14 @@
     "play_video_of": "Reproducir el vídeo de {name}",
     "video_of": "Vídeo de {name}",
     "close": "Cerrar"
+  },
+  "native": {
+    "loading": "Cargando…",
+    "offline_title": "No podemos conectar con tu gimnasio",
+    "offline_body": "Comprueba tu conexión e inténtalo de nuevo.",
+    "retry": "Reintentar",
+    "continue_with_google": "Continuar con Google",
+    "signing_in": "Iniciando sesión…",
+    "google_failed": "No se ha podido iniciar sesión con Google. Inténtalo de nuevo."
   }
 }

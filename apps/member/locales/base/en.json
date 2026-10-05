@@ -486,5 +486,14 @@
     "play_video_of": "Play the video of {name}",
     "video_of": "Video of {name}",
     "close": "Close"
+  },
+  "native": {
+    "loading": "Loading…",
+    "offline_title": "We can't reach your gym",
+    "offline_body": "Check your connection and try again.",
+    "retry": "Try again",
+    "continue_with_google": "Continue with Google",
+    "signing_in": "Signing in…",
+    "google_failed": "Google sign-in didn't work. Please try again."
   }
 }

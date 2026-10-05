@@ -14,6 +14,13 @@ ARG NEXT_PUBLIC_CLERK_SIGN_IN_URL=/en/sign-in
 ARG NEXT_PUBLIC_CLERK_SIGN_UP_URL=/en/sign-up
 ARG NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=/en
 ARG NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=/en
+# #1073: the Google OAuth client ids the native sign-in button is initialised
+# with. Empty by default, which is a build whose native button is not rendered at
+# all rather than one that fails when tapped.
+ARG NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID=
+ARG NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID=
+ENV NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID \
+    NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID
 ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
     NEXT_PUBLIC_CLERK_SIGN_IN_URL=$NEXT_PUBLIC_CLERK_SIGN_IN_URL \
     NEXT_PUBLIC_CLERK_SIGN_UP_URL=$NEXT_PUBLIC_CLERK_SIGN_UP_URL \
@@ -29,6 +36,10 @@ ENV NODE_ENV=production PORT=8082 HOSTNAME=0.0.0.0
 
 COPY --from=builder /app/apps/member/.next/standalone ./
 COPY --from=builder /app/apps/member/.next/static ./apps/member/.next/static
+# #1073: `next build` does not fold `public/` into the standalone output, so the
+# manifest and the app icons the layout links to 404 without this line — which is
+# what they did before the directory existed at all.
+COPY --from=builder /app/apps/member/public ./apps/member/public
 
 EXPOSE 8082
 CMD ["node", "apps/member/server.js"]

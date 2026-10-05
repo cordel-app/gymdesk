@@ -12,7 +12,9 @@ import { ThemeProvider } from '@/components/ThemeProvider';
 import { MembersBackground } from '@/components/MembersBackground';
 import { AdminBar } from '@/components/AdminBar';
 import { MemberLocalePreference } from '@/components/MemberLocalePreference';
-import { memberTheme } from '@/lib/memberChrome';
+import { NativeShell } from '@/components/NativeShell';
+import { NativeAppState } from '@/components/NativeAppState';
+import { memberTheme, safeArea } from '@/lib/memberChrome';
 
 export const metadata: Metadata = {
   title: 'Gymdesk',
@@ -46,14 +48,22 @@ export default async function LocaleLayout({
           <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
           <meta name="apple-mobile-web-app-capable" content="yes" />
           <link rel="manifest" href="/manifest.json" />
+          <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
         </head>
-        <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: memberTheme.pageBackground, color: memberTheme.text, fontSize: 16 }}>
+        {/* #1073: the bottom inset is the page's rather than any one screen's —
+            every route's last control would otherwise sit under the iOS home
+            indicator, and `env()` is 0px on the web so nothing moves there. The
+            top inset belongs to `TopBar`, which has a background to fill it
+            with. */}
+        <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: memberTheme.pageBackground, color: memberTheme.text, fontSize: 16, paddingBottom: safeArea.bottom }}>
           <NextIntlClientProvider messages={messages}>
             <ImpersonationProvider>
               <AppProvider>
                 <FeatureFlagsProvider>
                   <ThemeProvider>
                     <MemberLocalePreference />
+                    <NativeShell />
+                    <NativeAppState />
                     <MembersBackground />
                     <AdminBar />
                     <TopBar />
