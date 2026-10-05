@@ -43,6 +43,24 @@ export const GOAL_LIBRARY_AUDIT_ENTITIES: Record<GoalLibraryKind, string> = {
   nutrition: 'nutrition_goal',
 };
 
+/**
+ * The `feature_flags` key each kind is mounted behind (`app.ts`), declared here
+ * because it is the same per-kind fact the table and the audit entity are:
+ * **Nutrition Goals** is a tab of the Nutrition Library and rides its key,
+ * while **Personal Goals** has its own (migration 211, #948 §8 — gating it on
+ * the Library's would 403 a section of a different domain).
+ *
+ * Since #1070 the key is also what the permission guards are given, so a
+ * feature-level override (`FEATURE_PERMISSION_OVERRIDES`) applies to exactly the
+ * catalogue it names: a Personal Trainer has `RW` on Personal Goals and the
+ * module's `R_ASSIGNED` on Nutrition Goals, from one declaration and no branch
+ * on the kind.
+ */
+export const GOAL_LIBRARY_FEATURE_KEYS: Record<GoalLibraryKind, string> = {
+  personal: 'nutrition.personal_goals',
+  nutrition: 'nutrition.nutrition_library',
+};
+
 /** What `status` may hold. Mirrored by `chk_<prefix>_status` (migration 206). */
 export const GOAL_STATUSES = ['active', 'deleted'] as const;
 export type GoalStatus = (typeof GOAL_STATUSES)[number];

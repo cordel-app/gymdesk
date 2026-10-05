@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
-import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
+import { getTenantContext, requireFeatureWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import {
   GOAL_LIBRARY_AUDIT_ENTITIES,
+  GOAL_LIBRARY_FEATURE_KEYS,
   GOAL_LIBRARY_TABLES,
   GoalLibraryKind,
   buildGoalListWhere,
@@ -44,6 +45,11 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   // the global handler turns into a bare 500 (#966). `isMeasurableGoalKind()` is
   // the one place that decides it, asked here rather than branched on per route.
   const measurable = isMeasurableGoalKind(kind);
+  // #1070: writes are gated on this catalogue's own feature key rather than on
+  // `NUTRITION` alone, so a feature-level override reaches exactly the catalogue
+  // it was declared for. With no override declared the guard answers precisely
+  // what `requireModuleWrite('NUTRITION')` did.
+  const requireWrite = requireFeatureWrite(GOAL_LIBRARY_FEATURE_KEYS[kind], 'NUTRITION');
 
   /**
    * The columns every goal-shaped response returns, declared once so this router
@@ -130,7 +136,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
   /* ── Create (gym-owned goals only) ──────────────────────────────────────── */
 
-  router.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  router.post('/', requireWrite, async (req, res, next) => {
     const { gymId, actorName, isSuperadmin } = getTenantContext(req);
     const name = normalizeGoalName(req.body?.name, { required: true });
     if ('error' in name) return res.status(400).json({ error: name.error });
@@ -177,7 +183,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
   /* ── Update (gym-owned goals only — System goals are read-only here) ────── */
 
-  router.put('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  router.put('/:id', requireWrite, async (req, res, next) => {
     const { gymId, actorName, isSuperadmin } = getTenantContext(req);
     const { id } = req.params;
     const name = normalizeGoalName(req.body?.name, { required: false });
@@ -243,7 +249,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
   /* ── Soft delete (gym-owned goals only) ─────────────────────────────────── */
 
-  router.delete('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  router.delete('/:id', requireWrite, async (req, res, next) => {
     const { gymId, actorName, isSuperadmin } = getTenantContext(req);
     const { id } = req.params;
     const actor = actorSnapshot({ name: actorName, isSuperadmin });

@@ -5,7 +5,7 @@ import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
-import { canWriteModule } from '@/config/permissions';
+import { canWriteFeature, canWriteModule } from '@/config/permissions';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -186,8 +186,11 @@ export default function MembersPage() {
   const canManageTraining = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
   const canManagePackages = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
   // #948 §4: the PERSONAL GOALS section writes through `/member-personal-goals`,
-  // which is mounted on NUTRITION — the same module the catalogue is.
-  const canManageNutrition = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'NUTRITION'));
+  // which is mounted on NUTRITION — the same module the catalogue is. #1070: and
+  // behind `nutrition.personal_goals`, whose own override decides this, so the
+  // section offers exactly what that route accepts.
+  const canManagePersonalGoals = isSuperadmin
+    || (activeGym?.role != null && canWriteFeature(activeGym.role, 'NUTRITION', 'nutrition.personal_goals'));
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
 
   const buildParams = useCallback(() => {
@@ -625,7 +628,7 @@ export default function MembersPage() {
               editing={editingId === m.id}
               canManageTraining={canManageTraining}
               canManagePackages={canManagePackages}
-              canManageNutrition={canManageNutrition}
+              canManagePersonalGoals={canManagePersonalGoals}
               isAdmin={isAdmin}
               plans={plans}
             />

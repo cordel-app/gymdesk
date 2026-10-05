@@ -12,7 +12,10 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { db } from '../infra/db';
 import { invalidateFeatureFlagsCache } from '../infra/featureFlags';
-import { PERMISSION_MATRIX, PROFILE_ROLE_MAP, AppModule, AppRole, PermissionLevel } from '../infra/permissions';
+import {
+  FEATURE_PERMISSION_OVERRIDES, PERMISSION_MATRIX, PROFILE_ROLE_MAP,
+  AppModule, AppRole, PermissionLevel,
+} from '../infra/permissions';
 
 export const platformFeatureFlagsRouter = Router();
 export const featureFlagsPublicRouter = Router();
@@ -67,7 +70,20 @@ platformFeatureFlagsRouter.get(
     for (const [root, mod] of Object.entries(FEATURE_ROOT_MODULE)) {
       access[root] = Object.fromEntries(roles.map(r => [r, roleAccessOf(PERMISSION_MATRIX[mod][r])]));
     }
-    res.json({ roles: roles.map(role => ({ role, label: labelFor(role) })), access });
+    // #1070: the feature-level overrides, keyed by the **full** feature key and
+    // reported beside the inherited matrix rather than folded into it — the page
+    // marks an overridden value as the explicit decision it is, and a value that
+    // merely equals what the module already gave must not read as one. Only the
+    // keys an override is declared for appear here.
+    const overrides: Record<string, Record<string, RoleAccess>> = {};
+    for (const [featureKey, byRole] of Object.entries(FEATURE_PERMISSION_OVERRIDES)) {
+      const entries = Object.entries(byRole) as [AppRole, PermissionLevel][];
+      if (!entries.length) continue;
+      overrides[featureKey] = Object.fromEntries(
+        entries.map(([role, level]) => [role, roleAccessOf(level)]),
+      );
+    }
+    res.json({ roles: roles.map(role => ({ role, label: labelFor(role) })), access, overrides });
   },
 );
 

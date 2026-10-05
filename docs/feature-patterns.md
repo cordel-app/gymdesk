@@ -2386,6 +2386,7 @@ const menuItems: ContextMenuItem[] = [
 
 - Use `useModuleAccess`, not `isSuperadmin || canWriteModule(...)`: `isSuperadmin` stays true while impersonating, so the old pattern showed every edit control to a superadmin impersonating a read-only user.
 - Gate the **entry points** (Add button, ⋮ menu write items, in-row action buttons, Save). Inline edit forms that only open from a gated entry point need nothing extra.
+- **Pass the page's feature key when its feature overrides the module** (#1070): `useModuleAccess('NUTRITION', 'nutrition.personal_goals')`. The key is the one the route is mounted behind in `app.ts`, where the API reads the same override through `requireFeatureAccess` / `requireFeatureWrite`, so the control and the route agree. It changes nothing for a key with no override declared, so a page may always pass the key it is gated by — and a page must never derive a permission from an override itself (see CLAUDE.md's bullet; the declaration lives in `config/permissions.ts`, mirrored from the API's).
 
 ### ⋮ menu order and the destructive style (#802)
 

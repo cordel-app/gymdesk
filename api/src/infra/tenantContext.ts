@@ -2,7 +2,7 @@ import { createClerkClient } from '@clerk/backend';
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 import { Request, Response, NextFunction } from 'express';
 import { db } from './db';
-import { AppRole, AppModule, canAccess, canWrite } from './permissions';
+import { AppRole, AppModule, canAccess, canAccessFeature, canWrite, canWriteFeature } from './permissions';
 
 /** Gym-scoped role stored in gym_memberships.role. */
 export type GymRole = AppRole;
@@ -191,6 +191,36 @@ export function requireModuleAccess(module: AppModule) {
 export function requireModuleWrite(module: AppModule) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!req.tenantCtx || !canWrite(req.tenantCtx.role, module)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    next();
+  };
+}
+
+/**
+ * #1070: `requireModuleAccess` for a single **feature** of a module — the
+ * feature's own override decides when one is declared
+ * (`FEATURE_PERMISSION_OVERRIDES`), otherwise the module's cell does, so a
+ * mount that names its feature key behaves exactly as before until an override
+ * exists for it.
+ *
+ * The key is the one the route is already mounted behind
+ * (`requireFeatureEnabled`'s), which is what keeps "which feature is this?" a
+ * single answer per route rather than two that can disagree.
+ */
+export function requireFeatureAccess(featureKey: string, module: AppModule) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.tenantCtx || !canAccessFeature(req.tenantCtx.role, module, featureKey)) {
+      return res.status(403).json({ error: 'Forbidden' });
+    }
+    next();
+  };
+}
+
+/** #1070: `requireModuleWrite` for a single feature of a module. */
+export function requireFeatureWrite(featureKey: string, module: AppModule) {
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.tenantCtx || !canWriteFeature(req.tenantCtx.role, module, featureKey)) {
       return res.status(403).json({ error: 'Forbidden' });
     }
     next();

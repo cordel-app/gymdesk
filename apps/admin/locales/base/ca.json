@@ -3965,7 +3965,9 @@
     "load_error": "Error en carregar els flags.",
     "toggle_error": "Error en actualitzar el flag.",
     "enabled_ok": "'{key}' activat.",
-    "disabled_ok": "'{key}' desactivat."
+    "disabled_ok": "'{key}' desactivat.",
+    "override_hint": "{role} té {level} en aquesta funció com a excepció explícita al permís heretat de la seva secció.",
+    "override_legend": "Un valor en vermell és una excepció explícita al permís heretat."
   },
   "nutrition_plans": {
     "title": "Plans de nutrició assignats",

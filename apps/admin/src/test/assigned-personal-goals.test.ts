@@ -248,8 +248,10 @@ describe('the Member card section is behind Edit mode (#797/#957)', () => {
     expect(memberSectionSrc).not.toContain('disabled={!canWrite}');
   });
 
-  it('is handed the card own mode, and NUTRITION write access', () => {
-    expect(memberRowSrc).toContain('<MemberPersonalGoals memberId={memberId} canWrite={canManageNutrition} editing={editing} />');
+  it('is handed the card own mode, and Personal Goals write access', () => {
+    // #1070: the flag is `nutrition.personal_goals`' own, not the NUTRITION
+    // module's — the Personal Trainer override reaches this section too.
+    expect(memberRowSrc).toContain('<MemberPersonalGoals memberId={memberId} canWrite={canManagePersonalGoals} editing={editing} />');
     expect(memberRowSrc).toContain("t('members.section_personal_goals')");
   });
 
@@ -262,7 +264,9 @@ describe('the Member card section is behind Edit mode (#797/#957)', () => {
 
 describe('the page is a thin wrapper (#806)', () => {
   it('supplies the permissions and the two namespaces, and restates no control', () => {
-    expect(pageSrc).toContain("useModuleAccess('NUTRITION')");
+    // #1070: with Personal Goals' own feature key, so the Personal Trainer
+    // override the API enforces also decides the controls this page offers.
+    expect(pageSrc).toContain("useModuleAccess('NUTRITION', 'nutrition.personal_goals')");
     expect(pageSrc).toContain("useTranslations('assigned_personal_goals')");
     // A System goal label was written in `goal_library`, so that is where the
     // page resolves it (#947) — the section never picks a namespace.

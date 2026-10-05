@@ -47,6 +47,7 @@ const KINDS = [
 let gymId: string;
 let otherGymId: string;
 let frontDeskGymId: string;
+let trainerGymId: string;
 
 /** Unique per run, so a re-run against the same database cannot collide. */
 const RUN = `${Date.now()}`;
@@ -64,6 +65,12 @@ beforeAll(async () => {
   // front_desk has 'R' on NUTRITION: it may list, but every write is a 403.
   frontDeskGymId = await createTestGym('GL Front Desk Gym');
   await createTestMembership(frontDeskGymId, 'front_desk');
+
+  // #1070 §2: trainer_performance has 'R_ASSIGNED' on NUTRITION, overridden to
+  // 'RW' on `nutrition.personal_goals` alone — so the same role writes one of
+  // these two catalogues and not the other.
+  trainerGymId = await createTestGym('GL Trainer Gym');
+  await createTestMembership(trainerGymId, 'trainer_performance');
 });
 
 afterAll(async () => {
@@ -830,5 +837,47 @@ describe('#948 — Personal Goals has its own feature flag', () => {
       await db.query("UPDATE feature_flags SET enabled = 1 WHERE feature_key = 'nutrition'");
       invalidateFeatureFlagsCache();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #1070 §2 — the Personal Trainer's feature-level override
+// ---------------------------------------------------------------------------
+
+describe('Personal Trainer access (#1070)', () => {
+  it('lets a Personal Trainer create, rename and delete a Personal Goal', async () => {
+    const created = await createGoal('/personal-goals', { name: `PT Goal ${RUN}` }, trainerGymId);
+    expect(created.status).toBe(201);
+
+    const put = await request
+      .put(`/personal-goals/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', trainerGymId)
+      .send({ name: `PT Goal Renamed ${RUN}` });
+    expect(put.status).toBe(200);
+
+    const del = await request
+      .delete(`/personal-goals/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', trainerGymId);
+    expect(del.status).toBe(204);
+  });
+
+  it('does not let the same role write Nutrition Goals', async () => {
+    // The override is `nutrition.personal_goals`' and is matched on that exact
+    // key: Nutrition Goals ride the Nutrition Library's, so this role still has
+    // the module's R_ASSIGNED there.
+    const res = await createGoal('/nutrition-goals', { name: `PT Nutrition ${RUN}` }, trainerGymId);
+    expect(res.status).toBe(403);
+  });
+
+  it('still lets a Personal Trainer read both catalogues', async () => {
+    expect((await listGoals('/personal-goals', '?limit=5', trainerGymId)).status).toBe(200);
+    expect((await listGoals('/nutrition-goals', '?limit=5', trainerGymId)).status).toBe(200);
+  });
+
+  it('leaves the override off a role it was not declared for', async () => {
+    const res = await createGoal('/personal-goals', { name: `FD Override ${RUN}` }, frontDeskGymId);
+    expect(res.status).toBe(403);
   });
 });

@@ -7,6 +7,11 @@ import { useGym } from '@/context/GymContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { Tabs, type TabDescriptor } from '@/components/Tabs';
+import { featureFlagLabelKey, featureKeyShortName } from '@/lib/featureFlagLabels';
+// #1070 §3: the app's one red, so an overridden permission is marked in the
+// colour a destructive menu item and a failed save already use rather than a
+// hue this page invents.
+import { alertTextColor } from '@/components/formChrome';
 
 interface FeatureFlag {
   feature_key: string;
@@ -15,9 +20,19 @@ interface FeatureFlag {
   updated_by_name: string | null;
 }
 
+type RoleAccessLevel = '-' | 'R' | 'RW';
+
 interface RoleAccessData {
   roles: { role: string; label: string }[];
-  access: Record<string, Record<string, '-' | 'R' | 'RW'>>;
+  /** The module matrix a feature **inherits**, keyed by the key's first segment. */
+  access: Record<string, Record<string, RoleAccessLevel>>;
+  /**
+   * #1070: the feature-level overrides, keyed by the **full** feature key — only
+   * the keys that declare one. An override is the explicit decision that a role
+   * has this level on this feature whatever its module gives it, so it is
+   * reported apart from `access` and rendered apart from it.
+   */
+  overrides?: Record<string, Record<string, RoleAccessLevel>>;
 }
 
 const ROLE_COL_WIDTH = 64;
@@ -70,11 +85,6 @@ function buildTree(flags: FeatureFlag[]): FlagNode[] {
   }
 
   return roots;
-}
-
-function shortKey(key: string): string {
-  const parts = key.split('.');
-  return parts[parts.length - 1];
 }
 
 export default function FeatureFlagsPage() {
@@ -135,11 +145,17 @@ export default function FeatureFlagsPage() {
   if (gymLoading || !isSuperadmin) return null;
 
   const tree = buildTree(flags.filter(f => isMemberWebFlag(f.feature_key) === (tab === 'member_web')));
+  const hasOverrides = Object.keys(roleAccess?.overrides ?? {}).length > 0;
 
   function renderNode(node: FlagNode, depth = 0) {
     const flag = node.flag;
     const isToggling = toggling === node.key;
-    const label = shortKey(node.key);
+    // #1070 §1: the name the application itself shows for this section, from the
+    // navigation's own declaration. Resolved **before** `t()` is called, because
+    // next-intl has no `defaultValue` and prints a missing key verbatim — a key
+    // the navigation does not gate keeps the short key this page always showed.
+    const labelKey = featureFlagLabelKey(node.key);
+    const label = labelKey ? t(labelKey) : featureKeyShortName(node.key);
 
     return (
       <div key={node.key}>
@@ -170,13 +186,25 @@ export default function FeatureFlagsPage() {
             </span>
           </div>
           {roleAccess?.roles.map(r => {
-            const level = roleAccess.access[node.key.split('.')[0]]?.[r.role];
+            // #1070 §3: this feature's own override wins over the module level it
+            // would otherwise inherit, and is the only value drawn in red — the
+            // row keeps its own colours, and an inherited value keeps the
+            // styling it had.
+            const override = roleAccess.overrides?.[node.key]?.[r.role];
+            const level = override ?? roleAccess.access[node.key.split('.')[0]]?.[r.role];
             return (
-              <span key={r.role} style={{
-                width: ROLE_COL_WIDTH, flexShrink: 0, textAlign: 'center', fontSize: 12,
-                fontFamily: 'monospace', fontWeight: level === 'RW' ? 600 : 400,
-                color: level === 'RW' ? 'var(--gd-text, #111827)' : 'var(--gd-text-muted, #6b7280)',
-              }}>
+              <span
+                key={r.role}
+                title={override ? t('feature_flags.override_hint', { role: r.label, level: override }) : undefined}
+                style={{
+                  width: ROLE_COL_WIDTH, flexShrink: 0, textAlign: 'center', fontSize: 12,
+                  fontFamily: 'monospace',
+                  fontWeight: override ? 600 : level === 'RW' ? 600 : 400,
+                  color: override
+                    ? alertTextColor
+                    : level === 'RW' ? 'var(--gd-text, #111827)' : 'var(--gd-text-muted, #6b7280)',
+                }}
+              >
                 {level ?? ''}
               </span>
             );
@@ -237,8 +265,22 @@ export default function FeatureFlagsPage() {
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4, color: 'var(--gd-text, #111827)' }}>
         {t('feature_flags.title')}
       </h1>
-      <p style={{ fontSize: 14, color: 'var(--gd-text-muted, #6b7280)', marginBottom: 24 }}>
+      <p style={{ fontSize: 14, color: 'var(--gd-text-muted, #6b7280)', marginBottom: 8 }}>
         {t('feature_flags.description')}
+      </p>
+      <p style={{ fontSize: 13, color: 'var(--gd-text-muted, #6b7280)', marginBottom: 24 }}>
+        {roleAccess && t('feature_flags.role_access_hint')}
+        {hasOverrides && (
+          // #1070 §3: says in words what the red says in colour, so the
+          // distinction between an inherited permission and an explicit override
+          // does not rest on colour alone.
+          <>
+            {' '}
+            <span style={{ color: alertTextColor, fontWeight: 600 }}>
+              {t('feature_flags.override_legend')}
+            </span>
+          </>
+        )}
       </p>
 
       <Tabs

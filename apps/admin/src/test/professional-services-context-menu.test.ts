@@ -114,10 +114,14 @@ describe('#802 Professional Services context menu — destructive styling', () =
   });
 
   it('reuses the shared destructive colour instead of hard-coding one in the page', () => {
-    // #c0392b lives in ContextMenu, driven by the `danger` flag (§4, §8). The
-    // page's own error-text colour is unrelated, so the scan is scoped to the
-    // menu literal and to the `<ContextMenu … />` usage.
-    expect(contextMenuSrc).toContain("item.danger ? '#c0392b'");
+    // The red lives in ContextMenu, driven by the `danger` flag (§4, §8) — and
+    // since #1070 it reads `formChrome`'s `alertTextColor`, the one place the
+    // app's red is spelled, rather than repeating the hex. The page's own
+    // error-text colour is unrelated, so the scan is scoped to the menu's own
+    // colour decision and to the `<ContextMenu … />` usage.
+    expect(contextMenuSrc).toContain('item.danger ? alertTextColor');
+    expect(contextMenuSrc).toContain("import { alertTextColor } from './formChrome';");
+    expect(contextMenuSrc).not.toMatch(/#c0392b/);
     expect(block).not.toMatch(/#[0-9a-fA-F]{3,6}|color:|style:/);
     const usage = page.slice(page.indexOf('<ContextMenu items={menuItems}'));
     expect(usage.slice(0, usage.indexOf('/>'))).not.toMatch(/#[0-9a-fA-F]{3,6}|style=/);

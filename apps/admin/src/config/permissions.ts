@@ -35,6 +35,49 @@ export const PERMISSION_MATRIX: Record<AppModule, Record<AppRole, PermissionLeve
   CORDEL:       { admin: 'NONE',trainer_performance: 'NONE',      trainer_perf_nutrition: 'NONE',       front_desk: 'NONE', accountant: 'NONE', nutritionist: 'NONE',       member: 'NONE'  },
 };
 
+/**
+ * #1070: the API's `FEATURE_PERMISSION_OVERRIDES`, mirrored for menus and page
+ * controls exactly as the matrix above is (#611) —
+ * `api/src/test/feature-permission-overrides.unit.test.ts` fails on any drift.
+ *
+ * An override is declared per **feature key** and replaces the module's cell for
+ * that one feature: it is matched on the exact key and never on an ancestor, so
+ * `nutrition.personal_goals` says nothing about the rest of `nutrition`. The API
+ * enforces it (`requireFeatureAccess` / `requireFeatureWrite`); this copy only
+ * decides which controls a page offers.
+ */
+export const FEATURE_PERMISSION_OVERRIDES: Record<string, Partial<Record<AppRole, PermissionLevel>>> = {
+  'nutrition.personal_goals': { trainer_performance: 'RW' },
+};
+
+/** The level a feature key overrides for a role, or `null` when it inherits. */
+export function featurePermissionOverride(
+  featureKey: string | undefined,
+  role: AppRole,
+): PermissionLevel | null {
+  if (!featureKey) return null;
+  return FEATURE_PERMISSION_OVERRIDES[featureKey]?.[role] ?? null;
+}
+
+/** The level that actually applies: the feature's own override, else the module's. */
+export function getFeaturePermission(
+  role: AppRole,
+  module: AppModule,
+  featureKey?: string,
+): PermissionLevel {
+  return featurePermissionOverride(featureKey, role) ?? PERMISSION_MATRIX[module][role];
+}
+
+export function canAccessFeature(role: AppRole, module: AppModule, featureKey?: string): boolean {
+  const level = getFeaturePermission(role, module, featureKey);
+  return level !== 'NONE' && level !== 'R_OWN';
+}
+
+export function canWriteFeature(role: AppRole, module: AppModule, featureKey?: string): boolean {
+  const level = getFeaturePermission(role, module, featureKey);
+  return level === 'RW' || level === 'RW_ASSIGNED';
+}
+
 export function canAccessModule(role: AppRole, module: AppModule): boolean {
   const level = PERMISSION_MATRIX[module][role];
   return level !== 'NONE' && level !== 'R_OWN';

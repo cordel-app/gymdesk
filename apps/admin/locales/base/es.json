@@ -3938,7 +3938,9 @@
     "load_error": "Error al cargar los flags.",
     "toggle_error": "Error al actualizar el flag.",
     "enabled_ok": "'{key}' activado.",
-    "disabled_ok": "'{key}' desactivado."
+    "disabled_ok": "'{key}' desactivado.",
+    "override_hint": "{role} tiene {level} en esta función como excepción explícita al permiso heredado de su sección.",
+    "override_legend": "Un valor en rojo es una excepción explícita al permiso heredado."
   },
   "nutrition_plans": {
     "title": "Planes de nutrición asignados",

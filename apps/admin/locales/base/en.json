@@ -3952,7 +3952,9 @@
     "load_error": "Failed to load feature flags.",
     "toggle_error": "Failed to update feature flag.",
     "enabled_ok": "'{key}' enabled.",
-    "disabled_ok": "'{key}' disabled."
+    "disabled_ok": "'{key}' disabled.",
+    "override_hint": "{role} has {level} on this feature as an explicit override of the permission inherited from its section.",
+    "override_legend": "A value in red is an explicit override of the inherited permission."
   },
   "nutrition_plans": {
     "title": "Assigned Nutrition Plans",

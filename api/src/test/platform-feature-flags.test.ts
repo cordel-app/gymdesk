@@ -317,3 +317,41 @@ describe('superadmin bypasses feature flags', () => {
       .send({ enabled: true });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Role access (#1059) and the feature-level overrides (#1070)
+// ---------------------------------------------------------------------------
+
+describe('GET /platform/feature-flags/role-access', () => {
+  const roleAccess = () =>
+    request.get('/platform/feature-flags/role-access').set('Authorization', TEST_AUTH_HEADER);
+
+  it('reports the module matrix keyed by the feature root', async () => {
+    const res = await roleAccess();
+    expect(res.status).toBe(200);
+    expect(res.body.roles.map((r: any) => r.role)).toContain('trainer_performance');
+    expect(res.body.access.nutrition.trainer_performance).toBe('R');
+    expect(res.body.access.nutrition.admin).toBe('RW');
+  });
+
+  it('reports a feature-level override under its full key, apart from the matrix', async () => {
+    // #1070 §3: the page marks an override as the explicit decision it is, which
+    // it can only do while the two are reported separately — `access` still says
+    // what `nutrition` inherits, and the override says what Personal Goals is.
+    const res = await roleAccess();
+    expect(res.body.overrides['nutrition.personal_goals'].trainer_performance).toBe('RW');
+    expect(res.body.overrides['nutrition.personal_goals'].admin).toBeUndefined();
+    expect(res.body.overrides.nutrition).toBeUndefined();
+    expect(res.body.access.nutrition.trainer_performance).toBe('R');
+  });
+
+  it('returns 403 for a non-superadmin', async () => {
+    mockGetUser.mockResolvedValueOnce({
+      publicMetadata: {},
+      fullName: 'Regular User',
+      firstName: 'Regular',
+      lastName: 'User',
+    });
+    expect((await roleAccess()).status).toBe(403);
+  });
+});
