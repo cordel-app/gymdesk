@@ -9,7 +9,6 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import {
-  destructiveButtonStyle,
   memberTheme,
   noticeStyle,
   primaryButtonStyle,
@@ -97,24 +96,6 @@ interface PaymentRequest {
   created_at: string;
 }
 
-/**
- * #788: the card the member's recurring charges are taken from. The token that
- * charges it never reaches the app — only the brand, the last four digits and
- * when the card on file was stored.
- */
-interface StoredCard {
-  provider: string;
-  card_brand: string | null;
-  card_last4: string | null;
-  since: string | null;
-}
-
-interface PaymentMethodState {
-  payment_method: StoredCard | null;
-  can_remove: boolean;
-  removal_blocked_reason: string | null;
-}
-
 const day = (d: string | null) => (d ? d.slice(0, 10) : null);
 
 function formatInterval(interval: number, unit: string, t: (k: string) => string): string {
@@ -137,9 +118,6 @@ export default function MembershipPage() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [events, setEvents] = useState<BillingEvent[]>([]);
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
-  const [card, setCard] = useState<PaymentMethodState | null>(null);
-  const [cardBusy, setCardBusy] = useState(false);
-  const [cardError, setCardError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -157,13 +135,12 @@ export default function MembershipPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [mship, ledger, pkgs, promos, prs, pm] = await Promise.all([
+        const [mship, ledger, pkgs, promos, prs] = await Promise.all([
           apiFetch<{ membership: Membership | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
           apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
-          apiFetch<PaymentMethodState>('/me/payment-method').catch(() => null),
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
@@ -171,7 +148,6 @@ export default function MembershipPage() {
         setPackages(pkgs);
         setPromotions(promos);
         setPaymentRequests(prs);
-        setCard(pm);
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('common.error'));
       } finally {
@@ -228,53 +204,6 @@ export default function MembershipPage() {
       window.open(url, '_blank');
     } finally {
       setDownloadingReceipt(null);
-    }
-  }
-
-  /**
-   * Replacing a card costs nothing: the hosted page runs a zero-amount
-   * verification and its own consent checkbox is what authorises the future
-   * recurring charges, which is why there is no consent modal on this side.
-   */
-  async function replaceCard() {
-    setCardBusy(true);
-    setCardError(null);
-    try {
-      const result = await apiFetch<{ id: number; checkoutUrl: string }>(
-        '/me/payment-method/replace-requests', { method: 'POST' },
-      );
-      window.location.href = result.checkoutUrl;
-    } catch (err: any) {
-      if (err.message?.toLowerCase().includes('too many') || err.message?.includes('429')) {
-        setCardError(t('payment_method.rate_limited'));
-      } else {
-        setCardError(err.message ?? t('common.error'));
-      }
-      setCardBusy(false);
-    }
-  }
-
-  async function removeCard() {
-    if (!window.confirm(t('payment_method.remove_confirm'))) return;
-    setCardBusy(true);
-    setCardError(null);
-    try {
-      await apiFetch('/me/payment-method', { method: 'DELETE' });
-      const refreshed = await apiFetch<PaymentMethodState>('/me/payment-method').catch(() => null);
-      setCard(refreshed);
-    } catch (err: any) {
-      // The button is hidden when the server says removal is blocked, so a 409
-      // here means the membership changed under the member (a plan assigned in
-      // another tab, a staff reactivation) — show the reason in their language
-      // rather than the API's error code, and re-read the state that changed.
-      if (err.message === 'billable_membership') {
-        setCardError(t('payment_method.remove_blocked'));
-        setCard(await apiFetch<PaymentMethodState>('/me/payment-method').catch(() => null));
-      } else {
-        setCardError(err.message ?? t('common.error'));
-      }
-    } finally {
-      setCardBusy(false);
     }
   }
 
@@ -377,43 +306,6 @@ export default function MembershipPage() {
           </button>
         </div>
       )}
-
-      {/* #788: the stored card, and the two things a member can do with it.
-          Replacing is always offered — it used to require paying a whole
-          membership fee through the Start payment button — and removing only
-          once nothing is scheduled to be charged any more. */}
-      <section style={styles.section}>
-        <h2 style={styles.h2}>{t('payment_method.heading')}</h2>
-        {card?.payment_method ? (
-          <>
-            <p style={styles.cardLine}>
-              {card.payment_method.card_brand ?? t('payment_method.card')}
-              {card.payment_method.card_last4 ? ` •••• ${card.payment_method.card_last4}` : ''}
-            </p>
-            {card.payment_method.since && (
-              <p style={styles.hint}>
-                {t('payment_method.since', { date: day(card.payment_method.since) ?? '' })}
-              </p>
-            )}
-          </>
-        ) : (
-          <p style={styles.hint}>{t('payment_method.none')}</p>
-        )}
-        <div style={styles.cardActions}>
-          <button style={styles.startPaymentBtn} onClick={replaceCard} disabled={cardBusy}>
-            {card?.payment_method ? t('payment_method.replace') : t('payment_method.add')}
-          </button>
-          {card?.payment_method && card.can_remove && (
-            <button style={styles.removeCardBtn} onClick={removeCard} disabled={cardBusy}>
-              {t('payment_method.remove')}
-            </button>
-          )}
-        </div>
-        {card?.payment_method && !card.can_remove && (
-          <p style={styles.hint}>{t('payment_method.remove_blocked')}</p>
-        )}
-        {cardError && <p style={{ ...styles.hint, color: memberTheme.statusError }}>{cardError}</p>}
-      </section>
 
       {membership.benefits.length > 0 && (
         <section style={styles.section}>
@@ -601,12 +493,6 @@ function StatusPill({ status, label }: { status: string; label: string }) {
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  cardLine: { margin: '0 0 4px', fontSize: 15, fontWeight: 600, color: memberTheme.text },
-  cardActions: { display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 },
-  removeCardBtn: {
-    ...destructiveButtonStyle,
-    padding: '10px 16px', fontSize: 14, fontWeight: 600,
-  },
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
   title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
   card: { ...sectionCardStyle, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
