@@ -15,7 +15,11 @@ import {
 } from '@/components/formChrome';
 import { cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalDisplayName } from '@/components/goalLibrary/goalProfile';
+import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalDetailsModal } from './AssignedPersonalGoalDetailsModal';
+import { GoalReadingHeader } from './GoalReadingHeader';
+import { GoalReadingHistory } from './GoalReadingHistory';
+import { GoalReadingsResponse, ReadingKind, formatProgress } from './goalReadings';
 import { AssignedPersonalGoalForm, GoalOption, MemberOption } from './AssignedPersonalGoalForm';
 import {
   ASSIGNED_GOAL_STATUSES, ASSIGNED_PERSONAL_GOALS_ROOT, AssignedGoalStatus,
@@ -77,6 +81,13 @@ export function AssignedPersonalGoalsSection({
   const [detailRow, setDetailRow] = useState<AssignedPersonalGoalRow | null>(null);
   const [deleting, setDeleting] = useState<AssignedPersonalGoalRow | null>(null);
 
+  // #1037 — one assignment's reading history, loaded when its row is expanded and
+  // kept per row, so collapsing and re-expanding costs nothing. The five header
+  // fields are already on the row (they are derived on every read), so this read
+  // is only for the history list.
+  const [readings, setReadings] = useState<Record<number, GoalReadingsResponse>>({});
+  const [reading, setReading] = useState<{ row: AssignedPersonalGoalRow; kind: ReadingKind } | null>(null);
+
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<AssignedPersonalGoalFormValues>(emptyAssignedPersonalGoalForm());
   const [editError, setEditError] = useState<string | null>(null);
@@ -120,6 +131,17 @@ export function AssignedPersonalGoalsSection({
 
   useEffect(() => { load(); }, [load]);
 
+  const loadReadings = useCallback(async (id: number) => {
+    try {
+      const data = await apiFetch<GoalReadingsResponse>(`${ASSIGNED_PERSONAL_GOALS_ROOT}/${id}/readings`);
+      setReadings((prev) => ({ ...prev, [id]: data }));
+    } catch {
+      // A failed history read leaves the card's own figures standing: they are
+      // the row's, and an empty accordion is better than an error over a card
+      // that is otherwise correct.
+    }
+  }, [apiFetch]);
+
   // The two catalogues the pickers and the filters offer. Read once: neither
   // changes while this screen is open, and the assignment list is what moves.
   useEffect(() => {
@@ -155,7 +177,8 @@ export function AssignedPersonalGoalsSection({
     if (editingId === id) return; // never collapse the row being edited
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
+      if (next.has(id)) next.delete(id);
+      else { next.add(id); if (!readings[id]) loadReadings(id); }
       return next;
     });
   }
@@ -208,6 +231,26 @@ export function AssignedPersonalGoalsSection({
     } finally { setEditSaving(false); }
   }
 
+  /**
+   * `⋮ → Add reading` expands the row it was launched from, so the header, the
+   * history and the figure that just changed are all on screen when the dialog
+   * closes — the same reason `⋮ → Edit` expands its row (#797).
+   */
+  function openReading(row: AssignedPersonalGoalRow, kind: ReadingKind) {
+    setExpanded((prev) => new Set(prev).add(row.id));
+    setReading({ row, kind });
+  }
+
+  /**
+   * §30 — a saved reading updates the header and the history with no manual
+   * refresh: the list read re-derives the five fields and the history read
+   * re-lists the rows.
+   */
+  async function readingSaved(id: number) {
+    setReading(null);
+    await Promise.all([load(), loadReadings(id)]);
+  }
+
   async function confirmDelete() {
     if (!deleting) return;
     try {
@@ -220,17 +263,39 @@ export function AssignedPersonalGoalsSection({
     }
   }
 
+  /**
+   * The expanded row: #1037 §5's structured header first, then the assignment's
+   * own remaining fields, then §18's reading history.
+   *
+   * The order is §12's — header, (stage 4's chart), history — and the body holds
+   * **no control**: Add reading and Change initial reading are `⋮` items, because
+   * expanding a row reads and the menu is the single entry point into a write
+   * (#797). The history's own caret is presentation, not a write (#955).
+   */
   function renderReadOnly(row: AssignedPersonalGoalRow) {
     return (
-      <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-        <ReadOnlyField label={label('label_member')} value={row.member_name} />
-        <ReadOnlyField label={label('label_goal')} value={nameOfGoal(row)} />
-        <ReadOnlyField label={label('label_target')} value={formatTarget(row)} />
-        <ReadOnlyField label={label('label_period')} value={formatGoalPeriod(row, locale)} />
-        <ReadOnlyField label={label('label_status')} value={label(`status_${row.status}`)} />
-        <div style={{ gridColumn: '1 / -1' }}>
-          <ReadOnlyField label={label('label_notes')} value={row.notes ?? '—'} wrap />
+      <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <GoalReadingHeader
+          goalName={nameOfGoal(row)}
+          target={formatTarget(row)}
+          unit={row.target_unit}
+          summary={row}
+          label={label}
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+          <ReadOnlyField label={label('label_member')} value={row.member_name} />
+          <ReadOnlyField label={label('label_period')} value={formatGoalPeriod(row, locale)} />
+          <ReadOnlyField label={label('label_status')} value={label(`status_${row.status}`)} />
+          <div style={{ gridColumn: '1 / -1' }}>
+            <ReadOnlyField label={label('label_notes')} value={row.notes ?? '—'} wrap />
+          </div>
         </div>
+        <GoalReadingHistory
+          readings={readings[row.id]?.readings ?? []}
+          unit={row.target_unit}
+          locale={locale}
+          label={label}
+        />
       </div>
     );
   }
@@ -257,6 +322,15 @@ export function AssignedPersonalGoalsSection({
     },
     { header: label('col_target'), width: 140, mobile: 'secondary', render: (row) => <span style={cellStyle}>{formatTarget(row)}</span> },
     {
+      // #1037 §11 — the figure the ticket's own header leads with, reported by
+      // the server and never computed here. `—` for an assignment with no
+      // readings or no target, which is not the same fact as `0%`.
+      header: label('col_progress'),
+      width: 110,
+      mobile: 'secondary',
+      render: (row) => <span style={cellStyle}>{formatProgress(row.progress_percent)}</span>,
+    },
+    {
       header: label('col_period'),
       width: 220,
       mobile: 'secondary',
@@ -275,6 +349,11 @@ export function AssignedPersonalGoalsSection({
       render: (row) => (
         <ContextMenu items={[
           { label: label('edit'), onClick: () => openInlineEdit(row), disabled: !canWrite, title: readOnlyTitle },
+          // #1037 §3/§21 — two writers, two items: a measurement, and a new
+          // baseline every later percentage is computed from. Neither is a flag
+          // on the other, and both are gated like any write action.
+          { label: label('add_reading'), onClick: () => openReading(row, 'reading'), disabled: !canWrite, title: readOnlyTitle },
+          { label: label('set_initial_reading'), onClick: () => openReading(row, 'initial'), disabled: !canWrite, title: readOnlyTitle },
           { label: label('unassign'), onClick: () => setDeleting(row), disabled: !canWrite, title: readOnlyTitle, danger: true },
           // Details is always last (#802's rule for a page that fixes its order).
           { label: label('details'), onClick: () => setDetailRow(row) },
@@ -390,6 +469,18 @@ export function AssignedPersonalGoalsSection({
           goalName={nameOfGoal(detailRow)}
           label={label}
           onClose={() => setDetailRow(null)}
+        />
+      )}
+
+      {reading && (
+        <AddReadingModal
+          assignmentId={reading.row.id}
+          kind={reading.kind}
+          goalName={nameOfGoal(reading.row)}
+          unit={reading.row.target_unit}
+          label={label}
+          onClose={() => setReading(null)}
+          onSaved={() => readingSaved(reading.row.id)}
         />
       )}
 

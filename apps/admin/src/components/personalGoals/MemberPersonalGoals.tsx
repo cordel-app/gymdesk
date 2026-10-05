@@ -11,7 +11,11 @@ import {
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalDisplayName } from '@/components/goalLibrary/goalProfile';
+import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalForm, GoalOption } from './AssignedPersonalGoalForm';
+import { GoalReadingHeader } from './GoalReadingHeader';
+import { GoalReadingHistory } from './GoalReadingHistory';
+import { GoalReadingsResponse, ReadingKind } from './goalReadings';
 import {
   ASSIGNED_PERSONAL_GOALS_ROOT, AssignedPersonalGoalFormValues,
   AssignedPersonalGoalListResponse, AssignedPersonalGoalRow,
@@ -71,6 +75,12 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
 
   const [removing, setRemoving] = useState<AssignedPersonalGoalRow | null>(null);
 
+  // #1037 — each goal's reading history, loaded with the section: these cards are
+  // open by default (the Member card has no per-goal expansion), so the history
+  // accordion is there to be unfolded rather than fetched on demand.
+  const [readings, setReadings] = useState<Record<number, GoalReadingsResponse>>({});
+  const [reading, setReading] = useState<{ row: AssignedPersonalGoalRow; kind: ReadingKind } | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -87,6 +97,28 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
 
   useEffect(() => { load(); }, [load]);
 
+  const loadReadings = useCallback(async (ids: number[]) => {
+    const histories = await Promise.all(ids.map(async (id) => {
+      try {
+        return [id, await apiFetch<GoalReadingsResponse>(`${ASSIGNED_PERSONAL_GOALS_ROOT}/${id}/readings`)] as const;
+      } catch {
+        // A failed history read leaves the card's own figures standing — they are
+        // the row's, derived on the list read.
+        return null;
+      }
+    }));
+    setReadings((prev) => {
+      const next = { ...prev };
+      for (const entry of histories) if (entry) next[entry[0]] = entry[1];
+      return next;
+    });
+  }, [apiFetch]);
+
+  useEffect(() => {
+    const ids = rows.map((row) => row.id);
+    if (ids.length > 0) loadReadings(ids);
+  }, [rows, loadReadings]);
+
   // The catalogue the picker offers — only needed once Edit mode is open, which is
   // also the only moment it can be stale enough to matter.
   useEffect(() => {
@@ -102,6 +134,9 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
     if (editing) return;
     setCreating(false); setNewError(null);
     setEditingId(null); setEditError(null);
+    // The reading dialog is one of the mode's controls too, so leaving the mode
+    // closes it rather than leaving it mounted over a read-only card.
+    setReading(null);
   }, [editing]);
 
   const nameOfGoal = useCallback(
@@ -195,14 +230,30 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
             />
           ) : (
             <>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
-                <div style={{ fontWeight: 500, fontSize: 14 }}>{nameOfGoal(row)}</div>
-                <StatusBadge status={row.status} label={t(`status_${row.status}` as any)} />
-              </div>
+              {/* #1037 §5 — the five structured fields, the Status badge beside
+                  them. The goal's name is one of those fields rather than a
+                  heading above them: rendering it twice is the pipe-separated
+                  sentence §5 rejects wearing a different shape. */}
+              <GoalReadingHeader
+                goalName={nameOfGoal(row)}
+                target={formatTarget(row)}
+                unit={row.target_unit}
+                summary={row}
+                label={(key) => t(key as any)}
+                trailing={<StatusBadge status={row.status} label={t(`status_${row.status}` as any)} />}
+              />
               {/* The card's own `Label: Value` row (#929), never a second one. */}
-              <CardDetailRow label={t('label_target')} value={formatTarget(row)} />
               <CardDetailRow label={t('label_period')} value={formatGoalPeriod(row, locale)} />
               {row.notes && <CardDetailRow label={t('label_notes')} value={row.notes} />}
+              {/* §12/§18 — the history under the header, collapsed until asked for. */}
+              <div style={{ marginTop: 8 }}>
+                <GoalReadingHistory
+                  readings={readings[row.id]?.readings ?? []}
+                  unit={row.target_unit}
+                  locale={locale}
+                  label={(key) => t(key as any)}
+                />
+              </div>
               {/* Both actions belong to Edit mode: absent outside it, not disabled. */}
               {canEdit && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
@@ -216,6 +267,16 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
                     }}
                   >
                     {t('edit')}
+                  </button>
+                  {/* #1037 §3/§21 — a measurement and a new baseline, two
+                      writers rather than one with a flag. They belong to Edit
+                      mode like every other control in this section (#797/#957):
+                      absent outside it, not disabled. */}
+                  <button type="button" style={secondaryBtnSmall} onClick={() => setReading({ row, kind: 'reading' })}>
+                    {t('add_reading')}
+                  </button>
+                  <button type="button" style={secondaryBtnSmall} onClick={() => setReading({ row, kind: 'initial' })}>
+                    {t('set_initial_reading')}
                   </button>
                   <button type="button" style={secondaryBtnSmall} onClick={() => setRemoving(row)}>
                     {t('unassign')}
@@ -258,6 +319,23 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
         >
           {t('member_add')}
         </button>
+      )}
+
+      {reading && (
+        <AddReadingModal
+          assignmentId={reading.row.id}
+          kind={reading.kind}
+          goalName={nameOfGoal(reading.row)}
+          unit={reading.row.target_unit}
+          label={(key) => t(key as any)}
+          onClose={() => setReading(null)}
+          onSaved={async () => {
+            const id = reading.row.id;
+            setReading(null);
+            // §30 — the header and the history both refresh, with no manual reload.
+            await Promise.all([load(), loadReadings([id])]);
+          }}
+        />
       )}
 
       {removing && (

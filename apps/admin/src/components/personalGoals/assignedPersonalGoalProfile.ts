@@ -17,6 +17,8 @@
  * knows whether the section it feeds sits behind an Edit mode.
  */
 
+import type { GoalReadingSummaryFields } from './goalReadings';
+
 /** The router root. One mount (`api/src/app.ts`), so one constant. */
 export const ASSIGNED_PERSONAL_GOALS_ROOT = '/member-personal-goals';
 
@@ -35,8 +37,16 @@ export const ASSIGNED_PERSONAL_GOAL_AUDIT_ENTITY = 'member_personal_goal';
 export const ASSIGNED_GOAL_STATUSES = ['in_progress', 'achieved', 'abandoned'] as const;
 export type AssignedGoalStatus = (typeof ASSIGNED_GOAL_STATUSES)[number];
 
-/** A row as `GET /member-personal-goals` returns it. */
-export interface AssignedPersonalGoalRow {
+/**
+ * A row as `GET /member-personal-goals` returns it.
+ *
+ * It **extends** the reading summary (#1037): `initial_reading`,
+ * `latest_reading`, `progress_percent` and the rest are derived on every read by
+ * `api/src/api/goal-readings.ts` and ride on the row rather than being fetched
+ * beside it, so the five header fields of §5 are available wherever a row is —
+ * the list, the Member card, and each mutation's own response.
+ */
+export interface AssignedPersonalGoalRow extends GoalReadingSummaryFields {
   id: number;
   gym_id: string;
   member_id: number;
