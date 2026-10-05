@@ -218,9 +218,21 @@ describe('POST /personal-goals/:id/image — auth and ownership', () => {
   });
 
   it('returns 403 for a read-only role', async () => {
+    // The Clerk user is mocked as a **superadmin** for the `/platform/*` half of
+    // this file, and `tenantContext` gives a superadmin full admin on any gym it
+    // is handed — so the `front_desk` membership only decides anything once the
+    // caller is an ordinary user. Without this the case reached the handler and
+    // read as a 409 (that gym has no `storage_folder_prefix`), which is a pass
+    // for the wrong reason: the prefix below removes that second explanation, so
+    // a regression in `requireWrite` shows up as a 200 rather than as a 409.
+    mockAsNonSuperadmin();
+    await db.query('UPDATE gyms SET storage_folder_prefix = ? WHERE id = ?', [
+      `gyms/${frontDeskGymId}-PersonalGoalImagesFrontDesk`, frontDeskGymId,
+    ]);
     const res = await upload(`/personal-goals/${frontDeskGoalId}/image`, frontDeskGymId, validPng());
     expect(res.status).toBe(403);
     expect(putKeys()).toHaveLength(0);
+    expect(await imageUrlOf(frontDeskGoalId)).toBeNull();
   });
 
   it('returns 403 for a System goal — Cordel administers those', async () => {
