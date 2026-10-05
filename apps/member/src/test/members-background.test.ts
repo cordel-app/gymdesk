@@ -30,10 +30,22 @@ const layoutSrc = stripComments(readFileSync(LAYOUT_PATH, 'utf-8'));
 const libSrc = stripComments(readFileSync(LIB_PATH, 'utf-8'));
 
 describe('which background a page uses (#725)', () => {
-  it('knows the six slots', () => {
+  it('knows the slots the API sends', () => {
     expect([...MEMBER_BACKGROUND_SLOTS]).toEqual(
-      ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'background'],
+      // #1038 adds `personal_goals`, for the My Goals section.
+      ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background'],
     );
+  });
+
+  // #1038 adds the slot so a Theme can carry the My Goals artwork; the section
+  // that renders it is #1036's. Until that page exists `/goals` is an unnamed
+  // route and takes the general background, exactly as the Calendar page does
+  // (#984) — a page is added to `SECTION_SLOTS` when it exists, never by a page
+  // resolving `members_images` for itself.
+  it('does not map a My Goals page yet', () => {
+    expect(slotForPathname('/en/goals')).toBe('background');
+    expect(slotForPathname('/en/personal-goals')).toBe('background');
+    expect(libSrc).not.toMatch(/goals:\s*'personal_goals'/);
   });
 
   it('maps each Members section to its own slot', () => {

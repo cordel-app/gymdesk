@@ -14,8 +14,8 @@ const EDITOR_PATH = join(__dirname, '..', 'components', 'ThemeMembersImagesEdito
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
-/** The six slots #725 defines, with the section each one backs. */
-const SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'background'] as const;
+/** The slots, with the section each one backs — #725's six plus #1038's My Goals. */
+const SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background'] as const;
 
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -33,17 +33,20 @@ const locales = Object.fromEntries(
 ) as Record<(typeof LOCALE_CODES)[number], Record<string, Record<string, unknown>>>;
 
 describe('Custom Themes: Members App images (#725)', () => {
-  it('declares exactly the six slots the ticket defines', () => {
+  it('declares exactly the slots the tickets define, My Goals among them', () => {
     const declared = editorSrc.match(/export const MEMBER_IMAGE_SLOTS = \[([^\]]+)\]/)?.[1] ?? '';
-    const parsed = [...declared.matchAll(/'([a-z]+)'/g)].map((m) => m[1]);
+    const parsed = [...declared.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
     expect(parsed).toEqual([...SLOTS]);
   });
 
-  it('adds a Members App section to the existing editor, not a new screen', () => {
-    // One more collapsible section alongside Branding / Colors / Typography.
-    expect(pageSrc).toMatch(/type SectionKey = [^;]*'members'/);
-    expect(pageSrc).toContain("renderSection(t('section_members_images'), 'members'");
+  it('renders the images inside the Members App section, not as one of its own (#1038)', () => {
+    // The top-level section is gone: the images are a subsection of Members
+    // App, which is the only section that configures the Members App.
+    expect(pageSrc).not.toMatch(/type SectionKey = [^;]*'members'\s*\|/);
+    expect(pageSrc).not.toContain("section_members_images");
     expect(pageSrc).toContain('<ThemeMembersImagesEditor');
+    // …handed to the Members App editor as its `images` subsection.
+    expect(pageSrc).toMatch(/<ThemeMembersAppEditor[\s\S]*?images=\{\([\s\S]*?<ThemeMembersImagesEditor/);
     // No modal is introduced for it.
     expect(pageSrc).not.toMatch(/MembersImages[A-Za-z]*Modal/);
   });
@@ -100,7 +103,7 @@ describe('Custom Themes: Members App images (#725)', () => {
     expect(pickBody).not.toContain('apiFetch');
   });
 
-  it('reads the six URLs off the theme payload rather than fetching them', () => {
+  it('reads the slot URLs off the theme payload rather than fetching them', () => {
     expect(pageSrc).toContain('members_images: MembersImages');
     expect(pageSrc).toContain('theme.members_images?.[`${slot}_url`]');
     // No per-slot GET anywhere on the page.
@@ -122,7 +125,7 @@ describe('Custom Themes: Members App images (#725)', () => {
 
   it('labels the section and every slot in en, es and ca', () => {
     const keys = [
-      'section_members_images',
+      'group_members_images',
       'members_images_hint',
       'members_image_none',
       'members_image_upload',

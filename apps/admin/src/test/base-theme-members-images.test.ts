@@ -16,8 +16,8 @@ const EDITOR_PATH = join(__dirname, '..', 'components', 'ThemeMembersImagesEdito
 const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
-/** The six slots #732 defines, one per Members section. */
-const SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'background'] as const;
+/** The slots, one per Members section — #732's six plus #1038's My Goals. */
+const SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background'] as const;
 
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -35,18 +35,19 @@ const locales = Object.fromEntries(
 ) as Record<(typeof LOCALE_CODES)[number], Record<string, Record<string, unknown>>>;
 
 describe('Base Themes: Members App images (#732)', () => {
-  it('adds a Members App section to the existing editor, not a new screen', () => {
-    expect(pageSrc).toMatch(/type SectionKey = [^;]*'members'/);
-    expect(pageSrc).toContain("renderSection('members', t('section_members_images')");
+  it('renders the images inside the Members App section, not as one of its own (#1038)', () => {
+    expect(pageSrc).not.toMatch(/type SectionKey = [^;]*'members'\s*\|/);
+    expect(pageSrc).not.toContain('section_members_images');
     expect(pageSrc).toContain('<ThemeMembersImagesEditor');
+    expect(pageSrc).toMatch(/<ThemeMembersAppEditor[\s\S]*?images=\{\([\s\S]*?<ThemeMembersImagesEditor/);
     expect(pageSrc).not.toMatch(/MembersImages[A-Za-z]*Modal/);
   });
 
   it('reuses #725\'s editor component instead of a second implementation', () => {
     expect(pageSrc).toContain("from '@/components/ThemeMembersImagesEditor'");
-    // The six slots are named in one place, and it is not this page.
+    // The slots are named in one place, and it is not this page.
     const declared = editorSrc.match(/export const MEMBER_IMAGE_SLOTS = \[([^\]]+)\]/)?.[1] ?? '';
-    expect([...declared.matchAll(/'([a-z]+)'/g)].map((m) => m[1])).toEqual([...SLOTS]);
+    expect([...declared.matchAll(/'([a-z_]+)'/g)].map((m) => m[1])).toEqual([...SLOTS]);
     expect(pageSrc).not.toMatch(/const [A-Z_]*SLOTS\s*=\s*\[/);
   });
 
@@ -100,7 +101,7 @@ describe('Base Themes: Members App images (#732)', () => {
 
   it('labels the section and every slot in en, es and ca', () => {
     const keys = [
-      'section_members_images',
+      'group_members_images',
       'members_images_hint',
       'members_image_none',
       'members_image_upload',
