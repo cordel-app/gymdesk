@@ -117,6 +117,34 @@ export function toMysqlDateTime(value: Date): string {
 }
 
 /**
+ * §4 — when the initial reading recorded as a goal is **assigned** was taken.
+ *
+ * "If the existing assignment flow already has an appropriate timestamp, reuse
+ * it rather than creating an unnecessary duplicate timestamp": the baseline was
+ * measured when the goal started, so the assignment's own `start_date` is that
+ * timestamp. An explicit `initial_reading_at` wins over it, and `undefined` —
+ * which the insert reads as `UTC_TIMESTAMP()` — is the fallback.
+ *
+ * A **future** `start_date` is deliberately not used: staff may date an
+ * assignment forward, and `normalizeRecordedAt()` refuses a future reading for
+ * the reason a mistyped year is refused, so taking it from a field that is
+ * allowed to be in the future would be a way around that rule. Such a baseline
+ * is recorded now instead.
+ */
+export function initialReadingTimestamp(input: {
+  explicit: string | undefined;
+  startDate: string | null;
+  now?: Date;
+}): string | undefined {
+  if (input.explicit) return input.explicit;
+  if (!input.startDate) return undefined;
+  const now = input.now ?? new Date();
+  const started = new Date(`${input.startDate}T00:00:00Z`);
+  if (Number.isNaN(started.getTime()) || started.getTime() > now.getTime()) return undefined;
+  return `${input.startDate} 00:00:00`;
+}
+
+/**
  * A DATETIME reaches the application as a `Date` or as a string depending on
  * the driver's `dateStrings`, so one reader turns a stored row into the shape
  * every rule below works on. An unparsable timestamp answers `null` rather than

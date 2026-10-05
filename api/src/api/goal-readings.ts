@@ -84,6 +84,11 @@ function toNumberOrNull(value: unknown): number | null {
   return value === null || value === undefined ? null : Number(value);
 }
 
+function readingTimestamp(value: unknown): string | null {
+  const reading = toGoalReading({ id: 1, value: 0, recorded_at: value, is_initial: 0 });
+  return reading ? new Date(reading.recordedAt).toISOString() : null;
+}
+
 /**
  * One reading on the wire. `period` is §38's answer — which initial-reading
  * period the reading falls in — reported rather than left to the page, so the
@@ -102,7 +107,11 @@ function shapeReading(
   const base = {
     id: Number(row.id),
     value: toNumberOrNull(row.value),
-    recorded_at: row.recorded_at,
+    // ISO 8601, the form the summary's `initial_reading_at`/`latest_reading_at`
+    // report: a DATETIME reaches us as a `Date` or as a string depending on the
+    // driver, and one response carrying the same instant in two formats is a
+    // client-side parser nobody asked for.
+    recorded_at: readingTimestamp(row.recorded_at),
     is_initial: row.is_initial === 1 || row.is_initial === true || row.is_initial === '1',
     period: period ?? 0,
   };

@@ -39,10 +39,12 @@
  *   to the last initial-flagged reading at or before it, which is one `ORDER
  *   BY` and no join. `assignReadingPeriods()` is the one place that decides it.
  *
- * So "the initial-reading history" is `WHERE is_initial = 1 ORDER BY
- * recorded_at`, and the **active** initial reading is its last row — which is
+ * So "the initial-reading history" is the `is_initial` rows of one assignment in
+ * date order, and the **active** initial reading is the last of them — which is
  * what §25 requires progress to be computed from, and why a superseded initial
- * reading is never updated or deleted (§28).
+ * reading is never updated or deleted (§28). Both are read out of the one
+ * chronological load rather than by a query of their own, which is why the flag
+ * carries no index (see the keys below).
  *
  * ── Append-only, deliberately ──────────────────────────────────────────────
  *
@@ -109,18 +111,24 @@ exports.up = async (knex) => {
         created_by_name         VARCHAR(255)  NULL,
         created_by_type         VARCHAR(20)   NULL,
         PRIMARY KEY (id),
-        -- The one read this table has: every reading of one assignment, in the
-        -- order the chart and the history both need (§17/§19 are the same rows
-        -- read in opposite directions). \`id\` rides along as the tie-breaker,
-        -- because §33 allows several readings on one date and the pair is what
-        -- makes their order total.
+        -- Two indexes, one per FK, and the second one *is* the only read this
+        -- table has: every reading of a page of assignments, in the order the
+        -- chart and the history both need (§17/§19 are the same rows read in
+        -- opposite directions). \`gym_id\` leads it because the read constrains
+        -- the gym and because that is what \`${PREFIX}_gym_fk\` requires, and
+        -- \`id\` closes it because §33 allows several readings on one date and
+        -- the pair is what makes their order total.
+        --
+        -- There is deliberately **no** index on \`is_initial\`: nothing narrows it
+        -- in SQL. The initial-reading history (§22), the active initial reading
+        -- (§25) and a reading's period (§38) are all derived in memory from the
+        -- one chronological read these keys serve
+        -- (\`api/src/domain/goalReadings.ts\`), so an
+        -- index for them would be written on every row of an append-only table
+        -- and read by nothing. A later stage that genuinely narrows the flag in
+        -- SQL adds it then.
         KEY ${PREFIX}_goal_time_index (member_personal_goal_id, recorded_at, id),
-        -- The initial-reading history (§22) and the active initial reading
-        -- (§25): the same rows narrowed to the period boundaries.
-        KEY ${PREFIX}_goal_initial_index (member_personal_goal_id, is_initial, recorded_at),
-        -- Declared rather than left to InnoDB, which would otherwise auto-create
-        -- one named after the constraint.
-        KEY ${PREFIX}_gym_index (gym_id),
+        KEY ${PREFIX}_gym_goal_index (gym_id, member_personal_goal_id, recorded_at, id),
         CONSTRAINT ${PREFIX}_gym_fk FOREIGN KEY (gym_id)
           REFERENCES gyms(id) ON DELETE CASCADE,
         -- CASCADE, so a gym's deletion reaches these through either FK and an

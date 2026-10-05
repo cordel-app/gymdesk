@@ -16,7 +16,9 @@ import {
   toDateOnly,
   utcToday,
 } from '../domain/personalGoalAssignment';
-import { normalizeReadingValue, normalizeRecordedAt } from '../domain/goalReadings';
+import {
+  initialReadingTimestamp, normalizeReadingValue, normalizeRecordedAt,
+} from '../domain/goalReadings';
 import {
   insertGoalReading, loadGoalReadings, withReadingSummaries, withReadingSummary,
 } from './goal-readings';
@@ -281,8 +283,10 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
           gymId,
           assignmentId,
           value: initialReading.value,
-          recordedAt: initialReadingAt.value
-            ?? (startDate.value ? `${startDate.value} 00:00:00` : undefined),
+          recordedAt: initialReadingTimestamp({
+            explicit: initialReadingAt.value,
+            startDate: startDate.value ?? null,
+          }),
           isInitial: true,
           actorName: actor.name,
           actorType: actor.type,

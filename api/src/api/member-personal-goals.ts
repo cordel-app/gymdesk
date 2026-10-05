@@ -22,7 +22,9 @@ import {
   toDateOnly,
   utcToday,
 } from '../domain/personalGoalAssignment';
-import { normalizeReadingValue, normalizeRecordedAt } from '../domain/goalReadings';
+import {
+  initialReadingTimestamp, normalizeReadingValue, normalizeRecordedAt,
+} from '../domain/goalReadings';
 import {
   insertGoalReading, loadGoalReadings, withReadingSummaries, withReadingSummary,
 } from './goal-readings';
@@ -136,12 +138,17 @@ function shapeAssignment<T extends { target_value: unknown }>(row: T) {
  * what the ticket is about, and a stored copy would need a writer in every path
  * that records a measurement.
  */
-async function loadAssignment(id: unknown, gymId: string) {
+async function loadAssignmentRow(id: unknown, gymId: string) {
   const { rows } = await db.query(
     `SELECT ${COLUMNS} ${FROM} WHERE mpg.id = ? AND mpg.gym_id = ?`,
     [id, gymId],
   );
-  return rows[0] ? withReadingSummary(shapeAssignment(rows[0]), gymId) : undefined;
+  return rows[0] ? shapeAssignment(rows[0]) : undefined;
+}
+
+async function loadAssignment(id: unknown, gymId: string) {
+  const row = await loadAssignmentRow(id, gymId);
+  return row ? withReadingSummary(row, gymId) : undefined;
 }
 
 /* ── Statuses ─────────────────────────────────────────────────────────────────
@@ -334,7 +341,10 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
           // unnecessary duplicate": the baseline was measured when the goal
           // started, so an explicit `initial_reading_at` wins, then the
           // assignment's own `start_date`, then now.
-          recordedAt: initialReadingAt.value ?? startDateTimestamp(startDate.value),
+          recordedAt: initialReadingTimestamp({
+            explicit: initialReadingAt.value,
+            startDate: startDate.value ?? null,
+          }),
           isInitial: true,
           actorName: actor.name,
           actorType: actor.type,
@@ -343,9 +353,9 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
       return assignmentId;
     });
 
-    const assignment = await loadAssignment(insertId, gymId);
-    recordAudit(req, { action: 'assign', entityType: 'member_personal_goal', entityId: insertId, next: assignment });
-    res.status(201).json(assignment);
+    const stored = await loadAssignmentRow(insertId, gymId);
+    recordAudit(req, { action: 'assign', entityType: 'member_personal_goal', entityId: insertId, next: stored });
+    res.status(201).json(stored ? await withReadingSummary(stored, gymId) : stored);
   } catch (err) {
     // `mpgoal_live_goal_key` (migration 212) is the one unique index here: one
     // live, in-progress assignment per (member, goal). The 409 and the index say
@@ -376,7 +386,10 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
   const actor = actorSnapshot({ name: actorName, isSuperadmin });
 
   try {
-    const previous = await loadAssignment(id, gymId);
+    // The audit pair is the **stored** row, without the computed reading
+    // summary (#1037): `progress_percent` is derived on read, so including it
+    // would make a reading recorded between two edits read as an edit.
+    const previous = await loadAssignmentRow(id, gymId);
     if (!previous || previous.deleted_at !== null) {
       return res.status(404).json({ error: 'Assigned personal goal not found' });
     }
@@ -426,12 +439,12 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
       params,
     );
 
-    const assignment = await loadAssignment(id, gymId);
+    const stored = await loadAssignmentRow(id, gymId);
     recordAudit(req, {
       action: 'update', entityType: 'member_personal_goal', entityId: id,
-      previous, next: assignment,
+      previous, next: stored,
     });
-    res.json(assignment);
+    res.json(stored ? await withReadingSummary(stored, gymId) : stored);
   } catch (err) {
     // Moving an achieved assignment back to `in_progress` can collide with the
     // one that replaced it, which is the same rule as on create.
@@ -549,7 +562,7 @@ memberPersonalGoalsRouter.delete('/:id', requireWrite, async (req, res, next) =>
   const actor = actorSnapshot({ name: actorName, isSuperadmin });
 
   try {
-    const previous = await loadAssignment(id, gymId);
+    const previous = await loadAssignmentRow(id, gymId);
     if (!previous) return res.status(404).json({ error: 'Assigned personal goal not found' });
     if (previous.deleted_at !== null) return res.status(409).json({ error: 'Assigned personal goal is already deleted' });
 
@@ -584,9 +597,4 @@ memberPersonalGoalsRouter.delete('/:id', requireWrite, async (req, res, next) =>
 
 function toNumberOrNull(value: unknown): number | null {
   return value === null || value === undefined ? null : Number(value);
-}
-
-/** A `start_date` read as the DATETIME an initial reading taken that day stores. */
-function startDateTimestamp(startDate: string | null | undefined): string | undefined {
-  return startDate ? `${startDate} 00:00:00` : undefined;
 }

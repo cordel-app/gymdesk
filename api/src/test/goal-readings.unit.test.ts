@@ -11,6 +11,7 @@ import {
   RECORDED_AT_SKEW_MS,
   READING_VALUE_MAX,
   activeInitialReadingOf,
+  initialReadingTimestamp,
   assignReadingPeriods,
   initialReadingHistoryOf,
   latestReadingOf,
@@ -105,6 +106,28 @@ describe('toGoalReading', () => {
 
   it('round-trips a DATETIME through toMysqlDateTime', () => {
     expect(toMysqlDateTime(new Date('2026-09-22T18:30:00Z'))).toBe('2026-09-22 18:30:00');
+  });
+});
+
+describe('initialReadingTimestamp (§4)', () => {
+  const now = new Date('2026-10-05T12:00:00Z');
+
+  it('reuses the assignment\'s own start date rather than inventing one', () => {
+    expect(initialReadingTimestamp({ explicit: undefined, startDate: '2026-09-01', now }))
+      .toBe('2026-09-01 00:00:00');
+  });
+
+  it('prefers an explicitly named time', () => {
+    expect(initialReadingTimestamp({ explicit: '2026-09-02 08:00:00', startDate: '2026-09-01', now }))
+      .toBe('2026-09-02 08:00:00');
+  });
+
+  it('falls back to now (undefined) with no start date', () => {
+    expect(initialReadingTimestamp({ explicit: undefined, startDate: null, now })).toBeUndefined();
+  });
+
+  it('does not take a future start date, which would get around the future rule', () => {
+    expect(initialReadingTimestamp({ explicit: undefined, startDate: '2026-11-01', now })).toBeUndefined();
   });
 });
 
