@@ -23,6 +23,8 @@
  * in its own namespace (#901).
  */
 
+import type { ChartPoint } from '@gymdesk/charts';
+
 /**
  * §5 — the five fields of the card header, in order, each as the key its own
  * page resolves.
@@ -65,7 +67,7 @@ export interface GoalReadingRow {
   recorded_at: string | null;
   /** §21 — whether this reading opens an initial-reading period. */
   is_initial: boolean;
-  /** §38 — which period it falls in, 0-based. Read by stage 4's chart. */
+  /** §38 — which period it falls in, 0-based. Read by the chart (stage 4). */
   period: number;
   created_by_name?: string | null;
   created_by_type?: string | null;
@@ -260,4 +262,43 @@ export function toReadingPayload(form: ReadingFormValues) {
     value: Number(form.value.trim()),
     recorded_at: form.recorded_at || null,
   };
+}
+
+/* ── #1037 stage 4: the chart ─────────────────────────────────────────────── */
+
+/**
+ * §13–§17/§38 — the reading history as chart points, oldest first.
+ *
+ * The adapter is the admin's own, not the charting layer's: `@gymdesk/charts`
+ * knows nothing about goals, so every label a point carries is written here, in
+ * the staff member's locale and the assignment's own unit (§16). The `group` is
+ * the server's `period` (§38), which is what makes §23's segmented line one
+ * answer rather than one per app.
+ *
+ * A reading with no value or no timestamp is dropped rather than plotted at
+ * zero: `0` is a measurement, and a point invented for a row that has none is
+ * the fake reading §14 forbids.
+ */
+export function readingChartPoints(
+  readings: GoalReadingRow[],
+  unit: string | null,
+  locale: string,
+): ChartPoint[] {
+  return [...readings]
+    .sort((a, b) => timeOf(a) - timeOf(b) || a.id - b.id)
+    .filter((reading) => reading.value !== null && reading.recorded_at !== null)
+    .map((reading) => ({
+      x: timeOf(reading),
+      y: Number(reading.value),
+      group: Number.isFinite(reading.period) ? Math.max(0, Math.trunc(reading.period)) : 0,
+      label: formatReadingTimestamp(reading.recorded_at, locale),
+      valueLabel: formatReadingValue(reading.value, unit),
+    }));
+}
+
+/** A chart axis tick: the day, short, in the reader's own locale. */
+export function readingAxisLabel(at: number, locale: string): string {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }

@@ -18,6 +18,7 @@ import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalDisplayName } from '@/co
 import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalDetailsModal } from './AssignedPersonalGoalDetailsModal';
 import { GoalReadingHeader } from './GoalReadingHeader';
+import { GoalReadingChart } from './GoalReadingChart';
 import { GoalReadingHistory } from './GoalReadingHistory';
 import { GoalReadingsResponse, ReadingKind, formatProgress } from './goalReadings';
 import { AssignedPersonalGoalForm, GoalOption, MemberOption } from './AssignedPersonalGoalForm';
@@ -55,7 +56,8 @@ export function AssignedPersonalGoalsSection({
   canWrite: boolean;
   readOnlyTitle?: string;
   /** Resolves a key in the page's own `assigned_personal_goals` namespace. */
-  label: (key: string) => string;
+  /** The page's own resolver (#901). `values` interpolates, e.g. `chart_target`. */
+  label: (key: string, values?: Record<string, string | number>) => string;
   /** Resolves a key in `goal_library`, where a System goal's label was written. */
   goalLabel: (key: string) => string;
   ready?: boolean;
@@ -264,10 +266,28 @@ export function AssignedPersonalGoalsSection({
   }
 
   /**
+   * The chart's three strings. Resolved here rather than in the chart, which
+   * knows no locale key (#901), and the target is interpolated **before** it is
+   * handed over: next-intl prints a missing key verbatim, so a label composed
+   * from two calls would be the one place a `t()` fallback could hide.
+   */
+  function chartLabels(row: AssignedPersonalGoalRow) {
+    return {
+      title: label('section_progress_chart'),
+      ariaLabel: label('chart_aria_label'),
+      // An assignment with no target gets an unlabelled chart rather than a
+      // line captioned `Target —`: the reference line is not drawn either.
+      target: row.target_value === null
+        ? null
+        : label('chart_target', { value: formatTarget(row) }),
+    };
+  }
+
+  /**
    * The expanded row: #1037 §5's structured header first, then the assignment's
-   * own remaining fields, then §18's reading history.
+   * own remaining fields, then §13's progress chart and §18's reading history.
    *
-   * The order is §12's — header, (stage 4's chart), history — and the body holds
+   * The order is §12's — header, chart, history — and the body holds
    * **no control**: Add reading and Change initial reading are `⋮` items, because
    * expanding a row reads and the menu is the single entry point into a write
    * (#797). The history's own caret is presentation, not a write (#955).
@@ -290,6 +310,14 @@ export function AssignedPersonalGoalsSection({
             <ReadOnlyField label={label('label_notes')} value={row.notes ?? '—'} wrap />
           </div>
         </div>
+        {/* §12 — header, chart, history, in that order. */}
+        <GoalReadingChart
+          readings={readings[row.id]?.readings ?? []}
+          unit={row.target_unit}
+          target={row.target_value}
+          locale={locale}
+          labels={chartLabels(row)}
+        />
         <GoalReadingHistory
           readings={readings[row.id]?.readings ?? []}
           unit={row.target_unit}

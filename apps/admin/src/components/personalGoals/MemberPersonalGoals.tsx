@@ -14,6 +14,7 @@ import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalDisplayName } from '@/co
 import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalForm, GoalOption } from './AssignedPersonalGoalForm';
 import { GoalReadingHeader } from './GoalReadingHeader';
+import { GoalReadingChart } from './GoalReadingChart';
 import { GoalReadingHistory } from './GoalReadingHistory';
 import { GoalReadingsResponse, ReadingKind } from './goalReadings';
 import {
@@ -245,6 +246,24 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
               {/* The card's own `Label: Value` row (#929), never a second one. */}
               <CardDetailRow label={t('label_period')} value={formatGoalPeriod(row, locale)} />
               {row.notes && <CardDetailRow label={t('label_notes')} value={row.notes} />}
+              {/* §12 — the chart between the header and the history. */}
+              <div style={{ marginTop: 8 }}>
+                <GoalReadingChart
+                  readings={readings[row.id]?.readings ?? []}
+                  unit={row.target_unit}
+                  target={row.target_value}
+                  locale={locale}
+                  labels={{
+                    title: t('section_progress_chart'),
+                    ariaLabel: t('chart_aria_label'),
+                    // No target, no caption and no reference line — a line
+                    // labelled `Target —` explains nothing.
+                    target: row.target_value === null
+                      ? null
+                      : t('chart_target', { value: formatTarget(row) }),
+                  }}
+                />
+              </div>
               {/* §12/§18 — the history under the header, collapsed until asked for. */}
               <div style={{ marginTop: 8 }}>
                 <GoalReadingHistory

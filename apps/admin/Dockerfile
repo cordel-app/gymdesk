@@ -3,9 +3,13 @@ WORKDIR /app
 
 COPY package*.json ./
 COPY apps/admin/package*.json ./apps/admin/
+# #1037 stage 4 — `@gymdesk/charts` is a workspace this app depends on, so its
+# manifest has to be in place before `npm ci` and its source before the build.
+COPY shared/charts/package*.json ./shared/charts/
 
-RUN npm ci --workspace=apps/admin
+RUN npm ci --workspace=apps/admin --workspace=shared/charts
 
+COPY shared ./shared
 COPY apps/admin ./apps/admin
 
 # NEXT_PUBLIC_* are baked into the bundle at build time

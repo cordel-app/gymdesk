@@ -11,6 +11,8 @@
 // (#983), and a value spelled here would be the second place the Members App
 // paints from.
 
+import type { ChartPoint } from '@gymdesk/charts';
+
 /**
  * The seeded System Personal Goals (`api/src/domain/goalLibrary.ts`'s
  * `SYSTEM_PERSONAL_GOALS`). A System row's label is its **slug** resolved
@@ -456,4 +458,42 @@ export function readingFormError(form: ReadingFormValues, now: Date = new Date()
  */
 export function toReadingPayload(form: ReadingFormValues) {
   return { value: Number(form.value.trim()), recorded_at: form.recorded_at || null };
+}
+
+/* ── #1037 stage 4: the chart ─────────────────────────────────────────────── */
+
+/**
+ * §13–§17/§38 — the reading history as chart points, oldest first.
+ *
+ * The adapter is the app's, not the charting layer's: `@gymdesk/charts` knows
+ * nothing about goals, and every label a point carries is written here, in this
+ * member's own locale and this goal's own unit (§16). What the layer does with
+ * `group` is §23's segmented line — the period is the server's answer (§38), so
+ * neither app decides where a period starts.
+ *
+ * A reading with no value is dropped rather than plotted: a point at `0` is a
+ * measurement of zero, and inventing one would be the fake reading §14 forbids.
+ */
+export function readingChartPoints(
+  readings: GoalReading[],
+  unit: string | null,
+  locale: string,
+): ChartPoint[] {
+  return [...readings]
+    .sort((a, b) => readingTime(a) - readingTime(b) || a.id - b.id)
+    .filter((reading) => reading.value !== null && reading.recorded_at !== null)
+    .map((reading) => ({
+      x: readingTime(reading),
+      y: Number(reading.value),
+      group: Number.isFinite(reading.period) ? Math.max(0, Math.trunc(reading.period)) : 0,
+      label: formatReadingDate(reading.recorded_at, locale),
+      valueLabel: formatReadingValue(reading.value, unit) ?? undefined,
+    }));
+}
+
+/** A chart axis tick: the day, short, in the member's own locale. */
+export function readingAxisLabel(at: number, locale: string): string {
+  const date = new Date(at);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }

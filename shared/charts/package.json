@@ -1,0 +1,17 @@
+{
+  "name": "@gymdesk/charts",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cordel's shared charting layer: Apache ECharts behind one themed abstraction, consumed by the Admin and Members apps.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "echarts": "6.1.0"
+  },
+  "peerDependencies": {
+    "react": "18.3.1"
+  }
+}

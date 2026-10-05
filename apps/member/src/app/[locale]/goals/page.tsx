@@ -9,6 +9,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { MemberDialog } from '@/components/MemberDialog';
 import { GoalHeaderFields, GoalReadingHistory } from '@/components/GoalReadings';
+import { GoalReadingChart } from '@/components/GoalReadingChart';
 import {
   destructiveButtonStyle,
   inputStyle,
@@ -288,6 +289,21 @@ export default function GoalsPage() {
       : t('goals.past_summary_latest', { latest });
   }
 
+  /**
+   * The chart's three strings. The chart resolves none of them itself, like
+   * every other Members App component (#932's rule), and the target is
+   * interpolated here — a goal with no target gets no caption and no reference
+   * line rather than one reading `Target —`.
+   */
+  function chartLabels(goal: MemberGoal) {
+    const target = formatReadingValue(goal.target_value, goal.target_unit);
+    return {
+      title: t('goals.section_progress_chart'),
+      ariaLabel: t('goals.chart_aria_label'),
+      target: target === null ? null : t('goals.chart_target', { value: target }),
+    };
+  }
+
   const historyLabels = {
     title: t('goals.section_reading_history'),
     empty: t('goals.readings_empty'),
@@ -327,8 +343,16 @@ export default function GoalsPage() {
                     them, so it is not rendered twice. */}
                 <GoalHeaderFields fields={headerFields(goal)} />
                 {goal.notes && <p style={styles.goalNotes}>{goal.notes}</p>}
-                {/* §12/§18 — the history under the header (the chart lands
-                    between them in stage 4), collapsed until the member asks. */}
+                {/* §12 — chart, then history: the chart is what the member
+                    reads at a glance, the history is the log under it. */}
+                <GoalReadingChart
+                  readings={readings[goal.id]?.readings ?? []}
+                  unit={goal.target_unit}
+                  target={goal.target_value}
+                  locale={locale}
+                  labels={chartLabels(goal)}
+                />
+                {/* §18 — collapsed until the member asks. */}
                 <GoalReadingHistory
                   readings={readings[goal.id]?.readings ?? []}
                   unit={goal.target_unit}
