@@ -140,9 +140,11 @@ describe('#958: the actions stay in the ⋮ menu (Q2)', () => {
   it('renders no action button on a row beside the menu', () => {
     // Everything the ticket drew as `[ Cancel ] [ Assign new plan ] [ Details ]`
     // is a menu item; the only buttons left are the inline add draft's own
-    // Save/Cancel and `+ Add Membership Plan`.
+    // Save/Cancel, `+ Add Membership Plan` and — since #1107 — the Past Plans
+    // disclosure header, which belongs to the section rather than to a row and
+    // so leaves this rule intact.
     const buttons = sectionSrc.match(/<button/g) ?? [];
-    expect(buttons.length).toBeLessThanOrEqual(3);
+    expect(buttons.length).toBeLessThanOrEqual(4);
   });
 });
 
