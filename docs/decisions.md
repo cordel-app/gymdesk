@@ -16,7 +16,11 @@ Short record of the settled choices that are not obvious from the code. Don't re
 - No app identity is hard-coded (Bundle ID, name, `server.url`, OAuth client IDs, Firebase config come from configuration), `member_device_tokens` carries an `app_id` from its first migration, and the association files list apps rather than one app — all so that stage 2 costs plumbing, not code.
 - Stage 2 has two unverified risks that must be read before promising it to a gym: App Store guideline 4.2.6 (template apps may have to be submitted from the gym's own developer account) and whether Clerk accepts a native Apple token per Bundle ID.
 - Sign in with Apple can return a private relay email that does not match the invited address, and `POST /me/link` matches by email + `gym_id`; how to link those members is an open decision (see `docs/mobile-app.md` WP3b).
-- Full plan, spike findings and work packages: `docs/mobile-app.md`. Launch checklist: `docs/go-to-production.md` §6.
+- The shell is `apps/mobile` (WP3, #1074): one Capacitor workspace whose every identity value comes from an **app profile**
+  (`profiles/<id>.json`, overridable per field by `MOBILE_*`), so "stage 2 costs plumbing, not code" is checked rather than intended —
+  `api/src/test/mobile-shell-profile.unit.test.ts` fails on an identity literal anywhere else, and `npm run profile:apply` is the one
+  writer of a native identity, because `cap sync` does not write one.
+- Full plan, spike findings and work packages: `docs/mobile-app.md`. Manual simulator and device checks: `docs/mobile-runbook.md`. Launch checklist: `docs/go-to-production.md` §6.
 
 ---
 

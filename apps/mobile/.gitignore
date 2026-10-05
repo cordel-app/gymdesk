@@ -1,0 +1,17 @@
+# #1074 — what this workspace does not keep.
+#
+# `ios/` and `android/` are **in** the repository (the ticket's own scope), and
+# each carries the `.gitignore` Capacitor generates for its own build output
+# (`ios/.gitignore`, `android/.gitignore`), so this file only adds what those
+# two do not cover.
+
+.env
+
+# Firebase config per app profile (`profiles/<id>/`): given to a build, never
+# committed, and copied into the native project by `npm run profile:apply`.
+profiles/*/google-services.json
+profiles/*/GoogleService-Info.plist
+
+# …and the copies it writes.
+ios/App/App/GoogleService-Info.plist
+android/app/google-services.json

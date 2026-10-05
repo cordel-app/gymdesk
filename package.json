@@ -5,7 +5,8 @@
   "workspaces": [
     "api",
     "apps/admin",
-    "apps/member"
+    "apps/member",
+    "apps/mobile"
   ],
   "scripts": {
     "dev:api": "npm --workspace api run dev",
@@ -14,6 +15,8 @@
     "build:api": "npm --workspace api run build",
     "build:admin": "npm --workspace apps/admin run build",
     "build:member": "npm --workspace apps/member run build",
+    "mobile:profile": "npm --workspace apps/mobile run profile:show",
+    "mobile:sync": "npm --workspace apps/mobile run sync",
     "db:up": "docker compose up -d mysql --wait",
     "db:down": "docker compose down",
     "db:migrate": "npm --workspace api run db:migrate",

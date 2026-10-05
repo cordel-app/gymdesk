@@ -1041,10 +1041,29 @@ runbook is how.
 
 ## 6. Mobile app (iOS / Android)
 
-WP1 (push API) and WP2 (the Members App's native half) are done; the shell itself is not built.
-Plan and spike findings in `docs/mobile-app.md`, decision in `docs/decisions.md` #18. Stage 1 is **one generic app** ("Cordel Fitness",
-`com.cordel.fitness`); items marked *(stage 2)* only matter when a gym asks for its own app.
-Tick items off in the PR that completes them.
+WP1 (push API), WP2 (the Members App's native half) and WP3 (the shell, `apps/mobile`) are done;
+nothing has been built on a device or published. Plan and spike findings in `docs/mobile-app.md`,
+the manual checks in `docs/mobile-runbook.md`, decision in `docs/decisions.md` #18. Stage 1 is
+**one generic app** ("Cordel Fitness", `com.cordel.fitness`); items marked *(stage 2)* only matter
+when a gym asks for its own app. Tick items off in the PR that completes them.
+
+### The shell's own configuration (#1074 — each of these is a file or a value, not code)
+
+- [ ] **Icon and splash artwork.** The committed projects carry Capacitor's placeholders. Put
+      `icon.png` (1024×1024) and `splash.png` (2732×2732) in `apps/mobile/profiles/cordel-fitness/`
+      and run `npx @capacitor/assets generate --assetPath profiles/cordel-fitness`.
+- [ ] **The Firebase iOS SDK**, added in Xcode (*Add Package Dependencies…* →
+      `firebase-ios-sdk`, product **FirebaseMessaging**, on the `App` target). The Swift that uses
+      it is already in `AppDelegate.swift` behind `#if canImport(FirebaseMessaging)`, so the
+      project compiles without it — but until it is added iOS registers its **APNs** token and
+      the API's FCM delivery can never reach that device. Android needs no counterpart.
+- [ ] **`GoogleService-Info.plist` and `google-services.json`** in
+      `apps/mobile/profiles/cordel-fitness/` (both gitignored); `npm run profile:apply` copies
+      them into the two projects.
+- [ ] **`aps-environment`** is `development` in `ios/App/App/App.entitlements`; confirm a
+      distribution export carries `production`.
+- [ ] Run `npm run profile:apply` before any release build, and check
+      `git diff apps/mobile/ios apps/mobile/android` names only the identity values.
 
 ### Accounts (start early — verification takes days or weeks)
 
@@ -1097,7 +1116,8 @@ Tick items off in the PR that completes them.
       reaches a physical iPhone and a physical Android phone. Until the variable is set the API
       sends no push at all and every alert still reaches the Members App — nothing fails.
 - [ ] *(stage 2)* Association files list every app profile; push credentials are resolved per
-      `app_id`.
+      `app_id`. The app itself is already a second `apps/mobile/profiles/<id>.json` plus its own
+      store plumbing and no code change — rehearse it with `docs/mobile-runbook.md` §6.
 
 ### Store submission
 
