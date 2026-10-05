@@ -144,12 +144,16 @@ describe('the committed native projects carry the stage-1 profile', () => {
     expect(ids.length).toBeGreaterThan(0);
     expect([...new Set(ids)]).toEqual([appId]);
 
-    const plist = read('ios/App/App/Info.plist');
-    expect(plist).toMatch(
-      new RegExp(`<key>CFBundleDisplayName</key>\\s*<string>${appName}</string>`),
-    );
-    expect(plist).toMatch(
-      new RegExp(`<key>CFBundleURLSchemes</key>\\s*<array>\\s*<string>${appId.replace(/\./g, '\\.')}</string>`),
+    // The plist's own indentation is tabs, and a value here is a *profile's*
+    // (`Body & Mind`, a Bundle ID full of dots) — so the whitespace is squashed
+    // once and the assertion is a plain substring. Building a `RegExp` from a
+    // configured value is the thing CodeQL's incomplete-escaping rule is about:
+    // escaping the dots alone leaves a backslash in a name unescaped, and
+    // escaping nothing at all lets a `(` in a display name change the pattern.
+    const plist = read('ios/App/App/Info.plist').replace(/\s+/g, ' ');
+    expect(plist).toContain(`<key>CFBundleDisplayName</key> <string>${appName}</string>`);
+    expect(plist).toContain(
+      `<key>CFBundleURLSchemes</key> <array> <string>${appId}</string>`,
     );
   });
 
