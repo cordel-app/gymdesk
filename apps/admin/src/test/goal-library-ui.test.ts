@@ -6,10 +6,14 @@ import {
   GOAL_AUDIT_ENTITIES,
   GOAL_KINDS,
   LIBRARY_TABS,
+  MEASURABLE_GOAL_KINDS,
   SYSTEM_GOAL_SLUGS,
   emptyGoalForm,
+  formatGoalTarget,
   goalDisplayName,
+  goalFormError,
   isGoalTab,
+  isMeasurableGoalKind,
   isSystemGoal,
   toGoalFormValues,
   toGoalPayload,
@@ -20,7 +24,9 @@ import {
 import {
   GOAL_LIBRARY_AUDIT_ENTITIES,
   GOAL_LIBRARY_KINDS,
+  MEASURABLE_GOAL_KINDS as API_MEASURABLE_GOAL_KINDS,
   SYSTEM_GOALS,
+  SYSTEM_PERSONAL_GOAL_TARGETS,
 } from '../../../../api/src/domain/goalLibrary';
 
 // #947 — the Nutrition Library is three tabs (Foods, Personal Goals, Nutrition
@@ -230,18 +236,128 @@ describe('row shape and payloads', () => {
   });
 
   it('seeds the Edit form from the persisted row', () => {
-    expect(toGoalFormValues(row)).toEqual({ name: 'Competition Preparation', description: '  the season  ' });
-    expect(toGoalFormValues({ ...row, description: null })).toEqual({
-      name: 'Competition Preparation', description: '',
+    expect(toGoalFormValues({ ...row, target_value: 3, target_unit: 'kg' })).toEqual({
+      name: 'Competition Preparation', description: '  the season  ',
+      target_value: '3', target_unit: 'kg',
     });
-    expect(emptyGoalForm()).toEqual({ name: '', description: '' });
+    expect(toGoalFormValues({ ...row, description: null })).toEqual({
+      name: 'Competition Preparation', description: '', target_value: '', target_unit: '',
+    });
+    expect(emptyGoalForm()).toEqual({ name: '', description: '', target_value: '', target_unit: '' });
   });
 
   it('submits a trimmed description as `` so clearing it persists', () => {
     // The routers read an empty string as "clear it" and an absent key as "leave
     // it alone", so the key is always present.
-    expect(toGoalPayload({ name: ' Energy ', description: '   ' })).toEqual({ name: 'Energy', description: '' });
-    expect(toGoalPayload({ name: 'Energy', description: ' x ' })).toEqual({ name: 'Energy', description: 'x' });
+    expect(toGoalPayload({ ...emptyGoalForm(), name: ' Energy ', description: '   ' }, 'nutrition'))
+      .toEqual({ name: 'Energy', description: '' });
+    expect(toGoalPayload({ ...emptyGoalForm(), name: 'Energy', description: ' x ' }, 'nutrition'))
+      .toEqual({ name: 'Energy', description: 'x' });
+  });
+});
+
+/**
+ * #1034 §1/§2/§13 — the measurable pair, and the one declaration that says which
+ * kinds have it.
+ */
+describe('a Personal Goal is measurable, a Nutrition Goal is not (#1034 §1)', () => {
+  it('mirrors the API\'s own declaration of which kinds carry a target', () => {
+    // The API is the enforcement point (its routers project the columns off that
+    // list); this is the mirror the admin renders from, and the two drifting is
+    // how a form comes to offer a field the router ignores.
+    expect([...MEASURABLE_GOAL_KINDS]).toEqual([...API_MEASURABLE_GOAL_KINDS]);
+    expect(isMeasurableGoalKind('personal')).toBe(true);
+    expect(isMeasurableGoalKind('nutrition')).toBe(false);
+    // Every seeded default belongs to a measurable kind's own catalogue (§2).
+    for (const slug of Object.keys(SYSTEM_PERSONAL_GOAL_TARGETS)) {
+      expect(SYSTEM_GOAL_SLUGS.personal).toContain(slug);
+    }
+  });
+
+  it('submits the pair for a measurable kind only, with an empty value as an explicit clear', () => {
+    const form = { ...emptyGoalForm(), name: 'Lose weight', target_value: ' 3 ', target_unit: ' kg ' };
+    expect(toGoalPayload(form, 'personal')).toEqual({
+      name: 'Lose weight', description: '', target_value: 3, target_unit: 'kg',
+    });
+    expect(toGoalPayload({ ...form, target_value: '', target_unit: '' }, 'personal')).toEqual({
+      name: 'Lose weight', description: '', target_value: null, target_unit: null,
+    });
+    // A Nutrition Goal has no such columns, so the payload must not carry keys
+    // the router would ignore (#974).
+    expect(toGoalPayload(form, 'nutrition')).toEqual({ name: 'Lose weight', description: '' });
+  });
+
+  it('refuses a negative or non-numeric target, and a unit with nothing to qualify', () => {
+    const base = { ...emptyGoalForm(), name: 'Lose weight' };
+    expect(goalFormError(base, 'personal')).toBeNull();
+    expect(goalFormError({ ...base, name: '  ' }, 'personal')).toBe('error_required');
+    expect(goalFormError({ ...base, target_value: '-1' }, 'personal')).toBe('error_target_value');
+    expect(goalFormError({ ...base, target_value: 'x' }, 'personal')).toBe('error_target_value');
+    expect(goalFormError({ ...base, target_unit: 'kg' }, 'personal')).toBe('error_unit_needs_value');
+    // A value with no unit is incomplete rather than contradictory, exactly as
+    // `chk_pgoal_target_unit` has it — one direction only.
+    expect(goalFormError({ ...base, target_value: '3' }, 'personal')).toBeNull();
+    // None of it applies to a kind that has no target at all.
+    expect(goalFormError({ ...base, target_unit: 'kg' }, 'nutrition')).toBeNull();
+  });
+
+  it('formats a target as one phrase, trimming the DECIMAL\'s trailing zeros', () => {
+    expect(formatGoalTarget({ target_value: 3, target_unit: 'kg' })).toBe('3 kg');
+    expect(formatGoalTarget({ target_value: 3.5, target_unit: null })).toBe('3.5');
+    // Maintenance: a change of zero is the goal, not a missing target.
+    expect(formatGoalTarget({ target_value: 0, target_unit: 'kg' })).toBe('0 kg');
+    expect(formatGoalTarget({ target_value: null, target_unit: null })).toBe('—');
+    expect(formatGoalTarget({})).toBe('—');
+  });
+
+  it('renders the pair, its column and its read-only value behind that one predicate', () => {
+    // Never a branch on the kind in the JSX: the column, the read-only field and
+    // both halves of the form ask `measurable`, so they cannot disagree.
+    expect(sectionSrc).toContain('const measurable = isMeasurableGoalKind(kind);');
+    expect(sectionSrc).toContain("{measurable && (");
+    expect(sectionSrc).toContain("...(measurable ? [{");
+    expect(sectionSrc).not.toMatch(/kind === 'personal'/);
+  });
+});
+
+/** #1034 §4 — the `Assign goal to member` action is the page's to offer. */
+describe('Assign goal to member (#1034 §4)', () => {
+  it('is absent unless the page passes a handler, so Cordel\'s library never offers it', () => {
+    const menu = slice('<ContextMenu items={[', '/>', sectionSrc);
+    expect(menu).toContain('...(onAssign ? [{');
+    expect(menu).toContain("label: label('assign_to_member')");
+    // It is not destructive, so it carries no red flag — only Delete does.
+    const assignBlock = slice('...(onAssign ? [{', '}] : [])', menu);
+    expect(assignBlock).not.toContain('danger');
+    // …and it is a write, so it is gated like every other one.
+    expect(assignBlock).toContain('disabled: !canWrite');
+  });
+
+  it('is wired by the gym page and not by Cordel\'s', () => {
+    const gymPage = readFileSync(
+      join(__dirname, '../app/[locale]/personal-goals/page.tsx'), 'utf8',
+    );
+    const basePage = readFileSync(
+      join(__dirname, '../app/[locale]/cordel/personal-goals/page.tsx'), 'utf8',
+    );
+    expect(gymPage).toContain('onAssign=');
+    expect(gymPage).toContain('AssignGoalToMemberModal');
+    expect(basePage).not.toContain('onAssign');
+  });
+
+  it('pre-fills the dialog from the Gym Goal and submits through the one create declaration', () => {
+    const modal = readFileSync(
+      join(__dirname, '../components/personalGoals/AssignGoalToMemberModal.tsx'), 'utf8',
+    );
+    // §5: the goal is the row the action was launched from, never a picker.
+    expect(modal).not.toContain("set({ personal_goal_id");
+    expect(modal).toContain('personal_goal_id: String(goal.id)');
+    // §5/§8: the target is pre-filled and editable, the member is required.
+    expect(modal).toContain('target_value: goal.target_value');
+    expect(modal).toContain("label('choose_member')");
+    // One create form, not a second one.
+    expect(modal).toContain('toAssignedPersonalGoalCreatePayload');
+    expect(modal).toContain('assignedPersonalGoalFormError');
   });
 });
 
@@ -266,9 +382,11 @@ describe('read-only expanded row, editing behind the context menu (#797–#800)'
     expect(sectionSrc).toContain('new Set(prev).add(goal.id)');
   });
 
-  it('gates both writes on the page\'s own permission', () => {
+  it('gates every write on the page\'s own permission', () => {
     const menu = slice('<ContextMenu items={[', '/>', sectionSrc);
-    expect(menu.match(/disabled: !canWrite/g)?.length).toBe(2);
+    // Edit, Delete and — since #1034 §4 — Assign goal to member. Details is a
+    // read and is deliberately not among them.
+    expect(menu.match(/disabled: !canWrite/g)?.length).toBe(3);
     // The section decides no permission of its own (#806).
     expect(sectionSrc).not.toContain('useModuleAccess');
   });

@@ -7,8 +7,12 @@ import {
   GOAL_LIBRARY_TABLES,
   GoalLibraryKind,
   buildGoalListWhere,
+  isMeasurableGoalKind,
   normalizeGoalName,
 } from '../domain/goalLibrary';
+// What a goal **target** is lives in one module, shared with the gym-facing
+// router and the assignment side (#1034 §1).
+import { normalizeTargetUnit, normalizeTargetValue, targetPairError } from '../domain/goalTarget';
 import {
   actorSnapshot, clampLimit, clampOffset, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
@@ -27,9 +31,35 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
   const router = Router();
   const table = GOAL_LIBRARY_TABLES[kind];
   const entityType = GOAL_LIBRARY_AUDIT_ENTITIES[kind];
+  // #1034 §1: only a measurable kind has `target_value`/`target_unit`, and
+  // `nutrition_goals` has no such columns. Decided once, by the same declaration
+  // the gym-facing router asks.
+  const measurable = isMeasurableGoalKind(kind);
 
-  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status, g.created_at, g.modified_at,
+  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit,' : ''}
+    g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g')}`;
+
+  /** A DECIMAL comes back from mysql2 as a string; reported as the number it is. */
+  function shapeGoal<T extends Record<string, unknown>>(row: T) {
+    if (!row || !measurable) return row;
+    return {
+      ...row,
+      target_value: row.target_value === null || row.target_value === undefined
+        ? null
+        : Number(row.target_value),
+    };
+  }
+
+  /** The submitted target pair, or the 400 that describes it (measurable kinds only). */
+  function readTarget(body: any): { value: { value: number | null | undefined; unit: string | null | undefined } } | { error: string } {
+    if (!measurable) return { value: { value: undefined, unit: undefined } };
+    const value = normalizeTargetValue(body?.target_value);
+    if ('error' in value) return { error: value.error };
+    const unit = normalizeTargetUnit(body?.target_unit);
+    if ('error' in unit) return { error: unit.error };
+    return { value: { value: value.value, unit: unit.value } };
+  }
 
   /**
    * Every write here is a superadmin's, by `requireSuperadmin` — so the actor
@@ -41,7 +71,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
   async function loadGoal(id: unknown) {
     const { rows } = await db.query(`SELECT ${COLUMNS} FROM ${table} g WHERE g.id = ?`, [id]);
-    return rows[0];
+    return rows[0] ? shapeGoal(rows[0]) : undefined;
   }
 
   /* ── List ───────────────────────────────────────────────────────────────── */
@@ -70,7 +100,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
         `SELECT ${COLUMNS} FROM ${table} g WHERE ${where} ORDER BY g.name ASC LIMIT ${limit} OFFSET ${offset}`,
         params,
       );
-      res.json({ items: rows, total: countRows[0]?.total ?? 0, limit, offset });
+      res.json({ items: rows.map(shapeGoal), total: countRows[0]?.total ?? 0, limit, offset });
     } catch (err) { next(err); }
   });
 
@@ -81,6 +111,13 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
     if ('error' in name) return res.status(400).json({ error: name.error });
     const description = normalizeDescription(req.body?.description);
     if ('error' in description) return res.status(400).json({ error: description.error });
+    const target = readTarget(req.body);
+    if ('error' in target) return res.status(400).json({ error: target.error });
+    const createPairError = targetPairError({
+      targetValue: target.value.value ?? null,
+      targetUnit: target.value.unit ?? null,
+    });
+    if (createPairError) return res.status(400).json({ error: createPairError });
 
     try {
       const { rows: existing } = await db.query(
@@ -95,9 +132,14 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // Inventing a slug for it would promise a translation key nothing holds.
       const actor = platformActor(req);
       const { insertId } = await db.query(
-        `INSERT INTO ${table} (gym_id, name, description, status, created_by_name, created_by_type)
-         VALUES (NULL, ?, ?, 'active', ?, ?)`,
-        [name.value, description.value ?? null, actor.name, actor.type],
+        `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit,' : ''}
+           status, created_by_name, created_by_type)
+         VALUES (NULL, ?, ?,${measurable ? ' ?, ?,' : ''} 'active', ?, ?)`,
+        [
+          name.value, description.value ?? null,
+          ...(measurable ? [target.value.value ?? null, target.value.unit ?? null] : []),
+          actor.name, actor.type,
+        ],
       );
       const goal = await loadGoal(insertId);
       recordAudit(req, { action: 'create', entityType, entityId: insertId, next: goal });
@@ -113,10 +155,13 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
     if ('error' in name) return res.status(400).json({ error: name.error });
     const description = normalizeDescription(req.body?.description);
     if ('error' in description) return res.status(400).json({ error: description.error });
+    const target = readTarget(req.body);
+    if ('error' in target) return res.status(400).json({ error: target.error });
 
     try {
       const { rows: existing } = await db.query(
-        `SELECT id, name, description, status, slug FROM ${table} WHERE id = ? AND gym_id IS NULL`,
+        `SELECT id, name, description, status, slug${measurable ? ', target_value, target_unit' : ''}
+         FROM ${table} WHERE id = ? AND gym_id IS NULL`,
         [id],
       );
       if (existing.length === 0) return res.status(404).json({ error: 'Goal not found' });
@@ -138,11 +183,27 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       const params: unknown[] = [actor.name, actor.type];
       if (name.value !== undefined) { updates.push('name = ?'); params.push(name.value); }
       if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
+      if (measurable) {
+        // Against the row the write produces, not against the body: clearing the
+        // value while a stored unit stays behind is what a per-field check misses.
+        const pairError = targetPairError({
+          targetValue: target.value.value === undefined
+            ? toNumberOrNull(existing[0].target_value) : target.value.value,
+          targetUnit: target.value.unit === undefined
+            ? (existing[0].target_unit ?? null) : target.value.unit,
+        });
+        if (pairError) return res.status(400).json({ error: pairError });
+        if (target.value.value !== undefined) { updates.push('target_value = ?'); params.push(target.value.value); }
+        if (target.value.unit !== undefined) { updates.push('target_unit = ?'); params.push(target.value.unit); }
+      }
       params.push(id);
       await db.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`, params);
 
       const goal = await loadGoal(id);
-      recordAudit(req, { action: 'update', entityType, entityId: id, previous: existing[0], next: goal });
+      recordAudit(req, {
+        action: 'update', entityType, entityId: id,
+        previous: shapeGoal(existing[0]), next: goal,
+      });
       res.json(goal);
     } catch (err) { next(err); }
   });
@@ -173,6 +234,11 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
   });
 
   return router;
+}
+
+/** A DECIMAL the driver handed back as a string, as the number it is. */
+function toNumberOrNull(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value);
 }
 
 export const platformPersonalGoalsRouter = createPlatformGoalLibraryRouter('personal');

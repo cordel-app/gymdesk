@@ -280,3 +280,50 @@ describe('the page is a thin wrapper (#806)', () => {
     expect(modalSrc).toContain('ASSIGNED_PERSONAL_GOAL_AUDIT_ENTITY');
   });
 });
+
+/**
+ * #1034 §5/§7 — the catalogue's target reaches the form that assigns it, and the
+ * dialog launched from the goal itself is a narrower view of this same create
+ * form rather than a second one.
+ */
+describe('the Gym Goal\'s target reaches both assignment surfaces (#1034)', () => {
+  const formSrc = read(join(COMPONENT_DIR, 'AssignedPersonalGoalForm.tsx'));
+  const modalSrc = read(join(COMPONENT_DIR, 'AssignGoalToMemberModal.tsx'));
+
+  it('pre-fills the pair when a goal is picked, and clears it when the goal is', () => {
+    // The inheritance itself is the server's (§7); this keeps the form showing
+    // the values that will actually be stored.
+    expect(formSrc).toContain('onChange={(e) => set(selectGoal(e.target.value, goals))}');
+    expect(formSrc).toContain('function selectGoal(');
+    expect(formSrc).toContain("target_unit: goal?.target_unit ?? ''");
+  });
+
+  it('is one create form, not two', () => {
+    expect(modalSrc).toContain('toAssignedPersonalGoalCreatePayload');
+    expect(modalSrc).toContain('assignedPersonalGoalFormError');
+    expect(modalSrc).toContain('emptyAssignedPersonalGoalForm');
+    // No second payload shape and no second validation rule.
+    expect(modalSrc).not.toContain('JSON.stringify({ member_id');
+  });
+
+  it('wears the app\'s own modal and form chrome, declaring no style of its own', () => {
+    expect(modalSrc).toContain('CrudModal');
+    expect(modalSrc).toContain("from '@/components/formChrome'");
+    expect(modalSrc).not.toMatch(/#6c63ff/);
+    expect(modalSrc).not.toMatch(/background: '#/);
+  });
+
+  it('both pickers offer the pair, so neither screen reads the catalogue a second way', () => {
+    for (const file of ['AssignedPersonalGoalsSection.tsx', 'MemberPersonalGoals.tsx']) {
+      const src = read(join(COMPONENT_DIR, file));
+      expect(src, file).toContain('target_value: g.target_value ?? null');
+      expect(src, file).toContain('target_unit: g.target_unit ?? null');
+    }
+  });
+
+  it('formats an assignment target the same way whatever it came from', () => {
+    expect(formatTarget({ target_value: 3, target_unit: 'kg' })).toBe('3 kg');
+    expect(formatTarget({ target_value: 0, target_unit: 'kg' })).toBe('0 kg');
+    expect(formatTarget({ target_value: null, target_unit: null })).toBe('—');
+  });
+});

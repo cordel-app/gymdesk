@@ -50,7 +50,15 @@ export const memberPersonalGoalsRouter = Router();
  * list, the single read and the three mutations cannot answer with different
  * shapes (#799 §26).
  *
- * The goal's `slug` and `gym_id` travel with its `name` because the admin needs
+ * `goal_name` is the **snapshot** taken when the assignment was created
+ * (`member_personal_goals.goal_name`, migration 218), not the catalogue's current
+ * name: #1034 §7/§12 are explicit that renaming a Gym Goal must not change an
+ * assignment that already exists, and reading it live is what made it. The live
+ * name is its one fallback, for a row assigned before that migration — which has
+ * nothing else to read, exactly as an un-snapshotted Promotion application reads
+ * the live tables (#635 §16).
+ *
+ * The goal's `slug` and `gym_id` travel with it because the admin needs
  * all three: a seeded System goal is shown under its
  * `goal_library.personal_goal_<slug>` locale key with the stored name as the
  * fallback (`goalDisplayName()`), and `goal_gym_id IS NULL` is what the `System`
@@ -66,7 +74,8 @@ const COLUMNS = `
   mpg.modified_by_name, mpg.modified_by_type,
   mpg.deleted_by_name, mpg.deleted_by_type,
   m.name AS member_name,
-  pg.name AS goal_name, pg.slug AS goal_slug, pg.gym_id AS goal_gym_id,
+  COALESCE(mpg.goal_name, pg.name) AS goal_name,
+  pg.slug AS goal_slug, pg.gym_id AS goal_gym_id,
   pg.status AS goal_status
 `;
 
@@ -207,15 +216,11 @@ memberPersonalGoalsRouter.post('/', requireModuleWrite('NUTRITION'), async (req,
   const status = normalizeStatus(req.body?.status, { required: false });
   if ('error' in status) return res.status(400).json({ error: status.error });
 
-  // On a create an unmentioned field is simply empty, so the cross-field rules
-  // are applied to exactly what will be stored.
-  const fieldError = goalAssignmentFieldError({
-    targetValue: targetValue.value ?? null,
-    targetUnit: targetUnit.value ?? null,
-    startDate: startDate.value ?? null,
-    targetDate: targetDate.value ?? null,
-  });
-  if (fieldError) return res.status(400).json({ error: fieldError });
+  // The cross-field rules are deliberately **not** checked here: since #1034 an
+  // unmentioned target inherits the catalogue's, so the pair that gets stored is
+  // only known after the goal has been read — and checking the submitted pair as
+  // well would refuse a date order twice and a target pair against the wrong
+  // values. The one check sits beside the INSERT, over the effective row.
 
   const actor = actorSnapshot({ name: actorName, isSuperadmin });
 
@@ -231,20 +236,46 @@ memberPersonalGoalsRouter.post('/', requireModuleWrite('NUTRITION'), async (req,
     // a retired one is not — assigning a goal the gym has deleted is how a list
     // comes to name something the catalogue no longer offers.
     const { rows: goalRows } = await db.query(
-      `SELECT id FROM personal_goals
+      `SELECT id, name, target_value, target_unit FROM personal_goals
        WHERE id = ? AND (gym_id IS NULL OR gym_id = ?) AND status != 'deleted'`,
       [goalId, gymId],
     );
     if (goalRows.length === 0) return res.status(404).json({ error: 'Personal goal not found' });
 
+    // #1034 §7 — **the snapshot is the server's, not the form's.** A field the
+    // request does not mention inherits the catalogue's own value, so an
+    // assignment created by any client (the modal, a script, a test) carries the
+    // Gym Goal as it stood at this moment; an explicit `null` is still a clear,
+    // and a submitted value is the per-member override §8 exists for.
+    //
+    // The unit only inherits while the effective value is non-null: a unit
+    // qualifying nothing is what `chk_mpgoal_target_unit` refuses, so inheriting
+    // `kg` beside a target the request deliberately cleared would turn a valid
+    // write into a 400 nobody asked for.
+    const catalogue = goalRows[0];
+    const effectiveValue = targetValue.value === undefined
+      ? toNumberOrNull(catalogue.target_value)
+      : targetValue.value;
+    const effectiveUnit = targetUnit.value === undefined
+      ? (effectiveValue === null ? null : (catalogue.target_unit ?? null))
+      : targetUnit.value;
+
+    const pairError = goalAssignmentFieldError({
+      targetValue: effectiveValue,
+      targetUnit: effectiveUnit,
+      startDate: startDate.value ?? null,
+      targetDate: targetDate.value ?? null,
+    });
+    if (pairError) return res.status(400).json({ error: pairError });
+
     const { insertId } = await db.query(
       `INSERT INTO member_personal_goals
-         (gym_id, member_id, personal_goal_id, target_value, target_unit,
+         (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit,
           start_date, target_date, status, notes, created_by_name, created_by_type)
-       VALUES (?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?, ?)`,
       [
-        gymId, memberId, goalId,
-        targetValue.value ?? null, targetUnit.value ?? null,
+        gymId, memberId, goalId, catalogue.name,
+        effectiveValue, effectiveUnit,
         startDate.value ?? null, targetDate.value ?? null,
         status.value ?? null, notes.value ?? null,
         actor.name, actor.type,
@@ -365,6 +396,10 @@ memberPersonalGoalsRouter.delete('/:id', requireModuleWrite('NUTRITION'), async 
  * is a string one — `YYYY-MM-DD` sorts lexicographically. Normalising here keeps
  * that true whichever the driver hands over.
  */
+function toNumberOrNull(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value);
+}
+
 function dateOnly(value: unknown): string | null {
   if (value === null || value === undefined) return null;
   if (value instanceof Date) return value.toISOString().slice(0, 10);

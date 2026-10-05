@@ -16,6 +16,14 @@ export interface GoalOption {
   name: string;
   /** `null` = a System goal; the picker says so beside the name. */
   gym_id: string | null;
+  /**
+   * #1034 §1 — the catalogue's own target, so selecting a goal pre-fills what it
+   * aims for. The server inherits the same pair for a request that names neither
+   * (§7), so this is what keeps the form showing the values that will actually be
+   * stored rather than a second rule.
+   */
+  target_value?: number | null;
+  target_unit?: string | null;
 }
 
 export interface MemberOption { id: number; name: string }
@@ -83,7 +91,7 @@ export function AssignedPersonalGoalForm({
             <Field label={`${label('label_goal')} *`}>
               <select
                 value={form.personal_goal_id}
-                onChange={(e) => set({ personal_goal_id: e.target.value })}
+                onChange={(e) => set(selectGoal(e.target.value, goals))}
                 style={formControlStyle}
                 autoFocus
               >
@@ -180,6 +188,23 @@ export function AssignedPersonalGoalForm({
       </div>
     </div>
   );
+}
+
+/**
+ * #1034 §5/§7 — picking a goal brings its target with it, so the form shows what
+ * `POST /member-personal-goals` would store for a body that named neither (the
+ * inheritance is the server's; this only keeps the two in step). Typing over it
+ * is the per-member override §8 exists for, and clearing the goal again clears
+ * the pair rather than leaving the previous goal's figures behind.
+ */
+function selectGoal(id: string, goals: GoalOption[]): Partial<AssignedPersonalGoalFormValues> {
+  const goal = goals.find((g) => String(g.id) === id);
+  return {
+    personal_goal_id: id,
+    target_value: goal?.target_value === null || goal?.target_value === undefined
+      ? '' : String(goal.target_value),
+    target_unit: goal?.target_unit ?? '',
+  };
 }
 
 function Field({ label: fieldLabel, help, children }: { label: string; help?: string; children: React.ReactNode }) {

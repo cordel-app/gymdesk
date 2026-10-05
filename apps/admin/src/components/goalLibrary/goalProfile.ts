@@ -41,6 +41,25 @@ export const GOAL_AUDIT_ENTITIES: Record<GoalKind, string> = {
 };
 
 /**
+ * #1034 §1 — which kinds carry a **target** (`target_value` + `target_unit`).
+ * Exactly one does, mirroring `MEASURABLE_GOAL_KINDS` in
+ * `api/src/domain/goalLibrary.ts`: a Personal Goal is measurable, a Nutrition
+ * Goal's own target values are still a later ticket's (CLAUDE.md).
+ *
+ * `goal-library-ui.test.ts` asserts this mirror and the API's declaration agree,
+ * so making a second kind measurable goes in **three** places: that module, the
+ * two columns plus their CHECKs on the kind's table, and this list. It is what
+ * `GoalLibrarySection` asks rather than branching on the kind for itself, so the
+ * column, the read-only field and both halves of the form cannot disagree about
+ * whether a kind has a target.
+ */
+export const MEASURABLE_GOAL_KINDS: readonly GoalKind[] = ['personal'];
+
+export function isMeasurableGoalKind(kind: GoalKind): boolean {
+  return MEASURABLE_GOAL_KINDS.includes(kind);
+}
+
+/**
  * The tabs the Nutrition Library is organised into (#947 §1/§2), in order. The
  * same declaration drives both libraries, so neither page can offer a different
  * set of tabs or order them differently — which is also why a tab id is either
@@ -93,6 +112,15 @@ export interface GoalRow {
   slug: string | null;
   name: string;
   description: string | null;
+  /**
+   * #1034 §1 — the reusable target the `Assign goal to member` modal pre-fills
+   * from, and `null` for a goal that has none (Performance, Recovery and Energy
+   * are seeded without one). A number, not mysql2's DECIMAL string: the router
+   * converts it once. **Absent entirely for a non-measurable kind**, which is
+   * what `isMeasurableGoalKind()` is asked before either is rendered.
+   */
+  target_value?: number | null;
+  target_unit?: string | null;
   status: 'active' | 'deleted';
   created_at: string;
   created_by_name: string | null;
@@ -109,19 +137,34 @@ export interface GoalListResponse {
   offset: number;
 }
 
-/** The editable fields, in the shape both halves of the form hold them. */
+/**
+ * The editable fields, in the shape both halves of the form hold them.
+ *
+ * The target pair is held as **strings**, the way every numeric form in this app
+ * holds one: a `<input type="number">` reports `''` while the field is empty and
+ * a partially typed `3.` mid-keystroke, neither of which survives a round trip
+ * through `number`. `toGoalPayload()` is where they become what the API takes.
+ */
 export interface GoalFormValues {
   name: string;
   description: string;
+  target_value: string;
+  target_unit: string;
 }
 
 export function emptyGoalForm(): GoalFormValues {
-  return { name: '', description: '' };
+  return { name: '', description: '', target_value: '', target_unit: '' };
 }
 
 /** Persisted row → Edit form values: the single mapping both pages seed from. */
 export function toGoalFormValues(goal: GoalRow): GoalFormValues {
-  return { name: goal.name, description: goal.description ?? '' };
+  return {
+    name: goal.name,
+    description: goal.description ?? '',
+    target_value: goal.target_value === null || goal.target_value === undefined
+      ? '' : String(goal.target_value),
+    target_unit: goal.target_unit ?? '',
+  };
 }
 
 /**
@@ -130,10 +173,63 @@ export function toGoalFormValues(goal: GoalRow): GoalFormValues {
  *
  * `description` is always present, as `''` when empty: the routers read an empty
  * string as "clear it" and an absent key as "leave it alone", and an inline form
- * that cleared a description has to mean the former.
+ * that cleared a description has to mean the former. The target pair is the same
+ * rule one type over — `null` is the explicit clear — and it is sent **only for a
+ * measurable kind**, because a Nutrition Goal has no such columns and a payload
+ * carrying them would suggest a write the router ignores (#974).
  */
-export function toGoalPayload(form: GoalFormValues): { name: string; description: string } {
-  return { name: form.name.trim(), description: form.description.trim() };
+export function toGoalPayload(form: GoalFormValues, kind: GoalKind): {
+  name: string;
+  description: string;
+  target_value?: number | null;
+  target_unit?: string | null;
+} {
+  const base = { name: form.name.trim(), description: form.description.trim() };
+  if (!isMeasurableGoalKind(kind)) return base;
+  const value = form.target_value.trim();
+  return {
+    ...base,
+    target_value: value === '' ? null : Number(value),
+    target_unit: form.target_unit.trim() || null,
+  };
+}
+
+/**
+ * The client-side half of `targetPairError()` — the same rules, so the form says
+ * what is wrong beside the fields instead of waiting for the API's 400. The
+ * server's copy stays the enforcement point: this one only decides whether to
+ * submit.
+ *
+ * It answers a **locale key**, never a sentence: the words belong to whichever
+ * page renders the form (#901), which is what keeps this module JSX- and
+ * i18n-free.
+ */
+export function goalFormError(form: GoalFormValues, kind: GoalKind): string | null {
+  if (!form.name.trim()) return 'error_required';
+  if (!isMeasurableGoalKind(kind)) return null;
+  const value = form.target_value.trim();
+  if (value !== '' && !(Number.isFinite(Number(value)) && Number(value) >= 0)) {
+    return 'error_target_value';
+  }
+  if (form.target_unit.trim() !== '' && value === '') return 'error_unit_needs_value';
+  return null;
+}
+
+/**
+ * The target as one phrase — `3 kg`, `3` for a value with no unit, and `—` when
+ * there is none at all. Every surface asks for it rather than composing the pair
+ * itself, so a target cannot read two ways on one screen — the same formatter
+ * `formatTarget()` is for an assignment, which is deliberately a separate
+ * function on a separate row type rather than one shared across the two: what
+ * they format is the same kind of value, but a catalogue target and an agreed
+ * one are different facts (§10).
+ */
+export function formatGoalTarget(goal: Pick<GoalRow, 'target_value' | 'target_unit'>): string {
+  if (goal.target_value === null || goal.target_value === undefined) return '—';
+  // Trailing zeros trimmed: a DECIMAL(10,2) of `3.00` is a target somebody typed
+  // as `3`, and `3.00 kg` reads as a precision the gym never claimed.
+  const value = String(Number(goal.target_value));
+  return goal.target_unit ? `${value} ${goal.target_unit}` : value;
 }
 
 /** Whether this row is the platform's (System) rather than the gym's own. */

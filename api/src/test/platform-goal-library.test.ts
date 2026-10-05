@@ -47,6 +47,8 @@ const KINDS = [
     systemSlug: 'weight_loss',
     systemName: 'Weight Loss',
     systemSlugs: ['weight_loss', 'weight_gain', 'muscle_gain', 'maintenance', 'performance', 'recovery', 'energy'],
+    /** #1034 §1 — only this kind has `target_value` + `target_unit`. */
+    measurable: true,
   },
   {
     label: 'platform nutrition goals',
@@ -55,6 +57,7 @@ const KINDS = [
     systemSlug: 'protein',
     systemName: 'Protein',
     systemSlugs: ['calories', 'protein', 'carbohydrates', 'fats', 'fiber', 'water', 'fasting'],
+    measurable: false,
   },
 ] as const;
 
@@ -437,6 +440,52 @@ for (const kind of KINDS) {
   // -------------------------------------------------------------------------
   // Search
   // -------------------------------------------------------------------------
+
+  // -------------------------------------------------------------------------
+  // #1034 — Cordel administers the Base library's own targets
+  // -------------------------------------------------------------------------
+
+  describe(`${label} — target value and unit (#1034 §1)`, () => {
+    it(kind.measurable ? 'is administered here, on a System row' : 'is not a field of this kind', async () => {
+      if (!kind.measurable) {
+        const listed = await listGoals(path, '?limit=5');
+        expect(listed.status).toBe(200);
+        expect(listed.body.items[0]).not.toHaveProperty('target_value');
+        return;
+      }
+
+      // The seeded defaults migration 218 writes (§2).
+      const listed = await listGoals(path, '?limit=200');
+      const seeded = listed.body.items.find((g: any) => g.slug === 'weight_loss');
+      expect(seeded).toMatchObject({ target_value: 3, target_unit: 'kg' });
+
+      // A Base goal Cordel adds carries one of its own, reported as a number.
+      const created = await createGoal(path, table, {
+        name: `PGL Target ${RUN}`, target_value: '70', target_unit: 'kg',
+      });
+      expect(created.status).toBe(201);
+      expect(created.body).toMatchObject({ target_value: 70, target_unit: 'kg' });
+
+      // The partial-update rule, and the explicit clear beside it.
+      const renamed = await request.put(`${path}/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .send({ name: `PGL Target B ${RUN}` });
+      expect(renamed.status).toBe(200);
+      expect(renamed.body).toMatchObject({ target_value: 70, target_unit: 'kg' });
+
+      const cleared = await request.put(`${path}/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .send({ target_value: null, target_unit: null });
+      expect(cleared.status).toBe(200);
+      expect(cleared.body.target_value).toBeNull();
+
+      // A unit with nothing to qualify is a 400, not the CHECK's 500 (#966).
+      const orphaned = await request.put(`${path}/${created.body.id}`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .send({ target_unit: 'kg' });
+      expect(orphaned.status).toBe(400);
+    });
+  });
 
   describe(`${label} — ?search=`, () => {
     it('matches a System goal name', async () => {
