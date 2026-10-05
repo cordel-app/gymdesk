@@ -884,6 +884,24 @@ are absent outside the mode on the page that does have one. A prop that changed
 what a section *says* — a shorter field list, a different price — would be the
 second rendering again, wearing one component's name.
 
+**And the same rule holds for the list around that body (#1051).** The Member
+card drew those assignments a second way — a stack of metadata cards with a
+`▸/▾` toggle of its own — while the Assigned Plans page listed the same rows as
+a `DataTable`. `components/assignedPlan/AssignedPlansTable.tsx` is the one list
+now, and both screens render it. Two things are worth copying when a list is
+shared between a gym-wide screen and an entity-scoped one. **Express the
+difference as a scope, and let it decide the row's identity only**: a list of
+every member's plans is identified by the Member (#1011's one `mobile: 'name'`),
+a list of one member's by the Plan — repeating the person the page is already
+about identifies nothing, and on a phone it would pin that repeated name and
+hide the Plan behind it. Because #1011's gate reads the literal `Column<T>[]`
+array and allows exactly one `mobile: 'name'` in it, the two scopes are two
+complete declarations over shared cell renderers rather than one array built
+with a conditional spread. **And leave the row's actions to the caller**: the
+`⋮` a screen puts on a row is that screen's (`rowActions`), so the Assigned
+Plans page keeps the menu inside its expanded body while the Member card keeps
+its own three — a list that declared a menu would have to know both.
+
 **A modal fed from a detail the host does not have gets a loader, not a copy.**
 The Member card lists plans through the configuration read (one row per plan), so
 its `⋮ → Details` cannot hand the existing `AssignedPlanDetailsModal` a detail.

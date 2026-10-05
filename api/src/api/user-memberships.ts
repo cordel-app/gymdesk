@@ -100,6 +100,24 @@ export const userMembershipsRouter = Router();
 // database or in the business logic elsewhere in this file. A future start
 // date reads as 'pending' and a past end date on an otherwise-active row
 // reads as 'expired', without requiring a cron job to flip `status` itself.
+/**
+ * The `lifecycle_status` projection itself, so the one place that decides it is
+ * this constant rather than a CASE expression copied into a second query.
+ *
+ * #1051 gave it a second reader: the Member card shows its Assigned Plans with
+ * the Assigned Plans page's own table, and a Status column that read the stored
+ * `status` on one screen and this projection on the other would label the same
+ * future-dated assignment `Active` here and `Pending` there. It takes `um` as
+ * its table alias, which both callers already use.
+ */
+export const LIFECYCLE_STATUS_SQL = `
+  CASE
+    WHEN um.status IN ('paused', 'cancelled', 'expired') THEN um.status
+    WHEN um.starts_at > CURDATE() THEN 'pending'
+    WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
+    ELSE 'active'
+  END`;
+
 export const LIST_SELECT = `
   SELECT um.*,
          m.name AS member_name,
@@ -107,12 +125,7 @@ export const LIST_SELECT = `
          m.nif_nie_passport AS member_nif_nie_passport,
          p.name AS plan_name,
          p.member_limit AS plan_member_limit,
-         CASE
-           WHEN um.status IN ('paused', 'cancelled', 'expired') THEN um.status
-           WHEN um.starts_at > CURDATE() THEN 'pending'
-           WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
-           ELSE 'active'
-         END AS lifecycle_status
+         ${LIFECYCLE_STATUS_SQL} AS lifecycle_status
   FROM user_memberships um
   JOIN members m ON m.id = um.member_id
   LEFT JOIN membership_plans p ON p.id = um.membership_plan_id

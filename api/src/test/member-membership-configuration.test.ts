@@ -563,6 +563,62 @@ describe('GET /user-memberships/member/:memberId/configuration — is_live', () 
 // change"). Applying, revoking and re-applying stay covered by
 // membership-promotions.test.ts, against the Assigned Plan's own routes.
 
+// ─── lifecycle_status (#1051) ─────────────────────────────────────────────────
+
+describe('GET /user-memberships/member/:memberId/configuration — lifecycle_status', () => {
+  let gymId: string;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('MMC Lifecycle Gym');
+    await createTestMembership(gymId, 'admin');
+  });
+
+  // #1051: the Member card draws its plans with the Assigned Plans page's own
+  // table, whose Status column reads this projection. The two screens would
+  // otherwise label the same future-dated assignment differently — stored
+  // `active` here, `pending` there — so it is the same SQL
+  // (`LIFECYCLE_STATUS_SQL`) in both places, not a second CASE.
+  it('reports the date-aware status beside the stored one', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId, `Lifecycle Pending ${uniq()}`);
+    await createAssignment(gymId, memberId, planId, { status: 'active', startsAt: '2099-01-01' });
+
+    const res = await getConfiguration(gymId, memberId);
+    expect(res.status).toBe(200);
+    expect(res.body.plans).toHaveLength(1);
+    // The stored column is untouched — every write path still acts on it.
+    expect(res.body.plans[0].status).toBe('active');
+    expect(res.body.plans[0].lifecycle_status).toBe('pending');
+    // And it is still live: `is_live` is what splits Active from Past.
+    expect(res.body.plans[0].is_live).toBe(true);
+  });
+
+  it('carries a stored terminal status through unchanged, and expires a past end date', async () => {
+    const memberId = await createMember(gymId);
+    const cancelledPlan = await createPlan(gymId, `Lifecycle Cancelled ${uniq()}`);
+    const pausedPlan = await createPlan(gymId, `Lifecycle Paused ${uniq()}`);
+    const endedPlan = await createPlan(gymId, `Lifecycle Ended ${uniq()}`);
+
+    const pausedUm = await createAssignment(gymId, memberId, pausedPlan, {
+      status: 'paused', startsAt: '2026-03-01',
+    });
+    const cancelledUm = await createAssignment(gymId, memberId, cancelledPlan, {
+      status: 'cancelled', startsAt: '2026-02-01', endsAt: '2026-02-28',
+    });
+    // Stored 'active' with an end date already behind us reads 'expired'.
+    const endedUm = await createAssignment(gymId, memberId, endedPlan, {
+      status: 'active', startsAt: '2020-01-01', endsAt: '2020-12-31',
+    });
+
+    const res = await getConfiguration(gymId, memberId);
+    expect(res.status).toBe(200);
+    const byId = new Map(res.body.plans.map((p: any) => [p.id, p]));
+    expect((byId.get(pausedUm) as any).lifecycle_status).toBe('paused');
+    expect((byId.get(cancelledUm) as any).lifecycle_status).toBe('cancelled');
+    expect((byId.get(endedUm) as any).lifecycle_status).toBe('expired');
+  });
+});
+
 describe('GET /user-memberships/member/:memberId/configuration — no promotions (#931)', () => {
   let gymId: string;
 

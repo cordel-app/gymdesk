@@ -14,15 +14,18 @@
  * changed what it reads, writes or gates on (#961 "Preserve existing
  * functionality").
  *
- * Two of the mappings are the thread's answers rather than this module's:
+ * Two of the mappings are a thread's answer rather than this module's:
  *
- * * **Membership Plans stays in Profile** (§1), beside the Profile fields and
- *   the Account status, because it is what the Member *is* rather than what
- *   they bought.
- * * **Everything else goes to Products & Services** — the Billing Simulation,
- *   the Billing Events ledger, the Session Packages and the PT Class Slots, per
- *   the `Q2` answer on the thread ("All sections in the table to Products &
- *   Services"). They keep the relative order the single column had.
+ * * **Membership Plans is Products & Services', and first in it** — #1051
+ *   moved it out of Profile, which is where #961 §1 had put it ("what the
+ *   Member *is* rather than what they bought"). The later ticket is explicit
+ *   that the Member's assigned plans are managed from Products & Services, so
+ *   this declaration is the whole of that move: the section reads, writes and
+ *   gates on exactly what it did.
+ * * **Everything else was already Products & Services'** — the Billing
+ *   Simulation, the Billing Events ledger, the Session Packages and the PT
+ *   Class Slots, per #961's `Q2` answer ("All sections in the table to Products
+ *   & Services"). They keep the relative order the single column had.
  */
 
 export const MEMBER_TAB_IDS = [
@@ -61,12 +64,13 @@ export const MEMBER_TABS: readonly MemberTab[] = [
   {
     id: 'profile',
     labelKey: 'tab_profile',
-    sections: ['section_profile', 'section_account', 'section_membership_plans'],
+    sections: ['section_profile', 'section_account'],
   },
   {
     id: 'products_services',
     labelKey: 'tab_products_services',
     sections: [
+      'section_membership_plans',
       'section_additional_services',
       'section_billing_simulation',
       'section_pt_slots',

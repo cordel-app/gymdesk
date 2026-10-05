@@ -293,6 +293,7 @@
     "pt_slots_unmatched": "{count} franjas seleccionadas ya no están disponibles para este miembro y no se reservarán: {slots}",
     "section_membership_plans": "Planes de Membresía",
     "no_active_membership_plans": "Sin planes de membresía activos",
+    "membership_plans_active": "Planes activos",
     "membership_plans_history": "Planes anteriores",
     "add_membership_plan": "+ Añadir Plan de Membresía",
     "add_membership_plan_title": "Añadir Plan de Membresía",

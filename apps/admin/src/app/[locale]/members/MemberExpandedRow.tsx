@@ -364,10 +364,22 @@ export function MemberExpandedRow({
             </Section>
           )}
 
-          {/* #634 §13 — the Member's Membership configuration as independent
-              sections. Additional Services and the Billing Simulation are siblings
-              of MEMBERSHIP PLANS, never nested inside a plan card, and each one has
-              its own editing controls.
+        </>
+      )}
+
+      {tab === 'products_services' && (
+        <>
+          {/* #961 §2 — Products & Services: everything the Member bought or is
+              billed for. The thread's Q2 answer put all four of the sections the
+              ticket's own table left unassigned here, in the order the single
+              column had them, and #1051 moved MEMBERSHIP PLANS in at the top of
+              them. Which sections belong to which tab is `MEMBER_TABS` in
+              memberTabs.ts, never this JSX.
+
+              #634 §13 — the Member's Membership configuration as independent
+              sections. Additional Products and the Billing Simulation are
+              siblings of MEMBERSHIP PLANS, never nested inside a plan, and each
+              one has its own editing controls.
 
               #931 — there is no PROMOTIONS section here. A Promotion belongs to the
               target it applies to (a Membership Plan or a Product), never to a
@@ -377,9 +389,9 @@ export function MemberExpandedRow({
               was agreed with stay on the Assigned Plans card, from that
               application's own snapshot (#635 §16). */}
 
-          {/* 1. MEMBERSHIP PLANS — the Member's plans, several of which may be
-              active at once (§6). Adding one never replaces another (§14). */}
-          <Section label={t('members.section_membership_plans')}>
+          {/* 1. MEMBERSHIP PLANS — the Member's assigned plans, Active and Past,
+              drawn with the Assigned Plans page's own table (#1051). */}
+          <Section label={t('members.section_membership_plans')} divider={false}>
             <MemberMembershipPlans
               memberId={memberId}
               plans={configuration.plans}
@@ -390,7 +402,7 @@ export function MemberExpandedRow({
               assignBusy={assigningFor !== null}
               renderAssignEditor={(m) => (
                 // #628: Assign New Plan stays an explicit supersede action, edited
-                // inline inside the plan card it replaces — distinct from "+ Add
+                // inline under the list it acts on — distinct from "+ Add
                 // Membership Plan", which is purely additive.
                 assigningFor?.id === m.id ? (
                   <AssignPlanInlineEditor
@@ -403,21 +415,12 @@ export function MemberExpandedRow({
               )}
             />
           </Section>
-        </>
-      )}
 
-      {tab === 'products_services' && (
-        <>
-          {/* #961 §2 — Products & Services: everything the Member bought or is
-              billed for. The thread's Q2 answer put all four of the sections the
-              ticket's own table left unassigned here, in the order the single
-              column had them. Which sections belong to which tab is
-              `MEMBER_TABS` in memberTabs.ts, never this JSX. */}
           {/* 2. ADDITIONAL PRODUCTS — recurring Products, added and removed at
               any time, independent from plans and promotions (§4). #957: the
               section reads in both modes; its `+ Add Product` button is Edit
               mode's alone. */}
-          <Section label={t('members.section_additional_services')} divider={false}>
+          <Section label={t('members.section_additional_services')}>
             <MemberAdditionalServices
               plans={configuration.plans}
               services={configuration.services}

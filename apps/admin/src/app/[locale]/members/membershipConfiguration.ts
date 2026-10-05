@@ -19,6 +19,14 @@ export interface MemberPlanRow {
   membership_plan_id: number | null;
   plan_name: string | null;
   status: string;
+  /**
+   * #1051 — the date-aware projection of `status` the Assigned Plans page's
+   * Status column reads (`LIFECYCLE_STATUS_SQL`, decided once in SQL). The
+   * Member card shows its plans with that page's own table now, so the two
+   * screens cannot label the same future-dated assignment differently.
+   * `status` above is still the stored column every write path acts on.
+   */
+  lifecycle_status: string;
   membership_fee: number | null;
   /**
    * #958 — who created the assignment and when, shown on every Assigned

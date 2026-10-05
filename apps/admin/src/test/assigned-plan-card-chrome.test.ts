@@ -69,8 +69,11 @@ describe('#924 stage 5: the section order is a declaration, not the JSX', () => 
     const unlisted = present.filter(
       // #958 moved these out of the page directory into
       // `components/assignedPlan/`, shared with the Member card. A modal and
-      // the dialog that loads one are not sections of the card.
-      (f) => !f.endsWith('Modal.tsx') && !f.endsWith('Dialog.tsx') && !CARD_FILES.includes(f as any),
+      // the dialog that loads one are not sections of the card, and neither is
+      // the list that expands into it (#1051's `AssignedPlansTable`) — it has
+      // its own gate in member-assigned-plans-list.test.ts.
+      (f) => !f.endsWith('Modal.tsx') && !f.endsWith('Dialog.tsx') && !f.endsWith('Table.tsx')
+        && !CARD_FILES.includes(f as any),
     );
     expect(unlisted, 'Assigned Plan card file not covered by this test').toEqual([]);
   });
