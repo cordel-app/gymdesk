@@ -2556,6 +2556,52 @@ A dialog that appends a row does so through the route that names the action —
 never a flag in the payload, which is how a client would reach a second
 operation through the first one's endpoint.
 
+## Drawing a Chart (#1037 stage 4)
+
+There is one charting implementation in the repository: `shared/charts`
+(`@gymdesk/charts`), Apache ECharts behind one abstraction both apps depend on.
+A new chart — in either app — reuses it. Do not add a second charting library,
+an inline SVG chart or an ECharts option built in a page.
+
+1. **Decide what the layer owns.** It owns ECharts, the option, the colours and
+   the canvas's lifetime. Your page owns which rows become points, in its own
+   locale: a `ChartPoint` carries `label` and `valueLabel` already formatted, so
+   the layer resolves no locale key and formats no date.
+
+   ```tsx
+   const points = useMemo(() => readingChartPoints(readings, unit, locale), [readings, unit, locale]);
+   if (points.length === 0) return null;          // no data ⇒ no chart section, not an empty canvas
+   return <LineChart points={points} height={200} ariaLabel={t('chart_aria_label')}
+                     reference={target === null ? null : { value: target, label: t('chart_target', { value }) }}
+                     axisLabelFormatter={(at) => axisLabel(at, locale)} />;
+   ```
+
+2. **Spell no colour.** Every colour is a theme role resolved from the `--gd-*`
+   variable that holds it (`chartTheme.ts`), so a gym's Theme moves the chart.
+   `api/src/test/charts-layer.unit.test.ts` fails the build on a quoted hex in a
+   chart component, on an `echarts` import in either app, and on a `t()` inside
+   the layer.
+
+3. **Segment with `group`, don't draw twice.** Points carrying a `group` become
+   one series per group through `segmentPoints()`, each with its own palette
+   entry and bridged to the previous one so the line stays continuous; the
+   bridge draws no symbol, so no measurement is reported twice. Where a group
+   *comes from* is the server's (#1037 §38's `period`), never a frontend rule —
+   which is what lets both apps' adapters answer the same chart.
+
+4. **Both apps' adapters are gated against each other.** They are separate
+   modules by the no-shared-frontend-module rule, so a test asserts they return
+   the same points for the same rows; a type checker will not.
+
+5. **Adding a chart type** is four steps in `shared/charts/README.md`: a pure
+   option builder, its registration in `echartsRuntime.ts` (only what is drawn —
+   that file is where the bundle cost is visible), a component over
+   `EChartCanvas`, and the export. An *area* chart is `LineChart` with `area`.
+
+Each app's `Dockerfile` installs and copies `shared/charts` beside its own
+workspace, and both `next.config.js` list it in `transpilePackages` — the
+package ships TypeScript source and has no build step of its own.
+
 ## Tabs on an Expanded Card (#961)
 
 When an expanded card grows past the point where a reader can find anything in

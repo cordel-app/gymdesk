@@ -48,7 +48,7 @@ export default function AssignedPersonalGoalsPage() {
       <AssignedPersonalGoalsSection
         canWrite={canWrite}
         readOnlyTitle={readOnlyTitle}
-        label={(key) => t(key as any)}
+        label={(key, values) => t(key as any, values as any)}
         goalLabel={(key) => tGoals(key as any)}
         ready={!!activeGymId}
       />

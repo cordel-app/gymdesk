@@ -6,7 +6,8 @@
     "api",
     "apps/admin",
     "apps/member",
-    "apps/mobile"
+    "apps/mobile",
+    "shared/charts"
   ],
   "scripts": {
     "dev:api": "npm --workspace api run dev",

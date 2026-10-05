@@ -22,6 +22,8 @@ import {
   formatProgressPercent,
   formatReadingDate,
   formatReadingValue,
+  readingAxisLabel,
+  readingChartPoints,
   readingFormError,
   readingHistoryRows,
   toReadingPayload,
@@ -539,5 +541,70 @@ describe('#1037 the Add reading dialog (§3, §21, §30, §32)', () => {
     const past = pageSrc.slice(pageSrc.indexOf('pastGoals.length > 0'), pageSrc.indexOf('{/* Add / Edit */}'));
     expect(past).not.toContain('openReading');
     expect(pageSrc).toMatch(/await load\(\);\s*\n\s*setEditing\(null\);\s*\n\s*setNotice\(t\(kind/);
+  });
+});
+
+describe('#1037 stage 4 the progress chart', () => {
+  const chartSrc = read(join(SRC, 'components', 'GoalReadingChart.tsx'));
+
+  it('is drawn with the shared charting layer, never with ECharts directly', () => {
+    expect(chartSrc).toContain("from '@gymdesk/charts'");
+    expect(chartSrc).toContain('<LineChart');
+    expect(chartSrc).not.toMatch(/from ['"]echarts/);
+    expect(chartSrc).not.toContain('setOption');
+  });
+
+  it('sits between the header and the history on the card (§12)', () => {
+    expect(pageSrc).toContain('<GoalReadingChart');
+    const header = pageSrc.indexOf('<GoalHeaderFields');
+    const chart = pageSrc.indexOf('<GoalReadingChart');
+    const history = pageSrc.indexOf('<GoalReadingHistory');
+    expect(header).toBeGreaterThanOrEqual(0);
+    expect(chart).toBeGreaterThan(header);
+    expect(history).toBeGreaterThan(chart);
+  });
+
+  it('takes every colour from memberChrome and spells none (#983)', () => {
+    expect(chartSrc).toContain("from '@/lib/memberChrome'");
+    expect(/['"`]#[0-9a-fA-F]{3,8}['"`]/.test(chartSrc)).toBe(false);
+    expect(/\b(rgb|rgba|hsl|hsla)\(/.test(chartSrc)).toBe(false);
+  });
+
+  it('resolves no locale key of its own — the page hands the three strings in', () => {
+    expect(chartSrc).not.toContain('useTranslations');
+    expect(pageSrc).toContain('goals.section_progress_chart');
+    expect(pageSrc).toContain('goals.chart_aria_label');
+    expect(pageSrc).toContain('goals.chart_target');
+  });
+
+  it('turns the member’s readings into chronological points carrying the server’s period', () => {
+    const points = readingChartPoints(
+      [
+        { id: 2, value: 76, recorded_at: '2026-09-22T00:00:00.000Z', is_initial: true, period: 1 },
+        { id: 1, value: 80, recorded_at: '2026-09-01T00:00:00.000Z', is_initial: true, period: 0 },
+      ],
+      'kg',
+      'en-GB',
+    );
+    expect(points.map((p) => p.y)).toEqual([80, 76]);
+    expect(points.map((p) => p.group)).toEqual([0, 1]);
+    expect(points.map((p) => p.valueLabel)).toEqual(['80 kg', '76 kg']);
+    expect(readingAxisLabel(Date.parse('2026-09-22T00:00:00.000Z'), 'en-GB')).toContain('22');
+  });
+
+  it('has its three strings in all three languages', () => {
+    for (const code of LOCALE_CODES) {
+      const goals = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8')).goals;
+      for (const key of ['section_progress_chart', 'chart_aria_label', 'chart_target']) {
+        expect(goals[key], `${code}.${key}`).toBeTruthy();
+      }
+      expect(goals.chart_target).toContain('{value}');
+    }
+  });
+
+  it('captions and draws no target line when the goal has none', () => {
+    // `formatReadingValue(null, …)` is `null`, which the page turns into no label.
+    expect(formatReadingValue(null, 'kg')).toBeNull();
+    expect(pageSrc).toContain('target === null ? null');
   });
 });

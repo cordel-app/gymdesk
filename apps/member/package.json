@@ -13,6 +13,7 @@
     "@capacitor/core": "8.5.2",
     "@capacitor/push-notifications": "8.1.3",
     "@capgo/capacitor-social-login": "8.5.12",
+    "@gymdesk/charts": "*",
     "@clerk/localizations": "4.11.0",
     "@clerk/nextjs": "7.5.9",
     "@fullcalendar/core": "^6.1.21",

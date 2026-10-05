@@ -22,6 +22,7 @@ import {
   formatReadingTimestamp,
   formatReadingValue,
   readingFormError,
+  readingChartPoints,
   readingHistoryRows,
   toReadingPayload,
   type GoalReadingRow,
@@ -586,5 +587,65 @@ describe('#1037 who may record a reading', () => {
   it('refreshes the header and the history after a save, with no manual reload (§30)', () => {
     expect(sectionSrc).toMatch(/Promise\.all\(\[load\(\), loadReadings\(/);
     expect(memberSectionSrc).toMatch(/Promise\.all\(\[load\(\), loadReadings\(/);
+  });
+});
+
+describe('#1037 stage 4 the progress chart', () => {
+  const chartSrc = read(join(COMPONENT_DIR, 'GoalReadingChart.tsx'));
+
+  it('is drawn with the shared charting layer, never with ECharts directly', () => {
+    expect(chartSrc).toContain("from '@gymdesk/charts'");
+    expect(chartSrc).toContain('<LineChart');
+    expect(chartSrc).not.toMatch(/from ['"]echarts/);
+    // No option of its own: what a chart looks like is the layer's.
+    expect(chartSrc).not.toContain('setOption');
+  });
+
+  it('is rendered by both staff surfaces, between the header and the history (§12)', () => {
+    for (const [name, src] of [['section', sectionSrc], ['member card', memberSectionSrc]] as const) {
+      expect(src, name).toContain('<GoalReadingChart');
+      const header = src.indexOf('<GoalReadingHeader');
+      const chart = src.indexOf('<GoalReadingChart');
+      const history = src.indexOf('<GoalReadingHistory');
+      expect(header, name).toBeGreaterThanOrEqual(0);
+      expect(chart, name).toBeGreaterThan(header);
+      expect(history, name).toBeGreaterThan(chart);
+    }
+  });
+
+  it('declares no look of its own and spells no colour', () => {
+    expect(chartSrc).toContain("from '@/components/formChrome'");
+    expect(/['"`]#[0-9a-fA-F]{3,8}['"`]/.test(chartSrc)).toBe(false);
+  });
+
+  it('turns the rows into points without deciding a period', () => {
+    const points = readingChartPoints(
+      [
+        { id: 2, value: 76, recorded_at: '2026-09-22T00:00:00.000Z', is_initial: true, period: 1 },
+        { id: 1, value: 80, recorded_at: '2026-09-01T00:00:00.000Z', is_initial: true, period: 0 },
+      ],
+      'kg',
+      'en-GB',
+    );
+    // Chronological (§17), the server's own period (§38), labels already written.
+    expect(points.map((p) => p.y)).toEqual([80, 76]);
+    expect(points.map((p) => p.group)).toEqual([0, 1]);
+    expect(points.map((p) => p.valueLabel)).toEqual(['80 kg', '76 kg']);
+  });
+
+  it('has its three strings in all three languages', () => {
+    for (const code of LOCALE_CODES) {
+      for (const key of ['section_progress_chart', 'chart_aria_label', 'chart_target']) {
+        expect(messages[code].assigned_personal_goals[key], `${code}.${key}`).toBeTruthy();
+      }
+      // The caption interpolates the formatted target rather than composing it.
+      expect(messages[code].assigned_personal_goals.chart_target).toContain('{value}');
+    }
+  });
+
+  it('captions nothing when there is no target', () => {
+    // An assignment with no target gets no reference line and no `Target —`.
+    expect(sectionSrc).toContain('row.target_value === null');
+    expect(memberSectionSrc).toContain('row.target_value === null');
   });
 });

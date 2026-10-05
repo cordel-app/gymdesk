@@ -89,7 +89,15 @@ gymdesk/
       nginx.conf                   # Static files + proxy /payment-page/* → api.vdicube.com
       Dockerfile                   # nginx:alpine; published :8083 by #205
       SCRIPT-INVENTORY.md          # PCI DSS 6.4.3 third-party script inventory
-  shared/                          # Placeholder for future shared services (currently empty)
+  shared/
+    charts/                        # @gymdesk/charts (#1037 stage 4) — the shared charting layer, an npm
+                                   #   workspace both apps depend on and the only place that imports ECharts
+      src/echartsRuntime.ts        # loadECharts() — dynamic import + the registration of what is drawn
+      src/chartTheme.ts            # each colour role as the --gd-* variable that holds it, resolved per element
+      src/lineChartOption.ts       # the option a line/area chart is drawn from (pure)
+      src/series.ts                # ChartPoint/ChartSeries + segmentPoints() — one series per group
+      src/EChartCanvas.tsx         # the one component that mounts, resizes, re-themes and disposes a canvas
+      src/LineChart.tsx            # the first chart type; README.md says how to add another
   docs/                            # This folder
 ```
 
@@ -1033,6 +1041,22 @@ Each center may optionally override the gym's default theme via `centers.theme_i
 - `GET /system/themes/:id/assignments` — returns `{ is_gym_default, centers: [{id, name, is_assigned, is_inherited}] }`. Since #985 it reports **every** non-deleted Center of the gym, not only the ones using this theme: the Assignments section is a checkbox list, so an unassigned Center has to be a box you can tick. `is_assigned` is the Center's own `centers.theme_id` (null-safe `<=>`), `is_inherited` says the theme reaches it through `gyms.theme_id` instead — reported so the list can say so beside the name, never as a ticked box.
 - `PUT /system/themes/:id/set-default` — sets `gyms.theme_id`; rejects non-active themes (400).
 - `PUT /system/themes/:id/centers` — **replace-all** (#985): body `{ center_ids }` (an empty array is a legitimate save; `centers.id` is an auto-increment **integer**, so an id is accepted as a number *or* a string and every comparison runs through `centerKey()` — the response reports the stored form), the submitted Centers get `centers.theme_id = :id` and a Center the request leaves out and that currently holds this theme goes back to NULL (inheriting the Gym Default). Both UPDATEs run in one transaction, so a half-saved list is impossible; what moves is decided by `api/src/domain/themeCenterAssignments.ts` (`themeCenterAssignmentPlan`, `unknownCenterIds`), the Active rule guards *assigning* rather than the request (a theme taken out of service can still be removed from Centers), an unknown or non-string id is a 400 that writes nothing, a Center pointing at another theme and left out is untouched, and the change is audited as `previous`/`next` `assigned_center_ids`. It replaces the three routes the picker needed — `GET /:id/unassigned-centers`, `POST /:id/assign-centers` and `DELETE /:id/centers/:centerId` ("Restore Inheritance"), all removed: a set edited as a set has one writer.
+
+### Charts (`@gymdesk/charts`, #1037 stage 4)
+
+Both apps draw charts through **one** workspace package, `shared/charts`, and neither imports Apache ECharts itself:
+
+```text
+Admin app  ─┐
+            ├─▶  @gymdesk/charts  ─▶  Apache ECharts
+Members app ─┘
+```
+
+The package owns ECharts (loaded by `loadECharts()`, **dynamically**, so it never runs during SSR and never lands in a first-load bundle; only the chart and component modules actually drawn are registered, never the `echarts` barrel), the pure option builder per chart type (`lineChartOption.ts`), the colour resolution (`chartTheme.ts`) and the canvas's lifetime (`EChartCanvas.tsx` — mount, resize, dispose, and a re-read of the Theme when `applyTokens()` writes it, since that effect may land after the chart's). Each app owns only the adapter that turns its rows into `ChartPoint`s with its **own** locale and labels — the layer resolves no locale key, formats no date and knows no entity.
+
+**Theming**: ECharts paints a canvas and cannot read a CSS variable, so each role is declared as the `--gd-*` variable that holds it (the same names `applyTokens()` writes in both apps) and resolved off the element the chart sits in, so a Center's own Theme reaches it; a variable resolving blank falls back rather than letting ECharts use its own palette. `segmentPoints()` turns points carrying a `group` into one series per group, each with its own palette entry and bridged to the previous one so the line does not break — #1037 §23's per-period colouring is that one rule.
+
+`api/src/test/charts-layer.unit.test.ts` is the gate (in the API suite, because CI runs `npm test` in `api/` only): no `echarts` import in either app, no quoted colour in a chart component, no `t()` inside the layer, and the workspace wired into both apps' `package.json`, `next.config.js` and `Dockerfile`. Adding a chart type is four steps, in `shared/charts/README.md`.
 
 ### Middleware (both apps)
 Both apps use `clerkMiddleware` + `next-intl` middleware together. Public routes bypass `auth.protect()`. Both require `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` (baked at build time) and `CLERK_SECRET_KEY` (runtime).
