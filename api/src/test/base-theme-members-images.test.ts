@@ -292,11 +292,41 @@ describe('POST /platform/themes/:id/members-images/:slot', () => {
     const res = await upload(baseThemeId, 'training', 'image/png', PNG_BYTES);
     expect(res.status).toBe(503);
     expect(res.body.missingConfig).toEqual(expect.arrayContaining(['CLOUDFLARE_R2_BUCKET']));
+    expect(res.body.cause).toBe('not_configured');
+  });
+
+  // #1042: this was the one storage answer in either Theme router that named
+  // neither the step nor the object — the Base Theme counterpart of the drift
+  // #830 removed from the admin. It now reports what its gym-side twin does.
+  it('names the step, the object and the cause when the upload fails', async () => {
+    sendMock.mockImplementation((command: any) => (command.input.Key.endsWith('/')
+      ? Promise.resolve({})
+      : Promise.reject(Object.assign(new Error('NoSuchBucket'), { name: 'NoSuchBucket' }))));
+    const res = await upload(baseThemeId, 'training', 'image/png', PNG_BYTES);
+    expect(res.status).toBe(502);
+    expect(res.body.stage).toBe('upload_members_image');
+    expect(res.body.path).toBe(keyFor(baseThemeId, THEME_NAME, 'training'));
+    expect(res.body.cause).toBe('not_initialized');
+    expect(res.body.details.operation).toBe('uploadStorageObject');
+  });
+
+  it('names the folder step instead when it is the marker write that fails', async () => {
+    // Every marker write is rejected, so the one that failed is the outermost
+    // — the theme's own folder, not its `members_app/` leaf.
+    sendMock.mockRejectedValue(Object.assign(new Error('AccessDenied'), { name: 'AccessDenied' }));
+    const res = await upload(baseThemeId, 'training', 'image/png', PNG_BYTES);
+    expect(res.status).toBe(502);
+    expect(res.body.stage).toBe('create_theme_folder');
+    expect(res.body.details.operation).toBe('ensureStorageFolders');
+    // A refused credential is never read as missing storage, whatever step it
+    // happened at — that is what keeps `Initialize bucket` off the screen.
+    expect(res.body.cause).toBe('access_denied');
   });
 
   it('returns 404 for a Custom Theme — a gym\'s theme is not the platform\'s to write', async () => {
     const res = await upload(customThemeId, 'training', 'image/png', PNG_BYTES);
     expect(res.status).toBe(404);
+    expect(res.body.cause).toBe('not_found');
     expect(sentCommands('put')).toHaveLength(0);
 
     const { rows } = await db.query('SELECT id FROM theme_member_images WHERE theme_id = ?', [customThemeId]);

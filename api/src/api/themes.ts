@@ -19,6 +19,7 @@ import {
 import { themeRootFolderKeys, themeStorageFolderKeys } from '../domain/themeFolders';
 import { buildThemeLogoKey, themeLogoFolderKeys, themeLogoUrl } from '../domain/themeLogo';
 import { folderStageForKey, themeFolderStageForKey } from '../domain/storageFailureStage';
+import { storageCauseFromDetails } from '../domain/storageFailureCause';
 import { loadPlatformMemberImagesByTheme } from './theme-member-images';
 import {
   deleteStorageObject,
@@ -154,7 +155,7 @@ themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
      WHERE t.id = ? AND t.gym_id IS NULL`,
     [req.params.id],
   );
-  if (rows.length === 0) return res.status(404).json({ error: 'Theme not found' });
+  if (rows.length === 0) return res.status(404).json({ error: 'Theme not found', cause: 'not_found' });
 
   const [{ rows: auditRows }] = await Promise.all([
     db.query(
@@ -234,7 +235,7 @@ themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
     'SELECT id, name, status, tokens, logo_mime, logo_updated_at, logo_contains_gym_name, deleted_at FROM themes WHERE id = ? AND gym_id IS NULL',
     [req.params.id],
   );
-  if (existingRows.length === 0) return res.status(404).json({ error: 'Theme not found' });
+  if (existingRows.length === 0) return res.status(404).json({ error: 'Theme not found', cause: 'not_found' });
   const current = existingRows[0];
   if (current.deleted_at) return res.status(409).json({ error: 'Theme is deleted' });
 
@@ -321,12 +322,12 @@ themesRouter.post(
   async (req, res) => {
     const mime = req.headers['content-type']?.split(';')[0]?.trim();
     if (!mime || !ALLOWED_MIME_TYPES.includes(mime)) {
-      return res.status(415).json({ error: `Unsupported image type. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}` });
+      return res.status(415).json({ error: `Unsupported image type. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}`, cause: 'invalid_file' });
     }
     const body = req.body as Buffer;
-    if (!Buffer.isBuffer(body) || body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
+    if (!Buffer.isBuffer(body) || body.length === 0) return res.status(400).json({ error: 'Request body is empty', cause: 'invalid_file' });
     if (body.length > LOGO_MAX_BYTES) {
-      return res.status(413).json({ error: 'Logo exceeds 512 KB limit' });
+      return res.status(413).json({ error: 'Logo exceeds 512 KB limit', cause: 'invalid_file' });
     }
 
     if (!isStorageConfigured()) {
@@ -334,6 +335,7 @@ themesRouter.post(
       return res.status(503).json({
         error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
         stage: 'resolve_path',
+        cause: 'not_configured',
         missingConfig,
         diagnostics: getStorageDiagnostics(),
       });
@@ -346,7 +348,7 @@ themesRouter.post(
       'SELECT id, name, logo_object_key FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
       [req.params.id],
     );
-    if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
+    if (existing.length === 0) return res.status(404).json({ error: 'Theme not found', cause: 'not_found' });
     const theme = existing[0];
 
     const key = buildThemeLogoKey(PLATFORM_STORAGE_ROOT, theme.id, theme.name, mime);
@@ -367,13 +369,14 @@ themesRouter.post(
         ? err.details
         : describeStorageError(err, { operation: 'ensureStorageFolders', key });
       logger.error(
-        { err, details, diagnostics: getStorageDiagnostics(), themeId: theme.id },
+        { err, details, diagnostics: getStorageDiagnostics(), cause: storageCauseFromDetails(details), actor: (req as any).auth?.userId ?? null, themeId: theme.id },
         'Cloudflare R2 base theme logo folder creation failed',
       );
       return res.status(502).json({
         error: `Failed to create the theme logo folder: ${details.message}`,
         stage: folderStageForKey(details.key, logoFolderKeys, 'create_logo_folder'),
         path: details.key ?? key,
+        cause: storageCauseFromDetails(details),
         details,
       });
     }
@@ -385,13 +388,14 @@ themesRouter.post(
         ? err.details
         : describeStorageError(err, { operation: 'uploadStorageObject', key });
       logger.error(
-        { err, details, diagnostics: getStorageDiagnostics(), themeId: theme.id },
+        { err, details, diagnostics: getStorageDiagnostics(), cause: storageCauseFromDetails(details), actor: (req as any).auth?.userId ?? null, themeId: theme.id },
         'Cloudflare R2 base theme logo upload failed',
       );
       return res.status(502).json({
         error: `Failed to upload logo: ${details.message}`,
         stage: 'upload_logo',
         path: key,
+        cause: storageCauseFromDetails(details),
         details,
       });
     }
@@ -438,7 +442,7 @@ themesRouter.delete('/:id/logo', requireSuperadmin, async (req, res) => {
     'SELECT id, logo_object_key FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
     [req.params.id],
   );
-  if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
+  if (existing.length === 0) return res.status(404).json({ error: 'Theme not found', cause: 'not_found' });
 
   // #829, as the gym route has done since #713: an R2-backed logo leaves the
   // bucket first, and unlike the orphan sweep on replace this failure is
@@ -454,13 +458,14 @@ themesRouter.delete('/:id/logo', requireSuperadmin, async (req, res) => {
         ? err.details
         : describeStorageError(err, { operation: 'deleteStorageObject', key });
       logger.error(
-        { err, details, diagnostics: getStorageDiagnostics(), themeId: req.params.id },
+        { err, details, diagnostics: getStorageDiagnostics(), cause: storageCauseFromDetails(details), actor: (req as any).auth?.userId ?? null, themeId: req.params.id },
         'Cloudflare R2 base theme logo delete failed',
       );
       return res.status(502).json({
         error: `Failed to remove logo: ${details.message}`,
         stage: 'remove_logo',
         path: key,
+        cause: storageCauseFromDetails(details),
         details,
       });
     }
@@ -506,7 +511,7 @@ async function resolveWritableBaseTheme(
     [themeId],
   );
   if (rows.length === 0) {
-    res.status(404).json({ error: 'Theme not found' });
+    res.status(404).json({ error: 'Theme not found', cause: 'not_found' });
     return null;
   }
   return rows[0];
@@ -523,7 +528,7 @@ themesRouter.post(
     }
     const mime = req.headers['content-type']?.split(';')[0]?.trim();
     if (!mime || !(MEMBER_IMAGE_MIME_TYPES as readonly string[]).includes(mime)) {
-      return res.status(415).json({ error: `Unsupported image type. Allowed: ${MEMBER_IMAGE_MIME_TYPES.join(', ')}` });
+      return res.status(415).json({ error: `Unsupported image type. Allowed: ${MEMBER_IMAGE_MIME_TYPES.join(', ')}`, cause: 'invalid_file' });
     }
     // `req.body` is whatever a parser left there, and a request can make that a
     // string or an array — both of which carry a `length` and numeric indices,
@@ -531,23 +536,28 @@ themesRouter.post(
     // were bytes (CodeQL `js/type-confusion-through-parameter-tampering`).
     const raw: unknown = req.body;
     if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
-      return res.status(400).json({ error: 'Request body must be raw image bytes' });
+      return res.status(400).json({ error: 'Request body must be raw image bytes', cause: 'invalid_file' });
     }
     const body: Buffer = raw;
-    if (body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
+    if (body.length === 0) return res.status(400).json({ error: 'Request body is empty', cause: 'invalid_file' });
     if (body.length > MEMBER_IMAGE_MAX_BYTES) {
-      return res.status(413).json({ error: `Image exceeds ${MEMBER_IMAGE_MAX_BYTES / (1024 * 1024)} MB limit` });
+      return res.status(413).json({ error: `Image exceeds ${MEMBER_IMAGE_MAX_BYTES / (1024 * 1024)} MB limit`, cause: 'invalid_file' });
     }
     // The header is the client's word; the signature is the file's. #732
     // requires the server to validate independently of the browser.
     if (!bytesMatchImageMime(mime, body)) {
-      return res.status(400).json({ error: 'File contents do not match the declared image type' });
+      return res.status(400).json({ error: 'File contents do not match the declared image type', cause: 'invalid_file' });
     }
 
     if (!isStorageConfigured()) {
       const missingConfig = getMissingStorageConfigKeys();
       return res.status(503).json({
         error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+        // #1042: this answer named neither the step nor the cause, so the
+        // admin could say only "something failed" — the same drift as the 502
+        // below it.
+        stage: 'resolve_path',
+        cause: 'not_configured',
         missingConfig,
       });
     }
@@ -564,18 +574,31 @@ themesRouter.post(
       [theme.id, slot],
     );
 
+    const memberFolderKeys = themeMemberFolderKeys(PLATFORM_STORAGE_ROOT, theme.id, theme.name);
     try {
-      await ensureStorageFolders(themeMemberFolderKeys(PLATFORM_STORAGE_ROOT, theme.id, theme.name));
+      await ensureStorageFolders(memberFolderKeys);
       await uploadStorageObject(key, mime, body);
     } catch (err: any) {
       const details = err instanceof StorageOperationError
         ? err.details
         : describeStorageError(err, { operation: 'uploadStorageObject', key });
       logger.error(
-        { err, details, diagnostics: getStorageDiagnostics(), themeId: theme.id, slot },
+        { err, details, diagnostics: getStorageDiagnostics(), cause: storageCauseFromDetails(details), actor: (req as any).auth?.userId ?? null, themeId: theme.id, slot },
         'Cloudflare R2 base theme Members image upload failed',
       );
-      return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
+      return res.status(502).json({
+        error: `Failed to upload image: ${details.message}`,
+        // #1042: this was the one storage answer in either Theme router that
+        // named neither the step nor the object — the Base Themes counterpart
+        // of the drift #830 removed from the admin. Two calls share this
+        // handler, so the stage is read off the one that actually threw.
+        stage: details.operation === 'ensureStorageFolders'
+          ? folderStageForKey(details.key, memberFolderKeys, 'create_members_folder')
+          : 'upload_members_image',
+        path: details.key ?? key,
+        cause: storageCauseFromDetails(details),
+        details,
+      });
     }
 
     // The key is deterministic, so a replacement normally overwrites the object
@@ -677,6 +700,7 @@ themesRouter.post('/:id/storage/initialize', requireSuperadmin, async (req, res)
     return res.status(503).json({
       error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
       stage: 'resolve_path',
+      cause: 'not_configured',
       missingConfig,
       diagnostics: getStorageDiagnostics(),
     });
@@ -696,13 +720,14 @@ themesRouter.post('/:id/storage/initialize', requireSuperadmin, async (req, res)
       ? err.details
       : describeStorageError(err, { operation: 'ensureStorageFolders', key: folders[0] });
     logger.error(
-      { err, details, diagnostics: getStorageDiagnostics(), themeId: theme.id },
+      { err, details, diagnostics: getStorageDiagnostics(), cause: storageCauseFromDetails(details), actor: (req as any).auth?.userId ?? null, themeId: theme.id },
       'Cloudflare R2 base theme folder creation failed',
     );
     return res.status(502).json({
       error: `Failed to create the theme storage folders: ${details.message}`,
       stage: themeFolderStageForKey(details.key, folders),
       path: details.key ?? folders[0],
+      cause: storageCauseFromDetails(details),
       details,
     });
   }
@@ -723,7 +748,7 @@ themesRouter.post('/clone/:sourceId', requireSuperadmin, async (req, res) => {
     'SELECT id, name, tokens, logo_contains_gym_name FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
     [req.params.sourceId],
   );
-  if (source.length === 0) return res.status(404).json({ error: 'Theme not found' });
+  if (source.length === 0) return res.status(404).json({ error: 'Theme not found', cause: 'not_found' });
 
   const src = source[0];
   const baseName = req.body?.name?.trim() || `${src.name} (copy)`;
@@ -755,7 +780,7 @@ themesRouter.put('/:id/set-system-default', requireSuperadmin, async (req, res) 
     'SELECT id FROM themes WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL',
     [req.params.id],
   );
-  if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
+  if (existing.length === 0) return res.status(404).json({ error: 'Theme not found', cause: 'not_found' });
 
   await db.query('UPDATE themes SET is_system_default = 0 WHERE gym_id IS NULL');
   await db.query('UPDATE themes SET is_system_default = 1 WHERE id = ?', [req.params.id]);
@@ -767,7 +792,7 @@ themesRouter.put('/:id/set-system-default', requireSuperadmin, async (req, res) 
 
 themesRouter.delete('/:id', requireSuperadmin, async (req, res) => {
   const { rows: existing } = await db.query('SELECT id, deleted_at FROM themes WHERE id = ? AND gym_id IS NULL', [req.params.id]);
-  if (existing.length === 0) return res.status(404).json({ error: 'Theme not found' });
+  if (existing.length === 0) return res.status(404).json({ error: 'Theme not found', cause: 'not_found' });
   if (existing[0].deleted_at) return res.status(409).json({ error: 'Theme is already deleted' });
 
   const { isGymDefault, centerCount } = await checkThemeProtected(req.params.id as string);

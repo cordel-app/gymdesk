@@ -1283,7 +1283,7 @@ Derive the public URL from the key at read time (`buildStorageObjectUrl()` + a `
 
 ---
 
-## A binary upload goes through the API client, and says what broke (#824, #830)
+## A binary upload goes through the API client, and says what broke (#824, #830, #1042)
 
 A JSON call uses `apiFetch`, which assembles the bearer token, `x-gym-id`, `x-center-id`, `x-impersonate-as` and `x-locale`. A raw-bytes upload cannot reuse it (the body is the file and the `Content-Type` is what the server validates against), and every page that hand-rolled the `fetch` sent only the token — so the Next proxy, which forwards `x-gym-id` but cannot invent it, handed `tenantContext` a request with no gym and every theme logo upload came back as a bare `401 Unauthorized`.
 
@@ -1299,7 +1299,9 @@ A JSON call uses `apiFetch`, which assembles the bearer token, `x-gym-id`, `x-ce
 
 6. **A screen that saves several assets at once fails per asset.** One Save may carry a logo and six backgrounds, and a loop that throws on the first rejection leaves the rest unattempted with nothing said about them. Declare the sequence once beside the screens that share it (`components/themes/themeAssetSave.ts`): plan the operations from the draft, run **all** of them collecting a failure each, render every failure as its own block, and keep exactly the failed ones queued so Save is the retry and a stored asset is never uploaded twice. Name the asset in its heading (a slot interpolated into the key) and mark the control it belongs to, or six identical headings tell the admin nothing. The shared module takes its router root and its two requests as parameters — #806's rule: no endpoint and no permission decision in shared code.
 
-7. **A preview that cannot load says so.** Guard the `<img>` with `onError` and render a line in place of the browser's broken-image icon: a failed upload must never leave an apparently broken asset with no explanation, and the icon is indistinguishable from a genuinely missing one.
+7. **Say why it failed, and offer the fix only when the failure is evidence for it (#1042).** The stage says *which step*; a `cause` says *why*, and is what turns a diagnostic into an action. Declare the vocabulary once on the API (`domain/storageFailureCause.ts`), mirror it for the browser, and give every cause a `storage_cause_<value>` and `storage_suggestion_<value>` key per namespace — the block then reads *what happened / why / what you can do*, with the raw storage particulars underneath. Three rules make it safe. Read the cause from **what the storage layer answered** (the S3 error's own name or code first, its HTTP status second), never from the step that was running: a missing bucket and a refused credential break at the same step. Let the **route** state a cause the client could not derive — a 409 is also a duplicate name and a 400 is also a rejected field, so the client-side mirror answers `null` for both unless the route said otherwise, and `null` must render the plain block rather than an invented explanation. And keep **one** predicate for "may this failure offer the fix" (`storageCauseSuggestsInitialize()`): suggesting initialization for a permission or network failure sends an administrator to re-run a no-op while the real problem stands. The action itself is the one the context menu already runs, not a second workflow.
+
+8. **A preview that cannot load says so.** Guard the `<img>` with `onError` and render a line in place of the browser's broken-image icon: a failed upload must never leave an apparently broken asset with no explanation, and the icon is indistinguishable from a genuinely missing one.
 
 Nothing secret crosses: `describeStorageError()` returns the S3 error name, code, HTTP status, request id, bucket and key — never a credential.
 
