@@ -40,10 +40,28 @@ const ALERT = {
   payload: { title: 'Yoga' },
 };
 
+/**
+ * The host a stubbed `fetch` call went to, compared as a **host** and never as a
+ * substring of the URL: `url.includes('oauth2.googleapis.com')` would also be
+ * true of `https://evil.example/?x=oauth2.googleapis.com`, which is CodeQL's
+ * `js/incomplete-url-substring-sanitization` and a real bug in any code that
+ * routes on it — a fixture is no reason to write the pattern.
+ */
+const isHost = (url: unknown, host: string): boolean => {
+  try {
+    return new URL(String(url)).host === host;
+  } catch {
+    return false;
+  }
+};
+
+const GOOGLE_TOKEN_HOST = 'oauth2.googleapis.com';
+const FCM_HOST = 'fcm.googleapis.com';
+
 /** The token-exchange response, then whatever the send should answer. */
 function stubFetch(send: { status: number; body?: unknown }) {
   const fetchMock = vi.fn(async (url: string) => {
-    if (String(url).includes('oauth2.googleapis.com')) {
+    if (isHost(url, GOOGLE_TOKEN_HOST)) {
       return { ok: true, status: 200, json: async () => ({ access_token: 'at-1', expires_in: 3600 }) } as any;
     }
     return {
@@ -102,7 +120,7 @@ describe('delivery', () => {
     deliverPushNotifications('gym-1', [ALERT]);
     await settle();
 
-    const sends = fetchMock.mock.calls.filter(([url]) => String(url).includes('fcm.googleapis.com'));
+    const sends = fetchMock.mock.calls.filter(([url]) => isHost(url, FCM_HOST));
     expect(sends).toHaveLength(2);
     const tokens = sends.map(([, init]: any) => JSON.parse(init.body).message.token);
     expect(tokens).toEqual(['tok-a', 'tok-b']);
@@ -128,7 +146,7 @@ describe('delivery', () => {
     deliverPushNotifications('gym-1', [ALERT, { ...ALERT, memberId: 8 }]);
     await settle();
 
-    const exchanges = fetchMock.mock.calls.filter(([url]) => String(url).includes('oauth2.googleapis.com'));
+    const exchanges = fetchMock.mock.calls.filter(([url]) => isHost(url, GOOGLE_TOKEN_HOST));
     expect(exchanges).toHaveLength(1);
   });
 
