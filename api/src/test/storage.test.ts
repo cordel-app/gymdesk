@@ -126,15 +126,14 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gym_123-GymName');
 
-    expect(sendMock).toHaveBeenCalledTimes(7);
+    expect(sendMock).toHaveBeenCalledTimes(6);
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys).toEqual([
       'gym_123-GymName/',
-      'gym_123-GymName/Nutrition/',
-      'gym_123-GymName/Nutrition/Images/',
-      'gym_123-GymName/Exercises/',
-      'gym_123-GymName/Exercises/Images/',
-      'gym_123-GymName/Exercises/Videos/',
+      'gym_123-GymName/nutrition/',
+      'gym_123-GymName/exercises/',
+      'gym_123-GymName/exercises/images/',
+      'gym_123-GymName/exercises/videos/',
       'gym_123-GymName/themes/',
     ]);
     for (const call of sendMock.mock.calls) {
@@ -145,7 +144,7 @@ describe('initializeGymBucket()', () => {
   // ─── #826: exactly three first-level folders under the gym root ────────────
   //
   // The ticket is scoped to what sits *directly* under
-  // `gyms/<gym_id>-<gym_name>/`: `Nutrition/`, `Exercises/` and `themes/` (#829
+  // `gyms/<gym_id>-<gym_name>/`: `nutrition/`, `exercises/` and `themes/` (#829
   // lowercased the last of the three), and
   // nothing else. The leaves below them (§6) and the `<gym_id>-<name>` naming
   // (§5) are unchanged, which the tests above and below pin.
@@ -159,12 +158,56 @@ describe('initializeGymBucket()', () => {
     return [...new Set(segments)];
   }
 
-  it('creates Nutrition/, Exercises/ and themes/ as the only first-level folders', async () => {
+  it('creates nutrition/, exercises/ and themes/ as the only first-level folders', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName')).toEqual(['Nutrition', 'Exercises', 'themes']);
+    // #1035 lowercased the first two; `themes/` was already (#829).
+    expect(firstLevelFolders('gyms/gym_123-GymName')).toEqual(['nutrition', 'exercises', 'themes']);
+  });
+
+  // #1035 §7: `goals/` is the fourth folder in the ticket's target tree and is
+  // deliberately *not* written yet — nothing creates a Personal Goal image, and a
+  // first-level folder no writer populates is what #826 removed. It arrives with
+  // its writer, in stage 2.
+  it('does not create goals/ while nothing writes a Personal Goal image', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    expect(firstLevelFolders('gyms/gym_123-GymName')).not.toContain('goals');
+  });
+
+  // #1035 §2/§7: Gym Bucket Initialization writes a *gym's* tree and has never
+  // written the platform root — the `cordel/` structure is created by hand in the
+  // Cloudflare console, so not one marker here may touch it.
+  it('creates nothing under the platform cordel/ root', async () => {
+    setConfigured();
+    const { initializeGymBucket, PLATFORM_STORAGE_ROOT } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys.length).toBeGreaterThan(0);
+    for (const key of keys) {
+      expect(key.startsWith(`${PLATFORM_STORAGE_ROOT}/`)).toBe(false);
+      expect(key).not.toContain(`/${PLATFORM_STORAGE_ROOT}/`);
+    }
+  });
+
+  // §5: the old mixed-case names are gone from what initialization writes. The
+  // objects an earlier run stored under them stay where they are and still render
+  // from their rows' keys (§6) — this only pins that nothing creates them again.
+  it('no longer writes the pre-#1035 mixed-case markers', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys).not.toContain('gyms/gym_123-GymName/Nutrition/');
+    expect(keys).not.toContain('gyms/gym_123-GymName/Nutrition/Images/');
+    expect(keys).not.toContain('gyms/gym_123-GymName/Exercises/');
+    for (const key of keys) expect(key).toBe(key.replace(/Nutrition|Exercises|Images|Videos/g, (m) => m.toLowerCase()));
   });
 
   // §4 + the acceptance list: the three folders nothing has written to since
@@ -183,17 +226,20 @@ describe('initializeGymBucket()', () => {
     for (const key of keys) expect(key).not.toContain('Branding');
   });
 
-  // §6: the tree *below* the three roots is untouched by this ticket, so the
-  // upload targets every key builder writes into still have their markers.
+  // §6: the upload targets every key builder writes into still have their
+  // markers. #1035 dropped `Nutrition/Images/` with its leaf — a food's image is
+  // the only thing that folder ever held, so it sits directly under `nutrition/`
+  // now — and the two exercise leaves are unchanged apart from their case.
   it('keeps the leaf folders below the three roots', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
-    expect(keys).toContain('gyms/gym_123-GymName/Nutrition/Images/');
-    expect(keys).toContain('gyms/gym_123-GymName/Exercises/Images/');
-    expect(keys).toContain('gyms/gym_123-GymName/Exercises/Videos/');
+    expect(keys).toContain('gyms/gym_123-GymName/nutrition/');
+    expect(keys).toContain('gyms/gym_123-GymName/exercises/images/');
+    expect(keys).toContain('gyms/gym_123-GymName/exercises/videos/');
+    expect(keys).not.toContain('gyms/gym_123-GymName/nutrition/images/');
   });
 
   // A marker whose case disagreed with the key builders would show up in the R2
@@ -210,6 +256,8 @@ describe('initializeGymBucket()', () => {
 
     const markers = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     const folderOf = (key: string) => `${key.slice(0, key.indexOf('/', prefix.length + 1))}/`;
+    const { buildGymNutritionImageKey } = await import('../domain/baseNutritionImages');
+    expect(markers).toContain(folderOf(buildGymNutritionImageKey(prefix, 7, 'Chicken Breast', 'image/png')));
     expect(markers).toContain(folderOf(buildGymExerciseImageKey(prefix, 'ex_1', 'Squat')));
     expect(markers).toContain(folderOf(buildGymExerciseVideoKey(prefix, 'ex_1', 'Squat')));
     expect(markers).toContain(folderOf(buildThemeFolderPrefix(prefix, 'theme_9', 'Dark Modern')));
@@ -284,7 +332,7 @@ describe('initializeGymBucket()', () => {
 
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys[0]).toBe('gyms/gym_123-GymName/');
-    expect(keys).toContain('gyms/gym_123-GymName/Exercises/Videos/');
+    expect(keys).toContain('gyms/gym_123-GymName/exercises/videos/');
     for (const key of keys) expect(key.startsWith('gyms/gym_123-GymName/')).toBe(true);
   });
 });
@@ -292,7 +340,7 @@ describe('initializeGymBucket()', () => {
 describe('uploadGymImage()', () => {
   it('throws without touching the network when not configured', async () => {
     const { uploadGymImage } = await import('../infra/storage');
-    await expect(uploadGymImage('gym_123-Gym', 'Exercises/Images', 'image/png', Buffer.from('x'))).rejects.toThrow(
+    await expect(uploadGymImage('gym_123-Gym', 'exercises/images', 'image/png', Buffer.from('x'))).rejects.toThrow(
       'Cloudflare R2 storage is not configured for this deployment',
     );
     expect(sendMock).not.toHaveBeenCalled();
@@ -302,14 +350,14 @@ describe('uploadGymImage()', () => {
     setConfigured();
     const { uploadGymImage } = await import('../infra/storage');
     const body = Buffer.from('fake-image-bytes');
-    const url = await uploadGymImage('gym_123-GymName', 'Exercises/Images', 'image/png', body);
+    const url = await uploadGymImage('gym_123-GymName', 'exercises/images', 'image/png', body);
 
     expect(sendMock).toHaveBeenCalledTimes(1);
     const input = sendMock.mock.calls[0][0].input;
     expect(input.Bucket).toBe('test-bucket');
     expect(input.Body).toBe(body);
     expect(input.ContentType).toBe('image/png');
-    expect(input.Key).toMatch(/^gym_123-GymName\/Exercises\/Images\/[0-9a-f-]{36}\.png$/);
+    expect(input.Key).toMatch(/^gym_123-GymName\/exercises\/images\/[0-9a-f-]{36}\.png$/);
     expect(url).toBe(`https://example.r2.cloudflarestorage.com/test-bucket/${input.Key}`);
   });
 
@@ -322,7 +370,7 @@ describe('uploadGymImage()', () => {
       ['image/gif', 'gif'],
     ];
     for (const [mime, ext] of cases) {
-      const url = await uploadGymImage('gym_123-GymName', 'Exercises/Images', mime, Buffer.from('x'));
+      const url = await uploadGymImage('gym_123-GymName', 'exercises/images', mime, Buffer.from('x'));
       expect(url.endsWith(`.${ext}`)).toBe(true);
     }
   });
@@ -332,17 +380,17 @@ describe('uploadGymImage()', () => {
   it('uploads under the gyms/ root when the prefix comes from buildGymFolderPrefix()', async () => {
     setConfigured();
     const { buildGymFolderPrefix, uploadGymImage } = await import('../infra/storage');
-    await uploadGymImage(buildGymFolderPrefix('gym_123', 'Gym Name'), 'Exercises/Images', 'image/png', Buffer.from('x'));
+    await uploadGymImage(buildGymFolderPrefix('gym_123', 'Gym Name'), 'exercises/images', 'image/png', Buffer.from('x'));
     expect(sendMock.mock.calls[0][0].input.Key).toMatch(
-      /^gyms\/gym_123-GymName\/Exercises\/Images\/[0-9a-f-]{36}\.png$/,
+      /^gyms\/gym_123-GymName\/exercises\/images\/[0-9a-f-]{36}\.png$/,
     );
   });
 
   it('generates a distinct key for every upload (no filename collisions)', async () => {
     setConfigured();
     const { uploadGymImage } = await import('../infra/storage');
-    const urlA = await uploadGymImage('gym_123-GymName', 'Exercises/Images', 'image/png', Buffer.from('a'));
-    const urlB = await uploadGymImage('gym_123-GymName', 'Exercises/Images', 'image/png', Buffer.from('b'));
+    const urlA = await uploadGymImage('gym_123-GymName', 'exercises/images', 'image/png', Buffer.from('a'));
+    const urlB = await uploadGymImage('gym_123-GymName', 'exercises/images', 'image/png', Buffer.from('b'));
     expect(urlA).not.toBe(urlB);
   });
 });

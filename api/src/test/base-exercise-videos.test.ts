@@ -78,8 +78,8 @@ const GYM_EXERCISE_NAME = 'Test Base Video Gym Owned Exercise';
 const BASE_SLUG = 'Test-Base-Video-Barbell-Back-Squat';
 const SECOND_BASE_SLUG = 'Test-Base-Video-Cable-Row-Seated';
 
-const videoKey = (id: number, name: string) => `cordel/Exercises/Videos/${id}-${name}.mp4`;
-const posterKey = (id: number, name: string) => `cordel/Exercises/Videos/${id}-${name}-thumbnail.png`;
+const videoKey = (id: number, name: string) => `cordel/exercises/videos/${id}-${name}.mp4`;
+const posterKey = (id: number, name: string) => `cordel/exercises/videos/${id}-${name}-thumbnail.png`;
 
 const superadminUser = { publicMetadata: { platform_role: 'superadmin' }, fullName: 'Test Admin' };
 const regularUser = { publicMetadata: {}, fullName: 'Test User' };
@@ -239,7 +239,7 @@ describe('POST /platform/exercises/:id/video — auth', () => {
 // ─── Happy path (§1, §5) ──────────────────────────────────────────────────────
 
 describe('POST /platform/exercises/:id/video', () => {
-  it('stores both files under cordel/Exercises/Videos/ and persists both URLs', async () => {
+  it('stores both files under cordel/exercises/videos/ and persists both URLs', async () => {
     const res = await upload(baseExerciseId, { video: VIDEO, poster: POSTER });
     expect(res.status).toBe(200);
 
@@ -265,7 +265,7 @@ describe('POST /platform/exercises/:id/video', () => {
   it('writes the platform folder markers, never a gym tree', async () => {
     await upload(baseExerciseId, { video: VIDEO, poster: POSTER });
     const markers = sentCommands('put').map((c: any) => c.input.Key).filter((k: string) => k.endsWith('/'));
-    expect(markers).toEqual(['cordel/', 'cordel/Exercises/', 'cordel/Exercises/Videos/']);
+    expect(markers).toEqual(['cordel/', 'cordel/exercises/', 'cordel/exercises/videos/']);
   });
 
   it('sanitizes the exercise name in both keys', async () => {
@@ -287,8 +287,8 @@ describe('POST /platform/exercises/:id/video', () => {
   });
 
   it('leaves the image pair untouched — the two kinds of media are independent', async () => {
-    const image = url(`cordel/Exercises/Images/${baseExerciseId}-${BASE_SLUG}.png`);
-    const thumbnail = url(`cordel/Exercises/Images/${baseExerciseId}-${BASE_SLUG}-thumbnail.png`);
+    const image = url(`cordel/exercises/images/${baseExerciseId}-${BASE_SLUG}.png`);
+    const thumbnail = url(`cordel/exercises/images/${baseExerciseId}-${BASE_SLUG}-thumbnail.png`);
     await setImage(baseExerciseId, image, thumbnail);
 
     const res = await upload(baseExerciseId, { video: VIDEO, poster: POSTER });
@@ -443,7 +443,7 @@ describe('POST /platform/exercises/:id/video — replacement', () => {
   });
 
   it("never deletes a gym's object, whatever the row points at", async () => {
-    await setVideo(baseExerciseId, url(`${gymPrefix}/Exercises/Videos/${baseExerciseId}-Old-Name.mp4`), null);
+    await setVideo(baseExerciseId, url(`${gymPrefix}/exercises/videos/${baseExerciseId}-Old-Name.mp4`), null);
     const res = await upload(baseExerciseId, { video: VIDEO, poster: POSTER });
     expect(res.status).toBe(200);
     expect(deletedKeys()).toHaveLength(0);
@@ -453,7 +453,7 @@ describe('POST /platform/exercises/:id/video — replacement', () => {
     // The two kinds of media can share an object — a duplicate, a clone or an
     // import copies *references* — so the image pair is kept while the video
     // pair is swept.
-    const shared = url(`cordel/Exercises/Images/${baseExerciseId}-${BASE_SLUG}.png`);
+    const shared = url(`cordel/exercises/images/${baseExerciseId}-${BASE_SLUG}.png`);
     await setVideo(baseExerciseId, url(videoKey(baseExerciseId, 'Old-Name')), shared);
     await setImage(baseExerciseId, shared, null);
 
@@ -513,12 +513,12 @@ describe('DELETE /platform/exercises/:id/video', () => {
   });
 
   it('leaves the exercise otherwise unchanged, image included (§7)', async () => {
-    const image = url(`cordel/Exercises/Images/${baseExerciseId}-${BASE_SLUG}.png`);
+    const image = url(`cordel/exercises/images/${baseExerciseId}-${BASE_SLUG}.png`);
     await setImage(baseExerciseId, image, null);
     const res = await remove(baseExerciseId);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ id: baseExerciseId, name: BASE_NAME, status: 'active', image_url: image });
-    expect(deletedKeys()).not.toContain(`cordel/Exercises/Images/${baseExerciseId}-${BASE_SLUG}.png`);
+    expect(deletedKeys()).not.toContain(`cordel/exercises/images/${baseExerciseId}-${BASE_SLUG}.png`);
   });
 
   it('leaves the objects alone while a gym exercise still references them', async () => {
@@ -545,7 +545,7 @@ describe('DELETE /platform/exercises/:id/video', () => {
   });
 
   it("returns 404 for a gym's own exercise and leaves its media in place", async () => {
-    await setVideo(gymExerciseId, url(`${gymPrefix}/Exercises/Videos/${gymExerciseId}-Gym.mp4`), null);
+    await setVideo(gymExerciseId, url(`${gymPrefix}/exercises/videos/${gymExerciseId}-Gym.mp4`), null);
     const res = await remove(gymExerciseId);
     expect(res.status).toBe(404);
     expect(deletedKeys()).toHaveLength(0);

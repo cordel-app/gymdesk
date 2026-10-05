@@ -12,6 +12,9 @@ import {
   PLATFORM_NUTRITION_PREFIX,
   baseNutritionFolderKeys,
   buildBaseNutritionImageKey,
+  buildGymNutritionImageKey,
+  gymNutritionFolderKeys,
+  NUTRITION_FOLDER,
   sanitizeNutritionImageName,
   validateBaseNutritionImage,
 } from '../domain/baseNutritionImages';
@@ -86,32 +89,36 @@ function subjectExtent(png: Buffer, size: number) {
   };
 }
 
-describe('Base Nutrition Library image keys (#715 §1, §10, §11)', () => {
-  const IMAGE_ID = '3f2c1a9e-8b7d-4c6e-9f10-2a3b4c5d6e7f';
-  const UUID_KEY = /^cordel\/nutrition\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}-Chicken-Breast\.png$/;
-
+describe('Base Nutrition Library image keys (#715 §1, §10, §11; #1035 §12)', () => {
   it('stores every base food under the lowercase cordel/nutrition/', () => {
     expect(PLATFORM_NUTRITION_PREFIX).toBe('cordel/nutrition');
-    expect(buildBaseNutritionImageKey('Chicken Breast', IMAGE_ID)).toBe(`cordel/nutrition/${IMAGE_ID}-Chicken-Breast.png`);
+    expect(buildBaseNutritionImageKey(42, 'Chicken Breast')).toBe('cordel/nutrition/42-Chicken-Breast.png');
   });
 
-  it('names the image <image_uuid>-<sanitized name>, with a fresh UUID per upload', () => {
-    const first = buildBaseNutritionImageKey('Chicken Breast');
-    const second = buildBaseNutritionImageKey('Chicken Breast');
-    expect(first).toMatch(UUID_KEY);
-    expect(second).toMatch(UUID_KEY);
-    expect(first).not.toBe(second);
+  it('names the image <food_id>-<sanitized name>, the same key on every upload', () => {
+    // #1035 §12 replaced the per-upload UUID with the food's own id, so the key
+    // is deterministic: a replacement overwrites the object in place and there
+    // is nothing for the route to sweep.
+    const first = buildBaseNutritionImageKey(7, 'Chicken Breast');
+    const second = buildBaseNutritionImageKey(7, 'Chicken Breast');
+    expect(first).toBe('cordel/nutrition/7-Chicken-Breast.png');
+    expect(second).toBe(first);
+  });
+
+  it('gives two foods whose names sanitize alike their own object', () => {
+    expect(buildBaseNutritionImageKey(1, 'Salmon, Atlantic'))
+      .not.toBe(buildBaseNutritionImageKey(2, 'Salmon Atlantic'));
   });
 
   it('never uses a gym storage prefix', () => {
-    const key = buildBaseNutritionImageKey('Apple');
+    const key = buildBaseNutritionImageKey(9, 'Apple');
     expect(key.startsWith('cordel/')).toBe(true);
     expect(key).not.toContain('gyms/');
   });
 
   it('ends in .png', () => {
-    expect(buildBaseNutritionImageKey('Greek Yogurt', IMAGE_ID)).toBe(`cordel/nutrition/${IMAGE_ID}-Greek-Yogurt.png`);
-    expect(buildBaseNutritionImageKey('Brown Rice').endsWith('.png')).toBe(true);
+    expect(buildBaseNutritionImageKey(3, 'Greek Yogurt')).toBe('cordel/nutrition/3-Greek-Yogurt.png');
+    expect(buildBaseNutritionImageKey(4, 'Brown Rice').endsWith('.png')).toBe(true);
   });
 
   it('sanitizes the food name exactly as §10 spells it', () => {
@@ -129,11 +136,59 @@ describe('Base Nutrition Library image keys (#715 §1, §10, §11)', () => {
 
   it('falls back to `food` rather than producing an empty name', () => {
     expect(sanitizeNutritionImageName('!!!')).toBe('food');
-    expect(buildBaseNutritionImageKey('???', IMAGE_ID)).toBe(`cordel/nutrition/${IMAGE_ID}-food.png`);
+    expect(buildBaseNutritionImageKey(5, '???')).toBe('cordel/nutrition/5-food.png');
   });
 
   it('creates only the platform folder markers', () => {
     expect(baseNutritionFolderKeys()).toEqual(['cordel/', 'cordel/nutrition/']);
+  });
+});
+
+describe('gym nutrition image keys (#1035 §4, §5, §12)', () => {
+  const PREFIX = 'gyms/11111111-2222-3333-4444-555555555555-IronWorks';
+
+  it('is the same shape one root over, under the gym’s own nutrition/ folder', () => {
+    expect(buildGymNutritionImageKey(PREFIX, 42, 'Chicken Breast', 'image/png'))
+      .toBe(`${PREFIX}/nutrition/42-Chicken-Breast.png`);
+  });
+
+  it('no longer carries the pre-#1035 Nutrition/Images/<uuid> shape', () => {
+    const key = buildGymNutritionImageKey(PREFIX, 42, 'Chicken Breast', 'image/png');
+    expect(key).not.toContain('Nutrition');
+    expect(key).not.toContain('/Images/');
+  });
+
+  it('takes the extension from the validated MIME type, never a fixed .png', () => {
+    // The gym-facing upload accepts four types (unchanged by #1035), so naming a
+    // JPEG `.png` would make the key lie about its own object.
+    expect(buildGymNutritionImageKey(PREFIX, 7, 'Apple', 'image/jpeg')).toBe(`${PREFIX}/nutrition/7-Apple.jpg`);
+    expect(buildGymNutritionImageKey(PREFIX, 7, 'Apple', 'image/webp')).toBe(`${PREFIX}/nutrition/7-Apple.webp`);
+    expect(buildGymNutritionImageKey(PREFIX, 7, 'Apple', 'image/gif')).toBe(`${PREFIX}/nutrition/7-Apple.gif`);
+  });
+
+  it('is deterministic, so replacing an image reuses the key', () => {
+    expect(buildGymNutritionImageKey(PREFIX, 7, 'Apple', 'image/png'))
+      .toBe(buildGymNutritionImageKey(PREFIX, 7, 'Apple', 'image/png'));
+  });
+
+  it('sanitizes the name with the one rule both roots share', () => {
+    expect(buildGymNutritionImageKey(PREFIX, 8, 'Salmon, Atlantic', 'image/png'))
+      .toBe(`${PREFIX}/nutrition/8-Salmon-Atlantic.png`);
+    expect(buildGymNutritionImageKey(PREFIX, 9, '!!!', 'image/png')).toBe(`${PREFIX}/nutrition/9-food.png`);
+  });
+
+  it('never reaches the platform root', () => {
+    expect(buildGymNutritionImageKey(PREFIX, 1, 'Apple', 'image/png')).not.toContain('cordel/');
+  });
+
+  it('writes the gym root and its nutrition/ marker, outermost first', () => {
+    expect(gymNutritionFolderKeys(PREFIX)).toEqual([`${PREFIX}/`, `${PREFIX}/nutrition/`]);
+  });
+
+  it('shares the folder name with the platform side rather than restating it', () => {
+    expect(NUTRITION_FOLDER).toBe('nutrition');
+    expect(PLATFORM_NUTRITION_PREFIX.endsWith(`/${NUTRITION_FOLDER}`)).toBe(true);
+    expect(buildGymNutritionImageKey(PREFIX, 1, 'Apple', 'image/png')).toContain(`/${NUTRITION_FOLDER}/`);
   });
 });
 

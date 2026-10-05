@@ -5,7 +5,7 @@
 // gym, so its media cannot hang off `gyms.storage_folder_prefix` (#716 §1, §15).
 // It goes in the platform's own folder instead — `PLATFORM_STORAGE_ROOT`, the
 // `cordel` sibling of the `gyms/` root that #732 and #715 already use — under
-// the same `Exercises/Images` leaf a gym uses inside its own tree.
+// the same `exercises/images` leaf a gym uses inside its own tree.
 //
 // Everything here is pure: the object keys and the ownership test. What counts
 // as a *valid* image is not duplicated — a Base Exercise image is the same
@@ -14,10 +14,10 @@
 // routers call the one implementation.
 
 import { PLATFORM_STORAGE_ROOT, storageKeyFromObjectUrl } from '../infra/storage';
-import { EXERCISE_IMAGES_FOLDER, sanitizeExerciseImageName } from './exerciseImages';
+import { EXERCISE_FOLDER, EXERCISE_IMAGES_FOLDER, sanitizeExerciseImageName } from './exerciseImages';
 
 /**
- * `cordel/Exercises/Images` — the one folder every Base Exercise image is stored
+ * `cordel/exercises/images` — the one folder every Base Exercise image is stored
  * in (#716 §1). The leaf is spelled once, in `exerciseImages.ts`: a gym's
  * `<prefix>/Exercises/Images/` and this are the same branch of two different
  * roots, and they must never be confused for one another (§15).
@@ -25,7 +25,7 @@ import { EXERCISE_IMAGES_FOLDER, sanitizeExerciseImageName } from './exerciseIma
 export const PLATFORM_EXERCISE_IMAGES_PREFIX = `${PLATFORM_STORAGE_ROOT}/${EXERCISE_IMAGES_FOLDER}`;
 
 /**
- * `cordel/Exercises/Images/<exercise_id>-<sanitized name>.png` — the key a Base
+ * `cordel/exercises/images/<exercise_id>-<sanitized name>.png` — the key a Base
  * Exercise's **master** image is stored under (#716 §13).
  *
  * The id leads, so two exercises whose names sanitize alike never share an
@@ -44,7 +44,7 @@ export function buildBaseExerciseImageThumbnailKey(exerciseId: number | string, 
 }
 
 /**
- * Every folder marker between the bucket root and `cordel/Exercises/Images/`,
+ * Every folder marker between the bucket root and `cordel/exercises/images/`,
  * outermost first. R2 has no directories, so these are the zero-byte `…/`
  * objects `ensureStorageFolders()` writes; Gym Bucket Initialization only writes
  * a *gym's* tree, so the platform root is created by the first upload that needs
@@ -53,7 +53,7 @@ export function buildBaseExerciseImageThumbnailKey(exerciseId: number | string, 
 export function baseExerciseImageFolderKeys(): string[] {
   return [
     `${PLATFORM_STORAGE_ROOT}/`,
-    `${PLATFORM_STORAGE_ROOT}/Exercises/`,
+    `${PLATFORM_STORAGE_ROOT}/${EXERCISE_FOLDER}/`,
     `${PLATFORM_EXERCISE_IMAGES_PREFIX}/`,
   ];
 }
@@ -64,10 +64,10 @@ export function baseExerciseImageFolderKeys(): string[] {
  *
  * The mirror image of `isGymOwnedImageUrl()` (#719 §19): true only for a URL
  * this deployment built (`storageKeyFromObjectUrl()` — a different endpoint or
- * bucket is already "not ours") whose key sits under `cordel/Exercises/Images/`.
+ * bucket is already "not ours") whose key sits under `cordel/exercises/images/`.
  * So:
  *
- *  - `…/cordel/Exercises/Images/…` → true, the platform's own upload.
+ *  - `…/cordel/exercises/images/…` → true, the platform's own upload.
  *  - `…/gyms/<a gym>/…` → **false**: a gym's object, which a platform operation
  *    must never delete. Nothing should put one on a base row, and a `PUT` that
  *    sets `image_url` to any string is exactly what could.

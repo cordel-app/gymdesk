@@ -49,32 +49,32 @@ afterEach(() => {
 const url = (key: string) => `${R2_ENDPOINT}/${R2_BUCKET}/${key}`;
 
 describe('buildBaseExerciseVideoKey', () => {
-  it('stores a base exercise under cordel/Exercises/Videos/<id>-<Name>.mp4 (§1)', () => {
+  it('stores a base exercise under cordel/exercises/videos/<id>-<Name>.mp4 (§1)', () => {
     expect(buildBaseExerciseVideoKey(123, 'Barbell Back Squat'))
-      .toBe('cordel/Exercises/Videos/123-Barbell-Back-Squat.mp4');
+      .toBe('cordel/exercises/videos/123-Barbell-Back-Squat.mp4');
     expect(buildBaseExerciseVideoKey(456, 'Bench Press'))
-      .toBe('cordel/Exercises/Videos/456-Bench-Press.mp4');
+      .toBe('cordel/exercises/videos/456-Bench-Press.mp4');
     expect(buildBaseExerciseVideoKey(789, 'Lat Pulldown'))
-      .toBe('cordel/Exercises/Videos/789-Lat-Pulldown.mp4');
+      .toBe('cordel/exercises/videos/789-Lat-Pulldown.mp4');
   });
 
   it('names the poster with -thumbnail before the extension, and as a PNG (Q4)', () => {
     expect(buildBaseExerciseVideoPosterKey(456, 'Bench Press'))
-      .toBe('cordel/Exercises/Videos/456-Bench-Press-thumbnail.png');
+      .toBe('cordel/exercises/videos/456-Bench-Press-thumbnail.png');
   });
 
   it('hangs off the platform root, never a gym prefix (§1)', () => {
     const key = buildBaseExerciseVideoKey(7, 'Lat Pulldown');
     expect(key.startsWith(`${PLATFORM_STORAGE_ROOT}/`)).toBe(true);
     expect(key).not.toContain('gyms/');
-    expect(PLATFORM_EXERCISE_VIDEOS_PREFIX).toBe('cordel/Exercises/Videos');
+    expect(PLATFORM_EXERCISE_VIDEOS_PREFIX).toBe('cordel/exercises/videos');
   });
 
   it('sanitizes the name deterministically, exactly as the image keys do', () => {
     expect(buildBaseExerciseVideoKey(9, 'Cable Row, Seated'))
-      .toBe('cordel/Exercises/Videos/9-Cable-Row-Seated.mp4');
+      .toBe('cordel/exercises/videos/9-Cable-Row-Seated.mp4');
     expect(buildBaseExerciseVideoKey(10, 'Press  militar / máquina'))
-      .toBe('cordel/Exercises/Videos/10-Press-militar-maquina.mp4');
+      .toBe('cordel/exercises/videos/10-Press-militar-maquina.mp4');
   });
 
   it('keeps the id in both keys, so two names that sanitize alike never collide', () => {
@@ -83,13 +83,13 @@ describe('buildBaseExerciseVideoKey', () => {
   });
 
   it('falls back to a name rather than producing "<id>-.mp4"', () => {
-    expect(buildBaseExerciseVideoKey(4, '!!!')).toBe('cordel/Exercises/Videos/4-exercise.mp4');
+    expect(buildBaseExerciseVideoKey(4, '!!!')).toBe('cordel/exercises/videos/4-exercise.mp4');
   });
 
   it('is the same leaf a gym uses, under a different root (#719 §18)', () => {
     expect(buildGymExerciseVideoKey(GYM_PREFIX, 5, 'Squat'))
-      .toBe(`${GYM_PREFIX}/Exercises/Videos/5-Squat.mp4`);
-    expect(buildBaseExerciseVideoKey(5, 'Squat')).toBe('cordel/Exercises/Videos/5-Squat.mp4');
+      .toBe(`${GYM_PREFIX}/exercises/videos/5-Squat.mp4`);
+    expect(buildBaseExerciseVideoKey(5, 'Squat')).toBe('cordel/exercises/videos/5-Squat.mp4');
   });
 });
 
@@ -97,25 +97,25 @@ describe('baseExerciseVideoFolderKeys', () => {
   it('lists every marker from the platform root down, outermost first', () => {
     expect(baseExerciseVideoFolderKeys()).toEqual([
       'cordel/',
-      'cordel/Exercises/',
-      'cordel/Exercises/Videos/',
+      'cordel/exercises/',
+      'cordel/exercises/videos/',
     ]);
   });
 });
 
 describe('isPlatformOwnedExerciseVideoUrl', () => {
-  it('accepts an object under cordel/Exercises/Videos/', () => {
-    expect(isPlatformOwnedExerciseVideoUrl(url('cordel/Exercises/Videos/12-Squat.mp4'))).toBe(true);
-    expect(isPlatformOwnedExerciseVideoUrl(url('cordel/Exercises/Videos/12-Squat-thumbnail.png'))).toBe(true);
+  it('accepts an object under cordel/exercises/videos/', () => {
+    expect(isPlatformOwnedExerciseVideoUrl(url('cordel/exercises/videos/12-Squat.mp4'))).toBe(true);
+    expect(isPlatformOwnedExerciseVideoUrl(url('cordel/exercises/videos/12-Squat-thumbnail.png'))).toBe(true);
   });
 
   it("refuses a gym's own object — a platform operation never deletes one", () => {
-    expect(isPlatformOwnedExerciseVideoUrl(url(`${GYM_PREFIX}/Exercises/Videos/12-Squat.mp4`))).toBe(false);
+    expect(isPlatformOwnedExerciseVideoUrl(url(`${GYM_PREFIX}/exercises/videos/12-Squat.mp4`))).toBe(false);
   });
 
   it('refuses the image folder, and is refused by it — neither sweep owns the other', () => {
-    expect(isPlatformOwnedExerciseVideoUrl(url('cordel/Exercises/Images/12-Squat.png'))).toBe(false);
-    expect(isPlatformOwnedExerciseImageUrl(url('cordel/Exercises/Videos/12-Squat.mp4'))).toBe(false);
+    expect(isPlatformOwnedExerciseVideoUrl(url('cordel/exercises/images/12-Squat.png'))).toBe(false);
+    expect(isPlatformOwnedExerciseImageUrl(url('cordel/exercises/videos/12-Squat.mp4'))).toBe(false);
   });
 
   it("refuses another platform feature's object", () => {
@@ -134,11 +134,11 @@ describe('isPlatformOwnedExerciseVideoUrl', () => {
   });
 
   it('refuses a URL from another bucket or endpoint', () => {
-    expect(isPlatformOwnedExerciseVideoUrl(`${R2_ENDPOINT}/other-bucket/cordel/Exercises/Videos/12-Squat.mp4`)).toBe(false);
-    expect(isPlatformOwnedExerciseVideoUrl(`https://elsewhere.example.com/${R2_BUCKET}/cordel/Exercises/Videos/12-Squat.mp4`)).toBe(false);
+    expect(isPlatformOwnedExerciseVideoUrl(`${R2_ENDPOINT}/other-bucket/cordel/exercises/videos/12-Squat.mp4`)).toBe(false);
+    expect(isPlatformOwnedExerciseVideoUrl(`https://elsewhere.example.com/${R2_BUCKET}/cordel/exercises/videos/12-Squat.mp4`)).toBe(false);
   });
 
   it('anchors the prefix, so a sibling folder cannot pass as this one', () => {
-    expect(isPlatformOwnedExerciseVideoUrl(url('cordel/Exercises/VideosArchive/12-Squat.mp4'))).toBe(false);
+    expect(isPlatformOwnedExerciseVideoUrl(url('cordel/exercises/videosArchive/12-Squat.mp4'))).toBe(false);
   });
 });

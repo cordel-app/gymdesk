@@ -7,16 +7,29 @@
 // all three are decided in one place and can be unit-tested without a database
 // or a bucket. Same split as `baseNutritionImages.ts` (#715).
 
-import { sanitizeStorageObjectName, storageKeyFromObjectUrl } from '../infra/storage';
+import {
+  EXERCISE_IMAGES_STORAGE_FOLDER,
+  EXERCISE_STORAGE_FOLDER,
+  sanitizeStorageObjectName,
+  storageKeyFromObjectUrl,
+} from '../infra/storage';
 import { readPngMetadata, pngSupportsTransparency } from './pngImage';
 
 /**
- * `Exercises/Images` — the leaf of the gym's own folder tree (`GYM_FOLDERS` in
+ * `exercises` — the first-level folder every kind of exercise media hangs off.
+ * Re-exported from `infra/storage.ts` rather than restated, because Gym Bucket
+ * Initialization writes the very markers these keys are written into and a name
+ * spelled twice could diverge in case alone (#1035, the `THEMES_FOLDER` rule).
+ */
+export const EXERCISE_FOLDER = EXERCISE_STORAGE_FOLDER;
+
+/**
+ * `exercises/images` — the leaf of the gym's own folder tree (`GYM_FOLDERS` in
  * `infra/storage.ts`, written at Gym Bucket Initialization) that holds exercise
  * images. #719 §18 fixes it: a gym's upload goes here and never under
- * `cordel/Exercises/Images/`, which stays the platform's.
+ * `cordel/exercises/images/`, which stays the platform's.
  */
-export const EXERCISE_IMAGES_FOLDER = 'Exercises/Images';
+export const EXERCISE_IMAGES_FOLDER = EXERCISE_IMAGES_STORAGE_FOLDER;
 
 /**
  * How much of the exercise name a key may carry. `exercises.name` is
@@ -35,7 +48,7 @@ export function sanitizeExerciseImageName(name: string): string {
 }
 
 /**
- * `<gym prefix>/Exercises/Images/<exercise_id>-<sanitized name>.png` — the key a
+ * `<gym prefix>/exercises/images/<exercise_id>-<sanitized name>.png` — the key a
  * Gym Exercise's **master** image is stored under (#719 §5).
  *
  * The id leads, so two exercises whose names sanitize alike never share an
@@ -54,13 +67,13 @@ export function buildGymExerciseImageThumbnailKey(folderPrefix: string, exercise
 
 /**
  * Every folder marker between the bucket root and the gym's
- * `Exercises/Images/`, outermost first. Gym Bucket Initialization already writes
+ * `exercises/images/`, outermost first. Gym Bucket Initialization already writes
  * these (#417), so this is belt-and-braces for a gym whose tree predates a
  * folder or was initialized against a different bucket — R2 has no directories,
  * so a marker is just a zero-byte `…/` object and rewriting one is a no-op.
  */
 export function gymExerciseImageFolderKeys(folderPrefix: string): string[] {
-  return [`${folderPrefix}/`, `${folderPrefix}/Exercises/`, `${folderPrefix}/${EXERCISE_IMAGES_FOLDER}/`];
+  return [`${folderPrefix}/`, `${folderPrefix}/${EXERCISE_FOLDER}/`, `${folderPrefix}/${EXERCISE_IMAGES_FOLDER}/`];
 }
 
 // ─── Ownership (#719 §19) ─────────────────────────────────────────────────────
@@ -73,10 +86,10 @@ export function gymExerciseImageFolderKeys(folderPrefix: string): string[] {
  * different endpoint or bucket is already "not ours") whose key sits under the
  * gym's own `storage_folder_prefix`. So:
  *
- *  - `…/gyms/<this gym>/Exercises/Images/…` → true, the gym's own upload,
+ *  - `…/gyms/<this gym>/exercises/images/…` → true, the gym's own upload,
  *    including the `<uuid>.png` shape `POST /storage/uploads/exercise-image`
  *    (#417) has always written.
- *  - `…/cordel/Exercises/Images/…` → **false**: platform media, which a gym
+ *  - `…/cordel/exercises/images/…` → **false**: platform media, which a gym
  *    operation must never delete (§19), and which a gym exercise legitimately
  *    points at after an import (§2).
  *  - `…/gyms/<another gym>/…` → false. Nothing should produce this, and a gym
