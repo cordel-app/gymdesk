@@ -14,6 +14,10 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 import { NutritionPlanTree, Hierarchy } from './NutritionPlanTree';
 import { AssignNutritionPlanDialog, AssignedNutritionPlan } from '../AssignNutritionPlanDialog';
 
@@ -45,6 +49,58 @@ type SortKey = 'name' | 'created_at' | 'status';
 const STATUSES = ['active', 'inactive', 'draft'] as const;
 const LIMIT = 20;
 const emptyForm = { name: '', description: '', status: 'active' };
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 4 — the row is laid out from one declaration rather than from
+ * per-cell `flex`/`maxWidth` guesses (#637's shape, which stage 3's eight card
+ * lists already adopted). The name cell was `flexShrink: 0` and the description
+ * `flex: 1`, so on a narrow viewport the description was taken to zero and the
+ * rest of the row overflowed — the defect one cell over from the ticket's own
+ * screenshot.
+ *
+ * This list carries no header band, so there is nothing for the tracks to fall
+ * out of line *with* — adding one would be a desktop change §4 rules out — but
+ * the row still needs each cell to say what it is on a phone. The template's
+ * name is the row's identity and its status is the one state worth seeing
+ * without tapping; the description, the author and the date are read in the
+ * expanded tree.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 14, mobile: 'keep' },
+  { key: 'name', width: 160, grow: 2, mobile: 'name' },
+  { key: 'description', width: 160, grow: 3, mobile: 'secondary' },
+  { key: 'status', width: 90, mobile: 'keep' },
+  { key: 'created_by', width: 120, mobile: 'secondary' },
+  { key: 'created_at', width: 100, mobile: 'secondary' },
+  { key: 'actions', width: 44, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 12;
+/** This list's own horizontal inset — a card row. */
+const ROW_PADDING_X = 14;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
 
 export default function NutritionPlanTemplatesPage() {
   const t = useTranslations();
@@ -319,6 +375,10 @@ export default function NutritionPlanTemplatesPage() {
       ) : rows.length === 0 && !pendingNew ? (
         <p style={{ color: '#888' }}>{t('nutrition_plan_templates.empty')}</p>
       ) : (
+        /* The cards share LIST_GRID_COLUMNS and scroll together, so a narrow
+           viewport scrolls the list instead of the page (#1011). */
+        <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+        <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {pendingNew && (
             <PendingNewCard
@@ -357,6 +417,8 @@ export default function NutritionPlanTemplatesPage() {
               onChanged={() => refetchBranch(row.id)}
             />
           ))}
+        </div>
+        </div>
         </div>
       )}
 
@@ -492,22 +554,25 @@ function TemplateCard({
       ) : (
         <div
           onClick={onToggleExpand}
+          className={LIST_GRID_ROW_CLASS}
           style={headerRowStyle}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleExpand(); }}
         >
-          <span style={{ fontSize: 12, color: '#aaa', userSelect: 'none', flexShrink: 0 }}>{expanded ? '▼' : '▶'}</span>
-          <span style={nameCellStyle}>{template.name}</span>
-          <span style={descCellStyle}>{template.description ?? '—'}</span>
-          <StatusBadge status={template.status} label={t(`status.${template.status}`)} />
-          <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          <span className={CELL_CLASS.expand} style={{ fontSize: 12, color: '#aaa', userSelect: 'none' }}>{expanded ? '▼' : '▶'}</span>
+          <span className={CELL_CLASS.name} title={template.name} style={nameCellStyle}>{template.name}</span>
+          <span className={CELL_CLASS.description} style={descCellStyle}>{template.description ?? '—'}</span>
+          <span className={CELL_CLASS.status}>
+            <StatusBadge status={template.status} label={t(`status.${template.status}`)} />
+          </span>
+          <span className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {template.created_by_name ?? '—'}
           </span>
-          <span style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap', flexShrink: 0 }}>
+          <span className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
             {formatDate(template.created_at, locale)}
           </span>
-          <span onClick={(e) => e.stopPropagation()}>
+          <span className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('nutrition_plan_templates.col_actions')} items={menuItems} />
           </span>
         </div>
@@ -678,15 +743,16 @@ const cardStyle = (editing: boolean): React.CSSProperties => ({
   overflow: 'hidden',
 });
 const headerRowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px',
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `12px ${ROW_PADDING_X}px`,
   cursor: 'pointer', userSelect: 'none',
 };
 const nameCellStyle: React.CSSProperties = {
-  fontWeight: 600, fontSize: 15, flexShrink: 0, maxWidth: 220,
+  fontWeight: 600, fontSize: 15, minWidth: 0,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 const descCellStyle: React.CSSProperties = {
-  color: '#888', fontSize: 13.5, flex: 1,
+  color: '#888', fontSize: 13.5, minWidth: 0,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 const inlineLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 };

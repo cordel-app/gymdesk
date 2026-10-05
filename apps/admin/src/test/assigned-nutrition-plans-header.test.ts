@@ -73,9 +73,15 @@ describe('Assigned Nutrition Plans: rename and card header (#810)', () => {
   // ── §2 The assignment ───────────────────────────────────────────────────────
 
   it('shows the member next to the plan name, at the same size and weight', () => {
+    // #1011 stage 4 gave this row a `LIST_COLUMNS` declaration, so each cell
+    // reaches its column through the shared class map as well as carrying its
+    // own typography. Same claim, one indirection later.
     expect(collapsedHeaderSrc).toMatch(
-      /<span style=\{nameCellStyle\}>\{plan\.name\}<\/span>[\s\S]*?<span style=\{memberCellStyle\}>\{plan\.member_name\}<\/span>/,
+      /className=\{CELL_CLASS\.name\}[^>]*style=\{nameCellStyle\}>\{plan\.name\}<\/span>[\s\S]*?className=\{CELL_CLASS\.member\}[^>]*style=\{memberCellStyle\}>\{plan\.member_name\}<\/span>/,
     );
+    // …and the Member is what `Q1` keeps on a phone beside the plan's own name,
+    // because this list is member-related.
+    expect(pageSrc).toMatch(/key: 'member', width: \d+, grow: \d+, mobile: 'keep'/);
     // One typography declaration, spread by both cells, so they cannot drift.
     expect(pageSrc).toMatch(/const headerTitleStyle: React\.CSSProperties = \{ fontWeight: 600, fontSize: 15 \};/);
     for (const cell of ['nameCellStyle', 'memberCellStyle']) {

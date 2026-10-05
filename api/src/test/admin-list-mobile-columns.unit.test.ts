@@ -88,15 +88,15 @@ const declarations = walk(ADMIN_SRC)
 describe('#1011 — Admin list columns declare their mobile behaviour', () => {
   it('finds every list that declares columns', () => {
     // The twelve `DataTable` consumers of stage 1, the three grid pages of
-    // stage 2 and the eight flex-row pages stage 3 converted into grid pages. A
-    // twenty-fourth is welcome; a count that drops means a list stopped
-    // declaring its columns the shared way.
-    expect(declarations.length).toBeGreaterThanOrEqual(23);
-    // Exact, because this is the number stage 4 moves: the eight remaining
-    // flex-row pages each become a grid list as they adopt the declaration, and
-    // a page that quietly went back to hand-sized cells would drop it.
+    // stage 2 and the sixteen flex-row pages stages 3 and 4 converted into grid
+    // pages. A thirty-second is welcome; a count that drops means a list
+    // stopped declaring its columns the shared way.
+    expect(declarations.length).toBeGreaterThanOrEqual(31);
+    // Exact, because #1011's adoption is complete: every card list of the Admin
+    // app lays its rows out from one declaration now, so a page that quietly
+    // went back to hand-sized cells would drop this count.
     expect(declarations.flatMap((d) => d.arrays).filter((a) => a.shape === 'grid'))
-      .toHaveLength(11);
+      .toHaveLength(19);
   });
 
   it('gives every column a mobile behaviour', () => {

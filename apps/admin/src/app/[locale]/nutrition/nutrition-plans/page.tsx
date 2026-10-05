@@ -13,6 +13,10 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
+import {
+  LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
+  listCellClasses, listScrollerClass,
+} from '@/components/listChrome';
 import { NutritionPlanTree, Hierarchy } from '../nutrition-plan-templates/NutritionPlanTree';
 import { NewNutritionPlanDialog } from '../NewNutritionPlanDialog';
 
@@ -40,6 +44,57 @@ const emptyEditForm: EditForm = { name: '', description: '', start_date: '' };
 function formatDate(iso: string, locale: string) {
   return new Date(iso).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
 }
+
+// ─── List columns ─────────────────────────────────────────────────────────────
+
+/**
+ * #1011 stage 4 — the row is laid out from one declaration rather than from
+ * per-cell `flex`/`maxWidth` guesses (#637's shape, which stage 3's eight card
+ * lists already adopted). This list carries no header band, so there is nothing
+ * for the tracks to fall out of line *with* — adding one would be a desktop
+ * change §4 rules out — but the row still needs each cell to say what it is on
+ * a phone.
+ *
+ * The plan's name is the row's identity, and the **Member** rides beside it
+ * because this list is member-related, which is `Q1`'s own exception ("Member
+ * name, where the list is member-related"). The day count, the author and the
+ * date are read in the expanded tree.
+ */
+interface ListColumn extends ListGridColumn {
+  /** Fixed track width in px — also the minimum for a flexible column. */
+  width: number;
+  /** Set on a flexible column: it becomes minmax(width, growfr). */
+  grow?: number;
+}
+
+const LIST_COLUMNS: ListColumn[] = [
+  // The chevron is the row's own affordance rather than a value, so it stays.
+  { key: 'expand', width: 14, mobile: 'keep' },
+  { key: 'name', width: 140, grow: 2, mobile: 'name' },
+  { key: 'member', width: 120, grow: 1, mobile: 'keep' },
+  { key: 'days', width: 80, mobile: 'secondary' },
+  { key: 'created_at', width: 100, mobile: 'secondary' },
+  { key: 'created_by', width: 140, mobile: 'secondary' },
+  { key: 'status', width: 90, mobile: 'keep' },
+  { key: 'actions', width: 44, mobile: 'actions' },
+];
+
+/** The mobile class a column's header cell and its row cells share (#1011). */
+const CELL_CLASS = listCellClasses(LIST_COLUMNS);
+
+const LIST_COLUMN_GAP = 12;
+/** This list's own horizontal inset — a card row. */
+const ROW_PADDING_X = 16;
+
+const LIST_GRID_COLUMNS = LIST_COLUMNS
+  .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
+  .join(' ');
+
+/** Tracks + gaps + a row's horizontal padding: below this the list scrolls. */
+const LIST_MIN_WIDTH =
+  LIST_COLUMNS.reduce((sum, c) => sum + c.width, 0)
+  + LIST_COLUMN_GAP * (LIST_COLUMNS.length - 1)
+  + ROW_PADDING_X * 2;
 
 export default function NutritionPlansPage() {
   const t = useTranslations();
@@ -238,6 +293,10 @@ export default function NutritionPlansPage() {
       ) : rows.length === 0 ? (
         <p style={{ color: '#888' }}>{t('nutrition_plans.empty')}</p>
       ) : (
+        /* The cards share LIST_GRID_COLUMNS and scroll together, so a narrow
+           viewport scrolls the list instead of the page (#1011). */
+        <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
+        <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {rows.map((row) => (
             <PlanCard
@@ -265,6 +324,8 @@ export default function NutritionPlansPage() {
               onChanged={() => refetchBranch(row.id)}
             />
           ))}
+        </div>
+        </div>
         </div>
       )}
 
@@ -394,26 +455,29 @@ function PlanCard({
       ) : (
         <div
           onClick={onToggleExpand}
+          className={LIST_GRID_ROW_CLASS}
           style={headerRowStyle}
           role="button"
           tabIndex={0}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleExpand(); }}
         >
-          <span style={{ fontSize: 12, color: '#aaa', userSelect: 'none', flexShrink: 0 }}>{expanded ? '▼' : '▶'}</span>
-          <span style={nameCellStyle}>{plan.name}</span>
+          <span className={CELL_CLASS.expand} style={{ fontSize: 12, color: '#aaa', userSelect: 'none' }}>{expanded ? '▼' : '▶'}</span>
+          <span className={CELL_CLASS.name} title={`${plan.name} · ${plan.member_name}`} style={nameCellStyle}>{plan.name}</span>
           {/* #810: the assigned member reads at the plan name's own size and weight. */}
-          <span style={memberCellStyle}>{plan.member_name}</span>
-          <span style={metaCellStyle}>
+          <span className={CELL_CLASS.member} title={plan.member_name} style={memberCellStyle}>{plan.member_name}</span>
+          <span className={CELL_CLASS.days} style={metaCellStyle}>
             {t('nutrition_plans.day_count', { count: plan.day_count })}
           </span>
-          <span style={metaCellStyle}>
+          <span className={CELL_CLASS.created_at} style={metaCellStyle}>
             {formatDate(plan.created_at, locale)}
           </span>
-          <span style={{ ...metaCellStyle, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <span className={CELL_CLASS.created_by} style={{ ...metaCellStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {plan.created_by_name ?? '—'}
           </span>
-          <StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />
-          <span onClick={(e) => e.stopPropagation()}>
+          <span className={CELL_CLASS.status}>
+            <StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />
+          </span>
+          <span className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('nutrition_plans.col_actions')} items={menuItems} />
           </span>
         </div>
@@ -514,23 +578,25 @@ const cardStyle = (editing: boolean): React.CSSProperties => ({
   overflow: 'hidden',
 });
 const headerRowStyle: React.CSSProperties = {
-  display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px', cursor: 'pointer', userSelect: 'none',
+  display: 'grid', gridTemplateColumns: LIST_GRID_COLUMNS,
+  alignItems: 'center', gap: LIST_COLUMN_GAP, padding: `14px ${ROW_PADDING_X}px`,
+  cursor: 'pointer', userSelect: 'none',
 };
 // #810: the plan name and the member it is assigned to share one typography
 // declaration, so the two halves of the header title cannot drift apart.
 const headerTitleStyle: React.CSSProperties = { fontWeight: 600, fontSize: 15 };
 const nameCellStyle: React.CSSProperties = {
   ...headerTitleStyle,
-  flex: 1, minWidth: 0,
+  minWidth: 0,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 const memberCellStyle: React.CSSProperties = {
   ...headerTitleStyle,
-  flexShrink: 0, maxWidth: 200,
+  minWidth: 0,
   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
 };
 const metaCellStyle: React.CSSProperties = {
-  fontSize: 13, color: '#888', whiteSpace: 'nowrap', flexShrink: 0,
+  fontSize: 13, color: '#888', whiteSpace: 'nowrap',
 };
 const inlineLabelStyle: React.CSSProperties = { display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4 };
 const inlineInputStyle: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', background: '#fff' };
