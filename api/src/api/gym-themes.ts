@@ -637,7 +637,13 @@ gymThemesRouter.post(
       await requireRole('admin')(req, res, async () => {
         // The extension is derived from this validated MIME type, never from the
         // uploaded file's name — which never reaches the object key at all.
-        const mime = req.headers['content-type']?.split(';')[0]?.trim();
+        // A request can repeat the header, so what Node leaves here is not
+        // necessarily the string its type says: an array would carry `length`
+        // and numeric indices into `buildThemeLogoKey()` below as if it were
+        // the MIME type (CodeQL `js/type-confusion-through-parameter-tampering`),
+        // so it is narrowed here rather than asserted.
+        const rawContentType: unknown = req.headers['content-type'];
+        const mime = typeof rawContentType === 'string' ? rawContentType.split(';')[0]?.trim() : undefined;
         if (!mime || !ALLOWED_MIME_TYPES.includes(mime)) {
           return res.status(415).json({ error: `Unsupported image type. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}`, cause: 'invalid_file' });
         }
