@@ -91,7 +91,13 @@ jobs:
               exit 1
             fi
 
-            sleep 3
-            curl -sf --max-time 10 -o /dev/null http://localhost:8082/en || \
+            # Next.js answers its first request late (cold start, port forward
+            # still wiring up), so retry for up to ~60s instead of one shot.
+            ok=0
+            for i in $(seq 1 20); do
+              if curl -sf --max-time 10 -o /dev/null http://localhost:8082/en; then ok=1; break; fi
+              sleep 3
+            done
+            [ "$ok" = 1 ] || \
               { echo "ERROR: app not responding"; systemctl --user status fitness-members.service --no-pager || true; podman logs fitness-members 2>/dev/null || true; exit 1; }
             echo "Health check OK"
