@@ -25,10 +25,8 @@
  * replace and the one to write are both deploy-time configuration.
  */
 
-import { config } from 'dotenv';
+import 'dotenv/config';
 import { db } from '../infra/db';
-
-config();
 
 /** Every column that stores a full media URL rather than an object key. */
 export const STORED_URL_COLUMNS: ReadonlyArray<{ table: string; column: string }> = [

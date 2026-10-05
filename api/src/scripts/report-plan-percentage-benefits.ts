@@ -34,11 +34,9 @@
  * and has no tenant context, exactly like the other operator scripts here.
  */
 
-import { config } from 'dotenv';
+import 'dotenv/config';
 import { db } from '../infra/db';
 import { LEGACY_PLAN_BENEFIT_ACTIONS } from '../domain/productBenefitActions';
-
-config();
 
 /** The two groups of Plan-side tables, in the order the report prints them. */
 export const PLAN_CATALOGUE_TABLES = [

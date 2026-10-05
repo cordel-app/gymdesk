@@ -38,11 +38,9 @@
  * and has no tenant context, exactly like the other operator scripts here.
  */
 
-import { config } from 'dotenv';
+import 'dotenv/config';
 import { db } from '../infra/db';
 import { LIVE_ASSIGNMENT_STATUSES } from '../domain/oneActivePlan';
-
-config();
 
 export interface MultiActiveAssignment {
   user_membership_id: number;

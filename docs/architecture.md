@@ -1327,7 +1327,15 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 | `deploy-admin.yml` | Build/push/restart `fitness-admin` |
 | `deploy-member.yml` | Build/push/restart `fitness-members` |
 | `deploy-payment.yml` | Build/push/restart `fitness-pay` (corfront `:8083`) |
+| `exercises-import.yml` | **(#964)** `workflow_dispatch` only — runs the Free Exercise DB importer from the VPS against the selected environment's database. Same reason `deploy.yml` runs migrations there: the database is VCN-private and a GitHub runner cannot reach it. Defaults to `--dry-run`, so a dispatch nobody thought about reports rather than writes, and it runs the image that is *deployed* (no `podman pull`) so the catalogue is written by the code serving the API |
 | `debug-vps.yml`, `test-ssh.yml`, `test_ssh_corfront.yml` | Diagnostics (workflow_dispatch) |
+
+### Operator scripts (`api/src/scripts/`)
+
+One-off and repeatable data jobs — `exercises:import-free-db`, `nutrition:base-images`, `storage:rewrite-urls`, `memberships:multi-active`, `plans:percentage-benefits` — run through `npm run` in `api/`. Two rules, both learned the hard way in #964:
+
+- **`import 'dotenv/config';` goes first, before any `../` import.** `infra/db.ts` builds its pool at module scope and throws `CORDEL_FITNESS_DB_HOST, _USER, _PASSWORD and _NAME environment variables are required` when they are missing, and imports run before a module body — so the `import { config } from 'dotenv'` + `config()` form every script carried until #964 was reached only *after* the pool had already failed. `npm run exercises:import-free-db` with a correct `api/.env` therefore died before reading a row, which is why #964's catalogue had not been imported despite the importer being merged. `src/app.ts` and `src/infra/seed.ts` had the bare side-effect import all along; `api/src/test/script-env-loading.unit.test.ts` is the gate.
+- **Running one against a deployed database means running it from the VPS**, as a workflow, invoking the **compiled** file (`node dist/scripts/<name>.js`): `tsx` is a devDependency and `src/` is not copied into the runner image, so the `npm run` entry point does not exist there. `exercises-import.yml` is the pattern; the same test asserts its path still names a script that exists.
 
 ### Code scanning (CodeQL) — how an alert is cleared (#767)
 

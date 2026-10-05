@@ -32,7 +32,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
-import { config } from 'dotenv';
+import 'dotenv/config';
 import { db } from '../infra/db';
 import {
   buildBaseNutritionImageKey,
@@ -52,8 +52,6 @@ import {
   storageKeyFromObjectUrl,
   uploadStorageObject,
 } from '../infra/storage';
-
-config();
 
 interface BaseFood {
   id: number;
