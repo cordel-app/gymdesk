@@ -5,13 +5,16 @@ import {
   GOAL_API_ROOTS,
   GOAL_AUDIT_ENTITIES,
   GOAL_KINDS,
+  IMAGE_GOAL_KINDS,
   LIBRARY_TABS,
   MEASURABLE_GOAL_KINDS,
+  PERSONAL_GOAL_IMAGE_MAX_SIZE,
   SYSTEM_GOAL_SLUGS,
   emptyGoalForm,
   formatGoalTarget,
   goalDisplayName,
   goalFormError,
+  goalKindHasImage,
   isGoalTab,
   isMeasurableGoalKind,
   isSystemGoal,
@@ -24,10 +27,12 @@ import {
 import {
   GOAL_LIBRARY_AUDIT_ENTITIES,
   GOAL_LIBRARY_KINDS,
+  IMAGE_GOAL_KINDS as API_IMAGE_GOAL_KINDS,
   MEASURABLE_GOAL_KINDS as API_MEASURABLE_GOAL_KINDS,
   SYSTEM_GOALS,
   SYSTEM_PERSONAL_GOAL_TARGETS,
 } from '../../../../api/src/domain/goalLibrary';
+import { PERSONAL_GOAL_IMAGE_MAX_SIZE as API_PERSONAL_GOAL_IMAGE_MAX_SIZE } from '../../../../api/src/domain/personalGoalImages';
 
 // #947 — the Nutrition Library is three tabs (Foods, Personal Goals, Nutrition
 // Goals) in *both* libraries, the two goal catalogues are separate lists with
@@ -581,5 +586,98 @@ describe('Personal Goals is its own section (#948 §1, §3, §5, §6, §8, §9)'
     expect(apiAppSrc).toContain(
       "app.use('/nutrition-goals', requireAuth(), tenantContext, requireFeatureAccess('nutrition.nutrition_library', 'NUTRITION'), requireFeatureEnabled('nutrition.nutrition_library')",
     );
+  });
+});
+
+/**
+ * #1035 stage 2 — a Personal Goal carries an image, and the control that uploads
+ * it is the section's own rather than a second one per screen.
+ */
+describe('a Personal Goal has an image, a Nutrition Goal does not (#1035 stage 2)', () => {
+  const read = (path: string) => readFileSync(join(__dirname, '..', path), 'utf8');
+
+  it("mirrors the API's own declaration of which kinds carry an image", () => {
+    // The API is the enforcement point (its routers project `image_url` off that
+    // list and register the two image routes from it); this is the mirror the
+    // admin renders from, and the two drifting is how a control comes to write
+    // to a column that does not exist.
+    expect([...IMAGE_GOAL_KINDS]).toEqual([...API_IMAGE_GOAL_KINDS]);
+    expect(goalKindHasImage('personal')).toBe(true);
+    expect(goalKindHasImage('nutrition')).toBe(false);
+  });
+
+  it('mirrors the ceiling the API enforces, so the browser can say so first', () => {
+    expect(PERSONAL_GOAL_IMAGE_MAX_SIZE).toBe(API_PERSONAL_GOAL_IMAGE_MAX_SIZE);
+    expect(PERSONAL_GOAL_IMAGE_MAX_SIZE).toBe(512);
+  });
+
+  it('renders one control, from the section, behind the kind that has an image', () => {
+    const section = read('components/goalLibrary/GoalLibrarySection.tsx');
+    expect(section).toContain('goalKindHasImage');
+    expect(section).toContain('<GoalImageField');
+    // The control is Edit mode's; the read-only half shows the image as a value
+    // and holds no affordance (#797).
+    expect(section).toContain('<ReadOnlyImage');
+    // The *create* half offers no control: the object key needs the row's id.
+    expect(section).toContain("label('image_after_create')");
+  });
+
+  it('names no endpoint and spells no colour of its own in the control (#806, #912)', () => {
+    const field = read('components/goalLibrary/GoalImageField.tsx');
+    // The router root is the page's, handed down as `basePath`.
+    expect(field).not.toContain("'/personal-goals'");
+    expect(field).not.toContain("'/platform/personal-goals'");
+    // Raw bytes go through `uploadFetch`, never a hand-rolled proxy fetch, or
+    // `tenantContext` gets no gym and answers a bare 401 (#824).
+    expect(field).toContain('uploadFetch');
+    expect(field).not.toContain('/api/proxy');
+    // The Theme's Primary Button, never the retired lilac (#912/#954).
+    expect(field).toContain('primaryBtnSmall()');
+    expect(field).not.toContain('#6c63ff');
+    // One storage-readiness rule, shared with every other per-gym upload (#823).
+    expect(field).toContain('gymStorageBlock');
+  });
+
+  it('draws the preview in the app\'s one image frame rather than a third one', () => {
+    const field = read('components/goalLibrary/GoalImageField.tsx');
+    const section = read('components/goalLibrary/GoalLibrarySection.tsx');
+    for (const source of [field, section]) {
+      expect(source).toContain('imagePreviewFrameStyle');
+      // No local re-spelling of the checkerboard or the frame's border.
+      expect(source).not.toContain('backgroundSize');
+    }
+  });
+
+  it('has every key both halves resolve, in all three locales', () => {
+    const keys = [
+      'label_image', 'image_none', 'image_requirements', 'image_upload', 'image_replace',
+      'image_remove', 'image_uploading', 'image_removing', 'image_confirm_remove',
+      'image_after_create', 'image_not_configured', 'image_not_initialized',
+      'image_error_not_a_png', 'image_error_unreadable', 'image_error_too_large_dimensions',
+      'image_error_upload_failed', 'image_error_remove_failed',
+    ];
+    for (const locale of ['en', 'es', 'ca']) {
+      const messages = JSON.parse(
+        readFileSync(join(__dirname, '../../locales/base', `${locale}.json`), 'utf8'),
+      );
+      // next-intl prints a missing key verbatim, so an unwritten one reaches the
+      // screen as `goal_library.image_upload` rather than as a fallback.
+      for (const key of keys) {
+        expect(messages.goal_library[key], `${locale}.goal_library.${key}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('reports the image on the row shape the section renders from', () => {
+    const goal: GoalRow = {
+      id: 1, gym_id: 'gym_1', slug: null, name: 'Marathon', description: null,
+      image_url: 'https://cdn.example.com/gyms/gym_1-X/goals/1-Marathon.png',
+      status: 'active', created_at: '2026-10-05T00:00:00Z', created_by_name: null,
+      modified_at: null, modified_by_name: null, deleted_at: null, deleted_by_name: null,
+    };
+    expect(goal.image_url).toContain('/goals/1-Marathon.png');
+    // A goal with none reads as `null`, never as a placeholder asset (#716's
+    // no-fallback rule).
+    expect({ ...goal, image_url: null }.image_url).toBeNull();
   });
 });

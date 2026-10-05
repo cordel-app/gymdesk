@@ -126,7 +126,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gym_123-GymName');
 
-    expect(sendMock).toHaveBeenCalledTimes(6);
+    expect(sendMock).toHaveBeenCalledTimes(7);
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys).toEqual([
       'gym_123-GymName/',
@@ -135,17 +135,21 @@ describe('initializeGymBucket()', () => {
       'gym_123-GymName/exercises/images/',
       'gym_123-GymName/exercises/videos/',
       'gym_123-GymName/themes/',
+      // #1035 stage 2, appended last: a folder slotted into the middle would
+      // change the order every existing gym's markers were written in.
+      'gym_123-GymName/goals/',
     ]);
     for (const call of sendMock.mock.calls) {
       expect(call[0].input.Bucket).toBe('test-bucket');
     }
   });
 
-  // ─── #826: exactly three first-level folders under the gym root ────────────
+  // ─── #826: which first-level folders sit under the gym root ───────────────
   //
   // The ticket is scoped to what sits *directly* under
   // `gyms/<gym_id>-<gym_name>/`: `nutrition/`, `exercises/` and `themes/` (#829
-  // lowercased the last of the three), and
+  // lowercased the last of the three), plus `goals/` since #1035 stage 2 gave
+  // that one a writer, and
   // nothing else. The leaves below them (§6) and the `<gym_id>-<name>` naming
   // (§5) are unchanged, which the tests above and below pin.
 
@@ -158,25 +162,32 @@ describe('initializeGymBucket()', () => {
     return [...new Set(segments)];
   }
 
-  it('creates nutrition/, exercises/ and themes/ as the only first-level folders', async () => {
+  it('creates nutrition/, exercises/, themes/ and goals/ as the only first-level folders', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    // #1035 lowercased the first two; `themes/` was already (#829).
-    expect(firstLevelFolders('gyms/gym_123-GymName')).toEqual(['nutrition', 'exercises', 'themes']);
+    // #1035 lowercased the first two; `themes/` was already (#829), and stage 2
+    // appended `goals/` with its writer — which is #826's rule, not an exception
+    // to it: a first-level folder exists because something uploads into it.
+    expect(firstLevelFolders('gyms/gym_123-GymName'))
+      .toEqual(['nutrition', 'exercises', 'themes', 'goals']);
   });
 
-  // #1035 §7: `goals/` is the fourth folder in the ticket's target tree and is
-  // deliberately *not* written yet — nothing creates a Personal Goal image, and a
-  // first-level folder no writer populates is what #826 removed. It arrives with
-  // its writer, in stage 2.
-  it('does not create goals/ while nothing writes a Personal Goal image', async () => {
+  // #1035 §7: `goals/` is the fourth folder in the ticket's target tree, and
+  // stage 1 deliberately left it out because nothing wrote a Personal Goal image
+  // yet. Stage 2 is that writer, so it is created now — appended last, so every
+  // folder that existed before keeps the position it was written in, and with no
+  // leaf, since a goal's image is all that branch holds.
+  it('creates goals/ last, and with no leaf below it', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName')).not.toContain('goals');
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-1)).toBe('goals');
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/goals/')))
+      .toEqual(['gyms/gym_123-GymName/goals/']);
   });
 
   // #1035 §2/§7: Gym Bucket Initialization writes a *gym's* tree and has never
@@ -230,7 +241,7 @@ describe('initializeGymBucket()', () => {
   // markers. #1035 dropped `Nutrition/Images/` with its leaf — a food's image is
   // the only thing that folder ever held, so it sits directly under `nutrition/`
   // now — and the two exercise leaves are unchanged apart from their case.
-  it('keeps the leaf folders below the three roots', async () => {
+  it('keeps the leaf folders below the roots that have them', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
@@ -240,6 +251,9 @@ describe('initializeGymBucket()', () => {
     expect(keys).toContain('gyms/gym_123-GymName/exercises/images/');
     expect(keys).toContain('gyms/gym_123-GymName/exercises/videos/');
     expect(keys).not.toContain('gyms/gym_123-GymName/nutrition/images/');
+    // `goals/` has no leaf either, for the same reason `nutrition/` lost its one
+    // (#1035 stage 2): a Personal Goal's image is all that branch holds.
+    expect(keys).not.toContain('gyms/gym_123-GymName/goals/images/');
   });
 
   // A marker whose case disagreed with the key builders would show up in the R2
@@ -251,6 +265,7 @@ describe('initializeGymBucket()', () => {
     const { buildGymExerciseImageKey } = await import('../domain/exerciseImages');
     const { buildGymExerciseVideoKey } = await import('../domain/exerciseVideos');
     const { buildThemeFolderPrefix } = await import('../domain/themeMemberImages');
+    const { buildGymPersonalGoalImageKey } = await import('../domain/personalGoalImages');
     const prefix = buildGymFolderPrefix('gym_123', 'Gym Name');
     await initializeGymBucket(prefix);
 
@@ -261,6 +276,7 @@ describe('initializeGymBucket()', () => {
     expect(markers).toContain(folderOf(buildGymExerciseImageKey(prefix, 'ex_1', 'Squat')));
     expect(markers).toContain(folderOf(buildGymExerciseVideoKey(prefix, 'ex_1', 'Squat')));
     expect(markers).toContain(folderOf(buildThemeFolderPrefix(prefix, 'theme_9', 'Dark Modern')));
+    expect(markers).toContain(folderOf(buildGymPersonalGoalImageKey(prefix, 'pg_1', 'Weight Loss')));
   });
 
   // ─── #735: the gym-level themes/ folder ────────────────────────────────────

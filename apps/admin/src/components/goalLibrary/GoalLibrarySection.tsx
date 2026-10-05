@@ -15,11 +15,16 @@ import {
 } from '@/components/formChrome';
 import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { displayValue } from '@/components/nutritionLibrary/nutritionItemProfile';
+import {
+  IMAGE_PREVIEW_THUMBNAIL_SIZE, imagePreviewFrameStyle, imagePreviewImageStyle,
+} from '@/components/imagePreviewFrame';
+import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import { GoalDetailsModal } from './GoalDetailsModal';
+import { GoalImageField } from './GoalImageField';
 import {
   GOAL_API_ROOTS, GoalFormValues, GoalKind, GoalListResponse, GoalRow, GoalScope,
-  emptyGoalForm, formatGoalTarget, goalDisplayName, goalFormError, isMeasurableGoalKind,
-  isSystemGoal, toGoalFormValues, toGoalPayload,
+  emptyGoalForm, formatGoalTarget, goalDisplayName, goalFormError, goalKindHasImage,
+  isMeasurableGoalKind, isSystemGoal, toGoalFormValues, toGoalPayload,
 } from './goalProfile';
 
 const LIMIT = 20;
@@ -69,6 +74,10 @@ export function GoalLibrarySection({
   // #1034 §1: asked once, so the column, the read-only field and both halves of
   // the form cannot disagree about whether this kind has a target.
   const measurable = isMeasurableGoalKind(kind);
+  // #1035 stage 2: asked once, so the read-only preview and the Edit control
+  // cannot disagree about whether this kind has an image — and for a kind that
+  // has none, neither is rendered at all.
+  const hasImage = goalKindHasImage(kind);
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
@@ -167,6 +176,18 @@ export function GoalLibrarySection({
     } finally { setNewSaving(false); }
   }
 
+  /**
+   * The row the image control just changed, as the API returned it.
+   *
+   * Patched in place rather than reloading the list: the upload answers with the
+   * whole goal, so a second read would buy nothing — and it would also fight the
+   * open editor, whose draft is this component's own state. The row carries its
+   * new `modified_at`, which is what cache-busts the preview.
+   */
+  function applyGoalChange(updated: GoalRow) {
+    setGoals((prev) => prev.map((row) => (row.id === updated.id ? updated : row)));
+  }
+
   /* ── Inline edit ────────────────────────────────────────────────────────── */
 
   function openInlineEdit(goal: GoalRow) {
@@ -214,6 +235,15 @@ export function GoalLibrarySection({
     onSave: () => void,
     saveLabel: string,
     autoFocusRef?: React.RefObject<HTMLInputElement>,
+    /**
+     * The persisted goal this form is editing, or `undefined` while one is being
+     * created. The image control needs it: the object key is built from the row's
+     * id, which does not exist yet on a create — so that half says to upload it
+     * from Edit rather than offering a control that has nowhere to write (the
+     * Base Nutrition Library's own answer, #715, and #974's rule about never
+     * rendering a control the route would ignore).
+     */
+    goal?: GoalRow,
   ) {
     return (
       <div style={{ padding: '16px 20px' }}>
@@ -257,6 +287,31 @@ export function GoalLibrarySection({
             </div>
           </div>
         )}
+        {/* #1035 stage 2 — not a form field: the upload and the removal act on
+            the server straight away, so Save and Cancel neither carry nor undo
+            them. It belongs to Edit mode all the same (#797/#799 §17: the
+            expanded card reads, `⋮ → Edit` writes). */}
+        {hasImage && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={formFieldLabelStyle}>{label('label_image')}</label>
+            {goal ? (
+              <GoalImageField
+                goal={goal}
+                basePath={basePath}
+                /* A System goal's object lives under `cordel/goals/`, which no
+                   gym's bucket gates (#823) — so Cordel's page must not be
+                   blocked by whichever gym a superadmin has selected. */
+                requiresGymStorage={scope !== 'platform'}
+                disabled={!canWrite}
+                disabledTitle={readOnlyTitle}
+                label={label}
+                onChanged={applyGoalChange}
+              />
+            ) : (
+              <span style={formHelpTextStyle}>{label('image_after_create')}</span>
+            )}
+          </div>
+        )}
         <div style={{ marginBottom: 12 }}>
           <label style={formFieldLabelStyle}>{label('label_description')}</label>
           <textarea
@@ -282,6 +337,16 @@ export function GoalLibrarySection({
       <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <ReadOnlyField label={label('label_name')} value={nameOf(goal)} />
         {measurable && <ReadOnlyField label={label('label_target')} value={formatGoalTarget(goal)} />}
+        {/* A value, not a control: the read-only half of the card holds no
+            affordance of any kind (#797). */}
+        {hasImage && (
+          <ReadOnlyImage
+            label={label('label_image')}
+            url={goal.image_url ?? null}
+            stamp={goal.modified_at ?? goal.created_at}
+            emptyText={label('image_none')}
+          />
+        )}
         <ReadOnlyField label={label('label_description')} value={displayValue(goal.description)} wrap />
         <ReadOnlyField
           label={label('ownership')}
@@ -414,7 +479,7 @@ export function GoalLibrarySection({
             ? renderInlineForm(
               editForm, setEditForm, editError, editSaving,
               () => { setEditingId(null); setEditError(null); },
-              () => saveInlineEdit(goal), label('save'),
+              () => saveInlineEdit(goal), label('save'), undefined, goal,
             )
             : renderReadOnly(goal)
         )}
@@ -451,6 +516,35 @@ export function GoalLibrarySection({
           onCancel={() => setDeleting(null)}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * A goal's image as a **value** — the read-only counterpart of
+ * `GoalImageField`, drawn in the app's one 1:1 frame at thumbnail size and
+ * carrying no control at all (#797). A goal with none reads as the frame's own
+ * empty text rather than as a broken image or a placeholder asset: there is no
+ * default picture in this app and no fallback to another goal's (#716's rule).
+ */
+function ReadOnlyImage({ label, url, stamp, emptyText }: {
+  label: string; url: string | null; stamp: string | null; emptyText: string;
+}) {
+  // Cache-busted on the row's own timestamp, because the object key is
+  // deterministic and a replacement rewrites it.
+  const src = url ? `${url}?v=${encodeURIComponent(stamp ?? '')}` : null;
+  const drawable = src != null && SAFE_IMAGE_SRC.test(src);
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span style={formFieldLabelStyle}>{label}</span>
+      <div style={imagePreviewFrameStyle(IMAGE_PREVIEW_THUMBNAIL_SIZE)}>
+        {drawable ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={src!} alt="" loading="lazy" style={imagePreviewImageStyle} />
+        ) : (
+          <span style={{ ...formHelpTextStyle, margin: 0, fontSize: 11, textAlign: 'center', padding: 4 }}>{emptyText}</span>
+        )}
+      </div>
     </div>
   );
 }
