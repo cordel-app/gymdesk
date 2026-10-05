@@ -122,6 +122,9 @@ export async function cleanupTestGyms() {
   // are, so a later ticket pointing a non-cascading FK at them finds the order
   // already written down.
   await db.query(`DELETE FROM member_personal_goals WHERE gym_id IN (${marks})`, ids);
+  // #1072: both FKs are ON DELETE CASCADE, so the `members` delete below would
+  // clear these too — listed for the same readable-order reason.
+  await db.query(`DELETE FROM member_device_tokens WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM members WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM staff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids).catch(() => {});
