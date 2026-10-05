@@ -125,13 +125,21 @@ function BillingEventTable({
 }) {
   return (
     <div style={periodTableWrap}>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <table style={tableStyle}>
+        {/* #1106 — one fixed grid for every card: the widths are declared here,
+            never measured from a card's own content. */}
+        <colgroup>
+          <col style={{ width: COL_WIDTHS.date }} />
+          <col />
+          <col style={{ width: COL_WIDTHS.status }} />
+          <col style={{ width: COL_WIDTHS.amount }} />
+        </colgroup>
         <thead>
           <tr>
             <th style={timelineThStyle}>{t('simulation_col_date')}</th>
             <th style={timelineThStyle}>{t('simulation_col_event')}</th>
             <th style={timelineThStyle}>{t('simulation_col_status')}</th>
-            <th style={timelineThStyle}>{t('simulation_col_amount')}</th>
+            <th style={{ ...timelineThStyle, textAlign: 'right' }}>{t('simulation_col_amount')}</th>
           </tr>
         </thead>
         <tbody>
@@ -155,7 +163,7 @@ function BillingEventTable({
                   )}
                 </td>
                 <td style={timelineTdStyle}>{statusCell(line, t)}</td>
-                <td style={{ ...timelineTdStyle, color: TIMELINE_TONE_TEXT[tone] }}>
+                <td style={{ ...timelineTdStyle, textAlign: 'right', color: TIMELINE_TONE_TEXT[tone] }}>
                   {fmtMoney(line.actual_charge)}
                 </td>
               </tr>
@@ -272,6 +280,10 @@ export function BillingEventSimulation({ simulation, t, formatDate }: Props) {
   );
 }
 
+const COL_WIDTHS = { date: 120, status: 300, amount: 90 } as const;
+const tableStyle: React.CSSProperties = {
+  width: '100%', minWidth: 640, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 13,
+};
 const hint: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
 const toolbar: React.CSSProperties = {
   display: 'flex', alignItems: 'center', justifyContent: 'space-between',
