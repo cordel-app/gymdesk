@@ -286,6 +286,24 @@ export const secondaryBtnSmall: React.CSSProperties = {
 };
 
 /**
+ * The `✕` that removes the row it sits at the end of — a configured benefit
+ * line, a selected member, a schedule rule.
+ *
+ * #1029: declared here rather than respelled per row, so every list that
+ * removes a line removes it the same way. It is deliberately not a `Delete`
+ * button: it is one glyph at the far right of a row, and the row's own label is
+ * what says *what* is being removed, so a caller gives it an `aria-label`.
+ */
+export const rowRemoveBtnStyle: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  cursor: 'pointer',
+  color: '#c0392b',
+  fontSize: 14,
+  padding: 0,
+};
+
+/**
  * An `+ Add …` affordance that opens a section-level editor below itself.
  *
  * #971: its hairline is the Theme's input border rather than a grey of its own,

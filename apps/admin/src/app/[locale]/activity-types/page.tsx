@@ -22,7 +22,7 @@ import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyS
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
 import { WAITLIST_MODES } from '@/lib/waitlistModes';
-import { inlineActionsRowStyle } from '@/components/formChrome';
+import { dashedAddBtnStyle, inlineActionsRowStyle, rowRemoveBtnStyle } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -347,6 +347,7 @@ export default function ActivityTypesPage() {
 
   async function openEdit(row: ActivityType) {
     setEditingId(row.id);
+    resetScheduleEditing();
     setEditForm({
       name: row.name,
       description: row.description ?? '',
@@ -371,6 +372,21 @@ export default function ActivityTypesPage() {
   function cancelEdit() {
     setEditingId(null);
     setEditError(null);
+    resetScheduleEditing();
+  }
+
+  /**
+   * #1029: leaving Edit mode leaves no schedule editing behind — an open rule
+   * editor, a half-filled `+ Add schedule rule` or a pending #482 confirmation
+   * would otherwise still be mounted the next time the card is expanded, in a
+   * mode that is supposed to hold no control at all.
+   */
+  function resetScheduleEditing() {
+    setAddingRuleFor(null);
+    setEditingRuleId(null);
+    setRuleError(null);
+    setEditRuleConflict(null);
+    setDeleteRuleConflict(null);
   }
 
   async function handleSave(row: ActivityType, confirmPropagate = false) {
@@ -404,6 +420,7 @@ export default function ActivityTypesPage() {
       });
       setSaveConflict(null);
       setEditingId(null);
+      resetScheduleEditing();
       load();
     } catch (err: any) {
       if (err.status === 409 && err.body?.error === 'future_events_impacted') {
@@ -439,7 +456,7 @@ export default function ActivityTypesPage() {
     try {
       await apiFetch(`/activity-types/${deleting.id}`, { method: 'DELETE' });
       setDeleting(null);
-      if (editingId === deleting.id) setEditingId(null);
+      if (editingId === deleting.id) { setEditingId(null); resetScheduleEditing(); }
       setExpanded((prev) => { const s = new Set(prev); s.delete(deleting.id); return s; });
       load();
     } catch (err: any) {
@@ -760,21 +777,36 @@ export default function ActivityTypesPage() {
 
   // ─── Schedule section ─────────────────────────────────────────────────────────
 
-  function renderScheduleSection(row: ActivityType) {
+  /**
+   * #1029: the schedule reads until the Activity's own `⋮ → Edit` opens it, and
+   * every control in it belongs to that mode — the app-wide rule that expanding
+   * a card reads and the context menu writes (#797), applied to a section whose
+   * rows persist through their own routes rather than the card's Save.
+   *
+   * `editing` is the one flag, so the two halves cannot disagree: outside the
+   * mode the rules are values, with no `×` and no `+ Add schedule rule` at all
+   * (absent rather than disabled, as a section's own actions already are —
+   * #897/#957), and inside it a rule row *is* the affordance that opens the
+   * existing inline editor, so there is no per-rule `Edit` button and no second
+   * editing state to enter. Deletion keeps the route it always had, including
+   * #482's booked-occurrence confirmation.
+   */
+  function renderScheduleSection(row: ActivityType, editing: boolean) {
     const rules = rulesMap.get(row.id) ?? [];
     const isLoadingRules = loadingRules.has(row.id);
+    const isAdding = editing && addingRuleFor === row.id;
 
     return (
       <>
         <SectionHeader title={t('section_schedule')} />
         {isLoadingRules ? (
           <p style={{ fontSize: 13, color: '#888' }}>…</p>
-        ) : rules.length === 0 && addingRuleFor !== row.id ? (
+        ) : rules.length === 0 && !isAdding ? (
           <p style={{ fontSize: 13, color: '#888', fontStyle: 'italic', margin: '4px 0 10px' }}>{ts('no_rules')}</p>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
             {rules.map((rule) =>
-              editingRuleId === rule.id ? (
+              editing && editingRuleId === rule.id ? (
                 <div key={rule.id}>
                   {renderRuleForm(
                     editRuleForm,
@@ -788,16 +820,31 @@ export default function ActivityTypesPage() {
                   )}
                 </div>
               ) : (
-                <div key={rule.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px', background: 'var(--gd-card-bg, #f6f6f9)', borderRadius: 6, fontSize: 13 }}>
-                  <span style={{ flex: 1, color: '#333' }}>{ruleLabel(rule)}</span>
-                  <button onClick={() => openEditRule(rule)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle({ ...btnSmall('#555'), padding: '3px 10px', fontSize: 12 }, !canWrite)}>{ts('edit_rule')}</button>
-                  <button onClick={() => deleteRule(row.id, rule.id)} disabled={!canWrite} title={readOnlyTitle} style={readOnlyStyle({ ...btnSmall('#c0392b'), padding: '3px 10px', fontSize: 12 }, !canWrite)}>{ts('delete_rule')}</button>
+                <div key={rule.id} style={ruleRowStyle}>
+                  {editing ? (
+                    // The row opens the rule's own editor — its accessible name
+                    // is the rule it describes, so no extra label is invented.
+                    <button type="button" onClick={() => openEditRule(rule)} style={ruleRowButtonStyle}>
+                      {ruleLabel(rule)}
+                    </button>
+                  ) : (
+                    <span style={{ flex: 1, color: '#333' }}>{ruleLabel(rule)}</span>
+                  )}
+                  {editing && (
+                    <button
+                      type="button"
+                      onClick={() => deleteRule(row.id, rule.id)}
+                      aria-label={ts('delete_rule')}
+                      title={ts('delete_rule')}
+                      style={rowRemoveBtnStyle}
+                    >✕</button>
+                  )}
                 </div>
               ),
             )}
           </div>
         )}
-        {addingRuleFor === row.id
+        {isAdding
           ? renderRuleForm(
               addRuleForm,
               setAddRuleForm,
@@ -808,13 +855,8 @@ export default function ActivityTypesPage() {
               setAddRuleMembers,
               row.max_capacity,
             )
-          : editingRuleId == null && (
-              <button
-                onClick={() => openAddRule(row.id)}
-                disabled={!canWrite}
-                title={readOnlyTitle}
-                style={readOnlyStyle({ fontSize: 13, color: '#6c63ff', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }, !canWrite)}
-              >
+          : editing && editingRuleId == null && (
+              <button type="button" onClick={() => openAddRule(row.id)} style={dashedAddBtnStyle}>
                 + {ts('add_rule')}
               </button>
             )}
@@ -1033,7 +1075,7 @@ export default function ActivityTypesPage() {
               </button>
             </div>
 
-            {renderScheduleSection(row)}
+            {renderScheduleSection(row, true)}
           </div>
         )}
 
@@ -1070,7 +1112,7 @@ export default function ActivityTypesPage() {
               </div>
             )}
 
-            {renderScheduleSection(row)}
+            {renderScheduleSection(row, false)}
           </div>
         )}
       </div>
@@ -1344,6 +1386,23 @@ const colHeaderStyle: React.CSSProperties = {
   alignItems: 'center', padding: `6px ${ROW_PADDING_X}px`, gap: LIST_COLUMN_GAP,
   fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
   marginBottom: 4,
+};
+
+/** A schedule rule's own row — one line per rule, its action at the far right. */
+const ruleRowStyle: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: 10, padding: '6px 10px',
+  background: 'var(--gd-card-bg, #f6f6f9)', borderRadius: 6, fontSize: 13,
+};
+
+/**
+ * #1029: in Edit mode the row itself opens the rule's editor, so it is a real
+ * button for the keyboard — borderless and inheriting the row's own type, since
+ * it reveals what is already on the card rather than reading as a second action
+ * beside the `✕` (the `cardExpandToggleStyle` reasoning, one row over).
+ */
+const ruleRowButtonStyle: React.CSSProperties = {
+  flex: 1, textAlign: 'left', background: 'none', border: 'none', padding: 0,
+  font: 'inherit', color: '#333', cursor: 'pointer',
 };
 
 const inlineLabelStyle: React.CSSProperties = {

@@ -44,7 +44,7 @@ Two smaller rules come with it. A multi-select whose values need a qualifier (`M
 
 `listChrome.ts` stops at the row. What a page still had to invent for itself was the *inside* of an expanded card: its section headers, its label/value pairs, its inputs, its help and error lines, its Save/Cancel pair. The Member card had nine files doing exactly that, each with slightly different numbers — a 13px input on a 6px radius in one section and a 14px one on a 4px radius in the next, two spellings of the same uppercase section header, and a `#6c63ff` Save button no Theme could reach.
 
-**`apps/admin/src/components/formChrome.ts` is the one declaration.** A card spreads its objects instead of restating them: `cardSectionLabelStyle` / `cardSubLabelStyle` (the two heading levels), `cardSectionStyle` / `cardSectionDividedStyle` (a section's spacing, and the hairline that separates it from the one above — the first section takes the undivided one), `innerCardStyle`, `inlineEditorStyle` / `inlineEditorTitleStyle`, `cardMutedTextStyle` / `cardHintStyle`, `formFieldLabelStyle`, `formControlStyle` (the one box an `<input>`, a `<select>` and a `<textarea>` all wear), `formValueStyle`, `formCheckboxLabelStyle`, `formHelpTextStyle` / `formFieldErrorStyle` / `formErrorStyle`, `formActionsRowStyle` / `inlineActionsRowStyle`, `secondaryBtnStyle` / `secondaryBtnSmall`, `dashedAddBtnStyle`, `cardTextLinkStyle`, and the `cardDetailRowStyle` / `cardDetailLabelStyle` / `cardDetailValueStyle` trio a read-only `Label: Value` pair wears (#924 stage 5).
+**`apps/admin/src/components/formChrome.ts` is the one declaration.** A card spreads its objects instead of restating them: `cardSectionLabelStyle` / `cardSubLabelStyle` (the two heading levels), `cardSectionStyle` / `cardSectionDividedStyle` (a section's spacing, and the hairline that separates it from the one above — the first section takes the undivided one), `innerCardStyle`, `inlineEditorStyle` / `inlineEditorTitleStyle`, `cardMutedTextStyle` / `cardHintStyle`, `formFieldLabelStyle`, `formControlStyle` (the one box an `<input>`, a `<select>` and a `<textarea>` all wear), `formValueStyle`, `formCheckboxLabelStyle`, `formHelpTextStyle` / `formFieldErrorStyle` / `formErrorStyle`, `formActionsRowStyle` / `inlineActionsRowStyle`, `secondaryBtnStyle` / `secondaryBtnSmall`, `dashedAddBtnStyle`, `rowRemoveBtnStyle` (the `✕` that removes the row it sits at the end of, #1029), `cardTextLinkStyle`, and the `cardDetailRowStyle` / `cardDetailLabelStyle` / `cardDetailValueStyle` trio a read-only `Label: Value` pair wears (#924 stage 5).
 
 **Two of those are components, not objects.** `apps/admin/src/components/CardSection.tsx` renders a section — its heading, the hairline above it (pass `first` for the card's first section, which has none) and an optional `action` beside the heading — and `apps/admin/src/components/CardDetailRow.tsx` renders one `Label: Value` pair. Both are presentational: they resolve no locale key, name no endpoint and decide no permission, so whether a section's `SectionEditButton` exists at all stays the card's decision (#897).
 
@@ -585,6 +585,41 @@ Reference implementation:
 `[locale]/financials/products/ProductLayout.tsx` +
 `productProfile.ts`. Regression test:
 `apps/admin/src/test/products-expanded-read-only.test.ts`.
+
+
+### When a section's rows persist through their own routes (#1029)
+
+An Activity's **Schedule** is the same pattern applied to a section whose rows
+are not part of the card's Save at all: each schedule rule has its own
+`POST`/`PUT`/`DELETE /activity-types/:id/schedule-rules` and persists the moment
+it is saved. That is not a reason for the section to hold controls in the
+read-only half — it held a per-rule `[Edit] [Delete]` pair and an actionable
+`+ Add schedule rule` there, gated on `canWrite` alone — so three rules apply.
+
+1. **The section takes the card's mode as its one flag.**
+   `renderScheduleSection(row, editing)`, called with `true` from the edit body
+   and `false` from the read-only one, so the two halves render the same rows
+   and cannot disagree about which controls exist. Outside the mode the rules
+   are values, with no `✕` and no `+ Add …` **at all** — absent rather than
+   disabled, as a section's own `Edit` button already is (#897/#957).
+2. **The row is the affordance.** Inside the mode a rule row is a real
+   `<button>` that opens the existing inline editor, so there is no per-rule
+   `Edit` button and no second editing state to enter; its accessible name is
+   the rule's own label, so nothing is invented for it. Deletion is one `✕` at
+   the far right — `formChrome`'s `rowRemoveBtnStyle` with the row's action as
+   its `aria-label`, never a `Delete` button — and the add control is the shared
+   `dashedAddBtnStyle`. None of this changes the routes, the validation or an
+   existing 409 confirmation: the ticket is the affordance, not the behaviour.
+3. **Leaving the mode clears the section's own editing state.** An open rule
+   editor, a half-filled add form or a pending booked-occurrence confirmation
+   would otherwise still be mounted the next time the card is expanded, in a
+   mode that is supposed to hold no control. One `resetScheduleEditing()`, called
+   from Cancel, from a successful Save, from re-entering the mode and from
+   deleting the entity.
+
+Reference implementation: the `SCHEDULE` section of
+`[locale]/activity-types/page.tsx`; regression test
+`apps/admin/src/test/activity-schedule-edit-mode.test.ts`.
 
 
 ### When expanding *was* the editor (#798)
