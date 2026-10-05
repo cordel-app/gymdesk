@@ -89,12 +89,14 @@ describe('formatStorageErrorLine() (#828)', () => {
 
 describe('the Custom Themes context menu initializes the Theme bucket (#828 §1)', () => {
   it('calls the gym-scoped route, with the Theme id and nothing client-derived', () => {
-    expect(customPage).toContain("apiFetch(`/system/themes/${theme.id}/storage/initialize`, { method: 'POST' })");
+    // #1042: the handler takes the Theme id rather than the row, because the
+    // error block offers the same action and has only the id in scope.
+    expect(customPage).toContain("apiFetch(`/system/themes/${themeId}/storage/initialize`, { method: 'POST' })");
   });
 
   it('offers the action in the ⋮ menu', () => {
     expect(customPage).toContain("label: t('action_initialize_bucket')");
-    expect(customPage).toContain('onClick: () => handleInitializeBucket(theme)');
+    expect(customPage).toContain('onClick: () => handleInitializeBucket(theme.id)');
   });
 
   it('is disabled with the reason while the gym bucket cannot be written to (#823, §5)', () => {
@@ -124,12 +126,12 @@ describe('the Custom Themes context menu initializes the Theme bucket (#828 §1)
 
 describe('the Base Themes context menu initializes the Theme bucket (#828 §2)', () => {
   it('calls the platform route', () => {
-    expect(basePage).toContain("apiFetch(`/platform/themes/${theme.id}/storage/initialize`, { method: 'POST' })");
+    expect(basePage).toContain("apiFetch(`/platform/themes/${themeId}/storage/initialize`, { method: 'POST' })");
   });
 
   it('offers the action in the ⋮ menu and confirms or reports the outcome (§4)', () => {
     expect(basePage).toContain("label: t('action_initialize_bucket')");
-    expect(basePage).toContain('onClick: () => handleInitializeBucket(th)');
+    expect(basePage).toContain('onClick: () => handleInitializeBucket(th.id)');
     expect(basePage).toContain("toast(t('toast_bucket_initialized'), 'success')");
     expect(basePage).toContain("storageErrorLine(err, 'storage_error_title_initialize_bucket', 'create_theme_folder')");
   });

@@ -6,9 +6,11 @@ import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { formatStorageError, formatStorageErrorLine, type StorageErrorLike } from '@/lib/storageErrorMessage';
+import { storageCauseSuggestsInitialize, storageFailureCause } from '@/lib/storageFailureCause';
 import {
   failedMembersImageSlots,
   formatThemeAssetFailures,
+  initializeSuggestedByFailures,
   keepBySlot,
   keepFlagsBySlot,
   logoAssetFailed,
@@ -182,6 +184,12 @@ export default function ThemesPage() {
   // above the sections and marked on each failing control, and still queued so
   // pressing Save again retries exactly those.
   const [assetFailures, setAssetFailures] = useState<ThemeAssetFailure[]>([]);
+  // #1042 §3: whether the last Save's failure is evidence that this Theme's
+  // Cloudflare storage was never created — the one thing that puts the
+  // `Initialize bucket` action beside the error. Decided from the diagnosed
+  // cause and never from the step that failed, so a permission or network
+  // refusal does not send the admin to re-run a no-op (§4).
+  const [initializeSuggested, setInitializeSuggested] = useState(false);
   // Draft snapshot the current editForm is compared against for the dirty
   // state (#492) — set when entering edit mode, cleared once Save succeeds.
   const origFormRef = useRef<EditForm | null>(null);
@@ -227,8 +235,31 @@ export default function ThemesPage() {
    * returned. `fallbackStage` names the step for a failure that never reached
    * the storage code and so carries no `stage` of its own.
    */
+
+  /**
+   * #1042: the *Why* and *What you can do* half of a storage diagnostic, in
+   * this screen's own namespace.
+   *
+   * `storageFailureCause()` is the single place the two are decided — the
+   * route's own `cause` when it stated one, the HTTP status otherwise — and it
+   * answers `null` for a failure nothing identifies, which is what keeps an
+   * undiagnosed error reading exactly as it did before this ticket. The keys
+   * are interpolated from the wire value, so a cause with no key would print
+   * verbatim; `storage-save-diagnostics.test.ts` asserts every one of them in
+   * every locale.
+   */
+  function storageDiagnosis(err: StorageErrorLike) {
+    const cause = storageFailureCause(err);
+    if (!cause) return null;
+    return {
+      causeName: t(`storage_cause_${cause}` as any),
+      suggestionText: t(`storage_suggestion_${cause}` as any),
+    };
+  }
+
   function storageErrorMessage(err: StorageErrorLike, titleKey: string, fallbackStage: string) {
     const stage = err.body?.stage ?? fallbackStage;
+    const diagnosis = storageDiagnosis(err);
     return formatStorageError(err, {
       title: t(titleKey),
       operation: t('storage_error_operation'),
@@ -236,12 +267,17 @@ export default function ThemesPage() {
       error: t('storage_error_error'),
       details: t('storage_error_details'),
       operationName: t(`storage_stage_${stage}`),
+      cause: t('storage_error_cause'),
+      causeName: diagnosis?.causeName ?? null,
+      suggestion: t('storage_error_suggestion'),
+      suggestionText: diagnosis?.suggestionText ?? null,
     });
   }
 
   /** The same diagnostic on one line, for a failure reported as a toast (#828). */
   function storageErrorLine(err: StorageErrorLike, titleKey: string, fallbackStage: string) {
     const stage = err.body?.stage ?? fallbackStage;
+    const diagnosis = storageDiagnosis(err);
     return formatStorageErrorLine(err, {
       title: t(titleKey),
       operation: t('storage_error_operation'),
@@ -249,6 +285,10 @@ export default function ThemesPage() {
       error: t('storage_error_error'),
       details: t('storage_error_details'),
       operationName: t(`storage_stage_${stage}`),
+      cause: t('storage_error_cause'),
+      causeName: diagnosis?.causeName ?? null,
+      suggestion: t('storage_error_suggestion'),
+      suggestionText: diagnosis?.suggestionText ?? null,
     });
   }
 
@@ -265,10 +305,10 @@ export default function ThemesPage() {
    * failure the admin can meet is the deployment having no R2 at all — which the
    * route answers with the 503 the toast then names.
    */
-  async function handleInitializeBucket(theme: Theme) {
-    setInitializingBucketId(theme.id);
+  async function handleInitializeBucket(themeId: string) {
+    setInitializingBucketId(themeId);
     try {
-      await apiFetch(`/platform/themes/${theme.id}/storage/initialize`, { method: 'POST' });
+      await apiFetch(`/platform/themes/${themeId}/storage/initialize`, { method: 'POST' });
       toast(t('toast_bucket_initialized'), 'success');
     } catch (err: any) {
       toast(storageErrorLine(err, 'storage_error_title_initialize_bucket', 'create_theme_folder'));
@@ -297,6 +337,9 @@ export default function ThemesPage() {
       return slot ? t(key as any, { slot: t(`members_image_${slot}`) }) : t(key as any);
     },
     operationName: (_op, stage) => t(`storage_stage_${stage}` as any),
+    cause: t('storage_error_cause'),
+    suggestion: t('storage_error_suggestion'),
+    diagnosis: storageDiagnosis,
   };
 
   // Deferred — the actual DELETE only fires on Save (#492), so editing the
@@ -310,6 +353,7 @@ export default function ThemesPage() {
   function handleLogoPick(file: File) {
     setEditError(null);
     setAssetFailures([]);
+    setInitializeSuggested(false);
     setEditLogoFile(file);
     setLogoRemovePending(false);
     const reader = new FileReader();
@@ -325,6 +369,7 @@ export default function ThemesPage() {
     setEditError(null);
     // #830: the per-asset markers point at that message, so they go with it.
     setAssetFailures([]);
+    setInitializeSuggested(false);
     setMembersImageFiles((prev) => ({ ...prev, [slot]: file }));
     setMembersImageRemovals((prev) => ({ ...prev, [slot]: false }));
     const reader = new FileReader();
@@ -408,6 +453,7 @@ export default function ThemesPage() {
     origFormRef.current = form;
     setEditError(null);
     setAssetFailures([]);
+    setInitializeSuggested(false);
     setEditLogoFile(null);
     setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
     setLogoRemovePending(false);
@@ -430,6 +476,7 @@ export default function ThemesPage() {
     setEditingId(null);
     setEditError(null);
     setAssetFailures([]);
+    setInitializeSuggested(false);
     setEditLogoFile(null);
     setEditLogoPreview(null);
     setLogoRemovePending(false);
@@ -465,6 +512,7 @@ export default function ThemesPage() {
     setEditSaving(true);
     setEditError(null);
     setAssetFailures([]);
+    setInitializeSuggested(false);
     try {
       if (id === NEW_ID) {
         await apiFetch('/platform/themes', {
@@ -496,6 +544,7 @@ export default function ThemesPage() {
           // asset keys are built from the theme's persisted name, so there is
           // nothing to be gained from uploading against a rename that did not
           // happen. #830 gave it the diagnostic the Custom Themes screen had.
+          setInitializeSuggested(storageCauseSuggestsInitialize(storageFailureCause(err)));
           throw new Error(storageErrorMessage(err, 'storage_error_title_settings', 'save_settings'));
         }
         // #830 — every asset the admin touched is attempted, whatever the
@@ -529,6 +578,7 @@ export default function ThemesPage() {
         setMembersImageFiles(keepBySlot(membersImageFiles, pending.slotUploads));
         setMembersImageRemovals(keepFlagsBySlot(pending.slotRemovals));
         setAssetFailures(failures);
+        setInitializeSuggested(initializeSuggestedByFailures(failures));
         setEditError(failures.length > 0 ? formatThemeAssetFailures(failures, assetLabels) : null);
       }
       load();
@@ -625,7 +675,23 @@ export default function ThemesPage() {
         {editError && (
           // #824: `pre-line` because a storage failure is a diagnostic block
           // (operation, path, error, details), not a single sentence.
-          <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b', whiteSpace: 'pre-line' }}>{editError}</p>
+          // #1042 §3: and when the diagnosis is that this Theme's Cloudflare
+          // storage was never created, the fix is offered right here rather
+          // than left in a context menu — the same `Initialize bucket` action
+          // the `⋮` menu runs, not a second workflow.
+          <div style={{ marginTop: 12 }}>
+            <p style={{ margin: 0, fontSize: 13, color: '#c0392b', whiteSpace: 'pre-line' }}>{editError}</p>
+            {initializeSuggested && (
+              <button
+                type="button"
+                onClick={() => handleInitializeBucket(id)}
+                disabled={initializingBucketId === id}
+                style={{ ...primaryBtnSmall(), marginTop: 10, opacity: initializingBucketId === id ? 0.5 : 1, cursor: initializingBucketId === id ? 'not-allowed' : 'pointer' }}
+              >
+                {t('action_initialize_bucket')}
+              </button>
+            )}
+          </div>
         )}
 
         <div style={{ marginTop: 12 }}>
@@ -811,7 +877,7 @@ export default function ThemesPage() {
           // repeatably — `cordel/themes/<id>-<name>/` with its two leaves.
           items.push({
             label: t('action_initialize_bucket'),
-            onClick: () => handleInitializeBucket(th),
+            onClick: () => handleInitializeBucket(th.id),
             disabled: initializingBucketId === th.id,
           });
           items.push({ label: t('delete'), onClick: () => setDeleting(th), danger: true });

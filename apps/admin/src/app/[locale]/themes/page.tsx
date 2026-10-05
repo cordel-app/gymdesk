@@ -19,9 +19,11 @@ import { ThemeMembersAppEditor } from '@/components/ThemeMembersAppEditor';
 import { ThemeSection, ThemeBrandingEditor } from '@/components/ThemeSectionEditor';
 import { gymStorageBlock } from '@/lib/gymStorageReadiness';
 import { formatStorageError, formatStorageErrorLine, type StorageErrorLike } from '@/lib/storageErrorMessage';
+import { storageCauseSuggestsInitialize, storageFailureCause } from '@/lib/storageFailureCause';
 import {
   failedMembersImageSlots,
   formatThemeAssetFailures,
+  initializeSuggestedByFailures,
   keepBySlot,
   keepFlagsBySlot,
   logoAssetFailed,
@@ -196,6 +198,12 @@ export default function GymThemesPage() {
   // error block above the sections *and* marked on its own control, and stays
   // queued so pressing Save again retries exactly what failed.
   const [assetFailures, setAssetFailures] = useState<ThemeAssetFailure[]>([]);
+  // #1042 §3: whether the last Save's failure is evidence that this Theme's
+  // Cloudflare storage was never created — the one thing that puts the
+  // `Initialize bucket` action beside the error. Decided from the diagnosed
+  // cause and never from the step that failed, so a permission or network
+  // refusal does not send the admin to re-run a no-op (§4).
+  const [initializeSuggested, setInitializeSuggested] = useState(false);
   // Draft snapshot the current editForm is compared against for the dirty
   // state (#492) — set when a row is expanded for editing, cleared on Save.
   const origFormRef = useRef<typeof emptyForm | null>(null);
@@ -263,6 +271,7 @@ export default function GymThemesPage() {
       origFormRef.current = form;
       setEditError(null);
       setAssetFailures([]);
+      setInitializeSuggested(false);
       setEditLogoFile(null);
       setEditLogoPreview(theme.has_logo ? logoUrl(theme) : null);
       setLogoRemovePending(false);
@@ -368,6 +377,7 @@ export default function GymThemesPage() {
     // #830: the per-asset markers say "see the message above", so they go when
     // that message does — picking a file clears both, not one of the two.
     setAssetFailures([]);
+    setInitializeSuggested(false);
     setMembersImageFiles((prev) => ({ ...prev, [slot]: file }));
     setMembersImageRemovals((prev) => ({ ...prev, [slot]: false }));
     const reader = new FileReader();
@@ -396,8 +406,31 @@ export default function GymThemesPage() {
    * `stage`); when the API did name one, that wins, because it knows whether it
    * broke while resolving the path, creating a folder or uploading.
    */
+
+  /**
+   * #1042: the *Why* and *What you can do* half of a storage diagnostic, in
+   * this screen's own namespace.
+   *
+   * `storageFailureCause()` is the single place the two are decided — the
+   * route's own `cause` when it stated one, the HTTP status otherwise — and it
+   * answers `null` for a failure nothing identifies, which is what keeps an
+   * undiagnosed error reading exactly as it did before this ticket. The keys
+   * are interpolated from the wire value, so a cause with no key would print
+   * verbatim; `storage-save-diagnostics.test.ts` asserts every one of them in
+   * every locale.
+   */
+  function storageDiagnosis(err: StorageErrorLike) {
+    const cause = storageFailureCause(err);
+    if (!cause) return null;
+    return {
+      causeName: t(`storage_cause_${cause}` as any),
+      suggestionText: t(`storage_suggestion_${cause}` as any),
+    };
+  }
+
   function storageErrorMessage(err: StorageErrorLike, titleKey: string, fallbackStage: string) {
     const stage = err.body?.stage ?? fallbackStage;
+    const diagnosis = storageDiagnosis(err);
     return formatStorageError(err, {
       title: t(titleKey),
       operation: t('storage_error_operation'),
@@ -405,12 +438,17 @@ export default function GymThemesPage() {
       error: t('storage_error_error'),
       details: t('storage_error_details'),
       operationName: t(`storage_stage_${stage}`),
+      cause: t('storage_error_cause'),
+      causeName: diagnosis?.causeName ?? null,
+      suggestion: t('storage_error_suggestion'),
+      suggestionText: diagnosis?.suggestionText ?? null,
     });
   }
 
   /** The same diagnostic on one line, for a failure reported as a toast (#828). */
   function storageErrorLine(err: StorageErrorLike, titleKey: string, fallbackStage: string) {
     const stage = err.body?.stage ?? fallbackStage;
+    const diagnosis = storageDiagnosis(err);
     return formatStorageErrorLine(err, {
       title: t(titleKey),
       operation: t('storage_error_operation'),
@@ -418,6 +456,10 @@ export default function GymThemesPage() {
       error: t('storage_error_error'),
       details: t('storage_error_details'),
       operationName: t(`storage_stage_${stage}`),
+      cause: t('storage_error_cause'),
+      causeName: diagnosis?.causeName ?? null,
+      suggestion: t('storage_error_suggestion'),
+      suggestionText: diagnosis?.suggestionText ?? null,
     });
   }
 
@@ -431,11 +473,11 @@ export default function GymThemesPage() {
    * Initialization's, and until it has run the action is disabled with the
    * reason, exactly as Clone is (#823).
    */
-  async function handleInitializeBucket(theme: Theme) {
+  async function handleInitializeBucket(themeId: string) {
     if (storageBlock) { toast(t(`initialize_bucket_${storageBlock}`)); return; }
-    setInitializingBucketId(theme.id);
+    setInitializingBucketId(themeId);
     try {
-      await apiFetch(`/system/themes/${theme.id}/storage/initialize`, { method: 'POST' });
+      await apiFetch(`/system/themes/${themeId}/storage/initialize`, { method: 'POST' });
       toast(t('toast_bucket_initialized'), 'success');
     } catch (err: any) {
       // A toast is one text node, so the diagnostic goes on one line. The
@@ -464,6 +506,9 @@ export default function GymThemesPage() {
       return slot ? t(key as any, { slot: t(`members_image_${slot}`) }) : t(key as any);
     },
     operationName: (_op, stage) => t(`storage_stage_${stage}` as any),
+    cause: t('storage_error_cause'),
+    suggestion: t('storage_error_suggestion'),
+    diagnosis: storageDiagnosis,
   };
 
   async function handleSaveAll(theme: Theme) {
@@ -471,6 +516,7 @@ export default function GymThemesPage() {
     setSaving(true);
     setEditError(null);
     setAssetFailures([]);
+    setInitializeSuggested(false);
     try {
       // #985: a Base Theme's configuration belongs to the platform and this
       // screen renders it read-only, but a gym may still assign it to its own
@@ -491,6 +537,7 @@ export default function GymThemesPage() {
           // The configuration is the one step that still aborts: the asset keys
           // are built from the theme's persisted name, so there is nothing to be
           // gained from uploading against a rename that did not happen.
+          setInitializeSuggested(storageCauseSuggestsInitialize(storageFailureCause(err)));
           throw new Error(storageErrorMessage(err, 'storage_error_title_settings', 'save_settings'));
         }
       }
@@ -542,6 +589,7 @@ export default function GymThemesPage() {
       setMembersImageFiles(keepBySlot(membersImageFiles, pending.slotUploads));
       setMembersImageRemovals(keepFlagsBySlot(pending.slotRemovals));
       setAssetFailures(failures);
+      setInitializeSuggested(initializeSuggestedByFailures(failures));
       setEditError(
         [centersError, failures.length > 0 ? formatThemeAssetFailures(failures, assetLabels) : null]
           .filter(Boolean)
@@ -580,6 +628,7 @@ export default function GymThemesPage() {
     if (storageBlock) { setEditError(t(`logo_upload_${storageBlock}`)); return; }
     setEditError(null);
     setAssetFailures([]);
+    setInitializeSuggested(false);
     setEditLogoFile(file);
     setLogoRemovePending(false);
     const reader = new FileReader();
@@ -751,7 +800,23 @@ export default function GymThemesPage() {
         {editError && (
           // #824: `pre-line` because a storage failure is a diagnostic block
           // (operation, path, error, details), not a single sentence.
-          <p style={{ margin: '12px 0 0', fontSize: 13, color: '#c0392b', whiteSpace: 'pre-line' }}>{editError}</p>
+          // #1042 §3: and when the diagnosis is that this Theme's Cloudflare
+          // storage was never created, the fix is offered right here rather
+          // than left in a context menu — the same `Initialize bucket` action
+          // the `⋮` menu runs, not a second workflow.
+          <div style={{ marginTop: 12 }}>
+            <p style={{ margin: 0, fontSize: 13, color: '#c0392b', whiteSpace: 'pre-line' }}>{editError}</p>
+            {initializeSuggested && (
+              <button
+                type="button"
+                onClick={() => handleInitializeBucket(theme.id)}
+                disabled={initializingBucketId === theme.id}
+                style={{ ...primaryBtnSmall(), marginTop: 10, opacity: initializingBucketId === theme.id ? 0.5 : 1, cursor: initializingBucketId === theme.id ? 'not-allowed' : 'pointer' }}
+              >
+                {t('action_initialize_bucket')}
+              </button>
+            )}
+          </div>
         )}
 
         <div style={{ marginTop: 12 }}>
@@ -853,7 +918,7 @@ export default function GymThemesPage() {
       // are initialized from the Base Themes page, not from a gym's.
       menuItems.push({
         label: t('action_initialize_bucket'),
-        onClick: () => handleInitializeBucket(theme),
+        onClick: () => handleInitializeBucket(theme.id),
         disabled: !!storageBlock || initializingBucketId === theme.id,
         title: storageBlock ? t(`initialize_bucket_${storageBlock}`) : undefined,
       });
