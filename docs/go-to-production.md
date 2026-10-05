@@ -131,6 +131,23 @@ Tick items off in the PR that completes them.
       batches, per type — there is still no index on `type`) before narrowing
       the constraint, so stop the API, or at least any waitlist edit, before
       rolling back.
+- [ ] **Migration 219 needs no maintenance window** (#1038). It swaps
+      `chk_theme_member_images_slot` to add the `personal_goals` Members App
+      image slot, so `ADD CONSTRAINT … CHECK` rebuilds `theme_member_images`
+      under ALGORITHM=COPY / LOCK=SHARED exactly as 216 and 217 do to
+      `member_notifications` — but this table holds at most one narrow row per
+      `(theme, slot)`, tens of rows per gym rather than a log, so the rebuild is
+      milliseconds and the absence of a window is a decision rather than an
+      omission. The new list is a strict superset of 181's, so revalidation
+      cannot fail on existing data, and the statement is guarded on the live
+      clause, so re-running migrations after it lands is a no-op. Deploy order
+      is already safe: `deploy.yml` runs `knex migrate:latest` before the new
+      API image starts, so the CHECK is widened before any code that offers the
+      seventh slot goes live (the reverse order would store an object in R2 and
+      *then* fail the insert). Its `down` deletes the `personal_goals` rows
+      before narrowing the constraint, so stop the API, or at least any
+      Members-image upload, before rolling back; the R2 objects survive under
+      their keys either way, as a removed slot's always has (#725).
 - [ ] **Run migration 203 in a maintenance window** (#896 stage 1). Twelve tables
       gain an `(action, value)` pair, and each one takes a CHECK — which MySQL 8
       applies with ALGORITHM=COPY, exactly as migration 170's does. The file is
@@ -272,7 +289,7 @@ Tick items off in the PR that completes them.
       keeps every key byte for byte. Until it runs, those images stay broken, but nothing is lost: a
       replaced-media sweep compares objects, not URL strings, so the mixed state never deletes an object
       that is still in use.
-- [ ] **Confirm the R2 objects under `themes/<theme>/members_app/` are publicly readable too** (#725). The six
+- [ ] **Confirm the R2 objects under `themes/<theme>/members_app/` are publicly readable too** (#725). The
       Members App backgrounds are fetched by the member's browser directly from
       the public origin and, unlike the logo, have **no API route that serves the bytes**: a missing public
       origin means a theme colour where the artwork should be, not a broken image. Setting

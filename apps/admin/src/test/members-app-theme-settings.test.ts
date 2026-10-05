@@ -289,7 +289,12 @@ describe('#833 Members App settings: the editor', () => {
     expect(componentSrc, 'the editor persists on its own').not.toContain('saving');
     for (const [label, path] of Object.entries(PAGES)) {
       const src = readFileSync(path, 'utf-8');
-      expect(src, `${label} tokens are not the draft the editor edits`).toContain('<ThemeMembersAppEditor tokens={editForm.tokens} onChange={updateTokens}');
+      // Matched as a pattern rather than one line since #1038, which hands the
+      // editor its `images` subsection and so wraps the call over several
+      // lines. What is asserted is unchanged: the props are the page's own
+      // token draft and its `updateTokens`.
+      expect(src, `${label} tokens are not the draft the editor edits`)
+        .toMatch(/<ThemeMembersAppEditor\s+tokens=\{editForm\.tokens\}\s+onChange=\{updateTokens\}/);
     }
   });
 
@@ -308,7 +313,7 @@ describe('#833 Members App settings: the editor', () => {
     // The Custom Themes screen shows a Base Theme read-only, as it does for
     // every other section (#678).
     const custom = readFileSync(PAGES['Custom Themes'], 'utf-8');
-    expect(custom).toContain('<ThemeMembersAppEditor tokens={editForm.tokens} onChange={updateTokens} t={t} readOnly={isBase} />');
+    expect(custom).toMatch(/<ThemeMembersAppEditor\s+tokens=\{editForm\.tokens\}\s+onChange=\{updateTokens\}\s+t=\{t\}\s+readOnly=\{isBase\}/);
   });
 
   it('has every label in every locale, in both namespaces', () => {

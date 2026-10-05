@@ -1,4 +1,4 @@
-// The six Members App background images a Custom Theme can carry (#725).
+// The Members App background images a Custom Theme can carry (#725, #1038).
 //
 // Everything here is pure: the slot list, the deterministic object keys and the
 // shape the API returns. The router owns the uploads, the rows and the tenant
@@ -14,11 +14,19 @@ import {
 } from './themeFolders';
 
 /**
- * #725: six fixed slots, each mapped to one Members section, and nothing else —
- * "additional Members image types beyond the six defined above" is explicitly
- * out of scope, which is why this list is also the migration-181 CHECK.
+ * The fixed Members App image slots, each mapped to one Members section.
+ *
+ * #725 defined six and put "additional Members image types" out of scope;
+ * #1038 adds the seventh, `personal_goals`, for the My Goals section, and the
+ * rule that governed the six governs it: this list is **one** of the two places
+ * a slot is written down, the other being the `chk_theme_member_images_slot`
+ * CHECK (migration 181, current definition migration 218). Adding a slot here
+ * alone uploads the object to R2 and *then* fails the insert, leaving an orphan
+ * and a 500 (CLAUDE.md), so a new slot goes in both — and the key it is stored
+ * under is the slot's own name (`personal_goals.png`), which is why the name is
+ * the stored value and not a label.
  */
-export const MEMBER_IMAGE_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'background', 'membership'] as const;
+export const MEMBER_IMAGE_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'background', 'membership', 'personal_goals'] as const;
 
 export type MemberImageSlot = (typeof MEMBER_IMAGE_SLOTS)[number];
 
@@ -29,7 +37,7 @@ export function isMemberImageSlot(value: unknown): value is MemberImageSlot {
 // #824: a theme's own folder is `themeFolders.ts`' now that both the Members
 // backgrounds and the logo hang off it. Re-exported so every existing importer
 // of this module keeps working and the tree still has one definition.
-// `members_app` — the leaf of a theme's own folder that holds these six — moved
+// `members_app` — the leaf of a theme's own folder that holds them — moved
 // there too with #827, which creates it when the Theme is created.
 export { buildThemeFolderPrefix, THEME_MEMBERS_FOLDER, THEME_STORAGE_FOLDER };
 
@@ -77,14 +85,14 @@ export interface MemberImageRow {
   modified_at?: Date | string | null;
 }
 
-/** `{ training_url, nutrition_url, … }` — one field per slot, always all six. */
+/** `{ training_url, nutrition_url, … }` — one field per slot, always all of them. */
 export type MemberImageUrls = Record<`${MemberImageSlot}_url`, string | null>;
 
 /**
  * The Members image configuration of one theme, as every theme-shaped response
  * returns it.
  *
- * All six fields are always present: a slot with no row reads `null`, which
+ * Every field is always present: a slot with no row reads `null`, which
  * #725 defines as *"not currently configured"* — the Members App then uses the
  * theme background colour, and resolves nothing else. The row, not the object,
  * is what makes a slot configured, so a removed slot reads `null` even though
@@ -108,7 +116,7 @@ export function memberImageUrls(rows: MemberImageRow[]): MemberImageUrls {
   return urls;
 }
 
-/** The empty configuration — six nulls. Used for a theme with no rows at all. */
+/** The empty configuration — one null per slot. Used for a theme with no rows. */
 export function emptyMemberImageUrls(): MemberImageUrls {
   return memberImageUrls([]);
 }

@@ -88,7 +88,7 @@ const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
 
 // Assignments first, then Branding → Colors → Typography — the same set for a
 // Base Theme and a Custom one (#678); see renderInlineEditor().
-type SectionKey = 'branding' | 'members' | 'typography' | 'colors' | 'assignments' | 'members_app';
+type SectionKey = 'branding' | 'typography' | 'colors' | 'assignments' | 'members_app';
 
 const emptyForm = { name: '', description: '', logoContainsGymName: false, tokens: DEFAULT_TOKENS };
 
@@ -771,18 +771,6 @@ export default function GymThemesPage() {
             />
           ))}
 
-          {renderSection(t('section_members_images'), 'members', (
-            <ThemeMembersImagesEditor
-              previews={membersImagePreviews}
-              onPick={pickMembersImage}
-              onRemove={queueMembersImageRemove}
-              t={t}
-              readOnly={isBase}
-              storageBlock={storageBlock}
-              slotErrors={failedMembersImageSlots(assetFailures)}
-            />
-          ))}
-
           {renderSection(t('section_colors'), 'colors', (
             <ThemeColorsEditor tokens={editForm.tokens} onChange={updateTokens} namespace="gym_themes" t={t} readOnly={isBase} />
           ))}
@@ -794,9 +782,31 @@ export default function GymThemesPage() {
           {/* #833 — the Members App's own settings, each inheriting from its
               Admin source until this Theme overrides it. The same component
               renders on the Base Themes screen, so both Theme kinds get one
-              editor and one inheritance system. */}
+              editor and one inheritance system.
+
+              #1038 — the Members App background images are an `Images`
+              subsection *of* this section rather than a top-level Theme section
+              of their own: they configure the Members App and nothing else
+              configures them. The editor, its previews, its draft and the two
+              calls on Save are unchanged — only where it is rendered moved. */}
           {renderSection(t('section_members_app'), 'members_app', (
-            <ThemeMembersAppEditor tokens={editForm.tokens} onChange={updateTokens} t={t} readOnly={isBase} />
+            <ThemeMembersAppEditor
+              tokens={editForm.tokens}
+              onChange={updateTokens}
+              t={t}
+              readOnly={isBase}
+              images={(
+                <ThemeMembersImagesEditor
+                  previews={membersImagePreviews}
+                  onPick={pickMembersImage}
+                  onRemove={queueMembersImageRemove}
+                  t={t}
+                  readOnly={isBase}
+                  storageBlock={storageBlock}
+                  slotErrors={failedMembersImageSlots(assetFailures)}
+                />
+              )}
+            />
           ))}
         </div>
 

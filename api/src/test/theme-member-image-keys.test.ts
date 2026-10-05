@@ -4,6 +4,8 @@
 // `theme-members-images.test.ts`.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import {
   MEMBER_IMAGE_MAX_BYTES,
   MEMBER_IMAGE_MIME_TYPES,
@@ -38,16 +40,53 @@ afterAll(() => {
   else process.env.CLOUDFLARE_R2_BUCKET = originalBucket;
 });
 
-describe('Members image slots (#725)', () => {
-  it('has exactly the six slots the ticket defines', () => {
-    expect([...MEMBER_IMAGE_SLOTS]).toEqual(['training', 'nutrition', 'calendar', 'bookings', 'background', 'membership']);
+describe('Members image slots (#725, #1038)', () => {
+  it('has exactly the slots the two tickets define', () => {
+    expect([...MEMBER_IMAGE_SLOTS]).toEqual([
+      // #725's six, in its own order…
+      'training', 'nutrition', 'calendar', 'bookings', 'background', 'membership',
+      // …and #1038's seventh, for the My Goals section.
+      'personal_goals',
+    ]);
   });
 
-  it('accepts only those six as a slot', () => {
+  it('accepts only those as a slot', () => {
     for (const slot of MEMBER_IMAGE_SLOTS) expect(isMemberImageSlot(slot)).toBe(true);
-    for (const value of ['logo', 'Training', '', '../background', null, 7]) {
+    for (const value of ['logo', 'Training', '', '../background', 'goals', 'personal-goals', null, 7]) {
       expect(isMemberImageSlot(value)).toBe(false);
     }
+  });
+
+  /**
+   * CLAUDE.md's "two places" rule for this list, as a gate rather than a note:
+   * a slot added to `MEMBER_IMAGE_SLOTS` alone uploads the object to R2 and
+   * *then* fails the insert against `chk_theme_member_images_slot`, leaving an
+   * orphan and a 500. Migration 219 is the CHECK's current definition, so the
+   * two are compared directly — and the slot names are compared as a **set**,
+   * because the order in a CHECK is irrelevant while the order in the list is
+   * the UI's business.
+   */
+  it('is mirrored by the CHECK in migration 219', () => {
+    const migration = readFileSync(
+      join(__dirname, '..', 'infra', 'migrations', '219_theme_member_images_personal_goals_slot.js'),
+      'utf-8',
+    );
+    const declared = migration.match(/const SLOTS = \[([^\]]+)\]/)?.[1] ?? '';
+    const slots = [...declared.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
+    expect(slots.length).toBeGreaterThan(0);
+    expect([...slots].sort()).toEqual([...MEMBER_IMAGE_SLOTS].sort());
+  });
+
+  /**
+   * The slot name *is* the object's file name, and the ticket asks for
+   * `personal_goals.png` by name. R2 has no directories, so a key already
+   * stored on a row is the only way back to its object: re-spelling the slot
+   * would strand every image uploaded under the old name (#829's reasoning for
+   * the folder names, applied to a file name).
+   */
+  it('stores My Goals as `personal_goals.png`', () => {
+    expect(buildThemeMemberImageKey('cordel', THEME_ID, 'Dark Modern', 'personal_goals'))
+      .toBe(`cordel/themes/${THEME_ID}-DarkModern/members_app/personal_goals.png`);
   });
 });
 
@@ -141,7 +180,7 @@ describe('platform object keys (#732)', () => {
 });
 
 describe('the API shape (#725 §Database / Storage References)', () => {
-  it('returns all six fields, null for an unconfigured slot', () => {
+  it('returns one field per slot, null for an unconfigured slot', () => {
     expect(emptyMemberImageUrls()).toEqual({
       training_url: null,
       nutrition_url: null,
@@ -149,6 +188,7 @@ describe('the API shape (#725 §Database / Storage References)', () => {
       bookings_url: null,
       background_url: null,
       membership_url: null,
+      personal_goals_url: null,
     });
   });
 
@@ -161,14 +201,22 @@ describe('the API shape (#725 §Database / Storage References)', () => {
     expect(urls.nutrition_url).toBeNull();
   });
 
-  it('leaves the other five untouched when one slot is configured', () => {
+  it('leaves every other slot untouched when one is configured', () => {
     const urls = memberImageUrls([{ slot: 'bookings', object_key: 'k', modified_at: null }]);
     expect(urls.bookings_url).toContain('/k');
-    expect([urls.training_url, urls.nutrition_url, urls.calendar_url, urls.background_url, urls.membership_url])
-      .toEqual([null, null, null, null, null]);
+    expect([urls.training_url, urls.nutrition_url, urls.calendar_url, urls.background_url, urls.membership_url, urls.personal_goals_url])
+      .toEqual([null, null, null, null, null, null]);
   });
 
-  it('ignores a row whose slot is not one of the six', () => {
+  it('resolves the My Goals slot like any other (#1038)', () => {
+    const urls = memberImageUrls([
+      { slot: 'personal_goals', object_key: 'cordel/themes/t/members_app/personal_goals.png', modified_at: null },
+    ]);
+    expect(urls.personal_goals_url).toContain('/members_app/personal_goals.png');
+    expect(urls.membership_url).toBeNull();
+  });
+
+  it('ignores a row whose slot is not one of them', () => {
     expect(memberImageUrls([{ slot: 'logo', object_key: 'k', modified_at: null }])).toEqual(emptyMemberImageUrls());
   });
 });

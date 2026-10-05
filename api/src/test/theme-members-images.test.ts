@@ -1,4 +1,4 @@
-// #725: the six Members App background images of a Custom Theme, stored in the
+// #725: the Members App background images of a Custom Theme, stored in the
 // gym's own Cloudflare R2 folder under
 // `<storage_folder_prefix>/themes/<theme_id>-<name>/members_app/<slot>.png`.
 // Covers the upload and remove routes (`/system/themes/:id/members-images/:slot`),
@@ -225,8 +225,11 @@ describe('POST /system/themes/:id/members-images/:slot', () => {
     });
   });
 
-  it('keeps each of the six slots on its own fixed filename', async () => {
-    for (const slot of ['training', 'nutrition', 'calendar', 'bookings', 'background', 'membership']) {
+  it('keeps each slot on its own fixed filename', async () => {
+    // #1038 adds `personal_goals`, so this loop is also what proves migration
+    // 218's CHECK accepts it: an upload of a slot the constraint refuses stores
+    // the object and then 500s on the insert.
+    for (const slot of ['training', 'nutrition', 'calendar', 'bookings', 'background', 'membership', 'personal_goals']) {
       sendMock.mockClear();
       const res = await upload(themeId, gymId, slot, 'image/png', PNG_BYTES);
       expect(res.status).toBe(200);
@@ -235,7 +238,7 @@ describe('POST /system/themes/:id/members-images/:slot', () => {
       expect(res.body.members_images[`${slot}_url`]).toContain(`/members_app/${slot}.png`);
     }
     const { rows } = await db.query('SELECT slot FROM theme_member_images WHERE theme_id = ?', [themeId]);
-    expect(rows).toHaveLength(6);
+    expect(rows).toHaveLength(7);
   });
 
   it('rejects an unknown slot', async () => {
@@ -467,20 +470,20 @@ describe('DELETE /system/themes/:id/members-images/:slot', () => {
 // ─── The theme payload ───────────────────────────────────────────────────────
 
 describe('Members images on the theme payload (#725 §Performance, §API)', () => {
-  it('rides on the list, all six fields, without a request per image', async () => {
+  it('rides on the list, every field, without a request per image', async () => {
     expect((await upload(themeId, gymId, 'background', 'image/png', PNG_BYTES)).status).toBe(200);
 
     const res = await request.get('/system/themes').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     const theme = res.body.find((t: any) => t.id === themeId);
     expect(Object.keys(theme.members_images).sort()).toEqual(
-      ['background_url', 'bookings_url', 'calendar_url', 'membership_url', 'nutrition_url', 'training_url'],
+      ['background_url', 'bookings_url', 'calendar_url', 'membership_url', 'nutrition_url', 'personal_goals_url', 'training_url'],
     );
     expect(theme.members_images.background_url).toContain('/members_app/background.png');
     expect(theme.members_images.training_url).toBeNull();
   });
 
-  it('reports a Base Theme as six nulls', async () => {
+  it('reports a Base Theme as nulls', async () => {
     const res = await request.get('/system/themes').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     const base = res.body.find((t: any) => t.is_base);
     expect(base.members_images).toEqual({
@@ -490,6 +493,7 @@ describe('Members images on the theme payload (#725 §Performance, §API)', () =
       bookings_url: null,
       background_url: null,
       membership_url: null,
+      personal_goals_url: null,
     });
   });
 
