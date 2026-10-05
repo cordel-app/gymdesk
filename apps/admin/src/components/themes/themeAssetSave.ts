@@ -29,6 +29,7 @@
 
 import { MEMBER_IMAGE_SLOTS, type MemberImageSlot } from '@/components/ThemeMembersImagesEditor';
 import { formatStorageError, type StorageErrorLabels, type StorageErrorLike } from '@/lib/storageErrorMessage';
+import { storageCauseSuggestsInitialize, storageFailureCause } from '@/lib/storageFailureCause';
 
 /** One asset operation a Save has to perform. */
 export type ThemeAssetOp =
@@ -175,18 +176,30 @@ export async function runThemeAssetOps(ops: ThemeAssetOp[], io: ThemeAssetIo): P
  * the page resolves them through its own namespace, so neither screen can end
  * up with a heading the other lacks.
  */
-export interface ThemeAssetLabels extends Omit<StorageErrorLabels, 'title' | 'operationName'> {
+export interface ThemeAssetLabels
+  extends Omit<StorageErrorLabels, 'title' | 'operationName' | 'causeName' | 'suggestionText'> {
   title: (op: ThemeAssetOp) => string;
   operationName: (op: ThemeAssetOp, stage: string) => string;
+  /**
+   * #1042: the *Why* and *What you can do* sentences for one failure, resolved
+   * by the page from its own namespace — a function of the error rather than of
+   * the operation, because the cause is what the storage layer answered and not
+   * the step that was running. `null` for a failure the admin cannot diagnose,
+   * which is what keeps the block free of an invented explanation.
+   */
+  diagnosis?: (err: StorageErrorLike) => { causeName: string; suggestionText: string } | null;
 }
 
 /** One failure as the diagnostic block #824 defined (operation, path, error, details). */
 export function formatThemeAssetFailure(failure: ThemeAssetFailure, labels: ThemeAssetLabels): string {
   const stage = failure.error.body?.stage ?? themeAssetOpStage(failure.op);
+  const diagnosis = labels.diagnosis?.(failure.error) ?? null;
   return formatStorageError(failure.error, {
     ...labels,
     title: labels.title(failure.op),
     operationName: labels.operationName(failure.op, stage),
+    causeName: diagnosis?.causeName ?? null,
+    suggestionText: diagnosis?.suggestionText ?? null,
   });
 }
 
@@ -254,6 +267,19 @@ export function keepFlagsBySlot(keep: Set<MemberImageSlot>): Record<MemberImageS
  * the control that failed, so the admin can see which of seven uploads the
  * message above belongs to without reading the paths.
  */
+/**
+ * Whether any of this Save's failures is evidence that the Theme's Cloudflare
+ * storage was never created — which is the one thing that puts the
+ * `Initialize bucket` action beside the error (#1042 §3).
+ *
+ * Here rather than in each page for `logoAssetFailed()`'s reason: both Theme
+ * screens offer the same action from the same evidence, and a second copy is
+ * how one of them would come to offer it for a permission failure (§4).
+ */
+export function initializeSuggestedByFailures(failures: ThemeAssetFailure[]): boolean {
+  return failures.some(({ error }) => storageCauseSuggestsInitialize(storageFailureCause(error)));
+}
+
 export function logoAssetFailed(failures: ThemeAssetFailure[]): boolean {
   return failures.some(({ op }) => op.kind === 'logo_upload' || op.kind === 'logo_remove');
 }

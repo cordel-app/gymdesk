@@ -86,13 +86,20 @@ describe('Both Theme screens render their primary actions themed (#912 §1, §2)
     // #985 removed the second one with the `+ Assign Centers…` modal: the
     // Centers are an inline checkbox list now and this card's own Save is what
     // persists them, so `Save changes` is the screen's only filled action.
+    //
+    // #1042 added the second: the `Initialize bucket` action the error block
+    // offers when the failure is diagnosed as uninitialized storage. It is the
+    // same action the `⋮` menu runs, so it wears the same themed button rather
+    // than a style of its own.
     expect(gymSrc).toContain('primaryBtnSmall');
-    expect(gymSrc.match(/\.\.\.primaryBtnSmall\(\)/g) ?? []).toHaveLength(1);
+    expect(gymSrc.match(/\.\.\.primaryBtnSmall\(\)/g) ?? []).toHaveLength(2);
     expect(gymSrc).not.toContain("{t('assign_centers_btn')}");
   });
 
   it('the Base Theme screen does, for Save changes and + Add', () => {
-    expect(baseSrc.match(/\.\.\.primaryBtnSmall\(\)/g) ?? []).toHaveLength(1);
+    // Two spreads since #1042, for the gym screen's reason: Save changes and
+    // the `Initialize bucket` action beside a storage diagnostic.
+    expect(baseSrc.match(/\.\.\.primaryBtnSmall\(\)/g) ?? []).toHaveLength(2);
     expect(baseSrc).toContain('style={primaryBtnStyle()}');
   });
 

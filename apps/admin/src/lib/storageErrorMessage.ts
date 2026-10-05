@@ -18,6 +18,21 @@
  * Details: Cloudflare storage rejected the request.
  * ```
  *
+ * #1042 added the other two lines the ticket after it asked for — *why* it
+ * failed and *what you can do* — between the error and the details:
+ *
+ * ```text
+ * Error: Theme storage path was not found (404)
+ * Cause: The Cloudflare storage structure this theme needs does not exist yet.
+ * What you can do: Initialize this theme's Cloudflare storage and save again.
+ * ```
+ *
+ * Both are optional and both halves of each pair must be present, so a failure
+ * nothing could diagnose (`storageFailureCause()` answered `null`) renders
+ * exactly the block above rather than an invented explanation — which is also
+ * what keeps the `Initialize bucket` button the page offers beside this text
+ * off the screen for a failure that initialization would not fix.
+ *
  * Pure, and deliberately not a React component: the two Themes pages render it
  * into the error line they already have, and a unit test can assert the text.
  * Every label is passed in already translated — the caller resolves
@@ -30,6 +45,13 @@
 export interface StorageErrorBody {
   error?: string;
   stage?: string;
+  /**
+   * #1042: *why* it failed, from the closed set in
+   * `api/src/domain/storageFailureCause.ts`. The route states it where the
+   * client could not derive it (a 409 is also a name conflict, a 400 is also a
+   * rejected status value); `storageFailureCause()` reads it.
+   */
+  cause?: string;
   path?: string;
   details?: {
     operation?: string;
@@ -67,6 +89,21 @@ export interface StorageErrorLabels {
    * omits it gets the block with no `Error:` line, exactly as before.
    */
   fallbackError?: string;
+  /**
+   * #1042 §8 — the *Why* and *What you can do* half of the block. Both are
+   * optional, and both halves of each pair must be present for the line to
+   * render: a failure the admin could not diagnose (`storageFailureCause()`
+   * answered `null`) keeps the block exactly as #824 defined it, rather than
+   * growing an empty `Cause:` line or, worse, a suggestion that does not
+   * follow from the error (§4).
+   */
+  cause?: string;
+  /** The diagnosed sentence itself, e.g. *Cloudflare storage is not initialized.* */
+  causeName?: string | null;
+  /** Label of the suggestion line, e.g. `What you can do`. */
+  suggestion?: string;
+  /** The suggestion itself, e.g. *Initialize the Cloudflare storage and try again.* */
+  suggestionText?: string | null;
 }
 
 /** The error an `apiFetch`/`uploadFetch` rejection carries. */
@@ -113,6 +150,11 @@ export function formatStorageError(err: StorageErrorLike, labels: StorageErrorLa
   if (path) lines.push(`${labels.path}: ${path}`);
   const error = errorLine(err) || labels.fallbackError || '';
   if (error) lines.push(`${labels.error}: ${error}`);
+  // #1042 §8: what happened (the title and the error) is followed by why and by
+  // what to do, and the raw storage particulars come last — they are the
+  // "secondary/details section" the ticket asks for, not the headline.
+  if (labels.cause && labels.causeName) lines.push(`${labels.cause}: ${labels.causeName}`);
+  if (labels.suggestion && labels.suggestionText) lines.push(`${labels.suggestion}: ${labels.suggestionText}`);
   const details = detailLine(err.body);
   if (details) lines.push(`${labels.details}: ${details}`);
   return lines.join('\n');

@@ -237,6 +237,9 @@ describe('POST /system/themes/:id/logo', () => {
     expect(res.body.stage).toBe('create_theme_folder');
     expect(res.body.path).toBe(`${folderPrefix}/themes/${themeId}-${THEME_NAME.replace(/\s+/g, '')}/`);
     expect(res.body.details.operation).toBe('ensureStorageFolders');
+    // #1042: the cause is read off what R2 answered, not off the step — a
+    // refused credential must not tell the admin to initialize a bucket.
+    expect(res.body.cause).toBe('access_denied');
 
     const { rows } = await db.query<{ logo_object_key: string | null }>('SELECT logo_object_key FROM themes WHERE id = ?', [themeId]);
     expect(rows[0].logo_object_key).toBeNull();
@@ -342,6 +345,9 @@ describe('POST /system/themes/:id/logo', () => {
   it('uploads into the calling gym\'s own folder and 404s on another gym\'s theme', async () => {
     const res = await uploadLogo(otherThemeId, gymId, 'image/png', PNG_BYTES);
     expect(res.status).toBe(404);
+    // #1042: the row was not found, which is a different thing from the
+    // storage not existing — and so never offers to initialize it.
+    expect(res.body.cause).toBe('not_found');
     expect(sentCommands('put')).toHaveLength(0);
 
     // …and the owner's own upload lands under the owner's prefix, never the caller's.
@@ -356,6 +362,9 @@ describe('POST /system/themes/:id/logo', () => {
     expect(res.status).toBe(409);
     expect(res.body.error).toBe('Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.');
     expect(res.body.stage).toBe('resolve_path');
+    // #1042: the one cause that offers `Initialize bucket`, and the one the
+    // admin could not have derived — a 409 is also a duplicate theme name.
+    expect(res.body.cause).toBe('not_initialized');
     expect(sentCommands('put')).toHaveLength(0);
 
     const { rows } = await db.query<{ logo_object_key: string | null }>('SELECT logo_object_key FROM themes WHERE id = ?', [themeId]);
@@ -368,6 +377,7 @@ describe('POST /system/themes/:id/logo', () => {
     expect(res.status).toBe(503);
     expect(res.body.missingConfig).toEqual([...R2_ENV_KEYS]);
     expect(res.body.stage).toBe('resolve_path');
+    expect(res.body.cause).toBe('not_configured');
     expect(sentCommands('put')).toHaveLength(0);
   });
 
@@ -383,6 +393,8 @@ describe('POST /system/themes/:id/logo', () => {
     // #824: the diagnostic the admin is shown is built from these two.
     expect(res.body.stage).toBe('upload_logo');
     expect(res.body.path).toBe(logoKey(folderPrefix, themeId, THEME_NAME, 'png'));
+    // #1042: `NoSuchBucket` is evidence that the storage was never created.
+    expect(res.body.cause).toBe('not_initialized');
     // Gym-facing route: structured details, but never the platform config snapshot.
     expect(res.body.diagnostics).toBeUndefined();
 
@@ -397,6 +409,7 @@ describe('POST /system/themes/:id/logo', () => {
   it('returns 415 for an unsupported image type before touching storage', async () => {
     const res = await uploadLogo(themeId, gymId, 'image/tiff', PNG_BYTES);
     expect(res.status).toBe(415);
+    expect(res.body.cause).toBe('invalid_file');
     expect(sentCommands('put')).toHaveLength(0);
   });
 });
@@ -439,6 +452,10 @@ describe('DELETE /system/themes/:id/logo', () => {
     expect(res.status).toBe(502);
     expect(res.body.stage).toBe('remove_logo');
     expect(res.body.path).toBe(logoKey(folderPrefix, themeId, THEME_NAME, 'png'));
+    // #1042: a plain `Error('R2 down')` names nothing the cause rules
+    // recognise, so it is reported as unreachable — which, deliberately, is
+    // not a cause that offers to initialize anything.
+    expect(res.body.cause).toBe('unreachable');
 
     const { rows } = await db.query<{ logo_object_key: string | null }>('SELECT logo_object_key FROM themes WHERE id = ?', [themeId]);
     expect(rows[0].logo_object_key).toBe(logoKey(folderPrefix, themeId, THEME_NAME, 'png'));
