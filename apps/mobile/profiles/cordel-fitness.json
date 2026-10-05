@@ -1,0 +1,11 @@
+{
+  "id": "cordel-fitness",
+  "appName": "Cordel Fitness",
+  "appId": "com.cordel.fitness",
+  "serverUrl": "https://members.vdicube.com",
+  "allowNavigation": [
+    "members.vdicube.com"
+  ],
+  "googleIosClientId": null,
+  "googleWebClientId": null
+}

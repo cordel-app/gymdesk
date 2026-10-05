@@ -1,0 +1,33 @@
+{
+  "name": "@gymdesk/mobile",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Capacitor shell that loads the deployed Members App as an iOS and Android app (mobile app WP3, #1074).",
+  "scripts": {
+    "profile:show": "tsx scripts/show-profile.ts",
+    "profile:apply": "tsx scripts/apply-profile.ts",
+    "sync": "cap sync",
+    "sync:ios": "cap sync ios",
+    "sync:android": "cap sync android",
+    "open:ios": "cap open ios",
+    "open:android": "cap open android",
+    "run:ios": "cap run ios",
+    "run:android": "cap run android",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@capacitor/android": "8.5.2",
+    "@capacitor/app": "8.1.2",
+    "@capacitor/core": "8.5.2",
+    "@capacitor/ios": "8.5.2",
+    "@capacitor/push-notifications": "8.1.3",
+    "@capgo/capacitor-social-login": "8.5.12"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "8.5.2",
+    "@types/node": "20.19.43",
+    "tsx": "4.22.4",
+    "typescript": "5.9.3",
+    "vitest": "2.1.9"
+  }
+}

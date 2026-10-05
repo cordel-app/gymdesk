@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Cordel Fitness</string>
+    <string name="title_activity_main">Cordel Fitness</string>
+    <string name="package_name">com.cordel.fitness</string>
+    <string name="custom_url_scheme">com.cordel.fitness</string>
+</resources>

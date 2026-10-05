@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  #1074 (mobile app WP3) — the two entitlements the shell needs.
+
+	  `keychain-access-groups` is the 2026-10-04 spike's own finding
+	  (`docs/mobile-app.md` §3): without it a simulator build fails Google
+	  Sign-In with `keychain error`, because an ad-hoc signature gives the app no
+	  keychain group of its own. It is written as the build settings rather than
+	  as a literal, so it follows the app profile's Bundle ID (design rule 1) —
+	  a second app profile needs no edit here.
+
+	  `aps-environment` is `development`, which is what a simulator, a debug
+	  build and TestFlight's development pushes use. A store build needs
+	  `production`; Xcode rewrites it when exporting with a distribution
+	  profile, and `docs/mobile-runbook.md` carries the check.
+	-->
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	</array>
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

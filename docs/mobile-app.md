@@ -1,6 +1,6 @@
 # Mobile app (iOS / Android)
 
-**Status: WP1 and WP2 done; the shell itself is not built.** Epic:
+**Status: WP1, WP2 and WP3 done; the shell exists but has not been built on a device or published.** Epic:
 [#1078](https://github.com/cordel-app/gymdesk/issues/1078).
 This file is the plan and the record of what a feasibility spike (2026-10-04) proved. Decisions that are settled live in
 `docs/decisions.md` (#18); what must be true before launch lives in
@@ -220,13 +220,81 @@ under Clerk's restricted mode. It needs a Clerk instance and an invitation, not 
 the §6 checklist still carries it. If it turns out to need a change, that change belongs in
 `POST /me/link` (match by email + `gym_id`), never in the frontend.
 
-### WP3 — Mobile shell (`apps/mobile`, new workspace) (#1074)
-- Capacitor 8, `ios/` and `android/` in the repo. `capacitor.config.ts` reads `server.url` and
-  `allowNavigation` from environment variables.
-- iOS: URL scheme for Google in `Info.plist`, `GIDSignIn.handle` in `AppDelegate`, keychain
-  entitlement, icon, splash. Android: OAuth client with SHA-1, `google-services.json`.
-- A manual runbook for simulator and physical-device checks (no automated suite covers native
-  behaviour; CI runs `npm test` in `api/` only).
+### WP3 — Mobile shell (`apps/mobile`, new workspace) (#1074) — **done**
+
+Capacitor 8 with `ios/` and `android/` in the repository, three plugins (`@capacitor/app`,
+`@capacitor/push-notifications`, `@capgo/capacitor-social-login`) at the **same versions**
+`apps/member` holds, and `www/` holding one local page — the UI is the deployed Members App, so
+there is no web build step here. What follows is what the implementation decided beyond the
+bullet list, because WP3b, WP4 and WP5 all build on it.
+
+- **The app profile is the whole of design rule 1.** `profiles/<id>.json` is the one place an app
+  identity may be spelled (app id, display name, `server.url`, `allowNavigation`, the two Google
+  client ids); `MOBILE_*` variables override it **per field**, so a CI build points the generic
+  app at a staging URL without editing a profile and a per-gym profile needs no environment at
+  all. `appId`, `appName` and `serverUrl` have **no fallback in code** — a shell with no Bundle ID
+  would install over another app's identity and one with no URL would open a blank WebView — and
+  the custom URL scheme defaults to the app id rather than to a literal. The resolution is pure
+  (`src/appProfile.ts`), the file and the environment are the I/O half
+  (`src/loadAppProfile.ts`), and both `capacitor.config.ts` and the apply script come through the
+  second, so a `cap sync` and an apply can never disagree about what is being built.
+- **`npm run profile:apply` exists because `cap sync` does not write identity.** `cap add` seeds
+  the Xcode project, `Info.plist`, Gradle and `strings.xml` from `capacitor.config.ts` once and
+  `cap sync` then copies only web assets and plugins — so those four need a writer, and
+  `src/nativeProjectFiles.ts` is it: pure text transforms (assertable with no macOS machine), each
+  of which **throws rather than reporting success** when its anchor is gone, because the failure
+  that matters is an apply that leaves the previous gym's Bundle ID in place. It is idempotent,
+  and it also copies the profile's `google-services.json` / `GoogleService-Info.plist` when the
+  profile directory has them (both gitignored on both sides — they belong to a Firebase project,
+  not to this repository).
+- **Google's URL scheme is derived, not configured.** It is the reversed client id, a mechanical
+  transform of the id itself, so asking a profile for it as a second field is how the two come to
+  disagree. A build with **no** client id registers no Google scheme at all, which matches WP2's
+  rule that the native button is absent rather than broken in such a build.
+- **Android's `namespace` is read, not written.** It is the package the checked-in `MainActivity`
+  and the generated `R`/`BuildConfig` live under; `applicationId` is what the Play Store and FCM
+  identify the app by, and the two have been allowed to differ since AGP 7. Moving the namespace
+  would mean moving source files rather than editing a value — and reading it is also what keeps
+  the template's package out of the apply script as a literal.
+- **A URL opened on a running app reaches the *scene* delegate.** `Info.plist` declares
+  `UIApplicationSceneManifest`, so iOS delivers `scene(_:openURLContexts:)` and **not**
+  `application(_:open:options:)` — which is what the plugin's own README (written for the
+  pre-scene template) documents. `NativeSignInUrl.handle` is therefore one rule asked from both,
+  rather than a handler in the delegate that never runs. Anything a sign-in SDK does not consume
+  goes to Capacitor, which is how a custom-scheme link becomes `appUrlOpen` and WP2's
+  `appUrlOpenPath()` turns it into an in-app path.
+- **The iOS token has to be the FCM token, and that needs one Xcode step.** Delivery is FCM
+  HTTP v1 (WP1), and FCM does not deliver to an APNs token, so `AppDelegate` hands the APNs token
+  to `Messaging` and posts Firebase's token as Capacitor's `registration` value. Both that and
+  `GIDSignIn.handle` sit behind **`#if canImport`**: `GoogleSignIn` is a transitive dependency of
+  the social-login plugin rather than a product this target declares, and `FirebaseMessaging` is
+  added in Xcode by whoever has the `GoogleService-Info.plist` — so the project compiles with
+  neither, and **until the Firebase package is added iOS push cannot be delivered**
+  (`docs/mobile-runbook.md` §2 and `docs/go-to-production.md` §6 both carry it). Android needs no
+  counterpart: the plugin's token is already an FCM token there.
+- **Two entitlements, written from build settings.** `keychain-access-groups` is the spike's own
+  finding (§3 — without it a simulator build fails Google Sign-In with `keychain error`) and is
+  `$(AppIdentifierPrefix)$(PRODUCT_BUNDLE_IDENTIFIER)` so a second profile needs no edit;
+  `aps-environment` is `development`, and a store build needs `production`.
+- **Android's manifest gains two things**: an intent filter on `@string/custom_url_scheme`, which
+  is how a link reaches the app until WP4's App Links exist (`launchMode="singleTask"` is already
+  in the template, which is what makes it arrive on the running app), and `POST_NOTIFICATIONS`,
+  without which WP2's permission request on sign-in could only ever be denied.
+- Tests: `apps/mobile/src/test/appProfile.test.ts` (21 — the resolution and its refusals, the
+  per-field override, the scheme derivation, every transform including its escaping and its
+  throw, and that applying the stage-1 profile to the committed projects changes nothing) plus
+  `api/src/test/mobile-shell-profile.unit.test.ts` (15 — no identity literal outside `profiles/`,
+  the committed projects matching the profile, the synced `capacitor.config.json` agreeing, the
+  shell's app id equal to the API's `DEFAULT_APP_ID`, the plugin versions equal to the Members
+  App's, and the native wiring above). That second one is in the **API** suite for #1009's
+  reason: CI runs `npm test` in `api/` only.
+
+**Not verified here, and WP5's to close:** every acceptance criterion that needs a build. This
+container has no macOS, no Xcode and no Android SDK, so neither platform has been compiled, no
+simulator or device has run the app, and no push has been delivered. `docs/mobile-runbook.md` is
+the list of those checks; §2 of it is the configuration still to be supplied (icon and splash
+artwork, the Google clients, the Android SHA-1, `FCM_SERVICE_ACCOUNTS`, the Firebase iOS
+package).
 
 ### WP3b — Sign in with Apple (iOS) (#1075)
 - **Why:** App Store guideline 4.8 asks for an equivalent privacy-preserving login option when the
