@@ -97,20 +97,39 @@ async function setSlotCheck(knex, slots) {
 }
 
 exports.up = async (knex) => {
-  // Guarded on the table so a fresh database that has not yet run 181 — it
-  // cannot happen in sequence, but a partially restored one can — fails on the
-  // missing table rather than on a confusing constraint error.
-  if (!(await knex.schema.hasTable('theme_member_images'))) return;
+  // Deliberately unguarded on the table's existence, as migration 217 is:
+  // knex's own ordering guarantees 181 created it, and a `hasTable` guard that
+  // *returned* would be worse than no guard at all — knex would record 218 as
+  // applied, `db:migrate` would never revisit it, and a database that later had
+  // the table with the six-slot CHECK would fail every `personal_goals` upload
+  // (errno 3819, after the object is already in R2) permanently. A missing
+  // table is a broken restore and should stop the migrate.
   await setSlotCheck(knex, SLOTS);
 };
 
 exports.down = async (knex) => {
+  // Here a missing table genuinely means there is nothing to narrow.
   if (!(await knex.schema.hasTable('theme_member_images'))) return;
   // The rows have to go before the constraint narrows, or the ADD fails errno
   // 3819. Lossy by design, and the loss is a *reference*: the R2 object stays
   // where it is under its deterministic key (#725 — removing a slot has never
   // deleted an object), so re-running `up()` and re-uploading lands on the same
-  // path. No batching: this table holds a handful of rows per gym, not a log.
+  // path. No batching: this table holds a handful of rows per gym, not a log —
+  // though `slot` is not a left prefix of `uq_theme_member_images (theme_id,
+  // slot)`, so this is a full scan, which is only acceptable at that size.
+  //
+  // Stop the API (or at least Members-image uploads) before rolling back, as
+  // migration 217 asks for the same shape: DDL commits implicitly, so the
+  // DELETE is committed by the DROP, and a `personal_goals` row inserted
+  // between the two fails the ADD with errno 3819 and leaves `slot`
+  // unconstrained. Re-running `down()` recovers — the existence half of the
+  // guard re-adds a constraint that is missing rather than treating it as
+  // already narrow, and the DELETE removes the offending row first.
+  //
+  // Note also that `npm run db:migrate:down` is `knex migrate:rollback`, which
+  // reverts the whole *batch*: if 216/217/218 landed in one deploy, rolling
+  // back 218 that way also strips the notification types 216/217 added and
+  // deletes those rows. Use `migrate:down` to step one migration.
   await knex.raw(`DELETE FROM theme_member_images WHERE slot = '${NEW_SLOT}'`);
   await setSlotCheck(knex, SLOTS.filter((s) => s !== NEW_SLOT));
 };

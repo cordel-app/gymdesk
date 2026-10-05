@@ -174,49 +174,49 @@ export function ThemeMembersAppEditor({ tokens, onChange, t, readOnly, images }:
       {MEMBERS_APP_SECTIONS.map((sectionKey) => {
         const settings = membersAppSettingsFor(sectionKey);
         return renderSubsection(sectionKey, (
-              <>
-                {settings.map((setting) => {
-                  const overridden = isMembersAppOverridden(tokens, setting.key);
-                  return (
-                    <div
-                      key={setting.key}
-                      style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}
-                    >
-                      <div>
-                        <div style={{ fontSize: 13, fontWeight: 500 }}>{t(setting.labelKey)}</div>
-                        {/* §9 / §10 — a secondary line under the control saying
-                            either which Admin setting the value comes from, or
-                            that it no longer comes from one. */}
-                        <div style={SECONDARY}>
-                          {overridden
-                            ? t('members_custom_value')
-                            : `${t('members_inherited_from')} ${t(setting.source.labelKey)}`}
-                        </div>
-                      </div>
-
-                      <span style={{ ...BADGE, background: overridden ? '#e8f0fe' : '#f0f0f0', color: overridden ? '#1a56db' : '#666' }}>
-                        {overridden ? t('adv_badge_custom') : t('adv_badge_inherited')}
-                      </span>
-
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        {renderControl(setting)}
-                        {/* §11 — per-setting, and it removes the override
-                            rather than writing the Admin value into it, so the
-                            setting goes back to following Admin. */}
-                        {overridden && !readOnly && (
-                          <button
-                            type="button"
-                            onClick={() => onChange(withMembersAppInherited(tokens, setting.key))}
-                            style={{ background: 'none', border: '1px solid #ddd', cursor: 'pointer', color: '#666', fontSize: 11, padding: '4px 8px', borderRadius: 4, whiteSpace: 'nowrap' }}
-                          >
-                            {t('members_restore_inherited')}
-                          </button>
-                        )}
-                      </div>
+          <>
+            {settings.map((setting) => {
+              const overridden = isMembersAppOverridden(tokens, setting.key);
+              return (
+                <div
+                  key={setting.key}
+                  style={{ display: 'grid', gridTemplateColumns: '1fr auto auto', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}
+                >
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 500 }}>{t(setting.labelKey)}</div>
+                    {/* §9 / §10 — a secondary line under the control saying
+                        either which Admin setting the value comes from, or
+                        that it no longer comes from one. */}
+                    <div style={SECONDARY}>
+                      {overridden
+                        ? t('members_custom_value')
+                        : `${t('members_inherited_from')} ${t(setting.source.labelKey)}`}
                     </div>
-                  );
-                })}
-              </>
+                  </div>
+
+                  <span style={{ ...BADGE, background: overridden ? '#e8f0fe' : '#f0f0f0', color: overridden ? '#1a56db' : '#666' }}>
+                    {overridden ? t('adv_badge_custom') : t('adv_badge_inherited')}
+                  </span>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {renderControl(setting)}
+                    {/* §11 — per-setting, and it removes the override
+                        rather than writing the Admin value into it, so the
+                        setting goes back to following Admin. */}
+                    {overridden && !readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => onChange(withMembersAppInherited(tokens, setting.key))}
+                        style={{ background: 'none', border: '1px solid #ddd', cursor: 'pointer', color: '#666', fontSize: 11, padding: '4px 8px', borderRadius: 4, whiteSpace: 'nowrap' }}
+                      >
+                        {t('members_restore_inherited')}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </>
         ));
       })}
     </div>
