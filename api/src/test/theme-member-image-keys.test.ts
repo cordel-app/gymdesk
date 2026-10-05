@@ -61,14 +61,14 @@ describe('Members image slots (#725, #1038)', () => {
    * CLAUDE.md's "two places" rule for this list, as a gate rather than a note:
    * a slot added to `MEMBER_IMAGE_SLOTS` alone uploads the object to R2 and
    * *then* fails the insert against `chk_theme_member_images_slot`, leaving an
-   * orphan and a 500. Migration 218 is the CHECK's current definition, so the
+   * orphan and a 500. Migration 219 is the CHECK's current definition, so the
    * two are compared directly — and the slot names are compared as a **set**,
    * because the order in a CHECK is irrelevant while the order in the list is
    * the UI's business.
    */
-  it('is mirrored by the CHECK in migration 218', () => {
+  it('is mirrored by the CHECK in migration 219', () => {
     const migration = readFileSync(
-      join(__dirname, '..', 'infra', 'migrations', '218_theme_member_images_personal_goals_slot.js'),
+      join(__dirname, '..', 'infra', 'migrations', '219_theme_member_images_personal_goals_slot.js'),
       'utf-8',
     );
     const declared = migration.match(/const SLOTS = \[([^\]]+)\]/)?.[1] ?? '';

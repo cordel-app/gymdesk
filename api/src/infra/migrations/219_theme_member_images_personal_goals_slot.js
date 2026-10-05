@@ -99,7 +99,7 @@ async function setSlotCheck(knex, slots) {
 exports.up = async (knex) => {
   // Deliberately unguarded on the table's existence, as migration 217 is:
   // knex's own ordering guarantees 181 created it, and a `hasTable` guard that
-  // *returned* would be worse than no guard at all — knex would record 218 as
+  // *returned* would be worse than no guard at all — knex would record 219 as
   // applied, `db:migrate` would never revisit it, and a database that later had
   // the table with the six-slot CHECK would fail every `personal_goals` upload
   // (errno 3819, after the object is already in R2) permanently. A missing
@@ -127,9 +127,10 @@ exports.down = async (knex) => {
   // already narrow, and the DELETE removes the offending row first.
   //
   // Note also that `npm run db:migrate:down` is `knex migrate:rollback`, which
-  // reverts the whole *batch*: if 216/217/218 landed in one deploy, rolling
-  // back 218 that way also strips the notification types 216/217 added and
-  // deletes those rows. Use `migrate:down` to step one migration.
+  // reverts the whole *batch*: if 216/217/218/219 landed in one deploy, rolling
+  // back 219 that way also strips the notification types 216/217 added and the
+  // Personal Goal targets 218 added, and deletes those rows. Use `migrate:down`
+  // to step one migration.
   await knex.raw(`DELETE FROM theme_member_images WHERE slot = '${NEW_SLOT}'`);
   await setSlotCheck(knex, SLOTS.filter((s) => s !== NEW_SLOT));
 };

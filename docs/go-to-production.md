@@ -131,7 +131,7 @@ Tick items off in the PR that completes them.
       batches, per type — there is still no index on `type`) before narrowing
       the constraint, so stop the API, or at least any waitlist edit, before
       rolling back.
-- [ ] **Migration 218 needs no maintenance window** (#1038). It swaps
+- [ ] **Migration 219 needs no maintenance window** (#1038). It swaps
       `chk_theme_member_images_slot` to add the `personal_goals` Members App
       image slot, so `ADD CONSTRAINT … CHECK` rebuilds `theme_member_images`
       under ALGORITHM=COPY / LOCK=SHARED exactly as 216 and 217 do to
