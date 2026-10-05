@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { treeAddBtnStyle, weekdayChipStyle, weekdaySelectStyle } from '@/components/workoutChrome';
+import {
+  treeAddBtnStyle, treeControlBox, weekdayChipStyle, weekdaySelectStyle,
+} from '@/components/workoutChrome';
 import { dashedAddBtnStyle } from '@/components/formChrome';
 import { DEFAULT_TOKENS, applyTokens } from '@/lib/themeTokens';
 
@@ -159,18 +161,29 @@ describe('Expanding a plan reads; ⋮ → Edit writes (#971 §4, §5)', () => {
 
 describe('WorkoutBlockBuilder carries no colour of its own (#971 §1, §2)', () => {
   it('renders + Block and + Exercise as the shared dashed add button', () => {
-    expect(builderSrc).toMatch(/import \{ treeAddBtnStyle \} from '@\/components\/workoutChrome'/);
+    // #1031 grouped that import with the rest of the tree's shared chrome.
+    expect(builderSrc).toMatch(/treeAddBtnStyle[\s\S]*?from '@\/components\/workoutChrome'/);
     expect(builderSrc.match(/treeAddBtnStyle/g) ?? []).toHaveLength(4);
     expect(builderSrc).not.toContain('inlineAddStyle');
   });
 
   it('dresses its compact controls from the Theme\'s input pair', () => {
-    expect(builderSrc).toContain("border: '1px solid var(--gd-input-border, #ddd)'");
-    expect(builderSrc).toContain("background: 'var(--gd-input-bg, #fafafa)'");
-    for (const name of ['headerInput', 'headerSelect', 'cellInput', 'comboTrigger']) {
-      expect(builderSrc, `${name} does not share the one control box`)
-        .toMatch(new RegExp(`const ${name}: React\\.CSSProperties = \\{\\s*\\.\\.\\.treeControlBox`));
+    // #1031 moved `treeControlBox` and the four controls derived from it out of
+    // this file and into `workoutChrome.ts`, because the *other* tree
+    // (`WorkoutTemplateTree`) kept its own un-themed copy of all of them. The
+    // intent is unchanged and is now asserted one level up: the shared box
+    // names the two variables, and the builder spreads the shared controls
+    // rather than declaring any of its own.
+    expect(treeControlBox.border).toBe('1px solid var(--gd-input-border, #ddd)');
+    expect(treeControlBox.background).toBe('var(--gd-input-bg, #fafafa)');
+    for (const name of [
+      'treeHeaderInputStyle', 'treeHeaderSelectStyle', 'treeCellInputStyle', 'treeComboTriggerStyle',
+    ] as const) {
+      expect(chromeSrc, `${name} does not share the one control box`)
+        .toMatch(new RegExp(`export const ${name}: React\\.CSSProperties = \\{\\s*\\.\\.\\.treeControlBox`));
+      expect(builderSrc, `the builder redeclares ${name}`).not.toContain(`const ${name}`);
     }
+    expect(builderSrc).not.toContain('const treeControlBox');
   });
 
   it('spells none of the lilacs it used to', () => {

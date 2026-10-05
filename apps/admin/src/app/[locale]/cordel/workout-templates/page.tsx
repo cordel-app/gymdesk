@@ -7,7 +7,8 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CrudModal, FormLabel } from '@/components/CrudModal';
 import { StatusBadge } from '@/components/StatusBadge';
-import { btnStyle } from '@/components/ui';
+import { primaryBtnStyle } from '@/components/ui';
+import { filterControlStyle } from '@/components/FilterBar';
 
 interface WorkoutTemplate {
   id: number;
@@ -105,9 +106,9 @@ export default function CordelWorkoutTemplatesPage() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search…"
-            style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, width: 200 }}
+            style={{ ...filterControlStyle, width: 200 }}
           />
-          <button style={btnStyle()} onClick={() => { setNewName(''); setCreating(true); }}>+ New Template</button>
+          <button style={primaryBtnStyle()} onClick={() => { setNewName(''); setCreating(true); }}>+ New Template</button>
         </div>
       </div>
 

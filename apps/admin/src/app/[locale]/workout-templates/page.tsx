@@ -18,13 +18,20 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
-import { btnSmall, btnStyle, cardSurfaceStyle, primaryBtnSmall, readOnlyStyle } from '@/components/ui';
+import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
+import { filterControlStyle } from '@/components/FilterBar';
+import { CardSection } from '@/components/CardSection';
+import { cardSectionTitleStyle } from '@/components/CardSectionHeader';
+import { CardDetailRow } from '@/components/CardDetailRow';
 import { WorkoutTemplateTree, WtHierarchy, TemplateDropTarget } from './WorkoutTemplateTree';
-import { inlineActionsRowStyle } from '@/components/formChrome';
+import {
+  cardMutedTextStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, formValueStyle,
+  inlineActionsRowStyle, secondaryBtnSmall,
+} from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -469,28 +476,28 @@ export default function WorkoutTemplatesPage() {
         <div style={{ padding: '16px 20px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
             <div>
-              <label style={inlineLabelStyle}>{t('label_name')} *</label>
+              <label style={formFieldLabelStyle}>{t('label_name')} *</label>
               <input
                 ref={newNameRef}
                 value={inlineNew.name}
                 onChange={(e) => setInlineNew({ ...inlineNew, name: e.target.value })}
                 onKeyDown={(e) => { if (e.key === 'Enter') saveInlineNew(); if (e.key === 'Escape') cancelInlineNew(); }}
-                style={inlineInputStyle}
+                style={formControlStyle}
               />
             </div>
             <div>
-              <label style={inlineLabelStyle}>{t('label_description')}</label>
+              <label style={formFieldLabelStyle}>{t('label_description')}</label>
               <input
                 value={inlineNew.description}
                 onChange={(e) => setInlineNew({ ...inlineNew, description: e.target.value })}
                 onKeyDown={(e) => { if (e.key === 'Enter') saveInlineNew(); if (e.key === 'Escape') cancelInlineNew(); }}
-                style={inlineInputStyle}
+                style={formControlStyle}
               />
             </div>
           </div>
-          {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
+          {inlineNew.error && <p style={formErrorStyle}>{inlineNew.error}</p>}
           <div style={inlineActionsRowStyle}>
-            <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
+            <button onClick={cancelInlineNew} style={secondaryBtnSmall}>{t('cancel')}</button>
             <button onClick={saveInlineNew} disabled={inlineNew.saving} style={primaryBtnSmall()}>
               {inlineNew.saving ? t('saving') : t('save_changes')}
             </button>
@@ -559,63 +566,66 @@ export default function WorkoutTemplatesPage() {
 
         {/* Inline edit form */}
         {isEditing && (
-          <div style={{ padding: '0 20px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
-            <SectionHeader title={t('section_general')} />
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div>
-                <label style={inlineLabelStyle}>{t('label_name')} *</label>
-                <input
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  autoFocus
-                  style={inlineInputStyle}
-                />
+          <div style={{ padding: '16px 20px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
+            <CardSection label={t('section_general')} first>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={formFieldLabelStyle}>{t('label_name')} *</label>
+                  <input
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                    autoFocus
+                    style={formControlStyle}
+                  />
+                </div>
+                <div>
+                  <label style={formFieldLabelStyle}>{t('label_status')}</label>
+                  <select
+                    value={editForm.status}
+                    onChange={(e) => setEditForm({ ...editForm, status: e.target.value as WorkoutTemplate['status'] })}
+                    style={formControlStyle}
+                  >
+                    {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
+                  </select>
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label style={formFieldLabelStyle}>{t('label_description')}</label>
+                  <textarea
+                    value={editForm.description}
+                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                    rows={2}
+                    style={{ ...formControlStyle, resize: 'vertical' }}
+                  />
+                </div>
               </div>
-              <div>
-                <label style={inlineLabelStyle}>{t('label_status')}</label>
-                <select
-                  value={editForm.status}
-                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value as WorkoutTemplate['status'] })}
-                  style={inlineSelectStyle}
-                >
-                  {STATUSES.map((s) => <option key={s} value={s}>{tStatus(s)}</option>)}
-                </select>
-              </div>
-              <div style={{ gridColumn: '1 / -1' }}>
-                <label style={inlineLabelStyle}>{t('label_description')}</label>
-                <textarea
-                  value={editForm.description}
-                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                  rows={2}
-                  style={{ ...inlineInputStyle, resize: 'vertical' }}
-                />
-              </div>
-            </div>
+            </CardSection>
 
-            <SectionHeader title={t('section_workout_structure')} />
-            {hierLoading.has(wt.id) ? (
-              <p style={{ color: '#888', fontSize: 13, margin: '4px 0 12px' }}>{t('loading')}</p>
-            ) : h ? (
-              <WorkoutTemplateTree
-                templateId={wt.id}
-                hierarchy={h}
-                canWrite={!!canWrite}
-                onChanged={() => refetchBranch(wt.id)}
+            <CardSection label={t('section_workout_structure')}>
+              {hierLoading.has(wt.id) ? (
+                <p style={{ ...cardMutedTextStyle, margin: '4px 0 12px' }}>{t('loading')}</p>
+              ) : h ? (
+                <WorkoutTemplateTree
+                  templateId={wt.id}
+                  hierarchy={h}
+                  canWrite={!!canWrite}
+                  onChanged={() => refetchBranch(wt.id)}
+                />
+              ) : null}
+            </CardSection>
+
+            <CardSection label={t('section_notes')}>
+              <textarea
+                value={editForm.notes}
+                onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                rows={3}
+                placeholder={t('notes_placeholder')}
+                style={{ ...formControlStyle, resize: 'vertical' }}
               />
-            ) : null}
+            </CardSection>
 
-            <SectionHeader title={t('section_notes')} />
-            <textarea
-              value={editForm.notes}
-              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-              rows={3}
-              placeholder={t('notes_placeholder')}
-              style={{ ...inlineInputStyle, resize: 'vertical', width: '100%', boxSizing: 'border-box' }}
-            />
-
-            {editError && <p style={errorStyle}>{editError}</p>}
+            {editError && <p style={formErrorStyle}>{editError}</p>}
             <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
-              <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
+              <button onClick={cancelEdit} style={secondaryBtnSmall}>{t('cancel')}</button>
               <button onClick={() => handleSave(wt)} disabled={editSaving} style={primaryBtnSmall()}>
                 {editSaving ? t('saving') : t('save_changes')}
               </button>
@@ -625,27 +635,30 @@ export default function WorkoutTemplatesPage() {
 
         {/* Read-only expanded sections */}
         {isExpanded && !isEditing && (
-          <div style={{ padding: '0 20px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
-            <SectionHeader title={t('section_general')} />
-            <DetailRow label={t('label_description')} value={wt.description ?? '—'} />
-            <DetailRow label={t('label_status')} value={tStatus(wt.status)} />
+          <div style={{ padding: '16px 20px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
+            <CardSection label={t('section_general')} first>
+              <CardDetailRow label={t('label_description')} value={wt.description ?? '—'} />
+              <CardDetailRow label={t('label_status')} value={tStatus(wt.status)} />
+            </CardSection>
 
-            <SectionHeader title={t('section_workout_structure')} />
-            {hierLoading.has(wt.id) ? (
-              <p style={{ color: '#888', fontSize: 13, margin: '4px 0 12px' }}>{t('loading')}</p>
-            ) : h ? (
-              <WorkoutTemplateTree
-                templateId={wt.id}
-                hierarchy={h}
-                canWrite={!!canWrite}
-                onChanged={() => refetchBranch(wt.id)}
-              />
-            ) : null}
+            <CardSection label={t('section_workout_structure')}>
+              {hierLoading.has(wt.id) ? (
+                <p style={{ ...cardMutedTextStyle, margin: '4px 0 12px' }}>{t('loading')}</p>
+              ) : h ? (
+                <WorkoutTemplateTree
+                  templateId={wt.id}
+                  hierarchy={h}
+                  canWrite={!!canWrite}
+                  onChanged={() => refetchBranch(wt.id)}
+                />
+              ) : null}
+            </CardSection>
 
-            <SectionHeader title={t('section_notes')} />
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: wt.notes ? '#333' : '#aaa', whiteSpace: 'pre-wrap' }}>
-              {wt.notes ?? '—'}
-            </p>
+            <CardSection label={t('section_notes')}>
+              <p style={{ ...formValueStyle, padding: 0, border: 'none', color: wt.notes ? '#333' : '#aaa' }}>
+                {wt.notes ?? '—'}
+              </p>
+            </CardSection>
           </div>
         )}
       </div>
@@ -664,9 +677,9 @@ export default function WorkoutTemplatesPage() {
             value={nameInput}
             onChange={(e) => setNameInput(e.target.value)}
             placeholder={t('filter_name')}
-            style={filterInputStyle}
+            style={filterControlStyle}
           />
-          <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterInputStyle}>
+          <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterControlStyle}>
             <option value="">{t('filter_created_by_all')}</option>
             {createdByOptions.map((o) => <option key={o.membership_id} value={o.membership_id}>{o.name}</option>)}
           </select>
@@ -676,7 +689,7 @@ export default function WorkoutTemplatesPage() {
             options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))}
             allLabel={tStatus('all')}
           />
-          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
+          <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
         </div>
       </div>
 
@@ -730,7 +743,7 @@ export default function WorkoutTemplatesPage() {
       >
         {details && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={detailSectionLabelStyle}>{t('section_general')}</div>
+            <div style={cardSectionTitleStyle}>{t('section_general')}</div>
             <div>
               <span style={detailLabelStyle}>{t('details_name')}</span>
               <p style={{ margin: '2px 0 0', fontSize: 15, fontWeight: 500 }}>{details.name}</p>
@@ -755,7 +768,7 @@ export default function WorkoutTemplatesPage() {
             </div>
 
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
-            <div style={detailSectionLabelStyle}>Audit</div>
+            <div style={cardSectionTitleStyle}>Audit</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_at')}</span>
@@ -801,23 +814,6 @@ export default function WorkoutTemplatesPage() {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function SectionHeader({ title }: { title: string }) {
-  return (
-    <div style={{ borderBottom: '1px solid var(--gd-card-border, #eee)', margin: '16px 0 8px', paddingBottom: 4 }}>
-      <span style={{ fontSize: 12, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</span>
-    </div>
-  );
-}
-
-function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ display: 'flex', gap: 8, padding: '3px 0', fontSize: 13 }}>
-      <span style={{ width: 160, flexShrink: 0, color: '#666' }}>{label}</span>
-      <span style={{ color: '#111', flex: 1 }}>{value}</span>
-    </div>
-  );
-}
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
 const cardStyle: React.CSSProperties = { ...cardSurfaceStyle, overflow: 'hidden' };
@@ -835,32 +831,6 @@ const colHeaderStyle: React.CSSProperties = {
   marginBottom: 4,
 };
 
-const filterInputStyle: React.CSSProperties = {
-  padding: '8px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, background: '#fff',
-};
-
-const inlineLabelStyle: React.CSSProperties = {
-  display: 'block', fontSize: 12.5, fontWeight: 600, color: '#555', marginBottom: 4,
-};
-
-const inlineInputStyle: React.CSSProperties = {
-  width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
-  fontSize: 14, boxSizing: 'border-box', background: '#fff',
-};
-
-const inlineSelectStyle: React.CSSProperties = {
-  width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc',
-  fontSize: 14, boxSizing: 'border-box', background: '#fff',
-};
-
 const detailLabelStyle: React.CSSProperties = {
   fontSize: 11, fontWeight: 600, color: '#888', textTransform: 'uppercase', letterSpacing: '0.04em',
-};
-
-const detailSectionLabelStyle: React.CSSProperties = {
-  fontSize: 11, fontWeight: 700, color: '#888', textTransform: 'uppercase', letterSpacing: '0.06em',
-};
-
-const errorStyle: React.CSSProperties = {
-  margin: '8px 0 0', fontSize: 13, color: '#c0392b',
 };
