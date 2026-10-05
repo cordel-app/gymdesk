@@ -28,6 +28,10 @@ export const STORAGE_FAILURE_STAGES = [
   'upload_members_image',
   /** DELETE of a Members App background object. */
   'remove_members_image',
+  /** Server-side copy of the source theme's logo into a clone's folder (#1041). */
+  'copy_logo',
+  /** Server-side copy of one of the source theme's Members App backgrounds (#1041). */
+  'copy_members_image',
   /** The `PUT /system/themes/:id` that saves name, description and tokens. */
   'save_settings',
 ] as const;

@@ -24,6 +24,7 @@ vi.mock('@aws-sdk/client-s3', () => ({
   PutObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'put', input })),
   GetObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'get', input })),
   DeleteObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'delete', input })),
+  CopyObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'copy', input })),
 }));
 
 const R2_ENV_KEYS = [

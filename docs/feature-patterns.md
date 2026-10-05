@@ -2245,6 +2245,21 @@ Reference implementations: `membership-plans.ts` `POST /:id/duplicate` (multi-ta
 
 ---
 
+### Copying an entity that owns storage objects (#1041)
+
+A duplicate that owns files in Cloudflare R2 — today a Theme, with its logo and its Members App backgrounds — has to copy the *objects* as well as the rows, and the order of the four steps is what makes a half-copied entity impossible:
+
+1. **Resolve the destination's storage root and refuse early.** The gym's `storage_folder_prefix` (503 with no `CLOUDFLARE_R2_*`, 409 with no prefix) before anything is created, so nothing exists to be cleaned up (#827).
+2. **Write the new entity's folder markers**, with its *own* id in the key — zero-byte `…/` objects, idempotent, and never the parent roots somebody else owns (#735).
+3. **Copy every object, before the row.** One pure module plans the copies (`api/src/domain/themeAssetClone.ts`), driven by the source's own child rows and the existing key builders rather than by a list of file names, so a slot or an asset kind added later is copied with no change to it. A failure sweeps the destinations already written, answers `502` with the step as its `stage` and the destination as its `path`, and leaves no row at all.
+4. **Insert the row and the references to the copies in one transaction**, storing the *new* keys. A DB failure sweeps the copies too.
+
+Three rules come with it. The source is read and never written — no key, object or row of the source's is moved, renamed or deleted, which also means the copy must never be implemented as "rename then re-create". A reference the source carries in a different shape (a legacy blob column with no object behind it) is *materialised* into the copy's own canonical shape rather than duplicated as the legacy shape, so the copy cannot reintroduce a writer the codebase has retired. And a copy is server-side (`copyStorageObject()`, an S3 `CopyObjectCommand` that carries the object's `Content-Type` with it), not a download plus an upload, so the operation's cost does not scale with the asset's size.
+
+On the admin side the action is a multi-step storage operation, so it says so: the submit disables through the shared modal's `saving` (one click, one copy), the label names the operation while it runs, a success raises a toast, and each new `stage` value needs its `storage_stage_<value>` key in `apps/admin/locales/base/{en,es,ca}.json` — the key is interpolated from the wire value and next-intl prints a missing key verbatim.
+
+---
+
 ## Tree-Grid Editor (hierarchical catalog pages)
 
 Pages whose entity owns a hierarchy (Training Plan Template → Workouts → Blocks → Exercises, #61; Workout Template → Blocks → Exercises, #63) render it inline in the list page instead of chaining CRUD sub-pages/modals. The shared `DataTable` already supports it (`renderExpanded` / `expandedRowKeys` / `onToggleExpand`); the page supplies the rest:

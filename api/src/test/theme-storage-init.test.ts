@@ -29,6 +29,7 @@ vi.mock('@aws-sdk/client-s3', () => ({
   PutObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'put', input })),
   GetObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'get', input })),
   DeleteObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'delete', input })),
+  CopyObjectCommand: vi.fn().mockImplementation((input) => ({ __type: 'copy', input })),
 }));
 
 const R2_ENV_KEYS = [
@@ -271,7 +272,10 @@ describe('POST /system/themes/clone/:sourceId — what a clone carries over', ()
     expect(res.body.tokens.colors).toMatchObject(calendarColors);
   });
 
-  it('starts the clone with no Members App images of its own', async () => {
+  it('carries no Members App images when the source configured none', async () => {
+    // #1041 copies the source's configured backgrounds; a source with none
+    // gives the clone none, rather than an artificial empty object per slot
+    // (§4). The copying itself is theme-clone-assets.test.ts'.
     const res = await clone(sourceThemeId, gymId, 'Empty Members Clone');
     expect(res.status).toBe(201);
     for (const url of Object.values(res.body.members_images)) expect(url).toBeNull();

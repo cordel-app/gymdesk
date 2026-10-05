@@ -18,6 +18,7 @@ const sendMock = vi.hoisted(() => vi.fn().mockResolvedValue({}));
 vi.mock('@aws-sdk/client-s3', () => ({
   S3Client: vi.fn().mockImplementation(() => ({ send: sendMock })),
   PutObjectCommand: vi.fn().mockImplementation((input) => ({ input })),
+  CopyObjectCommand: vi.fn().mockImplementation((input) => ({ input })),
 }));
 
 const R2_ENV_KEYS = [

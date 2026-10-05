@@ -320,6 +320,16 @@ Tick items off in the PR that completes them.
       sweeps the rest. Neither is reachable from the app, so this is bucket housekeeping, not correctness.
       If a CSP is ever put in front of the member app, its `img-src` needs the R2 endpoint for the same
       reason.
+- [ ] **Themes cloned before #1041 keep their empty asset configuration** (#1041). Cloning copies the
+      source's logo and backgrounds **from now on**; there is deliberately no backfill, because a clone made
+      earlier may since have been given assets of its own and overwriting them is worse than leaving it as it
+      is. A gym that wants the source's artwork on such a clone either uploads it on the clone (Themes →
+      `⋮ → Edit`) or clones the source again. Nothing is broken meanwhile: an unconfigured slot is `null`,
+      which has meant "use the theme background colour" since #725.
+      Needs no window and no script. Related housekeeping: a clone whose copy step failed sweeps its own
+      destination objects, but if that sweep itself could not run (the log line is
+      *"Failed theme clone left an orphaned object in Cloudflare R2"*) the keys it names sit under a
+      `themes/<theme_id>-…/` folder whose id no `themes` row carries, so they are safe to delete by hand.
 - [ ] **Import the Base Exercise catalogue** (#964): `cd api && npm run exercises:import-free-db`
       against the real database. It needs no `CLOUDFLARE_R2_*` credentials — the import stores no image
       at all — but it does need outbound HTTPS to fetch the dataset, or a local copy passed with
