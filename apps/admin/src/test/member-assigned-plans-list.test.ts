@@ -104,6 +104,14 @@ describe('#1051: Active and Past are two instances of that list (§4)', () => {
     expect(sectionSrc).toContain("t('membership_plans_history')");
     expect(sectionSrc).toContain('{history.length > 0 && (');
   });
+
+  it('#1107: Past plans is a collapsible card, collapsed by default, with a count', () => {
+    expect(sectionSrc).toContain('useState(false)');
+    expect(sectionSrc).toContain('const [pastOpen, setPastOpen]');
+    expect(sectionSrc).toContain('aria-expanded={pastOpen}');
+    expect(sectionSrc).toContain('({history.length})');
+    expect(sectionSrc).toContain('{pastOpen && (');
+  });
 });
 
 describe('#958: the actions stay in the ⋮ menu (Q2)', () => {
@@ -132,9 +140,11 @@ describe('#958: the actions stay in the ⋮ menu (Q2)', () => {
   it('renders no action button on a row beside the menu', () => {
     // Everything the ticket drew as `[ Cancel ] [ Assign new plan ] [ Details ]`
     // is a menu item; the only buttons left are the inline add draft's own
-    // Save/Cancel and `+ Add Membership Plan`.
+    // Save/Cancel, `+ Add Membership Plan` and — since #1107 — the Past Plans
+    // disclosure header, which belongs to the section rather than to a row and
+    // so leaves this rule intact.
     const buttons = sectionSrc.match(/<button/g) ?? [];
-    expect(buttons.length).toBeLessThanOrEqual(3);
+    expect(buttons.length).toBeLessThanOrEqual(4);
   });
 });
 

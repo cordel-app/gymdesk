@@ -109,6 +109,8 @@ export function MemberMembershipPlans({
   // #958: the Assigned Plan whose Details are open, if any — one dialog for the
   // whole section rather than one mounted per row.
   const [detailsPlanId, setDetailsPlanId] = useState<number | null>(null);
+  // #1107: Past plans is a collapsible card, collapsed whenever the section mounts.
+  const [pastOpen, setPastOpen] = useState(false);
 
   // §2: only Active + Public Membership Plans may be offered. The server
   // enforces the same rule on assignment, so this filter only keeps the picker
@@ -297,16 +299,30 @@ export function MemberMembershipPlans({
           live one does. Absent rather than empty, as the card group was. */}
       {history.length > 0 && (
         <div style={{ marginTop: 16 }}>
-          <div style={subLabel}>{t('membership_plans_history')}</div>
-          <AssignedPlansTable
-            rows={history}
-            loadingText={t('add_membership_plan_loading')}
-            emptyText={t('no_active_membership_plans')}
-            onChanged={onChanged}
-            scope="member"
-            embedded
-            rowActions={rowActions}
-          />
+          <button
+            type="button"
+            onClick={() => setPastOpen((o) => !o)}
+            aria-expanded={pastOpen}
+            style={{
+              ...subLabel, display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+              background: 'none', border: 'none', padding: 0, margin: 0, cursor: 'pointer', textAlign: 'left',
+            }}
+          >
+            <span>{t('membership_plans_history')}</span>
+            <span>({history.length})</span>
+            <span aria-hidden="true" style={{ marginLeft: 'auto' }}>{pastOpen ? '▾' : '▸'}</span>
+          </button>
+          {pastOpen && (
+            <AssignedPlansTable
+              rows={history}
+              loadingText={t('add_membership_plan_loading')}
+              emptyText={t('no_active_membership_plans')}
+              onChanged={onChanged}
+              scope="member"
+              embedded
+              rowActions={rowActions}
+            />
+          )}
         </div>
       )}
 
