@@ -39,11 +39,13 @@ describe('The form actions are the platform\'s left-aligned inline row (#968 §3
   });
 
   it('left-aligns, because the shared row declares no justification', () => {
-    // The distinction this ticket is about: `formActionsRowStyle` is the
-    // right-aligned card-level pair, `inlineActionsRowStyle` the left-aligned
-    // section-level one. A `justifyContent` here would re-create the defect.
+    // The distinction this ticket was about: `formActionsRowStyle` is the
+    // card-level pair, `inlineActionsRowStyle` the section-level one. A
+    // `justifyContent` here would re-create the defect — and since #1028
+    // neither row declares one, so the two answer the alignment question the
+    // same way and a form cannot pick a side for itself.
     expect(inlineActionsRowStyle.justifyContent).toBeUndefined();
-    expect(formActionsRowStyle.justifyContent).toBe('flex-end');
+    expect(formActionsRowStyle.justifyContent).toBeUndefined();
     expect(inlineActionsRowStyle.display).toBe('flex');
     expect(editorSrc).not.toContain('flex-end');
   });

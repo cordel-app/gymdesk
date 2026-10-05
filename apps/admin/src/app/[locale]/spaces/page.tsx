@@ -19,6 +19,7 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 // #801: a Space has no ACTIVITIES section. The Space form used to carry a
 // checkbox list writing `PUT /spaces/:id/activity-types`; both the section and
@@ -397,7 +398,7 @@ export default function SpacesPage() {
           {centersError && <p style={errorStyle}>{t('error_centers_load')}</p>}
           {hasNoCenters && <p style={errorStyle}>{t('no_centers_available')}</p>}
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div style={inlineActionsRowStyle}>
             <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
             <button onClick={saveInlineNew} disabled={inlineNew.saving || saveBlocked} style={primaryBtnSmall()}>
               {inlineNew.saving ? t('saving') : t('save_changes')}
@@ -542,7 +543,7 @@ export default function SpacesPage() {
             />
 
             {editError && <p style={errorStyle}>{editError}</p>}
-            <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end' }}>
+            <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
               <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
               <button onClick={() => handleSave(space)} disabled={editSaving} style={primaryBtnSmall()}>
                 {editSaving ? t('saving') : t('save_changes')}

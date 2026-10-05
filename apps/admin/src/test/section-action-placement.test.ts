@@ -158,9 +158,11 @@ describe('Membership Plans: every subsection action is beside its title (#963)',
   it('keeps the card\'s own main form pair at the end of the form', () => {
     // GENERAL is the card's form, not a subsection with a contextual action, so
     // its Save/Cancel stays under the fields it commits — the app's form
-    // convention (`formActionsRowStyle`), and the one pair per card.
+    // convention, and the one pair per card. #1028: that row is the shared
+    // left-aligned `inlineActionsRowStyle` rather than a `flex-end` of the
+    // page's own, but it is still the last thing in the form.
     expect(plansSrc).toMatch(
-      /justifyContent: 'flex-end' \}\}>\s*<button onClick=\{cancelEdit\}[\s\S]*?handleInlineSave\(plan\)/,
+      /\.\.\.inlineActionsRowStyle, marginTop: 12 \}\}>\s*<button onClick=\{cancelEdit\}[\s\S]*?handleInlineSave\(plan\)/,
     );
   });
 
@@ -214,7 +216,8 @@ describe('Promotions: every subsection action is beside its title (#963)', () =>
 
   it('keeps the main configuration\'s own pair at the end of the form', () => {
     expect(promotionsSrc).toContain('function renderSectionActions(onSave: () => void)');
-    expect(promotionsSrc).toMatch(/renderSectionActions[\s\S]*?justifyContent: 'flex-end', marginTop: 16/);
+    // #1028: the shared left-aligned row, still at the end of the form.
+    expect(promotionsSrc).toMatch(/renderSectionActions[\s\S]*?\.\.\.inlineActionsRowStyle, marginTop: 16/);
   });
 
   it('still hides a section\'s Edit button outside the card\'s Edit mode (#897)', () => {

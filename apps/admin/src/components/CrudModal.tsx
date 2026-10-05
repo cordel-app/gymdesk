@@ -2,6 +2,7 @@
 
 import React, { ReactNode } from 'react';
 import { btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from './ui';
+import { modalActionsRowStyle } from './formChrome';
 
 interface CrudModalProps {
   open: boolean;
@@ -31,7 +32,18 @@ export function CrudModal({ open, title, error, saving, saveDisabled, hideSave, 
 
         {error && <p style={{ color: '#c0392b', margin: '8px 0 0', fontSize: 14 }}>{error}</p>}
 
-        <div style={{ display: 'flex', gap: 10, marginTop: 24, justifyContent: 'flex-end', alignItems: 'center' }}>
+        {/*
+          * #1028: a form's action group is left-aligned, from the one shared
+          * declaration (`modalActionsRowStyle`), so the Modal CRUD shape and the
+          * inline card forms put Cancel/Save in the same place.
+          *
+          * `hideSave` is the one exception, and it is not a form: it is how this
+          * component renders a read-only Details view, whose single Close button
+          * keeps the dialog convention every standalone Details modal in the app
+          * already uses. The order inside the row is untouched either way —
+          * `extraFooter` (a Delete, a View Audit Log link) still comes first.
+          */}
+        <div style={hideSave ? { ...modalActionsRowStyle, justifyContent: 'flex-end' } : modalActionsRowStyle}>
           {extraFooter}
           <button onClick={onCancel} style={btnStyle('#aaa')} disabled={saving}>{cancelLabel}</button>
           {!hideSave && <button onClick={onSave} style={primaryBtnStyle()} disabled={saving || saveDisabled}>{saveLabel}</button>}

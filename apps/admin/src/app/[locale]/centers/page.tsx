@@ -33,6 +33,7 @@ import {
   toCenterEditFormValues,
   toCenterUpdatePayload,
 } from './centerProfile';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 /**
  * #800 — the Center row expands into a read-only view of the Center and
@@ -361,7 +362,7 @@ export default function CentersPage() {
 
         {formError && <p style={{ color: '#c0392b', fontSize: 13, marginTop: 16 }}>{formError}</p>}
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 20, justifyContent: 'flex-end' }}>
+        <div style={{ ...inlineActionsRowStyle, marginTop: 20 }}>
           <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
           <button
             onClick={handleSaveEdit}

@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
+import { modalActionsRowStyle } from '@/components/formChrome';
 
 /**
  * #67: the New Training Plan dialog shared by the Training Plans page and the
@@ -117,7 +118,7 @@ export function NewTrainingPlanDialog({ open, presetTemplate, onClose, onCreated
                 <span style={{ color: '#666', fontSize: 13 }}>{t('training_plans.from_scratch_hint')}</span>
               </button>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+            <div style={{ ...modalActionsRowStyle, marginTop: 20 }}>
               <button onClick={onClose} style={btnStyle('#aaa')}>{t('training_plans.cancel')}</button>
             </div>
           </>
@@ -136,7 +137,7 @@ export function NewTrainingPlanDialog({ open, presetTemplate, onClose, onCreated
                 <span style={{ color: '#666', fontSize: 13 }}>{t('training_plans.conflict_expire_hint')}</span>
               </button>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20 }}>
+            <div style={{ ...modalActionsRowStyle, marginTop: 20 }}>
               <button onClick={() => setConflict(null)} style={btnStyle('#aaa')} disabled={saving}>{t('training_plans.cancel')}</button>
             </div>
           </>
@@ -174,7 +175,7 @@ export function NewTrainingPlanDialog({ open, presetTemplate, onClose, onCreated
 
             {error && <p style={{ color: '#c0392b', margin: '12px 0 0', fontSize: 14 }}>{error}</p>}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+            <div style={{ ...modalActionsRowStyle, marginTop: 20 }}>
               <button onClick={onClose} style={btnStyle('#aaa')} disabled={saving}>{t('training_plans.cancel')}</button>
               <button onClick={() => save()} style={btnStyle()} disabled={saving}>
                 {saving ? t('training_plans.saving') : t('training_plans.create')}

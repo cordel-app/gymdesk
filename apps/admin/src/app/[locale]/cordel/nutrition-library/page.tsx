@@ -27,6 +27,7 @@ import { btnStyle, btnSmall, cardSurfaceStyle } from '@/components/ui';
 import { LibraryTabs } from '@/components/goalLibrary/LibraryTabs';
 import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
 import { LibraryTabId, isGoalTab } from '@/components/goalLibrary/goalProfile';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 interface Category { id: number; slug: string }
 interface NutritionalQuality { id: number; slug: string }
@@ -493,7 +494,7 @@ export default function CordelNutritionLibraryPage() {
           )}
         </div>
         {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{error}</p>}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+        <div style={inlineActionsRowStyle}>
           <button onClick={onCancel} style={btnSmall('#888')}>Cancel</button>
           <button onClick={onSave} disabled={saving} style={btnSmall()}>{saving ? 'Saving…' : saveLabel}</button>
         </div>

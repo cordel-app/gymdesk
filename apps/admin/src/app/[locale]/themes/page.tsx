@@ -54,6 +54,7 @@ import {
   type AssignmentCenter,
 } from './centerAssignments';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
+import { formActionsRowStyle } from '@/components/formChrome';
 
 interface Theme {
   id: string;
@@ -798,7 +799,7 @@ export default function GymThemesPage() {
             the platform's and stays read-only, but its Center assignments are
             this gym's and are persisted by this button, since there is no
             Assign action any more. Nothing else about the footer moves. */}
-        <div style={{ display: 'flex', gap: 8, marginTop: 16, justifyContent: 'flex-end', borderTop: '1px solid var(--gd-border, #eee)', paddingTop: 16 }}>
+        <div style={formActionsRowStyle}>
           <button onClick={handleCancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
           <button onClick={() => handleSaveAll(theme)} disabled={saving || !dirty} style={{ ...primaryBtnSmall(), opacity: (saving || !dirty) ? 0.5 : 1, cursor: (saving || !dirty) ? 'not-allowed' : 'pointer' }}>
             {saving ? t('saving') : t('save_changes')}

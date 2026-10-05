@@ -26,6 +26,7 @@ import {
   formatStaffField,
   toStaffEditFormValues,
 } from './staffProfile';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 /**
  * #798: the columns the Edit form manages are declared once, in
@@ -941,11 +942,16 @@ export default function StaffPage() {
           <p style={{ color: '#888', fontSize: 13, marginTop: 16 }}>{t('save_will_invite', { email: form.email ?? '' })}</p>
         )}
         {formError && <p style={{ color: '#c0392b', fontSize: 13, marginTop: 16 }}>{formError}</p>}
-        <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+        {/*
+          * #1028: the shared left-aligned form row, in the app's own
+          * `Cancel` → `Save` order — this form was the one that read
+          * `[Save] [Cancel]`.
+          */}
+        <div style={{ ...inlineActionsRowStyle, marginTop: 20 }}>
+          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
           <button onClick={handleSave} disabled={!canWrite || saving} title={readOnlyTitle} style={readOnlyStyle(btnStyle('#4c6ef5'), !canWrite)}>
             {saving ? t('saving') : t('save')}
           </button>
-          <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
         </div>
       </div>
     );

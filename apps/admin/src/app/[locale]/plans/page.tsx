@@ -66,6 +66,7 @@ import {
   toPlanGeneralFormValues,
   toPlanGeneralUpdatePayload,
 } from './planProfile';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -944,7 +945,7 @@ export default function PlansPage() {
             })}
           </p>
           {inlineNew.error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{inlineNew.error}</p>}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <div style={inlineActionsRowStyle}>
             <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('plans.cancel')}</button>
             <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall()}>
               {inlineNew.saving ? t('plans.saving') : t('plans.save_changes')}
@@ -1075,7 +1076,7 @@ export default function PlansPage() {
                             one in the history, so they are deliberately not repeated here. */}
                         <p style={{ ...fieldDescStyle, margin: '8px 0' }}>{t('plans.tax_rate_moved_hint')}</p>
                         {editError && <p style={{ color: '#c0392b', fontSize: 13, margin: '8px 0 0' }}>{editError}</p>}
-                        <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+                        <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
                           <button onClick={cancelEdit} style={btnSmall('#888')}>{t('plans.cancel')}</button>
                           <button onClick={() => handleInlineSave(plan)} disabled={editSaving} style={btnSmall()}>
                             {editSaving ? t('plans.saving') : t('plans.save_changes')}

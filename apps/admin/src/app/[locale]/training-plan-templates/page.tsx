@@ -18,7 +18,7 @@ import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
-import { secondaryBtnSmall } from '@/components/formChrome';
+import { inlineActionsRowStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { TrainingPlanTree, Hierarchy } from './TrainingPlanTree';
 import { NewTrainingPlanDialog } from '../training-plans/NewTrainingPlanDialog';
 
@@ -450,7 +450,7 @@ export default function TrainingPlanTemplatesPage() {
               </div>
             </div>
             {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <div style={inlineActionsRowStyle}>
               <button onClick={cancelInlineNew} style={btnSmall('#888')}>{t('cancel')}</button>
               <button onClick={saveInlineNew} disabled={inlineNew.saving} style={btnSmall()}>
                 {inlineNew.saving ? t('saving') : t('save_changes')}
@@ -667,7 +667,7 @@ function TemplateCard({
             </div>
           </div>
           {editError && <p style={errorStyle}>{editError}</p>}
-          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 12, marginBottom: 12 }}>
+          <div style={{ ...inlineActionsRowStyle, marginTop: 12, marginBottom: 12 }}>
             <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
             <button onClick={onSave} disabled={editSaving} style={btnSmall()}>
               {editSaving ? t('saving') : t('save_changes')}

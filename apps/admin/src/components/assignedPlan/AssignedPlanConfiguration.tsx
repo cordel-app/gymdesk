@@ -555,6 +555,10 @@ export function AssignedPlanConfiguration({
  * colours are `secondaryBtnSmall`, and the primary action takes the Theme's own
  * Primary Button colours through `primaryBtnSmall()` — never a `#111` of this
  * page's own, which no Theme could reach.
+ *
+ * #1028: and the row is the shared one as it stands, with no `justifyContent` of
+ * its own — a form's action group is left-aligned everywhere, so the override
+ * that pushed this pair to the right of the card is gone.
  */
 function SaveCancel({ saving, onSave, onCancel, t }: {
   saving: boolean;
@@ -563,7 +567,7 @@ function SaveCancel({ saving, onSave, onCancel, t }: {
   t: ReturnType<typeof useTranslations>;
 }) {
   return (
-    <div style={{ ...inlineActionsRowStyle, justifyContent: 'flex-end' }}>
+    <div style={inlineActionsRowStyle}>
       <button onClick={onCancel} disabled={saving} style={secondaryBtnSmall}>{t('cancel')}</button>
       <button onClick={onSave} disabled={saving} style={primaryBtnSmall()}>
         {saving ? t('saving') : t('save_changes')}

@@ -41,6 +41,7 @@ import {
   promotionTargetOrDefault,
   targetsMembershipPlan,
 } from '@/lib/promotionTargets';
+import { inlineActionsRowStyle } from '@/components/formChrome';
 
 // ─── List columns ─────────────────────────────────────────────────────────────
 
@@ -1492,7 +1493,7 @@ export default function PromotionsPage() {
     return (
       <>
         {editError && <p style={{ margin: '16px 0 0', fontSize: 13, color: '#c0392b' }}>{editError}</p>}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 16 }}>
+        <div style={{ ...inlineActionsRowStyle, marginTop: 16 }}>
           <button onClick={cancelEdit} style={btnSmall('#888')}>{t('cancel')}</button>
           <button onClick={onSave} disabled={editSaving} style={primaryBtnSmall()}>
             {editSaving ? t('saving') : t('save_changes')}
