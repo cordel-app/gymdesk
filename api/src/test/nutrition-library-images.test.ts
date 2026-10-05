@@ -191,8 +191,13 @@ describe('POST /nutrition-library/:id/image — the stored key', () => {
   it('no longer writes the pre-#1035 Nutrition/Images/<uuid> key', async () => {
     await upload(gymId, foodId);
     for (const key of sentKeys('put')) {
-      expect(key).not.toContain('Nutrition');
-      expect(key).not.toContain('/Images/');
+      // Assert on the tree *below* the gym's own folder. A gym's
+      // `storage_folder_prefix` is derived from its name, and this one's
+      // legitimately contains "Nutrition" — testing the whole key would fail on
+      // the prefix rather than on the folder shape under test.
+      const relative = key.startsWith(`${prefix}/`) ? key.slice(prefix.length + 1) : key;
+      expect(relative).not.toContain('Nutrition');
+      expect(relative).not.toContain('/Images/');
     }
   });
 
