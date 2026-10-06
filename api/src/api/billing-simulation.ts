@@ -17,6 +17,7 @@ import { PlanDuration, toPlanDuration, toPlanDurationCadence } from '../domain/p
 import { ProductBenefitCategory } from '../domain/productClassification';
 import { loadServicesForSimulation } from './user-membership-services';
 import {
+  ASSIGNMENT_AUTO_RENEW,
   ASSIGNMENT_CADENCE,
   loadPlanBenefitsForSimulation,
   loadPromotionGrantSnapshots,
@@ -97,6 +98,12 @@ interface AssignmentRow {
   plan_paid_periods: number | null;
   plan_bonus_periods: number | null;
   plan_pay_beforehand_periods: number | null;
+  /**
+   * #1130 — the assignment's own frozen `auto_renew`. Read with no fallback
+   * onto its Plan's live flag (`ASSIGNMENT_AUTO_RENEW`), and so outside the
+   * all-or-nothing snapshot rule below.
+   */
+  duration_repeats: number | boolean | null;
   /** #772 — the assignment's own Personal Membership Fee Benefit. */
   personal_fee_benefit_action: string | null;
   personal_fee_benefit_value: string | number | null;
@@ -119,10 +126,17 @@ function assignmentPlanDuration(row: AssignmentRow): PlanDuration {
   // simulation classifies a 4-weekly assignment's Free Period in 4-week steps,
   // exactly as the nightly run prices it.
   const cadence = toPlanDurationCadence(row.recurring_billing_interval, row.recurring_billing_unit);
+  // #1130 — whether that stretch is a repeating cycle is the assignment's own
+  // frozen flag in both branches: it has no catalogue counterpart to fall back
+  // to, so it sits outside this all-or-nothing rule like #772's benefit.
+  const repeats = row.duration_repeats;
   return Number(row.has_billing_snapshot) === 1
-    ? toPlanDuration(row.free_periods, row.paid_periods, row.bonus_periods, row.pay_beforehand_periods, cadence)
+    ? toPlanDuration(
+        row.free_periods, row.paid_periods, row.bonus_periods, row.pay_beforehand_periods, cadence, repeats,
+      )
     : toPlanDuration(
-        row.plan_free_periods, row.plan_paid_periods, row.plan_bonus_periods, row.plan_pay_beforehand_periods, cadence,
+        row.plan_free_periods, row.plan_paid_periods, row.plan_bonus_periods, row.plan_pay_beforehand_periods,
+        cadence, repeats,
       );
 }
 
@@ -217,6 +231,7 @@ export async function loadSimulationAssignments(
             p.pay_beforehand_periods AS plan_pay_beforehand_periods,
             ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
             ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
+            ${ASSIGNMENT_AUTO_RENEW()} AS duration_repeats,
             (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
              OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
              OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL

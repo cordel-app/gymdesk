@@ -46,7 +46,7 @@ function promotion(over: Partial<SimulationPromotion> = {}): SimulationPromotion
 function context(over: Partial<MembershipFeeContext> = {}): MembershipFeeContext {
   return {
     startsAt: '2026-01-01',
-    planDuration: toPlanDuration(0, 0, 0, 0, MONTHLY_CADENCE),
+    planDuration: toPlanDuration(0, 0, 0, 0, MONTHLY_CADENCE, false),
     personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT,
     promotions: [],
     ...over,
@@ -159,7 +159,7 @@ describe('resolveMembershipFee — the Personal Membership Fee Benefit', () => {
     // still the benefit that explains the €0 (`periodStatus` reads off it).
     const charge = resolveMembershipFee(REGULAR, '2026-01-15', context({
       personalFeeBenefit: tenPercent,
-      planDuration: toPlanDuration(1, 12, 0, 0, MONTHLY_CADENCE),
+      planDuration: toPlanDuration(1, 12, 0, 0, MONTHLY_CADENCE, false),
     }));
     expect(charge.amount).toBe(0);
     expect(charge.benefits.map((b) => b.source)).toEqual(['membership_plan', 'personal']);
@@ -169,7 +169,7 @@ describe('resolveMembershipFee — the Personal Membership Fee Benefit', () => {
   it('discounts the Paid Duration of the Plan\'s own Billing & Duration', () => {
     const charge = resolveMembershipFee(REGULAR, '2026-03-01', context({
       personalFeeBenefit: tenPercent,
-      planDuration: toPlanDuration(1, 12, 0, 0, MONTHLY_CADENCE),
+      planDuration: toPlanDuration(1, 12, 0, 0, MONTHLY_CADENCE, false),
     }));
     expect(charge.amount).toBe(36);
   });

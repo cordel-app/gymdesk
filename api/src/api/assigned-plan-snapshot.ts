@@ -1,5 +1,6 @@
 import { db, Tx } from '../infra/db';
 import { PersonalFeeBenefit, toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
+import { toPlanDurationRepeats } from '../domain/planDuration';
 import { PlanBenefitPrices } from '../domain/planBenefitPrices';
 import { productBenefitPrices } from './product-benefit-pricing';
 import { ProductBenefit, toProductBenefit } from '../domain/productBenefitActions';
@@ -133,6 +134,18 @@ export interface AssignedPlanSnapshot extends AssignedPlanBillingSnapshot {
    */
   personal_fee_benefit: PersonalFeeBenefit;
   /**
+   * #1130 — does this assignment's Billing & Duration cycle start again when it
+   * ends? Frozen from the Plan's `billing_policies.auto_renew` at assignment
+   * time (migration 229).
+   *
+   * Outside `AssignedPlanBillingSnapshot` for `personal_fee_benefit`'s reason:
+   * the column is NOT NULL with a default, so it has an answer for every row,
+   * and `snapshot_captured` below reads that interface's values — folding it in
+   * would report every assignment in the table as captured and freeze the
+   * duration fallback for rows that captured nothing.
+   */
+  auto_renew: boolean;
+  /**
    * False when nothing was captured at all — an assignment made before
    * migration 174 that the backfill could not fill (no Plan to copy from), or
    * one whose Plan had nothing to copy (no durations, no billing policy, no
@@ -231,13 +244,23 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
   userMembershipId: number;
   membershipPlanId: number | null;
   membershipFeePrice: number | null;
+  /**
+   * #1130 — whether to freeze the Plan's `auto_renew` onto the assignment.
+   *
+   * True for every path that *creates* an assignment, which is why it defaults
+   * that way: the contract is agreed now, so it renews the way the Plan renews
+   * now. False from `materialiseAssignedPlanSnapshot()` alone, and that is the
+   * load-bearing case — see the note on the UPDATE below.
+   */
+  captureAutoRenew?: boolean;
 }): Promise<void> {
   const { gymId, userMembershipId, membershipPlanId, membershipFeePrice } = params;
+  const captureAutoRenew = params.captureAutoRenew !== false;
   if (membershipPlanId == null) return;
 
   const { rows: planRows } = await tx.query(
     `SELECT p.free_periods, p.paid_periods, p.bonus_periods, p.pay_beforehand_periods,
-            bp.recurring_billing_interval, bp.recurring_billing_unit
+            bp.recurring_billing_interval, bp.recurring_billing_unit, bp.auto_renew
      FROM membership_plans p
      LEFT JOIN billing_policies bp ON bp.membership_plan_id = p.id AND bp.gym_id = p.gym_id
      WHERE p.id = ? AND p.gym_id = ?`,
@@ -245,16 +268,32 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
   );
   const plan = planRows[0] ?? {};
 
+  /**
+   * #1130 — `auto_renew` is written only when the assignment is being created.
+   *
+   * It is the one snapshot column that must not be *materialised*: an
+   * assignment created before migration 229 is non-repeating today (the
+   * column's backfilled 0), so writing the live Plan's flag onto it the first
+   * time staff edit an unrelated benefit section would start a second Free /
+   * Pre-paid / Bonus cycle on a contract already past its first one, which is
+   * the retroactive change the ticket's answer A forbids. "What it resolves
+   * today" is the stored value, so there is genuinely nothing to capture.
+   *
+   * A Plan with no `billing_policies` row renews nothing — there is no cadence
+   * to step a cycle by — hence `?? false` rather than the column's own default.
+   */
   await tx.query(
     `UPDATE user_memberships
      SET free_periods = ?, paid_periods = ?, bonus_periods = ?, pay_beforehand_periods = ?,
          recurring_billing_interval = ?, recurring_billing_unit = ?, membership_fee_price = ?
+         ${captureAutoRenew ? ', auto_renew = ?' : ''}
      WHERE id = ? AND gym_id = ?`,
     [
       plan.free_periods ?? null, plan.paid_periods ?? null, plan.bonus_periods ?? null,
       plan.pay_beforehand_periods ?? null,
       plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null,
       membershipFeePrice ?? null,
+      ...(captureAutoRenew ? [toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0] : []),
       userMembershipId, gymId,
     ],
   );
@@ -334,7 +373,11 @@ export async function materialiseAssignedPlanSnapshot(tx: Tx, params: {
   membershipFeePrice: number | null;
 }): Promise<boolean> {
   if (await hasAssignedPlanSnapshot(tx, params.gymId, params.userMembershipId)) return false;
-  await snapshotAssignedPlan(tx, params);
+  // #1130 — everything else here is "write down what this assignment resolves
+  // live today"; `auto_renew` already has a stored answer (migration 229's
+  // backfilled 0) and capturing the Plan's current flag would change what the
+  // assignment bills from its second cycle on. See the note on the UPDATE.
+  await snapshotAssignedPlan(tx, { ...params, captureAutoRenew: false });
   return true;
 }
 
@@ -346,7 +389,7 @@ export async function loadAssignedPlanSnapshot(
     db.query(
       `SELECT free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
               recurring_billing_interval, recurring_billing_unit, membership_fee_price,
-              personal_fee_benefit_action, personal_fee_benefit_value
+              personal_fee_benefit_action, personal_fee_benefit_value, auto_renew
        FROM user_memberships WHERE id = ? AND gym_id = ?`,
       [umId, gymId],
     ),
@@ -374,6 +417,9 @@ export async function loadAssignedPlanSnapshot(
     oneoff_benefits: oneoff,
     periodical_benefits: periodical,
     personal_fee_benefit: toPersonalFeeBenefit(um.personal_fee_benefit_action, um.personal_fee_benefit_value),
+    // #1130 — the assignment's own frozen flag, with no live fallback
+    // (`ASSIGNMENT_AUTO_RENEW` says why).
+    auto_renew: toPlanDurationRepeats(um.auto_renew),
     // Reads `billing` alone — see the note on `personal_fee_benefit` above.
     snapshot_captured:
       Object.values(billing).some((v) => v != null)
@@ -485,6 +531,22 @@ export const ASSIGNMENT_CADENCE = {
   interval: (um = 'um', bp = 'bp') => `COALESCE(${um}.recurring_billing_interval, ${bp}.recurring_billing_interval)`,
   unit: (um = 'um', bp = 'bp') => `COALESCE(${um}.recurring_billing_unit, ${bp}.recurring_billing_unit)`,
 };
+
+/**
+ * #1130 — whether an assignment's Billing & Duration cycle repeats, in SQL.
+ *
+ * Deliberately **not** a `COALESCE` onto `bp.auto_renew`, which is the shape
+ * every other snapshot column here takes and is the one way this goes wrong:
+ * `billing_policies.auto_renew` is `NOT NULL DEFAULT true`, so falling back to
+ * it would make every assignment written before migration 229 renew — the
+ * retroactive billing change the ticket's answer A exists to prevent. The
+ * column is NOT NULL with its own backfilled default, so it always has an
+ * answer and there is nothing to fall back *to*.
+ *
+ * It is a function rather than a bare string for the reason the pair above is:
+ * three of the five callers alias `user_memberships` as something else.
+ */
+export const ASSIGNMENT_AUTO_RENEW = (um = 'um') => `${um}.auto_renew`;
 
 function toFrequency(v: unknown): ProductFrequency | null {
   return (v ?? null) as ProductFrequency | null;

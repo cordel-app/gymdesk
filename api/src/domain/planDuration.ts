@@ -62,6 +62,41 @@
 // `promotionTimeline.ts` keeps its own calendar-month semantics, because a
 // Promotion has no cadence of its own (its ticket says so explicitly).
 //
+// ── #1130: the configured stretch is a *cycle*, and it may repeat ───────────
+//
+// Until #1130 this timeline ran once: after the Bonus Duration the contract
+// billed its regular fee for ever (`pay_regular`, open-ended). `auto_renew`
+// existed on `billing_policies`, was shown on the Plan card and was read by
+// **nothing**. The ticket's answer (`Q1 real`) is that the four durations are
+// one *cycle* and `auto_renew` is what decides whether it starts again:
+//
+//     auto_renew = 0   |<- free ->|<- prepaid ->|<- paid ->|<- bonus ->|<- regular, open-ended
+//     auto_renew = 1   |<- free ->|<- prepaid ->|<- paid ->|<- bonus ->|<- free ->|<- prepaid ->| ...
+//
+// so with it on the contract never reaches `pay_regular` at all, and the
+// Pre-paid lump is owed again at the start of every iteration (the thread's
+// answer **B**). With it off nothing changes: the cycle runs once and the
+// contract settles into its regular price without expiring (answer **C** —
+// "one cycle only" is about the benefit cycle, never about billing stopping).
+//
+// Because this module is the one place that decides which period is
+// Free/Pre-paid/Pay/Bonus and `resolveMembershipFee()` is the one place every
+// surface prices a cycle through, the nightly run, `POST /payment-requests`,
+// the Payments dashboard, `GET /me/membership` and both simulations start
+// repeating at the same instant. There is no version of this that is only a
+// preview — which is why `repeats` is a **required** field of `PlanDuration`,
+// beside the cadence and for the cadence's reason (#892): a pricing path that
+// could forget it would quietly charge a renewing contract the regular price
+// from its second cycle on.
+//
+// Where the flag comes from is the other half of the answer, and it is not this
+// module's: `repeats` is the assignment's **own** `user_memberships.auto_renew`
+// (migration 229), snapshotted from the Plan at assignment time like every
+// other commercial term (#635 §13/§17) and backfilled to 0, so no assignment
+// that already exists has its billing moved by the deploy (answer **A**). The
+// Plan's own previews read the Plan's live `billing_policies.auto_renew`,
+// because a catalogue preview is about the Plan as it stands now.
+//
 // The period arithmetic itself is not duplicated: it is `advanceBillingDate`,
 // the same helper every billing projection advances with.
 
@@ -107,12 +142,22 @@ export interface PlanDuration {
   /** Of `paidPeriods`, how many are already paid up front (stage 13). */
   prepaidPeriods: number;
   cadence: PlanDurationCadence;
+  /**
+   * #1130 — does the configured cycle start again when it ends? The
+   * assignment's own frozen `auto_renew`, or a Plan's live one for a catalogue
+   * preview. Required rather than optional for the reason `cadence` is: this is
+   * what the contract bills, not a display preference.
+   */
+  repeats: boolean;
 }
 
 /** "Never configured" — also what a NULL/0 column set normalizes to. */
 export const NO_PLAN_DURATION: PlanDuration = {
   freePeriods: 0, paidPeriods: 0, bonusPeriods: 0, prepaidPeriods: 0,
   cadence: DEFAULT_PLAN_DURATION_CADENCE,
+  // Nothing is configured, so there is no cycle to repeat — and `repeats` with
+  // a zero-length cycle is a no-op anyway (`planDurationCycleLength()` below).
+  repeats: false,
 };
 
 /**
@@ -129,6 +174,25 @@ export function toPlanDurationCadence(interval: unknown, unit: unknown): PlanDur
 }
 
 /**
+ * #1130 — normalizes a stored `auto_renew` into the one boolean the classifier
+ * reads. mysql2 serves a `TINYINT(1)` as `0`/`1`, but a caller may hand over a
+ * real boolean (a Plan's own API shape) or a string from a driver configured
+ * differently.
+ *
+ * Anything it cannot read as a number is **false**, and that direction is
+ * deliberate: false is what every assignment written before migration 229
+ * means and what the engine did before this ticket, so an unreadable value
+ * costs the renewal rather than inventing one — the same way round as the
+ * column's own `DEFAULT 0`.
+ */
+export function toPlanDurationRepeats(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (value == null || value === '') return false;
+  const n = Number(value);
+  return Number.isFinite(n) ? n !== 0 : false;
+}
+
+/**
  * Normalizes the nullable `free_periods` / `paid_periods` / `bonus_periods` /
  * `pay_beforehand_periods` columns against the cadence they are counted in.
  * NULL ("never configured") and 0 both mean "no such period" for billing
@@ -137,7 +201,10 @@ export function toPlanDurationCadence(interval: unknown, unit: unknown): PlanDur
  *
  * The cadence is a required argument rather than an optional one: a pricing
  * path that forgot it would silently count a 4-weekly Plan's durations in
- * calendar months, which is precisely the defect #892 removes.
+ * calendar months, which is precisely the defect #892 removes. `repeats`
+ * (#1130) is required for the same reason, one ticket on: a path that forgot it
+ * would bill a renewing contract its regular fee from the second cycle while
+ * the surface beside it showed the cycle starting again.
  *
  * `pay_beforehand_periods` is clamped to `paid_periods`, exactly as
  * `computePromotionTimeline` clamps the Promotion's: the API validates the
@@ -151,6 +218,7 @@ export function toPlanDuration(
   bonusPeriods: unknown,
   prepaidPeriods: unknown,
   cadence: PlanDurationCadence,
+  repeats: unknown,
 ): PlanDuration {
   const count = (v: unknown) => Math.max(0, Math.trunc(Number(v)) || 0);
   const paid = count(paidPeriods);
@@ -160,6 +228,9 @@ export function toPlanDuration(
     bonusPeriods: count(bonusPeriods),
     prepaidPeriods: Math.min(count(prepaidPeriods), paid),
     cadence: toPlanDurationCadence(cadence?.interval, cadence?.unit),
+    // #1130 — required for the reason `cadence` is: a caller that could omit it
+    // would silently stop a renewing contract's cycle after its first pass.
+    repeats: toPlanDurationRepeats(repeats),
   };
 }
 
@@ -173,6 +244,8 @@ export function toPlanDuration(
  * It changes the unit, never the numbers — §6 of the ticket, in code.
  */
 export function withDurationCadence(duration: PlanDuration, cadence: PlanDurationCadence): PlanDuration {
+  // #1130 — `repeats` rides along with the counts, because rebinding the unit a
+  // period is measured in says nothing about whether the cycle starts again.
   return { ...duration, cadence: toPlanDurationCadence(cadence?.interval, cadence?.unit) };
 }
 
@@ -203,6 +276,54 @@ function boundary(duration: PlanDuration, startsAt: string, periods: number): st
 }
 
 /**
+ * #1130 — the length of one iteration of the configured cycle, in periods:
+ * Free + Paid + Bonus. The Pre-paid Duration is deliberately **not** added,
+ * because it is the first slice *of* the Paid Duration rather than a stretch
+ * beside it (`toPlanDuration()` clamps it to `paidPeriods` for that reason), so
+ * counting it would make every pre-paid contract's cycle too long.
+ *
+ * Zero means nothing is configured, and a zero-length cycle cannot repeat —
+ * which is what keeps `repeats` a no-op for an assignment carrying no Billing &
+ * Duration at all, rather than an infinite loop.
+ */
+export function planDurationCycleLength(duration: PlanDuration): number {
+  return duration.freePeriods + duration.paidPeriods + duration.bonusPeriods;
+}
+
+/**
+ * The upper bound on iterations `elapsedCycles()` will walk. A one-period
+ * monthly cycle reaches it after ~100 years, so it cannot be hit by a date any
+ * surface here produces (the Membership Fee Simulation caps at 60 periods and
+ * the Billing Event Simulation at 36 months); it exists so that a corrupt
+ * `starts_at` — a date from year 9999, a fixture a thousand cycles out — costs
+ * a misclassified period rather than a hung request.
+ */
+const MAX_CYCLE_ITERATIONS = 1200;
+
+/**
+ * How many complete iterations of the cycle lie between `startsAt` and `date`.
+ *
+ * Always 0 when the cycle does not repeat or has no length, which is what makes
+ * every caller below identical to its pre-#1130 self for such a duration.
+ *
+ * The walk steps iteration boundaries rather than dividing a month count,
+ * because a boundary is `advanceBillingDate(startsAt, n x interval, unit)` and
+ * that is not a linear function of `n` — it clamps end-of-month overflow (31
+ * Jan + 1 month = 3 Mar), so the only way to know which iteration a date is in
+ * is to ask the same helper every other boundary here is measured with.
+ */
+function elapsedCycles(duration: PlanDuration, startsAt: string, date: string): number {
+  const cycleLength = planDurationCycleLength(duration);
+  if (!duration.repeats || cycleLength < 1) return 0;
+  let elapsed = 0;
+  while (
+    elapsed < MAX_CYCLE_ITERATIONS
+    && boundary(duration, startsAt, (elapsed + 1) * cycleLength) <= date
+  ) elapsed += 1;
+  return elapsed;
+}
+
+/**
  * Which period `date` falls in, counted from the assignment's start date.
  *
  * Every boundary is measured from `startsAt` in a single step
@@ -218,18 +339,33 @@ function boundary(duration: PlanDuration, startsAt: string, periods: number): st
  *
  * A date before `startsAt` is `pay_regular`: nothing is waived before the
  * contract it belongs to starts.
+ *
+ * Since #1130 a duration whose `repeats` is set classifies `date` inside the
+ * iteration of the cycle it actually falls in, so a `12 prepaid + 3 bonus`
+ * contract reads Pre-paid again at period 16 rather than settling into its
+ * regular price. With `repeats` off — every assignment that existed before
+ * migration 229, and every Plan whose Auto Renew is unticked — the offset is
+ * zero and this is the one-shot timeline it has always been.
  */
 export function classifyPlanDurationPeriod(
   duration: PlanDuration, startsAt: string, date: string,
 ): PlanDurationStatus {
   if (date < startsAt) return 'pay_regular';
   const { freePeriods, paidPeriods, bonusPeriods, prepaidPeriods } = duration;
-  if (date < boundary(duration, startsAt, freePeriods)) return 'free_plan';
+  // #1130 — zero when the cycle does not repeat, which is the pre-ticket
+  // arithmetic to the letter; otherwise the periods the earlier iterations
+  // consumed, so every boundary below is still a single step from the anchor.
+  const offset = elapsedCycles(duration, startsAt, date) * planDurationCycleLength(duration);
+  if (date < boundary(duration, startsAt, offset + freePeriods)) return 'free_plan';
   // The prepaid periods are the *first* of the paid ones — the same slice
   // `computePromotionTimeline` draws as Prepaid before it draws Pay.
-  if (date < boundary(duration, startsAt, freePeriods + prepaidPeriods)) return 'prepaid_plan';
-  if (date < boundary(duration, startsAt, freePeriods + paidPeriods)) return 'pay_plan';
-  if (date < boundary(duration, startsAt, freePeriods + paidPeriods + bonusPeriods)) return 'bonus_plan';
+  if (date < boundary(duration, startsAt, offset + freePeriods + prepaidPeriods)) return 'prepaid_plan';
+  if (date < boundary(duration, startsAt, offset + freePeriods + paidPeriods)) return 'pay_plan';
+  if (date < boundary(duration, startsAt, offset + freePeriods + paidPeriods + bonusPeriods)) return 'bonus_plan';
+  // Unreachable for a repeating cycle of non-zero length: `offset` is chosen so
+  // that `date` sits inside the iteration it opens, and the bonus boundary
+  // above is where the next one begins. A renewing contract therefore never
+  // settles into `pay_regular`, which is the whole of #1130's `Q1 real`.
   return 'pay_regular';
 }
 
@@ -243,7 +379,9 @@ export function classifyPlanDurationPeriod(
  * Simulation and — because `POST /payment-requests` refuses a cycle that owes
  * nothing — could not even raise its first payment.
  *
- * So the whole Pre-paid Duration is owed **once, on the first of its periods**:
+ * So the whole Pre-paid Duration is owed **on the first of its periods** —
+ * once for a contract that does not renew, and once per iteration for one that
+ * does (#1130 answer B):
  *
  *     |<- prepaid 1 ->|<- prepaid 2 ->|<- prepaid 3 ->|<- pay ->|
  *        3 x the fee       covered         covered      the fee
@@ -270,6 +408,10 @@ export function prepaidPeriodsDueOn(
 ): number {
   if (duration.prepaidPeriods < 1) return 0;
   if (classifyPlanDurationPeriod(duration, startsAt, date) !== 'prepaid_plan') return 0;
-  const secondPrepaidPeriod = boundary(duration, startsAt, duration.freePeriods + 1);
+  // #1130 answer B — the lump is owed again at the start of *every* iteration,
+  // so "the first prepaid period" is the first of the cycle `date` falls in.
+  // `offset` is 0 for a contract that does not repeat, which is #946 unchanged.
+  const offset = elapsedCycles(duration, startsAt, date) * planDurationCycleLength(duration);
+  const secondPrepaidPeriod = boundary(duration, startsAt, offset + duration.freePeriods + 1);
   return date < secondPrepaidPeriod ? duration.prepaidPeriods : 0;
 }

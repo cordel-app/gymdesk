@@ -7,7 +7,7 @@ import {
 } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { PlanDurationStatus, toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
-import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
+import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import { PromotionTimelineStatus } from '../domain/promotionTimeline';
 
 /**
@@ -66,6 +66,7 @@ export const FEE_ASSIGNMENT_COLUMNS = `
   p.pay_beforehand_periods AS plan_pay_beforehand_periods,
   ${ASSIGNMENT_CADENCE.interval()} AS duration_cadence_interval,
   ${ASSIGNMENT_CADENCE.unit()} AS duration_cadence_unit,
+  ${ASSIGNMENT_AUTO_RENEW()} AS duration_repeats,
   (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
    OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
    OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
@@ -130,6 +131,13 @@ export interface FeeAssignmentRow {
   /** `ASSIGNMENT_CADENCE` — the length of one of those periods (#892). */
   duration_cadence_interval: number | string | null;
   duration_cadence_unit: string | null;
+  /**
+   * #1130 — the assignment's own frozen `auto_renew`: does that Free /
+   * Pre-paid / Paid / Bonus stretch start again when it ends? Read with no
+   * fallback onto the Plan's live flag, and therefore deliberately *not* part
+   * of `has_billing_snapshot` below — see `ASSIGNMENT_AUTO_RENEW`.
+   */
+  duration_repeats: number | boolean | null;
   /** 1 when any of the seven snapshot columns is set; decides that fallback. */
   has_billing_snapshot: number;
 }
@@ -170,10 +178,17 @@ function durationForRow(row: FeeAssignmentRow) {
   // frozen pair, else its Plan's live one), and falls back to `1 month` for a
   // row that has neither, which is what every duration meant before #892.
   const cadence = toPlanDurationCadence(row.duration_cadence_interval, row.duration_cadence_unit);
+  // #1130 — the renewal flag is the assignment's own either way: it has no
+  // catalogue counterpart to fall back to, so it sits outside the
+  // all-or-nothing snapshot rule exactly as the Personal Fee Benefit does.
+  const repeats = row.duration_repeats;
   return Number(row.has_billing_snapshot) === 1
-    ? toPlanDuration(row.free_periods, row.paid_periods, row.bonus_periods, row.pay_beforehand_periods, cadence)
+    ? toPlanDuration(
+        row.free_periods, row.paid_periods, row.bonus_periods, row.pay_beforehand_periods, cadence, repeats,
+      )
     : toPlanDuration(
-        row.plan_free_periods, row.plan_paid_periods, row.plan_bonus_periods, row.plan_pay_beforehand_periods, cadence,
+        row.plan_free_periods, row.plan_paid_periods, row.plan_bonus_periods, row.plan_pay_beforehand_periods,
+        cadence, repeats,
       );
 }
 

@@ -23,7 +23,7 @@ import { parseDeviceRegistration } from '../domain/deviceTokens';
 import { themeLogoUrl } from '../domain/themeLogo';
 import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
-import { ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
+import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
 import { loadPromotionApplications, regularMembershipFee } from './user-memberships';
 import { currentCycleDate, currentMembershipFee } from './membership-fee-pricing';
 import {
@@ -1493,6 +1493,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
               p.name AS plan_name, p.description AS plan_description,
               ${ASSIGNMENT_CADENCE.interval()} AS billing_interval,
               ${ASSIGNMENT_CADENCE.unit()} AS billing_unit,
+              ${ASSIGNMENT_AUTO_RENEW()} AS duration_repeats,
               um.closed_at,
               (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
                OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
@@ -1535,10 +1536,16 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       // is shown the same free window the nightly run will honour.
       planDuration: (() => {
         const cadence = toPlanDurationCadence(um.billing_interval, um.billing_unit);
+        // #1130 — and whether that cycle repeats, from the assignment's own
+        // frozen flag, so the Member reads the same renewal the run will bill.
+        const repeats = um.duration_repeats;
         return Number(um.has_billing_snapshot) === 1
-          ? toPlanDuration(um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods, cadence)
+          ? toPlanDuration(
+              um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods, cadence, repeats,
+            )
           : toPlanDuration(
-              um.plan_free_periods, um.plan_paid_periods, um.plan_bonus_periods, um.plan_pay_beforehand_periods, cadence,
+              um.plan_free_periods, um.plan_paid_periods, um.plan_bonus_periods, um.plan_pay_beforehand_periods,
+              cadence, repeats,
             );
       })(),
       // #772 — the Personal Membership Fee Benefit discounts every cycle this

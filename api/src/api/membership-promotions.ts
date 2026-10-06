@@ -18,7 +18,7 @@ import { ProductBenefitCategory } from '../domain/productClassification';
 import { PlanBenefitPrices } from '../domain/planBenefitPrices';
 import { toProductBenefit } from '../domain/productBenefitActions';
 import { productBenefitPrices } from './product-benefit-pricing';
-import { ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
+import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import {
   isNewMember,
   isNewMemberForNewAssignment,
@@ -400,6 +400,7 @@ async function currentMembershipFeeInTx(tx: Tx, gymId: string, userMembershipId:
             um.personal_fee_benefit_action, um.personal_fee_benefit_value,
             ${ASSIGNMENT_CADENCE.interval()} AS duration_cadence_interval,
             ${ASSIGNMENT_CADENCE.unit()} AS duration_cadence_unit,
+            ${ASSIGNMENT_AUTO_RENEW()} AS duration_repeats,
             (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
              OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
              OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
@@ -418,13 +419,16 @@ async function currentMembershipFeeInTx(tx: Tx, gymId: string, userMembershipId:
   const charge = resolveMembershipFee(regular, currentCycleDate(um), {
     startsAt: toDateOnly(um.starts_at),
     // #892 — counts of the assignment's own Billing Frequency periods.
+    // #1130 — and whether that stretch repeats, from the assignment's own frozen
+    // `auto_renew` (no live fallback — see `ASSIGNMENT_AUTO_RENEW`).
     planDuration: Number(um.has_billing_snapshot) === 1
       ? toPlanDuration(
           um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods, durationCadence,
+          um.duration_repeats,
         )
       : toPlanDuration(
           um.plan_free_periods, um.plan_paid_periods, um.plan_bonus_periods, um.plan_pay_beforehand_periods,
-          durationCadence,
+          durationCadence, um.duration_repeats,
         ),
     // #772 — an adjustment event must be the difference between two prices the
     // member would actually be charged, so the personal benefit is on both.

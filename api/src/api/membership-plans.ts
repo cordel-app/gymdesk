@@ -399,6 +399,14 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
   const exampleTimelineDuration = toPlanDuration(
     plan.free_periods, plan.paid_periods, plan.bonus_periods, plan.pay_beforehand_periods,
     planCadence ?? DEFAULT_PLAN_DURATION_CADENCE,
+    // #1130 — a Plan's own previews read the Plan's **live** `auto_renew`,
+    // not a snapshot: this is the catalogue as it stands now, which is what a
+    // gym owner configuring it is asking about. An assignment reads its own
+    // frozen flag instead (migration 229), which is why the two can differ for
+    // a member enrolled before the Plan's Auto Renew was last changed.
+    // A Plan with no billing policy has no cadence to step a cycle by, so it
+    // renews nothing — `billingPolicy` being null answers false.
+    billingPolicy ? billingPolicy.auto_renew : false,
   );
   // #818: the Example timeline replaces #485's Billing Events Forecast. One row
   // per billing period of the Plan's own cadence, each classified by the Plan's

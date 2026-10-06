@@ -38,7 +38,7 @@ const START = '2026-10-01';
 const duration = (
   d: { free?: number; paid?: number; bonus?: number; prepaid?: number },
   cadence: PlanDurationCadence = MONTH,
-) => toPlanDuration(d.free ?? 0, d.paid ?? 0, d.bonus ?? 0, d.prepaid ?? 0, cadence);
+) => toPlanDuration(d.free ?? 0, d.paid ?? 0, d.bonus ?? 0, d.prepaid ?? 0, cadence, false);
 
 /* ── The rule ─────────────────────────────────────────────────────────────── */
 
