@@ -148,6 +148,29 @@ Tick items off in the PR that completes them.
       batches, per type — there is still no index on `type`) before narrowing
       the constraint, so stop the API, or at least any waitlist edit, before
       rolling back.
+- [ ] **Run migration 226 in that same window** (#1113 §2). The fourth
+      `chk_member_notifications_type` swap, one value wider
+      (`booking_reminder_2h`), so it costs one more ALGORITHM=COPY rebuild of
+      `member_notifications` with exactly the consequences listed above, and if
+      170, 216 and 217 are still unapplied all four belong in **one** window —
+      four rebuilds of one table, not four independent changes. It also creates the two
+      indexes the reminder run needs — `mn_reminder_dedupe_idx (gym_id, type,
+      entity_type, entity_id, member_id)` on `member_notifications` for its
+      duplicate-prevention lookup, and `ce_status_starts_idx (status, starts_at)`
+      on `calendar_events` for its candidate scan, which is cross-gym and so can
+      use none of that table's `gym_id`-leading indexes. Both are `CREATE INDEX`
+      (INPLACE/LOCK=NONE), so neither adds locking, and they are here only because
+      they are one logical change with the CHECK rather than because they share
+      its rebuild (they run after it, as separate statements). Note the second one
+      touches `calendar_events`: on a large calendar expect the migration to take
+      noticeably longer than the CHECK swap alone. The new CHECK list is a strict
+      superset of 217's, so it cannot fail on data, and every statement is
+      guarded, so re-running migrations after it lands is a no-op. Its `down`
+      deletes the type's rows in batches, then drops both indexes, then narrows
+      the constraint, so **stop the reminder run** (disable
+      `booking-reminder-run.yml`) before rolling back — a row inserted between
+      the DELETE and the ADD fails the ADD with errno 3819, and the run inserts
+      every 15 minutes.
 - [ ] **Migration 219 needs no maintenance window** (#1038). It swaps
       `chk_theme_member_images_slot` to add the `personal_goals` Members App
       image slot, so `ADD CONSTRAINT … CHECK` rebuilds `theme_member_images`
@@ -618,7 +641,8 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
 
 ## 4b. Scheduled runs (GitHub Actions)
 
-The nightly billing run and the recurring booking run are triggered by GitHub Actions,
+The nightly billing run, the recurring booking run and (#1113) the quarter-hourly booking
+reminder run are triggered by GitHub Actions,
 which is a deliberate decision (2026-09-26: keep the trigger, make the API and the
 workflows robust to its delays) rather than a placeholder. These are the pieces of that
 hardening:
@@ -717,6 +741,32 @@ hardening:
       With this done the API no longer has to be reachable from GitHub's runners — the last
       of the three inbound paths (#1083 Monei, #1085 Clerk, #1086 these runs). Whether it
       is then actually closed is the open question in #1087.
+- [ ] **A new secret and a new schedule for the 2-hour training reminder** (#1113 §2).
+      `POST /booking-reminders/run` is fired by `.github/workflows/booking-reminder-run.yml`
+      every 15 minutes — the only scheduled run that is not nightly, because a reminder two
+      hours before a 07:00 class has to be raised at 05:00. Three owner steps, in this
+      order, and until the first one is done **no member is ever reminded** and nothing else
+      notices (the route answers `401`, the workflow goes red, and the alert is simply
+      absent from the Members App):
+      1. Generate `BOOKING_REMINDERS_INTERNAL_SECRET` (`openssl rand -hex 32`) and set it
+         both as a GitHub **secret** in each environment and in the API's own environment
+         (the quadlet `Environment=` lines, §1) — the same pair `BILLING_INTERNAL_SECRET`
+         and `RECURRING_BOOKINGS_INTERNAL_SECRET` already have. Its own secret rather than
+         a reuse, per the rule `api/src/api/promotion-lifecycle.ts` states: a job with a
+         workflow of its own gets a secret with it.
+      2. Nothing else to configure — the workflow reads the same `API_BASE_URL` variable the
+         other two do, and `/booking-reminders/run` is already on the relay's allowlist
+         (#1086). It follows that this run is red on both environments until the admin app
+         carrying that relay is deployed, exactly as the item above says.
+      3. Watch the first day. Expect most passes to answer `candidates=0` (most
+         quarter-hours have no class about to start) — that is the ordinary outcome, not a
+         failure. A `capped` warning means a pass hit `BOOKING_REMINDER_MAX_PER_RUN` (500)
+         and the next one will finish the backlog; it only needs attention if it recurs.
+      Note the cost: 96 scheduled runs a day on this repository's Actions minutes. The
+      cadence is one line in that workflow and nothing else depends on it, so it can be
+      relaxed (every 30 minutes still reminds every member, a little later) without touching
+      the API — the run asks for events starting *within* two hours precisely so that a
+      later pass sends the reminder closer to the class rather than dropping it.
 
 ## 5. Payments (Monei / PCI)
 

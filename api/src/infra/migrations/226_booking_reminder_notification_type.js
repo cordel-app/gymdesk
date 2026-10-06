@@ -26,17 +26,50 @@
  * re-added wholesale, and the list below is migration 217's plus one value —
  * which is also the `NotificationType` union verbatim, in the same order.
  *
- * **The index is the other half of §5.** The run's duplicate prevention is a
- * `NOT EXISTS` on `(gym_id, member_id, type, entity_type, entity_id)` and it
- * runs every few minutes across every gym; migration 087's only index is
- * `(gym_id, member_id, created_at)`, which narrows to the member and then scans
- * their whole alert history. `mn_reminder_dedupe_idx` makes that lookup exact.
- * It is created here rather than in a migration of its own because the CHECK
- * swap below already rebuilds the table.
+ * **Two indexes, because the run has two halves and both are hot.** It executes
+ * every 15 minutes, across every gym, and usually finds nothing — so neither
+ * half may be a table scan.
  *
- * The three helpers below are copied from migration 217. That is deliberate,
- * not drift: a migration is never edited, so a shared helper would let a later
- * change rewrite history that has already been applied.
+ * `mn_reminder_dedupe_idx` covers the duplicate prevention, a `NOT EXISTS` on
+ * `(gym_id, type, entity_type, entity_id, member_id)` — all five equality — where
+ * migration 087's only index, `(gym_id, member_id, created_at)`, narrows to the
+ * member and then scans their whole alert history. Column order is not what makes
+ * the index usable (every predicate is equality); what it buys is a **distinct
+ * access path**, since a `(gym_id, member_id, …)` ordering would have overlapped
+ * 087's prefix.
+ *
+ * `ce_status_starts_idx (status, starts_at)` covers the *driving* half, and is the
+ * one this migration would most easily have forgotten: the candidate query is
+ * deliberately cross-gym, so it carries **no `gym_id` predicate**, and every
+ * `calendar_events` index is `gym_id`-leading (migration 082). Without it, each
+ * pass full-scans one of the two largest tables in the schema to answer
+ * `status = 'scheduled'` and a two-hour `starts_at` range. With it,
+ * `calendar_events` is the driving table and the booking side is already covered
+ * by `ceb_gym_event_idx (gym_id, calendar_event_id)`, satisfied from `ce.gym_id`
+ * and `ce.id`.
+ *
+ * **The cost of the first one is write amplification**, and it is a real trade
+ * rather than a free lunch: `member_notifications` goes from one secondary index
+ * to two, the new one five columns wide, maintained by every alert insert on
+ * every request path (`sendNotification`, `sendBulkNotification`) to serve a
+ * reader that runs a few times an hour. The alternative is the `(gym_id,
+ * member_id)` prefix scan over a member's entire alert history on every candidate
+ * row of every pass, which is worse and gets worse with time.
+ *
+ * Both are created here rather than in a migration of their own because they are
+ * one logical change and belong in one maintenance window — **not** because they
+ * share the rebuild below: `CREATE INDEX` is a separate statement that runs after
+ * the `ADD CONSTRAINT` rebuild has implicitly committed, online
+ * (INPLACE/LOCK=NONE). That ordering is still the right one, since building an
+ * index first would only give the ALGORITHM=COPY rebuild one more index to copy.
+ *
+ * The helpers below are copied from migration 217. That is deliberate, not drift:
+ * a migration is never edited, so a shared helper would let a later change
+ * rewrite history that has already been applied. One thing differs on purpose and
+ * is **not** a regression against 217: that migration loops over its two delta
+ * values, because one value standing for a pair can read a half-applied clause as
+ * already correct. This delta is a single value, so the single test is sound, and
+ * the shape is migration 216's.
  *
  * **Cost — same maintenance window as migrations 170, 216 and 217.** `DROP
  * CHECK` is INPLACE/LOCK=NONE, but `ADD CONSTRAINT … CHECK` is neither (errno
@@ -82,6 +115,7 @@ const NOTIFICATION_CHECK = 'chk_member_notifications_type';
 /** The one value that tells this migration's list from the one before it. */
 const REMINDER_TYPE = 'booking_reminder_2h';
 const DEDUPE_INDEX = 'mn_reminder_dedupe_idx';
+const SCAN_INDEX = 'ce_status_starts_idx';
 
 async function constraintExists(knex, table, name) {
   const [[row]] = await knex.raw(
@@ -155,40 +189,46 @@ async function indexExists(knex, table, name) {
 exports.up = async (knex) => {
   await setNotificationCheck(knex, NOTIFICATION_TYPES);
 
-  // The run's dedupe lookup, exactly. `member_id` last because the three
-  // columns before it are equality-matched for one occurrence and the member is
-  // what the subquery then probes for.
+  // The run's dedupe lookup, exactly. The order puts `member_id` last so the
+  // index does not share a prefix with `mn_gym_member_created_idx`.
   if (!(await indexExists(knex, 'member_notifications', DEDUPE_INDEX))) {
     await knex.raw(
       `CREATE INDEX ${DEDUPE_INDEX} ON member_notifications ` +
       '(gym_id, type, entity_type, entity_id, member_id)',
     );
   }
+
+  // The run's candidate scan. Cross-gym, so no `gym_id`-leading index can serve
+  // it; `status` is equality and `starts_at` the two-hour range after it.
+  if (!(await indexExists(knex, 'calendar_events', SCAN_INDEX))) {
+    await knex.raw(`CREATE INDEX ${SCAN_INDEX} ON calendar_events (status, starts_at)`);
+  }
 };
 
 exports.down = async (knex) => {
-  if (await indexExists(knex, 'member_notifications', DEDUPE_INDEX)) {
-    await knex.raw(`DROP INDEX ${DEDUPE_INDEX} ON member_notifications`);
-  }
-
   // Drop the type from the CHECK, and its rows with it — they would fail the
   // narrower constraint, and they are an advisory log, not data anything else
   // references. The rollback is lossy by design: those reminders are gone. The
   // bookings they were about are untouched, and the next run after a roll
   // *forward* would simply raise them again for any event still in the window.
   //
-  // Batched because `type` is the second column of the index above and that
-  // index is dropped by the time this runs, so one unbounded DELETE would scan
-  // and next-key-lock a log that is large by the time anyone rolls this back,
-  // in a single statement that holds the server for minutes and replicates as
-  // one event. It bounds each *statement*, not the transaction: knex wraps a
-  // migration in one, so locks and undo log still accumulate across batches
-  // until the ALTER below implicitly commits them.
+  // Batched because **no** index has `type` as a leftmost prefix — not
+  // `mn_reminder_dedupe_idx`, where it is the second column — so one unbounded
+  // DELETE would scan and next-key-lock a log that is large by the time anyone
+  // rolls this back, in a single statement that holds the server for minutes and
+  // replicates as one event. It bounds each *statement*, not the transaction:
+  // knex wraps a migration in one, so locks and undo log still accumulate across
+  // batches until the ALTER below implicitly commits them.
   //
-  // Stop the reminder run (or the API) before rolling back: a row inserted
-  // between the DELETE and the ADD fails the ADD with errno 3819. Re-running
-  // `down()` then recovers — the guard above re-adds a constraint that is
-  // missing rather than treating it as already narrow.
+  // It runs **before** the DROP INDEX on purpose: with the index still there the
+  // optimizer may scan 435 narrow bytes per row instead of the clustered index
+  // and its JSON `payload`.
+  //
+  // Stop the reminder run before rolling back (disable
+  // `.github/workflows/booking-reminder-run.yml`): it inserts every 15 minutes,
+  // and a row landing between the DELETE and the ADD fails the ADD with errno
+  // 3819. Re-running `down()` then recovers — the guard above re-adds a
+  // constraint that is missing rather than treating it as already narrow.
   let deleted;
   do {
     const [res] = await knex.raw(
@@ -196,6 +236,13 @@ exports.down = async (knex) => {
     );
     deleted = res.affectedRows;
   } while (deleted === 5000);
+
+  if (await indexExists(knex, 'member_notifications', DEDUPE_INDEX)) {
+    await knex.raw(`DROP INDEX ${DEDUPE_INDEX} ON member_notifications`);
+  }
+  if (await indexExists(knex, 'calendar_events', SCAN_INDEX)) {
+    await knex.raw(`DROP INDEX ${SCAN_INDEX} ON calendar_events`);
+  }
 
   await setNotificationCheck(
     knex,
