@@ -706,8 +706,8 @@ describe('which Promotions the catalogue offers (#1118 §4, the thread’s Q4)',
       'SELECT id FROM members WHERE gym_id = ?', [gid],
     );
     const { insertId: planId } = await db.query(
-      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, base_price)
-       VALUES (?, 'Standard', 'active', 'public', 0)`,
+      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status)
+       VALUES (?, 'Standard', 'active', 'public')`,
       [gid],
     );
     await db.query(
