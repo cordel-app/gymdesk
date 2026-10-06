@@ -22,7 +22,7 @@ on:
       environment:
         description: GitHub environment whose database to import into
         type: choice
-        options: [dev, production]
+        options: [dev, pro]
         default: dev
       dry_run:
         description: Print the report without writing anything
