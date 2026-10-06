@@ -40,6 +40,9 @@ const CARD_FILES = [
   'MemberPurchasedProducts.tsx',
   'MemberBillingSimulation.tsx',
   'MemberPersonalTrainingSlots.tsx',
+  // #1108 stage 2 §7: the Member window's own `[ Save & Pay ]` action area, which
+  // sits under the tab panes rather than inside a section.
+  'MemberSaveAndPaySection.tsx',
   'AssignPlanInlineEditor.tsx',
 ] as const;
 

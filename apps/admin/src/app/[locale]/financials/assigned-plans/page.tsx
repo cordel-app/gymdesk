@@ -10,7 +10,7 @@ import { AssignedPlansTable, type AssignedPlanTableRow } from '@/components/assi
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type LifecycleStatus = 'draft' | 'pending' | 'active' | 'paused' | 'expired' | 'cancelled';
+type LifecycleStatus = 'draft' | 'pending_payment' | 'pending' | 'active' | 'paused' | 'expired' | 'cancelled';
 
 interface AssignedPlan extends AssignedPlanTableRow {
   member_name: string;
@@ -24,8 +24,12 @@ interface MemberHit { id: number; name: string; email: string }
 // Mirrors LIFECYCLE_STATUSES in api/src/api/user-memberships.ts, which is what
 // the `lifecycle_status` query parameter accepts. #1108 stage 1 added `draft`:
 // every new assignment is created in it, so a filter that could not name it
-// would hide the newest rows behind an otherwise complete status list.
-const LIFECYCLE_STATUSES: LifecycleStatus[] = ['draft', 'pending', 'active', 'paused', 'expired', 'cancelled'];
+// would hide the newest rows behind an otherwise complete status list. Stage 2
+// adds `pending_payment` for the same reason — it is where a committed plan waits
+// for its first payment, which is exactly the set a gym chasing payments wants.
+const LIFECYCLE_STATUSES: LifecycleStatus[] = [
+  'draft', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancelled',
+];
 
 // ── Member search (inline filter — mirrors payments/billing-events' MemberFilter) ──
 

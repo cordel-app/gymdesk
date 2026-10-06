@@ -320,7 +320,20 @@
     "billing_simulation_benefit_personal": "Benefici personal",
     "membership_created_by": "Creat per",
     "membership_created_at": "Creat el",
-    "membership_plan_snapshot": "Detalls del Pla de Subscripció Assignat"
+    "membership_plan_snapshot": "Detalls del Pla de Subscripció Assignat",
+    "section_save_and_pay": "GUARDAR I PAGAR",
+    "save_and_pay": "Guardar i pagar",
+    "save_and_pay_new_link": "Nou enllaç de pagament",
+    "save_and_pay_draft_notice": "Guardar i pagar confirma {plan} tal com està configurat i genera el pagament que l’activa. No es cobra ni es cancel·la res fins que el pagament es confirmi.",
+    "save_and_pay_awaiting_notice": "{plan} està pendent de pagament, per la qual cosa la seva configuració està bloquejada. S’activarà tan bon punt es confirmi el pagament.",
+    "save_and_pay_amount": "A pagar ara: {amount}",
+    "save_and_pay_nothing_due": "No hi ha res a pagar en el primer període de facturació, de manera que el pla s’activa directament.",
+    "save_and_pay_open_link": "Obrir la pàgina de pagament",
+    "save_and_pay_copy_link": "Copiar enllaç",
+    "save_and_pay_link_copied": "Enllaç de pagament copiat",
+    "save_and_pay_copy_failed": "No s’ha pogut copiar l’enllaç de pagament",
+    "save_and_pay_link_expired": "L’enllaç de pagament ja no es pot obrir. Crea’n un de nou perquè el membre pugui pagar.",
+    "save_and_pay_error": "No s’ha pogut confirmar la membresia"
   },
   "member_payments": {
     "title": "Pagaments del membre",
@@ -965,7 +978,8 @@
     "open": "Obert",
     "closed": "Tancat",
     "public": "Públic",
-    "staff_only": "Només Personal"
+    "staff_only": "Només Personal",
+    "pending_payment": "Pendent de pagament"
   },
   "plans": {
     "title": "Quotes",
@@ -3683,7 +3697,6 @@
     "action_details": "Detalls",
     "action_edit": "Edita",
     "action_done_editing": "Finalitza l’Edició",
-    "action_activate": "Activa",
     "action_pause": "Pausa",
     "action_reactivate": "Reactiva",
     "action_close": "Cancel·la",

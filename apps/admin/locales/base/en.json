@@ -319,7 +319,20 @@
     "billing_simulation_benefit_personal": "Personal benefit",
     "membership_created_by": "Created by",
     "membership_created_at": "Created at",
-    "membership_plan_snapshot": "Assigned Membership Plan details"
+    "membership_plan_snapshot": "Assigned Membership Plan details",
+    "section_save_and_pay": "SAVE & PAY",
+    "save_and_pay": "Save & Pay",
+    "save_and_pay_new_link": "New payment link",
+    "save_and_pay_draft_notice": "Save & Pay commits {plan} as configured and raises the payment that activates it. Nothing is charged and nothing is cancelled until the payment is confirmed.",
+    "save_and_pay_awaiting_notice": "{plan} is awaiting payment, so its configuration is locked. It becomes active as soon as the payment is confirmed.",
+    "save_and_pay_amount": "Due now: {amount}",
+    "save_and_pay_nothing_due": "Nothing is due for the first billing period, so this plan is activated straight away.",
+    "save_and_pay_open_link": "Open the payment page",
+    "save_and_pay_copy_link": "Copy link",
+    "save_and_pay_link_copied": "Payment link copied",
+    "save_and_pay_copy_failed": "The payment link could not be copied",
+    "save_and_pay_link_expired": "The payment link can no longer be opened. Create a new one to let the member pay.",
+    "save_and_pay_error": "The membership could not be committed"
   },
   "member_payments": {
     "title": "Member Payments",
@@ -989,7 +1002,8 @@
     "scheduled": "Scheduled",
     "under_maintenance": "Under Maintenance",
     "public": "Public",
-    "staff_only": "Staff Only"
+    "staff_only": "Staff Only",
+    "pending_payment": "Pending Payment"
   },
   "plans": {
     "title": "Membership Plans",
@@ -3670,7 +3684,6 @@
     "action_details": "Details",
     "action_edit": "Edit",
     "action_done_editing": "Done Editing",
-    "action_activate": "Activate",
     "action_pause": "Pause",
     "action_reactivate": "Reactivate",
     "action_close": "Cancel",

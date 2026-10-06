@@ -20,6 +20,7 @@ import { btnStyle, primaryBtnStyle } from '@/components/ui';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { MemberExpandedRow } from './MemberExpandedRow';
+import { MemberSaveAndPaySection } from './MemberSaveAndPaySection';
 import { MemberDetailModal } from './MemberDetailModal';
 import { MemberEditForm } from './MemberEditForm';
 import {
@@ -631,6 +632,17 @@ export default function MembersPage() {
               canManagePersonalGoals={canManagePersonalGoals}
               isAdmin={isAdmin}
               plans={plans}
+            />
+            {/* #1108 stage 2 §7 — the Member window's own action area, under the
+                tab panes rather than inside one: Save & Pay completes the
+                Member's configured purchase, so it belongs to the Member and not
+                to the Membership Plans section. It renders nothing at all when
+                there is nothing waiting to be committed. */}
+            <MemberSaveAndPaySection
+              memberId={m.id}
+              canWrite={canManagePackages}
+              readOnlyTitle={t('common.read_only_hint')}
+              refreshKey={`${activeTab}:${profileVersion}`}
             />
           </div>
         )}

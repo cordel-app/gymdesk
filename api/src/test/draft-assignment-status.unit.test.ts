@@ -29,6 +29,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { countsAsRecentMembership } from '../domain/newMemberEligibility';
 import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
+import { excludePreActivationSql } from '../domain/assignmentCommit';
 
 const API_SRC = join(__dirname, '..');
 const REPO = join(API_SRC, '..', '..');
@@ -36,6 +37,23 @@ const ADMIN_SRC = join(REPO, 'apps', 'admin', 'src');
 const ADMIN_LOCALES = join(REPO, 'apps', 'admin', 'locales', 'base');
 
 const read = (...parts: string[]) => readFileSync(join(...parts), 'utf8');
+
+/**
+ * The statuses a named list holds, whether they are written as literals or as the
+ * two constants `domain/assignmentCommit.ts` declares — stage 2 made several of
+ * these lists name the constants, and a regex that only saw quoted strings would
+ * read `CLOSEABLE_FROM` as `['active', 'paused']`.
+ */
+function statusList(source: string, name: string): string[] {
+  const match = source.match(new RegExp(`${name}[^=]*=\\s*\\[([\\s\\S]*?)\\]`));
+  expect(match, name).toBeTruthy();
+  const body = match![1];
+  return [
+    ...[...body.matchAll(/'([a-z_]+)'/g)].map((x) => x[1]),
+    ...(body.includes('DRAFT_ASSIGNMENT_STATUS') ? ['draft'] : []),
+    ...(body.includes('PENDING_PAYMENT_ASSIGNMENT_STATUS') ? ['pending_payment'] : []),
+  ];
+}
 
 /** A source file with `//` and `/* *\/` comments stripped, so a rule is asserted against code. */
 function code(...parts: string[]): string {
@@ -45,6 +63,10 @@ function code(...parts: string[]): string {
 }
 
 const MIGRATION = read(API_SRC, 'infra', 'migrations', '227_draft_membership_status.js');
+// #1108 stage 2's own widening, which is the CHECK the table actually carries
+// now: 227 made `draft` legal and 233 adds `pending_payment` beside it.
+const MIGRATION_233 = read(API_SRC, 'infra', 'migrations', '233_pending_payment_membership_status.js');
+const MIGRATION_233_CODE = code(API_SRC, 'infra', 'migrations', '233_pending_payment_membership_status.js');
 // The same file with its header prose removed: that prose *names*
 // `awaiting_payment` to say it stays retired, which is the opposite of the drift
 // the assertion below is looking for.
@@ -52,23 +74,40 @@ const MIGRATION_CODE = code(API_SRC, 'infra', 'migrations', '227_draft_membershi
 const USER_MEMBERSHIPS = code(API_SRC, 'api', 'user-memberships.ts');
 
 describe('the status CHECK and the API\'s status list agree', () => {
-  it('migration 227 widens the CHECK to exactly the five statuses the router accepts', () => {
-    // The widened list in the migration…
-    const wide = MIGRATION.match(/const WIDE = \[([^\]]*)\]/);
-    const narrow = MIGRATION.match(/const NARROW = \[([^\]]*)\]/);
+  it('the latest widening matches exactly the statuses the router accepts', () => {
+    // The widened list in the migration that owns the CHECK today…
+    const wide = MIGRATION_233.match(/const WIDE = \[([^\]]*)\]/);
+    const narrow = MIGRATION_233.match(/const NARROW = \[([^\]]*)\]/);
     expect(wide).toBeTruthy();
     expect(narrow).toBeTruthy();
     const values = (m: RegExpMatchArray) =>
       [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
     const wideValues = [...values(wide!), ...values(narrow!)];
 
-    // …and the router's own list.
-    const statuses = USER_MEMBERSHIPS.match(/const STATUSES = \[([^\]]*)\] as const;/);
+    // …and the router's own list. `STATUSES` names the two pre-activation
+    // constants rather than literals, so the comparison is against the
+    // vocabulary `domain/assignmentCommit.ts` declares.
+    const statuses = USER_MEMBERSHIPS.match(/const STATUSES = \[([\s\S]*?)\] as const;/);
     expect(statuses).toBeTruthy();
-    const routerValues = [...statuses![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
+    const routerValues = [
+      ...[...statuses![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]),
+      ...(statuses![1].includes('DRAFT_ASSIGNMENT_STATUS') ? ['draft'] : []),
+      ...(statuses![1].includes('PENDING_PAYMENT_ASSIGNMENT_STATUS') ? ['pending_payment'] : []),
+    ];
 
     expect(new Set(routerValues)).toEqual(new Set(wideValues));
     expect(routerValues).toContain('draft');
+    expect(routerValues).toContain('pending_payment');
+  });
+
+  it('227 stays the four-to-five widening it was, with 233 the one that adds Pending Payment', () => {
+    // 227 is history: re-running it must not quietly re-narrow the table by
+    // dropping the value 233 added, which is what an edit to its own WIDE would
+    // do the next time a deployment replays the migrations.
+    const wide227 = MIGRATION.match(/const WIDE = \[([^\]]*)\]/);
+    expect([...wide227![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1])).not.toContain('pending_payment');
+    expect(MIGRATION_233_CODE).toContain('isStatusSet');
+    expect(MIGRATION_233_CODE).not.toContain('awaiting_payment');
   });
 
   it('compares the stored CHECK as an exact set, so a six-value one is not accepted', () => {
@@ -86,13 +125,20 @@ describe('the status CHECK and the API\'s status list agree', () => {
     expect(USER_MEMBERSHIPS).not.toContain('awaiting_payment');
   });
 
-  it('declares draft -> active and draft -> cancelled, and nothing else, as the Draft\'s transitions', () => {
+  it('declares the Draft\'s three transitions, and no way back out of Pending Payment', () => {
     const table = USER_MEMBERSHIPS.match(/const ALLOWED_TRANSITIONS[\s\S]*?\n\};/);
     expect(table).toBeTruthy();
     const draftRow = table![0].match(/draft: \[([^\]]*)\]/);
     expect(draftRow).toBeTruthy();
-    const targets = [...draftRow![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
-    expect(targets.sort()).toEqual(['active', 'cancelled']);
+    expect([...draftRow![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]).sort())
+      .toEqual(['active', 'cancelled', 'pending_payment']);
+    // #1108 stage 2: unlocking a configuration the member is already being asked
+    // to pay for would let the amount on the hosted page stop matching the plan
+    // it buys, so there is deliberately no `pending_payment -> draft`.
+    const pendingRow = table![0].match(/pending_payment: \[([^\]]*)\]/);
+    expect(pendingRow).toBeTruthy();
+    expect([...pendingRow![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]).sort())
+      .toEqual(['active', 'cancelled']);
   });
 });
 
@@ -100,7 +146,11 @@ describe('every assignment path creates a Draft', () => {
   const MEMBERSHIP_PLANS = code(API_SRC, 'api', 'membership-plans.ts');
 
   it('names the creation status once rather than in three INSERTs', () => {
-    expect(USER_MEMBERSHIPS).toContain("export const ASSIGNMENT_CREATION_STATUS = 'draft';");
+    // It is the pre-activation vocabulary's own constant since stage 2, so the
+    // one answer to "what status is an assignment created in" is one import away
+    // from the two statuses that mean "not yet the member's".
+    expect(USER_MEMBERSHIPS)
+      .toContain('export const ASSIGNMENT_CREATION_STATUS = DRAFT_ASSIGNMENT_STATUS;');
   });
 
   it('has no INSERT INTO user_memberships that omits the status column or hardcodes a literal', () => {
@@ -128,11 +178,12 @@ describe('every assignment path creates a Draft', () => {
     expect(MEMBERSHIP_PLANS).toContain('ASSIGNMENT_CREATION_STATUS');
   });
 
-  it('commits a Draft through POST /:id/activate and refuses the flip on PUT', () => {
+  it('commits through a route of its own and refuses the flip on PUT', () => {
     expect(USER_MEMBERSHIPS).toMatch(/post\('\/:id\/activate'/);
+    expect(USER_MEMBERSHIPS).toMatch(/post\('\/:id\/save-and-pay'/);
     // The PUT names the route rather than performing the transition, so #956's
     // check and the supersede cannot be bypassed.
-    expect(USER_MEMBERSHIPS).toContain('/user-memberships/:id/activate');
+    expect(USER_MEMBERSHIPS).toContain('/user-memberships/:id/save-and-pay');
   });
 });
 
@@ -166,12 +217,13 @@ describe('a Draft is not the member\'s Membership Plan', () => {
     // Active member would otherwise overwrite their status on the Members list
     // and drop them out of the Nutrition Dashboard's active count.
     expect(latestEnrollmentStatusSql('m').replace(/\s+/g, ' '))
-      .toContain("um.status <> 'draft'");
+      .toContain("um.status NOT IN ('draft', 'pending_payment')");
   });
 
   it('is excluded from the two member-facing reads, by the constant beside the ordering', () => {
     const forecast = code(API_SRC, 'api', 'me-billing-forecast.ts');
-    expect(forecast).toContain("export const MEMBER_CURRENT_ASSIGNMENT_FILTER = \"AND um.status <> 'draft'\";");
+    expect(forecast).toContain('export const MEMBER_CURRENT_ASSIGNMENT_FILTER = `AND ${excludePreActivationSql(\'um\')}`;');
+    expect(excludePreActivationSql('um')).toBe("um.status NOT IN ('draft', 'pending_payment')");
     // Both callers append both halves: the ordering alone would sort a Draft
     // first, because FIELD() answers 0 for a value it does not list.
     for (const source of [forecast, code(API_SRC, 'api', 'me.ts')]) {
@@ -182,7 +234,7 @@ describe('a Draft is not the member\'s Membership Plan', () => {
 
   it('is excluded from the Financials dashboard\'s assigned-plan count', () => {
     expect(code(API_SRC, 'api', 'financials-dashboard.ts'))
-      .toContain("um.status NOT IN ('draft', 'cancelled', 'expired')");
+      .toContain("um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'expired')");
   });
 });
 
@@ -215,10 +267,19 @@ describe('a Draft is editable and projected', () => {
       [code(API_SRC, 'api', 'user-membership-services.ts'), 'ATTACHABLE_STATUSES'],
     ];
     for (const [source, name] of lists) {
-      const match = source.match(new RegExp(`${name}[^=]*= \\[([^\\]]*)\\]`));
-      expect(match, name).toBeTruthy();
-      expect([...match![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]), name).toContain('draft');
+      expect(statusList(source, name), name).toContain('draft');
     }
+  });
+
+  it('is editable and attachable while Pending Payment is neither, and both are closeable', () => {
+    // §6 — Save & Pay is the point of no return, so the two editing allowlists
+    // simply do not name `pending_payment`: the lock is the absence of a grant
+    // rather than a second rule each write path has to remember. Closing it, on
+    // the other hand, is the one way out of a committed plan nobody pays for.
+    const services = code(API_SRC, 'api', 'user-membership-services.ts');
+    expect(statusList(USER_MEMBERSHIPS, 'SNAPSHOT_EDITABLE_STATUSES')).not.toContain('pending_payment');
+    expect(statusList(services, 'ATTACHABLE_STATUSES')).not.toContain('pending_payment');
+    expect(statusList(USER_MEMBERSHIPS, 'CLOSEABLE_FROM')).toContain('pending_payment');
   });
 
   it('is simulated, so the Billing Event Forecast answers what committing it would bill', () => {
@@ -247,12 +308,14 @@ describe('the admin app mirrors the status model', () => {
     }
   });
 
-  it('offers Activate for a Draft and routes it through the activation endpoint', () => {
-    expect(CARD).toContain("detail.status === 'draft'");
-    expect(CARD).toContain('/activate');
-    // #956's one dialog, raised by the activation now that the four assignment
-    // paths no longer 409.
-    expect(CARD).toContain('ReplacePlanDialog');
+  it('offers no commit of its own: that moved to the Member window in stage 2', () => {
+    // §7 puts the completion action in the general Member window rather than
+    // inside the Membership Plans section, so stage 1's placeholder `⋮ → Activate`
+    // and the replacement dialog it raised are gone from this card. The rule is
+    // asserted the other way round too, in
+    // `apps/admin/src/test/assigned-plan-preactivation-retired.test.ts`.
+    expect(CARD).not.toContain('/activate');
+    expect(CARD).not.toContain('ReplacePlanDialog');
   });
 
   it('lets the Assigned Plans filter name a Draft', () => {
@@ -268,7 +331,7 @@ describe('the admin app mirrors the status model', () => {
       // next-intl prints a missing key verbatim, so an absent one renders as
       // `status.draft` on screen rather than falling back to anything.
       expect(messages.status?.draft, locale).toBeTruthy();
-      expect(messages.assigned_plans_page?.action_activate, locale).toBeTruthy();
+      expect(messages.status?.pending_payment, locale).toBeTruthy();
     }
   });
 });

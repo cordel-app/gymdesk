@@ -9,6 +9,12 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   cancelled:    { bg: '#fdeaea', fg: '#c0392b' },
   expired:      { bg: '#f3eafd', fg: '#7d3cbd' },
   draft:        { bg: '#eef2f7', fg: '#5a6b7b' },
+  // #1108 stage 2: an Assigned Plan waiting for its first payment to be
+  // confirmed. It reuses the amber `paused`/`pending` pair already in this map
+  // rather than introducing a colour — it *is* a pending thing — so the three
+  // pre-active states read apart (grey Draft, amber Pending Payment, green
+  // Active) without this component growing a palette.
+  pending_payment: { bg: '#fff4e0', fg: '#b26a00' },
   deleted:      { bg: '#fdeaea', fg: '#c0392b' },
   invited:      { bg: '#e8f0fe', fg: '#1a56a8' },
   not_enrolled: { bg: '#f0f0f0', fg: '#666666' },

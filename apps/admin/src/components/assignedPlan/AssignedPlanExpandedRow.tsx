@@ -28,8 +28,6 @@ import {
   exampleTimelineRowTone,
   formatExampleTimelineBilling,
 } from '@/lib/exampleTimeline';
-import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
-import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
 import {
   ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS,
   ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS,
@@ -52,13 +50,20 @@ import type { AssignedPlanDetail } from './types';
 // Mirrors CLOSEABLE_FROM in api/src/api/user-memberships.ts. #1108 stage 1:
 // `draft` is in it because closing is how a Draft is discarded — there is no
 // expiry sweep (Q1a), so staff need a way out of a Draft that is not activation.
-const CLOSEABLE_STATUSES = ['draft', 'active', 'paused'];
+// Stage 2 adds `pending_payment` for the same reason: a committed plan nobody
+// pays for is discarded, never unlocked back into a Draft.
+const CLOSEABLE_STATUSES = ['draft', 'pending_payment', 'active', 'paused'];
 
 // The statuses whose configuration can still be edited at all — a cancelled or
 // expired assignment bills nothing further, so Edit mode has nothing to offer
 // and the action is not shown. Mirrors SNAPSHOT_EDITABLE_STATUSES in
 // api/src/api/user-memberships.ts, which #1108 §2 widened with `draft`: a Draft
 // is the pre-checkout configuration state and is *fully* editable.
+//
+// `pending_payment` is deliberately absent (#1108 stage 2 §6): Save & Pay is the
+// point of no return, so a committed plan's configuration is locked and every
+// section's `PUT` refuses it — offering Edit mode over controls the server would
+// reject is the one thing worse than not offering it.
 const EDITABLE_STATUSES = ['draft', 'active', 'paused'];
 
 function fmtDate(iso: string | null) {
@@ -121,8 +126,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   const [actionBusy, setActionBusy] = useState(false);
   const [closeStep, setCloseStep] = useState<'none' | 'confirm' | 'warn'>('none');
   const [closeWarnings, setCloseWarnings] = useState<string[]>([]);
-  // #956's replacement conflict, answered by the activation since #1108 stage 1.
-  const [replacement, setReplacement] = useState<ActivePlanConflict | null>(null);
 
   // #613: impersonation-aware; actions that apply to the plan's status are shown, disabled when not permitted.
   const { canWrite: canWritePayments, isAdmin, readOnlyTitle } = useModuleAccess('PAYMENTS');
@@ -155,40 +158,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       onChanged();
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
-    } finally {
-      setActionBusy(false);
-    }
-  }
-
-  /**
-   * Commit the Draft: `POST /:id/activate` (#1108 stage 1).
-   *
-   * The 409 it may answer is #956's replacement conflict, moved onto this
-   * transition from the four assignment paths — the member can have been
-   * holding another plan the whole time this Draft was configured — so the same
-   * shared `ReplacePlanDialog` names what the resend will cancel, recognised by
-   * shape through `activePlanConflict()` rather than by status code alone.
-   *
-   * Stage 2 replaces this action with the Member-level **Save & Pay**, which
-   * raises the payment around the very same commit.
-   */
-  async function activateDraft(confirmReplacement = false) {
-    setActionBusy(true);
-    try {
-      await apiFetch(`/user-memberships/${assignedPlanId}/activate`, {
-        method: 'POST',
-        body: JSON.stringify(confirmReplacement ? { confirm: true } : {}),
-      });
-      setReplacement(null);
-      await loadDetail();
-      onChanged();
-    } catch (err: any) {
-      const conflict = confirmReplacement ? null : activePlanConflict(err);
-      if (conflict) setReplacement(conflict);
-      else {
-        setReplacement(null);
-        toast(err.message ?? t('error_generic'));
-      }
     } finally {
       setActionBusy(false);
     }
@@ -248,9 +217,11 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // the Assigned Plans page outside the mode (#897).
   const editing = !embedded && isEditing;
 
-  // #1108 stage 1: only a Draft can be activated, and that is the one action a
-  // Draft offers beyond editing and discarding it.
-  const canActivate = detail.status === 'draft';
+  // #1108 stage 2: committing is the Member window's **Save & Pay** (§7), so this
+  // card no longer offers an Activate of its own — stage 1's `⋮ → Activate` was
+  // the placeholder that kept assignment working between the two stages, and a
+  // second commit entry point inside the Membership Plans section is exactly what
+  // §7 rules out. What a Draft still offers here is editing it and discarding it.
   const canPause = detail.status === 'active';
   const canReactivate = detail.status === 'paused';
   const canClose = CLOSEABLE_STATUSES.includes(detail.status);
@@ -270,12 +241,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       }]
       : []),
     { label: t('action_details'), onClick: () => setShowDetails(true) },
-    ...(canActivate
-      // Not passed by reference: the click's `MouseEvent` would land in
-      // `confirmReplacement` and confirm the replacement on the first attempt
-      // (#956's own rule for these handlers).
-      ? [{ label: t('action_activate'), onClick: () => activateDraft(), ...write }]
-      : []),
     ...(canPause ? [{ label: t('action_pause'), onClick: () => runAction('pause'), ...write }] : []),
     ...(canReactivate ? [{ label: t('action_reactivate'), onClick: () => runAction('reactivate'), ...write }] : []),
     ...(canClose ? [{ label: t('action_close'), onClick: () => setCloseStep('confirm'), danger: true, ...adminOnly }] : []),
@@ -507,17 +472,6 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       {showDetails && (
         <AssignedPlanDetailsModal detail={detail} onClose={() => setShowDetails(false)} />
       )}
-
-      {/* #956's one dialog, raised here since #1108 stage 1 moved the conflict
-          onto the activation. Cancel clears the conflict and nothing else — no
-          request, no reload, no collapse. */}
-      <ReplacePlanDialog
-        conflict={replacement}
-        newPlanName={detail.plan_name}
-        busy={actionBusy}
-        onConfirm={() => activateDraft(true)}
-        onCancel={() => setReplacement(null)}
-      />
 
       {/* #630: the menu action reads "Cancel" now, so the dialog can't label both
           its buttons with it — the confirm button spells out what it cancels and

@@ -72,34 +72,45 @@ describe('#786 — no awaiting_payment status in the admin', () => {
   });
 });
 
-// #1108 stage 1 — the Draft Assigned Plan's own admin half. The source scan
-// above cannot assert this (it is about an absence), so the presence is asserted
-// here, beside it, rather than in a second file about the same four sources.
-describe('#1108 stage 1 — the admin commits a Draft through the activation route', () => {
-  it('offers Activate for a Draft and nothing else out of it', () => {
+// #1108 stage 2 — the Draft's commit moved off this card and onto the Member
+// window's Save & Pay (§7), so what this block asserts is that the card stopped
+// offering a commit of its own. The source scan above cannot assert this (it is
+// about an absence), so it is asserted here, beside it.
+describe('#1108 stage 2 — the Assigned Plan card offers no commit of its own', () => {
+  it('has no Activate action and no activation request left on it', () => {
     const row = sources['AssignedPlanExpandedRow.tsx'];
-    expect(row).toContain("detail.status === 'draft'");
-    expect(row).toContain("t('action_activate')");
-    // The commit is its own route, so #956's check and the supersede cannot be
-    // bypassed by a plain status flip.
-    expect(row).toMatch(/\/activate/);
+    expect(row).not.toContain("t('action_activate')");
+    expect(row).not.toMatch(/\/activate/);
+    expect(row).not.toMatch(/activateDraft/);
     expect(row).not.toMatch(/runAction\('activate'\)/);
+    // And no replacement dialog either: the 409 is Save & Pay's now, so the
+    // conflict is confirmed where the commit is initiated.
+    expect(row).not.toContain('ReplacePlanDialog');
+    expect(row).not.toContain('activePlanConflict');
+    // What a Draft still offers here is editing and discarding it.
+    expect(row).toContain("t('action_close')");
+    expect(row).toMatch(/EDITABLE_STATUSES\s*=\s*\[[^\]]*'draft'/);
   });
 
-  it('raises the shared replacement dialog from the activation\'s own 409', () => {
+  it('does not offer Edit mode for a locked configuration', () => {
     const row = sources['AssignedPlanExpandedRow.tsx'];
-    expect(row).toContain('ReplacePlanDialog');
-    expect(row).toContain('activePlanConflict');
+    const editable = row.match(/EDITABLE_STATUSES\s*=\s*\[([^\]]*)\]/)?.[1] ?? '';
+    expect(editable).not.toContain('pending_payment');
+    // Closing it, on the other hand, is how staff get out of one.
+    const closeable = row.match(/CLOSEABLE_STATUSES\s*=\s*\[([^\]]*)\]/)?.[1] ?? '';
+    expect(closeable).toContain('pending_payment');
   });
 
-  it('lets the Assigned Plans filter name a Draft', () => {
+  it('lets the Assigned Plans filter name both pre-activation statuses', () => {
     expect(sources['page.tsx']).toMatch(/LIFECYCLE_STATUSES[^=]*=\s*\[[^\]]*'draft'/);
   });
 
-  it.each(LOCALE_CODES)('%s labels the Activate action', (code) => {
+  it.each(LOCALE_CODES)('%s labels the Pending Payment status and drops the retired action', (code) => {
     const locale = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
     // next-intl prints a missing key verbatim, so an absent one would render as
-    // `assigned_plans_page.action_activate` in the context menu.
-    expect(locale.assigned_plans_page.action_activate).toBeTruthy();
+    // `status.pending_payment` in the Status column.
+    expect(locale.status.pending_payment).toBeTruthy();
+    // The card's own Activate is gone, so its label is a dead key.
+    expect(locale.assigned_plans_page.action_activate).toBeUndefined();
   });
 });
