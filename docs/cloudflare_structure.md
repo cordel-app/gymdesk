@@ -23,7 +23,8 @@
 │               ├── bookings.png                                           — tamaño definido por el diseño
 │               ├── background.png                                         — tamaño definido por el diseño
 │               ├── goals.png                                              — tamaño definido por el diseño
-│               └── products_services.png                                  — tamaño definido por el diseño
+│               ├── bookings.png                                           — tamaño definido por el diseño                                        
+│               └── products.png                                           — tamaño definido por el diseño
 │
 └── gyms/
     └── {gym_id}-{sanitized_gym_name}/
@@ -53,7 +54,8 @@
                     ├── bookings.png                                       — tamaño definido por el diseño
                     ├── background.png                                     — tamaño definido por el diseño
                     ├── goals.png                                          — tamaño definido por el diseño                    
-                    └── products_services.png                            — tamaño definido por el diseño
+                    ├── bookings.png                                       — tamaño definido por el diseño                                        
+                    └── products.png                                       — tamaño definido por el diseño
 
 ---
 
