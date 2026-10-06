@@ -26,7 +26,11 @@ import { loadMemberImagesByTheme } from './theme-member-images';
 import { ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
 import { loadPromotionApplications, regularMembershipFee } from './user-memberships';
 import { currentCycleDate, currentMembershipFee } from './membership-fee-pricing';
-import { MEMBER_CURRENT_ASSIGNMENT_ORDER, memberBillingEventForecast } from './me-billing-forecast';
+import {
+  MEMBER_CURRENT_ASSIGNMENT_FILTER,
+  MEMBER_CURRENT_ASSIGNMENT_ORDER,
+  memberBillingEventForecast,
+} from './me-billing-forecast';
 import { deriveBillingEventStatus } from '../domain/billingEventStatus';
 import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
@@ -1487,6 +1491,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
        WHERE um.gym_id = ? AND um.member_id = ?
+       ${MEMBER_CURRENT_ASSIGNMENT_FILTER}
        ${MEMBER_CURRENT_ASSIGNMENT_ORDER}
        LIMIT 1`,
       [gymId, memberId],

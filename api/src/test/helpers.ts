@@ -76,6 +76,34 @@ export async function createTestStaffForMembership(
   return Number(insertId);
 }
 
+/**
+ * Commit a Draft assignment (#1108 stage 1).
+ *
+ * Every assignment path creates the row as a Draft now, so a test whose subject
+ * is what an *active* plan prices, bills or shows — rather than the Draft state
+ * itself — assigns and then calls this. It is a helper rather than each file
+ * spelling the request because there is one commit route and a second spelling
+ * of it would drift from `POST /:id/activate`'s own contract.
+ *
+ * `confirm` is #956's replacement confirmation, which moved onto this transition
+ * from the four insert paths: pass it where the member is deliberately being
+ * given a second plan.
+ */
+export async function activateAssignment(
+  gymId: string, userMembershipId: number, opts?: { confirm?: boolean },
+): Promise<void> {
+  const res = await request
+    .post(`/user-memberships/${userMembershipId}/activate`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send(opts?.confirm ? { confirm: true } : {});
+  if (res.status !== 200) {
+    throw new Error(
+      `activateAssignment(${userMembershipId}) answered ${res.status}: ${JSON.stringify(res.body)}`,
+    );
+  }
+}
+
 /** Deletes gyms created by this worker and their dependent rows. */
 export async function cleanupTestGyms() {
   // #780: the two run histories are the deliberate no-`gym_id` exception, so

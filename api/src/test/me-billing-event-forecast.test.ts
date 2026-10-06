@@ -21,6 +21,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  activateAssignment,
 } from './helpers';
 
 const ROOT = '/me/billing-event-forecast';
@@ -82,6 +83,11 @@ async function assignPlan(gid: string, mid: number, planId: number, startsAt = T
     .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid)
     .send({ member_id: mid, membership_plan_id: planId, starts_at: startsAt });
   expect(res.status).toBe(201);
+  // #1108 stage 1: assignment creates a Draft, and a Draft is deliberately not
+  // the member's plan (Q2) — the member-facing reads exclude it — so the plan
+  // this file forecasts is committed here.
+  vi.mocked(verifyToken).mockResolvedValueOnce({ sub: `mbf-admin-${gid}` } as any);
+  await activateAssignment(gid, res.body.id);
   return res.body.id as number;
 }
 

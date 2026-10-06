@@ -44,27 +44,41 @@ Clerk **restricted mode** is a dashboard-only setting, not code — see
 
 ### A2. Staff assign a Plan
 
-Three routes insert a `user_memberships` row, and all three hardcode `status = 'active'`:
+Three routes insert a `user_memberships` row, and all three write
+`ASSIGNMENT_CREATION_STATUS` — **`draft`** since #1108 stage 1:
 
 | Route | File |
 |---|---|
-| `POST /user-memberships` | `api/src/api/user-memberships.ts:636` |
-| `POST /user-memberships/:id/assign-new-plan` | `api/src/api/user-memberships.ts:865` |
-| `POST /membership-plans/:id/assign` | `api/src/api/membership-plans.ts:553` |
+| `POST /user-memberships` | `api/src/api/user-memberships.ts` |
+| `POST /user-memberships/:id/assign-new-plan` | `api/src/api/user-memberships.ts` |
+| `POST /membership-plans/:id/assign` | `api/src/api/membership-plans.ts` |
 
 Each one, in the same transaction:
 
 - writes a `status_changed` Billing Event through `recordStatusChange()`
-  (`api/src/api/billing-events.ts`), `previousStatus: null → 'active'`;
+  (`api/src/api/billing-events.ts`), `previousStatus: null → 'draft'`;
 - calls `snapshotAssignedPlan()` (`api/src/api/assigned-plan-snapshot.ts`) — the Assigned
   Plan owns the commercial configuration it was assigned with (#635 §11–§17).
 
 What it does **not** write: `next_billing_date` (still NULL), a `payment_requests` row, or
-a `payment_methods` row. So an assignment is `active` — bookable, per
-`api/src/api/activity-eligibility.ts`'s `um.status = 'active'` gate — from the moment it is
-created, and the nightly run skips it silently until a card is on file.
+a `payment_methods` row. A Draft is therefore **not billable and not bookable**: the nightly
+run and `api/src/api/activity-eligibility.ts` both read `um.status = 'active'`.
 
-There is no pre-activation status: #786 retired `draft` and `awaiting_payment` — see
+### A2b. The Draft is committed
+
+`POST /user-memberships/:id/activate` is the one `draft → active` transition, and it is
+where #956's one-plan rule is enforced — the member may have been holding another plan the
+whole time this one was configured, since a Draft is deliberately outside
+`LIVE_ASSIGNMENT_STATUSES`. It answers `409 active_plan_exists` unless the caller confirms,
+and supersedes on `confirm: true` through `supersedeLiveAssignments()` exactly as the insert
+paths used to. `PUT /user-memberships/:id` refuses the flip and names this route, the way a
+cancellation is refused and routed to `DELETE`.
+
+Once active, the first payment is collected as A3–A6 describe, and nothing about it moves
+`um.status`: the webhook's `completed` branch stamps `next_billing_date`, and the nightly run
+skips the assignment until a card is on file. Stage 2 of #1108 is **Save & Pay** — the same
+commit with the payment raised around it, a *Pending Payment* state between the two and the
+forecast consolidated into real Billing Events — see
 [Assigned Plan status model](#assigned-plan-status-model).
 
 ### A3. A payment request is raised
@@ -690,19 +704,30 @@ nightly run (automatically, per settled charge).
 ### Assigned Plan status model
 
 `STATUSES` and `ALLOWED_TRANSITIONS` in `api/src/api/user-memberships.ts`, and the
-`user_memberships_status_check` CHECK (current definition: migration 198):
+`user_memberships_status_check` CHECK (current definition: migration 227):
 
 ```
-active ◄──► paused
-  └───────────┴──► cancelled
-expired (assign-new-plan only)
+draft ──► active ◄──► paused
+  └─────────┴───────────┴──► cancelled
+expired (assign-new-plan's own supersede on pre-#1108 rows)
 ```
 
-An assignment is **`active` from creation** — all three insert paths (`POST /user-memberships`,
-`POST /user-memberships/:id/assign-new-plan`, `POST /membership-plans/:id/assign`) write
-`'active'` — and its first payment is collected afterwards (A3–A6). Nothing about the first
-payment moves `um.status`: the webhook's `completed` branch stamps `next_billing_date`, and
-the nightly run skips the assignment until a card is on file.
+An assignment is **`draft` from creation** (#1108 stage 1) — all three insert paths write
+`ASSIGNMENT_CREATION_STATUS` — and `POST /user-memberships/:id/activate` is the one
+transition that commits it (A2b). A Draft bills nothing, cannot be booked on, is not the
+member's enrollment status and is excluded from the member's own reads; it *is* fully
+editable and it *is* projected, so the Assigned Plan card's Billing Event Forecast answers
+what committing it would bill (#1108 §5 / Q3).
+
+`draft` is deliberately **outside** `LIVE_ASSIGNMENT_STATUSES` (#1108 Q2), so a member may
+hold one Active plan and one Draft replacement at once — which is what makes a replacement
+configurable before it is committed — and migration 213's UNIQUE index needs no change,
+because `active_member_key` is `IF(status = 'active', member_id, NULL)`. The index still
+backstops the commit, since the `draft → active` UPDATE populates that column.
+
+Once active, the first payment is collected as A3–A6 describe. Nothing about it moves
+`um.status`: the webhook's `completed` branch stamps `next_billing_date`, and the nightly run
+skips the assignment until a card is on file.
 
 #511 stage 1 (migration 148) had added two pre-activation statuses, `draft` and
 `awaiting_payment`, with a **Submit** action (`POST /user-memberships/:id/submit`,
@@ -712,9 +737,18 @@ would have been configurable and closeable but never activatable or payable. #78
 them: the route, the Submit menu item, the dates-and-discount Edit form that only those two
 statuses could open, the `draft` Billing Events projection (its pure
 `projectDraftBillingEvents()` / `computeMembershipFeePriceAt()` followed in #854), and every
-status list that named them are gone, and migration 198 narrowed the CHECK back to the four values above. That
-migration **refuses to run** while any row still holds a retired status, rather than guess
-what the row should become.
+status list that named them are gone, and migration 198 narrowed the CHECK back to four
+values. That migration **refuses to run** while any row still holds a retired status, rather
+than guess what the row should become.
+
+**#1108 stage 1 brought `draft` back** — with the insert paths and the commit transition that
+make it reachable, which is exactly what 198 said was missing — and left `awaiting_payment`
+and `/submit` retired. Migration 227 is that widening; its `down` refuses to run while any
+row holds a status the narrow CHECK would refuse, for 198's reason, so roll the application
+half back first — every assignment path now writes a Draft, which makes that refusal the
+ordinary outcome of rolling back out of order rather than a pathological one. #1108's second
+pre-activation state is **Pending Payment**, and it is stage 2's: it arrives with the Save &
+Pay transaction that produces it rather than as a value nothing can write for a second time.
 
 > **Decisions (2026-09-27, #786)** — change them here if they turn out wrong:
 > - Retired rather than wired: an assignment is `active` from creation and the first payment
@@ -723,7 +757,22 @@ what the row should become.
 > - No pre-activation step replaces **Submit**: there is no "prepare, then activate" flow.
 > - Re-introducing a payment gate before activation later is a schema widening (the CHECK,
 >   `STATUSES`, `ALLOWED_TRANSITIONS`) plus an activation write in the webhook and manual
->   payment paths — its own ticket, not a revert of this one.
+>   payment paths — its own ticket, not a revert of this one. **That ticket is #1108**, whose
+>   stage 1 did the widening (migration 227) and put the activation write in one explicit
+>   route; the webhook and manual-payment half is its stage 2.
+
+> **Decisions (2026-10-06, #1108 stage 1)** — change them here if they turn out wrong:
+> - A Draft is **not** the member's Membership Plan: it is outside
+>   `LIVE_ASSIGNMENT_STATUSES`, so one Active plan and one Draft replacement is a legal
+>   state, and #956's check runs on the commit instead of on the four insert paths.
+> - A Draft is **not bookable**: `activity-eligibility.ts`'s `um.status = 'active'` gate is
+>   unchanged, which *is* a change in behaviour — an unpaid assignment was bookable from
+>   creation under #786.
+> - The Draft's projection is the Assigned Plan card's existing **Billing Event Forecast**;
+>   no fourth section and no new name (#1108 Q3).
+> - A Draft nobody commits does **not** expire (Q1a): staff discard it through
+>   `POST /:id/close`, which is warning-free because a Draft has never had a
+>   `next_billing_date`.
 
 `expired` is reached only by `assign-new-plan`'s supersede logic, never by request.
 

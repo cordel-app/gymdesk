@@ -41,8 +41,10 @@ import { LIFECYCLE_STATUS_SQL } from './user-memberships';
 // configuration. Deliberately the same list the Billing Simulation consolidates
 // (SIMULATED_STATUSES in billing-simulation.ts), so the three configuration
 // sections and the simulation below them can never disagree about which plans
-// count.
-const LIVE_STATUSES = ['active', 'paused'] as const;
+// count — #1108 stage 1 added `draft` to both for that reason: a Draft is what
+// the staff are configuring, so it has to appear on the Member card beside the
+// forecast that projects it.
+const LIVE_STATUSES = ['draft', 'active', 'paused'] as const;
 
 // mysql2 may return DATE columns as Date objects rather than strings depending
 // on the connection's timezone config (same note as user-memberships.ts and

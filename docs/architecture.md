@@ -438,11 +438,38 @@ A member's card lives in `payment_methods` (one row per member and gym, `payment
 
 **Billing Events range rule** (per the #511 issue thread's Q2 answer, implemented in `domain/assignedPlanBillingEvents.ts` — pure, unit-tested, no DB dependency): show all billing events affected by a promotion applied to the plan, plus the events covering the following two calendar months after the last one; with no applicable promotion, the next two calendar months from the plan's `starts_at`. Clamped to `ends_at` when the plan ends first.
 - The view queries the real, persisted `billing_events` ledger and only ever tags (`promotion_affected: true/false`) and filters it — amounts are never recomputed, preserving historical values.
-- #511 also gave a **`draft`** plan a non-persisted projection (`projected: true`), since a draft had no ledger yet. #786 retired the `draft` status, and #854 removed the projection and its `projected` flag (view-level and per event) with it.
+- #511 also gave a **`draft`** plan a non-persisted projection (`projected: true`), since a draft had no ledger yet. #786 retired the `draft` status, and #854 removed the projection and its `projected` flag (view-level and per event) with it. #1108 stage 1 brought the **status** back without bringing the projection back: a Draft's ledger is genuinely empty, and what a Draft would bill is the card's existing Billing Event Forecast (`assignmentBillingEventSimulation.ts`, #924 stage 4), which a Draft reaches because `draft` is in `SIMULATED_STATUSES` — not a second, status-specific projection inside this view.
 
 `user_membership_promotions.revoked_at` (nullable `DATETIME`, migration 150) is stamped when a promotion is revoked (`DELETE /user-memberships/:id/promotions/:promotionId`) — together with `applied_at`, it defines the `[applied_at, revoked_at]` window used to tag whether a given billing event (or projected cycle) was affected by that promotion, independent of the row's `status`. Migration 150 also adds a `billing_events (user_membership_id, created_at)` composite index, since the range calculation reads every ledger row for one membership ordered by `created_at`.
 
 The Close action's unused-value check warns on a pending `next_billing_date`. #511 stage 3 also warned about a `session_count` allowance with sessions left in its window; #635 stage 4 (part 2) retired Included Services, so that half is gone — a Plan's Session Benefits are billed up front rather than consumed per booking, so closing forfeits nothing.
+
+### Draft Assigned Plans (#1108 stage 1, migration 227)
+
+Assigning a Membership Plan no longer makes it the member's membership. All three insert
+paths write `ASSIGNMENT_CREATION_STATUS` — **`draft`** — and `POST /user-memberships/:id/activate`
+is the one `draft → active` transition; `PUT /user-memberships/:id` refuses that flip and
+names the route, the way a cancellation is refused and routed to `DELETE`. Migration 227
+widens `user_memberships_status_check` to five values, which is the widening migration 198
+(#786) said a payment gate before activation would need. `awaiting_payment` stays retired:
+#1108's second pre-activation state is *Pending Payment*, and it arrives with stage 2's
+**Save & Pay** rather than as a value nothing can write for a second time.
+
+| Question | Answer, and where it lives |
+|---|---|
+| Is a Draft the member's plan? | **No.** `draft` is outside `LIVE_ASSIGNMENT_STATUSES` (`domain/oneActivePlan.ts`), so one Active plan plus one Draft replacement is a legal state — which is what makes a replacement configurable before it is committed. #956's check, its `confirm` and `supersedeLiveAssignments()` therefore run in the activate transaction rather than in the four insert paths. Migration 213's UNIQUE index is untouched (`active_member_key` is `IF(status = 'active', member_id, NULL)`) and still backstops the commit, because the `draft → active` UPDATE populates that column. |
+| Does it bill or book? | **No.** `api/src/api/billing.ts` and `api/src/api/activity-eligibility.ts` both read `um.status = 'active'`. A Draft not being bookable *is* a behaviour change — an unpaid assignment was bookable from creation under #786. |
+| Is it editable? | **Fully** (§2–§4). `draft` is in `SNAPSHOT_EDITABLE_STATUSES` (every snapshot section), `ATTACHABLE_STATUSES` (Additional Products) and `CLOSEABLE_FROM`; Promotions were never status-gated. |
+| Is it projected? | **Yes** — `SIMULATED_STATUSES` and the Member card's own `LIVE_STATUSES` include it, so the Assigned Plan card's existing **Billing Event Forecast** answers what committing it would bill. #1108 Q3's answer is to read it there rather than grow a fourth name beside *Membership Fee Simulation*, *Billing Event Forecast* and the **Billing Events** ledger. |
+| Where is it invisible? | `latestEnrollmentStatusSql()` (it reads the *latest* row, so a Draft would overwrite a currently Active member's enrollment status and drop them out of the Nutrition Dashboard's count), `countsAsRecentMembership()` (#927's window — a Draft's `starts_at` is by definition inside it), the Financials dashboard's assigned-plan join, and the member's own reads through `MEMBER_CURRENT_ASSIGNMENT_FILTER` beside `MEMBER_CURRENT_ASSIGNMENT_ORDER` — both halves in both callers, because `FIELD()` answers 0 for an unlisted status and would sort a Draft *first*. |
+| What if nobody commits it? | It sits there (Q1a — no expiry sweep). Staff discard it with `POST /:id/close`, which is warning-free because a Draft has never had a `next_billing_date`. |
+
+Admin: `lifecycle_status` reports `draft` (a stored status outranks the date-aware part of
+`LIFECYCLE_STATUS_SQL`, so a future-dated Draft reads `draft` and not `pending`), the
+Assigned Plans filter offers it, `StatusBadge` already had the tone, and the Assigned Plan
+card offers `⋮ → Activate` — which raises the shared `ReplacePlanDialog` from the 409, since
+that is where the conflict comes from now. The gate is
+`api/src/test/draft-assignment-status.unit.test.ts`.
 
 ### Membership Fee Simulation — the Assigned Plan's Example Timeline (#924 stage 3 — no migration)
 
