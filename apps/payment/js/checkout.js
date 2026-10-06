@@ -95,7 +95,13 @@
     // for nothing, and the server says which — see `purpose` in
     // GET /payment-page/token/:token. A verification shows no amount, because
     // none is taken.
+    //
+    // #1121 stage 2 adds a third: a one-off product purchase. It shows an
+    // amount like a fee, but the consent sentence must not promise a recurring
+    // charge "until you cancel your membership" — that is a different
+    // authorisation, and the member is buying one locker.
     var isCardUpdate = data.purpose === 'card_update';
+    var isPurchase = data.purpose === 'product_purchase';
 
     applyThemeColors(data.themeColors);
 
@@ -121,6 +127,14 @@
         (data.gymName || 'el gimnasio') + ' a cargar en ella tu cuota de membresía ' +
         billingIntervalLabel(data.billingInterval) +
         ' hasta que canceles tu membresía.';
+    } else if (isPurchase) {
+      amountRowEl.hidden = false;
+      amountEl.textContent = formatAmount(data.amount, data.currency);
+      consentTextEl.textContent =
+        'Al completar este pago autorizas a ' + (data.gymName || 'el gimnasio') +
+        ' a cargar ' + formatAmount(data.amount, data.currency) + ' en esta tarjeta' +
+        (data.itemName ? ' por ' + data.itemName : '') +
+        '. Es un pago único.';
     } else {
       amountRowEl.hidden = false;
       amountEl.textContent = formatAmount(data.amount, data.currency);

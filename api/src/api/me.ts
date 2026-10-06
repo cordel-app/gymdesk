@@ -31,7 +31,12 @@ import {
   MEMBER_CURRENT_ASSIGNMENT_ORDER,
   memberBillingEventForecast,
 } from './me-billing-forecast';
-import { memberProductCatalogue } from './me-products';
+import {
+  PurchaseRefused,
+  memberProductCatalogue,
+  startProductPurchase,
+} from './me-products';
+import { purchaseBlockResponse } from '../domain/memberProductPurchase';
 import {
   MEMBER_PLAN_HISTORY_LIMIT,
   splitMemberPlanHistory,
@@ -2136,18 +2141,17 @@ meRouter.get('/billing-event-forecast', requireRole('member'), requireFeatureEna
 //
 // It is a read of `products` and nothing else (§7: no second catalogue), under
 // the predicate `domain/memberProductCatalogue.ts` owns — `status = 'active'`
-// and `enrollment_status = 'public'`, the thread's `Q1`. Stage 1 has no Buy
-// action, so nothing here writes, prices a purchase or knows what the member
-// already holds.
+// and `enrollment_status = 'public'`, the thread's `Q1`.
+//
+// Since stage 2 each row also carries **this member's own** state for it
+// (`purchase_state`, `purchasable`, §6), which is still not a second catalogue:
+// the Products are the gym's, and what is per member is only what they have
+// bought (`member_products`, the thread's `Q2`).
 //
 // Behind **both** feature flags, for the reason My Goals is (#1036): the section
 // it appears in is `member_web.my_membership`, and the catalogue itself is
 // `financials.products` — a gym that switched Products off did not mean "and
 // offer them to members anyway".
-//
-// `resolveMemberId()` is called although the answer is the gym's and not the
-// member's, so a caller who is authenticated but is not a member of this gym is
-// refused here rather than reading its catalogue.
 meRouter.get(
   '/products',
   requireRole('member'),
@@ -2157,9 +2161,81 @@ meRouter.get(
     const ctx = getTenantContext(req);
     const { gymId } = ctx;
     try {
-      await resolveMemberId(gymId, ctx);
-      res.json({ items: await memberProductCatalogue(gymId) });
+      const memberId = await resolveMemberId(gymId, ctx);
+      res.json({ items: await memberProductCatalogue(gymId, memberId) });
     } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * #1121 stage 2 §5 — the member buys one.
+ *
+ * Self-service and final (the thread's `Q3`: no staff approval), so the route
+ * is the whole of the purchase decision: it reads the Product through the
+ * catalogue's own predicate, prices it with the figure the catalogue quoted,
+ * raises the hosted-page payment and writes the `pending_payment` purchase the
+ * webhook completes. Nothing is granted here — a purchase becomes the member's
+ * when the provider says the money arrived, which is why
+ * `POST` answers a checkout URL rather than a purchase.
+ *
+ * Its limiter is the fee route's: a payment attempt costs a provider round trip
+ * and a hosted page, and a member who needs more than a handful an hour is
+ * either stuck or probing. It is keyed on the Clerk user for the same reason
+ * (`req.ip` triggers express-rate-limit's IPv6 validation warning, and every
+ * caller here is authenticated).
+ */
+const memberPurchaseRateLimit = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  keyGenerator: (req) => (req as any).auth?.userId ?? 'unauthenticated',
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many purchase attempts. Please try again later.' }),
+});
+
+meRouter.post(
+  '/products/:id/purchase',
+  requireRole('member'),
+  requireFeatureEnabled('member_web.my_membership'),
+  requireFeatureEnabled('financials.products'),
+  memberPurchaseRateLimit as any,
+  async (req: Request, res: Response, next: NextFunction) => {
+    const ctx = getTenantContext(req);
+    const { gymId } = ctx;
+    const productId = Number(req.params.id);
+    if (!Number.isInteger(productId) || productId <= 0) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+    try {
+      const memberId = await resolveMemberId(gymId, ctx);
+      const { rows } = await db.query<{ name: string; email: string }>(
+        'SELECT name, email FROM members WHERE gym_id = ? AND id = ?',
+        [gymId, memberId],
+      );
+      const member = rows[0];
+      if (!member) return res.status(404).json({ error: 'Member profile not found' });
+
+      const result = await startProductPurchase({
+        gymId,
+        memberId,
+        memberName: member.name,
+        memberEmail: member.email,
+        productId,
+      });
+      req.log.info(
+        { memberId, productId, purchaseId: result.purchaseId },
+        'Member product purchase started',
+      );
+      res.status(201).json(result);
+    } catch (err: any) {
+      if (err instanceof PurchaseRefused) {
+        const { status, ...body } = purchaseBlockResponse(err.block);
+        return res.status(status).json(body);
+      }
+      if (err.status) return res.status(err.status).json({ error: err.message });
+      req.log.error({ err: (err as Error).message }, 'Member product purchase failed');
       next(err);
     }
   },

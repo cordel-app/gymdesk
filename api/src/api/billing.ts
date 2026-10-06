@@ -7,6 +7,7 @@ import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import { advanceBillingDate } from '../domain/billingDate';
 import { registerRejection } from '../domain/billingDunning';
 import { abandonedRequestHours } from '../domain/paymentRequestExpiry';
+import { cancelAbandonedPurchases } from './me-products';
 import { recordStatusChange } from './billing-events';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
@@ -571,12 +572,25 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
       [hours],
     );
 
+    // #1121 stage 2: a product purchase whose payment is over has to stop being
+    // `pending_payment`, or its UNIQUE pending key blocks the member from ever
+    // buying that Product again. Keyed on the request's status — including the
+    // rows just expired above — so there is no second definition of when an
+    // attempt is finished, and it is reported beside the totals rather than
+    // folded into `expired`, which `.github/workflows/billing-run.yml` parses.
+    const purchasesCancelled = await cancelAbandonedPurchases();
+
     const expired = unopened + abandoned;
     req.log.info(
-      { expired, unopened, abandoned, abandonedAfterHours: hours },
+      { expired, unopened, abandoned, abandonedAfterHours: hours, purchasesCancelled },
       'payment_requests cleanup: expired rows',
     );
-    res.json({ expired, expired_unopened: unopened, expired_abandoned: abandoned });
+    res.json({
+      expired,
+      expired_unopened: unopened,
+      expired_abandoned: abandoned,
+      purchases_cancelled: purchasesCancelled,
+    });
   } catch (err) {
     req.log.error({ err: (err as Error).message }, 'billing cleanup failed');
     res.status(500).json({ error: 'Internal server error' });

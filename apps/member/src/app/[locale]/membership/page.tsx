@@ -28,6 +28,7 @@ import {
   MemberProductsSection,
   type MemberProductCardItem,
 } from '@/components/MemberProductsSection';
+import { MemberDialog } from '@/components/MemberDialog';
 import {
   PastMembershipPlansCard,
   type PastMembershipPlanItem,
@@ -44,6 +45,11 @@ import {
   productPackageNote,
   productPriceText,
   productTaxNoteKey,
+  isMembershipFeeRequest,
+  purchaseErrorKey,
+  purchaseStateKey,
+  purchaseStateStatusWord,
+  showsBuyAction,
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
@@ -128,6 +134,13 @@ interface PaymentRequest {
   id: number;
   amount: string;
   currency: string;
+  /**
+   * #1121 stage 2 — which flow raised it. A product purchase is a real payment
+   * and belongs in the member's history, but it is not the **membership fee**,
+   * so the "you have a payment to finish" prompt below must not read one as an
+   * unpaid fee (migration 228's reason, and #788's one flow over).
+   */
+  source: string;
   status: 'pending' | 'completed' | 'failed' | 'expired';
   billing_interval: number | null;
   billing_unit: 'day' | 'week' | 'month' | 'year' | null;
@@ -177,6 +190,12 @@ export default function MembershipPage() {
 
   const [downloadingReceipt, setDownloadingReceipt] = useState<number | null>(null);
 
+  // #1121 stage 2 — the Product the member is confirming, and that one
+  // dialog's own submit state. `null` means no dialog.
+  const [purchasing, setPurchasing] = useState<MemberProduct | null>(null);
+  const [purchaseSubmitting, setPurchaseSubmitting] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -216,7 +235,8 @@ export default function MembershipPage() {
     return () => { cancelled = true; };
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
-  const pendingRequest = paymentRequests.find(r => r.status === 'pending') ?? null;
+  const pendingRequest = paymentRequests
+    .find(r => r.status === 'pending' && isMembershipFeeRequest(r.source)) ?? null;
   const showStartPayment = !pendingRequest
     && membership?.status === 'active'
     && membership?.membership_fee != null
@@ -395,8 +415,69 @@ export default function MembershipPage() {
         price: productPriceText(product, locale),
         frequency: frequencyKey ? t(frequencyKey as any) : null,
         meta: meta || null,
+        action: productAction(product),
       };
     });
+  }
+
+  /**
+   * #1121 stage 2 §6 — the card's one action: Buy, or what the member already
+   * holds.
+   *
+   * Which of the two (and whether either) is `lib/memberProducts.ts`' answer
+   * over the server's `purchasable`/`purchase_state`, so a Product stage 2
+   * cannot sell — a recurring one, an unpriced one — gets **nothing** rather
+   * than a disabled button (#1073). The pill's tone is `statusTone()`'s, the
+   * app's one map (#983).
+   */
+  function productAction(product: MemberProduct) {
+    if (showsBuyAction(product)) {
+      return (
+        <button
+          type="button"
+          style={styles.buyBtn}
+          onClick={() => openPurchase(product)}
+        >
+          {t('membership.product_buy')}
+        </button>
+      );
+    }
+    const stateKey = purchaseStateKey(product.purchase_state);
+    const statusWord = purchaseStateStatusWord(product.purchase_state);
+    if (!stateKey || !statusWord) return null;
+    return <StatusPill status={statusWord} label={t(stateKey as any)} />;
+  }
+
+  function openPurchase(product: MemberProduct) {
+    setPurchaseError(null);
+    setPurchasing(product);
+  }
+
+  function closePurchase() {
+    setPurchasing(null);
+    setPurchaseError(null);
+  }
+
+  /**
+   * Starts the purchase and hands the member to the hosted page, exactly as the
+   * membership fee's own consent flow does — the card is typed on
+   * `pay.<host>`, never here (the Admin and Members apps never see card data).
+   */
+  async function confirmPurchase(product: MemberProduct) {
+    setPurchaseSubmitting(true);
+    setPurchaseError(null);
+    try {
+      const result = await apiFetch<{ checkoutUrl: string }>(
+        `/me/products/${product.id}/purchase`,
+        { method: 'POST' },
+      );
+      window.location.href = result.checkoutUrl;
+    } catch (err: any) {
+      // The API answers the refusal code, so the member reads it in their own
+      // language; anything else falls back to the generic key.
+      setPurchaseError(t(purchaseErrorKey(err?.message) as any));
+      setPurchaseSubmitting(false);
+    }
   }
 
   function pastCardLines(group: BillingEvent[]): BillingEventCardLine[] {
@@ -666,6 +747,49 @@ export default function MembershipPage() {
         </PaymentsSubcard>
       </PaymentsCard>
 
+      {/* #1121 stage 2 §5/§8 — the member sees the final price before paying, in
+          the app's own dialog (#1115: one dialog shell, not a second overlay).
+          It asks nothing: the price, the frequency and the package note are the
+          ones the card already showed, resolved once above. */}
+      {purchasing && (
+        <MemberDialog
+          labelledBy="product-purchase-title"
+          title={t('membership.product_purchase_title')}
+          onClose={purchaseSubmitting ? () => {} : closePurchase}
+          actions={(
+            <>
+              <button
+                type="button"
+                style={styles.dialogSecondary}
+                onClick={closePurchase}
+                disabled={purchaseSubmitting}
+              >
+                {t('membership.product_purchase_cancel')}
+              </button>
+              <button
+                type="button"
+                style={{ ...styles.dialogPrimary, ...(purchaseSubmitting ? styles.busy : null) }}
+                onClick={() => confirmPurchase(purchasing)}
+                disabled={purchaseSubmitting}
+              >
+                {purchaseSubmitting
+                  ? t('membership.product_purchase_submitting')
+                  : t('membership.product_purchase_confirm')}
+              </button>
+            </>
+          )}
+        >
+          <p style={styles.modalBody}>
+            {t('membership.product_purchase_body', {
+              name: purchasing.name,
+              price: productPriceText(purchasing, locale) ?? '—',
+            })}
+          </p>
+          <p style={styles.hintLeft}>{t('membership.product_purchase_once')}</p>
+          {purchaseError && <p style={styles.submitError}>{purchaseError}</p>}
+        </MemberDialog>
+      )}
+
       {/* Consent modal */}
       {consentOpen && (
         <div style={styles.overlay} onClick={() => !submitting && setConsentOpen(false)}>
@@ -769,5 +893,12 @@ const styles: Record<string, React.CSSProperties> = {
   submitError: { margin: '0 0 12px', fontSize: 13, color: memberTheme.statusError },
   modalActions: { display: 'flex', gap: 10, justifyContent: 'flex-end' },
   cancelBtn: { ...secondaryButtonStyle, padding: '10px 16px', fontSize: 14 },
+  // #1121 stage 2 — the Buy action and the purchase dialog's own pair. Both
+  // spread `memberChrome`'s buttons; neither spells a colour (#983).
+  buyBtn: { ...primaryButtonStyle, padding: '8px 18px', fontSize: 13.5, fontWeight: 600 },
+  dialogPrimary: { ...primaryButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600, flex: 1 },
+  dialogSecondary: { ...secondaryButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600, flex: 1 },
+  busy: { opacity: 0.6, cursor: 'default' },
+  hintLeft: { margin: 0, fontSize: 12.5, color: memberTheme.textMuted },
   confirmBtn: { ...primaryButtonStyle, padding: '10px 20px', fontSize: 14, fontWeight: 600, transition: 'opacity 0.15s' },
 };

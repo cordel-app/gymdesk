@@ -1,6 +1,6 @@
-// #1121 stage 1 — the member-facing Product catalogue: which Products a member
-// may be shown, what they are shown of each one, and how the Members App words
-// it.
+// #1121 stages 1 and 2 — the member-facing Product catalogue: which Products a
+// member may be shown, what they are shown of each one, how the Members App
+// words it, and what buying one means.
 //
 // Both halves are pure, which is the whole reason they are separate modules:
 // `api/src/domain/memberProductCatalogue.ts` owns the predicate and the wire
@@ -74,6 +74,8 @@ function product(over: Partial<MemberProduct> = {}): MemberProduct {
     price_incl_tax: 15,
     currency: 'EUR',
     tax_included: true,
+    purchase_state: 'available',
+    purchasable: true,
     ...over,
   };
 }
@@ -115,18 +117,14 @@ describe('which Products a member may be shown (#1121 Q1)', () => {
     expect(loader).not.toContain('mandatory');
   });
 
-  // Stage 1 is a read of the catalogue. The purchase table, its status and the
-  // "already bought" answer are stage 2's (`Q2`), and nothing here may pretend
-  // to know them.
-  it('says nothing about a purchase', () => {
-    for (const file of [
-      join(REPO, 'api', 'src', 'domain', 'memberProductCatalogue.ts'),
-      join(REPO, 'api', 'src', 'api', 'me-products.ts'),
-    ]) {
-      const source = withoutComments(read(file));
-      expect(source).not.toContain('member_products');
-      expect(source).not.toContain('purchase');
-    }
+  // The predicate module answers *visibility* and nothing else: stage 2's
+  // purchase state is composed onto its result (`describeProductPurchase()`),
+  // never folded into it, so "which Products may a member see" stays one
+  // question with one answer.
+  it('the predicate module says nothing about a purchase', () => {
+    const source = withoutComments(read(REPO, 'api', 'src', 'domain', 'memberProductCatalogue.ts'));
+    expect(source).not.toContain('member_products');
+    expect(source).not.toContain('purchase');
   });
 });
 
@@ -310,8 +308,13 @@ describe('the page reads the catalogue and offers nothing (#1121 stage 1)', () =
     expect(withoutComments(page())).toContain('products === null');
   });
 
-  it('holds no purchase affordance yet', () => {
-    const source = withoutComments(page() + read(MEMBER, 'src', 'components', 'MemberProductsSection.tsx'));
-    expect(source).not.toMatch(/products_buy|product_buy|\/purchase/);
+  // #1121 stage 2 — the Buy action exists now, and the page is where it is
+  // wired: the component takes it as one `action` node and decides neither
+  // what it does nor whether it is there.
+  it('the Buy action is the page’s, and the card only renders it', () => {
+    expect(withoutComments(page())).toContain('/purchase');
+    const card = withoutComments(read(MEMBER, 'src', 'components', 'MemberProductsSection.tsx'));
+    expect(card).not.toMatch(/product_buy|\/purchase|apiFetch/);
+    expect(card).toContain('item.action');
   });
 });

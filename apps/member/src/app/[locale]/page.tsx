@@ -81,6 +81,7 @@ export default function HomePage() {
   const featureEnabled = (key: string) => (isSuperadmin && !isImpersonating) || isFeatureEnabled(featureFlags, key);
 
   const [nextBooking, setNextBooking] = useState<UpcomingBooking | null | undefined>(undefined);
+  const [sameDayMore, setSameDayMore] = useState(0);
   const [membership, setMembership] = useState<Membership | null | undefined>(undefined);
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null);
   const [alert, setAlert] = useState<NotificationItem | null>(null);
@@ -105,6 +106,11 @@ export default function HomePage() {
         (s) => s.my_booking_status === 'booked' || s.my_booking_status === 'waitlisted',
       );
       setNextBooking(booked[0] ?? null);
+      setSameDayMore(
+        booked[0]
+          ? booked.filter((b) => dateOnly(b.starts_at) === dateOnly(booked[0].starts_at)).length - 1
+          : 0,
+      );
       setMembership(mship.membership);
       setAlert(notifs.items.find((n) => n.read_at === null) ?? null);
       setNutritionPlan(nutrition.plan);
@@ -123,6 +129,8 @@ export default function HomePage() {
     }
     load();
   }, [appLoading, isLinked]);
+
+  function goToBookings() { router.push(`/${locale}/schedule`); }
 
   async function cancelBooking(bookingId: number) {
     setCancelPending(true);
@@ -220,7 +228,7 @@ export default function HomePage() {
           {loading ? (
             <div style={styles.card}><p style={styles.hint}>{t('home.loading')}</p></div>
           ) : nextBooking ? (
-            <div style={styles.card}>
+            <div style={{ ...styles.card, cursor: 'pointer' }} onClick={goToBookings}>
               <div style={styles.bookingRow}>
                 <div>
                   <p style={styles.bookingName}>{nextBooking.class_type_name}</p>
@@ -242,16 +250,22 @@ export default function HomePage() {
                 <button
                   style={styles.btnCancel}
                   disabled={cancelPending}
-                  onClick={() => cancelBooking(nextBooking.my_booking_id!)}
+                  onClick={(e) => { e.stopPropagation(); cancelBooking(nextBooking.my_booking_id!); }}
                 >
                   {cancelPending ? '…' : t('member_schedule.cancel_booking')}
                 </button>
               )}
+              {sameDayMore > 0 && (
+                <p style={styles.bookingSub}>{t('home.more_bookings_that_day', { count: sameDayMore })}</p>
+              )}
             </div>
           ) : (
-            <div style={styles.card}>
+            <div style={{ ...styles.card, cursor: 'pointer' }} onClick={goToBookings}>
               <p style={styles.hint}>{t('home.no_upcoming_booking')}</p>
-              <button style={styles.btnSecondary} onClick={() => router.push(`/${locale}/calendar`)}>
+              <button
+                style={styles.btnSecondary}
+                onClick={(e) => { e.stopPropagation(); router.push(`/${locale}/calendar`); }}
+              >
                 {t('home.browse_calendar')}
               </button>
             </div>
