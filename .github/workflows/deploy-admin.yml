@@ -13,7 +13,7 @@ on:
       environment:
         description: GitHub environment to deploy to
         type: choice
-        options: [dev, production]
+        options: [dev, pro]
         default: dev
 
 env:
@@ -53,7 +53,7 @@ jobs:
           no-cache: true
           # #1114 — NEXT_PUBLIC_APP_ENV_LABEL / NEXT_PUBLIC_APP_BRAND_NAME are the
           # browser title's environment label and brand. GitHub *variables* rather
-          # than secrets (neither is one) and per environment, so a `production`
+          # than secrets (neither is one) and per environment, so a `pro`
           # build cannot carry the dev title; unset, the title reads the app's own
           # role alone rather than a wrong brand.
           build-args: |

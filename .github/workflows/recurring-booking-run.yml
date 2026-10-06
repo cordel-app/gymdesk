@@ -35,7 +35,7 @@ on:
       environment:
         description: GitHub environment to run against
         type: choice
-        options: [dev, production]
+        options: [dev, pro]
         default: dev
 
 jobs:
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     # #784: a manual run uses the environment it was dispatched with; a
     # scheduled run has no inputs and falls back to the literal below.
-    # #784: switch to 'production' once the environment exists
+    # #784: switch to 'pro' once that environment carries live gyms
     environment: ${{ inputs.environment || 'dev' }}
     env:
       # #784: the host is the selected environment's `API_BASE_URL` variable
