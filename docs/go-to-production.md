@@ -1047,8 +1047,8 @@ runbook is how.
 
 ## 6. Mobile app (iOS / Android)
 
-WP1 (push API), WP2 (the Members App's native half) and WP3 (the shell, `apps/mobile`) are done;
-nothing has been built on a device or published. Plan and spike findings in `docs/mobile-app.md`,
+WP1 (push API), WP2 (the Members App's native half), WP3 (the shell, `apps/mobile`) and WP4
+(universal links / App Links) are done; nothing has been built on a device or published. Plan and spike findings in `docs/mobile-app.md`,
 the manual checks in `docs/mobile-runbook.md`, decision in `docs/decisions.md` #18. Stage 1 is
 **one generic app** ("Cordel Fitness", `com.cordel.fitness`); items marked *(stage 2)* only matter
 when a gym asks for its own app. Tick items off in the PR that completes them.
@@ -1112,17 +1112,34 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 
 ### Links and push
 
-- [ ] `apple-app-site-association` and `assetlinks.json` served from the Members App's
-      production domain (`Content-Type: application/json`, no redirect) and *Associated Domains*
-      enabled; check an invitation link opens the app from Notes and from Mail.
+- [x] `apple-app-site-association` and `assetlinks.json` **served** from the Members App
+      (#1076 — two route handlers in `apps/member`, reached by a `next.config.js` rewrite so the
+      `200` stays on the canonical path; `application/json`, no redirect; the middleware never
+      sees either path). They answer `404` until the variable below is set, which is a domain
+      that associates no app.
+- [ ] **Set `MOBILE_APP_ASSOCIATIONS`** in the production Members App environment (#1076 — a JSON
+      object keyed by app id, `{"com.cordel.fitness":{"apple_team_id":"…","android_sha256_cert_fingerprints":["…"]}}`,
+      or that JSON base64-encoded for the quadlet `Environment=` lines). The Android value must
+      include **Play App Signing's** fingerprint, not only the upload key's: Play re-signs the
+      app, and an installed release verifies against the key it was signed with. Until it is set a
+      tapped invitation opens in the browser and completes there — nothing fails.
+- [ ] **Enable *Associated Domains*** on the App ID in the Apple Developer portal. The
+      entitlement is already committed (`applinks:` the app profile's own `serverUrl` host,
+      written by `npm run profile:apply`), but the capability on the App ID is what makes a
+      provisioning profile carry it.
+- [ ] Check an invitation link opens the app from **Notes** and from **Mail**, on iOS and
+      Android, and that the same link still works in a browser with the app not installed. Known
+      caveat, not a defect: some in-app browsers (a mail client's own WebView, Gmail on Android)
+      do not trigger a universal link at all.
 - [ ] Push: set `FCM_SERVICE_ACCOUNTS` in the production API environment (#1072 — a JSON object
       keyed by app id; set it **base64-encoded** in GitHub, since `deploy.yml` writes the API's
       environment as inline quadlet `Environment=` lines) and `MOBILE_DEFAULT_APP_ID` if the
       generic app's id is not `com.cordel.fitness`; run migration 221; verify a notification
       reaches a physical iPhone and a physical Android phone. Until the variable is set the API
       sends no push at all and every alert still reaches the Members App — nothing fails.
-- [ ] *(stage 2)* Association files list every app profile; push credentials are resolved per
-      `app_id`. The app itself is already a second `apps/mobile/profiles/<id>.json` plus its own
+- [ ] *(stage 2)* Association files list every app, and push credentials are resolved per
+      `app_id`, from one variable each (`MOBILE_APP_ASSOCIATIONS`, `FCM_SERVICE_ACCOUNTS`) keyed
+      by app id — a second app is a new key in both. The app itself is already a second `apps/mobile/profiles/<id>.json` plus its own
       store plumbing and no code change — rehearse it with `docs/mobile-runbook.md` §6.
 
 ### Store submission
