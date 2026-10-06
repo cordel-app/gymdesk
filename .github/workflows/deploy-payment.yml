@@ -93,9 +93,26 @@ jobs:
               exit 1
             fi
 
+            # Prints why the health check below failed rather than only that it did:
+            # every frontend deploy on corfront has failed it since 2026-10-04 ~22:00
+            # UTC while the public hostnames kept answering. Read-only.
+            diagnose() {
+              echo "--- health check diagnostics (:8083/) ---"
+              for h in localhost 127.0.0.1 '[::1]'; do
+                printf '%s -> ' "$h"
+                curl -sS -o /dev/null --max-time 5 -w 'HTTP %{http_code} from %{remote_ip}\n' "http://$h:8083/" 2>&1 || true
+              done
+              echo "--- localhost resolves to ---"; getent ahosts localhost || true
+              echo "--- listeners on :8083 ---"; ss -tlnp 2>/dev/null | grep ':8083' || echo "nothing listening on :8083"
+              echo "--- published ports ---"; podman port fitness-pay 2>&1 || true
+              echo "--- proxy variables ---"; p=$(env | grep -i -E '^(http|https|no|all)_proxy=' | sed -E 's#(://)[^@/]*@#\1***@#'); echo "${p:-none set}"
+              echo "--- from inside the container ---"
+              podman exec fitness-pay sh -c 'curl -sS -o /dev/null -w "HTTP %{http_code}\n" http://127.0.0.1:8083/ 2>&1 || wget -qS -O /dev/null http://127.0.0.1:8083/ 2>&1 | head -1' 2>&1 || true
+            }
+
             sleep 3
             curl -sf --max-time 10 -o /dev/null http://localhost:8083/ || \
-              { echo "ERROR: payment page not responding on :8083"; systemctl --user status fitness-pay.service --no-pager || true; podman logs fitness-pay 2>/dev/null || true; exit 1; }
+              { echo "ERROR: payment page not responding on :8083"; diagnose; systemctl --user status fitness-pay.service --no-pager || true; podman logs fitness-pay 2>/dev/null || true; exit 1; }
 
             # #1083 — the webhook relay, end to end. Monei's own dashboard
             # preflights a webhook URL with a GET, and the API answers that with
