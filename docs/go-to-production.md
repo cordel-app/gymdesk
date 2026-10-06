@@ -473,6 +473,11 @@ Tick items off in the PR that completes them.
       configuration today — if a locale is ever added to the frontends, the API must be
       updated in the same deploy or the new language will silently fall back to English.
 
+- [ ] **The API's own logs reach Grafana Cloud Loki** (#1186): `fitness-api.container` named
+      no log driver, so its stdout never reached the journal the Fleet collector reads, while
+      corfront's units carry `LogDriver=journald`. `deploy.yml` writes that line into the unit
+      on every deploy (with #1192's env-file change). Verify after the next API deploy with
+      `{host="corback"} |= "request completed"` in Explore.
 - [ ] **Clean up after the `_CMDLINE` secret leak** (#1192, found 2026-10-07). Until #1192,
       `deploy.yml` wrote the API's environment as inline quadlet `Environment=` lines, which
       quadlet passes as `podman run --env KEY=value`; journald records that command line in the

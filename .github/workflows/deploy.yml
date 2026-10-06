@@ -267,6 +267,14 @@ jobs:
             sed -i '/^Environment=/d; /^EnvironmentFile=/d' "$CF"
             sed -i "/^\[Container\]$/a EnvironmentFile=$ENV_FILE" "$CF"
 
+            # #1186: the API's output goes to journald, where the hosts' log
+            # collector reads it, exactly as corfront's three units already do
+            # (`LogDriver=journald`). Without it this unit named no log driver
+            # and not one line the API wrote ever reached Grafana Cloud Loki.
+            # Rewritten every deploy, so a hand edit of the line cannot drift.
+            sed -i '/^LogDriver=/d' "$CF"
+            sed -i "/^\[Container\]$/a LogDriver=journald" "$CF"
+
             # Retire the old EnvironmentFile-based secrets file (#448's shape).
             rm -f "$HOME/fitness-api.env"
 
