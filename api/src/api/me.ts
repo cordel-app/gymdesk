@@ -1525,7 +1525,20 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // The limit is a declared constant written into the statement, never a bound
     // parameter — `db.query` is a prepared statement and MySQL refuses `LIMIT ?`.
     const { current, past: past_memberships } = splitMemberPlanHistory(mships as any[]);
-    if (!current) return res.json({ membership: null, past_memberships: [] });
+    // #1108 stage 2 / #1122: a plan awaiting its first payment is not the
+    // member's plan (it is filtered out above), but it is what *Pay now* is
+    // for, so the page is told about it beside the current one.
+    const { rows: pendingRows } = await db.query<any>(
+      `SELECT um.id, um.starts_at, mp.name AS plan_name
+         FROM user_memberships um LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
+        WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'pending_payment'
+        ORDER BY um.id DESC LIMIT 1`,
+      [gymId, memberId],
+    );
+    const pending_membership = pendingRows[0]
+      ? { ...pendingRows[0], starts_at: toDateOnly(pendingRows[0].starts_at), membership_fee: await currentMembershipFee(gymId, Number(pendingRows[0].id)) }
+      : null;
+    if (!current) return res.json({ membership: null, past_memberships: [], pending_membership });
 
     const um = current;
     // The assignment's own benefit rows, never the Plan's live sections — the
@@ -1597,6 +1610,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     res.json({
       membership: { ...membership, membership_fee, benefits, upcoming_payments },
       past_memberships,
+      pending_membership,
     });
   } catch (err) {
     next(err);

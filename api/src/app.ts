@@ -87,6 +87,7 @@ import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
 // goals exist; this says who holds which.
 import { memberPersonalGoalsRouter } from './api/member-personal-goals';
 import { mePersonalGoalsRouter } from './api/me-personal-goals';
+import { meMembershipPlansRouter } from './api/me-membership-plans';
 import { nutritionDashboardRouter } from './api/nutrition-dashboard';
 import { calendarEventsRouter } from './api/calendar-events';
 import { sharedTrainingRequestsRouter } from './api/shared-training-requests';
@@ -293,6 +294,8 @@ app.use('/me/gyms', requireAuth(), meGymsRouter);
 // the two feature flags it needs are declared on the router itself, beside
 // the rules that read them.
 app.use('/me/personal-goals', requireAuth(), tenantContext, centerContext, mePersonalGoalsRouter);
+// #1122: the Members App's Add Plan — the member's own Draft, Promotions and Save & Pay.
+app.use('/me/membership-plans', requireAuth(), tenantContext, centerContext, meMembershipPlansRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);
 
 // ORGANIZATION module — admin=RW, trainer*/front_desk/nutritionist=R, accountant/member=NONE

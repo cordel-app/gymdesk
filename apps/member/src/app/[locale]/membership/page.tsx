@@ -30,6 +30,18 @@ import {
   type MemberProductCardPromotion,
 } from '@/components/MemberProductsSection';
 import { MemberDialog } from '@/components/MemberDialog';
+import { MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
+import {
+  type MemberPendingPlan,
+  type MemberPlanOffer,
+  assignErrorKey,
+  choosingOwesNothing,
+  planFinalPriceText,
+  planFrequencyKey,
+  planPriceText,
+  planPromotionBenefitNote,
+  planPromotionDurationNote,
+} from '@/lib/memberPlanCatalogue';
 import {
   PastMembershipPlansCard,
   type PastMembershipPlanItem,
@@ -215,6 +227,21 @@ export default function MembershipPage() {
    */
   const [appliedPromotions, setAppliedPromotions] = useState<Record<number, number>>({});
 
+  // #1122 §1–§6 — Add Plan. The catalogue is read when the member opens it,
+  // the Promotion applied per plan is page state (its snapshot is written by
+  // the assignment itself, §5/§6), and the plan awaiting its first payment is
+  // what the server reports beside the current one (#1108 stage 2).
+  const [pendingMembership, setPendingMembership] = useState<MemberPendingPlan | null>(null);
+  const [planCatalogue, setPlanCatalogue] = useState<MemberPlanOffer[] | null>(null);
+  const [catalogueOpen, setCatalogueOpen] = useState(false);
+  const [catalogueLoading, setCatalogueLoading] = useState(false);
+  const [appliedPlanPromotions, setAppliedPlanPromotions] = useState<Record<number, number>>({});
+  const [choosingPlan, setChoosingPlan] = useState<MemberPlanOffer | null>(null);
+  const [assignSubmitting, setAssignSubmitting] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+  const [assignNeedsConfirm, setAssignNeedsConfirm] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -228,7 +255,7 @@ export default function MembershipPage() {
     (async () => {
       try {
         const [mship, ledger, pkgs, promos, prs, projection, catalogue] = await Promise.all([
-          apiFetch<{ membership: Membership | null; past_memberships?: MemberPastPlan[] }>('/me/membership'),
+          apiFetch<{ membership: Membership | null; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
@@ -239,6 +266,7 @@ export default function MembershipPage() {
         if (cancelled) return;
         setMembership(mship.membership);
         setPastPlans(mship.past_memberships ?? []);
+        setPendingMembership(mship.pending_membership ?? null);
         setEvents(ledger.items);
         setPackages(pkgs);
         setPromotions(promos);
@@ -252,7 +280,7 @@ export default function MembershipPage() {
       }
     })();
     return () => { cancelled = true; };
-  }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
+  }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags, reloadKey]);
 
   const pendingRequest = paymentRequests
     .find(r => r.status === 'pending' && isMembershipFeeRequest(r.source)) ?? null;
@@ -262,8 +290,12 @@ export default function MembershipPage() {
     && membership.membership_fee > 0;
 
   // Resolve amount and interval shown in the consent modal
+  // #1108 stage 2: the plan awaiting its first payment is what Pay now is
+  // for while one exists — `POST /me/payment-requests` picks it ahead of an
+  // active plan for the same reason.
   const consentAmount = pendingRequest
     ? parseFloat(pendingRequest.amount).toFixed(2)
+    : pendingMembership?.membership_fee != null ? pendingMembership.membership_fee.toFixed(2)
     : membership?.membership_fee != null ? membership.membership_fee.toFixed(2) : '';
   const consentCurrency = pendingRequest?.currency ?? 'EUR';
   const consentInterval = pendingRequest
@@ -592,6 +624,200 @@ export default function MembershipPage() {
     }
   }
 
+  // ── #1122 — Add Plan ──────────────────────────────────────────────────────
+
+  async function openCatalogue() {
+    setCatalogueOpen(true);
+    if (planCatalogue !== null) return;
+    setCatalogueLoading(true);
+    try {
+      const res = await apiFetch<{ plans: MemberPlanOffer[] }>('/me/membership-plans');
+      setPlanCatalogue(res.plans);
+    } catch {
+      setPlanCatalogue([]);
+    } finally {
+      setCatalogueLoading(false);
+    }
+  }
+
+  function applyPlanPromotion(planId: number, promotionId: number) {
+    setAppliedPlanPromotions((prev) => ({ ...prev, [planId]: promotionId }));
+  }
+
+  function openChoosePlan(plan: MemberPlanOffer) {
+    setChoosingPlan(plan);
+    setAssignError(null);
+    setAssignNeedsConfirm(false);
+  }
+
+  function closeChoosePlan() {
+    setChoosingPlan(null);
+    setAssignError(null);
+    setAssignNeedsConfirm(false);
+  }
+
+  /**
+   * `POST /me/membership-plans/:id/assign` — the member's own Draft, the
+   * applied Promotion with its snapshot, then Save & Pay. A 409 `active_plan_exists`
+   * is the one-plan rule asking for the replacement to be confirmed, so the
+   * dialog turns into that question and resends with `confirm: true`.
+   */
+  async function confirmChoosePlan(confirmReplacement = false) {
+    if (!choosingPlan) return;
+    setAssignSubmitting(true);
+    setAssignError(null);
+    try {
+      const applied = appliedPlanPromotions[choosingPlan.id] ?? null;
+      await apiFetch(`/me/membership-plans/${choosingPlan.id}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({
+          promotion_ids: applied ? [applied] : [],
+          ...(confirmReplacement ? { confirm: true } : {}),
+        }),
+      });
+      closeChoosePlan();
+      setCatalogueOpen(false);
+      setReloadKey((k) => k + 1);
+    } catch (err: any) {
+      if (err?.message === 'active_plan_exists' && !confirmReplacement) {
+        setAssignNeedsConfirm(true);
+      } else {
+        setAssignError(t(assignErrorKey(err?.message) as any));
+      }
+    } finally {
+      setAssignSubmitting(false);
+    }
+  }
+
+  /**
+   * The *Add plan* action and, while one exists, the plan awaiting its first
+   * payment — above the current plan (§1), in both the with-plan and the
+   * no-plan branches so the entry point is never missing.
+   */
+  function renderPlansHeader() {
+    return (
+      <>
+        {pendingMembership && (
+          <div style={styles.pendingPlanCard}>
+            <p style={styles.pendingPlanHeading}>{t('membership.pending_plan_heading')}</p>
+            <p style={styles.pendingPlanBody}>
+              {t('membership.pending_plan_body', {
+                name: pendingMembership.plan_name ?? '—',
+                price: pendingMembership.membership_fee != null ? pendingMembership.membership_fee.toFixed(2) : '—',
+              })}
+            </p>
+            <div style={styles.pendingPlanAction}>
+              <button type="button" style={primaryButtonStyle} onClick={openConsent}>
+                {t('membership.pending_plan_pay')}
+              </button>
+            </div>
+          </div>
+        )}
+        {!pendingMembership && !catalogueOpen && (
+          <div style={styles.addPlanRow}>
+            <button type="button" style={primaryButtonStyle} onClick={openCatalogue}>
+              {t('membership.add_plan')}
+            </button>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  function renderPlanCatalogue() {
+    if (!catalogueOpen) return null;
+    const items: MemberPlanCardItem[] = (planCatalogue ?? []).map((plan) => {
+      const applied = appliedPlanPromotions[plan.id] ?? null;
+      const frequencyKey = planFrequencyKey(plan);
+      return {
+        key: String(plan.id),
+        name: plan.name,
+        description: plan.description,
+        price: planPriceText(plan, locale),
+        frequency: frequencyKey
+          ? t(frequencyKey as any)
+          : (plan.billing_interval != null && plan.billing_unit ? formatInterval(plan.billing_interval, plan.billing_unit, t) : null),
+        finalPriceLabel: t('membership.plan_final_price'),
+        finalPrice: applied ? planFinalPriceText(plan, applied, locale) : null,
+        promotions: plan.promotions.map((promotion) => {
+          const benefit = planPromotionBenefitNote(promotion, locale);
+          const duration = planPromotionDurationNote(promotion);
+          const isApplied = applied === promotion.id;
+          return {
+            key: String(promotion.id),
+            heading: t('membership.promotion_heading'),
+            name: promotion.name,
+            benefit: benefit ? t(benefit.key as any, benefit.values) : null,
+            duration: duration ? t(duration.key as any, duration.values) : null,
+            action: isApplied
+              ? <span style={statusPillStyle(statusTone('active'))}>{t('membership.promotion_applied')}</span>
+              : (
+                <button type="button" style={secondaryButtonStyle} onClick={() => applyPlanPromotion(plan.id, promotion.id)}>
+                  {t('membership.promotion_apply')}
+                </button>
+              ),
+          };
+        }),
+        action: (
+          <button type="button" style={primaryButtonStyle} onClick={() => openChoosePlan(plan)}>
+            {t('membership.choose_plan')}
+          </button>
+        ),
+      };
+    });
+    return (
+      <>
+        <MemberPlanCatalogue
+          title={t('membership.add_plan_title')}
+          emptyLabel={catalogueLoading ? t('membership.add_plan_loading') : t('membership.add_plan_empty')}
+          items={items}
+          onClose={() => setCatalogueOpen(false)}
+          closeLabel={t('membership.add_plan_close')}
+        />
+        {choosingPlan && (
+          <MemberDialog
+            title={t('membership.choose_plan_title')}
+            onClose={assignSubmitting ? () => {} : closeChoosePlan}
+            labelledBy="choose-plan-title"
+            actions={(
+              <>
+                <button type="button" style={secondaryButtonStyle} onClick={closeChoosePlan} disabled={assignSubmitting}>
+                  {t('membership.choose_plan_cancel')}
+                </button>
+                <button
+                  type="button"
+                  style={primaryButtonStyle}
+                  onClick={() => confirmChoosePlan(assignNeedsConfirm)}
+                  disabled={assignSubmitting}
+                >
+                  {assignSubmitting
+                    ? t('membership.choose_plan_submitting')
+                    : assignNeedsConfirm ? t('membership.add_plan_replace_confirm') : t('membership.choose_plan_confirm')}
+                </button>
+              </>
+            )}
+          >
+            {assignNeedsConfirm ? (
+              <p style={styles.dialogBody}>
+                {t('membership.add_plan_replace_body', { current: membership?.plan_name ?? '—', name: choosingPlan.name })}
+              </p>
+            ) : (
+              <p style={styles.dialogBody}>
+                {choosingOwesNothing(choosingPlan, appliedPlanPromotions[choosingPlan.id] ?? null)
+                  ? t('membership.choose_plan_body_free', { name: choosingPlan.name })
+                  : t('membership.choose_plan_body', {
+                    name: choosingPlan.name,
+                    price: planFinalPriceText(choosingPlan, appliedPlanPromotions[choosingPlan.id] ?? null, locale) ?? '—',
+                  })}
+              </p>
+            )}
+            {assignError && <p style={{ ...styles.dialogBody, color: memberTheme.statusError }}>{assignError}</p>}
+          </MemberDialog>
+        )}
+      </>
+    );
+  }
+
   function pastCardLines(group: BillingEvent[]): BillingEventCardLine[] {
     return group.map((event) => {
       const transition = event.event_type === 'status_changed' && event.new_status
@@ -652,11 +878,15 @@ export default function MembershipPage() {
     // rather than the plan's — so the products still belong on this screen.
     return (
       <main style={styles.container}>
-        <div style={styles.emptyCard}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>✦</div>
-          <h1 style={styles.emptyTitle}>{t('membership.title')}</h1>
-          <p style={styles.hint}>{t('membership.empty')}</p>
-        </div>
+        {renderPlansHeader()}
+        {renderPlanCatalogue()}
+        {!pendingMembership && !catalogueOpen && (
+          <div style={styles.emptyCard}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>✦</div>
+            <h1 style={styles.emptyTitle}>{t('membership.title')}</h1>
+            <p style={styles.hint}>{t('membership.empty')}</p>
+          </div>
+        )}
         {renderProducts()}
       </main>
     );
@@ -665,6 +895,11 @@ export default function MembershipPage() {
   return (
     <main style={styles.container}>
       <h1 style={styles.title}>{t('membership.title')}</h1>
+
+      {/* #1122 §1 — Add plan above the current plan, and the plan awaiting
+          its first payment while one exists. */}
+      {renderPlansHeader()}
+      {renderPlanCatalogue()}
 
       <div style={styles.card}>
         <div style={styles.cardHead}>
@@ -988,6 +1223,14 @@ const styles: Record<string, React.CSSProperties> = {
   eventAmount: { fontSize: 15, fontWeight: 600, fontVariantNumeric: 'tabular-nums' },
   eventSub: { fontSize: 12, color: memberTheme.textMuted, marginTop: 4 },
   receiptBtn: { background: 'none', border: 'none', padding: 0, color: memberTheme.link, textDecoration: 'underline', fontSize: 12, cursor: 'pointer' },
+  // #1122 — the Add plan row, the plan awaiting its first payment, and the
+  // choose dialog's text. Every colour is the theme's (#983).
+  addPlanRow: { display: 'flex', justifyContent: 'flex-end', marginBottom: 12 },
+  pendingPlanCard: { ...noticeStyle('warning'), marginBottom: 12 },
+  pendingPlanHeading: { margin: 0, fontSize: 13, fontWeight: 700 },
+  pendingPlanBody: { margin: '4px 0 0', fontSize: 13 },
+  pendingPlanAction: { display: 'flex', justifyContent: 'flex-end', marginTop: 10 },
+  dialogBody: { margin: '0 0 8px', fontSize: 14, color: memberTheme.text, lineHeight: 1.5 },
   emptyCard: { ...sectionCardStyle, padding: '40px 24px', textAlign: 'center' },
   emptyTitle: { margin: '8px 0 12px', fontSize: 20, fontWeight: 700 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: 0 },

@@ -530,7 +530,7 @@ userMembershipsRouter.get('/:id/billing-events', async (req, res) => {
 // Returns an error payload when the Plan cannot be assigned, or null when it
 // can. A Plan that does not exist (or belongs to another gym) reports 404,
 // preserving the response every caller already produced for that case.
-async function planAssignabilityError(gymId: string, planId: number):
+export async function planAssignabilityError(gymId: string, planId: number):
   Promise<{ status: number; error: string } | null>
 {
   const { rows } = await db.query(
