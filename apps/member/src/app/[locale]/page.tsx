@@ -71,6 +71,7 @@ export default function HomePage() {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations();
+  const hasProductsImage = useSectionImageUrl('membership') !== null;
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, member, isSuperadmin } = useApp();
   const { isImpersonating } = useImpersonation();
@@ -316,6 +317,7 @@ export default function HomePage() {
             being squeezed beside a wrapping title. */}
         {featureEnabled('member_web.my_membership') && (
           <MembersSectionCard slot="membership" style={styles.productsTile} onClick={() => router.push(`/${locale}/membership`)} role="button" tabIndex={0}>
+            {!hasProductsImage && <span style={styles.tileIcon}>🛍️</span>}
             <p style={styles.planName}>{t('home.products_services')}</p>
             <p style={styles.bookingSub}>
               {loading
