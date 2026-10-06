@@ -673,7 +673,8 @@ hardening:
       each (threshold `RUN_FRESHNESS_THRESHOLD_HOURS`, default 26). Configured by hand in
       Grafana Cloud on 2026-10-06 (stack `maroonyogurt3482`, folder **Gymdesk**, group
       `run-freshness`, every 5 min): two alert rules that read
-      `https://api.vdicube.com/health/runs` through the **Infinity** data source —
+      `https://admin.vdicube.com/api/health/runs` (the admin relay of the API's
+      `/health/runs`, #1166) through the **Infinity** data source —
       *nightly billing run is stale* (`severity=critical`) and *recurring bookings run is
       stale* (`severity=warning`) — each firing after 10 min of `stale: true`, with **No data
       and Error → Alerting** so an unreachable endpoint fires too, routed by the default
@@ -685,14 +686,12 @@ hardening:
       `grafana@maroonyogurt3482.grafana.net` on 2026-10-06 18:17 UTC (received by Xavier).
 - [ ] **A production contact point** for the freshness alerts once there is a production
       stack, tested the same way.
-- [ ] **Route the freshness alerts through the admin app before the API goes private**
-      (#1166, ahead of #1087): both rules call `api.vdicube.com/health/runs` directly and
-      fire on an unreachable endpoint, so closing the API host first reads as a missed run.
-      The relay (`GET /api/health/runs` on the admin app) is in the repo; once an admin app
-      carrying it is deployed to dev, check `curl https://admin.vdicube.com/api/health/runs`
-      answers the API's body, then change the Infinity URL in both rules
-      (`gymdesk-billing-run-stale`, `gymdesk-recurring-bookings-run-stale`) to it and update
-      `docs/payments.md` → Observability today.
+- [x] **Route the freshness alerts through the admin app before the API goes private**
+      (#1166, ahead of #1087): both rules (`gymdesk-billing-run-stale`,
+      `gymdesk-recurring-bookings-run-stale`) were repointed from `api.vdicube.com/health/runs`
+      to `https://admin.vdicube.com/api/health/runs` on 2026-10-06, after the relay was live on
+      dev and 10/10 queries from Grafana Cloud succeeded, so closing the API host no longer
+      fires them. A production stack points its rules at the production admin host the same way.
 - [x] **Decide the `/billing/` GitHub Actions IP allowlist** (#783): removed, not
       automated — replaced by a per-route limiter on the internal run routes. The
       allowlist never ran (no nginx on corback), so nothing needs undoing on a server; what is

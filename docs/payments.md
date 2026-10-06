@@ -1046,7 +1046,8 @@ absence into something an alert outside GitHub can see:
 - Stack `maroonyogurt3482`, folder **Gymdesk** (uid `gymdesk`), rule group `run-freshness`,
   evaluated every **5 min**.
 - Two Grafana-managed alert rules, one per run, each a single **Infinity** query
-  (`grafanacloud-infinity`, backend parser) on `GET https://api.vdicube.com/health/runs` with
+  (`grafanacloud-infinity`, backend parser) on `GET https://admin.vdicube.com/api/health/runs`
+  (the admin relay, #1166 — repointed from `api.vdicube.com` on 2026-10-06) with
   root selector `billing` or `recurring_bookings`, the `stale` field as a boolean column and a
   computed column `stale ? 1 : 0`, followed by a threshold `> 0`:
 
