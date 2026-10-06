@@ -109,6 +109,9 @@ jobs:
           # them every POST /billing/run and /recurring-bookings/run answers 401.
           BILLING_INTERNAL_SECRET: ${{ secrets.BILLING_INTERNAL_SECRET }}
           RECURRING_BOOKINGS_INTERNAL_SECRET: ${{ secrets.RECURRING_BOOKINGS_INTERNAL_SECRET }}
+          # #1113's own secret for booking-reminder-run.yml. Until #1177 it was
+          # never forwarded, so the API had none and every 15-minute run was a 401.
+          BOOKING_REMINDERS_INTERNAL_SECRET: ${{ secrets.BOOKING_REMINDERS_INTERNAL_SECRET }}
           # #1072 (mobile app WP1) — push. Optional: unset means the API sends no
           # push at all and every member still gets their alerts in the app.
           # Set it **base64-encoded** (`base64 -w0 service-accounts.json`): the
@@ -117,6 +120,14 @@ jobs:
           # `parseServiceAccounts()` accepts either form.
           FCM_SERVICE_ACCOUNTS: ${{ secrets.FCM_SERVICE_ACCOUNTS }}
           MOBILE_DEFAULT_APP_ID: ${{ vars.MOBILE_DEFAULT_APP_ID }}
+          # #1177 — proxy hops (`api/src/domain/forwardedClient.ts`). This job is the
+          # only writer of the API's environment: the script below deletes every
+          # `Environment=` line of the unit before writing this block, so a value
+          # set by hand on the VPS does not survive the next deploy. All optional:
+          # unset writes an empty value, which reads as the default (1, 0, 0).
+          TRUST_PROXY_HOPS: ${{ vars.TRUST_PROXY_HOPS }}
+          PAYMENT_WEBHOOK_RELAY_HOPS: ${{ vars.PAYMENT_WEBHOOK_RELAY_HOPS }}
+          INTERNAL_RUN_RELAY_HOPS: ${{ vars.INTERNAL_RUN_RELAY_HOPS }}
           # #1175 — gym websites post sign-ups to the admin app's relay. The base
           # is what System → Website Integration shows gyms
           # (`https://admin.<host>/api`); the hop count keys the per-IP limit on
@@ -128,7 +139,7 @@ jobs:
           host: ${{ secrets.CORBACK_SSH_HOST }}
           username: podman
           key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
-          envs: APP_NODE_ENV,APP_PORT,CLERK_SECRET_KEY,CLERK_PUBLISHABLE_KEY,CLERK_WEBHOOK_SIGNING_SECRET,CORDEL_FITNESS_DB_HOST,CORDEL_FITNESS_DB_USER,CORDEL_FITNESS_DB_PASSWORD,CORDEL_FITNESS_DB_NAME,CORDEL_FITNESS_ADMIN_URL,CORDEL_FITNESS_MEMBERS_URL,CLOUDFLARE_R2_ENDPOINT,CLOUDFLARE_R2_ACCESS_KEY_ID,CLOUDFLARE_R2_SECRET_ACCESS_KEY,CLOUDFLARE_R2_BUCKET,CLOUDFLARE_R2_PUBLIC_URL,PAYMENT_PROVIDER,PAYMENT_PAGE_URL,PAYMENT_NOTIFICATION_URL,PAYMENT_OK_URL,PAYMENT_KO_URL,MONEI_API_KEY,MONEI_WEBHOOK_SECRET,MONEI_ACCOUNT_ID,BILLING_INTERNAL_SECRET,RECURRING_BOOKINGS_INTERNAL_SECRET,FCM_SERVICE_ACCOUNTS,MOBILE_DEFAULT_APP_ID,PUBLIC_REGISTRATION_BASE_URL,PUBLIC_REGISTRATION_RELAY_HOPS
+          envs: APP_NODE_ENV,APP_PORT,CLERK_SECRET_KEY,CLERK_PUBLISHABLE_KEY,CLERK_WEBHOOK_SIGNING_SECRET,CORDEL_FITNESS_DB_HOST,CORDEL_FITNESS_DB_USER,CORDEL_FITNESS_DB_PASSWORD,CORDEL_FITNESS_DB_NAME,CORDEL_FITNESS_ADMIN_URL,CORDEL_FITNESS_MEMBERS_URL,CLOUDFLARE_R2_ENDPOINT,CLOUDFLARE_R2_ACCESS_KEY_ID,CLOUDFLARE_R2_SECRET_ACCESS_KEY,CLOUDFLARE_R2_BUCKET,CLOUDFLARE_R2_PUBLIC_URL,PAYMENT_PROVIDER,PAYMENT_PAGE_URL,PAYMENT_NOTIFICATION_URL,PAYMENT_OK_URL,PAYMENT_KO_URL,MONEI_API_KEY,MONEI_WEBHOOK_SECRET,MONEI_ACCOUNT_ID,BILLING_INTERNAL_SECRET,RECURRING_BOOKINGS_INTERNAL_SECRET,BOOKING_REMINDERS_INTERNAL_SECRET,FCM_SERVICE_ACCOUNTS,MOBILE_DEFAULT_APP_ID,TRUST_PROXY_HOPS,PAYMENT_WEBHOOK_RELAY_HOPS,INTERNAL_RUN_RELAY_HOPS,PUBLIC_REGISTRATION_BASE_URL,PUBLIC_REGISTRATION_RELAY_HOPS
           script: |
             set -euo pipefail
 
@@ -167,6 +178,12 @@ jobs:
                      BILLING_INTERNAL_SECRET RECURRING_BOOKINGS_INTERNAL_SECRET; do
               if [ -z "${!v:-}" ]; then echo "ERROR: $v is empty in GitHub env 'dev'"; exit 1; fi
             done
+            # #1177: optional rather than required so this deploy does not fail
+            # before the secret exists — but loud, because without it every
+            # booking-reminder-run.yml pass is a 401 and no member is reminded.
+            if [ -z "${BOOKING_REMINDERS_INTERNAL_SECRET:-}" ]; then
+              echo "WARNING: BOOKING_REMINDERS_INTERNAL_SECRET is empty — POST /booking-reminders/run will answer 401 (#1113)"
+            fi
 
             # Values are written as inline Environment= lines directly into the
             # quadlet unit file (no separate EnvironmentFile) — GitHub stays the
@@ -211,8 +228,12 @@ jobs:
             Environment=MONEI_ACCOUNT_ID=${MONEI_ACCOUNT_ID}
             Environment=BILLING_INTERNAL_SECRET=${BILLING_INTERNAL_SECRET}
             Environment=RECURRING_BOOKINGS_INTERNAL_SECRET=${RECURRING_BOOKINGS_INTERNAL_SECRET}
+            Environment=BOOKING_REMINDERS_INTERNAL_SECRET=${BOOKING_REMINDERS_INTERNAL_SECRET:-}
             Environment=FCM_SERVICE_ACCOUNTS=${FCM_SERVICE_ACCOUNTS:-}
             Environment=MOBILE_DEFAULT_APP_ID=${MOBILE_DEFAULT_APP_ID:-}
+            Environment=TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-}
+            Environment=PAYMENT_WEBHOOK_RELAY_HOPS=${PAYMENT_WEBHOOK_RELAY_HOPS:-}
+            Environment=INTERNAL_RUN_RELAY_HOPS=${INTERNAL_RUN_RELAY_HOPS:-}
             Environment=PUBLIC_REGISTRATION_BASE_URL=${PUBLIC_REGISTRATION_BASE_URL:-}
             Environment=PUBLIC_REGISTRATION_RELAY_HOPS=${PUBLIC_REGISTRATION_RELAY_HOPS:-}
             ENVEOF

@@ -744,7 +744,9 @@ hardening:
          the counters come back as before, that a wrong `X-Internal-Secret` is still a
          `401` (relayed, not invented) and that a path outside the allowlist — e.g.
          `https://admin.vdicube.com/api/internal/gyms` — is a `404` from the relay.
-      2. **Set `INTERNAL_RUN_RELAY_HOPS=1` on the API** if a reverse proxy sits between the
+      2. **Set the GitHub variable `INTERNAL_RUN_RELAY_HOPS=1`** (then redeploy the API;
+         `deploy.yml` forwards it since #1177, and a value set by hand on the unit is wiped
+         by the next deploy) if a reverse proxy sits between the
          admin container and the API (i.e. the admin app reaches it through Traefik rather
          than at an internal address). The internal-run budget is keyed per client address
          and only a failed secret spends it (#783), so keyed on the relay instead, ten wrong
@@ -769,8 +771,10 @@ hardening:
       notices (the route answers `401`, the workflow goes red, and the alert is simply
       absent from the Members App):
       1. Generate `BOOKING_REMINDERS_INTERNAL_SECRET` (`openssl rand -hex 32`) and set it
-         both as a GitHub **secret** in each environment and in the API's own environment
-         (the quadlet `Environment=` lines, §1) — the same pair `BILLING_INTERNAL_SECRET`
+         as a GitHub **secret** in each environment and redeploy the API: since #1177
+         `deploy.yml` forwards it into the unit (before that it did not, so no value could
+         reach the API and every pass was a 401; a deploy without it logs a WARNING) — the
+         same pair `BILLING_INTERNAL_SECRET`
          and `RECURRING_BOOKINGS_INTERNAL_SECRET` already have. Its own secret rather than
          a reuse, per the rule `api/src/api/promotion-lifecycle.ts` states: a job with a
          workflow of its own gets a secret with it.
@@ -824,7 +828,9 @@ runbook is how.
         container left unset would relay pro's payments to the dev API. `deploy-payment.yml`
         probes the relay after each deploy (the same `GET` Monei's dashboard preflights with),
         so a wrong address fails the deploy rather than losing confirmations quietly.
-  - [ ] Set **`PAYMENT_WEBHOOK_RELAY_HOPS=1`** on the API (Oscar's `fitness-api` unit) once
+  - [ ] Set the GitHub variable **`PAYMENT_WEBHOOK_RELAY_HOPS=1`** (then redeploy the API;
+        `deploy.yml` forwards it since #1177 — a value set by hand on the `fitness-api` unit
+        is wiped by the next deploy) once
         `PAYMENT_NOTIFICATION_URL` points at the relay. It defaults to `0`, which keys the
         webhook's 60/min budget on the relay instead of the paying member — every gym's
         confirmations would then share one bucket. Do **not** raise `TRUST_PROXY_HOPS`
