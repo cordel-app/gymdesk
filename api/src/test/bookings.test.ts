@@ -164,7 +164,7 @@ describe('Bookings', () => {
   });
 });
 
-describe('Bookings — activity type eligibility (#481)', () => {
+describe('Bookings — activity type eligibility (#481, Professional Services since #973)', () => {
   let gymId: string;
   let centerId: number;
 
@@ -174,49 +174,60 @@ describe('Bookings — activity type eligibility (#481)', () => {
     centerId = await createCenter(gymId);
   });
 
-  async function createPlan(name: string): Promise<number> {
+  /** A gym-owned Professional Service plus its per-gym enable row. */
+  async function createService(): Promise<number> {
     const { insertId } = await db.query(
-      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, ?, 'active', 'staff_only')`,
-      [gymId, name],
+      `INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)`,
+      [gymId, `Elig Service ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`],
+    );
+    await db.query(
+      `INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')`,
+      [gymId, insertId],
     );
     return insertId;
   }
 
-  async function assignActivePlan(memberId: number, planId: number): Promise<void> {
+  /** #973 stage 1: the activity requires sessions of `serviceId`. */
+  async function requireService(activityTypeId: number, serviceId: number): Promise<void> {
+    await db.query('UPDATE activity_types SET public_event = 0 WHERE id = ?', [activityTypeId]);
     await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at) VALUES (?, ?, ?, 'active', CURDATE())`,
-      [gymId, memberId, planId],
+      `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id) VALUES (?, ?, ?)`,
+      [gymId, activityTypeId, serviceId],
     );
   }
 
-  it('rejects booking a non-public activity type with no eligible plans configured', async () => {
-    const atId = await createActivityType(gymId, 5, 'Elig No Plan Class');
-    await db.query('UPDATE activity_types SET public_event = 0 WHERE id = ?', [atId]);
-    const sessionId = await createSession(gymId, atId, centerId);
-    const memberId = await createMember(gymId, centerId, `elig-noplan-${Date.now()}@test.com`);
-
-    const res = await request
-      .post('/bookings')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ member_id: memberId, class_session_id: sessionId });
-
-    expect(res.status).toBe(403);
-    expect(res.body.code).toBe('plan_not_eligible');
-  });
-
-  it('allows booking when the member is on an eligible plan', async () => {
-    const atId = await createActivityType(gymId, 5, 'Elig Yes Plan Class');
-    await db.query('UPDATE activity_types SET public_event = 0 WHERE id = ?', [atId]);
-    const sessionId = await createSession(gymId, atId, centerId);
-    const memberId = await createMember(gymId, centerId, `elig-yesplan-${Date.now()}@test.com`);
-
-    const planId = await createPlan('Eligible Plan');
-    await assignActivePlan(memberId, planId);
-    await db.query(
-      'INSERT INTO activity_type_eligible_plans (gym_id, activity_type_id, membership_plan_id) VALUES (?, ?, ?)',
-      [gymId, atId, planId],
+  /** Grants `sessions` of `serviceId` through a purchased class package. */
+  async function grantSessions(memberId: number, serviceId: number, sessions = 5): Promise<number> {
+    const name = `Elig Package ${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const { insertId: classPackageId } = await db.query(
+      `INSERT INTO class_packages (gym_id, name, number_of_sessions, price, validity_days, status)
+       VALUES (?, ?, ?, 50, 180, 'active')`,
+      [gymId, name, sessions],
     );
+    const { insertId: productId } = await db.query(
+      `INSERT INTO products
+         (gym_id, name, type, units, amount, currency, billing_frequency, status, availability, is_system, class_package_id)
+       VALUES (?, ?, 'sessions', ?, 50.00, 'EUR', NULL, 'active', 'available', 0, ?)`,
+      [gymId, name, sessions, classPackageId],
+    );
+    await db.query(
+      `INSERT INTO product_professional_services (gym_id, product_id, professional_service_id) VALUES (?, ?, ?)`,
+      [gymId, productId, serviceId],
+    );
+    const { insertId } = await db.query(
+      `INSERT INTO user_class_packages (gym_id, member_id, class_package_id, purchased_at, expires_at, sessions_remaining, status)
+       VALUES (?, ?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_DATE(), INTERVAL 180 DAY), ?, 'active')`,
+      [gymId, memberId, classPackageId, sessions],
+    );
+    return insertId;
+  }
+
+  it('a non-public activity type that names no Professional Service is open to every member (#973 Q3)', async () => {
+    const atId = await createActivityType(gymId, 5, 'Elig No Service Class');
+    await db.query('UPDATE activity_types SET public_event = 0 WHERE id = ?', [atId]);
+    const sessionId = await createSession(gymId, atId, centerId);
+    const memberId = await createMember(gymId, centerId, `elig-noservice-${Date.now()}@test.com`);
+
     const res = await request
       .post('/bookings')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -227,7 +238,61 @@ describe('Bookings — activity type eligibility (#481)', () => {
     expect(res.body.status).toBe('booked');
   });
 
-  it('regression: a public activity type (default) allows booking regardless of plan', async () => {
+  it('rejects a member with no sessions for the service the activity requires, naming the service', async () => {
+    const atId = await createActivityType(gymId, 5, 'Elig Required Class');
+    const serviceId = await createService();
+    await requireService(atId, serviceId);
+    const sessionId = await createSession(gymId, atId, centerId);
+    const memberId = await createMember(gymId, centerId, `elig-nosessions-${Date.now()}@test.com`);
+
+    const res = await request
+      .post('/bookings')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: memberId, class_session_id: sessionId });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('professional_service_required');
+    expect(res.body.professional_services).toHaveLength(1);
+    expect(res.body.professional_services[0].id).toBe(serviceId);
+  });
+
+  it('allows booking when the member holds sessions for a required service', async () => {
+    const atId = await createActivityType(gymId, 5, 'Elig Yes Service Class');
+    const serviceId = await createService();
+    await requireService(atId, serviceId);
+    const sessionId = await createSession(gymId, atId, centerId);
+    const memberId = await createMember(gymId, centerId, `elig-yesservice-${Date.now()}@test.com`);
+    await grantSessions(memberId, serviceId);
+
+    const res = await request
+      .post('/bookings')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: memberId, class_session_id: sessionId });
+
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('booked');
+  });
+
+  it('sessions of another service do not qualify', async () => {
+    const atId = await createActivityType(gymId, 5, 'Elig Other Service Class');
+    await requireService(atId, await createService());
+    const sessionId = await createSession(gymId, atId, centerId);
+    const memberId = await createMember(gymId, centerId, `elig-otherservice-${Date.now()}@test.com`);
+    await grantSessions(memberId, await createService());
+
+    const res = await request
+      .post('/bookings')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: memberId, class_session_id: sessionId });
+
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('professional_service_required');
+  });
+
+  it('regression: a public activity type (default) allows booking regardless of sessions', async () => {
     // No public_event set at all — proving the create-time default of true
     // preserves pre-existing (zero-configuration) booking behavior.
     const atId = await createActivityType(gymId, 5, 'Elig Public Class');
@@ -246,7 +311,7 @@ describe('Bookings — activity type eligibility (#481)', () => {
 
   it('staff override: an ineligible booking is rejected without override, then succeeds with override_eligibility', async () => {
     const atId = await createActivityType(gymId, 5, 'Elig Override Class');
-    await db.query('UPDATE activity_types SET public_event = 0 WHERE id = ?', [atId]);
+    await requireService(atId, await createService());
     const sessionId = await createSession(gymId, atId, centerId);
     const memberId = await createMember(gymId, centerId, `elig-override-${Date.now()}@test.com`);
 
@@ -256,7 +321,7 @@ describe('Bookings — activity type eligibility (#481)', () => {
       .set('x-gym-id', gymId)
       .send({ member_id: memberId, class_session_id: sessionId });
     expect(rejected.status).toBe(403);
-    expect(rejected.body.code).toBe('plan_not_eligible');
+    expect(rejected.body.code).toBe('professional_service_required');
 
     const overridden = await request
       .post('/bookings')

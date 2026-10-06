@@ -84,57 +84,103 @@ activityTypesRouter.get('/:id', async (req, res) => {
     'SELECT * FROM activity_type_schedule_rules WHERE activity_type_id = ? AND gym_id = ? ORDER BY created_at ASC',
     [req.params.id, gymId],
   );
-  res.json({ ...rows[0], schedule_rules: rules.map(formatRule) });
+  res.json({
+    ...rows[0],
+    schedule_rules: rules.map(formatRule),
+    // #973 §7: "Activity retrieval returns the selected Professional Services".
+    eligible_professional_services: await loadEligibleServices(req.params.id, gymId),
+  });
 });
 
-// #481: which Membership Plans may book this activity type when it is not
-// a public event. Irrelevant when public_event = true, but always readable
-// so the admin UI can populate the multi-select once staff turns it off.
-activityTypesRouter.get('/:id/eligible-plans', async (req, res) => {
+// #973 stage 1: which Professional Services may book this activity type when
+// it is not a public event. A member qualifies by holding sessions for one of
+// them (`domain/memberProfessionalServices.ts`); an activity that names none
+// is open to every member (the thread's `Q3 open`). Irrelevant when
+// public_event = true, but always readable so the admin UI can populate the
+// picker once staff turns it off.
+const ELIGIBLE_SERVICES_SELECT = `
+  SELECT ps.id, ps.name, ps.is_system, gps.status
+  FROM activity_type_eligible_professional_services ateps
+  JOIN professional_services ps ON ps.id = ateps.professional_service_id AND ps.deleted_at IS NULL
+  LEFT JOIN gym_professional_services gps
+    ON gps.professional_service_id = ps.id AND gps.gym_id = ateps.gym_id
+  WHERE ateps.activity_type_id = ? AND ateps.gym_id = ?
+  ORDER BY ps.name ASC
+`;
+
+async function loadEligibleServices(activityTypeId: number | string, gymId: string) {
+  const { rows } = await db.query(ELIGIBLE_SERVICES_SELECT, [activityTypeId, gymId]);
+  return rows;
+}
+
+activityTypesRouter.get('/:id/eligible-professional-services', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows: existing } = await db.query(
     'SELECT id FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [req.params.id, gymId],
   );
   if (existing.length === 0) return res.status(404).json({ error: 'Activity type not found' });
-  const { rows } = await db.query(
-    `SELECT mp.id, mp.name, mp.lifecycle_status
-     FROM activity_type_eligible_plans atep
-     JOIN membership_plans mp ON mp.id = atep.membership_plan_id
-     WHERE atep.activity_type_id = ? AND atep.gym_id = ?
-     ORDER BY mp.name ASC`,
-    [req.params.id, gymId],
-  );
-  res.json(rows);
+  res.json(await loadEligibleServices(req.params.id, gymId));
 });
 
-activityTypesRouter.put('/:id/eligible-plans', requireRole('admin'), async (req, res) => {
+activityTypesRouter.put('/:id/eligible-professional-services', requireRole('admin'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const activityTypeId = String(req.params.id);
   const { rows: existing } = await db.query(
-    'SELECT id FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    'SELECT id, name FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [activityTypeId, gymId],
   );
   if (existing.length === 0) return res.status(404).json({ error: 'Activity type not found' });
 
-  const ids: number[] = Array.isArray(req.body.membership_plan_ids) ? req.body.membership_plan_ids : [];
-
-  if (ids.length > 0) {
-    const marks = ids.map(() => '?').join(',');
-    const { rows: validPlans } = await db.query(
-      `SELECT id FROM membership_plans WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${marks})`,
-      [gymId, ...ids],
-    );
-    if (validPlans.length !== new Set(ids).size) {
-      return res.status(400).json({ error: 'One or more membership_plan_ids are invalid for this gym' });
+  const raw = req.body.professional_service_ids;
+  if (raw !== undefined && !Array.isArray(raw)) {
+    return res.status(400).json({ error: 'professional_service_ids must be an array' });
+  }
+  const ids: number[] = [];
+  for (const value of (raw ?? []) as unknown[]) {
+    const parsed = parseProfessionalServiceId(value);
+    if ('error' in parsed || parsed.id === null) {
+      return res.status(400).json({ error: 'professional_service_ids must be positive integers' });
     }
+    if (!ids.includes(parsed.id)) ids.push(parsed.id);
   }
 
-  await db.query('DELETE FROM activity_type_eligible_plans WHERE activity_type_id = ? AND gym_id = ?', [activityTypeId, gymId]);
-  if (ids.length > 0) {
-    const values = ids.map(() => '(?, ?, ?)').join(', ');
-    const params = ids.flatMap((id) => [activityTypeId, id, gymId]);
-    await db.query(`INSERT INTO activity_type_eligible_plans (activity_type_id, membership_plan_id, gym_id) VALUES ${values}`, params);
+  // #986's rule, one relation over: a service the row already names is not a
+  // *selection*, so re-sending it unchanged never 400s because the gym has
+  // since switched that service off. A newly chosen one must be assignable —
+  // visible to the gym, not deleted and active for it — which is the same
+  // rule the single `professional_service_id` field validates against.
+  const before = await loadEligibleServices(activityTypeId, gymId);
+  const stored = new Set(before.map((r: any) => Number(r.id)));
+  for (const id of ids) {
+    if (stored.has(id)) continue;
+    const serviceErr = await validateProfessionalServiceId(gymId, id);
+    if (serviceErr) return res.status(400).json({ error: serviceErr });
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.query(
+      'DELETE FROM activity_type_eligible_professional_services WHERE activity_type_id = ? AND gym_id = ?',
+      [activityTypeId, gymId],
+    );
+    if (ids.length > 0) {
+      const values = ids.map(() => '(?, ?, ?)').join(', ');
+      const params = ids.flatMap((id) => [activityTypeId, id, gymId]);
+      await tx.query(
+        `INSERT INTO activity_type_eligible_professional_services (activity_type_id, professional_service_id, gym_id) VALUES ${values}`,
+        params,
+      );
+    }
+  });
+
+  const after = await loadEligibleServices(activityTypeId, gymId);
+  const names = (rows: any[]) => rows.map((r) => r.name);
+  if (names(before).join('|') !== names(after).join('|')) {
+    recordAudit(req, {
+      action: 'update', entityType: 'activity_type', entityId: activityTypeId, entityName: existing[0].name,
+      previous: { eligible_professional_services: names(before) },
+      next: { eligible_professional_services: names(after) },
+    });
   }
   res.status(204).send();
 });
@@ -455,6 +501,17 @@ activityTypesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
        // duplicate stays inside the gym the value was already validated against.
        src.professional_service_id,
        gymMembershipId ?? null, gymMembershipId ?? null],
+    );
+
+    // #973 stage 1: a copy is a copy — the services that may book the original
+    // may book the duplicate. The rows are copied as stored (no re-validation),
+    // for the reason the trainer and the service above are.
+    await tx.query(
+      `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id)
+       SELECT gym_id, ?, professional_service_id
+       FROM activity_type_eligible_professional_services
+       WHERE activity_type_id = ? AND gym_id = ?`,
+      [insertId, req.params.id, gymId],
     );
 
     const { rows: srcRules } = await tx.query(

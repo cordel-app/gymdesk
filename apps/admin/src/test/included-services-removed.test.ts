@@ -7,9 +7,11 @@ import { join } from 'path';
 // §1: "Remove the existing Included Services concept from Membership Plans
 // [and] Assigned Membership Plans … Do not rename it or move it somewhere
 // else." The issue answered where the relation goes instead: the Activity Type
-// names the Membership Plans allowed to book it (`activity_type_eligible_plans`,
-// #481), which the Activity Types page already edits — so nothing replaces the
-// section on the Plans page, and this file pins that down.
+// names who may book it — the Membership Plans allowed to until #973, and since
+// its stage 1 the Professional Services a member needs sessions for
+// (`activity_type_eligible_professional_services`, migration 231) — which the
+// Activity Types page edits, so nothing replaces the section on the Plans page,
+// and this file pins that down.
 //
 // `apps/admin` has no component test infrastructure, so this is a source scan,
 // the same shape as `plans-charge-benefits-removed.test.ts` (part 1).
@@ -123,10 +125,12 @@ describe('Plans: Included Services removed (#635 stage 4)', () => {
     }
   });
 
-  it('keeps the inverted relation editable from the Activity Types page', () => {
+  it('keeps the inverted relation editable from the Activity Types page (Professional Services since #973)', () => {
     const code = sourcesIn(ACTIVITY_TYPES_DIR).map((s) => stripComments(s.src)).join('\n');
-    expect(code).toContain('eligible-plans');
-    expect(code).toContain('label_eligible_plans');
+    expect(code).toContain('eligible-professional-services');
+    expect(code).toContain('label_eligible_services');
+    expect(code).not.toContain('eligible-plans');
+    expect(code).not.toContain('label_eligible_plans');
   });
 
   it('drops the Included Services keys from the "plans" namespace in every locale', () => {
@@ -156,8 +160,10 @@ describe('Plans: Included Services removed (#635 stage 4)', () => {
     );
     const code = stripComments(panel);
     expect(code).not.toContain('allowance_exhausted');
-    // Eligibility and center coverage are the gates that remain.
-    expect(code).toContain('plan_not_eligible');
+    // Eligibility and center coverage are the gates that remain — eligibility
+    // being the Professional Service requirement since #973 stage 1.
+    expect(code).toContain('professional_service_required');
+    expect(code).not.toContain('plan_not_eligible');
     expect(code).toContain('center_not_covered');
   });
 });

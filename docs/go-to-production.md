@@ -1089,6 +1089,14 @@ runbook is how.
       activity. Run
       `SELECT gym_id, COUNT(*) FROM plan_allowances WHERE allowance_type = 'session_count' GROUP BY gym_id`
       before the deploy; if any gym has rows, tell them the cap is going before it does.
+- [ ] **Capture each activity's eligible plans before migrating 231** (#973 stage 1):
+      `activity_type_eligible_plans` is dropped and deliberately **not** mapped onto
+      Professional Services (§4), so every restricted activity becomes open to every
+      member the morning after the deploy. The migration prints one log line per activity
+      with the plan ids it named; also run
+      `SELECT gym_id, activity_type_id, GROUP_CONCAT(membership_plan_id) FROM activity_type_eligible_plans GROUP BY gym_id, activity_type_id`
+      beforehand and tell each affected gym to re-restrict those activities by Professional
+      Service from the Activities page.
 - [ ] **Migration 185 must run *before* the API build that writes `waived_billing`**
       (#635 stage 11): it widens the `billing_events.event_type` CHECK. It only accepts
       a type nothing writes yet, so it is safe to run against the current build — but the

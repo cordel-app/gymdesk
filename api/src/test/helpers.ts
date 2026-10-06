@@ -172,7 +172,7 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM staff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM class_sessions WHERE gym_id IN (${marks})`, ids).catch(() => {});
   await db.query(`DELETE FROM spaces WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM activity_type_eligible_plans WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM activity_type_eligible_professional_services WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM activity_types WHERE gym_id IN (${marks})`, ids);
   // #966: `tptw_workout_template_id` is the one FK into `workout_templates` that
   // is ON DELETE RESTRICT (migration 038), so a gym's plan-template → workout-

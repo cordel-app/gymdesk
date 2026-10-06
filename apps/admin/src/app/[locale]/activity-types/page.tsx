@@ -72,7 +72,10 @@ interface ScheduleRule {
 interface Center { id: number; name: string; }
 interface Space { id: number; name: string; center_id: number; }
 interface Trainer { gym_membership_id: number; name: string; }
-interface MembershipPlan { id: number; name: string; lifecycle_status: string; }
+// #973 stage 1: the Professional Services an activity names as its booking
+// requirement — the gym's own catalogue (`/professional-services`), never a
+// list of this page's own.
+interface ProfessionalService { id: number; name: string; is_system: number; status: 'active' | 'inactive'; }
 
 const STATUSES = ['active', 'inactive'] as const;
 // #980 stage 2: the same vocabulary the calendar event panel offers for an
@@ -192,19 +195,19 @@ export default function ActivityTypesPage() {
   const [centers, setCenters] = useState<Center[]>([]);
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
-  const [membershipPlans, setMembershipPlans] = useState<MembershipPlan[]>([]);
+  const [professionalServices, setProfessionalServices] = useState<ProfessionalService[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [rulesMap, setRulesMap] = useState<Map<number, ScheduleRule[]>>(new Map());
   const [loadingRules, setLoadingRules] = useState<Set<number>>(new Set());
-  const [eligiblePlansMap, setEligiblePlansMap] = useState<Map<number, MembershipPlan[]>>(new Map());
+  const [eligibleServicesMap, setEligibleServicesMap] = useState<Map<number, ProfessionalService[]>>(new Map());
 
   // Edit general fields
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditForm>(emptyEditForm);
-  const [editSelectedPlans, setEditSelectedPlans] = useState<Set<number>>(new Set());
+  const [editSelectedServices, setEditSelectedServices] = useState<Set<number>>(new Set());
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -250,17 +253,17 @@ export default function ActivityTypesPage() {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
-      const [at, ct, sp, tr, mp] = await Promise.all([
+      const [at, ct, sp, tr, ps] = await Promise.all([
         apiFetch<ActivityType[]>(`/activity-types${statusFilter ? `?status=${statusFilter}` : ''}`),
         apiFetch<Center[]>('/centers'),
         apiFetch<Space[]>('/spaces'),
         apiFetch<Trainer[]>('/trainers'),
-        apiFetch<MembershipPlan[]>('/membership-plans?lifecycle_status=active'),
+        apiFetch<ProfessionalService[]>('/professional-services'),
       ]);
-      setRows(at); setCenters(ct); setSpaces(sp); setTrainers(tr); setMembershipPlans(mp);
-      // Clear rules/eligible-plans cache on reload
+      setRows(at); setCenters(ct); setSpaces(sp); setTrainers(tr); setProfessionalServices(ps);
+      // Clear rules/eligible-services cache on reload
       setRulesMap(new Map());
-      setEligiblePlansMap(new Map());
+      setEligibleServicesMap(new Map());
     } catch (err: any) {
       toast(err.message ?? t('error_generic'));
     } finally {
@@ -283,8 +286,8 @@ export default function ActivityTypesPage() {
     if (!rulesMap.has(id)) {
       await fetchRules(id);
     }
-    if (!eligiblePlansMap.has(id)) {
-      await fetchEligiblePlans(id);
+    if (!eligibleServicesMap.has(id)) {
+      await fetchEligibleServices(id);
     }
   }
 
@@ -300,14 +303,16 @@ export default function ActivityTypesPage() {
     }
   }
 
-  // #481: which Membership Plans may book this activity type when it is not public.
-  async function fetchEligiblePlans(id: number): Promise<MembershipPlan[]> {
+  // #973 stage 1: which Professional Services may book this activity type when
+  // it is not public (a member qualifies by holding sessions for one of them;
+  // naming none leaves the activity open to every member).
+  async function fetchEligibleServices(id: number): Promise<ProfessionalService[]> {
     try {
-      const plans = await apiFetch<MembershipPlan[]>(`/activity-types/${id}/eligible-plans`);
-      setEligiblePlansMap((prev) => new Map([...prev, [id, plans]]));
-      return plans;
+      const services = await apiFetch<ProfessionalService[]>(`/activity-types/${id}/eligible-professional-services`);
+      setEligibleServicesMap((prev) => new Map([...prev, [id, services]]));
+      return services;
     } catch {
-      setEligiblePlansMap((prev) => new Map([...prev, [id, []]]));
+      setEligibleServicesMap((prev) => new Map([...prev, [id, []]]));
       return [];
     }
   }
@@ -365,8 +370,20 @@ export default function ActivityTypesPage() {
     setEditError(null);
     setExpanded((prev) => new Set([...prev, row.id]));
     if (!rulesMap.has(row.id)) await fetchRules(row.id);
-    const plans = eligiblePlansMap.get(row.id) ?? (await fetchEligiblePlans(row.id));
-    setEditSelectedPlans(new Set(plans.map((p) => p.id)));
+    const services = eligibleServicesMap.get(row.id) ?? (await fetchEligibleServices(row.id));
+    setEditSelectedServices(new Set(services.map((p) => p.id)));
+  }
+
+  /**
+   * The services the picker offers for an activity: every one active for the
+   * gym, plus any the activity already names that the gym has since switched
+   * off — rendered disabled so the stored value still reads correctly.
+   */
+  function selectableServices(activityTypeId: number): ProfessionalService[] {
+    const stored = eligibleServicesMap.get(activityTypeId) ?? [];
+    const active = professionalServices.filter((p) => p.status === 'active');
+    const activeIds = new Set(active.map((p) => p.id));
+    return [...active, ...stored.filter((p) => !activeIds.has(p.id))];
   }
 
   function cancelEdit() {
@@ -414,9 +431,9 @@ export default function ActivityTypesPage() {
           ...(confirmPropagate ? { confirm_propagate: true } : {}),
         }),
       });
-      await apiFetch(`/activity-types/${row.id}/eligible-plans`, {
+      await apiFetch(`/activity-types/${row.id}/eligible-professional-services`, {
         method: 'PUT',
-        body: JSON.stringify({ membership_plan_ids: Array.from(editSelectedPlans) }),
+        body: JSON.stringify({ professional_service_ids: Array.from(editSelectedServices) }),
       });
       setSaveConflict(null);
       setEditingId(null);
@@ -871,7 +888,7 @@ export default function ActivityTypesPage() {
     const isEditing = editingId === row.id;
 
     const menuItems: ContextMenuItem[] = [
-      { label: t('details'), onClick: () => { setDetails(row); if (!eligiblePlansMap.has(row.id)) fetchEligiblePlans(row.id); } },
+      { label: t('details'), onClick: () => { setDetails(row); if (!eligibleServicesMap.has(row.id)) fetchEligibleServices(row.id); } },
       { label: t('edit'), onClick: () => openEdit(row), disabled: !canWrite, title: readOnlyTitle },
       { label: t('duplicate'), onClick: () => handleDuplicate(row), disabled: !canWrite, title: readOnlyTitle },
       { label: t('delete'), onClick: () => setDeleting(row), danger: true, disabled: !canWrite, title: readOnlyTitle },
@@ -1042,28 +1059,33 @@ export default function ActivityTypesPage() {
             </div>
             {!editForm.public_event && (
               <div style={{ marginBottom: 12 }}>
-                <label style={inlineLabelStyle}>{t('label_eligible_plans')}</label>
-                {membershipPlans.length === 0 ? (
-                  <p style={{ fontSize: 13, color: '#888', margin: '4px 0' }}>{t('no_membership_plans')}</p>
+                <label style={inlineLabelStyle}>{t('label_eligible_services')}</label>
+                {selectableServices(row.id).length === 0 ? (
+                  <p style={{ fontSize: 13, color: '#888', margin: '4px 0' }}>{t('no_professional_services')}</p>
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-                    {membershipPlans.map((p) => (
-                      <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+                    {selectableServices(row.id).map((p) => (
+                      <label key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: p.status === 'active' ? 'pointer' : 'default', fontSize: 14 }}>
                         <input
                           type="checkbox"
-                          checked={editSelectedPlans.has(p.id)}
+                          checked={editSelectedServices.has(p.id)}
+                          // #986's rule: a stored service the gym has since switched off
+                          // still reads correctly, and is kept (not re-validated) by the
+                          // save — but cannot be newly chosen.
+                          disabled={p.status !== 'active'}
                           onChange={(e) => {
-                            const next = new Set(editSelectedPlans);
+                            const next = new Set(editSelectedServices);
                             if (e.target.checked) next.add(p.id); else next.delete(p.id);
-                            setEditSelectedPlans(next);
+                            setEditSelectedServices(next);
                           }}
                           style={{ width: 15, height: 15 }}
                         />
-                        {p.name}
+                        {p.name}{p.status !== 'active' ? ` (${tStatus('inactive')})` : ''}
                       </label>
                     ))}
                   </div>
                 )}
+                <p style={{ fontSize: 12.5, color: '#888', margin: '4px 0 0' }}>{t('eligible_services_hint')}</p>
               </div>
             )}
 
@@ -1099,12 +1121,12 @@ export default function ActivityTypesPage() {
             <DetailRow label={t('label_waitlist_mode')} value={t(`waitlist_mode_${row.waitlist_mode}` as any)} />
             {!row.public_event && (
               <div style={{ margin: '4px 0 10px' }}>
-                <span style={{ ...inlineLabelStyle, marginBottom: 6, display: 'block' }}>{t('label_eligible_plans')}</span>
-                {(eligiblePlansMap.get(row.id) ?? []).length === 0 ? (
-                  <p style={{ fontSize: 13, color: '#aaa', fontStyle: 'italic', margin: 0 }}>{t('no_eligible_plans')}</p>
+                <span style={{ ...inlineLabelStyle, marginBottom: 6, display: 'block' }}>{t('label_eligible_services')}</span>
+                {(eligibleServicesMap.get(row.id) ?? []).length === 0 ? (
+                  <p style={{ fontSize: 13, color: '#aaa', fontStyle: 'italic', margin: 0 }}>{t('no_eligible_services')}</p>
                 ) : (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {(eligiblePlansMap.get(row.id) ?? []).map((p) => (
+                    {(eligibleServicesMap.get(row.id) ?? []).map((p) => (
                       <span key={p.id} style={{ background: '#f0f0f0', borderRadius: 4, padding: '3px 8px', fontSize: 13 }}>{p.name}</span>
                     ))}
                   </div>
@@ -1270,13 +1292,13 @@ export default function ActivityTypesPage() {
             <ModalDetail label={t('label_waitlist_mode')} value={t(`waitlist_mode_${details.waitlist_mode}` as any)} />
             {!details.public_event && (
               <div>
-                <span style={detailLabelStyle}>{t('label_eligible_plans')}</span>
+                <span style={detailLabelStyle}>{t('label_eligible_services')}</span>
                 <div style={{ marginTop: 4 }}>
-                  {(eligiblePlansMap.get(details.id) ?? []).length === 0 ? (
-                    <p style={{ margin: 0, fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>{t('no_eligible_plans')}</p>
+                  {(eligibleServicesMap.get(details.id) ?? []).length === 0 ? (
+                    <p style={{ margin: 0, fontSize: 13, color: '#aaa', fontStyle: 'italic' }}>{t('no_eligible_services')}</p>
                   ) : (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                      {(eligiblePlansMap.get(details.id) ?? []).map((p) => (
+                      {(eligibleServicesMap.get(details.id) ?? []).map((p) => (
                         <span key={p.id} style={{ background: '#f0f0f0', borderRadius: 4, padding: '3px 8px', fontSize: 13 }}>{p.name}</span>
                       ))}
                     </div>

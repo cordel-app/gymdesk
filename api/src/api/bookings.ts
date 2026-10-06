@@ -267,7 +267,16 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
     }
     res.status(201).json({ ...rows[0], over_capacity: result.over_capacity });
   } catch (err: any) {
-    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+    if (err.status) {
+      return res.status(err.status).json({
+        error: err.message,
+        code: err.code,
+        // #973 stage 1: a `professional_service_required` refusal names the
+        // services that would unlock the booking, for the member-facing
+        // surface that routes to buying one.
+        ...(err.professional_services ? { professional_services: err.professional_services } : {}),
+      });
+    }
     handleDupEntry(err, res, next, 'This member already has an active booking for this session.');
   }
 });
