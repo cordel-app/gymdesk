@@ -15,15 +15,19 @@
  *
  * The column is nullable on both goal tables — the template's and the
  * member plan's, because a plan created from a template copies its goals —
- * with `ON DELETE SET NULL`: a food soft-deletes through `status = 'deleted'`
- * and is never hard-deleted by the application, so the SET NULL is for the
- * platform operator's SQL only, and a goal whose illustration goes loses the
- * picture rather than the goal. No backfill: every existing goal keeps the
+ * with `ON DELETE SET NULL`, the action 078 chose for `nptm_main_dish_fk` on
+ * the same target: a gym delete cascades to its foods (105's `nli_gym_fk`) and
+ * `cleanupTestGyms` hard-deletes them, so a goal whose illustration goes loses
+ * the picture rather than the goal. No backfill: every existing goal keeps the
  * standard fallback it showed before, and nothing guesses a food from a slug.
  *
- * Added with knex's builder — the two generated FK names are 50 and 59
- * characters, under MySQL's 64 — but named explicitly all the same so the
- * three nutrition FKs on each table read as one family (`nptg_*`, `mnpg_*`).
+ * Three guarded statements per table rather than one `alterTable`: MySQL DDL
+ * is non-transactional, so a metadata-lock timeout on the FK would leave the
+ * column in place and a column-only guard would skip the FK and the index for
+ * good. The index is declared **before** the FK so the FK is backed by it
+ * instead of auto-creating a second, identical one. Knex's generated names
+ * would be 63 and 61 characters — one under MySQL's 64 — which is the reason
+ * to name them (`nptg_*`, `mnpg_*`, the families each table already has).
  */
 
 const COLUMN = 'nutrition_library_item_id';
@@ -32,24 +36,51 @@ const TABLES = [
   ['member_nutrition_plan_goals', 'mnpg'],
 ];
 
+async function fkExists(knex, table, name) {
+  const [[row]] = await knex.raw(
+    `SELECT COUNT(*) AS cnt FROM information_schema.TABLE_CONSTRAINTS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ?
+        AND CONSTRAINT_TYPE = 'FOREIGN KEY'`,
+    [table, name],
+  );
+  return Number(row.cnt) > 0;
+}
+
+async function indexExists(knex, table, name) {
+  const [[row]] = await knex.raw(
+    `SELECT COUNT(*) AS cnt FROM information_schema.STATISTICS
+      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?`,
+    [table, name],
+  );
+  return Number(row.cnt) > 0;
+}
+
 exports.up = async (knex) => {
   for (const [table, prefix] of TABLES) {
-    if (await knex.schema.hasColumn(table, COLUMN)) continue;
-    await knex.schema.alterTable(table, (t) => {
-      t.integer(COLUMN).unsigned().nullable();
-      t.foreign(COLUMN, `${prefix}_lib_fk`).references('id').inTable('nutrition_library_items').onDelete('SET NULL');
-      t.index([COLUMN], `${prefix}_lib_idx`);
-    });
+    const fk = `${prefix}_lib_fk`;
+    const idx = `${prefix}_lib_idx`;
+    if (!(await knex.schema.hasColumn(table, COLUMN))) {
+      await knex.raw(`ALTER TABLE ${table} ADD COLUMN ${COLUMN} INT UNSIGNED NULL`);
+    }
+    if (!(await indexExists(knex, table, idx))) {
+      await knex.raw(`ALTER TABLE ${table} ADD INDEX ${idx} (${COLUMN})`);
+    }
+    if (!(await fkExists(knex, table, fk))) {
+      await knex.raw(
+        `ALTER TABLE ${table} ADD CONSTRAINT ${fk} FOREIGN KEY (${COLUMN})
+           REFERENCES nutrition_library_items(id) ON DELETE SET NULL`,
+      );
+    }
   }
 };
 
 exports.down = async (knex) => {
   for (const [table, prefix] of TABLES) {
-    if (!(await knex.schema.hasColumn(table, COLUMN))) continue;
-    await knex.schema.alterTable(table, (t) => {
-      t.dropForeign([COLUMN], `${prefix}_lib_fk`);
-      t.dropIndex([COLUMN], `${prefix}_lib_idx`);
-      t.dropColumn(COLUMN);
-    });
+    const fk = `${prefix}_lib_fk`;
+    const idx = `${prefix}_lib_idx`;
+    // The FK before the index that backs it (ER_DROP_INDEX_FK otherwise).
+    if (await fkExists(knex, table, fk)) await knex.raw(`ALTER TABLE ${table} DROP FOREIGN KEY ${fk}`);
+    if (await indexExists(knex, table, idx)) await knex.raw(`ALTER TABLE ${table} DROP INDEX ${idx}`);
+    if (await knex.schema.hasColumn(table, COLUMN)) await knex.raw(`ALTER TABLE ${table} DROP COLUMN ${COLUMN}`);
   }
 };
