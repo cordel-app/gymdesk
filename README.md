@@ -179,7 +179,8 @@ Copy each `.env.example` to `.env` and fill in values. Do not commit `.env` file
 | `PAYMENT_WEBHOOK_RELAY_HOPS` | Optional — the *further* hop `POST /webhooks/payment` sits behind once the payment app relays it (default: `0`, #1083) |
 | `INTERNAL_RUN_RELAY_HOPS` | Optional — the *further* hops the four internal run routes sit behind once the nightly workflows post to the admin app's `/api/internal` relay (default: `0`, #1086) |
 | `PUBLIC_REGISTRATION_IP_LIMIT_PER_HOUR` / `PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY` | Optional — website self-registration rate limits (defaults: `60` / `200`) |
-| `API_PUBLIC_URL` | Optional — public API origin shown on System → Website Integration |
+| `PUBLIC_REGISTRATION_BASE_URL` | Optional — the admin app's registration relay base (`https://admin.<host>/api`) shown on Website Integration; unset shows the path alone (#1175) |
+| `PUBLIC_REGISTRATION_RELAY_HOPS` | Optional — the *further* hops the registration route sits behind once websites post to that relay (default: `0`, #1175) |
 | `LOG_LEVEL` | Optional — logger level (default: `info`) |
 
 **Payment page** (`apps/payment`, container environment — the config is an `envsubst` template)

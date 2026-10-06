@@ -1,10 +1,11 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { parseBody, z } from '../infra/validate';
 import { isStaffLoginEmail } from '../infra/staff-access';
 import { verifyWebsiteApiKey } from '../infra/website-api-key';
+import { publicRegistrationClientKey } from '../domain/forwardedClient';
 
 /**
  * #599: website self-registration. Mounted at /public/gyms/:gymRef/registrations.
@@ -43,6 +44,21 @@ const ipLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   message: { error: 'Too many requests.' },
+  // #1175: the key is the website's address, not the request's peer. Gym
+  // websites post to the admin app's registration relay, which forwards the
+  // `X-Forwarded-For` it was called with, so the chain in front of this route
+  // is one hop longer than `trust proxy` accounts for — keyed on the relay,
+  // every gym's website would share one hourly budget. See
+  // domain/forwardedClient.ts for why the hop is per route and defaults to none
+  // (where this is `req.ip`, exactly as before).
+  keyGenerator: (req) => {
+    const client = publicRegistrationClientKey({
+      ip: req.ip,
+      socketAddress: req.socket.remoteAddress,
+      forwardedFor: req.headers['x-forwarded-for'],
+    });
+    return client === '' ? '' : ipKeyGenerator(client);
+  },
 });
 
 // Keyed by gym and placed after the key check, so only authenticated calls

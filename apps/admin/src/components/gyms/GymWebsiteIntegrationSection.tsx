@@ -23,7 +23,7 @@ import { btnSmall, primaryBtnSmall } from '@/components/ui';
  * needs a `gym_memberships` row for it.
  *
  * The section owns its own read because the key state is not in the gym list's
- * row: the endpoint URL is built by the API from `API_PUBLIC_URL` + the gym ref
+ * row: the endpoint URL is built by the API from `PUBLIC_REGISTRATION_BASE_URL` + the gym ref
  * (#645), and building it a second time in the browser would be a second place
  * deciding what a gym's registration endpoint is. It is loaded when the card is
  * expanded, not with the list, so opening Cordel → Gyms stays one request.
