@@ -680,10 +680,11 @@ hardening:
       policy to the `gymdesk-dev` contact point (email to Xavier and Oscar). Proved on
       2026-10-06 with a temporary inverted copy that fired and resolved within two
       evaluations. Full setup in `docs/payments.md` → Observability today.
-- [ ] **Prove the freshness alert's email arrives**: press *Test* on the `gymdesk-dev`
-      contact point (the firing test above was routed to the `empty` contact point, so no
-      delivery has been attempted yet), and add a production contact point when there is a
-      production stack.
+- [x] **Prove the freshness alert's email arrives**: *Test* on the `gymdesk-dev` contact
+      point delivered `[FIRING:1] TestAlert Grafana` from
+      `grafana@maroonyogurt3482.grafana.net` on 2026-10-06 18:17 UTC (received by Xavier).
+- [ ] **A production contact point** for the freshness alerts once there is a production
+      stack, tested the same way.
 - [ ] **Route the freshness alerts through the admin app before the API goes private**
       (#1166, ahead of #1087): both rules call `api.vdicube.com/health/runs` directly and
       fire on an unreachable endpoint, so closing the API host first reads as a missed run.
