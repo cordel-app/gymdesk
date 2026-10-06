@@ -11,8 +11,9 @@
  * `lib/internalRunUpstream.ts` the transport; neither decides anything, the
  * same split #1073, #1074 and #1085 used for the same reason.
  *
- * The relay **authenticates nothing**. `BILLING_INTERNAL_SECRET` and
- * `RECURRING_BOOKINGS_INTERNAL_SECRET` stay in the API, whose routers compare
+ * The relay **authenticates nothing**. `BILLING_INTERNAL_SECRET`,
+ * `RECURRING_BOOKINGS_INTERNAL_SECRET` and (#1113)
+ * `BOOKING_REMINDERS_INTERNAL_SECRET` stay in the API, whose routers compare
  * the `X-Internal-Secret` header themselves (`checkInternalSecret()`), so a
  * wrong secret is still a `401` **from the API**, relayed as such — and it still
  * spends the internal-run budget #783 put in front of those routes. The relay is
@@ -28,15 +29,19 @@ export const INTERNAL_RUN_RELAY_PATH = '/api/internal';
  * carry a shared secret, not a Clerk session), so anything not named here must
  * be a `404` from the relay rather than a request the API has to judge.
  *
- * These are exactly the four `POST`s in `.github/workflows/billing-run.yml` and
- * `recurring-booking-run.yml`. A fifth internal run is added here and nowhere
- * else.
+ * These are exactly the `POST`s in `.github/workflows/billing-run.yml`,
+ * `recurring-booking-run.yml` and `booking-reminder-run.yml`. A further internal
+ * run is added here and nowhere else.
  */
 export const INTERNAL_RUN_API_PATHS = [
   '/billing/run',
   '/billing/cleanup',
   '/promotion-lifecycle/run',
   '/recurring-bookings/run',
+  // #1113: the 2-hour training reminder. The only one of these that is not
+  // nightly — it runs several times an hour — which changes nothing about the
+  // relay: the allowlist is about which paths may be forwarded, never how often.
+  '/booking-reminders/run',
 ] as const;
 
 /**

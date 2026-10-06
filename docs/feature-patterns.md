@@ -2699,6 +2699,50 @@ to **Cordel → Gyms → [Gym]**, move the *placement* and nothing else.
 
 ---
 
+## A scheduled run that is not nightly (#1113)
+
+Every scheduled run before #1113 was nightly, so `claimRun()`/`finishRun()` (#780) and
+`.github/workflows/*-run.yml`'s one-cron-a-day shape were the only pattern there was. The
+2-hour training reminder is the other kind — it has to fire several times an hour — and the
+differences are the pattern:
+
+1. **No run-log claim.** #780's guard is *one completed run per UTC date*; it exists so two
+   runs that move money or book slots cannot overlap or repeat a day. A run that must
+   execute many times a day cannot use it: it would silence every pass but the first. What
+   replaces it is **idempotence by construction** — the row the pass writes is what removes
+   its subject from the next pass's candidate set. Nothing stores "already done"; the
+   artefact *is* the record. (#647 stage 4's skip-notification dedupe is the same device.)
+2. **Overlap is the workflow's job, not the database's.** A `concurrency:` group with
+   `cancel-in-progress: false` keeps two passes from racing, and `cancel-in-progress` is
+   `false` rather than `true` because cancelling the pass in flight would leave its writes
+   half-done.
+3. **A window, not an instant.** GitHub's cron is best-effort. A run that asks for "events
+   starting in 115–120 minutes" drops everything that fell between two passes; one that asks
+   for "starting within the next 120 minutes" turns a late pass into a late *alert*, which is
+   the failure you want. Combined with (1), the result is at-most-once and at-least-once-if-
+   it-ever-runs.
+4. **Its own secret.** `api/src/api/promotion-lifecycle.ts` already states the rule: a job
+   that is a *step of another workflow* shares that workflow's `X-Internal-Secret`; a job
+   with a schedule of its own gets a secret of its own. Add it to `api/.env.example` and to
+   `docs/go-to-production.md` §4b, because unset means `401` and the feature is simply
+   absent with nothing else noticing.
+5. **Index both halves.** A nightly run's cost is amortised over a day; a quarter-hourly one
+   is not. The `db-reviewer` pass on #1113 caught exactly this: the dedupe lookup was
+   indexed and the *candidate scan* was not, and because that query is deliberately cross-gym
+   it could use none of the `gym_id`-leading indexes the schema is full of. Ask which table
+   drives the query, not only which one the subquery probes.
+6. **Write the `LIMIT` into the statement.** A cap is the natural shape for a run
+   like this, and a bound `LIMIT ?` is refused by mysql2's `execute()` — the route
+   then answers `500` on every call with nothing in the diff to suggest why. Every
+   paginated route here already interpolates a validated integer;
+   `api/src/test/bound-limit-placeholder.unit.test.ts` is now the gate.
+7. **Add the path to the relay allowlist** (`INTERNAL_RUN_API_PATHS`,
+   `apps/admin/src/lib/internalRunRelay.ts`) and to nothing else — #1086's gate asserts the
+   allowlist *is* the set the workflows call, in both directions, so a run added to one and
+   forgotten in the other fails the build.
+
+---
+
 ## Testing a payment-provider call (#773, #791)
 
 Any new code path that charges, tokenises or refunds through `PaymentProvider` is tested

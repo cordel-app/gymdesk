@@ -212,7 +212,9 @@
     "type_waitlist_closed": "Lista de espera cerrada",
     "detail_waitlist_closed": "La lista de espera de esta clase se ha cerrado. Ya no estás en ella y no puedes volver a apuntarte.",
     "type_waitlist_removed": "Fuera de la lista de espera",
-    "detail_waitlist_removed": "Se te ha retirado de la lista de espera de esta clase. La lista sigue abierta, así que puedes volver a apuntarte."
+    "detail_waitlist_removed": "Se te ha retirado de la lista de espera de esta clase. La lista sigue abierta, así que puedes volver a apuntarte.",
+    "type_booking_reminder_2h": "Recordatorio de entreno",
+    "detail_booking_reminder_2h": "Tienes este entreno reservado en 2 horas."
   },
   "membership": {
     "title": "Mi cuota",

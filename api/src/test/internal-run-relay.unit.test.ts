@@ -32,6 +32,11 @@ const MIDDLEWARE = readFileSync(join(ADMIN, 'middleware.ts'), 'utf8');
 const API_APP = readFileSync(join(__dirname, '..', 'app.ts'), 'utf8');
 const BILLING_WORKFLOW = readFileSync(join(WORKFLOWS, 'billing-run.yml'), 'utf8');
 const BOOKING_WORKFLOW = readFileSync(join(WORKFLOWS, 'recurring-booking-run.yml'), 'utf8');
+// #1113: the third workflow that calls the relay — the only one that is not
+// nightly. It is read here because the allowlist is asserted to be exactly the
+// set the workflows call, in both directions.
+const REMINDER_WORKFLOW = readFileSync(join(WORKFLOWS, 'booking-reminder-run.yml'), 'utf8');
+const ALL_WORKFLOWS = `${BILLING_WORKFLOW}${BOOKING_WORKFLOW}${REMINDER_WORKFLOW}`;
 
 /** A source file's lines with its (long) comments dropped: a rule about what
  *  the code does must not be satisfied or broken by prose about it. */
@@ -80,7 +85,7 @@ describe('the relay exists on the admin app, and only there', () => {
   });
 
   it('answers POST and nothing else', () => {
-    // All four internal runs are POSTs; a GET under this prefix has nothing to
+    // Every internal run is a POST; a GET under this prefix has nothing to
     // relay and gets Next's own 405.
     expect(ROUTE_CODE).toMatch(/export async function POST\b/);
     expect(ROUTE_CODE).not.toMatch(/export (async function|const) (GET|PUT|PATCH|DELETE)\b/);
@@ -93,18 +98,19 @@ describe('the relay exists on the admin app, and only there', () => {
   });
 });
 
-describe('only the four internal runs may be relayed', () => {
+describe('only the declared internal runs may be relayed', () => {
   it('names exactly the paths the workflows POST to', () => {
     expect(quoted(declaration(MODULE_CODE, 'INTERNAL_RUN_API_PATHS'))).toEqual([
       '/billing/run',
       '/billing/cleanup',
       '/promotion-lifecycle/run',
       '/recurring-bookings/run',
+      '/booking-reminders/run',
     ]);
   });
 
-  it('is the set the two workflows actually call', () => {
-    const called = [...`${BILLING_WORKFLOW}${BOOKING_WORKFLOW}`.matchAll(
+  it('is the set the workflows actually call', () => {
+    const called = [...ALL_WORKFLOWS.matchAll(
       /\$API_BASE_URL(\/[a-z-]+\/[a-z-]+)"/g,
     )].map((m) => m[1]);
     expect(new Set(called)).toEqual(
@@ -209,6 +215,7 @@ describe('the relay authenticates nothing', () => {
     for (const source of [ROUTE_CODE, MODULE_CODE, UPSTREAM_CODE]) {
       expect(source).not.toContain('BILLING_INTERNAL_SECRET');
       expect(source).not.toContain('RECURRING_BOOKINGS_INTERNAL_SECRET');
+      expect(source).not.toContain('BOOKING_REMINDERS_INTERNAL_SECRET');
     }
   });
 
@@ -236,7 +243,7 @@ describe('a 600-second run is not cut off by the relay', () => {
   });
 
   it('waits longer than the longest --max-time in the workflows', () => {
-    const budgets = [...`${BILLING_WORKFLOW}${BOOKING_WORKFLOW}`.matchAll(/--max-time (\d+)/g)].map(
+    const budgets = [...ALL_WORKFLOWS.matchAll(/--max-time (\d+)/g)].map(
       (m) => Number(m[1]),
     );
     expect(budgets.length).toBeGreaterThan(0);

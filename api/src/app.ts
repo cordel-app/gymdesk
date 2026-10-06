@@ -101,6 +101,7 @@ import { paymentPageRouter } from './api/payment-page';
 import { billingRouter } from './api/billing';
 import { recurringBookingsRouter } from './api/recurring-bookings';
 import { promotionLifecycleRouter } from './api/promotion-lifecycle';
+import { bookingRemindersRouter } from './api/booking-reminders';
 import { healthRouter } from './api/health';
 import { tenantContext, requireFeatureAccess, requireModuleAccess } from './infra/tenantContext';
 import { centerContext } from './infra/centerContext';
@@ -246,6 +247,12 @@ app.use('/recurring-bookings', internalRunLimiter as any, recurringBookingsRoute
 // here rather than on the tenant-scoped `/promotions` router below because it
 // walks every gym.
 app.use('/promotion-lifecycle', internalRunLimiter as any, promotionLifecycleRouter);
+
+// #1113: internal runner that raises the 2-hour training reminder — same
+// X-Internal-Secret pattern, with its own secret because it has a schedule of
+// its own (see api/src/api/booking-reminders.ts). Mounted here rather than on
+// the tenant-scoped routers below because it walks every gym.
+app.use('/booking-reminders', internalRunLimiter as any, bookingRemindersRouter);
 
 // Theme logo — no auth (img tags in both apps need this)
 app.use('/themes', themesPublicRouter);

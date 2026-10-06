@@ -212,7 +212,9 @@
     "type_waitlist_closed": "Llista d'espera tancada",
     "detail_waitlist_closed": "La llista d'espera d'aquesta classe s'ha tancat. Ja no hi ets i no t'hi pots tornar a apuntar.",
     "type_waitlist_removed": "Fora de la llista d'espera",
-    "detail_waitlist_removed": "Se t'ha retirat de la llista d'espera d'aquesta classe. La llista continua oberta, així que t'hi pots tornar a apuntar."
+    "detail_waitlist_removed": "Se t'ha retirat de la llista d'espera d'aquesta classe. La llista continua oberta, així que t'hi pots tornar a apuntar.",
+    "type_booking_reminder_2h": "Recordatori d'entrenament",
+    "detail_booking_reminder_2h": "Tens aquest entrenament reservat en 2 hores."
   },
   "membership": {
     "title": "La meva quota",
