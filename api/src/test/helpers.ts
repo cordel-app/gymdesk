@@ -118,6 +118,11 @@ export async function cleanupTestGyms() {
   if (ids.length === 0) return;
   const marks = ids.map(() => '?').join(',');
   // Delete in FK dependency order to avoid constraint violations.
+  // #1121 stage 2: before `payment_requests` (its FK to them is ON DELETE SET
+  // NULL, so leaving it would null the link rather than fail) and well before
+  // `products`, whose FK from here is ON DELETE RESTRICT — a purchase is the
+  // record of money that moved, so a Product may not be hard-deleted under it.
+  await db.query(`DELETE FROM member_products WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_requests WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_methods WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM calendar_event_shared_training_requests WHERE gym_id IN (${marks})`, ids);
