@@ -31,7 +31,7 @@
     "training": "El Meu Pla d'Entrenament",
     "bookings": "Les Meves Reserves",
     "nutrition": "La Meva Nutrició",
-    "membership": "La Meva Quota",
+    "membership": "Els Meus Productes i Serveis",
     "profile": "Perfil",
     "alerts": "Alertes",
     "goals": "Els Meus Objectius"
@@ -217,7 +217,7 @@
     "detail_booking_reminder_2h": "Tens aquest entrenament reservat en 2 hores."
   },
   "membership": {
-    "title": "La meva quota",
+    "title": "Els Meus Productes i Serveis",
     "loading": "Carregant…",
     "empty": "Encara no tens cap quota assignada. Demana-la al teu gimnàs.",
     "price": "Preu mensual",
@@ -234,6 +234,11 @@
     },
     "expires": "caduca el {date}",
     "benefits_heading": "Beneficis inclosos",
+    "products_heading": "Productes i Serveis Addicionals",
+    "products_empty": "El teu gimnàs encara no ofereix productes ni serveis addicionals.",
+    "product_sessions_price": "{count, plural, one {Preu total per # sessió} other {Preu total per # sessions}}",
+    "product_package_price": "Preu total del paquet",
+    "product_tax_included": "Impostos inclosos",
     "download_receipt": "Descarregar rebut",
     "status": {
       "active": "Activa",

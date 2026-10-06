@@ -31,7 +31,7 @@
     "training": "My Training Plan",
     "bookings": "My Bookings",
     "nutrition": "My Nutrition",
-    "membership": "My Membership",
+    "membership": "My Products and Services",
     "profile": "Profile",
     "alerts": "Alerts",
     "goals": "My Goals"
@@ -217,7 +217,7 @@
     "detail_booking_reminder_2h": "You have this training booked in 2 hours."
   },
   "membership": {
-    "title": "My membership",
+    "title": "My Products and Services",
     "loading": "Loading…",
     "empty": "You don't have a membership yet. Ask your gym to set one up.",
     "price": "Monthly price",
@@ -234,6 +234,11 @@
     },
     "expires": "expires {date}",
     "benefits_heading": "Included benefits",
+    "products_heading": "Additional Products and Services",
+    "products_empty": "Your gym does not offer any additional products or services yet.",
+    "product_sessions_price": "{count, plural, one {Total price for # session} other {Total price for # sessions}}",
+    "product_package_price": "Total price for the package",
+    "product_tax_included": "Tax included",
     "download_receipt": "Download receipt",
     "status": {
       "active": "Active",

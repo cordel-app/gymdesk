@@ -25,6 +25,17 @@ import {
   PaymentsSubcard,
 } from '@/components/MemberPaymentsCard';
 import {
+  MemberProductsSection,
+  type MemberProductCardItem,
+} from '@/components/MemberProductsSection';
+import {
+  type MemberProduct,
+  productFrequencyKey,
+  productPackageNote,
+  productPriceText,
+  productTaxNoteKey,
+} from '@/lib/memberProducts';
+import {
   type BillingEventForecast,
   type ForecastDate,
   type ForecastLine,
@@ -140,6 +151,13 @@ export default function MembershipPage() {
   // `available: false` rather than an error, so a failed fetch is the only thing
   // that falls back to the empty shape.
   const [forecast, setForecast] = useState<BillingEventForecast>(EMPTY_FORECAST);
+  // #1121 stage 1 — the gym's own catalogue, read-only. `null` means the
+  // catalogue could not be read at all (a gym with `financials.products`
+  // switched off answers 403), and the subsection is then **absent** rather than
+  // claiming a gym offers nothing — the same distinction the forecast draws with
+  // `available`, and #1073's "a control that cannot work is absent, never
+  // broken". An empty array is a gym that really has nothing public yet.
+  const [products, setProducts] = useState<MemberProduct[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -157,13 +175,14 @@ export default function MembershipPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [mship, ledger, pkgs, promos, prs, projection] = await Promise.all([
+        const [mship, ledger, pkgs, promos, prs, projection, catalogue] = await Promise.all([
           apiFetch<{ membership: Membership | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
           apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
           apiFetch<BillingEventForecast>('/me/billing-event-forecast').catch(() => EMPTY_FORECAST),
+          apiFetch<{ items: MemberProduct[] }>('/me/products').catch(() => null),
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
@@ -172,6 +191,7 @@ export default function MembershipPage() {
         setPromotions(promos);
         setPaymentRequests(prs);
         setForecast(projection);
+        setProducts(catalogue?.items ?? null);
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('common.error'));
       } finally {
@@ -290,6 +310,48 @@ export default function MembershipPage() {
     });
   }
 
+  /* ── #1121 Additional Products and Services ─────────────────────────────── */
+  //
+  // Which key a line reads under is `lib/memberProducts.ts`' decision and the
+  // card is `MemberProductsSection`'s; the page resolves the keys, exactly as it
+  // does for the Payments card above. No amount is computed here.
+
+  /**
+   * The subsection, or nothing at all for a catalogue that could not be read.
+   * One function because two branches of this page render it — a member with a
+   * plan and one without — and two copies would drift.
+   */
+  function renderProducts() {
+    if (products === null) return null;
+    return (
+      <MemberProductsSection
+        title={t('membership.products_heading')}
+        emptyLabel={t('membership.products_empty')}
+        items={productCardItems(products)}
+      />
+    );
+  }
+
+  function productCardItems(items: MemberProduct[]): MemberProductCardItem[] {
+    return items.map((product) => {
+      const frequencyKey = productFrequencyKey(product);
+      const packageNote = productPackageNote(product);
+      const taxKey = productTaxNoteKey(product);
+      const meta = [
+        packageNote ? t(packageNote.key as any, packageNote.values) : null,
+        taxKey ? t(taxKey as any) : null,
+      ].filter(Boolean).join(' · ');
+      return {
+        key: String(product.id),
+        name: product.name,
+        description: product.description,
+        price: productPriceText(product, locale),
+        frequency: frequencyKey ? t(frequencyKey as any) : null,
+        meta: meta || null,
+      };
+    });
+  }
+
   function pastCardLines(group: BillingEvent[]): BillingEventCardLine[] {
     return group.map((event) => {
       const transition = event.event_type === 'status_changed' && event.new_status
@@ -346,6 +408,8 @@ export default function MembershipPage() {
   }
 
   if (!membership) {
+    // A member may hold no plan at all (#956), and the catalogue is the gym's
+    // rather than the plan's — so the products still belong on this screen.
     return (
       <main style={styles.container}>
         <div style={styles.emptyCard}>
@@ -353,6 +417,7 @@ export default function MembershipPage() {
           <h1 style={styles.emptyTitle}>{t('membership.title')}</h1>
           <p style={styles.hint}>{t('membership.empty')}</p>
         </div>
+        {renderProducts()}
       </main>
     );
   }
@@ -422,6 +487,13 @@ export default function MembershipPage() {
           </button>
         </div>
       )}
+
+      {/* #1121 §3 — Additional Products and Services, directly below the
+          membership card. The payment banner and Start payment above it belong
+          to that card (they are about the fee it charges), so the subsection
+          follows them rather than splitting the membership from its own
+          pending payment. */}
+      {renderProducts()}
 
       {membership.benefits.length > 0 && (
         <section style={styles.section}>

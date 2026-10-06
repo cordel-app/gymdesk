@@ -31,7 +31,7 @@
     "training": "Mi Plan de Entrenamiento",
     "bookings": "Mis Reservas",
     "nutrition": "Mi Nutrición",
-    "membership": "Mi Cuota",
+    "membership": "Mis Productos y Servicios",
     "profile": "Perfil",
     "alerts": "Alertas",
     "goals": "Mis Objetivos"
@@ -217,7 +217,7 @@
     "detail_booking_reminder_2h": "Tienes este entreno reservado en 2 horas."
   },
   "membership": {
-    "title": "Mi cuota",
+    "title": "Mis Productos y Servicios",
     "loading": "Cargando…",
     "empty": "Aún no tienes una cuota asignada. Pídelo a tu gimnasio.",
     "price": "Precio mensual",
@@ -234,6 +234,11 @@
     },
     "expires": "caduca el {date}",
     "benefits_heading": "Beneficios incluidos",
+    "products_heading": "Productos y Servicios Adicionales",
+    "products_empty": "Tu gimnasio todavía no ofrece productos ni servicios adicionales.",
+    "product_sessions_price": "{count, plural, one {Precio total por # sesión} other {Precio total por # sesiones}}",
+    "product_package_price": "Precio total del paquete",
+    "product_tax_included": "Impuestos incluidos",
     "download_receipt": "Descargar recibo",
     "status": {
       "active": "Activa",
