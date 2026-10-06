@@ -187,8 +187,6 @@ describe('Assigned Plan configuration: locales', () => {
     'no_oneoff_benefits', 'no_session_benefits', 'no_period_benefits',
     'add_oneoff_benefit', 'add_session_benefit', 'add_period_benefit',
     'unit_day', 'unit_week', 'unit_month', 'unit_year',
-    'frequency_once', 'frequency_per_session', 'frequency_four_weeks',
-    'frequency_week', 'frequency_month', 'frequency_year',
     // #772 — the Personal Membership Fee Benefit section.
     'section_membership_fee_benefit', 'label_personal_fee_benefit',
     'label_personal_fee_benefit_percentage', 'personal_fee_benefit_no_benefit',

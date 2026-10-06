@@ -52,16 +52,11 @@ const SECTION_KEYS = [
   'services_item_retired',
 ];
 
-// Every value `products.billing_frequency` can hold — the label lookup is a
-// template key, so the locale tests' static scan can't catch a missing one.
-const FREQUENCY_KEYS = [
-  'services_frequency_week',
-  'services_frequency_four_weeks',
-  'services_frequency_month',
-  'services_frequency_year',
-  'services_frequency_once',
-  'services_frequency_per_session',
-];
+// #1128: a service's Frequency is its Product's Billing Frequency, and the one
+// `billing_frequency` namespace labels it — this section no longer carries a copy
+// of those words. `api/src/test/billing-frequency-labels.unit.test.ts` asserts
+// every value has a label in all three locales.
+const FREQUENCY_KEYS: string[] = [];
 
 describe('Additional Periodic Services (#631)', () => {
   it('is a section of the Assigned Plan expanded row', () => {

@@ -10,6 +10,14 @@ import {
   exampleTimelineRowTone,
   formatExampleTimelineBilling,
 } from '@/lib/exampleTimeline';
+import {
+  PLAN_BILLING_FREQUENCIES,
+  PLAN_BILLING_FREQUENCY_CADENCES,
+  PlanBillingFrequency,
+  billingFrequencyLabelKey,
+  legacyCadenceText,
+  planBillingFrequencyOf,
+} from '@/lib/billingFrequency';
 
 /**
  * #816 — the single declaration of the Membership Plan's expanded-card shape.
@@ -282,58 +290,64 @@ export const memberLimitChipStyle: CSSProperties = {
   color: '#4b45c6',
 };
 
-// ─── Billing frequency (#820) ─────────────────────────────────────────────────
+// ─── Billing frequency (#820, labels #1128) ───────────────────────────────────
 //
 // The Billing & Duration section used to configure the cadence with a number box
 // plus the whole `recurring_billing_unit` ENUM ("every 3 days", "every 2 years").
-// #820 replaces both controls with a single dropdown of the two cadences a gym
-// bills on — Month and 4 Weeks.
+// #820 replaced both controls with a single dropdown of the two cadences a gym
+// bills on.
 //
 // What is stored does not change: the pair still goes to
 // `PUT /membership-plans/:id/billing-policy` as `recurring_billing_interval` +
 // `recurring_billing_unit`, which is what every assignment snapshots and what
 // `advanceBillingDate()` steps. The API is the enforcer
 // (`api/src/domain/planBillingFrequency.ts` — the same two pairs, rejected with
-// a 400 otherwise); this declaration is what the dropdown offers and how a
-// stored pair is read back, kept here rather than in the JSX so the option list,
-// the mapping and the labels are one testable thing.
+// a 400 otherwise).
+//
+// The pair itself, the match and the **label** moved to `@/lib/billingFrequency`
+// with #1128, because an Assigned Plan card renders the same cadence from
+// `components/assignedPlan/` (which cannot import a page module) and because a
+// Membership Plan has no frequency terminology of its own: `Monthly` and
+// `Every 4 weeks` are the same words a Product billed on that period reads. This
+// declaration re-exports them rather than restating them, and adds the one thing
+// that is the Plan's own — the *period noun* a duration is counted in.
 
-export const PLAN_BILLING_FREQUENCIES = ['month', 'four_weeks'] as const;
+export {
+  PLAN_BILLING_FREQUENCIES,
+  planBillingFrequencyOf,
+};
+export type { PlanBillingFrequency };
 
-export type PlanBillingFrequency = (typeof PLAN_BILLING_FREQUENCIES)[number];
-
-/** What each option stores, and the `plans.*` key that labels it. */
+/**
+ * What each option stores, the `billing_frequency.*` key that labels the
+ * frequency, and the `plans.*` key that names one of its periods.
+ *
+ * The two keys are two different sentences and may not be merged: the Billing
+ * Frequency row reads `Every 4 weeks`, while a Paid Duration of two reads
+ * `2 × 4 Weeks` (#892) — `2 × Every 4 weeks` is not English.
+ */
 export const PLAN_BILLING_FREQUENCY_OPTIONS: Record<
   PlanBillingFrequency,
-  { interval: number; unit: string; labelKey: string }
+  { interval: number; unit: string; labelKey: string; periodLabelKey: string }
 > = {
-  month: { interval: 1, unit: 'month', labelKey: 'billing_frequency_month' },
-  four_weeks: { interval: 4, unit: 'week', labelKey: 'billing_frequency_four_weeks' },
+  month: {
+    ...PLAN_BILLING_FREQUENCY_CADENCES.month,
+    labelKey: billingFrequencyLabelKey('month') as string,
+    periodLabelKey: 'period_unit_month',
+  },
+  four_weeks: {
+    ...PLAN_BILLING_FREQUENCY_CADENCES.four_weeks,
+    labelKey: billingFrequencyLabelKey('four_weeks') as string,
+    periodLabelKey: 'period_unit_four_weeks',
+  },
 };
 
 /** A new Plan is created monthly (`DEFAULT_BILLING_POLICY`). */
 export const DEFAULT_PLAN_BILLING_FREQUENCY: PlanBillingFrequency = 'month';
 
-/**
- * Which option a stored pair is, or `null` for a cadence outside the two: a
- * Plan configured before #820, or a row written straight into the database.
- * `null` is deliberately not coerced to an option — the read-only row keeps
- * showing what the Plan is really billed on ("Every 2 months"), and the editor
- * says so instead of relabelling it.
- */
-export function planBillingFrequencyOf(interval: unknown, unit: unknown): PlanBillingFrequency | null {
-  const n = Number(interval);
-  if (!Number.isInteger(n)) return null;
-  for (const freq of PLAN_BILLING_FREQUENCIES) {
-    const opt = PLAN_BILLING_FREQUENCY_OPTIONS[freq];
-    if (opt.interval === n && opt.unit === unit) return freq;
-  }
-  return null;
-}
-
 /** `{ interval, unit }` — what the choice stores. */
 export function planBillingFrequencyCadence(freq: PlanBillingFrequency): { interval: number; unit: string } {
-  const { interval, unit } = PLAN_BILLING_FREQUENCY_OPTIONS[freq];
+  const { interval, unit } = PLAN_BILLING_FREQUENCY_CADENCES[freq];
   return { interval, unit };
 }
 
@@ -350,12 +364,11 @@ export function planBillingPolicyBody(freq: PlanBillingFrequency, autoRenew: boo
 
 /**
  * `Every 2 months` — the pre-#820 rendering, kept for a legacy cadence that no
- * option matches. A matched pair is labelled by its option's key instead, so
- * "Month" and "4 Weeks" read the same in the dropdown and in the read-only row.
+ * option matches. Re-exported from `@/lib/billingFrequency` under its original
+ * name so the Plans page and an Assigned Plan card describe such a cadence with
+ * one sentence.
  */
-export function legacyBillingFrequencyText(interval: number, unit: string): string {
-  return `Every ${interval === 1 ? unit : `${interval} ${unit}s`}`;
-}
+export const legacyBillingFrequencyText = legacyCadenceText;
 
 // ─── Billing & Duration, in Billing Frequency periods (#892) ─────────────────
 //
@@ -394,7 +407,7 @@ export function planDurationUnitLabel(
 ): string | null {
   if (!cadence) return null;
   const freq = planBillingFrequencyOf(cadence.recurring_billing_interval, cadence.recurring_billing_unit);
-  return freq ? t(PLAN_BILLING_FREQUENCY_OPTIONS[freq].labelKey) : null;
+  return freq ? t(PLAN_BILLING_FREQUENCY_OPTIONS[freq].periodLabelKey) : null;
 }
 
 /**

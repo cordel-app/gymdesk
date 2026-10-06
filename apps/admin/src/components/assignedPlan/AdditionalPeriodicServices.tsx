@@ -42,6 +42,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import { useApiClient } from '@/lib/apiClient';
 import { primaryBtnSmall, readOnlyStyle } from '@/components/ui';
 import { useToast } from '@/components/Toast';
@@ -109,6 +110,7 @@ export function AdditionalPeriodicServices({
   canAdd = true, readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const itemsLoadedRef = useRef(false);
@@ -200,8 +202,11 @@ export function AdditionalPeriodicServices({
     }
   }
 
+  // #1128: a service's Frequency is its Product's Billing Frequency, so it reads
+  // from the one namespace that labels every billing frequency rather than from
+  // a per-page copy of the words.
   const frequencyLabel = (frequency: string | null) =>
-    frequency ? t(`services_frequency_${frequency}` as any) : '—';
+    billingFrequencyLabel(frequency, tFreq) ?? '—';
 
   const canAttach = ATTACHABLE_STATUSES.includes(planStatus);
   const write = canWrite ? {} : { disabled: true, title: readOnlyTitle };

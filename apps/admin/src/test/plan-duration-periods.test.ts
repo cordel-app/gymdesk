@@ -124,7 +124,9 @@ describe('#892: every Plan surface renders through the one formatter', () => {
   it('the editor labels each input with the *selected* frequency, not the stored one', () => {
     const src = read(PLANS_PAGE);
     expect(src).toContain("t('plans.periods_unit_suffix', {");
-    expect(src).toContain('PLAN_BILLING_FREQUENCY_OPTIONS[durationForm.billing_frequency].labelKey');
+    // #1128: the suffix names one *period* ("4 Weeks"), not the frequency
+    // ("Every 4 weeks") — "2 × Every 4 weeks" is not English.
+    expect(src).toContain('PLAN_BILLING_FREQUENCY_OPTIONS[durationForm.billing_frequency].periodLabelKey');
     // Saving still sends only the four numbers and the cadence — no conversion.
     expect(src).toMatch(/raw === ''\s*\?\s*null\s*:\s*parseInt\(raw, 10\)/);
   });

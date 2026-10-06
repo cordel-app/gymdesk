@@ -16,6 +16,14 @@
 // from the list the moment the user chooses something else. The notice beside
 // the select names the value it holds, which is #945 §3's "flag the value for
 // correction rather than guessing".
+//
+// #1128: the label *text* is not this module's. Every key below is
+// `billingFrequencyLabelKey()`'s (`@/lib/billingFrequency`), resolved in the one
+// `billing_frequency` namespace, so the dropdown, the list row, the Details
+// modal, a Membership Plan's benefit row and an Assigned Plan card all read
+// `Monthly` rather than four spellings of it.
+import { billingFrequencyLabelKey } from '@/lib/billingFrequency';
+
 export const OFFERED_FREQUENCIES = ['once', 'four_weeks', 'month', 'year'] as const;
 export const LEGACY_FREQUENCIES = ['per_session', 'week'] as const;
 
@@ -29,7 +37,7 @@ export function isLegacyFrequency(value: unknown): value is LegacyFrequency {
 
 export interface FrequencyOption {
   value: Frequency;
-  /** Key in the `products` namespace. */
+  /** Key in the `billing_frequency` namespace (#1128). */
   labelKey: string;
   /** A legacy frequency is shown (so the row reads truthfully) but not selectable. */
   disabled: boolean;
@@ -43,11 +51,11 @@ export interface FrequencyOption {
 export function frequencyOptions(current: string | null | undefined): FrequencyOption[] {
   const options: FrequencyOption[] = OFFERED_FREQUENCIES.map((f) => ({
     value: f,
-    labelKey: `frequency_${f}`,
+    labelKey: billingFrequencyLabelKey(f) as string,
     disabled: false,
   }));
   if (isLegacyFrequency(current)) {
-    options.push({ value: current, labelKey: `frequency_${current}`, disabled: true });
+    options.push({ value: current, labelKey: billingFrequencyLabelKey(current) as string, disabled: true });
   }
   return options;
 }
@@ -58,5 +66,5 @@ export function frequencyOptions(current: string | null | undefined): FrequencyO
  * option (next-intl has none and would print the key).
  */
 export function legacyFrequencyLabelKey(current: string | null | undefined): string | null {
-  return isLegacyFrequency(current) ? `frequency_${current}` : null;
+  return isLegacyFrequency(current) ? billingFrequencyLabelKey(current) : null;
 }

@@ -17,9 +17,14 @@
  *
  * `t` is passed in rather than taken from `useTranslations()` here because the
  * two pages namespace their keys differently (`promotions.*` vs `plans.*`).
+ * The one exception is a billing frequency, which #1128 gave a namespace of its
+ * own precisely because it must read the same on every page: that label is
+ * resolved here, through `@/lib/billingFrequency`, and never from a page's `t`.
  */
 
 import React from 'react';
+import { useTranslations } from 'next-intl';
+import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import { primaryBtnSmall } from '@/components/ui';
 import { rowRemoveBtnStyle } from '@/components/formChrome';
 import {
@@ -508,6 +513,9 @@ export function ProductBenefitEditor({
    */
   showRequirement?: boolean;
 }) {
+  // #1128: a billing frequency reads the same on every page, so its label is
+  // the one shared namespace's and not the caller's `t`.
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const hasMoreToAdd = categoryItems.some((c) => !draft.some((d) => d.product_id === c.id));
   // #893 §3: the user must not have to guess why a row has no Remove control.
   // A form's explanatory sentence stays in the form (#797), so it is rendered
@@ -583,7 +591,7 @@ export function ProductBenefitEditor({
                   </select>
                 ) : (
                   <span style={{ fontSize: 13, color: '#666' }}>
-                    {row.product_billing_frequency ? t(`frequency_${row.product_billing_frequency}`) : '—'}
+                    {billingFrequencyLabel(row.product_billing_frequency, tFreq) ?? '—'}
                   </span>
                 ))}
                 {benefitContext && action && (
@@ -764,6 +772,9 @@ export function ProductBenefitView({
    */
   showRequirement?: boolean;
 }) {
+  // #1128: a billing frequency reads the same on every page, so its label is
+  // the one shared namespace's and not the caller's `t`.
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   if (rows.length === 0) return <p style={hintSt}>{t(emptyKey)}</p>;
   // One grid for every section of this page, whatever each section has values
   // for: a column with nothing to say renders an empty cell rather than
@@ -790,9 +801,7 @@ export function ProductBenefitView({
         // configured; every other section shows the item's own. Either way the
         // cell stays, and a row with no frequency reads "—".
         if (frequencyColumn === 'benefit') return t(sessionFrequencyLabelKey(row.frequency));
-        return row.product_billing_frequency
-          ? t(`frequency_${row.product_billing_frequency}`)
-          : '—';
+        return billingFrequencyLabel(row.product_billing_frequency, tFreq) ?? '—';
       case 'action':
         return benefitContext ? benefitTreatmentLabel(t, benefitContext, row) : null;
       case 'requirement':
