@@ -3,6 +3,9 @@
 # CI never writes this file. Workflows only podman pull + systemctl restart.
 # Traefik: pay.vdicube.com → localhost:8083.
 # PCI: do not log query strings on this host (page_token lives in ?token=).
+#      The container's own access log drops them since #1083 (log_format
+#      pay_no_query in apps/payment/templates/default.conf.template); Traefik's
+#      own log is still Oscar's to configure.
 
 [Unit]
 Description=Cordel Fitness Pay
@@ -14,7 +17,13 @@ Image=ghcr.io/cordel-app/fitness-pay:latest
 ContainerName=fitness-pay
 LogDriver=journald
 PublishPort=8083:80
-Environment=CORDEL_FITNESS_API_URL="https://api.vdicube.com"
+# #1083 — two origins, because Monei's webhook is relayed by this container.
+#   PUBLIC:   what the browser-facing proxies (/payment-page/, /themes/) call.
+#   INTERNAL: what POST /webhooks/payment is handed to — the API's internal
+#             address, so the provider no longer needs a public route to it.
+# No trailing slash on either. On pro these are the pro API's addresses.
+Environment=CORDEL_FITNESS_API_PUBLIC_URL="https://api.vdicube.com"
+Environment=CORDEL_FITNESS_API_INTERNAL_URL="https://api.vdicube.com"
 
 [Service]
 Restart=always

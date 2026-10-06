@@ -575,7 +575,7 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       touches no existing object.
 
 - [ ] If a Content-Security-Policy is ever added in front of the **admin** app (only
-      `apps/payment/nginx.conf` sets one today), its `img-src` must allow
+      `apps/payment/templates/default.conf.template` sets one today), its `img-src` must allow
       `https://img.youtube.com` — workout exercise rows load a YouTube poster from there
       for an exercise whose video is a YouTube link (#720) — plus the R2 endpoint that
       serves uploaded exercise images.
@@ -669,10 +669,30 @@ against Monei test keys. Most items here are "confirm X against the live account
 runbook is how.
 
 - [ ] Live `MONEI_API_KEY`, `MONEI_WEBHOOK_SECRET` and `MONEI_ACCOUNT_ID`; webhook endpoint
-      (`/webhooks/payment`) registered on the live Monei account, subscribed to **charge**
-      events. `PAYMENT_ENV`, `PAYMENT_PAGE_URL`, `PAYMENT_OK_URL`, `PAYMENT_KO_URL` and
-      `PAYMENT_NOTIFICATION_URL` set for the live hosts — see the env table in
-      `docs/payments.md` § Provider layer for the full list and what reads each.
+      registered on the live Monei account, subscribed to **charge** events — and since
+      #1083 that endpoint is the **payment app's** relay, `https://pay.cordel.tech/webhooks/payment`,
+      not the API's own route. `PAYMENT_ENV`, `PAYMENT_PAGE_URL`, `PAYMENT_OK_URL`,
+      `PAYMENT_KO_URL` and `PAYMENT_NOTIFICATION_URL` set for the live hosts — see the env
+      table in `docs/payments.md` § Provider layer for the full list and what reads each.
+- [ ] **#1083 — the webhook relay's own two settings, on each environment.** Neither is a
+      repo change; both are wrong by default on pro.
+  - [ ] In Oscar's `fitness-pay` quadlet (reference: `infra/payment-app/fitness-pay.container`),
+        set `CORDEL_FITNESS_API_PUBLIC_URL` and `CORDEL_FITNESS_API_INTERNAL_URL` to that
+        environment's API — the second being the address the payment container reaches the
+        API at, with **no trailing slash**. The image's defaults are the dev API, so a pro
+        container left unset would relay pro's payments to the dev API. `deploy-payment.yml`
+        probes the relay after each deploy (the same `GET` Monei's dashboard preflights with),
+        so a wrong address fails the deploy rather than losing confirmations quietly.
+  - [ ] Set **`PAYMENT_WEBHOOK_RELAY_HOPS=1`** on the API (Oscar's `fitness-api` unit) once
+        `PAYMENT_NOTIFICATION_URL` points at the relay. It defaults to `0`, which keys the
+        webhook's 60/min budget on the relay instead of the paying member — every gym's
+        confirmations would then share one bucket. Do **not** raise `TRUST_PROXY_HOPS`
+        instead: that trusts one more caller-supplied `X-Forwarded-For` entry on every route
+        (`docs/payments.md` §A5, `decisions.md` #19).
+  - [ ] Deploy the payment app **before** the next API deploy of each environment:
+        `PAYMENT_NOTIFICATION_URL` already holds the pay-host URL in the GitHub `dev` and
+        `pro` environments, and it reaches the API on its next `deploy.yml` run — so an API
+        deployed ahead of the relay would hand Monei a URL that 404s.
 - [ ] **Monei AoC** (Attestation of Compliance) obtained — SAQ A eligibility is void
       without it.
 - [ ] **PCI DSS v4.0 Req 6.4.3** — versioned `monei.js` URL + `sha384` SRI hash from Monei,

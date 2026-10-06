@@ -1,0 +1,112 @@
+# Payment app (pay.vdicube.com / pay.cordel.tech) — nginx config.
+#
+# This file is a TEMPLATE, not a config: the official nginx image runs
+# `envsubst` over /etc/nginx/templates/*.template at container start and writes
+# the result to /etc/nginx/conf.d/. Only ${NAMES} that exist in the container's
+# environment are substituted, so nginx's own $variables below are untouched.
+#
+# Two origins are configuration rather than literals, because dev and pro differ
+# (#1083) and the image is one tag for both:
+#
+#   ${CORDEL_FITNESS_API_PUBLIC_URL}  the API as the browser-facing proxies reach it
+#   ${CORDEL_FITNESS_API_INTERNAL_URL} the API as *this container* reaches it, for the
+#                                      webhook relay — the internal address, so Monei's
+#                                      webhook no longer needs the API to be public
+#
+# The Dockerfile gives both the dev value as an image default, so a container
+# started with no environment behaves exactly as this app did before #1083.
+
+# PCI (docs/architecture.md): never log a query string on this host — the
+# checkout link carries `?token=<page_token>`. $uri is the path alone, already
+# decoded and with the query string dropped; $request would carry it.
+log_format pay_no_query '$remote_addr - [$time_local] "$request_method $uri $server_protocol" '
+                        '$status $body_bytes_sent $request_time "$http_user_agent"';
+
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index checkout.html;
+
+    access_log /var/log/nginx/access.log pay_no_query;
+
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' https://js.monei.com; frame-src https://js.monei.com https://*.monei.com; connect-src 'self' https://api.monei.com https://js.monei.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://js.monei.com;" always;
+    add_header X-Frame-Options SAMEORIGIN always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy no-referrer always;
+
+    # Token lookups — Traefik terminates TLS; this proxies to the Gymdesk API.
+    location /payment-page/ {
+        proxy_pass ${CORDEL_FITNESS_API_PUBLIC_URL};
+        proxy_ssl_server_name on;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Gym theme logo (public, unauthenticated) — proxied so it stays same-origin for CSP img-src.
+    location /themes/ {
+        proxy_pass ${CORDEL_FITNESS_API_PUBLIC_URL};
+        proxy_ssl_server_name on;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # #1083 — Monei's webhook relay. Monei posts to this host
+    # (PAYMENT_NOTIFICATION_URL) and nginx hands the request to the API's own
+    # /webhooks/payment by its internal address, so the API needs no public
+    # route for the provider.
+    #
+    # Everything here is deliberate:
+    #
+    #  * The body is relayed BYTE FOR BYTE, and so is Monei's signature header.
+    #    The API verifies the HMAC over the exact bytes Monei signed
+    #    (`parseWebhook()` first, over `express.raw`), so the webhook secret
+    #    never leaves the API and a tampered body is still a 400 from the API,
+    #    relayed as such. nginx therefore rewrites no header and no body:
+    #    `proxy_request_buffering on` (the default) passes the entity unchanged,
+    #    and `proxy_http_version 1.1` with an emptied `Connection` header keeps
+    #    a chunked body chunked rather than making nginx re-frame it.
+    #
+    #  * The API's own status code is what Monei gets. `proxy_intercept_errors`
+    #    stays off (the default), so a 400 or a 500 from the API is relayed
+    #    verbatim and Monei retries exactly when the API says it should. There
+    #    is no blanket 200 anywhere in this block: a swallowed error loses a
+    #    payment confirmation.
+    #
+    #  * An unreachable or slow API answers 502/504 — a 5xx, so Monei retries —
+    #    rather than hanging on Monei's own timeout.
+    #
+    #  * The client address is preserved in X-Forwarded-For. The API keys the
+    #    webhook's 60/min budget on the client this chain names, counting this
+    #    relay as one extra hop (`PAYMENT_WEBHOOK_RELAY_HOPS`,
+    #    api/src/domain/forwardedClient.ts) — without that, every webhook would
+    #    count as one client and the budget would be shared by the whole book.
+    location = /webhooks/payment {
+        proxy_pass ${CORDEL_FITNESS_API_INTERNAL_URL}/webhooks/payment;
+        proxy_ssl_server_name on;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 5s;
+        proxy_send_timeout 30s;
+        proxy_read_timeout 30s;
+
+        # Monei retries, so a relay that half-succeeded must not be retried
+        # against a second upstream by nginx itself: a POST is not idempotent
+        # from nginx's point of view either.
+        proxy_next_upstream off;
+    }
+
+    location = /error.html {
+        try_files /error.html =404;
+    }
+
+    location / {
+        try_files $uri /checkout.html;
+    }
+}

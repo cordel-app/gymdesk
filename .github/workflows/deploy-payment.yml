@@ -96,4 +96,13 @@ jobs:
             sleep 3
             curl -sf --max-time 10 -o /dev/null http://localhost:8083/ || \
               { echo "ERROR: payment page not responding on :8083"; systemctl --user status fitness-pay.service --no-pager || true; podman logs fitness-pay 2>/dev/null || true; exit 1; }
+
+            # #1083 — the webhook relay, end to end. Monei's own dashboard
+            # preflights a webhook URL with a GET, and the API answers that with
+            # 200 { ok: true }, so this probe is exactly what Monei will do:
+            # a 2xx here means the relay reached the API at the internal
+            # address this container is configured with. A failure means
+            # payments would not be confirmed, so it fails the deploy.
+            curl -sf --max-time 10 -o /dev/null http://localhost:8083/webhooks/payment || \
+              { echo "ERROR: webhook relay not reaching the API (CORDEL_FITNESS_API_INTERNAL_URL)"; podman logs fitness-pay 2>/dev/null | tail -40 || true; exit 1; }
             echo "Health check OK"
