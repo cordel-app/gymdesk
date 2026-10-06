@@ -30,9 +30,11 @@
 // Read-only by nature: the server computes it on every read, persists nothing
 // and charges nothing.
 
-import React, { useState } from 'react';
+import React, { ReactNode, useState } from 'react';
 
 import {
+  TIMELINE_CYCLE_LINE,
+  TIMELINE_CYCLE_TEXT,
   TIMELINE_TONE_BACKGROUND,
   TIMELINE_TONE_TEXT,
   timelineTdStyle,
@@ -45,11 +47,13 @@ import {
   BillingEventSimulationDate,
   BillingEventSimulationLine,
   allExpandedPeriods,
+  billingEventCycleCells,
   everyPeriodExpanded,
   initialExpandedPeriods,
   simulationLineTone,
   simulationPriceLabelKey,
 } from '@/lib/billingEventSimulation';
+import type { ExampleTimelineRowCycle } from '@/lib/exampleTimeline';
 
 type Simulation = BillingEventSimulationData;
 type Translate = (key: string, values?: Record<string, string | number>) => string;
@@ -68,6 +72,15 @@ interface Props {
   t: Translate;
   /** Formats a `YYYY-MM-DD` in the viewer's locale — the page's own helper. */
   formatDate: (date: string) => string;
+  /**
+   * #1130 stage 3 — the marker under the last card: whether the contract's cycle
+   * starts again, already worded (and glyphed) by the card that renders this
+   * section, because which sentence a cycle takes is `exampleTimelineCycleNote()`'s
+   * answer and not this component's — the same split the Membership Fee
+   * Simulation's table uses. A caller that passes none (a Promotion, which has no
+   * cycle) renders the section exactly as it did before the ticket.
+   */
+  cycleNote?: ReactNode;
 }
 
 function fmtMoney(amount: number): string {
@@ -176,6 +189,41 @@ function BillingEventTable({
 }
 
 /**
+ * #1130 stage 3 — the cycle gutter beside one billing-period card: the
+ * iteration's number on the first card of its run, and the thin vertical line
+ * that runs alongside the cards belonging to it.
+ *
+ * It is the Membership Fee Simulation's `Cycle` cell in a flex layout rather
+ * than a table one — the same two values (`TIMELINE_CYCLE_LINE`,
+ * `TIMELINE_CYCLE_TEXT`, imported, never a second hex) and the same gap at the
+ * foot of an iteration's last card, which is what keeps the two lines from
+ * touching with no horizontal divider between them (§2). The cards themselves
+ * are untouched: nothing here wraps them in a container or draws a border.
+ *
+ * A card outside every displayed iteration renders the gutter's width and
+ * nothing in it, so the cards stay aligned with each other.
+ */
+function CycleGutter({ cell, label }: { cell: ExampleTimelineRowCycle | null; label: string }) {
+  return (
+    <div style={cycleGutter}>
+      {cell?.label != null && (
+        <span style={cycleNumber} aria-label={`${label} ${cell.label}`}>{cell.label}</span>
+      )}
+      {cell && (
+        <span
+          aria-hidden
+          style={{
+            position: 'absolute', top: 0, right: CYCLE_LINE_INSET, width: 1,
+            bottom: cell.endsSegment ? CYCLE_SEGMENT_GAP : 0,
+            background: TIMELINE_CYCLE_LINE,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
  * One billing period. The whole header is the expand/collapse control, so the
  * summary itself is clickable and keyboard-operable (`<button>` + `aria-expanded`,
  * the shape the list rows use); the chevron beside the date is decorative.
@@ -208,7 +256,7 @@ function BillingPeriodCard({
   );
 }
 
-export function BillingEventSimulation({ simulation, t, formatDate }: Props) {
+export function BillingEventSimulation({ simulation, t, formatDate, cycleNote }: Props) {
   const dates = simulation?.dates ?? [];
   const signature = dates.map((group) => group.date).join('|');
 
@@ -233,6 +281,12 @@ export function BillingEventSimulation({ simulation, t, formatDate }: Props) {
   if (!simulation?.available) {
     return <p style={hint}>{t('simulation_unavailable')}</p>;
   }
+
+  // #1130 stage 3 — the gutter exists for the cards the engine put in an
+  // iteration. Which iteration each one is in is `group.cycle`; this only finds
+  // where a run ends, so the line can stop short of the next one's.
+  const cycleCells = billingEventCycleCells(dates);
+  const showCycle = cycleCells.some((cell) => cell);
 
   const allOpen = everyPeriodExpanded(dates, expanded);
   // A single period is still individually collapsible, but "expand all" has no
@@ -263,22 +317,59 @@ export function BillingEventSimulation({ simulation, t, formatDate }: Props) {
         </div>
       )}
 
-      {dates.map((group) => (
-        <BillingPeriodCard
-          key={group.date}
-          group={group}
-          expanded={expanded[group.date] === true}
-          onToggle={() => setExpanded({ ...expanded, [group.date]: !expanded[group.date] })}
-          t={t}
-          formatDate={formatDate}
-        />
-      ))}
+      {dates.map((group, i) => {
+        const card = (
+          <BillingPeriodCard
+            group={group}
+            expanded={expanded[group.date] === true}
+            onToggle={() => setExpanded({ ...expanded, [group.date]: !expanded[group.date] })}
+            t={t}
+            formatDate={formatDate}
+          />
+        );
+        // #1130 stage 3 — a section with no cycle to group by renders the cards
+        // exactly as it always has, with no gutter and no extra wrapper.
+        if (!showCycle) return <React.Fragment key={group.date}>{card}</React.Fragment>;
+        return (
+          <div key={group.date} style={cycleRow}>
+            <CycleGutter cell={cycleCells[i]} label={t('col_cycle')} />
+            <div style={{ flex: 1, minWidth: 0 }}>{card}</div>
+          </div>
+        );
+      })}
+
+      {showCycle && cycleNote != null && (
+        <p style={cycleNoteStyle}>{cycleNote}</p>
+      )}
 
       <p style={footnote}>{t('simulation_disclaimer')}</p>
       {simulation.truncated && <p style={footnote}>{t('simulation_truncated')}</p>}
     </div>
   );
 }
+
+/**
+ * #1130 stage 3 — the gap at the foot of an iteration's last card, which is what
+ * makes the two vertical lines visibly separate (§2: "the two vertical lines
+ * must not touch"). The Membership Fee Simulation's table uses the same device a
+ * row at a time.
+ */
+const CYCLE_SEGMENT_GAP = 10;
+/** The gutter's width, and how far its line sits clear of the cards beside it. */
+const CYCLE_GUTTER_WIDTH = 30;
+const CYCLE_LINE_INSET = 8;
+/** One card and its gutter. No border, no background: the card is the visual. */
+const cycleRow: React.CSSProperties = { display: 'flex', alignItems: 'stretch' };
+const cycleGutter: React.CSSProperties = {
+  position: 'relative', flex: '0 0 auto', width: CYCLE_GUTTER_WIDTH,
+};
+const cycleNumber: React.CSSProperties = {
+  color: TIMELINE_CYCLE_TEXT, fontSize: 11, fontWeight: 600, lineHeight: '26px',
+};
+/** The marker under the last card, in the gutter's own voice. */
+const cycleNoteStyle: React.CSSProperties = {
+  margin: '6px 0 0', paddingLeft: CYCLE_GUTTER_WIDTH, fontSize: 11, color: TIMELINE_CYCLE_TEXT,
+};
 
 const COL_WIDTHS = { date: 120, status: 300, amount: 90 } as const;
 const tableStyle: React.CSSProperties = {

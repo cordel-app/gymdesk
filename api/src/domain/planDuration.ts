@@ -415,3 +415,33 @@ export function prepaidPeriodsDueOn(
   const secondPrepaidPeriod = boundary(duration, startsAt, offset + duration.freePeriods + 1);
   return date < secondPrepaidPeriod ? duration.prepaidPeriods : 0;
 }
+
+/**
+ * #1130 stage 3 — which iteration of the configured cycle `date` falls in,
+ * counted from 1, or `null` when there is no iteration to name it with.
+ *
+ * It is the date-keyed counterpart of the period-keyed rule the Membership Fee
+ * Simulation's table groups its rows by, and it exists so the **Billing Event
+ * Simulation** can group its cards by the same iterations without deriving them
+ * a second time: that projection is one group per billing *date*, and a date
+ * may be a Product's rather than the fee's, so there is no period number to
+ * divide.
+ *
+ * `null` in three cases, and each of them is a card the grouping leaves alone:
+ * a contract with nothing configured (no cycle at all), a date before the
+ * contract starts (nothing is waived there — `classifyPlanDurationPeriod()`
+ * says so too), and a date the cycle has run past, which only a
+ * **non-repeating** contract has: those are its regular periods, not a second
+ * iteration, exactly as the fee table leaves its trailing regular rows
+ * ungrouped.
+ */
+export function planDurationCycleIteration(
+  duration: PlanDuration, startsAt: string, date: string,
+): number | null {
+  if (planDurationCycleLength(duration) < 1) return null;
+  if (date < startsAt) return null;
+  // Only reachable for a cycle that does not repeat: a repeating one never
+  // settles into its regular price (#1130 `Q1 real`).
+  if (classifyPlanDurationPeriod(duration, startsAt, date) === 'pay_regular') return null;
+  return elapsedCycles(duration, startsAt, date) + 1;
+}

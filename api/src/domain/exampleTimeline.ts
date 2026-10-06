@@ -168,6 +168,84 @@ export function timelineCycleFor(duration: PlanDuration): ExampleTimelineCycle |
   };
 }
 
+/**
+ * #1130 — how many periods `cycle.iterations` complete iterations span, bounded
+ * by the row budget, or `null` for a cycle that does not repeat (there is
+ * nothing to bound: such a contract settles into its regular price and the
+ * trailing-regular rule finds it).
+ *
+ * It is the one place that number is decided, which is what makes #1130 §3's
+ * "the two simulations should tell exactly the same story" structural rather
+ * than a convention: the Membership Fee Simulation bounds its *rows* by it
+ * below, and `timelineCycleHorizon()` turns the same count into the last date
+ * the **Billing Event Simulation** runs to. A cycle longer than the budget is
+ * clamped, exactly as the table has always clamped, so neither projection can
+ * claim a span the other does not reach.
+ */
+export function timelineCyclePeriods(cycle: ExampleTimelineCycle | null | undefined): number | null {
+  if (!cycle?.repeats) return null;
+  const periods = Math.trunc(cycle.length) * Math.trunc(cycle.iterations);
+  if (!(periods >= 1)) return null;
+  return Math.min(periods, MAX_TIMELINE_PERIODS);
+}
+
+/**
+ * #1130 stage 3 — the **last billing date** those periods reach, counted from
+ * the first period a projection renders: `startOn + (periods - 1) x cadence`,
+ * because a period is billed on the day it starts.
+ *
+ * `null` for a cycle that does not repeat, which is what leaves the Billing
+ * Event Simulation's existing horizon rules (#629 §6's first regular charge,
+ * #915's two-cycles-per-stream floor) exactly as they were for every contract
+ * that existed before this ticket.
+ *
+ * `startOn` is the same date the fee table starts at — the contract's anchor for
+ * a Plan preview, the period containing today for an assignment
+ * (`periodContaining()`) — so the two sections of one card cover the same dates.
+ */
+export function timelineCycleHorizon(
+  startOn: string,
+  cadence: PlanDurationCadence,
+  cycle: ExampleTimelineCycle | null | undefined,
+): string | null {
+  const periods = timelineCyclePeriods(cycle);
+  if (periods == null) return null;
+  return advanceBillingDate(startOn.slice(0, 10), (periods - 1) * cadence.interval, cadence.unit);
+}
+
+/**
+ * Nothing stops a gym back-dating `starts_at`, so the walk to the current
+ * period is bounded: 1200 periods is a century of monthly billing, and a row
+ * set that cannot reach today is reported as it is rather than looped over.
+ */
+const MAX_ELAPSED_PERIODS = 1200;
+
+/**
+ * The period `date` falls in, counted from `startsAt`: where an existing
+ * contract's projection starts and which period number that first row carries.
+ * A contract that has not started yet begins at its own first period.
+ *
+ * It lives here rather than beside one adapter because since #1130 stage 3 both
+ * of a card's projections need it — the fee table to know which period it is
+ * starting at, and `timelineCycleHorizon()` to count the displayed iterations
+ * from the same place.
+ */
+export function periodContaining(
+  startsAt: string, date: string, cadence: PlanDurationCadence | null,
+): { startOn: string; firstPeriod: number } {
+  const anchor = startsAt.slice(0, 10);
+  if (!cadence) return { startOn: anchor, firstPeriod: 1 };
+  let cursor = anchor;
+  let index = 0;
+  while (index < MAX_ELAPSED_PERIODS) {
+    const next = advanceBillingDate(cursor, cadence.interval, cadence.unit);
+    if (next > date.slice(0, 10)) break;
+    cursor = next;
+    index++;
+  }
+  return { startOn: cursor, firstPeriod: index + 1 };
+}
+
 export interface ExampleTimelineWalkInput {
   /**
    * The length of one row — the Plan's, or the assignment's own, stored
@@ -248,8 +326,9 @@ export function walkExampleTimeline(input: ExampleTimelineWalkInput): ExampleTim
   // are what say so.
   const cycle = input.cycle ?? null;
   const cycleLength = Math.max(0, Math.trunc(cycle?.length ?? 0) || 0);
-  const iterations = Math.max(1, Math.trunc(cycle?.iterations ?? 0) || 1);
-  const rowsWanted = cycle?.repeats && cycleLength > 0 ? cycleLength * iterations : null;
+  // The same count `timelineCycleHorizon()` turns into the Billing Event
+  // Simulation's last date, so the two sections of one card span the same dates.
+  const rowsWanted = timelineCyclePeriods(cycle);
 
   while (
     (rowsWanted != null ? periods.length < rowsWanted : regularShown < TRAILING_REGULAR_PERIODS)

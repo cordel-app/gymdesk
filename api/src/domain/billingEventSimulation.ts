@@ -26,6 +26,7 @@
 // and nothing is charged.
 
 import { BillingSimulationResult, SimulationBenefit } from './billingSimulation';
+import { ExampleTimelineCycle } from './exampleTimeline';
 
 /**
  * How many complete cycles of every recurring billing frequency a simulation
@@ -68,6 +69,19 @@ export interface BillingEventDate {
   date: string;
   lines: BillingEventLine[];
   total: number;
+  /**
+   * #1130 stage 3 — which iteration of the contract's configured cycle this
+   * date falls in, counted from 1, or `null` where there is no iteration to
+   * name it with (no cycle configured, or one of the regular dates a
+   * non-repeating contract settles into after its single pass).
+   *
+   * It is `planDurationCycleIteration()`'s answer, reported rather than
+   * derived — the same rule the Membership Fee Simulation's rows are grouped
+   * by, so a card and a row describing the same cycle cannot disagree, and a
+   * frontend that counted its own iterations could group cards the nightly run
+   * bills differently with nothing at runtime noticing.
+   */
+  cycle: number | null;
 }
 
 export interface BillingEventSimulationResult {
@@ -85,6 +99,19 @@ export interface BillingEventSimulationResult {
   truncated: boolean;
   dates: BillingEventDate[];
   total: number;
+  /**
+   * #1130 stage 3 — the cycle those dates belong to, as the engine reports it:
+   * how long one iteration is, whether it starts again and how many iterations
+   * the projection shows. `null` for a contract with no Billing & Duration
+   * configured, for a Promotion (which has none at all) and on an unavailable
+   * projection — and a `null` here is what renders the section exactly as it
+   * did before the ticket.
+   *
+   * It is the **same** value the Membership Fee Simulation beside it reports
+   * (`timelineCycleFor()`), which is #1130 §3 in the wire shape: the two
+   * sections of one card are told the same story by one answer.
+   */
+  cycle: ExampleTimelineCycle | null;
 }
 
 /** What a caller may bound the grouping by. */
@@ -97,6 +124,13 @@ export interface GroupBillingEventsOptions {
    * therefore produces the dates it has already been charged on as well.
    */
   from?: string | null;
+  /**
+   * #1130 stage 3 — which iteration of the contract's cycle a billing date
+   * falls in. Supplied by the adapters whose entity has a cycle (a Plan's and
+   * an assignment's), omitted by the Promotion's, which has none: every group
+   * then carries `cycle: null` and the section renders ungrouped.
+   */
+  iterationOf?: ((date: string) => number | null) | null;
 }
 
 export const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -110,7 +144,7 @@ export const emptyBillingEventSimulation = (
   reason: string | null,
 ): BillingEventSimulationResult => ({
   available: false, reason, currency: 'EUR', anchor_date: null, horizon_date: null,
-  tax_included: true, truncated: false, dates: [], total: 0,
+  tax_included: true, truncated: false, dates: [], total: 0, cycle: null,
 });
 
 /**
@@ -135,6 +169,7 @@ export function groupBillingEventsByDate(
   opts?: GroupBillingEventsOptions,
 ): { dates: BillingEventDate[]; total: number } {
   const from = opts?.from ?? null;
+  const iterationOf = opts?.iterationOf ?? null;
   const byDate = new Map<string, BillingEventDate>();
   for (const section of simulation.sections) {
     for (const event of section.events) {
@@ -147,7 +182,7 @@ export function groupBillingEventsByDate(
       if (from != null && event.date < from) continue;
       let group = byDate.get(event.date);
       if (!group) {
-        group = { date: event.date, lines: [], total: 0 };
+        group = { date: event.date, lines: [], total: 0, cycle: iterationOf?.(event.date) ?? null };
         byDate.set(event.date, group);
       }
       for (const line of event.lines) {

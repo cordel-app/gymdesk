@@ -60,7 +60,12 @@ import {
   groupBillingEventsByDate,
   todayUtc,
 } from './billingEventSimulation';
-import { PlanDuration, withDurationCadence } from './planDuration';
+import {
+  PlanDuration,
+  planDurationCycleIteration,
+  withDurationCadence,
+} from './planDuration';
+import { timelineCycleFor, timelineCycleHorizon } from './exampleTimeline';
 import { PlanTimelineCadence } from './planExampleTimeline';
 import { NO_PERSONAL_FEE_BENEFIT } from './personalFeeBenefit';
 import { ProductBenefit } from './productBenefitActions';
@@ -171,9 +176,17 @@ export function computePlanBillingEventSimulation(
     personalFeeBenefit: NO_PERSONAL_FEE_BENEFIT,
   };
 
+  // #1130 stage 3 — the cycle the Membership Fee Simulation above this section
+  // groups its rows by, from the same helper and off the Plan's own live Auto
+  // Renew (a catalogue preview is about the Plan as it stands now). A repeating
+  // one is also the projection's horizon: it never reaches a regular charge, so
+  // the default rule would run it to the engine's 36-month safety cap.
+  const duration = assignment.planDuration;
+  const cycle = timelineCycleFor(duration);
   const simulation = computeBillingSimulation({
     assignments: [assignment],
     minimumCycles: SIMULATED_CYCLES,
+    horizonUntil: timelineCycleHorizon(anchor, duration.cadence, cycle) ?? undefined,
     maxMonths: input.maxMonths,
   });
   if (!simulation.available) return empty(NOTHING_TO_BILL_REASON);
@@ -191,6 +204,9 @@ export function computePlanBillingEventSimulation(
     horizon_date: simulation.horizon_date,
     tax_included: true,
     truncated: simulation.truncated,
-    ...groupBillingEventsByDate(simulation, mandatoryByCharge),
+    cycle,
+    ...groupBillingEventsByDate(simulation, mandatoryByCharge, {
+      iterationOf: (date) => planDurationCycleIteration(duration, anchor, date),
+    }),
   };
 }
