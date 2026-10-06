@@ -200,3 +200,4 @@ Copy each `.env.example` to `.env` and fill in values. Do not commit `.env` file
 | `NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL` / `NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL` | Admin only — post-auth redirects |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL` | Member only — post-sign-in redirect |
 | `TENANT` | Admin only, optional — loads tenant-specific label overrides from `locales/tenants/<TENANT>/` |
+| `NEXT_PUBLIC_APP_ENV_LABEL` / `NEXT_PUBLIC_APP_BRAND_NAME` | #1114 — the browser title's environment label (`Dev`, bare, no parentheses) and brand (`Cordel.tech Fitness` on dev, `Cordel.tech` on production), composed with each app's own role by `src/lib/appTitle.ts`. Build args, so a change needs a rebuild; unset, the title is `Admin` / `Members` alone |

@@ -15,9 +15,17 @@ import { MemberLocalePreference } from '@/components/MemberLocalePreference';
 import { NativeShell } from '@/components/NativeShell';
 import { NativeAppState } from '@/components/NativeAppState';
 import { memberTheme, safeArea } from '@/lib/memberChrome';
+import { publicAppTitle } from '@/lib/appTitle';
 
+// #1114 — the browser title names the application and the environment
+// (`(Dev) Members - Cordel.tech Fitness`), and `lib/appTitle.ts` is the one
+// place it is composed. Nothing here spells it: a literal would make the two
+// apps' titles two things to keep in step, and this app has no say in which
+// environment it is deployed to. The installed app's own name is not this —
+// that is `public/manifest.json` for the PWA and the mobile profile for the
+// store build (#1074).
 export const metadata: Metadata = {
-  title: 'Gymdesk',
+  title: publicAppTitle(),
   description: 'Your gym, in your pocket.',
   other: {
     // Static metadata, rendered before any gym is resolved, so it cannot
