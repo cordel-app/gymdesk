@@ -35,6 +35,7 @@ import {
   PurchaseRefused,
   memberProductCatalogue,
   startProductPurchase,
+  PromotionRefused,
 } from './me-products';
 import { purchaseBlockResponse } from '../domain/memberProductPurchase';
 import {
@@ -2217,12 +2218,26 @@ meRouter.post(
       const member = rows[0];
       if (!member) return res.status(404).json({ error: 'Member profile not found' });
 
+      // #1118 §5 — the Promotion the member applied, if any. It is the only
+      // thing this body carries: the price is never the client's to name (it is
+      // re-resolved and re-priced server-side from this id), and the member is
+      // never named by the request at all (#1036).
+      const rawPromotionId = (req.body ?? {}).promotion_id;
+      let promotionId: number | null = null;
+      if (rawPromotionId != null && rawPromotionId !== '') {
+        promotionId = Number(rawPromotionId);
+        if (!Number.isInteger(promotionId) || promotionId <= 0) {
+          return res.status(400).json({ error: 'Invalid promotion_id' });
+        }
+      }
+
       const result = await startProductPurchase({
         gymId,
         memberId,
         memberName: member.name,
         memberEmail: member.email,
         productId,
+        promotionId,
       });
       req.log.info(
         { memberId, productId, purchaseId: result.purchaseId },
@@ -2233,6 +2248,15 @@ meRouter.post(
       if (err instanceof PurchaseRefused) {
         const { status, ...body } = purchaseBlockResponse(err.block);
         return res.status(status).json(body);
+      }
+      if (err instanceof PromotionRefused) {
+        // 409 rather than 400: the request was well formed and was true when
+        // the member made it — what changed is the Promotion underneath it, so
+        // re-reading the catalogue is the way out.
+        return res.status(409).json({
+          error: 'promotion_not_applicable',
+          message: 'This promotion is no longer available for this product',
+        });
       }
       if (err.status) return res.status(err.status).json({ error: err.message });
       req.log.error({ err: (err as Error).message }, 'Member product purchase failed');

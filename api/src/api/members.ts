@@ -10,6 +10,7 @@ import { isStaffLoginEmail, STAFF_EMAIL_CONFLICT } from '../infra/staff-access';
 import { classifyAccount, loadAccountLinksFor } from '../infra/clerk-account-links';
 import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
 import { isNewMemberStatus, newMemberStatusByMember } from './new-member-eligibility';
+import { loadMemberPurchases } from './member-product-promotions';
 
 /**
  * #513: never write the raw nif_nie_passport value into audit_logs — mask it
@@ -166,6 +167,41 @@ membersRouter.get('/:id', async (req, res) => {
   // second reader of a Member must not be able to answer it differently.
   const isNewMember = await isNewMemberStatus(db, gymId, Number(rows[0].id));
   res.json({ ...rows[0], is_new_member: isNewMember });
+});
+
+/**
+ * #1118 §12 — the **Products & Services** this Member has bought, as the Admin
+ * side of their card reads them.
+ *
+ * Registered before `/:id/clerk-status` only for readability; `/:id/products`
+ * cannot collide with `/:id` either way. It is a read of `member_products` and
+ * its application snapshot and nothing else — in particular it joins neither
+ * `products` nor `promotions`, because §13 is explicit that the Admin "should
+ * not dynamically resolve the current Promotion configuration to determine what
+ * was applied historically", and migration 228's own header says the same about
+ * the Product. Every column is the purchase's own frozen copy (#635 §16).
+ *
+ * It is behind no second feature flag: the section it feeds is part of the
+ * Member card, which is already `membership.members` + module `MEMBERS`, and a
+ * gym that has since switched Products off still has to be able to see what its
+ * members were charged.
+ */
+membersRouter.get('/:id/products', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = Number(req.params.id);
+  if (!Number.isInteger(memberId) || memberId <= 0) {
+    return res.status(400).json({ error: 'Invalid id' });
+  }
+  try {
+    const { rows } = await db.query(
+      'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [memberId, gymId],
+    );
+    if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+    res.json({ items: await loadMemberPurchases(gymId, memberId) });
+  } catch (err) {
+    next(err);
+  }
 });
 
 membersRouter.get('/:id/clerk-status', async (req, res, next) => {

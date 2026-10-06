@@ -540,6 +540,38 @@ UNIQUE keys are documented in `docs/payments.md` → *Data model*, and the flow 
 | What blocks a second purchase? | A **pending** one only (`mprod_pending_purchase_key`, UNIQUE while `pending_payment`). An `active` purchase does not: nothing in `products` says an item may be bought once, and a second session package later is a real purchase. |
 | What clears a stuck one? | `POST /billing/cleanup`'s third statement (`cancelAbandonedPurchases()`), keyed on the request's own status — the pending key is UNIQUE, so a purchase left pending by a missed webhook would lock that member out of that Product for ever. |
 
+### Promotions on a member's Product purchase (#1118, migration 229)
+
+`member_product_promotions` is the Promotion a member applied to a Product they bought,
+frozen the moment the purchase was created. It is the sibling of the three
+`user_membership_promotion_*_snapshot` tables and for the same reason — #635 §16's rule that
+an application prices and displays from its **own** snapshot and never from a live join —
+so it carries the Promotion's name, its `(action, value)` pair (#896's one vocabulary), the
+duration in billing cycles and **both** amounts (the Product's regular VAT-inclusive price
+and the price the member was actually charged), beside `promotion_id` as the link to the
+live row. `UNIQUE (member_product_id)` is the load-bearing half: §4/§5/§13 all speak of
+*the* Promotion on a Product, so at most one application per purchase is the database's rule
+rather than the route's.
+
+`api/src/domain/memberProductPromotion.ts` is the pure half (which Promotions are offered,
+what applying one does to the price, what the snapshot keeps) and
+`api/src/api/member-product-promotions.ts` the I/O half — the same two-module split
+#1121 stage 1 and #1123 use.
+
+| Question | Answer, and where it lives |
+|---|---|
+| Which Promotions are about a Product? | The Promotion's **own grant rows** — the thread's `Q4`: *"do not introduce a second `promotion_products` relation […] the Product selected inside the Promotion is already the source of truth"*. So the offer is the grant for that Product in the section `classifyProduct()` (#550) puts it in, and the `(action, value)` pair on it is the benefit. No migration added a target relation, and none may. |
+| Which Promotions are *offered*? | `promotions.applies_to = 'product'` (#926 — this is the column's **first reader**), `lifecycle_status = 'active'`, `starts_at <= now <= ends_at` (compared in SQL, the window every apply path already enforces), and `only_applicable_for_new_members` through `isNewMemberStatus()` (#927's Member-level answer — a purchase configures no assignment to exclude). |
+| Which offers are **not** shown? | Those that do not lower the price: a grant that changes nothing (`no_benefit`, the default every grant row carries unless somebody chose otherwise), one that prices the Product to **nothing** (this flow buys a Product by paying for it, §9/§16 — there is no free-grant path, and a `waive` grant belongs to an Assigned Plan's own application), and one that prices it **higher** (a `fixed_price` above the Product's price is a configuration the vocabulary permits and a promotion it is not). `chk_mprodp_amounts` backstops the last of the three (and is deliberately a superset of the loader's rule — migration 229's header says why). |
+| Who prices it? | `applyLineBenefit()` (#896) at quantity 1 over the VAT-inclusive figure `computePriceFields()` produced — the same function the billing engine's charge builders and the Promotion card's own *Final Price* call, so the member and the gym owner cannot be quoted two numbers, and nothing here does tax arithmetic (#817). A Sessions package is never divided by its `units` (#942). |
+| Where does the duration come from? | A **Periodic** grant's own `quantity`, which #1135 settled *is* a Duration. A session or one-off grant answers `null` and the surface says nothing — the thread's `Q5`: a one-off Product has no billing cycles to express one in. Under stage 2 every purchasable Product is non-recurring, so that is every purchase today; the rule is written for the recurring purchases a later stage adds. |
+| When is the snapshot written? | In the **purchase's own transaction**. Tapping *Apply promotion* persists nothing (§7 binds the snapshot to "the resulting purchase", so there is nothing for it to hang off before one exists, and every member who changes their mind would leave an orphan row); `POST /me/products/:id/purchase` takes a `promotion_id`, re-reads it through the very loader that produced the offer, prices the charge from the answer and writes both rows together. A Promotion that lapsed in between answers `409 promotion_not_applicable` rather than charging a price the gym no longer offers. |
+| What does the charge say? | `member_products.amount` is what it has always been — the figure actually charged, so a discounted purchase raises a discounted `payment_requests` row and the webhook's `payment_recorded` Billing Event carries the discounted amount (§14). The regular price it was discounted from is the application's own `regular_amount`, which is where §13's *Price* line reads it. |
+| What does the Admin see? | `GET /members/:id/products` → the Member card's **Products & Services** section (§11's rename of *Additional Products*, in the `members` namespace only — the Assigned Plan card's own section keeps its name). It joins neither `products` nor `promotions`: §13 is explicit that the Admin must not resolve the current Promotion configuration to describe a historical purchase, so every column on screen is the purchase's or the application's own frozen copy. The treatment reads through `benefitTreatmentLabel()` in the `promotions` namespace, so it is worded in the Promotion's own voice (§3) and this surface adds no second vocabulary. |
+
+The gate is `api/src/test/member-product-promotions.unit.test.ts` (in the API suite, because
+CI runs `npm test` in `api/` only), with `me-products.test.ts` covering the flow end to end.
+
 ### Additional Periodic Services — *Additional Products* in the UI (#631, migration 164; #957)
 
 `user_membership_services` attaches recurring Products (`products`) directly to an Assigned Plan (`user_memberships`) — independent of the Membership Plan's included benefits and of Promotion benefits (#631 §7), which keep their own tables. The Product stays the source of truth for the name, price and `billing_frequency` (read live on every request, never copied onto the attachment), so the table stores only the assignment-specific facts: `product_id`, `quantity`, `starts_at` and `ends_at`. `product_id` has no `ON DELETE CASCADE` (the same reasoning migration 130 used for the charge-benefit snapshot, retired in stage 4): items are only ever soft-deleted, and an attached service must survive one being retired — a service whose item was later retired keeps billing and is flagged `product_retired` on read. A `VIRTUAL` generated column (`open_service_key`, non-NULL only while `ends_at IS NULL`) carries a unique key, so two concurrent POSTs can't both slip past the overlap check and leave the same item attached twice.

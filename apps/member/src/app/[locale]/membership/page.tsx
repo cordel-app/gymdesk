@@ -27,6 +27,7 @@ import {
 import {
   MemberProductsSection,
   type MemberProductCardItem,
+  type MemberProductCardPromotion,
 } from '@/components/MemberProductsSection';
 import { MemberDialog } from '@/components/MemberDialog';
 import {
@@ -40,16 +41,22 @@ import {
   pastPlanStatusKey,
 } from '@/lib/memberPlans';
 import {
+  type AppliedMemberProductPromotion,
   type MemberProduct,
+  type MemberProductPromotion,
+  productFinalPriceText,
   productFrequencyKey,
   productPackageNote,
   productPriceText,
   productTaxNoteKey,
   isMembershipFeeRequest,
+  promotionBenefitNote,
+  promotionDurationNote,
   purchaseErrorKey,
   purchaseStateKey,
   purchaseStateStatusWord,
   showsBuyAction,
+  showsRegularProductPrice,
 } from '@/lib/memberProducts';
 import {
   type BillingEventForecast,
@@ -195,6 +202,18 @@ export default function MembershipPage() {
   const [purchasing, setPurchasing] = useState<MemberProduct | null>(null);
   const [purchaseSubmitting, setPurchaseSubmitting] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
+
+  /**
+   * #1118 §5 — the Promotion the member has applied, per Product.
+   *
+   * It is page state and nothing more: applying one recalculates the Final
+   * price from the figure the server already quoted and persists nothing, and
+   * the **snapshot** is written by the purchase itself (§7 binds it to "the
+   * resulting purchase", so there is nothing for it to hang off before one
+   * exists). The id travels to `POST /me/products/:id/purchase`, which re-reads
+   * and re-prices it server-side — the browser never names a price.
+   */
+  const [appliedPromotions, setAppliedPromotions] = useState<Record<number, number>>({});
 
   const [consentOpen, setConsentOpen] = useState(false);
   const [consentChecked, setConsentChecked] = useState(false);
@@ -408,16 +427,102 @@ export default function MembershipPage() {
         packageNote ? t(packageNote.key as any, packageNote.values) : null,
         taxKey ? t(taxKey as any) : null,
       ].filter(Boolean).join(' · ');
+      const applied = appliedPromotionFor(product);
       return {
         key: String(product.id),
         name: product.name,
         description: product.description,
-        price: productPriceText(product, locale),
+        // §5: the Final price, which is the applied Promotion's own figure —
+        // the server's, never recomputed here (#817).
+        price: productFinalPriceText(product, applied, locale),
+        regularPrice: showsRegularProductPrice(product, applied)
+          ? productPriceText(product, locale)
+          : null,
         frequency: frequencyKey ? t(frequencyKey as any) : null,
         meta: meta || null,
+        promotions: productPromotions(product, applied),
         action: productAction(product),
       };
     });
+  }
+
+  /* ── #1118 Promotions on a Product ──────────────────────────────────────── */
+
+  /** The offer the member has applied to this Product in the page, if any. */
+  function appliedPromotionFor(product: MemberProduct): MemberProductPromotion | null {
+    const promotionId = appliedPromotions[product.id];
+    if (promotionId == null) return null;
+    return (product.promotions ?? []).find((p) => p.promotion_id === promotionId) ?? null;
+  }
+
+  /**
+   * The Promotion blocks under a Product (§4), or the one it was bought under
+   * (§13).
+   *
+   * A purchased or pending Product has no offers left — the server stops
+   * sending them — so what it shows instead is its own frozen application,
+   * read-only and with no action: there is nothing left to apply.
+   */
+  function productPromotions(
+    product: MemberProduct, applied: MemberProductPromotion | null,
+  ): MemberProductCardPromotion[] {
+    if (product.applied_promotion) return [appliedPromotionCard(product.applied_promotion, product)];
+    return (product.promotions ?? []).map((promotion) => {
+      const isApplied = applied?.promotion_id === promotion.promotion_id;
+      return {
+        key: String(promotion.promotion_id),
+        heading: t('membership.promotion_heading'),
+        name: promotion.promotion_name,
+        benefit: promotionNoteText(
+          promotionBenefitNote(promotion.action, promotion.value, product.currency, locale),
+        ),
+        duration: promotionNoteText(promotionDurationNote(promotion.duration_cycles)),
+        action: isApplied ? (
+          // §5.5 — applied reads as a statement, not as a button that undoes
+          // itself: the member clears it by applying another or by not buying.
+          <span style={styles.promotionApplied}>{t('membership.promotion_applied')}</span>
+        ) : (
+          <button
+            type="button"
+            style={styles.promotionBtn}
+            onClick={() => applyPromotion(product, promotion)}
+          >
+            {t('membership.promotion_apply')}
+          </button>
+        ),
+      };
+    });
+  }
+
+  /** The Promotion a live purchase was made under — the snapshot, never a live read. */
+  function appliedPromotionCard(
+    promotion: AppliedMemberProductPromotion, product: MemberProduct,
+  ): MemberProductCardPromotion {
+    return {
+      key: `applied-${promotion.id}`,
+      heading: t('membership.promotion_heading'),
+      name: promotion.promotion_name,
+      benefit: promotionNoteText(
+        promotionBenefitNote(
+          promotion.benefit_action, promotion.benefit_value, product.currency, locale,
+        ),
+      ),
+      duration: promotionNoteText(promotionDurationNote(promotion.duration_cycles)),
+      action: <span style={styles.promotionApplied}>{t('membership.promotion_applied')}</span>,
+    };
+  }
+
+  /** A note the lib decided, resolved — `null` stays `null` rather than a key. */
+  function promotionNoteText(note: { key: string; values?: Record<string, string | number> } | null) {
+    return note ? t(note.key as any, note.values) : null;
+  }
+
+  /**
+   * Applying one is presentation plus one id: the price the card shows becomes
+   * the offer's own, and nothing is written until the member buys.
+   */
+  function applyPromotion(product: MemberProduct, promotion: MemberProductPromotion) {
+    setAppliedPromotions((current) => ({ ...current, [product.id]: promotion.promotion_id }));
   }
 
   /**
@@ -467,9 +572,16 @@ export default function MembershipPage() {
     setPurchaseSubmitting(true);
     setPurchaseError(null);
     try {
+      const applied = appliedPromotionFor(product);
       const result = await apiFetch<{ checkoutUrl: string }>(
         `/me/products/${product.id}/purchase`,
-        { method: 'POST' },
+        {
+          method: 'POST',
+          // The id alone: the route re-reads and re-prices the Promotion, so a
+          // price named here would be ignored (§8) — and one that has lapsed in
+          // the meantime refuses the purchase rather than charging another.
+          body: JSON.stringify(applied ? { promotion_id: applied.promotion_id } : {}),
+        },
       );
       window.location.href = result.checkoutUrl;
     } catch (err: any) {
@@ -780,9 +892,12 @@ export default function MembershipPage() {
           )}
         >
           <p style={styles.modalBody}>
+            {/* §8: the member must always see the **actual** final price before
+                completing the purchase — so the dialog quotes the price with
+                their applied Promotion, exactly as the card does. */}
             {t('membership.product_purchase_body', {
               name: purchasing.name,
-              price: productPriceText(purchasing, locale) ?? '—',
+              price: productFinalPriceText(purchasing, appliedPromotionFor(purchasing), locale) ?? '—',
             })}
           </p>
           <p style={styles.hintLeft}>{t('membership.product_purchase_once')}</p>
@@ -896,6 +1011,11 @@ const styles: Record<string, React.CSSProperties> = {
   // #1121 stage 2 — the Buy action and the purchase dialog's own pair. Both
   // spread `memberChrome`'s buttons; neither spells a colour (#983).
   buyBtn: { ...primaryButtonStyle, padding: '8px 18px', fontSize: 13.5, fontWeight: 600 },
+  // #1118 §4/§17 — *Apply promotion* is an obvious action but a secondary one:
+  // Buy is the card's primary, and two filled buttons on one card compete. Both
+  // come from `memberChrome.ts`, so neither spells a colour (#983).
+  promotionBtn: { ...secondaryButtonStyle, padding: '7px 14px', fontSize: 13, fontWeight: 600 },
+  promotionApplied: { fontSize: 13, fontWeight: 600, color: memberTheme.textSecondary },
   dialogPrimary: { ...primaryButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600, flex: 1 },
   dialogSecondary: { ...secondaryButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600, flex: 1 },
   busy: { opacity: 0.6, cursor: 'default' },

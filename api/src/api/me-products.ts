@@ -42,9 +42,29 @@ import {
   productPurchaseBlock,
   purchaseSnapshot,
 } from '../domain/memberProductPurchase';
+import {
+  type AppliedPromotion,
+  type MemberProductPromotionOffer,
+} from '../domain/memberProductPromotion';
+import {
+  loadAppliedPromotions,
+  loadPromotionOffers,
+  resolvePurchasePromotion,
+  writePurchasePromotion,
+} from './member-product-promotions';
 
-/** A catalogue row plus what this member has done about it (stage 2, §6). */
-export type MemberCatalogueProduct = MemberProduct & ProductPurchaseFields;
+/**
+ * A catalogue row plus what this member has done about it (stage 2, §6) and
+ * what their gym is currently offering on it (#1118 §4).
+ *
+ * `promotions` is what may still be applied; `applied_promotion` is the
+ * snapshot of the one a live purchase was actually made under, read from
+ * `member_product_promotions` and never from the live Promotion (§13).
+ */
+export type MemberCatalogueProduct = MemberProduct & ProductPurchaseFields & {
+  promotions: MemberProductPromotionOffer[];
+  applied_promotion: AppliedPromotion | null;
+};
 
 /** The columns both reads project — the catalogue's own, plus its tax rate. */
 const PRODUCT_COLUMNS = `
@@ -54,7 +74,7 @@ const PRODUCT_COLUMNS = `
 
 /**
  * Every Product of the gym a member may be shown, alphabetically, with the
- * state of their own purchases of each.
+ * state of their own purchases of each and the Promotions on offer for it.
  *
  * Alphabetical rather than the Products page's `is_system DESC, name` order: a
  * member has no idea which items were seeded, so ordering by it would group the
@@ -64,12 +84,16 @@ const PRODUCT_COLUMNS = `
  * aggregate: a member has at most a handful of live purchases, so one indexed
  * read of their own rows is cheaper to understand than a `GROUP_CONCAT` over
  * the catalogue — and it keeps the catalogue query exactly what stage 1 wrote.
+ * The offers (#1118 §4) are a third, for the same reason and because they are
+ * `domain/memberProductPromotion.ts`' rule rather than the catalogue's: the
+ * Products a member may see is still the one predicate stage 1 wrote, with no
+ * knowledge of Promotions in it.
  */
 export async function memberProductCatalogue(
   gymId: string,
   memberId: number,
 ): Promise<MemberCatalogueProduct[]> {
-  const [{ rows }, statuses] = await Promise.all([
+  const [{ rows }, purchases] = await Promise.all([
     db.query<any>(
       `SELECT ${PRODUCT_COLUMNS}
        FROM products p
@@ -78,30 +102,67 @@ export async function memberProductCatalogue(
        ORDER BY p.name ASC`,
       [gymId, ...memberProductCatalogueParams()],
     ),
-    loadPurchaseStatuses(gymId, memberId),
+    loadLivePurchases(gymId, memberId),
   ]);
-  return rows.map((row: any) => {
-    const item = shapeMemberProduct(row, grossPrice(row));
-    return { ...item, ...describeProductPurchase(item, statuses.get(item.id) ?? []) };
+
+  const items = rows.map((row: any) => shapeMemberProduct(row, grossPrice(row)));
+  const [offers, applied] = await Promise.all([
+    loadPromotionOffers(gymId, memberId, items.map((item) => ({
+      id: item.id,
+      type: item.type,
+      billing_frequency: item.billing_frequency,
+      price_incl_tax: item.price_incl_tax,
+    }))),
+    loadAppliedPromotions(
+      gymId,
+      [...purchases.values()].map((rowsForProduct) => rowsForProduct.map((r) => r.id)).flat(),
+    ),
+  ]);
+
+  return items.map((item) => {
+    const own = purchases.get(item.id) ?? [];
+    const purchase = describeProductPurchase(item, own.map((r) => r.status));
+    // The live purchase this state is about, in `purchaseStateFor()`'s own
+    // precedence — a checkout in flight outranks a completed purchase — so the
+    // card cannot report one state and the Promotion of another.
+    const live = own.find((r) => r.status === 'pending_payment')
+      ?? own.find((r) => r.status === 'active')
+      ?? null;
+    return {
+      ...item,
+      ...purchase,
+      // A Product the member already holds or is paying for is not on offer
+      // again: the Buy action is gone (§6), so an *Apply promotion* beside it
+      // would act on nothing.
+      promotions: purchase.purchase_state === 'available' ? offers.get(item.id) ?? [] : [],
+      applied_promotion: live ? applied.get(live.id) ?? null : null,
+    };
   });
 }
 
-/** Each Product this member holds a live purchase of, and in which statuses. */
-async function loadPurchaseStatuses(
+/**
+ * Each live (non-cancelled) purchase this member holds, by Product.
+ *
+ * It carries the row ids as well as the statuses, because the catalogue reports
+ * the Promotion a live purchase was made under beside its state (§5's "the
+ * Promotion is shown as applied"), and that snapshot is keyed on the purchase.
+ */
+async function loadLivePurchases(
   gymId: string,
   memberId: number,
-): Promise<Map<number, string[]>> {
-  const { rows } = await db.query<{ product_id: number; status: string }>(
-    `SELECT product_id, status
+): Promise<Map<number, { id: number; status: string }[]>> {
+  const { rows } = await db.query<{ id: number; product_id: number; status: string }>(
+    `SELECT id, product_id, status
        FROM member_products
-      WHERE gym_id = ? AND member_id = ? AND status <> 'cancelled'`,
+      WHERE gym_id = ? AND member_id = ? AND status <> 'cancelled'
+      ORDER BY id DESC`,
     [gymId, memberId],
   );
-  const byProduct = new Map<number, string[]>();
+  const byProduct = new Map<number, { id: number; status: string }[]>();
   for (const row of rows) {
     const key = Number(row.product_id);
     const list = byProduct.get(key) ?? [];
-    list.push(row.status);
+    list.push({ id: Number(row.id), status: row.status });
     byProduct.set(key, list);
   }
   return byProduct;
@@ -120,6 +181,8 @@ export interface StartPurchaseInput {
   memberName: string;
   memberEmail: string;
   productId: number;
+  /** #1118 §5 — the Promotion the member applied, if they applied one. */
+  promotionId?: number | null;
 }
 
 export interface StartPurchaseResult {
@@ -135,6 +198,21 @@ export interface StartPurchaseResult {
 export class PurchaseRefused extends Error {
   constructor(readonly block: PurchaseBlock) {
     super(block);
+  }
+}
+
+/**
+ * Thrown for a Promotion the member named that is no longer on offer for this
+ * Product — expired, switched off, re-configured, or never theirs to apply.
+ *
+ * It is a refusal rather than a silent fall-back to the regular price, because
+ * the member is looking at a Final price they chose: charging a different one
+ * without saying so is the one outcome §8's "must always be able to see the
+ * actual final price before completing the purchase" rules out.
+ */
+export class PromotionRefused extends Error {
+  constructor() {
+    super('promotion_not_applicable');
   }
 }
 
@@ -164,6 +242,17 @@ const ER_DUP_ENTRY = 1062;
  *    behind it would take the member's money for nothing identifiable, so the
  *    two INSERTs are one transaction and a lost race on the pending key
  *    (`ER_DUP_ENTRY`) is reported as the 409 the route would have answered.
+ *  - **An applied Promotion is re-resolved here, not trusted from the client**
+ *    (#1118 §5). The member names a `promotion_id`; this route asks
+ *    `domain/memberProductPromotion.ts`' one rule again — through the very
+ *    loader that produced the offer — and prices the charge from the answer, so
+ *    a Promotion that expired or was re-configured between the quote and the
+ *    Buy refuses the purchase instead of charging a price the gym no longer
+ *    offers. The **snapshot is written in this same transaction** (§7): the
+ *    application belongs to the purchase (§7 binds it to "the resulting
+ *    purchase"), so there is nothing for it to hang off before one exists —
+ *    which is also why tapping *Apply promotion* persists nothing and leaves no
+ *    orphan rows behind every member who changes their mind.
  */
 export async function startProductPurchase(
   input: StartPurchaseInput,
@@ -186,12 +275,28 @@ export async function startProductPurchase(
   const block = productPurchaseBlock(item, pending);
   if (block) throw new PurchaseRefused(block);
 
+  // #1118 §5 — what the member applied, re-read and re-priced now. The
+  // purchase is charged the Promotion's Final price, so `member_products.amount`
+  // stays what it has always been: the figure actually charged. The regular
+  // price it was discounted from is the application's own
+  // (`member_product_promotions.regular_amount`), which is where §13's *Price*
+  // line reads it from.
+  const offer = input.promotionId
+    ? await resolvePurchasePromotion(input.gymId, input.memberId, {
+      id: item.id,
+      type: item.type,
+      billing_frequency: item.billing_frequency,
+      price_incl_tax: item.price_incl_tax,
+    }, input.promotionId)
+    : null;
+  if (input.promotionId && !offer) throw new PromotionRefused();
+
   const snapshot = purchaseSnapshot({
     name: item.name,
     type: item.type,
     billing_frequency: item.billing_frequency,
     units: item.units,
-    price_incl_tax: item.price_incl_tax,
+    price_incl_tax: offer ? offer.final_price_incl_tax : item.price_incl_tax,
     currency: item.currency,
     tax_rate_percent: taxRate,
   });
@@ -250,6 +355,13 @@ export async function startProductPurchase(
           snapshot.tax_rate_percent, paymentRequestId, input.memberName,
         ],
       );
+
+      // #1118 §7 — the application, frozen beside the purchase it priced. In
+      // the same transaction for #1121 stage 2's reason: a purchase charged a
+      // discounted amount with nothing on file explaining it is exactly what
+      // §15's audit questions must never meet.
+      if (offer) await writePurchasePromotion(tx, input.gymId, insertId, offer);
+
       return insertId;
     });
 

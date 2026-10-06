@@ -56,6 +56,10 @@ export interface MemberProduct {
    * button the route refuses (or hide one it would have accepted).
    */
   purchasable: boolean;
+  /** #1118 §4 — the Promotions still on offer for it, the server's own rule. */
+  promotions?: MemberProductPromotion[];
+  /** #1118 §13 — the Promotion a live purchase was made under, frozen. */
+  applied_promotion?: AppliedMemberProductPromotion | null;
 }
 
 /** A locale key plus whatever it interpolates, for the page to resolve. */
@@ -185,6 +189,143 @@ export function purchaseErrorKey(message: string | null | undefined): string {
     case 'purchase_pending': return 'membership.product_purchase_pending_error';
     case 'recurring_not_supported': return 'membership.product_purchase_recurring_error';
     case 'no_price': return 'membership.product_purchase_unpriced_error';
+    // #1118 §5 — the Promotion lapsed between the quote and the Buy. The member
+    // is told so rather than being charged a price they did not choose.
+    case 'promotion_not_applicable': return 'membership.promotion_unavailable_error';
     default: return 'membership.product_purchase_error';
   }
+}
+
+/* ── #1118: a Promotion on a Product ───────────────────────────────────────── */
+
+/**
+ * One Promotion the gym is currently offering on a Product, as
+ * `GET /me/products` reports it.
+ *
+ * Both prices are the server's — `price_incl_tax` grossed up once and the
+ * Promotion's treatment applied by the very function the billing engine uses
+ * (#896's `applyLineBenefit()`), so this app never recalculates a discount and
+ * cannot quote a figure the purchase would not charge.
+ */
+export interface MemberProductPromotion {
+  promotion_id: number;
+  promotion_name: string;
+  product_id: number;
+  action: string;
+  value: number | null;
+  /** §6 — the billing cycles it covers, or `null` where it names none. */
+  duration_cycles: number | null;
+  regular_price_incl_tax: number | null;
+  final_price_incl_tax: number | null;
+}
+
+/** The snapshot of the Promotion a live purchase was actually made under (§13). */
+export interface AppliedMemberProductPromotion {
+  id: number;
+  promotion_id: number;
+  promotion_name: string;
+  benefit_action: string;
+  benefit_value: number | null;
+  duration_cycles: number | null;
+  regular_amount: number;
+  final_amount: number;
+  applied_at: string | null;
+}
+
+/**
+ * Which locale key says what a Promotion does, and what it interpolates.
+ *
+ * It is the member-facing counterpart of the admin's `benefitTreatmentLabel()`
+ * and not a copy of it — the two apps share no frontend module — so it names
+ * keys of this app's own and decides the key *before* `t()` is called, because
+ * next-intl prints a missing key verbatim. A treatment outside the vocabulary
+ * reads as the Promotion's name alone rather than as the raw column.
+ *
+ * `waive` is in the map although stage 2 never offers one (a Promotion that
+ * prices a Product to nothing is not something to buy — there is no payment to
+ * make), because the same key set describes an **applied** Promotion read back
+ * from a snapshot, which a later stage may well write.
+ */
+export function promotionBenefitNote(
+  action: string, value: number | null, currency: string, locale: string,
+): ProductNote | null {
+  switch (action) {
+    case 'waive':
+      return { key: 'membership.promotion_benefit_waive' };
+    case 'percentage_discount':
+      return value == null ? null : {
+        key: 'membership.promotion_benefit_percentage',
+        values: { value: formatPercent(value, locale) },
+      };
+    case 'fixed_discount':
+      return value == null ? null : {
+        key: 'membership.promotion_benefit_fixed_discount',
+        values: { amount: formatPaymentAmount(value, currency, locale) ?? '' },
+      };
+    case 'fixed_price':
+      return value == null ? null : {
+        key: 'membership.promotion_benefit_fixed_price',
+        values: { amount: formatPaymentAmount(value, currency, locale) ?? '' },
+      };
+    default:
+      return null;
+  }
+}
+
+/**
+ * The duration caption, or `null` for a Promotion that names no period.
+ *
+ * §6 asks for it in **billing cycles**, and the thread's `Q5` is explicit that
+ * a one-off Product has none to express — so the server answers `null` for
+ * every grant that is not Periodic (#1135: only a Periodic grant's quantity is
+ * a Duration) and the card simply shows the benefit on its own.
+ */
+export function promotionDurationNote(durationCycles: number | null): ProductNote | null {
+  if (durationCycles == null || durationCycles <= 0) return null;
+  return { key: 'membership.promotion_duration_cycles', values: { count: durationCycles } };
+}
+
+/** A percentage as the member reads it — `50`, `12.5`, never `50.00`. */
+function formatPercent(value: number, locale: string): string {
+  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value);
+}
+
+/**
+ * The price the card shows for a Product, given the Promotion the member has
+ * applied in the page (if any).
+ *
+ * The applied Promotion's own `final_price_incl_tax` is the server's figure, so
+ * selecting one *replaces* the price rather than recomputing it here — §5's
+ * "the updated Final price is immediately displayed" with no arithmetic in the
+ * browser (#817).
+ */
+export function productFinalPrice(
+  product: MemberProduct, applied: MemberProductPromotion | null,
+): number | null {
+  return applied ? applied.final_price_incl_tax : product.price_incl_tax;
+}
+
+/**
+ * That same figure, formatted in the **Product's own** currency — never the
+ * membership's, which is a different row and may be a different currency.
+ */
+export function productFinalPriceText(
+  product: MemberProduct, applied: MemberProductPromotion | null, locale: string,
+): string | null {
+  return formatPaymentAmount(productFinalPrice(product, applied), product.currency, locale);
+}
+
+/**
+ * Whether the card shows the regular price struck through beside the final one.
+ *
+ * Only where the two actually differ: `€50.00 → €50.00` is a line saying
+ * nothing, which is the rule the Payments card's own breakdown already follows.
+ */
+export function showsRegularProductPrice(
+  product: MemberProduct, applied: MemberProductPromotion | null,
+): boolean {
+  if (!applied) return false;
+  return applied.final_price_incl_tax != null
+    && product.price_incl_tax != null
+    && applied.final_price_incl_tax !== product.price_incl_tax;
 }
