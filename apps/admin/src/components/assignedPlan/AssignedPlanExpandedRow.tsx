@@ -23,12 +23,17 @@ import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
 import { BillingEventSimulation } from '@/components/BillingEventSimulation';
 import {
+  exampleTimelineCycleNote,
+  exampleTimelineRowCycle,
   exampleTimelineRowTone,
   formatExampleTimelineBilling,
 } from '@/lib/exampleTimeline';
 import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
 import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
-import { ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS } from './types';
+import {
+  ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS,
+  ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS,
+} from './types';
 import type { AssignedPlanDetail } from './types';
 
 // #786: an assignment is `active` from creation, so there is no pre-activation
@@ -380,13 +385,19 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
             )}
             <ExampleTimeline
               labels={{
+                // #1130 stage 2 — the Cycle column, rendered only for the rows
+                // the server reports an iteration for.
+                cycle: t('col_cycle'),
                 period: t('col_period'),
                 dates: t('col_dates'),
                 status: t('col_status'),
                 billing: t('col_billing'),
               }}
-              rows={detail.example_timeline.periods.map((row) => ({
+              rows={detail.example_timeline.periods.map((row, i) => ({
                 key: row.period,
+                cycle: exampleTimelineRowCycle(
+                  detail.example_timeline!.periods, detail.example_timeline!.cycle, i,
+                ),
                 period: row.endsOn ? String(row.period) : `${row.period}+`,
                 dates: row.endsOn
                   ? `${fmtTimelineDate(row.startsOn, locale)} – ${fmtTimelineDate(row.endsOn, locale)}`
@@ -404,6 +415,13 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
                 ),
                 tone: exampleTimelineRowTone(row),
               }))}
+              cycleNote={(() => {
+                // Whether this contract's cycle starts again is the engine's
+                // answer (`auto_renew`, frozen onto the assignment) — the card
+                // only words it.
+                const note = exampleTimelineCycleNote(detail.example_timeline?.cycle ?? null);
+                return note ? t(ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS[note] as any) : null;
+              })()}
               footnotes={
                 <p style={{ margin: '8px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>
                   {t('timeline_disclaimer')}

@@ -242,6 +242,17 @@ export const ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS: Record<ExampleTimelineSta
   pay_regular: 'timeline_pay_regular',
 };
 
+/**
+ * #1130 stage 2 — the `assigned_plans_page.*` key for each cycle marker under
+ * the table. Which of the two a contract takes is `exampleTimelineCycleNote()`'s
+ * answer (the Plan card asks the same rule through its own keys), so the card
+ * chooses no marker of its own.
+ */
+export const ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS = {
+  repeats: 'timeline_cycle_repeats',
+  once: 'timeline_cycle_once',
+} as const;
+
 export interface AssignedPlanDetail {
   id: number;
   status: string;

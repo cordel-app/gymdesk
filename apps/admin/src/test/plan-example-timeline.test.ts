@@ -89,9 +89,11 @@ describe('Example timeline: one table design for both cards (#818)', () => {
     expect(promotionsSrc).toContain('<ExampleTimeline');
   });
 
-  it('renders the ticket’s four columns, in the ticket’s order', () => {
+  // #1130 stage 2 adds the Cycle column "to the left of the existing Period
+  // column", and nothing else about the four moved.
+  it('renders the ticket’s four columns, in the ticket’s order, behind the Cycle one', () => {
     const headers = [...sharedSrc.matchAll(/\{labels\.(\w+)\}/g)].map((m) => m[1]);
-    expect(headers).toEqual(['period', 'dates', 'status', 'billing']);
+    expect(headers).toEqual(['cycle', 'period', 'dates', 'status', 'billing']);
   });
 
   it('keeps the table free of any entity knowledge', () => {
