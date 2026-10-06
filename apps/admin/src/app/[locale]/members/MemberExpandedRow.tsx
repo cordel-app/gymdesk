@@ -25,6 +25,10 @@ import {
 } from '@/components/formChrome';
 import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
 import { MemberBillingSimulation } from './MemberBillingSimulation';
+import {
+  MemberPurchasedProducts,
+  type PurchasedProduct,
+} from './MemberPurchasedProducts';
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { MemberAdditionalServices } from './MemberAdditionalServices';
@@ -160,6 +164,9 @@ export function MemberExpandedRow({
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
   const [expandedEventIds, setExpandedEventIds] = useState<Set<number>>(new Set());
   const [sessionPackages, setSessionPackages] = useState<SessionPackage[]>([]);
+  // #1118 §12 — the Products this Member bought from the Members App, each with
+  // the Promotion snapshot it was bought under.
+  const [purchasedProducts, setPurchasedProducts] = useState<PurchasedProduct[]>([]);
   const [extendingId, setExtendingId] = useState<number | null>(null);
   const [extendValue, setExtendValue] = useState('');
   const [extendSaving, setExtendSaving] = useState(false);
@@ -182,7 +189,9 @@ export function MemberExpandedRow({
     setLoading(true);
     setError(null);
     try {
-      const [config, memberTrainingPlans, nutrition, events, clerk, packages, memberCenters] = await Promise.all([
+      const [
+        config, memberTrainingPlans, nutrition, events, clerk, packages, memberCenters, purchases,
+      ] = await Promise.all([
         apiFetch<MemberConfiguration>(`/user-memberships/member/${memberId}/configuration`)
           .catch(() => EMPTY_CONFIGURATION),
         canManageTraining
@@ -193,9 +202,12 @@ export function MemberExpandedRow({
         apiFetch<{ status: string }>(`/members/${memberId}/clerk-status`).catch(() => null),
         apiFetch<SessionPackage[]>(`/members/${memberId}/class-packages`).catch(() => []),
         apiFetch<MemberCenter[]>(`/members/${memberId}/centers`).catch(() => []),
+        apiFetch<{ items: PurchasedProduct[] }>(`/members/${memberId}/products`)
+          .catch(() => ({ items: [] })),
       ]);
 
       setConfiguration(config);
+      setPurchasedProducts(purchases.items ?? []);
       setClerkStatus(clerk);
       setTrainingPlans(memberTrainingPlans);
       setNutritionPlans(nutrition);
@@ -420,11 +432,20 @@ export function MemberExpandedRow({
             />
           </Section>
 
-          {/* 2. ADDITIONAL PRODUCTS — recurring Products, added and removed at
-              any time, independent from plans and promotions (§4). #957: the
-              section reads in both modes; its `+ Add Product` button is Edit
-              mode's alone. */}
+          {/* 2. PRODUCTS & SERVICES (#1118 §11, renamed from *Additional
+              Products*) — the Admin representation of everything the Member
+              holds beside their plan: the Products they bought from the Members
+              App (§12, read-only — a purchase is money that moved) and the
+              recurring Products staff attach to an Assigned Plan, which are
+              independent from plans and promotions (#634 §4). #957: the section
+              reads in both modes; the services editor's `+ Add Product` button
+              is Edit mode's alone. */}
           <Section label={t('members.section_additional_services')}>
+            <div style={{ marginBottom: 14 }}>
+              <div style={subLabelStyle}>{t('members.purchased_products_label')}</div>
+              <MemberPurchasedProducts items={purchasedProducts} />
+            </div>
+            <div style={subLabelStyle}>{t('members.periodic_services_label')}</div>
             <MemberAdditionalServices
               plans={configuration.plans}
               services={configuration.services}

@@ -549,3 +549,418 @@ describe('the payment decides whether the member holds it (#1121 stage 2 §6, #1
     expect(page.body).toMatchObject({ purpose: 'product_purchase', amount: 10, itemName: 'Day Pass' });
   });
 });
+
+/* ── #1118: Promotions on a member's Product ──────────────────────────────── */
+
+interface PromoOpts {
+  name?: string;
+  appliesTo?: 'product' | 'membership_plan';
+  status?: 'active' | 'inactive' | 'expired';
+  startsAt?: string;
+  endsAt?: string;
+  newMembersOnly?: 0 | 1;
+}
+
+async function createPromotion(gid: string, opts: PromoOpts = {}): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO promotions
+       (gym_id, name, starts_at, ends_at, lifecycle_status, applies_to, stackable,
+        only_applicable_for_new_members, free_months, paid_months, bonus_months)
+     VALUES (?, ?, ?, ?, ?, ?, 1, ?, 0, 6, 0)`,
+    [
+      gid, opts.name ?? 'Summer Promotion',
+      opts.startsAt ?? '2026-01-01', opts.endsAt ?? '2099-12-31',
+      opts.status ?? 'active', opts.appliesTo ?? 'product',
+      opts.newMembersOnly ?? 0,
+    ],
+  );
+  return insertId;
+}
+
+/** A grant on the Promotion, in the section the Product classifies into. */
+async function grantProduct(
+  gid: string, promotionId: number, productId: number,
+  category: 'session' | 'oneoff' | 'periodical' = 'oneoff',
+  opts: { action?: string; value?: number | null; quantity?: number } = {},
+) {
+  await db.query(
+    `INSERT INTO promotion_${category}
+       (gym_id, promotion_id, product_id, quantity, \`action\`, \`value\`)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      gid, promotionId, productId, opts.quantity ?? 1,
+      opts.action ?? 'percentage_discount', opts.value ?? 50,
+    ],
+  );
+}
+
+function buyWithPromotion(gid: string, clerkId: string, productId: number, promotionId: number) {
+  vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerkId } as any);
+  return request.post(`${ROOT}/${productId}/purchase`)
+    .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid)
+    .send({ promotion_id: promotionId });
+}
+
+async function applicationRows(gid: string) {
+  const { rows } = await db.query<any>(
+    `SELECT * FROM member_product_promotions WHERE gym_id = ? ORDER BY id`, [gid],
+  );
+  return rows;
+}
+
+describe('which Promotions the catalogue offers (#1118 §4, the thread’s Q4)', () => {
+  it('offers the Promotion that grants the Product, with both prices', async () => {
+    const { gid, clerk } = await purchaseGym('Offer');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const promotionId = await createPromotion(gid);
+    await grantProduct(gid, promotionId, productId);
+
+    const res = await asMember(gid, clerk);
+    expect(res.status).toBe(200);
+    expect(res.body.items[0].promotions).toHaveLength(1);
+    expect(res.body.items[0].promotions[0]).toMatchObject({
+      promotion_id: promotionId,
+      promotion_name: 'Summer Promotion',
+      action: 'percentage_discount',
+      value: 50,
+      // A one-off grant names no cycles (the thread's `Q5`).
+      duration_cycles: null,
+      regular_price_incl_tax: 100,
+      final_price_incl_tax: 50,
+    });
+  });
+
+  it('offers nothing for a Promotion that is not about a Product (#926)', async () => {
+    const { gid, clerk } = await purchaseGym('PlanTarget');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const promotionId = await createPromotion(gid, { appliesTo: 'membership_plan' });
+    await grantProduct(gid, promotionId, productId);
+
+    const res = await asMember(gid, clerk);
+    expect(res.body.items[0].promotions).toEqual([]);
+  });
+
+  it('offers nothing outside the Promotion’s own window, or when it is switched off', async () => {
+    const { gid, clerk } = await purchaseGym('Window');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const ended = await createPromotion(gid, { name: 'Ended', endsAt: '2020-01-01' });
+    const future = await createPromotion(gid, { name: 'Future', startsAt: '2099-01-01' });
+    const off = await createPromotion(gid, { name: 'Off', status: 'inactive' });
+    for (const id of [ended, future, off]) await grantProduct(gid, id, productId);
+
+    const res = await asMember(gid, clerk);
+    expect(res.body.items[0].promotions).toEqual([]);
+  });
+
+  it('offers only a grant that lowers the price above nothing', async () => {
+    const { gid, clerk } = await purchaseGym('Neutral');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    // Changes nothing.
+    const neutral = await createPromotion(gid, { name: 'Neutral' });
+    await grantProduct(gid, neutral, productId, 'oneoff', { action: 'no_benefit', value: null });
+    // Prices it to nothing: there is no payment to make, and this flow has no
+    // path that grants a Product for free (§9/§16).
+    const free = await createPromotion(gid, { name: 'Free' });
+    await grantProduct(gid, free, productId, 'oneoff', { action: 'waive', value: null });
+    // Prices it *higher*: a configuration the vocabulary permits and a
+    // promotion it is not.
+    const dearer = await createPromotion(gid, { name: 'Dearer' });
+    await grantProduct(gid, dearer, productId, 'oneoff', { action: 'fixed_price', value: 250 });
+
+    const res = await asMember(gid, clerk);
+    expect(res.body.items[0].promotions).toEqual([]);
+    // And none of the three can be forced through the purchase either.
+    for (const id of [neutral, free, dearer]) {
+      expect((await buyWithPromotion(gid, clerk, productId, id)).status).toBe(409);
+    }
+  });
+
+  it('reads a Sessions package’s offers from the session section (#550)', async () => {
+    const { gid, clerk } = await purchaseGym('Sessions');
+    const productId = await createItem(gid, {
+      name: 'Ten Pack', type: 'sessions', units: 10, amount: '200.00', frequency: 'once',
+    });
+    const promotionId = await createPromotion(gid);
+    // The same grant in the wrong section is not an offer for it.
+    await grantProduct(gid, promotionId, productId, 'oneoff');
+    expect((await asMember(gid, clerk)).body.items[0].promotions).toEqual([]);
+
+    await grantProduct(gid, promotionId, productId, 'session', { action: 'fixed_discount', value: 50 });
+    const res = await asMember(gid, clerk);
+    expect(res.body.items[0].promotions[0]).toMatchObject({
+      action: 'fixed_discount', final_price_incl_tax: 150,
+    });
+  });
+
+  it('honours only_applicable_for_new_members (#927)', async () => {
+    const { gid, clerk } = await purchaseGym('NewOnly');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const promotionId = await createPromotion(gid, { newMembersOnly: 1 });
+    await grantProduct(gid, promotionId, productId);
+
+    // A member who has never held a plan is new, so it is offered.
+    expect((await asMember(gid, clerk)).body.items[0].promotions).toHaveLength(1);
+
+    // One who holds a live plan is not.
+    const { rows: members } = await db.query<any>(
+      'SELECT id FROM members WHERE gym_id = ?', [gid],
+    );
+    const { insertId: planId } = await db.query(
+      `INSERT INTO membership_plans (gym_id, name, status, base_price)
+       VALUES (?, 'Standard', 'active', 0)`,
+      [gid],
+    );
+    await db.query(
+      `INSERT INTO user_memberships
+         (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, ?, 'active', CURDATE(), 0)`,
+      [gid, members[0].id, planId],
+    );
+    expect((await asMember(gid, clerk)).body.items[0].promotions).toEqual([]);
+  });
+
+  it('is scoped to the caller’s gym', async () => {
+    const { gid, clerk } = await purchaseGym('PromoScope');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const otherGym = await createTestGym('Products Promo Other Gym');
+    const otherPromotion = await createPromotion(otherGym, { name: 'Other Gym Promo' });
+    // The grant names this gym's Product from another gym's Promotion: the
+    // query joins on `gym_id` so it is nobody's offer.
+    await db.query(
+      `INSERT INTO promotion_oneoff (gym_id, promotion_id, product_id, quantity, \`action\`, \`value\`)
+       VALUES (?, ?, ?, 1, 'percentage_discount', 50)`,
+      [otherGym, otherPromotion, productId],
+    );
+
+    expect((await asMember(gid, clerk)).body.items[0].promotions).toEqual([]);
+  });
+});
+
+describe('buying with a Promotion (#1118 §5, §7, §10)', () => {
+  it('charges the Promotion’s price and freezes the snapshot beside the purchase', async () => {
+    const { gid, clerk } = await purchaseGym('ApplyBuy');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const promotionId = await createPromotion(gid);
+    await grantProduct(gid, promotionId, productId);
+
+    const res = await buyWithPromotion(gid, clerk, productId, promotionId);
+    expect(res.status).toBe(201);
+    expect(res.body).toMatchObject({ amount: 50, currency: 'EUR' });
+
+    // The provider is handed the discounted amount, in cents.
+    expect(providerCalls.createPaymentRequest.at(-1)!.amount).toBe(5000);
+
+    const [purchase] = await purchaseRows(gid);
+    expect(purchase).toMatchObject({ status: 'pending_payment' });
+    expect(Number(purchase.amount)).toBe(50);
+    expect(Number(purchase.request_amount)).toBe(50);
+
+    const [application] = await applicationRows(gid);
+    expect(application).toMatchObject({
+      member_product_id: purchase.id,
+      promotion_id: promotionId,
+      promotion_name: 'Summer Promotion',
+      benefit_action: 'percentage_discount',
+      duration_cycles: null,
+    });
+    expect(Number(application.benefit_value)).toBe(50);
+    expect(Number(application.regular_amount)).toBe(100);
+    expect(Number(application.final_amount)).toBe(50);
+  });
+
+  it('charges the regular price when no Promotion is applied', async () => {
+    const { gid, clerk } = await purchaseGym('NoPromo');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const promotionId = await createPromotion(gid);
+    await grantProduct(gid, promotionId, productId);
+
+    // The offer exists and is simply not taken: a Promotion is never applied
+    // automatically (§4).
+    const res = await buyAs(gid, clerk, productId);
+    expect(res.status).toBe(201);
+    expect(res.body.amount).toBe(100);
+    expect(await applicationRows(gid)).toHaveLength(0);
+  });
+
+  it('refuses a Promotion that is no longer on offer, and writes nothing', async () => {
+    const { gid, clerk } = await purchaseGym('Lapsed');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const promotionId = await createPromotion(gid);
+    await grantProduct(gid, promotionId, productId);
+    // It lapses between the quote and the Buy.
+    await db.query(
+      "UPDATE promotions SET lifecycle_status = 'inactive' WHERE id = ?", [promotionId],
+    );
+
+    const res = await buyWithPromotion(gid, clerk, productId, promotionId);
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('promotion_not_applicable');
+    expect(await purchaseRows(gid)).toHaveLength(0);
+    expect(await applicationRows(gid)).toHaveLength(0);
+  });
+
+  it('refuses a Promotion of another gym, and one that does not grant the Product', async () => {
+    const { gid, clerk } = await purchaseGym('WrongPromo');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const unrelated = await createPromotion(gid, { name: 'Unrelated' });
+
+    expect((await buyWithPromotion(gid, clerk, productId, unrelated)).status).toBe(409);
+    expect((await buyWithPromotion(gid, clerk, productId, 999_999)).status).toBe(409);
+    expect(await purchaseRows(gid)).toHaveLength(0);
+  });
+
+  it('refuses a malformed promotion_id without reaching the provider', async () => {
+    const { gid, clerk } = await purchaseGym('BadPromoId');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const before = providerCalls.createPaymentRequest.length;
+
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerk } as any);
+    const res = await request.post(`${ROOT}/${productId}/purchase`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid)
+      .send({ promotion_id: 'not-a-number' });
+    expect(res.status).toBe(400);
+    expect(providerCalls.createPaymentRequest).toHaveLength(before);
+  });
+
+  it('reports the frozen application once the payment lands, and stops offering it', async () => {
+    const { gid, clerk } = await purchaseGym('AppliedRead');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const promotionId = await createPromotion(gid);
+    await grantProduct(gid, promotionId, productId);
+    await buyWithPromotion(gid, clerk, productId, promotionId);
+    const [pending] = await purchaseRows(gid);
+    await deliverWebhook(pending.provider_order, 'SUCCEEDED');
+
+    const res = await asMember(gid, clerk);
+    expect(res.body.items[0]).toMatchObject({ purchase_state: 'purchased' });
+    // Held already: there is nothing left to apply.
+    expect(res.body.items[0].promotions).toEqual([]);
+    expect(res.body.items[0].applied_promotion).toMatchObject({
+      promotion_id: promotionId,
+      promotion_name: 'Summer Promotion',
+      benefit_action: 'percentage_discount',
+      regular_amount: 100,
+      final_amount: 50,
+    });
+
+    // The Billing Event records the discounted charge, which is what §14 asks:
+    // the events come from the snapshot, not from the catalogue price.
+    const { rows: events } = await db.query<any>(
+      'SELECT amount, event_type FROM billing_events WHERE gym_id = ?', [gid],
+    );
+    expect(events).toHaveLength(1);
+    expect(Number(events[0].amount)).toBe(50);
+  });
+
+  it('keeps the snapshot when the Promotion is edited afterwards (§7, §13)', async () => {
+    const { gid, clerk } = await purchaseGym('Immutable');
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const promotionId = await createPromotion(gid);
+    await grantProduct(gid, promotionId, productId);
+    await buyWithPromotion(gid, clerk, productId, promotionId);
+    const [pending] = await purchaseRows(gid);
+    await deliverWebhook(pending.provider_order, 'SUCCEEDED');
+
+    // 50% → 30%, renamed, switched off, and the Product repriced under it.
+    await db.query(
+      "UPDATE promotions SET name = 'Winter Promotion', lifecycle_status = 'inactive' WHERE id = ?",
+      [promotionId],
+    );
+    await db.query(
+      "UPDATE promotion_oneoff SET `value` = 30 WHERE promotion_id = ?", [promotionId],
+    );
+    await db.query("UPDATE products SET amount = '250.00' WHERE id = ?", [productId]);
+
+    const res = await asMember(gid, clerk);
+    expect(res.body.items[0].applied_promotion).toMatchObject({
+      promotion_name: 'Summer Promotion',
+      benefit_value: 50,
+      regular_amount: 100,
+      final_amount: 50,
+    });
+  });
+
+  it('expresses a Periodic grant’s duration in billing cycles (§6, #1135)', async () => {
+    // Stage 2 cannot *buy* a recurring Product, so this asserts the duration
+    // rule where it is readable: the offer a Periodic grant produces.
+    const { gid, clerk } = await purchaseGym('Cycles');
+    const productId = await createItem(gid, { name: 'Locker Rental', amount: '15.00', frequency: 'month' });
+    const promotionId = await createPromotion(gid);
+    await grantProduct(gid, promotionId, productId, 'periodical', { quantity: 3 });
+
+    const res = await asMember(gid, clerk);
+    expect(res.body.items[0]).toMatchObject({ purchasable: false });
+    expect(res.body.items[0].promotions[0]).toMatchObject({
+      duration_cycles: 3, regular_price_incl_tax: 15, final_price_incl_tax: 7.5,
+    });
+  });
+});
+
+describe('the Admin read of a member’s Products (#1118 §12, §13)', () => {
+  const ADMIN_CLERK = `mep-admin-${Date.now()}`;
+
+  function asAdmin(gid: string, memberId: number) {
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: ADMIN_CLERK } as any);
+    return request.get(`/members/${memberId}/products`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid);
+  }
+
+  it('reports the purchase and its frozen Promotion', async () => {
+    const gid = await createTestGym('Products Admin Read Gym');
+    await createTestMembership(gid, 'admin', ADMIN_CLERK);
+    const clerk = `mep-admin-member-${uniq()}`;
+    await createTestMembership(gid, 'member', clerk);
+    const memberId = await createLinkedMember(gid, clerk);
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    const promotionId = await createPromotion(gid);
+    await grantProduct(gid, promotionId, productId);
+    await buyWithPromotion(gid, clerk, productId, promotionId);
+
+    const res = await asAdmin(gid, memberId);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0]).toMatchObject({
+      product_id: productId,
+      product_name: 'Day Pass',
+      status: 'pending_payment',
+      amount: 50,
+      regular_amount: 100,
+      created_by_type: 'member',
+    });
+    expect(res.body.items[0].promotion).toMatchObject({
+      promotion_name: 'Summer Promotion', benefit_action: 'percentage_discount',
+    });
+  });
+
+  it('reports the charged price as both figures when no Promotion was applied', async () => {
+    const gid = await createTestGym('Products Admin Plain Gym');
+    await createTestMembership(gid, 'admin', `${ADMIN_CLERK}-plain`);
+    const clerk = `mep-admin-plain-${uniq()}`;
+    await createTestMembership(gid, 'member', clerk);
+    const memberId = await createLinkedMember(gid, clerk);
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    await buyAs(gid, clerk, productId);
+
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: `${ADMIN_CLERK}-plain` } as any);
+    const res = await request.get(`/members/${memberId}/products`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid);
+    expect(res.body.items[0]).toMatchObject({
+      amount: 100, regular_amount: 100, promotion: null,
+    });
+  });
+
+  it('is scoped to the caller’s gym', async () => {
+    const gid = await createTestGym('Products Admin Scope Gym');
+    await createTestMembership(gid, 'admin', `${ADMIN_CLERK}-scope`);
+    const otherGym = await createTestGym('Products Admin Other Gym');
+    const { insertId: otherMember } = await db.query(
+      'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
+      [otherGym, 'Other', `mep-other-${uniq()}@test.com`],
+    );
+
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: `${ADMIN_CLERK}-scope` } as any);
+    const res = await request.get(`/members/${otherMember}/products`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid);
+    expect(res.status).toBe(404);
+  });
+});
