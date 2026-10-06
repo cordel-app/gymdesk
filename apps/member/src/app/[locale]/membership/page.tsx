@@ -30,6 +30,16 @@ import {
 } from '@/components/MemberProductsSection';
 import { MemberDialog } from '@/components/MemberDialog';
 import {
+  PastMembershipPlansCard,
+  type PastMembershipPlanItem,
+} from '@/components/PastMembershipPlansCard';
+import {
+  type MemberPastPlan,
+  pastPlanEndedOn,
+  pastPlanName,
+  pastPlanStatusKey,
+} from '@/lib/memberPlans';
+import {
   type MemberProduct,
   productFrequencyKey,
   productPackageNote,
@@ -155,6 +165,10 @@ export default function MembershipPage() {
   const { flags: featureFlags } = useFeatureFlags();
 
   const [membership, setMembership] = useState<Membership | null>(null);
+  // #1122 §7 — the member's finished plans, which the server splits off the one
+  // ordering that decides which assignment the card above is about, so this page
+  // never filters a list by status for itself.
+  const [pastPlans, setPastPlans] = useState<MemberPastPlan[]>([]);
   const [packages, setPackages] = useState<UserPackage[]>([]);
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [events, setEvents] = useState<BillingEvent[]>([]);
@@ -195,7 +209,7 @@ export default function MembershipPage() {
     (async () => {
       try {
         const [mship, ledger, pkgs, promos, prs, projection, catalogue] = await Promise.all([
-          apiFetch<{ membership: Membership | null }>('/me/membership'),
+          apiFetch<{ membership: Membership | null; past_memberships?: MemberPastPlan[] }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
@@ -205,6 +219,7 @@ export default function MembershipPage() {
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
+        setPastPlans(mship.past_memberships ?? []);
         setEvents(ledger.items);
         setPackages(pkgs);
         setPromotions(promos);
@@ -348,6 +363,38 @@ export default function MembershipPage() {
         title={t('membership.products_heading')}
         emptyLabel={t('membership.products_empty')}
         items={productCardItems(products)}
+      />
+    );
+  }
+
+  /* ── #1122 Past Membership Plans ────────────────────────────────────────── */
+
+  function pastPlanItems(plans: MemberPastPlan[]): PastMembershipPlanItem[] {
+    return plans.map((plan) => {
+      const endedOn = pastPlanEndedOn(plan, locale);
+      const status = t(pastPlanStatusKey(plan) as any);
+      return {
+        key: String(plan.id),
+        name: pastPlanName(plan),
+        // A row with no end date on file reads as its status alone, rather than
+        // as a date the assignment does not actually carry.
+        meta: endedOn ? `${status} · ${endedOn}` : status,
+      };
+    });
+  }
+
+  /**
+   * The history card, or nothing at all for a member who has none — a collapsed
+   * card that opens onto an empty list is vertical space spent saying nothing,
+   * which is what §8 asks this section not to do.
+   */
+  function renderPastPlans() {
+    if (pastPlans.length === 0) return null;
+    return (
+      <PastMembershipPlansCard
+        title={t('membership.past_plans_heading')}
+        summary={t('membership.past_plans_count', { count: pastPlans.length })}
+        items={pastPlanItems(pastPlans)}
       />
     );
   }
@@ -568,6 +615,12 @@ export default function MembershipPage() {
           </button>
         </div>
       )}
+
+      {/* #1122 §7 — Past Membership Plans, directly under the current plan and
+          its own payment banner: it belongs to the Membership Plans group of
+          this page rather than beside the catalogue, and it is collapsed, so it
+          costs one line of vertical space before anything else is pushed down. */}
+      {renderPastPlans()}
 
       {/* #1121 §3 — Additional Products and Services, directly below the
           membership card. The payment banner and Start payment above it belong

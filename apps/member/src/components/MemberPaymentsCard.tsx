@@ -2,6 +2,7 @@
 
 import { type CSSProperties, type ReactNode, useState } from 'react';
 import { memberTheme, rowDividerStyle, sectionCardStyle } from '@/lib/memberChrome';
+import { MemberCollapsibleCard } from './MemberCollapsibleCard';
 
 /**
  * #1123 — the look of the Members App's **Payments** card: the collapsible card
@@ -52,6 +53,10 @@ export interface BillingEventCardLine {
 /**
  * The outer **Payments** card (§1): collapsed by default, with the three
  * subcards appearing underneath when it is opened.
+ *
+ * Since #1122 the card itself is `MemberCollapsibleCard` — the same chrome the
+ * Past Membership Plans card wears — so this is only what Payments puts inside
+ * one. A second collapsible card of its own is what that promotion removed.
  */
 export function PaymentsCard({ title, summary, children }: {
   title: string;
@@ -59,18 +64,10 @@ export function PaymentsCard({ title, summary, children }: {
   summary?: string | null;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
   return (
-    <section style={styles.card}>
-      <button type="button" onClick={() => setOpen((prev) => !prev)} aria-expanded={open} style={styles.cardToggle}>
-        <span style={styles.cardTitle}>{title}</span>
-        <span style={styles.toggleRight}>
-          {summary && <span style={styles.summary}>{summary}</span>}
-          <span style={styles.caret} aria-hidden="true">{open ? '▾' : '▸'}</span>
-        </span>
-      </button>
-      {open && <div style={styles.subcards}>{children}</div>}
-    </section>
+    <MemberCollapsibleCard title={title} summary={summary} bodyStyle={styles.subcards}>
+      {children}
+    </MemberCollapsibleCard>
   );
 }
 
@@ -156,13 +153,6 @@ export function BillingEventCard({
 }
 
 const styles: Record<string, CSSProperties> = {
-  card: { ...sectionCardStyle, marginTop: 16, overflow: 'hidden' },
-  cardToggle: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-    width: '100%', padding: '14px 16px', background: 'none', border: 'none',
-    cursor: 'pointer', textAlign: 'left', font: 'inherit',
-  },
-  cardTitle: { fontSize: 15, fontWeight: 700, color: memberTheme.title2 },
   toggleRight: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
   summary: { fontSize: 12.5, color: memberTheme.textMuted },
   caret: { fontSize: 12, color: memberTheme.textMuted },

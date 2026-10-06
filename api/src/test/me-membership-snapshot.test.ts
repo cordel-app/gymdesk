@@ -431,3 +431,93 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
     }
   });
 });
+
+// ─── #1122 §7/§8 — Past Membership Plans ─────────────────────────────────────
+//
+// Integration rather than unit because what is under test is *which rows* the
+// endpoint reports as history: the split itself is pure and asserted in
+// `member-past-plans.unit.test.ts`.
+
+describe('GET /me/membership — past_memberships', () => {
+  let gymId: string;
+  let memberId: number;
+  let currentPlanId: number;
+  let oldPlanId: number;
+  let olderPlanId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym('Me Membership History Gym');
+    await createTestMembership(gymId, 'member');
+    memberId = await createCallingMember(gymId);
+
+    currentPlanId = await createPlan(gymId, { interval: 1, unit: 'month' });
+    oldPlanId = await createPlan(gymId, { interval: 1, unit: 'month' });
+    olderPlanId = await createPlan(gymId, { interval: 1, unit: 'month' });
+
+    // The live one the card above is about.
+    await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
+       VALUES (?, ?, ?, 'active', '2026-10-01', 60, ?)`,
+      [gymId, memberId, currentPlanId, NEXT_BILLING],
+    );
+    // Two finished ones, the older carrying no `ends_at` so its `closed_at` is
+    // what the history has to fall back to.
+    await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
+       VALUES (?, ?, ?, 'cancelled', '2026-06-01', '2026-09-12', 60)`,
+      [gymId, memberId, oldPlanId],
+    );
+    await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, closed_at, base_price)
+       VALUES (?, ?, ?, 'expired', '2026-01-05', '2026-05-30 09:15:00', 60)`,
+      [gymId, memberId, olderPlanId],
+    );
+    // A Draft replacement being configured for this member, which is neither
+    // their plan nor their history (#1108 Q2).
+    await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, ?, 'draft', '2026-11-01', 60)`,
+      [gymId, memberId, oldPlanId],
+    );
+  });
+
+  it('lists the finished plans, newest first, and never the current one', async () => {
+    const { body } = await getMembership(gymId);
+    expect(body.membership.membership_plan_id).toBe(currentPlanId);
+    expect(body.past_memberships.map((p: any) => p.membership_plan_id))
+      .toEqual([oldPlanId, olderPlanId]);
+  });
+
+  it('reports the day each one ended — its end date, else when it was closed', async () => {
+    const { body } = await getMembership(gymId);
+    expect(body.past_memberships[0].ended_on).toBe('2026-09-12');
+    expect(body.past_memberships[1].ended_on).toBe('2026-05-30');
+  });
+
+  it('excludes a Draft from the history as well as from the card', async () => {
+    const { body } = await getMembership(gymId);
+    expect(body.membership.status).toBe('active');
+    expect(body.past_memberships.map((p: any) => p.status)).toEqual(['cancelled', 'expired']);
+  });
+
+  it('carries no price and no billing date on a past plan (§8)', async () => {
+    const { body } = await getMembership(gymId);
+    for (const field of ['membership_fee', 'next_billing_date', 'benefits']) {
+      expect(body.past_memberships[0]).not.toHaveProperty(field);
+    }
+  });
+
+  it('answers an empty history for a member whose only plan is their current one', async () => {
+    const otherGym = await createTestGym('Me Membership History Gym 2');
+    await createTestMembership(otherGym, 'member');
+    const otherMember = await createCallingMember(otherGym);
+    await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
+       VALUES (?, ?, NULL, 'active', '2026-10-01', 60, ?)`,
+      [otherGym, otherMember, NEXT_BILLING],
+    );
+    const { body } = await getMembership(otherGym);
+    // The rows above belong to the first gym, so a tenant leak would show here.
+    expect(body.past_memberships).toEqual([]);
+  });
+});
