@@ -8,6 +8,7 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { MemberDialog } from '@/components/MemberDialog';
+import { MemberGoalCard, type MemberGoalCardMenuItem } from '@/components/MemberGoalCard';
 import { GoalHeaderFields, GoalReadingHistory } from '@/components/GoalReadings';
 import { GoalReadingChart } from '@/components/GoalReadingChart';
 import {
@@ -31,10 +32,10 @@ import {
   READING_MARKER_KEYS,
   ReadingFormValues,
   ReadingKind,
-  emptyGoalForm,
   emptyReadingForm,
   formatProgressPercent,
   formatReadingValue,
+  newGoalForm,
   readingFormError,
   toReadingPayload,
   formForAssignableGoal,
@@ -44,12 +45,13 @@ import {
   goalFormError,
   goalStatusKey,
   goalStatusToneKey,
+  goalSummaryLine,
   toGoalCreatePayload,
   toGoalUpdatePayload,
 } from '@/lib/memberGoals';
 
 /**
- * #1036 — **My Goals**.
+ * #1036 — **My Goals**, as #1115's cards.
  *
  * The member's own Personal Goals: the ones they are pursuing, the ones that
  * are over, and the three actions §4 allows — assign an existing Gym Goal to
@@ -57,15 +59,26 @@ import {
  * is create a Goal **definition** (§4, §6): the picker is a read of the gym's
  * catalogue and there is no free-text name anywhere on this page.
  *
+ * Since #1115 each live goal is an individual **card**, collapsed by default,
+ * whose header carries the one line a member scans (name · target · progress)
+ * and whose body is the progress content underneath. Creating and editing are
+ * **inline, in the card** — no dialog — so the only overlays left on this
+ * screen are the two that are not forms over a goal's own fields: #1037's Add
+ * reading and the removal confirmation.
+ *
  * Every decision — the label a goal is shown under, what its target reads as,
  * which list a row belongs in, what a form submits and which field is wrong —
- * is `lib/memberGoals.ts`'s, and every colour, surface and button is
- * `lib/memberChrome.ts`'s (#983). This file is markup, state and requests.
+ * is `lib/memberGoals.ts`'s, every colour, surface and button is
+ * `lib/memberChrome.ts`'s (#983), and the card's own shape is
+ * `components/MemberGoalCard.tsx`'s. This file is markup, state and requests.
  */
 
 interface GoalsResponse { goals: MemberGoal[]; past_goals: MemberGoal[] }
 
 type Editing =
+  // #1115 §2/§3 — both are inline states of a card, never a dialog: `add` is
+  // the draft card at the top of the section, `edit` turns one existing card's
+  // body into its form.
   | { kind: 'add' }
   | { kind: 'edit'; goal: MemberGoal }
   | { kind: 'remove'; goal: MemberGoal }
@@ -90,10 +103,14 @@ export default function GoalsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<Editing>(null);
-  const [form, setForm] = useState<GoalFormValues>(emptyGoalForm);
+  const [form, setForm] = useState<GoalFormValues>(newGoalForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // #1115 §1 — which cards the member has opened. Collapsed is the default, so
+  // an id absent from this map is a closed card and a goal added later opens
+  // closed like every other.
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
   // #1037 — each goal's reading history, keyed by assignment. The five header
   // fields are already on the row (the API derives them on every read), so this
   // is only the list §18 unfolds.
@@ -126,6 +143,8 @@ export default function GoalsPage() {
     setPastGoals(mine.past_goals ?? []);
     setAvailable(options.goals ?? []);
     const live = (mine.goals ?? []).map((goal) => goal.id);
+    // The histories come with the page rather than with the first expand:
+    // opening a card is presentation and fetches nothing (#955's rule).
     if (live.length > 0) await loadReadings(live);
   }, [apiFetch, loadReadings]);
 
@@ -151,8 +170,9 @@ export default function GoalsPage() {
     return () => { cancelled = true; };
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
+  /** §2 — the draft card, with today's date already in Start date. */
   function openAdd() {
-    setForm(emptyGoalForm);
+    setForm(newGoalForm());
     setFormError(null);
     setNotice(null);
     setEditing({ kind: 'add' });
@@ -177,9 +197,18 @@ export default function GoalsPage() {
     setEditing({ kind: 'reading', goal, reading });
   }
 
-  function closeDialog() {
+  /**
+   * §2/§3 — Cancel. A draft card disappears with its unsaved values; an edited
+   * card goes back to the state it was displayed in, with the stored values
+   * intact because nothing was written.
+   */
+  function closeEditing() {
     setEditing(null);
     setFormError(null);
+  }
+
+  function toggleCard(id: number) {
+    setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
   }
 
   /**
@@ -209,14 +238,17 @@ export default function GoalsPage() {
     }
   }
 
-  /** Picking a goal pre-fills the target it carries (§5). */
+  /**
+   * Picking a goal pre-fills the target it carries (§5), over the draft the
+   * member is already filling in — so the Start date §2 put there survives it.
+   */
   function selectGoal(id: string) {
     const goal = available.find((g) => String(g.id) === id);
-    setForm(goal ? formForAssignableGoal(goal) : { ...form, personal_goal_id: id });
+    setForm(goal ? formForAssignableGoal(goal, form) : { ...form, personal_goal_id: id });
   }
 
   async function submit() {
-    if (!editing || editing.kind === 'remove') return;
+    if (!editing || editing.kind === 'remove' || editing.kind === 'reading') return;
     const invalid = goalFormError(form, { requireGoal: editing.kind === 'add' });
     if (invalid) { setFormError(t(invalid as any)); return; }
 
@@ -235,9 +267,9 @@ export default function GoalsPage() {
       await load();
       setEditing(null);
     } catch (err: any) {
-      // The dialog stays open with the member's input intact — the server's
-      // message is the duplicate 409, a refused target or a lost connection,
-      // and all three are worth reading beside the field that caused them.
+      // The card stays in its editing state with the member's input intact —
+      // the server's message is the duplicate 409, a refused target or a lost
+      // connection, and all three are worth reading beside the fields.
       setFormError(err?.message ?? t('goals.error'));
     } finally {
       setSaving(false);
@@ -279,6 +311,35 @@ export default function GoalsPage() {
     }));
   }
 
+  /**
+   * #1115 §1 — the card header's own line: the target the goal was agreed at
+   * and how far along it is. Either half may be missing (a qualitative goal has
+   * no target; a goal nobody has measured has no percentage), and the lib leaves
+   * out what is absent rather than placeholdering it.
+   */
+  function cardSummary(goal: MemberGoal): string | null {
+    const target = formatGoalTarget(goal);
+    return goalSummaryLine([
+      target === null ? null : t('goals.summary_target', { value: target }),
+      formatProgressPercent(goal.progress_percent),
+    ]);
+  }
+
+  /** §4 — what the card's `⋮` offers. Edit and Remove are the two §4 requires. */
+  function cardMenu(goal: MemberGoal): MemberGoalCardMenuItem[] {
+    return [
+      { key: 'reading', label: t('goals.add_reading'), onSelect: () => openReading(goal, 'reading') },
+      { key: 'initial', label: t('goals.set_initial_reading'), onSelect: () => openReading(goal, 'initial') },
+      { key: 'edit', label: t('goals.edit'), onSelect: () => openEdit(goal) },
+      {
+        key: 'remove',
+        label: t('goals.remove'),
+        danger: true,
+        onSelect: () => { setNotice(null); setFormError(null); setEditing({ kind: 'remove', goal }); },
+      },
+    ];
+  }
+
   /** A past goal's one extra line: what it was last measured at, if ever. */
   function pastSummary(goal: MemberGoal): string | null {
     const latest = formatReadingValue(goal.latest_reading, goal.target_unit);
@@ -313,6 +374,117 @@ export default function GoalsPage() {
     },
   };
 
+  /**
+   * §2/§3 — the one form behind both inline states, so the create card and the
+   * edit card cannot drift apart: the only difference is the goal itself, which
+   * is a picker while adding and a value once assigned (§12 — the assignment's
+   * goal is immutable).
+   *
+   * The **unit** is read-only in both (§1): it belongs to the Gym Goal, so it is
+   * shown beside the target rather than asked for, exactly as the Add reading
+   * dialog shows it.
+   */
+  function goalForm(mode: 'add' | 'edit', goal?: MemberGoal) {
+    const unit = form.target_unit.trim();
+    return (
+      <div style={styles.formBody}>
+        {mode === 'add' ? (
+          <label style={styles.field}>
+            <span style={styles.label}>{t('goals.field_goal')}</span>
+            {/* §6 — a select over the gym's own catalogue, never a text
+                field: the member picks an existing Gym Goal or nothing. The
+                options are the server's `available` list, which already
+                leaves out the retired ones and the ones they hold (§7). */}
+            <select
+              style={styles.control}
+              value={form.personal_goal_id}
+              onChange={(e) => selectGoal(e.target.value)}
+            >
+              <option value="">{t('goals.select_placeholder')}</option>
+              {available.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {goalDisplayName(option, t as unknown as (key: string) => string)}
+                </option>
+              ))}
+            </select>
+            {available.length === 0 && <span style={styles.help}>{t('goals.none_available')}</span>}
+          </label>
+        ) : (
+          <div style={styles.field}>
+            <span style={styles.label}>{t('goals.field_goal')}</span>
+            <p style={styles.readOnlyValue}>{goal ? nameOf(goal) : ''}</p>
+          </div>
+        )}
+
+        <div style={styles.fieldRow}>
+          <label style={styles.field}>
+            <span style={styles.label}>{t('goals.field_target')}</span>
+            <input
+              style={styles.control}
+              type="number"
+              inputMode="decimal"
+              step="0.01"
+              min="0"
+              value={form.target_value}
+              onChange={(e) => setForm({ ...form, target_value: e.target.value })}
+            />
+          </label>
+          <div style={styles.field}>
+            <span style={styles.label}>{t('goals.field_unit')}</span>
+            {/* Read-only (§1): the unit is the goal's own, so it reads as a
+                value rather than as a control. A target the member clears takes
+                it with it, which `toGoalUpdatePayload()` decides. */}
+            <p style={styles.readOnlyValue}>{unit === '' ? '—' : unit}</p>
+          </div>
+        </div>
+
+        <div style={styles.fieldRow}>
+          <label style={styles.field}>
+            <span style={styles.label}>{t('goals.field_start_date')}</span>
+            <input
+              style={styles.control}
+              type="date"
+              value={form.start_date}
+              onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+            />
+          </label>
+          <label style={styles.field}>
+            <span style={styles.label}>{t('goals.field_target_date')}</span>
+            <input
+              style={styles.control}
+              type="date"
+              value={form.target_date}
+              onChange={(e) => setForm({ ...form, target_date: e.target.value })}
+            />
+          </label>
+        </div>
+
+        <label style={styles.field}>
+          <span style={styles.label}>{t('goals.field_notes')}</span>
+          <textarea
+            style={{ ...styles.control, minHeight: 72, resize: 'vertical' }}
+            maxLength={1000}
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          />
+        </label>
+
+        {formError && <p style={styles.error}>{formError}</p>}
+
+        {/* §2/§3 — Save and Cancel close the form they belong to, under the
+            fields they commit rather than in a dialog footer. */}
+        <div style={styles.formActions}>
+          <button type="button" style={styles.primarySmallBtn} onClick={submit} disabled={saving}>
+            {saving ? t('goals.saving') : t('goals.save')}
+          </button>
+          <button type="button" style={styles.secondaryBtn} onClick={closeEditing} disabled={saving}>
+            {t('goals.cancel')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return <main style={styles.container}><p style={styles.hint}>{t('goals.loading')}</p></main>;
   }
@@ -321,68 +493,80 @@ export default function GoalsPage() {
     return <main style={styles.container}><p style={{ ...styles.hint, color: memberTheme.statusError }}>{error}</p></main>;
   }
 
+  const adding = editing?.kind === 'add';
+
   return (
     <main style={styles.container}>
       <h1 style={styles.title}>{t('goals.title')}</h1>
 
       {notice && <p style={{ ...noticeStyle('success'), marginBottom: 14 }}>{notice}</p>}
 
-      {goals.length === 0 ? (
+      {goals.length === 0 && !adding ? (
         <div style={styles.emptyCard}>
           <div style={{ fontSize: 40, marginBottom: 12 }}>🎯</div>
           <p style={styles.hint}>{t('goals.empty')}</p>
+          {/* §6 — the empty state's CTA opens the same inline card. */}
           <button type="button" style={styles.primaryBtn} onClick={openAdd}>{t('goals.add')}</button>
         </div>
       ) : (
         <>
           <section style={styles.section}>
-            {goals.map((goal) => (
-              <article key={goal.id} style={styles.card}>
-                {/* §5 — the five structured fields, not a pipe-separated line.
-                    The goal's name is one of them rather than a heading above
-                    them, so it is not rendered twice. */}
-                <GoalHeaderFields fields={headerFields(goal)} />
-                {goal.notes && <p style={styles.goalNotes}>{goal.notes}</p>}
-                {/* §12 — chart, then history: the chart is what the member
-                    reads at a glance, the history is the log under it. */}
-                <GoalReadingChart
-                  readings={readings[goal.id]?.readings ?? []}
-                  unit={goal.target_unit}
-                  target={goal.target_value}
-                  locale={locale}
-                  labels={chartLabels(goal)}
-                />
-                {/* §18 — collapsed until the member asks. */}
-                <GoalReadingHistory
-                  readings={readings[goal.id]?.readings ?? []}
-                  unit={goal.target_unit}
-                  locale={locale}
-                  labels={historyLabels}
-                />
-                <div style={styles.cardActions}>
-                  <button type="button" style={styles.primarySmallBtn} onClick={() => openReading(goal, 'reading')}>
-                    {t('goals.add_reading')}
-                  </button>
-                  <button type="button" style={styles.secondaryBtn} onClick={() => openReading(goal, 'initial')}>
-                    {t('goals.set_initial_reading')}
-                  </button>
-                  <button type="button" style={styles.secondaryBtn} onClick={() => openEdit(goal)}>
-                    {t('goals.edit')}
-                  </button>
-                  <button
-                    type="button"
-                    style={styles.destructiveBtn}
-                    onClick={() => { setNotice(null); setFormError(null); setEditing({ kind: 'remove', goal }); }}
-                  >
-                    {t('goals.remove')}
-                  </button>
-                </div>
-              </article>
-            ))}
+            {/* §2 — the draft sits at the top of the section, in its editing
+                state, rather than in an overlay over it. */}
+            {adding && (
+              <MemberGoalCard title={t('goals.add')} expanded>
+                {goalForm('add')}
+              </MemberGoalCard>
+            )}
+
+            {goals.map((goal) => {
+              const isEditing = editing?.kind === 'edit' && editing.goal.id === goal.id;
+              return isEditing ? (
+                // §3 — the card itself becomes the form. No menu while it is
+                // open: `⋮ → Edit` is what opened it, and Save/Cancel is what
+                // leaves it.
+                <MemberGoalCard key={goal.id} title={nameOf(goal)} expanded>
+                  {goalForm('edit', goal)}
+                </MemberGoalCard>
+              ) : (
+                <MemberGoalCard
+                  key={goal.id}
+                  title={nameOf(goal)}
+                  summary={cardSummary(goal)}
+                  expanded={Boolean(expanded[goal.id])}
+                  onToggle={() => toggleCard(goal.id)}
+                  menu={{ label: t('goals.menu_label'), items: cardMenu(goal) }}
+                >
+                  {/* §5 — the five structured fields, not a pipe-separated line.
+                      The goal's name is one of them rather than a heading above
+                      them, so it is not rendered twice. */}
+                  <GoalHeaderFields fields={headerFields(goal)} />
+                  {goal.notes && <p style={styles.goalNotes}>{goal.notes}</p>}
+                  {/* §12 — chart, then history: the chart is what the member
+                      reads at a glance, the history is the log under it. */}
+                  <GoalReadingChart
+                    readings={readings[goal.id]?.readings ?? []}
+                    unit={goal.target_unit}
+                    target={goal.target_value}
+                    locale={locale}
+                    labels={chartLabels(goal)}
+                  />
+                  {/* §18 — collapsed until the member asks. */}
+                  <GoalReadingHistory
+                    readings={readings[goal.id]?.readings ?? []}
+                    unit={goal.target_unit}
+                    locale={locale}
+                    labels={historyLabels}
+                  />
+                </MemberGoalCard>
+              );
+            })}
           </section>
-          <button type="button" style={{ ...styles.primaryBtn, width: '100%' }} onClick={openAdd}>
-            {t('goals.add')}
-          </button>
+          {!adding && (
+            <button type="button" style={{ ...styles.primaryBtn, width: '100%' }} onClick={openAdd}>
+              {t('goals.add')}
+            </button>
+          )}
         </>
       )}
 
@@ -418,124 +602,19 @@ export default function GoalsPage() {
         </section>
       )}
 
-      {/* Add / Edit */}
-      {editing && editing.kind !== 'remove' && (
-        <MemberDialog
-          labelledBy="goal-dialog-title"
-          title={editing.kind === 'add' ? t('goals.add') : t('goals.edit_title')}
-          onClose={saving ? () => {} : closeDialog}
-          actions={(
-            <>
-              <button type="button" style={styles.dialogSecondary} onClick={closeDialog} disabled={saving}>
-                {t('goals.cancel')}
-              </button>
-              <button type="button" style={styles.dialogPrimary} onClick={submit} disabled={saving}>
-                {saving ? t('goals.saving') : (editing.kind === 'add' ? t('goals.add') : t('goals.save'))}
-              </button>
-            </>
-          )}
-        >
-          {editing.kind === 'add' ? (
-            <label style={styles.field}>
-              <span style={styles.label}>{t('goals.field_goal')}</span>
-              {/* §6 — a select over the gym's own catalogue, never a text
-                  field: the member picks an existing Gym Goal or nothing. The
-                  options are the server's `available` list, which already
-                  leaves out the retired ones and the ones they hold (§7). */}
-              <select
-                style={styles.control}
-                value={form.personal_goal_id}
-                onChange={(e) => selectGoal(e.target.value)}
-              >
-                <option value="">{t('goals.select_placeholder')}</option>
-                {available.map((goal) => (
-                  <option key={goal.id} value={goal.id}>
-                    {goalDisplayName(goal, t as unknown as (key: string) => string)}
-                  </option>
-                ))}
-              </select>
-              {available.length === 0 && <span style={styles.help}>{t('goals.none_available')}</span>}
-            </label>
-          ) : (
-            <div style={styles.field}>
-              <span style={styles.label}>{t('goals.field_goal')}</span>
-              {/* The goal itself is immutable on an edit (§12), so it reads as
-                  a value rather than as a control the `PUT` would ignore. */}
-              <p style={styles.readOnlyValue}>{nameOf(editing.goal)}</p>
-            </div>
-          )}
-
-          <div style={styles.fieldRow}>
-            <label style={styles.field}>
-              <span style={styles.label}>{t('goals.field_target')}</span>
-              <input
-                style={styles.control}
-                type="number"
-                inputMode="decimal"
-                step="0.01"
-                min="0"
-                value={form.target_value}
-                onChange={(e) => setForm({ ...form, target_value: e.target.value })}
-              />
-            </label>
-            <label style={styles.field}>
-              <span style={styles.label}>{t('goals.field_unit')}</span>
-              <input
-                style={styles.control}
-                type="text"
-                maxLength={20}
-                value={form.target_unit}
-                onChange={(e) => setForm({ ...form, target_unit: e.target.value })}
-              />
-            </label>
-          </div>
-
-          <div style={styles.fieldRow}>
-            <label style={styles.field}>
-              <span style={styles.label}>{t('goals.field_start_date')}</span>
-              <input
-                style={styles.control}
-                type="date"
-                value={form.start_date}
-                onChange={(e) => setForm({ ...form, start_date: e.target.value })}
-              />
-            </label>
-            <label style={styles.field}>
-              <span style={styles.label}>{t('goals.field_target_date')}</span>
-              <input
-                style={styles.control}
-                type="date"
-                value={form.target_date}
-                onChange={(e) => setForm({ ...form, target_date: e.target.value })}
-              />
-            </label>
-          </div>
-
-          <label style={styles.field}>
-            <span style={styles.label}>{t('goals.field_notes')}</span>
-            <textarea
-              style={{ ...styles.control, minHeight: 72, resize: 'vertical' }}
-              maxLength={1000}
-              value={form.notes}
-              onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            />
-          </label>
-
-          {formError && <p style={styles.error}>{formError}</p>}
-        </MemberDialog>
-      )}
-
       {/* §3 / §21 — Add reading, and the same dialog for a new baseline. The
           unit is the goal's and is shown beside the input rather than asked
-          for, and the date defaults to today and cannot be in the future. */}
+          for, and the date defaults to today and cannot be in the future.
+          It stays a dialog: it is not a form over the goal's own fields, and
+          #1115 §2/§3 is about creating and editing a goal. */}
       {editing && editing.kind === 'reading' && (
         <MemberDialog
           labelledBy="goal-reading-title"
           title={t(editing.reading === 'initial' ? 'goals.set_initial_reading' : 'goals.add_reading')}
-          onClose={saving ? () => {} : closeDialog}
+          onClose={saving ? () => {} : closeEditing}
           actions={(
             <>
-              <button type="button" style={styles.dialogSecondary} onClick={closeDialog} disabled={saving}>
+              <button type="button" style={styles.dialogSecondary} onClick={closeEditing} disabled={saving}>
                 {t('goals.cancel')}
               </button>
               <button
@@ -596,10 +675,10 @@ export default function GoalsPage() {
         <MemberDialog
           labelledBy="goal-remove-title"
           title={t('goals.remove_title')}
-          onClose={saving ? () => {} : closeDialog}
+          onClose={saving ? () => {} : closeEditing}
           actions={(
             <>
-              <button type="button" style={styles.dialogSecondary} onClick={closeDialog} disabled={saving}>
+              <button type="button" style={styles.dialogSecondary} onClick={closeEditing} disabled={saving}>
                 {t('goals.cancel')}
               </button>
               <button
@@ -633,19 +712,19 @@ const styles: Record<string, React.CSSProperties> = {
   goalTarget: { margin: '4px 0 0', fontSize: 14, color: memberTheme.textSecondary },
   goalNotes:  { margin: '6px 0 0', fontSize: 12, color: memberTheme.textMuted, fontStyle: 'italic' },
   goalDates:  { margin: '6px 0 0', fontSize: 12, color: memberTheme.textMuted },
-  cardActions:{ display: 'flex', gap: 10, marginTop: 14, flexWrap: 'wrap' },
   primaryBtn: { ...primaryButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600 },
   primarySmallBtn: { ...primaryButtonStyle, padding: '8px 16px', fontSize: 13, fontWeight: 600 },
   readingInputRow: { display: 'flex', alignItems: 'center', gap: 8 },
   unit:       { fontSize: 13, color: memberTheme.textMuted, flexShrink: 0 },
   secondaryBtn: { ...secondaryButtonStyle, padding: '8px 16px', fontSize: 13, fontWeight: 600 },
-  destructiveBtn: { ...destructiveButtonStyle, padding: '8px 16px', fontSize: 13, fontWeight: 600 },
   dialogPrimary: { ...primaryButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600, flex: 1 },
   dialogSecondary: { ...secondaryButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600, flex: 1 },
   dialogDestructive: { ...destructiveButtonStyle, padding: '10px 18px', fontSize: 14, fontWeight: 600, flex: 1 },
   busy:       { opacity: 0.6, cursor: 'default' },
   field:      { display: 'flex', flexDirection: 'column', gap: 5, flex: 1, minWidth: 0 },
   fieldRow:   { display: 'flex', gap: 12, flexWrap: 'wrap' },
+  formBody:   { display: 'flex', flexDirection: 'column', gap: 12 },
+  formActions:{ display: 'flex', gap: 10, marginTop: 4, flexWrap: 'wrap' },
   label:      { fontSize: 12, fontWeight: 600, color: memberTheme.textSecondary },
   control:    { ...inputStyle, padding: '9px 10px', fontSize: 14, width: '100%', boxSizing: 'border-box' },
   readOnlyValue: { margin: 0, padding: '9px 0', fontSize: 14, color: memberTheme.text },

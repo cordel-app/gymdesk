@@ -88,6 +88,25 @@ Reference implementation: `apps/admin/src/components/workoutChrome.ts` + `apps/a
 
 ---
 
+## A Members App card that is created and edited in place (#1115)
+
+The Admin app's rule is *expanding reads, `⋮ → Edit` writes* (#797), and the form it opens is inline in the row. The Members App had grown the opposite shape on My Goals: a flat list of always-open cards, each with four buttons under it, and `Add goal` / `Edit` opening a modal over the page. #1115 brings the same shape to the member's side, phone-first.
+
+**One component owns the card, and it decides nothing.** `apps/member/src/components/MemberGoalCard.tsx` renders the header (title, a one-line summary, the caret), the contextual `⋮` and the body its caller passes as children. Like `GoalReadings.tsx` and `NutritionItemRow.tsx` (#932) it resolves no locale key, reads no row and spells no colour — every label arrives translated and every value formatted, and the surfaces come from `lib/memberChrome.ts` (#983). The page keeps the open state, the draft, the requests and every `t()`.
+
+Four rules come with it:
+
+- **The header is one button and the `⋮` is another.** Tapping a contextual menu must not expand or collapse the card, and the only way that holds for certain is for the menu to sit *outside* the element that toggles: a nested `<button>` is invalid HTML and a `stopPropagation()` on a click handler is a rule a later edit can forget. The `⋮` is a 44px square, the header fills the rest of the width.
+- **Collapsed by default, and expanding fetches nothing.** Opening a card is presentation (#955's rule in the Admin app, and the same here): whatever the body needs came with the page, so a tap costs no request and no recomputation. If a body genuinely cannot be loaded up front, that is a lazily loaded expansion and needs three states, not two (#966) — decide it in the ticket rather than in the toggle.
+- **Creating and editing are inline, through one form.** `+ Add …` (and the empty state's CTA) opens a **draft card** at the top of the section in its editing state; `⋮ → Edit` turns an existing card's body into the same form; Cancel removes the draft, or leaves the edited card exactly as it was, because nothing was written. One `renderForm(mode)` serves both so they cannot drift apart, and Save/Cancel sit under the fields they commit. A card with no `onToggle` renders the same chrome with **no** affordance rather than a toggle that does nothing — there is nothing to collapse while a form is open in it.
+- **A dialog is for what is not a form over the entity's own fields.** `MemberDialog` stays the app's one shell (#1036 §19), and after this pattern its uses on such a screen are the destructive confirmation and any side action with its own payload (My Goals keeps #1037's Add reading there). A modal over the fields the card already shows is what the pattern replaces.
+
+**A field the member does not own reads as a value, in both modes.** My Goals' `Unit` belongs to the Gym Goal, so it is shown beside the target rather than asked for — the Admin app's `editable: false` field (#974/#927) one app over. When such a field constrains another, the *payload* resolves it (`toGoalUpdatePayload()` drops a unit whose value was cleared, which is what the DB CHECK refuses) rather than a validator refusing a state the member has no control to fix.
+
+Reference implementation: `apps/member/src/components/MemberGoalCard.tsx` + `apps/member/src/app/[locale]/goals/page.tsx`, pinned by `api/src/test/member-goal-cards.unit.test.ts` (in the API suite, because CI runs `npm test` in `api/` only) and `apps/member/src/test/my-goals.test.ts`.
+
+---
+
 ## Standard Error Response
 
 All API errors must return JSON in this shape — never HTML, never a raw string:

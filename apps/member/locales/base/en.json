@@ -412,9 +412,8 @@
     "loading": "Loading your goals…",
     "error": "We couldn't load your goals.",
     "empty": "You don't have any goals yet.",
-    "add": "Add goal",
+    "add": "Add personal goal",
     "edit": "Edit",
-    "edit_title": "Edit goal",
     "remove": "Remove",
     "remove_title": "Remove goal?",
     "remove_confirm": "Are you sure you want to remove “{name}” from your goals?",
@@ -443,7 +442,6 @@
     "error_target_number": "The target must be a number.",
     "error_target_negative": "The target can't be negative.",
     "error_target_max": "The target is too large.",
-    "error_unit_without_value": "Add a target before its unit.",
     "error_unit_length": "The unit is too long.",
     "error_dates": "The target date must be on or after the start date.",
     "error_notes_length": "The notes are too long.",
@@ -478,7 +476,9 @@
     "error_reading_negative": "The reading can't be negative.",
     "error_reading_max": "The reading is too large.",
     "error_reading_date_required": "Choose a date.",
-    "error_reading_date_future": "The date can't be in the future."
+    "error_reading_date_future": "The date can't be in the future.",
+    "summary_target": "Target: {value}",
+    "menu_label": "Goal actions"
   },
   "exercise_media": {
     "image": "Exercise image",
