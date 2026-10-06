@@ -9,6 +9,7 @@
     "loading": "Carregant…",
     "next_booking": "Propera reserva",
     "no_upcoming_booking": "No tens reserves properes.",
+    "more_bookings_that_day": "+{count} {count, plural, one {reserva més} other {reserves més}} aquell dia",
     "waitlisted": "En llista d'espera",
     "membership_status": "Quota",
     "no_membership": "Sense quota activa.",

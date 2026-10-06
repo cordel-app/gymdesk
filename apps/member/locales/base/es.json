@@ -9,6 +9,7 @@
     "loading": "Cargando…",
     "next_booking": "Próxima reserva",
     "no_upcoming_booking": "No tienes reservas próximas.",
+    "more_bookings_that_day": "+{count} {count, plural, one {reserva más} other {reservas más}} ese día",
     "waitlisted": "En lista de espera",
     "membership_status": "Cuota",
     "no_membership": "Sin cuota activa.",
