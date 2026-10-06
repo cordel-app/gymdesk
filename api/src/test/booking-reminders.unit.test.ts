@@ -143,18 +143,15 @@ describe('the candidate query (#1113 §3)', () => {
     // `starts_at` is a UTC DATETIME by this codebase's convention, so no value
     // crosses a timezone conversion on its way to a comparison.
     expect(sql).toContain('ce.starts_at > UTC_TIMESTAMP()');
-    expect(sql).toContain('ce.starts_at <= UTC_TIMESTAMP() + INTERVAL ? MINUTE');
-    expect(reminderCandidatesParams()).toEqual([
-      BOOKING_REMINDER_LEAD_MINUTES,
-      BOOKING_REMINDER_MAX_PER_RUN,
-    ]);
+    expect(sql).toContain('ce.starts_at <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE)');
+    expect(reminderCandidatesParams()).toEqual([BOOKING_REMINDER_LEAD_MINUTES]);
   });
 
   it('asks for events starting WITHIN the lead time, not exactly at it', () => {
     // A late pass must cost punctuality, never the alert: a window of
     // "115 to 120 minutes" would drop every member whose event fell between two
     // passes. There is no lower bound but "not already started".
-    expect(sql).not.toMatch(/starts_at\s*>=?\s*UTC_TIMESTAMP\(\)\s*\+/);
+    expect(sql).not.toMatch(/starts_at\s*>=?\s*DATE_ADD/);
   });
 
   it('dedupes against the alert row itself, with no second record of it', () => {
@@ -172,9 +169,26 @@ describe('the candidate query (#1113 §3)', () => {
     expect(code(MIGRATION)).not.toContain('calendar_event_bookings');
   });
 
-  it('bounds one pass', () => {
-    expect(sql).toContain('LIMIT ?');
+  it('bounds one pass with the cap written into the statement', () => {
+    // `db.query` is mysql2's `execute()`, a server-side prepared statement, and a
+    // bound `LIMIT ?` is refused there — which is what made every pass of this
+    // run answer 500 the first time it reached CI. `recurring-bookings.ts` is the
+    // precedent: it interpolates its own validated limit too.
     expect(BOOKING_REMINDER_MAX_PER_RUN).toBeGreaterThan(0);
+    expect(sql).toContain(`LIMIT ${BOOKING_REMINDER_MAX_PER_RUN}`);
+    expect(sql).not.toContain('LIMIT ?');
+  });
+
+  it('refuses to interpolate anything but a positive integer', () => {
+    // The only caller passes a module constant, so a bad value means something
+    // reached the builder that never should have.
+    for (const bad of [0, -1, 1.5, Number.NaN, '500' as unknown as number]) {
+      expect(() => reminderCandidatesSql(bad)).toThrow(/positive integer/);
+    }
+  });
+
+  it('adds the interval with DATE_ADD, the form every other query here uses', () => {
+    expect(sql).toContain('DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE)');
   });
 
   it('takes the title from the occurrence, with no join to activity_types', () => {

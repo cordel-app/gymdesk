@@ -61,6 +61,15 @@ export const BOOKING_REMINDER_LEAD_MINUTES = 120;
  * a candidate stays a candidate until its row exists. It is here so a gym that
  * opens a hundred classes at the same hour cannot turn one pass into an
  * unbounded insert, and so the run's own counters stay readable.
+ *
+ * It is **interpolated into the SQL rather than bound as a parameter**, which is
+ * this codebase's one way of spelling a `LIMIT` (`recurring-bookings.ts`'s own
+ * safety valve does the same with a value that comes from a request body, after
+ * validating it as an integer). `db.query` is mysql2's `execute()`, i.e. a
+ * server-side prepared statement, and a bound `LIMIT ?` is refused there — which
+ * is what made every pass of this run answer `500` the first time it reached CI.
+ * Interpolation is safe because this is a module constant and never a request
+ * value, and `limitClause()` asserts that rather than trusting it.
  */
 export const BOOKING_REMINDER_MAX_PER_RUN = 500;
 
@@ -98,7 +107,7 @@ export interface ReminderCandidate {
  * writes it) and the entry's own name for a manual one — so this needs no join
  * to `activity_types` and cannot answer `null` for an occurrence that has none.
  */
-export function reminderCandidatesSql(): string {
+export function reminderCandidatesSql(limit: number = BOOKING_REMINDER_MAX_PER_RUN): string {
   return `
     SELECT ce.gym_id, ceb.member_id, ce.id AS calendar_event_id, ce.title, ce.starts_at
       FROM calendar_event_bookings ceb
@@ -109,7 +118,7 @@ export function reminderCandidatesSql(): string {
        AND ce.deleted_at IS NULL
        AND m.deleted_at IS NULL
        AND ce.starts_at > UTC_TIMESTAMP()
-       AND ce.starts_at <= UTC_TIMESTAMP() + INTERVAL ? MINUTE
+       AND ce.starts_at <= DATE_ADD(UTC_TIMESTAMP(), INTERVAL ? MINUTE)
        AND NOT EXISTS (
              SELECT 1 FROM member_notifications mn
               WHERE mn.gym_id = ce.gym_id
@@ -118,15 +127,28 @@ export function reminderCandidatesSql(): string {
                 AND mn.entity_type = 'session'
                 AND mn.entity_id = ce.id)
      ORDER BY ce.starts_at, ce.gym_id, ceb.member_id
-     LIMIT ?`;
+     ${limitClause(limit)}`;
+}
+
+/**
+ * `LIMIT <n>`, with the integer written into the statement.
+ *
+ * The assertion is the whole safety argument: the only caller passes a module
+ * constant, so a non-integer here means a value reached this function that
+ * never should have, and failing loudly is better than interpolating it.
+ */
+function limitClause(limit: number): string {
+  if (!Number.isInteger(limit) || limit <= 0) {
+    throw new Error(`booking reminder limit must be a positive integer, got ${limit}`);
+  }
+  return `LIMIT ${limit}`;
 }
 
 /** The parameters `reminderCandidatesSql()` takes, in order. */
 export function reminderCandidatesParams(
   leadMinutes: number = BOOKING_REMINDER_LEAD_MINUTES,
-  limit: number = BOOKING_REMINDER_MAX_PER_RUN,
-): [number, number] {
-  return [leadMinutes, limit];
+): [number] {
+  return [leadMinutes];
 }
 
 /**

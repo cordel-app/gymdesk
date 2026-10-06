@@ -2731,7 +2731,12 @@ differences are the pattern:
    indexed and the *candidate scan* was not, and because that query is deliberately cross-gym
    it could use none of the `gym_id`-leading indexes the schema is full of. Ask which table
    drives the query, not only which one the subquery probes.
-6. **Add the path to the relay allowlist** (`INTERNAL_RUN_API_PATHS`,
+6. **Write the `LIMIT` into the statement.** A cap is the natural shape for a run
+   like this, and a bound `LIMIT ?` is refused by mysql2's `execute()` — the route
+   then answers `500` on every call with nothing in the diff to suggest why. Every
+   paginated route here already interpolates a validated integer;
+   `api/src/test/bound-limit-placeholder.unit.test.ts` is now the gate.
+7. **Add the path to the relay allowlist** (`INTERNAL_RUN_API_PATHS`,
    `apps/admin/src/lib/internalRunRelay.ts`) and to nothing else — #1086's gate asserts the
    allowlist *is* the set the workflows call, in both directions, so a run added to one and
    forgotten in the other fails the build.
