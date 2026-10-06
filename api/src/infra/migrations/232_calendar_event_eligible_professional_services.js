@@ -31,8 +31,9 @@
  *
  * One raw `CREATE TABLE` with every constraint named `ceeps_*`, the way 229
  * and 231 are — the Knex builder's generated FK names would exceed MySQL's
- * 64-character identifier limit for a 47-character table name and fail the
- * create on a fresh database (231's header has the whole failure). `gym_id`
+ * 64-character identifier limit for a 45-character table name (71 and 77
+ * characters for the event and service FKs) and fail the create on a fresh
+ * database (231's header has the whole failure). `gym_id`
  * NOT NULL, every FK `ON DELETE CASCADE`, UNIQUE on the pair, an index on
  * `(gym_id, calendar_event_id)` for the booking gate's read.
  *

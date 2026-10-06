@@ -198,6 +198,10 @@ export async function cleanupTestGyms() {
   // seeds and are deliberately left alone.
   await db.query(`DELETE FROM personal_goals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM nutrition_goals WHERE gym_id IN (${marks})`, ids);
+  // #980 stage 3: every FK is ON DELETE CASCADE, so the `calendar_events` delete
+  // below would clear these anyway — listed for the same readable-order reason
+  // `activity_type_eligible_professional_services` is above.
+  await db.query(`DELETE FROM calendar_event_eligible_professional_services WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM calendar_events WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM product_professional_services WHERE gym_id IN (${marks})`, ids);
   // #635 stage 1: every FK on these is ON DELETE CASCADE, so the products
