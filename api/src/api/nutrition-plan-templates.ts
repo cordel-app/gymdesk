@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
+import { goalRowsSql, parseGoalIllustrationInput, validateGoalIllustration } from './nutrition-goal-illustration';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
@@ -254,8 +255,8 @@ nutritionPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
 
     const { rows: goalRows } = await db.query(
       gymIdFilter
-        ? 'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? AND gym_id = ? ORDER BY position ASC'
-        : 'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? AND gym_id IS NULL ORDER BY position ASC',
+        ? goalRowsSql('nutrition_plan_template_goals', 'g.nutrition_plan_template_id = ? AND g.gym_id = ?')
+        : goalRowsSql('nutrition_plan_template_goals', 'g.nutrition_plan_template_id = ? AND g.gym_id IS NULL'),
       gymIdFilter ? [id, gymIdFilter] : [id],
     );
 
@@ -400,8 +401,8 @@ nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITIO
       );
       for (const g of goals) {
         await tx.query(
-          'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [gymId, insertId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position],
+          'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [gymId, insertId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, g.nutrition_library_item_id ?? null],
         );
       }
 
@@ -502,8 +503,8 @@ nutritionPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('NUTRITION'),
       );
       for (const g of goals) {
         await tx.query(
-          'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [gymId, insertId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position],
+          'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [gymId, insertId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, g.nutrition_library_item_id ?? null],
         );
       }
 
@@ -988,7 +989,7 @@ nutritionPlanTemplatesRouter.get('/:id/goals', async (req, res, next) => {
   try {
     if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Nutrition plan template not found' });
     const { rows } = await db.query(
-      'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? AND gym_id = ? ORDER BY position ASC',
+      goalRowsSql('nutrition_plan_template_goals', 'g.nutrition_plan_template_id = ? AND g.gym_id = ?'),
       [id, gymId],
     );
     res.json(rows);
@@ -999,22 +1000,27 @@ nutritionPlanTemplatesRouter.post('/:id/goals', requireModuleWrite('NUTRITION'),
   const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   if (!(await templateExists(id, gymId))) return res.status(404).json({ error: 'Nutrition plan template not found' });
-  const { item_name, quantity, unit, frequency, applies_all_days } = req.body;
+  const { item_name, quantity, unit, frequency, applies_all_days, nutrition_library_item_id } = req.body;
   if (!item_name || !(NUTRITION_GOALS as readonly string[]).includes(item_name)) {
     return res.status(400).json({ error: `item_name must be one of: ${NUTRITION_GOALS.join(', ')}` });
   }
   if (quantity == null || isNaN(Number(quantity))) return res.status(400).json({ error: 'quantity is required and must be a number' });
   if (!unit?.trim()) return res.status(400).json({ error: 'unit is required' });
+  // #932: the food that illustrates the goal, optional.
+  const illustration = parseGoalIllustrationInput(nutrition_library_item_id);
+  if ('error' in illustration) return res.status(400).json({ error: illustration.error });
   try {
+    const illustrationErr = await validateGoalIllustration(gymId, illustration.id);
+    if (illustrationErr) return res.status(400).json({ error: illustrationErr });
     const { rows: posRows } = await db.query(
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ?',
       [id],
     );
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-      [gymId, id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
+      'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [gymId, id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position, illustration.id],
     );
-    const { rows } = await db.query('SELECT * FROM nutrition_plan_template_goals WHERE id = ?', [insertId]);
+    const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?'), [insertId]);
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
 });
@@ -1024,7 +1030,15 @@ nutritionPlanTemplatesRouter.put('/:id/goals/:gid', requireModuleWrite('NUTRITIO
   const { id, gid } = req.params as { id: string; gid: string };
   const updates: string[] = [];
   const params: any[] = [];
-  const { item_name, quantity, unit, frequency, applies_all_days } = req.body;
+  const { item_name, quantity, unit, frequency, applies_all_days, nutrition_library_item_id } = req.body;
+  if (nutrition_library_item_id !== undefined) {
+    // #932: absent keeps, null clears, an id must be a food the gym may use.
+    const illustration = parseGoalIllustrationInput(nutrition_library_item_id);
+    if ('error' in illustration) return res.status(400).json({ error: illustration.error });
+    const illustrationErr = await validateGoalIllustration(gymId, illustration.id);
+    if (illustrationErr) return res.status(400).json({ error: illustrationErr });
+    updates.push('nutrition_library_item_id = ?'); params.push(illustration.id);
+  }
   if (item_name !== undefined) {
     if (!(NUTRITION_GOALS as readonly string[]).includes(item_name)) {
       return res.status(400).json({ error: `item_name must be one of: ${NUTRITION_GOALS.join(', ')}` });
@@ -1049,7 +1063,7 @@ nutritionPlanTemplatesRouter.put('/:id/goals/:gid', requireModuleWrite('NUTRITIO
       params,
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Goal not found' });
-    const { rows } = await db.query('SELECT * FROM nutrition_plan_template_goals WHERE id = ?', [gid]);
+    const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?'), [gid]);
     res.json(rows[0]);
   } catch (err) { next(err); }
 });

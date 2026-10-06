@@ -113,6 +113,7 @@ export default function NutritionPage() {
                     key={g.id}
                     name={goalLabel(t, g.item_name)}
                     detail={goalDetail(t, g)}
+                    imageUrl={g.image_url ?? null}
                   />
                 ))
               )}

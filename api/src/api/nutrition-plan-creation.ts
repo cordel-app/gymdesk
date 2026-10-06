@@ -95,8 +95,8 @@ export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArg
     );
     for (const g of goals) {
       await tx.query(
-        'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [gymId, planId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position],
+        'INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+        [gymId, planId, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days, g.position, g.nutrition_library_item_id ?? null],
       );
     }
   } else {

@@ -71,6 +71,12 @@ export interface NutritionGoalItem {
   quantity: number | string | null;
   unit: string | null;
   frequency: string | null;
+  /**
+   * #932: the image of the Nutrition Library food staff chose to illustrate
+   * the goal with, resolved by `GET /me/nutrition-plan`; `null` renders the
+   * standard fallback. Absent on older payloads.
+   */
+  image_url?: string | null;
 }
 
 /**

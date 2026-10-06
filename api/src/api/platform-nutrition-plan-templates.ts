@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
+import { goalRowsSql, parseGoalIllustrationInput, validateGoalIllustration } from './nutrition-goal-illustration';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
@@ -174,7 +175,7 @@ platformNutritionPlanTemplatesRouter.get('/:id/hierarchy', requireSuperadmin, as
       [id],
     );
     const { rows: goalRows } = await db.query(
-      'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? AND gym_id IS NULL ORDER BY position ASC',
+      goalRowsSql('nutrition_plan_template_goals', 'g.nutrition_plan_template_id = ? AND g.gym_id IS NULL'),
       [id],
     );
 
@@ -548,7 +549,7 @@ platformNutritionPlanTemplatesRouter.get('/:id/goals', requireSuperadmin, async 
   try {
     if (!(await baseTemplateExists(id))) return res.status(404).json({ error: 'Template not found' });
     const { rows } = await db.query(
-      'SELECT * FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ? AND gym_id IS NULL ORDER BY position ASC',
+      goalRowsSql('nutrition_plan_template_goals', 'g.nutrition_plan_template_id = ? AND g.gym_id IS NULL'),
       [id],
     );
     res.json(rows);
@@ -558,22 +559,28 @@ platformNutritionPlanTemplatesRouter.get('/:id/goals', requireSuperadmin, async 
 platformNutritionPlanTemplatesRouter.post('/:id/goals', requireSuperadmin, async (req, res, next) => {
   const { id } = req.params as { id: string };
   if (!(await baseTemplateExists(id))) return res.status(404).json({ error: 'Template not found' });
-  const { item_name, quantity, unit, frequency, applies_all_days } = req.body;
+  const { item_name, quantity, unit, frequency, applies_all_days, nutrition_library_item_id } = req.body;
   if (!item_name || !(NUTRITION_GOALS as readonly string[]).includes(item_name)) {
     return res.status(400).json({ error: `item_name must be one of: ${NUTRITION_GOALS.join(', ')}` });
   }
   if (quantity == null || isNaN(Number(quantity))) return res.status(400).json({ error: 'quantity is required and must be a number' });
   if (!unit?.trim()) return res.status(400).json({ error: 'unit is required' });
+  // #932: a Base template's goal may only be illustrated by a System food —
+  // its goals are copied into every gym that clones it.
+  const illustration = parseGoalIllustrationInput(nutrition_library_item_id);
+  if ('error' in illustration) return res.status(400).json({ error: illustration.error });
   try {
+    const illustrationErr = await validateGoalIllustration(null, illustration.id);
+    if (illustrationErr) return res.status(400).json({ error: illustrationErr });
     const { rows: posRows } = await db.query(
       'SELECT COALESCE(MAX(position), 0) + 1 AS next_position FROM nutrition_plan_template_goals WHERE nutrition_plan_template_id = ?',
       [id],
     );
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?)',
-      [id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position],
+      'INSERT INTO nutrition_plan_template_goals (gym_id, nutrition_plan_template_id, item_name, quantity, unit, frequency, applies_all_days, position, nutrition_library_item_id) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [id, item_name, Number(quantity), unit.trim(), frequency?.trim() ?? 'daily', applies_all_days != null ? Number(applies_all_days) : 1, posRows[0].next_position, illustration.id],
     );
-    const { rows } = await db.query('SELECT * FROM nutrition_plan_template_goals WHERE id = ?', [insertId]);
+    const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?'), [insertId]);
     res.status(201).json(rows[0]);
   } catch (err) { next(err); }
 });

@@ -1150,8 +1150,18 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
       [plan.id, gymId],
     );
 
+    // #932 §2/§3: a goal is a slug, not a food, so its picture is the food
+    // staff chose to illustrate it with (`nutrition_library_item_id`, migration
+    // 233) — the library item's own `image_url`, the same source the meal foods
+    // and the restrictions above read. A goal illustrated by nothing carries
+    // `null`, which the page renders as the standard fallback.
     const { rows: goalRows } = await db.query(
-      'SELECT id, item_name, quantity, unit, frequency, applies_all_days FROM member_nutrition_plan_goals WHERE member_nutrition_plan_id = ? AND gym_id = ? ORDER BY position ASC',
+      `SELECT g.id, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days,
+              g.nutrition_library_item_id, nli.image_url
+       FROM member_nutrition_plan_goals g
+       LEFT JOIN nutrition_library_items nli ON nli.id = g.nutrition_library_item_id
+       WHERE g.member_nutrition_plan_id = ? AND g.gym_id = ?
+       ORDER BY g.position ASC`,
       [plan.id, gymId],
     );
 
