@@ -32,6 +32,10 @@ import {
   memberBillingEventForecast,
 } from './me-billing-forecast';
 import { memberProductCatalogue } from './me-products';
+import {
+  MEMBER_PLAN_HISTORY_LIMIT,
+  splitMemberPlanHistory,
+} from '../domain/memberPlanHistory';
 import { deriveBillingEventStatus } from '../domain/billingEventStatus';
 import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
@@ -1484,6 +1488,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
               p.name AS plan_name, p.description AS plan_description,
               ${ASSIGNMENT_CADENCE.interval()} AS billing_interval,
               ${ASSIGNMENT_CADENCE.unit()} AS billing_unit,
+              um.closed_at,
               (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
                OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
                OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
@@ -1494,12 +1499,18 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
        WHERE um.gym_id = ? AND um.member_id = ?
        ${MEMBER_CURRENT_ASSIGNMENT_FILTER}
        ${MEMBER_CURRENT_ASSIGNMENT_ORDER}
-       LIMIT 1`,
+       LIMIT ${MEMBER_PLAN_HISTORY_LIMIT}`,
       [gymId, memberId],
     );
-    if (!mships[0]) return res.json({ membership: null });
+    // #1122 §7 — the member's own plan history, which is the tail of that one
+    // ordering rather than a second read with a rule of its own: the row the
+    // card above is about can then never also appear in the history under it.
+    // The limit is a declared constant written into the statement, never a bound
+    // parameter — `db.query` is a prepared statement and MySQL refuses `LIMIT ?`.
+    const { current, past: past_memberships } = splitMemberPlanHistory(mships as any[]);
+    if (!current) return res.json({ membership: null, past_memberships: [] });
 
-    const um = mships[0];
+    const um = current;
     // The assignment's own benefit rows, never the Plan's live sections — the
     // loader falls back to those only for an assignment that captured nothing.
     // (Until stage 10 this read `membership_plan_benefits`, P1.4's plan-keyed
@@ -1557,9 +1568,13 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
       plan_free_periods, plan_paid_periods, plan_bonus_periods, plan_pay_beforehand_periods,
       personal_fee_benefit_action, personal_fee_benefit_value,
+      closed_at,
       ...membership
     } = um as any;
-    res.json({ membership: { ...membership, membership_fee, benefits, upcoming_payments } });
+    res.json({
+      membership: { ...membership, membership_fee, benefits, upcoming_payments },
+      past_memberships,
+    });
   } catch (err) {
     next(err);
   }

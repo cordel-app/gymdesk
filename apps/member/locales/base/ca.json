@@ -236,6 +236,8 @@
     "benefits_heading": "Beneficis inclosos",
     "products_heading": "Productes i Serveis Addicionals",
     "products_empty": "El teu gimnàs encara no ofereix productes ni serveis addicionals.",
+    "past_plans_heading": "Plans de Membresia Anteriors",
+    "past_plans_count": "{count, plural, one {# pla} other {# plans}}",
     "product_sessions_price": "{count, plural, one {Preu total per # sessió} other {Preu total per # sessions}}",
     "product_package_price": "Preu total del paquet",
     "product_tax_included": "Impostos inclosos",

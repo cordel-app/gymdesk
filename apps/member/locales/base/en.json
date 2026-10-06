@@ -236,6 +236,8 @@
     "benefits_heading": "Included benefits",
     "products_heading": "Additional Products and Services",
     "products_empty": "Your gym does not offer any additional products or services yet.",
+    "past_plans_heading": "Past Membership Plans",
+    "past_plans_count": "{count, plural, one {# plan} other {# plans}}",
     "product_sessions_price": "{count, plural, one {Total price for # session} other {Total price for # sessions}}",
     "product_package_price": "Total price for the package",
     "product_tax_included": "Tax included",
