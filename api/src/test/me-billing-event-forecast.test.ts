@@ -230,15 +230,18 @@ describe('GET /me/billing-events', () => {
   // implementation the staff ledger reads (#640), never by the page.
   it('reports a derived status on every ledger row', async () => {
     const umId = await assignPlan(gymId, memberId, await createPlan(gymId, 70));
+    // `billing_events.source` is NOT NULL with no default (migration 008) and
+    // its CHECK admits `admin` · `system` · `employee` · `customer` · `provider`.
     const { insertId: paidId } = await db.query(
-      `INSERT INTO billing_events (gym_id, member_id, user_membership_id, event_type, amount)
-       VALUES (?, ?, ?, 'payment_recorded', 70)`,
+      `INSERT INTO billing_events
+         (gym_id, member_id, user_membership_id, event_type, source, amount)
+       VALUES (?, ?, ?, 'payment_recorded', 'admin', 70)`,
       [gymId, memberId, umId],
     );
     const { insertId: changedId } = await db.query(
       `INSERT INTO billing_events
-         (gym_id, member_id, user_membership_id, event_type, previous_status, new_status)
-       VALUES (?, ?, ?, 'status_changed', 'active', 'paused')`,
+         (gym_id, member_id, user_membership_id, event_type, source, previous_status, new_status)
+       VALUES (?, ?, ?, 'status_changed', 'system', 'active', 'paused')`,
       [gymId, memberId, umId],
     );
 
