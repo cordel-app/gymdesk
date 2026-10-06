@@ -1096,7 +1096,19 @@ runbook is how.
       with the plan ids it named; also run
       `SELECT gym_id, activity_type_id, GROUP_CONCAT(membership_plan_id) FROM activity_type_eligible_plans GROUP BY gym_id, activity_type_id`
       beforehand and tell each affected gym to re-restrict those activities by Professional
-      Service from the Activities page.
+      Service from the Activities page. The other direction matters too: a non-public
+      activity that named **no** plan was blocked for everyone under #481 and is open to
+      everyone under `Q3 open`, so also run
+      `SELECT at.gym_id, at.id FROM activity_types at LEFT JOIN activity_type_eligible_plans atep ON atep.activity_type_id = at.id WHERE at.public_event = 0 AND at.deleted_at IS NULL AND atep.id IS NULL`
+      (the migration logs both lists).
+- [ ] **Migration 231 has no clean order with `deploy.yml`** (#973 stage 1): it creates
+      the table the new build reads *and* drops the one the old build reads, and
+      `deploy.yml` migrates before it restarts `fitness-api`. Between those two steps the
+      previous build answers `500 ER_NO_SUCH_TABLE` on every non-public booking
+      (`activity-eligibility.ts`' hook) and on `GET /activity-types/:id`; the reverse order
+      breaks the new build instead. Deploy it at a quiet hour and accept the restart
+      window (dev took it), or — if production has live bookings by then — split the
+      drop into a later migration deployed after this build is live, the 176/177/184 order.
 - [ ] **Migration 185 must run *before* the API build that writes `waived_billing`**
       (#635 stage 11): it widens the `billing_events.event_type` CHECK. It only accepts
       a type nothing writes yet, so it is safe to run against the current build — but the

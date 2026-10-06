@@ -34,11 +34,20 @@
  *
  * ## Shape
  *
- * Mirrors 139: `gym_id` NOT NULL with every FK `ON DELETE CASCADE` (a deleted
- * Activity Type or Professional Service takes its rows with it), UNIQUE on the
- * pair so a replace-all `PUT` cannot double a service, and an index on
- * `(gym_id, activity_type_id)` because the booking gate reads "which services
- * does this activity name" on every non-public booking.
+ * The columns mirror 139 — `gym_id` NOT NULL with every FK `ON DELETE
+ * CASCADE` (a deleted Activity Type or Professional Service takes its rows
+ * with it), UNIQUE on the pair so a replace-all `PUT` and Duplicate's copy
+ * cannot double a service, and an index on `(gym_id, activity_type_id)`
+ * because the booking gate reads "which services does this activity name" on
+ * every non-public booking — but the *statement* mirrors 229, not 139: one raw
+ * `CREATE TABLE` with every constraint named `ateps_*` (the alias both readers
+ * use). The Knex builder would emit CREATE plus five separate ALTERs and name
+ * the FKs `<table>_<column>_foreign`, and with a 44-character table name two
+ * of those exceed MySQL's 64-character identifier limit (ER_TOO_LONG_IDENT):
+ * the third statement fails, the table is left with its PK and the `gym_id`
+ * FK only, and a re-run finds `hasTable()` true and skips the rest for good —
+ * no cascade, no UNIQUE, no index, and nothing at runtime to notice. One
+ * statement is atomic, so the one `hasTable()` guard is exact.
  *
  * ## `down`
  *
@@ -53,23 +62,37 @@
 
 const NEW_TABLE = 'activity_type_eligible_professional_services';
 const OLD_TABLE = 'activity_type_eligible_plans';
+const PREFIX = 'ateps';
 
 exports.up = async (knex) => {
   if (!(await knex.schema.hasTable(NEW_TABLE))) {
-    await knex.schema.createTable(NEW_TABLE, (t) => {
-      t.increments('id').unsigned().primary();
-      t.specificType('gym_id', 'char(36)').notNullable().references('id').inTable('gyms').onDelete('CASCADE');
-      t.integer('activity_type_id').unsigned().notNullable().references('id').inTable('activity_types').onDelete('CASCADE');
-      t.integer('professional_service_id').unsigned().notNullable().references('id').inTable('professional_services').onDelete('CASCADE');
-      t.datetime('created_at').notNullable().defaultTo(knex.raw('(UTC_TIMESTAMP())'));
-      t.unique(['activity_type_id', 'professional_service_id'], 'atps_activity_type_service_unique');
-      t.index(['gym_id', 'activity_type_id'], 'atps_gym_activity_type_idx');
-    });
+    await knex.raw(`
+      CREATE TABLE ${NEW_TABLE} (
+        id                      INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        gym_id                  CHAR(36)     NOT NULL,
+        activity_type_id        INT UNSIGNED NOT NULL,
+        professional_service_id INT UNSIGNED NOT NULL,
+        created_at              DATETIME     NOT NULL DEFAULT (UTC_TIMESTAMP()),
+        PRIMARY KEY (id),
+        UNIQUE KEY ${PREFIX}_activity_type_service_unique (activity_type_id, professional_service_id),
+        KEY ${PREFIX}_gym_activity_type_idx (gym_id, activity_type_id),
+        KEY ${PREFIX}_professional_service_idx (professional_service_id),
+        CONSTRAINT ${PREFIX}_gym_fk FOREIGN KEY (gym_id)
+          REFERENCES gyms(id) ON DELETE CASCADE,
+        CONSTRAINT ${PREFIX}_activity_type_fk FOREIGN KEY (activity_type_id)
+          REFERENCES activity_types(id) ON DELETE CASCADE,
+        CONSTRAINT ${PREFIX}_professional_service_fk FOREIGN KEY (professional_service_id)
+          REFERENCES professional_services(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+    `);
   }
 
   if (await knex.schema.hasTable(OLD_TABLE)) {
     // §4: nothing is mapped, so say what is being dropped rather than drop it
-    // silently. One line per activity, with the plans it named.
+    // silently. One line per activity, with the plans it named. The default
+    // `group_concat_max_len` (1024) would silently truncate a long list, and
+    // this log is the only thing the migration leaves behind.
+    await knex.raw('SET SESSION group_concat_max_len = 1048576');
     const rows = await knex(OLD_TABLE)
       .select('gym_id', 'activity_type_id')
       .select(knex.raw('GROUP_CONCAT(membership_plan_id ORDER BY membership_plan_id) AS plan_ids'))
@@ -81,20 +104,50 @@ exports.up = async (knex) => {
         console.log(`[migration 231]   gym ${r.gym_id} activity_type ${r.activity_type_id} -> plans [${r.plan_ids}]`);
       }
     }
+
+    // The other half of §4: a non-public activity naming NO plan was blocked
+    // for everyone under #481 and is open to everyone under `Q3 open` — the
+    // one row this change lets *in* rather than out, and the one the query
+    // above cannot see because there is no row to group.
+    const [closed] = await knex.raw(
+      `SELECT at.gym_id, at.id AS activity_type_id
+       FROM activity_types at
+       LEFT JOIN ${OLD_TABLE} atep ON atep.activity_type_id = at.id
+       WHERE at.public_event = 0 AND at.deleted_at IS NULL AND atep.id IS NULL
+       ORDER BY at.gym_id, at.id`,
+    );
+    if (closed.length > 0) {
+      console.log(`[migration 231] ${closed.length} non-public activity type(s) named no eligible plan (blocked for everyone under #481; open to everyone from now on):`);
+      for (const r of closed) {
+        console.log(`[migration 231]   gym ${r.gym_id} activity_type ${r.activity_type_id}`);
+      }
+    }
+
     await knex.schema.dropTable(OLD_TABLE);
   }
 };
 
 exports.down = async (knex) => {
   if (!(await knex.schema.hasTable(OLD_TABLE))) {
-    await knex.schema.createTable(OLD_TABLE, (t) => {
-      t.increments('id').unsigned().primary();
-      t.specificType('gym_id', 'char(36)').notNullable().references('id').inTable('gyms').onDelete('CASCADE');
-      t.integer('activity_type_id').unsigned().notNullable().references('id').inTable('activity_types').onDelete('CASCADE');
-      t.integer('membership_plan_id').unsigned().notNullable().references('id').inTable('membership_plans').onDelete('CASCADE');
-      t.datetime('created_at').notNullable().defaultTo(knex.raw('(UTC_TIMESTAMP())'));
-      t.unique(['activity_type_id', 'membership_plan_id'], 'atep_activity_type_plan_unique');
-    });
+    // One statement for the same reason as `up`, keeping 139's generated names
+    // so a rolled-back schema is the one 139 produced.
+    await knex.raw(`
+      CREATE TABLE ${OLD_TABLE} (
+        id                 INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        gym_id             CHAR(36)     NOT NULL,
+        activity_type_id   INT UNSIGNED NOT NULL,
+        membership_plan_id INT UNSIGNED NOT NULL,
+        created_at         DATETIME     NOT NULL DEFAULT (UTC_TIMESTAMP()),
+        PRIMARY KEY (id),
+        UNIQUE KEY atep_activity_type_plan_unique (activity_type_id, membership_plan_id),
+        CONSTRAINT activity_type_eligible_plans_gym_id_foreign FOREIGN KEY (gym_id)
+          REFERENCES gyms(id) ON DELETE CASCADE,
+        CONSTRAINT activity_type_eligible_plans_activity_type_id_foreign FOREIGN KEY (activity_type_id)
+          REFERENCES activity_types(id) ON DELETE CASCADE,
+        CONSTRAINT activity_type_eligible_plans_membership_plan_id_foreign FOREIGN KEY (membership_plan_id)
+          REFERENCES membership_plans(id) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+    `);
   }
   await knex.schema.dropTableIfExists(NEW_TABLE);
 };
