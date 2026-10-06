@@ -88,6 +88,8 @@ describe('diffAuditedFields (#980 §11)', () => {
       'professional_service_id',
       // #980 stage 2 — the occurrence's own Waitlist setting.
       'waitlist_mode',
+      // #980 stage 3 — the effective Eligible Professional Services, by name.
+      'eligible_professional_service_names',
     ]);
   });
 });

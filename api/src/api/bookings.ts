@@ -35,7 +35,12 @@ const SELECT = `
 // booking transaction with the tx handle; must throw an Error with a message
 // the router can surface as a translated string.
 export interface AccessHook {
-  (tx: Tx, gymId: string, memberId: number, activityTypeId: number, centerId?: number | null, opts?: { overrideAccess?: boolean }): Promise<void>;
+  (
+    tx: Tx, gymId: string, memberId: number, activityTypeId: number, centerId?: number | null,
+    // #980 stage 3: the occurrence being booked, so a gate that is answered
+    // per occurrence (its own Eligible Professional Services) can read it.
+    opts?: { overrideAccess?: boolean; calendarEventId?: number },
+  ): Promise<void>;
 }
 const accessHooks: AccessHook[] = [];
 export function registerBookingAccessHook(fn: AccessHook) { accessHooks.push(fn); }
@@ -99,7 +104,7 @@ export async function bookMemberOnSession(
     if (session[0].status !== 'scheduled') throw Object.assign(new Error('Session is not open for bookings'), { status: 400 });
 
     for (const hook of accessHooks) {
-      await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id, { overrideAccess });
+      await hook(tx, gymId, memberId, session[0].activity_type_id, session[0].center_id, { overrideAccess, calendarEventId: Number(session[0].id) });
     }
 
     const { rows: nextRows } = await tx.query(

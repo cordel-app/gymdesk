@@ -135,11 +135,13 @@ export interface WeeklySlotProjectionInput {
   to: DateTime;
   occurrences: SlotOccurrenceRow[];
   /**
-   * Activity Types the Member is allowed to book (#481 eligibility). Anything
+   * Occurrences the Member is allowed to book (`calendar_event_id`s). Anything
    * else is dropped before grouping: showing a slot the booking path would
-   * reject with 403 is worse than not showing it.
+   * reject with 403 is worse than not showing it. Per occurrence rather than
+   * per Activity Type since #980 stage 3, because an occurrence may carry
+   * Eligible Professional Services of its own.
    */
-  eligibleActivityTypeIds: Set<number>;
+  eligibleEventIds: Set<number>;
   /**
    * Stage 3: `slotIdentityKey()` of every stored selection, so each projected
    * slot can report whether it is one the Member picked. Omitted by callers
@@ -220,7 +222,7 @@ function dateStatus(row: SlotOccurrenceRow): SlotDateStatus {
  * seven columns without inventing the missing ones.
  */
 export function projectWeeklySlots(input: WeeklySlotProjectionInput): WeeklySlotDay[] {
-  const { timezone, from, to, occurrences, eligibleActivityTypeIds, selectedKeys } = input;
+  const { timezone, from, to, occurrences, eligibleEventIds, selectedKeys } = input;
 
   // One pass to bucket occurrences by slot and by local date. A slot can hold
   // at most one occurrence per date; when a gym has somehow scheduled two
@@ -232,7 +234,7 @@ export function projectWeeklySlots(input: WeeklySlotProjectionInput): WeeklySlot
   }>();
 
   for (const row of occurrences) {
-    if (!eligibleActivityTypeIds.has(row.activity_type_id)) continue;
+    if (!eligibleEventIds.has(row.calendar_event_id)) continue;
     const localStart = toLocal(row.starts_at, timezone);
     const localEnd = toLocal(row.ends_at, timezone);
     if (!localStart.isValid || !localEnd.isValid) continue;

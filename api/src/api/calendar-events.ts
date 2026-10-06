@@ -66,11 +66,62 @@ async function checkConflict(
  * with nobody in it" would be the second place deciding what `Not used`
  * means.
  */
-function shapeRow<T extends EventExecutionInput>(row: T) {
-  return withEventExecutionStatus([row])[0];
+/**
+ * #980 stage 3 — the occurrence's **Eligible Professional Services**, as the
+ * two lists the effective one is chosen from: its own rows
+ * (`calendar_event_eligible_professional_services`, migration 232) and its
+ * Activity Type's (migration 231). `eligible_services_override` says which
+ * applies, the way a NULL `waitlist_mode` says "follow the Activity Type".
+ * Read as JSON so one row carries both without a second round trip; the
+ * ordering is applied in `withEligibleServices()` (JSON_ARRAYAGG promises none).
+ */
+const ELIGIBLE_SERVICES_JSON_SQL = `
+         (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', eps.id, 'name', eps.name))
+            FROM calendar_event_eligible_professional_services ceeps
+            JOIN professional_services eps ON eps.id = ceeps.professional_service_id AND eps.deleted_at IS NULL
+           WHERE ceeps.calendar_event_id = ce.id) AS own_eligible_services_json,
+         (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', eps.id, 'name', eps.name))
+            FROM activity_type_eligible_professional_services ateps
+            JOIN professional_services eps ON eps.id = ateps.professional_service_id AND eps.deleted_at IS NULL
+           WHERE ateps.activity_type_id = ce.activity_type_id) AS activity_eligible_services_json`;
+
+interface EligibleService { id: number; name: string }
+
+function parseServiceJson(value: unknown): EligibleService[] {
+  const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+  const list: EligibleService[] = Array.isArray(parsed) ? parsed : [];
+  return [...list].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-const shapeRows = withEventExecutionStatus;
+/**
+ * Replaces the two JSON columns with what a reader needs: the **effective**
+ * list (`eligible_professional_services`), whether it is the occurrence's own
+ * (`eligible_services_override`), and the names alone for the audit diff
+ * (`eligible_professional_service_names`, one of `SESSION_AUDITED_FIELDS`).
+ */
+function withEligibleServices<T extends Record<string, any>>(row: T): T {
+  // Idempotent: `readSessionAndAudit()` shapes the row for the diff and the
+  // route then shapes it again for the response — a second pass must not
+  // read the two JSON columns it already removed as "no services".
+  if (!('own_eligible_services_json' in row) && Array.isArray(row.eligible_professional_services)) return row;
+  const own = parseServiceJson(row.own_eligible_services_json);
+  const inherited = parseServiceJson(row.activity_eligible_services_json);
+  const override = !!row.eligible_services_override;
+  const effective = override ? own : inherited;
+  const { own_eligible_services_json: _o, activity_eligible_services_json: _a, ...rest } = row;
+  return {
+    ...rest,
+    eligible_services_override: override,
+    eligible_professional_services: effective,
+    eligible_professional_service_names: effective.map((s) => s.name),
+  } as unknown as T;
+}
+
+function shapeRow<T extends EventExecutionInput>(row: T) {
+  return withEligibleServices(withEventExecutionStatus([row])[0]);
+}
+
+const shapeRows = <T extends EventExecutionInput>(rows: T[]) => withEventExecutionStatus(rows).map(withEligibleServices);
 
 // ─── classSessionsRouter ─────────────────────────────────────────────────────
 
@@ -120,6 +171,7 @@ const SESSION_SELECT = `
          END AS concurrent_groups_count,
          etm.name AS effective_trainer_name,
          ps.name AS professional_service_name,
+         ${ELIGIBLE_SERVICES_JSON_SQL},
          (SELECT COUNT(*) FROM calendar_event_bookings ceb WHERE ceb.calendar_event_id = ce.id AND ceb.status = 'booked') AS booked_count,
          -- #977 section 9: the waitlist of *this* session, never the
          -- activity's -- the same aggregate GET /me/schedule already returns
@@ -299,6 +351,28 @@ function waitlistAuditExtra(removed: number[]): Record<string, unknown> | undefi
  * rather than becoming an audit row of its own, because it is the same action:
  * a gym reading `Waitlist: open → disabled` is being told who that cost.
  */
+/**
+ * #980 stage 3: the occurrence's own list, written replace-all inside the
+ * caller's transaction so the flag and the rows commit together. `undefined`
+ * writes nothing; `null` ("follow the Activity Type again") clears the rows
+ * beside the flag the UPDATE already reset.
+ */
+async function writeEligibleServices(
+  tx: Tx, gymId: string, calendarEventId: string, ids: number[] | null | undefined,
+): Promise<void> {
+  if (ids === undefined) return;
+  await tx.query(
+    'DELETE FROM calendar_event_eligible_professional_services WHERE calendar_event_id = ? AND gym_id = ?',
+    [calendarEventId, gymId],
+  );
+  if (ids === null || ids.length === 0) return;
+  const values = ids.map(() => '(?, ?, ?)').join(', ');
+  await tx.query(
+    `INSERT INTO calendar_event_eligible_professional_services (gym_id, calendar_event_id, professional_service_id) VALUES ${values}`,
+    ids.flatMap((id) => [gymId, calendarEventId, id]),
+  );
+}
+
 async function readSessionAndAudit(
   req: Request, gymId: string, before: Record<string, unknown>,
   extra?: Record<string, unknown>,
@@ -307,7 +381,7 @@ async function readSessionAndAudit(
     `${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`,
     [req.params.id, gymId],
   );
-  const after = rows[0];
+  const after = rows[0] ? withEligibleServices(rows[0]) : undefined;
   const changes = after ? diffAuditedFields(before, after, SESSION_AUDITED_FIELDS) : null;
   if (changes) {
     recordAudit(req, {
@@ -523,9 +597,33 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
 classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res, next) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
   const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, activity_type_id, allows_shared_booking,
-          professional_service_id, waitlist_mode } = req.body;
+          professional_service_id, waitlist_mode, eligible_professional_service_ids } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
     return res.status(400).json({ error: 'ends_at must be after starts_at' });
+  }
+
+  // #980 stage 3 §2 — the occurrence's own Eligible Professional Services.
+  // Three answers, #896's for #896's reason: an absent key keeps what the
+  // occurrence has (its own list, or its Activity Type's), an explicit `null`
+  // is "follow the Activity Type again", and an array — an empty one included,
+  // which under #973 `Q3 open` means any member may book this event — becomes
+  // the occurrence's own list. Anything else is a 400, never a coercion.
+  let eligibleIds: number[] | null | undefined;
+  if ('eligible_professional_service_ids' in req.body) {
+    if (eligible_professional_service_ids === null) {
+      eligibleIds = null;
+    } else if (!Array.isArray(eligible_professional_service_ids)) {
+      return res.status(400).json({ error: 'eligible_professional_service_ids must be an array or null' });
+    } else {
+      eligibleIds = [];
+      for (const value of eligible_professional_service_ids as unknown[]) {
+        const parsed = parseProfessionalServiceId(value);
+        if ('error' in parsed || parsed.id === null) {
+          return res.status(400).json({ error: 'eligible_professional_service_ids must be positive integers' });
+        }
+        if (!eligibleIds.includes(parsed.id)) eligibleIds.push(parsed.id);
+      }
+    }
   }
 
   // #980 stage 2 §3 — the occurrence's own Waitlist setting, judged in the one
@@ -562,6 +660,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
               ce.starts_at AS cur_starts, ce.ends_at AS cur_ends, ce.activity_type_id AS cur_activity,
               ce.activity_type_id, ce.trainer_membership_id, ce.space_id, ce.starts_at, ce.ends_at,
               ce.capacity, ce.allows_shared_booking, ce.professional_service_id, ce.waitlist_mode,
+              ce.eligible_services_override, ${ELIGIBLE_SERVICES_JSON_SQL},
               at.name AS activity_name
        FROM calendar_events ce
        JOIN activity_types at ON at.id = ce.activity_type_id
@@ -569,7 +668,21 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
       [req.params.id, gymId],
     );
     if (existingRows.length === 0) return res.status(404).json({ error: 'Session not found' });
-    const cur = existingRows[0];
+    const cur = withEligibleServices(existingRows[0]);
+
+    // #986's rule, one relation over: a service the occurrence is already
+    // subject to (its own, or inherited) is not a *selection*, so re-sending
+    // it unchanged never 400s because the gym has since switched it off. A
+    // newly chosen one must be assignable — the same rule the Activity Type's
+    // list and the single `professional_service_id` validate against.
+    if (Array.isArray(eligibleIds)) {
+      const stored = new Set(cur.eligible_professional_services.map((svc: EligibleService) => Number(svc.id)));
+      for (const id of eligibleIds) {
+        if (stored.has(id)) continue;
+        const serviceErr = await validateProfessionalServiceId(gymId, id);
+        if (serviceErr) return res.status(400).json({ error: serviceErr });
+      }
+    }
 
     const err = await validateSessionRefs(gymId, req.body, cur.center_id, cur.cur_trainer ?? null);
     if (err) return res.status(err.includes('inactive') || err.includes('center') ? 400 : 404).json({ error: err });
@@ -607,6 +720,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
             capacity              = IF(?, ?, capacity),
             professional_service_id = IF(?, ?, professional_service_id),
             waitlist_mode         = IF(?, ?, waitlist_mode),
+            eligible_services_override = IF(?, ?, eligible_services_override),
             modified_by_membership_id = ?
            WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
           [
@@ -619,10 +733,12 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
             max_capacity_override != null && max_capacity_override !== '' ? parseInt(max_capacity_override, 10) : null,
             serviceId !== undefined ? 1 : 0, serviceId ?? null,
             waitlistMode !== undefined ? 1 : 0, waitlistMode ?? null,
+            eligibleIds !== undefined ? 1 : 0, Array.isArray(eligibleIds) ? 1 : 0,
             gymMembershipId,
             req.params.id, gymId,
           ],
         );
+        await writeEligibleServices(tx, gymId, String(req.params.id), eligibleIds);
 
         return waitlistModeClosesQueue(waitlistMode)
           ? emptyWaitlistQueue(tx, gymId, String(req.params.id), gymMembershipId)
@@ -648,6 +764,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
           allows_shared_booking  = IF(?, ?, allows_shared_booking),
           professional_service_id = IF(?, ?, professional_service_id),
           waitlist_mode          = IF(?, ?, waitlist_mode),
+          eligible_services_override = IF(?, ?, eligible_services_override),
           modified_by_membership_id = ?
          WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
         [
@@ -661,11 +778,13 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
           'allows_shared_booking' in req.body ? 1 : 0, allows_shared_booking ? 1 : 0,
           serviceId !== undefined ? 1 : 0, serviceId ?? null,
           waitlistMode !== undefined ? 1 : 0, waitlistMode ?? null,
+          eligibleIds !== undefined ? 1 : 0, Array.isArray(eligibleIds) ? 1 : 0,
           gymMembershipId,
           req.params.id, gymId,
         ],
       );
       if (rowCount === 0) return { rowCount, removed: [] as number[] };
+      await writeEligibleServices(tx, gymId, String(req.params.id), eligibleIds);
       const removed = waitlistModeClosesQueue(waitlistMode)
         ? await emptyWaitlistQueue(tx, gymId, String(req.params.id), gymMembershipId)
         : [];

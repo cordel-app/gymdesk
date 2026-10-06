@@ -63,6 +63,8 @@ describe('Class session detail panel: Edit mode (#980 stage 1)', () => {
     expect(payload).toContain('trainer_membership_id');
     expect(payload).toContain('space_id');
     expect(payload).toContain('waitlist_mode');
+    // #980 stage 3 — the Eligible Professional Services ride the same body.
+    expect(payload).toContain('eligible_professional_service_ids');
     // One request, not one per field: a partial save is what §9 forbids.
     expect((save.match(/apiFetch\(/g) ?? []).length).toBe(1);
   });
@@ -126,6 +128,38 @@ describe('Class session detail panel: Edit mode (#980 stage 1)', () => {
       for (const code of LOCALE_CODES) {
         const value = locales[code].calendar?.[key];
         expect(value, `${code}.calendar.${key} is missing`).toBeTruthy();
+      }
+    }
+  });
+});
+
+describe('Class session detail panel: Eligible Professional Services (#980 stage 3)', () => {
+  it('shows the effective list as a value in read-only mode, and a checkbox list only in Edit mode', () => {
+    const readOnlyBlock = panelSrc.slice(panelSrc.indexOf('{!editingDetails && ('), panelSrc.indexOf('{editingDetails && ('));
+    expect(readOnlyBlock).toContain("t('event_eligible_services')");
+    expect(readOnlyBlock).not.toContain('session-eligible-');
+    const editBlock = panelSrc.slice(panelSrc.indexOf('{editingDetails && ('));
+    expect(editBlock).toContain('session-eligible-');
+    expect(editBlock).toContain('type="checkbox"');
+  });
+
+  it('compares the draft against the effective list and sends ids only when they changed', () => {
+    const payload = panelSrc.match(/function detailsPayload\([\s\S]*?\n {2}\}/)?.[0] ?? '';
+    expect(payload).toContain('current.eligible_professional_services');
+    expect(payload).toContain('eligible_professional_service_ids = nextEligible');
+  });
+
+  it('picks from the page\'s own Professional Services read, not a second fetch', () => {
+    expect(panelSrc).toContain('professionalServices: ProfessionalServiceOption[]');
+    expect(panelSrc).not.toContain("apiFetch<ProfessionalServiceOption");
+    expect(pageSrc).toContain("apiFetch<ProfessionalService[]>('/professional-services')");
+    expect(pageSrc).toContain('professionalServices={professionalServices}');
+  });
+
+  it('has the four locale keys in every language', () => {
+    for (const code of LOCALE_CODES) {
+      for (const key of ['event_eligible_services', 'eligible_services_any', 'eligible_services_inherited', 'eligible_services_hint']) {
+        expect(locales[code].calendar?.[key], `${code}.json calendar.${key}`).toBeTruthy();
       }
     }
   });

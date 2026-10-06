@@ -43,6 +43,15 @@ interface ClassSession {
    */
   waitlist_mode: WaitlistMode | null;
   effective_waitlist_mode: WaitlistMode;
+  /**
+   * #980 stage 3: the occurrence's **effective** Eligible Professional
+   * Services — its own list while `eligible_services_override` is set, the
+   * Activity Type's otherwise (#973 stage 1). An empty effective list means
+   * any member may book. Save compares the draft against this effective list,
+   * for the same reason the Waitlist compares against the effective mode.
+   */
+  eligible_services_override: boolean;
+  eligible_professional_services: { id: number; name: string }[];
   booked_count: number;
   status: string;
   /**
@@ -65,6 +74,7 @@ interface Booking {
 
 interface Space { id: number; name: string; status?: string; center_id?: number | null }
 interface Trainer { gym_membership_id: number; name: string }
+interface ProfessionalServiceOption { id: number; name: string; status: 'active' | 'inactive' }
 
 interface Props {
   sessionId: number;
@@ -79,6 +89,8 @@ interface Props {
    */
   spaces: Space[];
   trainers: Trainer[];
+  /** #980 stage 3: the gym's Professional Services, the page's own `/professional-services` read. */
+  professionalServices: ProfessionalServiceOption[];
 }
 
 const panelStyle: React.CSSProperties = {
@@ -138,7 +150,7 @@ function fmtTime(iso: string) {
 }
 
 export function ClassSessionDetailPanel({
-  sessionId, onClose, onMutated, canWrite, spaces, trainers,
+  sessionId, onClose, onMutated, canWrite, spaces, trainers, professionalServices,
 }: Props) {
   const t = useTranslations('calendar');
   const { apiFetch } = useApiClient();
@@ -187,6 +199,7 @@ export function ClassSessionDetailPanel({
   const [draftTrainerId, setDraftTrainerId] = useState('');
   const [draftSpaceId, setDraftSpaceId] = useState('');
   const [draftWaitlistMode, setDraftWaitlistMode] = useState<WaitlistMode>('disabled');
+  const [draftEligibleIds, setDraftEligibleIds] = useState<Set<number>>(new Set());
   const [savingDetails, setSavingDetails] = useState(false);
   const [detailsError, setDetailsError] = useState<string | null>(null);
   // §3 — Save asks first when it is about to empty the waiting list, and the
@@ -364,6 +377,8 @@ export function ClassSessionDetailPanel({
     // showed: an occurrence with no setting of its own is subject to its
     // Activity Type's, so that is the value staff are editing away from.
     setDraftWaitlistMode(session.effective_waitlist_mode);
+    // Seeded from the effective list for the same reason as the Waitlist.
+    setDraftEligibleIds(new Set(session.eligible_professional_services.map((svc) => svc.id)));
     setDetailsError(null);
     setConfirmDisableWaitlist(false);
     setEditingDetails(true);
@@ -396,7 +411,33 @@ export function ClassSessionDetailPanel({
     if (nextTrainer !== (current.trainer_membership_id ?? null)) body.trainer_membership_id = nextTrainer;
     if (nextSpace   !== (current.space_id ?? null))              body.space_id              = nextSpace;
     if (draftWaitlistMode !== current.effective_waitlist_mode)   body.waitlist_mode         = draftWaitlistMode;
+    // #980 stage 3 — only a changed set is sent, as an array of ids; the
+    // occurrence then owns that list (an empty one means any member may book).
+    const currentEligible = current.eligible_professional_services.map((svc) => svc.id).sort((a, b) => a - b);
+    const nextEligible = [...draftEligibleIds].sort((a, b) => a - b);
+    if (currentEligible.join(',') !== nextEligible.join(',')) body.eligible_professional_service_ids = nextEligible;
     return body;
+  }
+
+  /**
+   * The services the Eligible checkbox list offers: every one active for the
+   * gym, plus any the occurrence is already subject to that the gym has since
+   * switched off — rendered disabled so the stored value still reads
+   * correctly (#986's rule).
+   */
+  function eligibleServiceOptions(current: ClassSession): ProfessionalServiceOption[] {
+    const active = professionalServices.filter((svc) => svc.status === 'active');
+    const activeIds = new Set(active.map((svc) => svc.id));
+    const storedInactive = current.eligible_professional_services
+      .filter((svc) => !activeIds.has(svc.id))
+      .map((svc) => ({ id: svc.id, name: svc.name, status: 'inactive' as const }));
+    return [...active, ...storedInactive];
+  }
+
+  function eligibleServicesLabel(current: ClassSession): string {
+    const names = current.eligible_professional_services.map((svc) => svc.name).join(', ');
+    const value = names || t('eligible_services_any');
+    return current.eligible_services_override ? value : `${value} (${t('eligible_services_inherited')})`;
   }
 
   /**
@@ -592,6 +633,9 @@ export function ClassSessionDetailPanel({
               value={`${t(`waitlist_mode_${session.effective_waitlist_mode}` as any)}${
                 session.waitlist_mode == null ? ` (${t('waitlist_inherited')})` : ''}`}
             />
+            {/* #980 stage 3 — who may book this occurrence, as a value. The
+                `(inherited …)` note says the list is the Activity Type's. */}
+            <DetailRow label={t('event_eligible_services')} value={eligibleServicesLabel(session)} />
           </>
         )}
 
@@ -657,6 +701,33 @@ export function ClassSessionDetailPanel({
                 ))}
               </select>
               <p style={formHelpTextStyle}>{t(`waitlist_mode_hint_${draftWaitlistMode}` as any)}</p>
+            </div>
+            {/* #980 stage 3 §2 — the occurrence's own Eligible Professional
+                Services (`Q1 multi`), as a checkbox list over the gym's own
+                catalogue. Saving a changed set makes it this occurrence's and
+                leaves the Activity Type's list alone (§12). */}
+            <div>
+              <span style={formFieldLabelStyle}>{t('event_eligible_services')}</span>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 4 }}>
+                {eligibleServiceOptions(session).map((svc) => (
+                  <label key={svc.id} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: svc.status === 'active' ? 'pointer' : 'default' }}>
+                    <input
+                      type="checkbox"
+                      id={`session-eligible-${svc.id}`}
+                      checked={draftEligibleIds.has(svc.id)}
+                      disabled={savingDetails || svc.status !== 'active'}
+                      onChange={(e) => {
+                        const next = new Set(draftEligibleIds);
+                        if (e.target.checked) next.add(svc.id); else next.delete(svc.id);
+                        setDraftEligibleIds(next);
+                      }}
+                      style={{ width: 15, height: 15 }}
+                    />
+                    {svc.name}
+                  </label>
+                ))}
+              </div>
+              <p style={formHelpTextStyle}>{t('eligible_services_hint')}</p>
             </div>
           </div>
         )}

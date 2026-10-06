@@ -80,7 +80,7 @@ function project(occurrences: SlotOccurrenceRow[], selected: SlotIdentity[] = []
     from: FROM,
     to: FROM.plus({ weeks: 4 }),
     occurrences,
-    eligibleActivityTypeIds: new Set([7]),
+    eligibleEventIds: new Set(occurrences.filter((o) => o.activity_type_id === 7).map((o) => o.calendar_event_id)),
     selectedKeys: new Set(selected.map(slotIdentityKey)),
   });
 }

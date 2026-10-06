@@ -169,21 +169,24 @@ export async function loadProjection(gymId: string, memberId: number, selections
     to.toUTC().toFormat('yyyy-MM-dd HH:mm:ss'),
   );
 
-  // One eligibility question per distinct Activity Type, not per occurrence:
-  // #481 eligibility is a (member, activity type) fact, and a 2-month window
-  // of a weekly rule is ~9 rows of the same type.
-  const activityTypeIds = [...new Set(occurrences.map((o) => o.activity_type_id))];
+  // One eligibility question per occurrence (#980 stage 3: an occurrence may
+  // carry Eligible Professional Services of its own), over the balances
+  // loaded once above — the same rule `bookMemberOnSession` applies, asked
+  // through the same function rather than re-implemented.
   const eligibility = await Promise.all(
-    activityTypeIds.map((id) => isActivityTypeEligibleForMember(db, gymId, memberId, id)),
+    occurrences.map((o) => isActivityTypeEligibleForMember(db, gymId, memberId, o.activity_type_id, {
+      calendarEventId: o.calendar_event_id,
+      memberServices: services,
+    })),
   );
-  const eligibleActivityTypeIds = new Set(activityTypeIds.filter((_, i) => eligibility[i]));
+  const eligibleEventIds = new Set(occurrences.filter((_, i) => eligibility[i]).map((o) => o.calendar_event_id));
 
   const days: WeeklySlotDay[] = projectWeeklySlots({
     timezone,
     from,
     to,
     occurrences,
-    eligibleActivityTypeIds,
+    eligibleEventIds,
     selectedKeys: new Set(selections.map(slotIdentityKey)),
   });
 

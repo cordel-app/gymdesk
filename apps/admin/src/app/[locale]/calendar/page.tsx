@@ -36,6 +36,8 @@ interface ActivityType {
 interface Space { id: number; name: string; status?: string; center_id?: number | null }
 interface Center { id: number; name: string }
 interface Trainer { gym_membership_id: number; name: string }
+// #980 stage 3: the Professional Services the session panel's Eligible list picks from.
+interface ProfessionalService { id: number; name: string; status: 'active' | 'inactive' }
 
 type FilterMode = 'all' | 'space' | 'activity_type' | 'trainer';
 
@@ -94,6 +96,7 @@ export default function CalendarPage() {
   const [spaces, setSpaces] = useState<Space[]>([]);
   const [centers, setCenters] = useState<Center[]>([]);
   const [trainers, setTrainers] = useState<Trainer[]>([]);
+  const [professionalServices, setProfessionalServices] = useState<ProfessionalService[]>([]);
   const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
 
@@ -122,10 +125,12 @@ export default function CalendarPage() {
       apiFetch<ActivityType[]>('/activity-types?status=active'),
       apiFetch<Space[]>('/spaces'),
       apiFetch<Trainer[]>('/trainers'),
-    ]).then(([at, sp, tr]) => {
+      apiFetch<ProfessionalService[]>('/professional-services'),
+    ]).then(([at, sp, tr, ps]) => {
       setActivityTypes(at);
       setSpaces(sp);
       setTrainers(tr);
+      setProfessionalServices(ps);
     }).catch((err: any) => toast(err.message));
 
     // Centers is a feature-gated module (organization.centers) — some gyms
@@ -681,6 +686,7 @@ export default function CalendarPage() {
                 canWrite={canWrite}
                 spaces={spaces}
                 trainers={trainers}
+                professionalServices={professionalServices}
               />
             </div>
           </>

@@ -37,6 +37,11 @@ export const SESSION_AUDITED_FIELDS = [
   // `null → disabled` is as real a change as `open → disabled` and reads as
   // one in the log.
   'waitlist_mode',
+  // #980 stage 3 — the occurrence's effective Eligible Professional Services,
+  // as the list of names (its own list when it overrides the Activity Type's,
+  // the Activity Type's otherwise), so `inherited → own` and `[PT] → []`
+  // (restricted → any member) both read as the change they are.
+  'eligible_professional_service_names',
 ] as const;
 
 export interface FieldChanges {

@@ -70,7 +70,11 @@ function project(occurrences: SlotOccurrenceRow[], opts: {
     from,
     to: opts.to ?? from.plus({ months: 2 }),
     occurrences,
-    eligibleActivityTypeIds: opts.eligible ?? new Set([7]),
+    // Per occurrence since #980 stage 3; `eligible` is still the set of
+    // Activity Types the fixture treats as bookable.
+    eligibleEventIds: new Set(
+      occurrences.filter((o) => (opts.eligible ?? new Set([7])).has(o.activity_type_id)).map((o) => o.calendar_event_id),
+    ),
   });
 }
 

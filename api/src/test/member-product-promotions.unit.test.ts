@@ -365,8 +365,10 @@ describe('the Members App half', () => {
 
 describe('the Admin half (§11, §12, §13)', () => {
   it('renames the Member card\'s section in every locale', () => {
+    // #1118 §11 named it *Products & Services*; #1185 renamed the section and
+    // the tab beside it to *Products*. The key is untouched either time.
     const EXPECTED: Record<string, string> = {
-      en: 'Products & Services', es: 'Productos y Servicios', ca: 'Productes i Serveis',
+      en: 'Products', es: 'Productos', ca: 'Productes',
     };
     for (const code of LOCALES) {
       expect(messages('admin', code).members.section_additional_services).toBe(EXPECTED[code]);

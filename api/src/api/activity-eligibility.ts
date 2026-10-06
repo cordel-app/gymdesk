@@ -1,7 +1,7 @@
 import { Tx } from '../infra/db';
 import { registerBookingAccessHook } from './bookings';
 import { tryClaimPackageCredit } from './package-credits';
-import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
+import { MemberProfessionalService, resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import {
   PROFESSIONAL_SERVICE_REQUIRED_CODE,
   RequiredProfessionalService,
@@ -25,41 +25,81 @@ import {
  * A `public_event` activity passes unconditionally, as before. A non-public
  * activity that names no service is **open** (the thread's `Q3 open`) — not
  * "blocked for everyone", which is what an empty plan list meant under #481.
+ * Since #980 stage 3 an occurrence may carry a list of its own
+ * (`calendar_event_eligible_professional_services`, migration 232), which
+ * wins over the Activity Type's when `calendar_events.eligible_services_override`
+ * is set; the booking hook is handed the occurrence for that reason.
  */
 
+const ACTIVITY_REQUIRED_SQL = `
+  SELECT ps.id, ps.name
+  FROM activity_type_eligible_professional_services ateps
+  JOIN professional_services ps ON ps.id = ateps.professional_service_id AND ps.deleted_at IS NULL
+  WHERE ateps.activity_type_id = ? AND ateps.gym_id = ?
+  ORDER BY ps.name ASC
+`;
+
+const OCCURRENCE_REQUIRED_SQL = `
+  SELECT ps.id, ps.name
+  FROM calendar_event_eligible_professional_services ceeps
+  JOIN professional_services ps ON ps.id = ceeps.professional_service_id AND ps.deleted_at IS NULL
+  WHERE ceeps.calendar_event_id = ? AND ceeps.gym_id = ?
+  ORDER BY ps.name ASC
+`;
+
+/**
+ * The services the booking must be judged against. #980 stage 3: an
+ * occurrence with `eligible_services_override = 1` has a list of its own
+ * (migration 232), possibly empty — "any member may book this event" —
+ * and one without follows its Activity Type's, exactly as a NULL
+ * `waitlist_mode` follows the Activity Type's setting.
+ *
+ * A soft-deleted service drops out of either list (it is no longer a thing a
+ * member can hold sessions for); one the gym has merely switched off stays
+ * in it, so that it keeps blocking rather than silently opening the
+ * activity — "a service the gym has switched off must not make a slot
+ * eligible" holds in that direction too.
+ */
 async function loadRequiredServices(
   q: Tx,
   gymId: string,
   activityTypeId: number,
+  calendarEventId?: number,
 ): Promise<RequiredProfessionalService[]> {
-  // A soft-deleted service drops out of the requirement (it is no longer a
-  // thing a member can hold sessions for); one the gym has merely switched
-  // off stays in it, so that it keeps blocking rather than silently opening
-  // the activity — "a service the gym has switched off must not make a slot
-  // eligible" holds in that direction too.
-  const { rows } = await q.query<RequiredProfessionalService>(
-    `SELECT ps.id, ps.name
-     FROM activity_type_eligible_professional_services ateps
-     JOIN professional_services ps ON ps.id = ateps.professional_service_id AND ps.deleted_at IS NULL
-     WHERE ateps.activity_type_id = ? AND ateps.gym_id = ?
-     ORDER BY ps.name ASC`,
-    [activityTypeId, gymId],
-  );
+  if (calendarEventId != null) {
+    const { rows: ceRows } = await q.query(
+      'SELECT eligible_services_override FROM calendar_events WHERE id = ? AND gym_id = ?',
+      [calendarEventId, gymId],
+    );
+    if (ceRows[0]?.eligible_services_override) {
+      const { rows } = await q.query<RequiredProfessionalService>(OCCURRENCE_REQUIRED_SQL, [calendarEventId, gymId]);
+      return rows;
+    }
+  }
+  const { rows } = await q.query<RequiredProfessionalService>(ACTIVITY_REQUIRED_SQL, [activityTypeId, gymId]);
   return rows;
 }
 
+export interface EligibilityOptions {
+  /** The occurrence being booked or projected — its own list wins when it has one. */
+  calendarEventId?: number;
+  /** The member's balances, when the caller already holds them (one load for a whole projection). */
+  memberServices?: MemberProfessionalService[];
+}
+
 /**
- * The full decision for one (member, activity type) pair. `q` is a `Tx` or
- * the `db` singleton — both expose `query`. The member's balances are read
- * through the same loader `GET /members/:memberId/professional-services`
- * serves, so the number that decides a booking is the number the staff screen
- * shows.
+ * The full decision for one (member, activity type[, occurrence]) triple.
+ * `q` is a `Tx` or the `db` singleton — both expose `query`. The member's
+ * balances are read through the same loader
+ * `GET /members/:memberId/professional-services` serves, so the number that
+ * decides a booking is the number the staff screen shows.
  */
 export async function resolveActivityTypeEligibility(
   q: Tx,
   gymId: string,
   memberId: number,
   activityTypeId: number,
+  opts: EligibilityOptions = {},
 ): Promise<ServiceEligibility> {
   const { rows: atRows } = await q.query(
     'SELECT public_event FROM activity_types WHERE id = ? AND gym_id = ?',
@@ -71,9 +111,9 @@ export async function resolveActivityTypeEligibility(
   if (atRows.length === 0 || atRows[0].public_event) {
     return { eligible: true, required: [], matched: [], packageBacked: false };
   }
-  const required = await loadRequiredServices(q, gymId, activityTypeId);
+  const required = await loadRequiredServices(q, gymId, activityTypeId, opts.calendarEventId);
   if (required.length === 0) return decideServiceEligibility(required, []);
-  const services = await resolveMemberProfessionalServices(gymId, memberId);
+  const services = opts.memberServices ?? await resolveMemberProfessionalServices(gymId, memberId);
   return decideServiceEligibility(required, services);
 }
 
@@ -90,13 +130,14 @@ export async function isActivityTypeEligibleForMember(
   gymId: string,
   memberId: number,
   activityTypeId: number,
+  opts: EligibilityOptions = {},
 ): Promise<boolean> {
-  return (await resolveActivityTypeEligibility(q, gymId, memberId, activityTypeId)).eligible;
+  return (await resolveActivityTypeEligibility(q, gymId, memberId, activityTypeId, opts)).eligible;
 }
 
 registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId, _centerId, opts) => {
   if (opts?.overrideAccess) return;
-  const decision = await resolveActivityTypeEligibility(tx, gymId, memberId, activityTypeId);
+  const decision = await resolveActivityTypeEligibility(tx, gymId, memberId, activityTypeId, { calendarEventId: opts?.calendarEventId });
 
   if (decision.eligible) {
     // A balance a Plan or a Promotion grants charges nothing. One that exists
