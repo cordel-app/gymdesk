@@ -1,6 +1,9 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server';
 import createIntlMiddleware from 'next-intl/middleware';
 import { NextResponse } from 'next/server';
+// #1085: the one path Clerk posts its webhook to, declared beside what the
+// relay forwards so the route and the rule that exempts it cannot drift.
+import { CLERK_WEBHOOK_RELAY_PATH } from '@/lib/clerkWebhookRelay';
 
 const handleI18nRouting = createIntlMiddleware({
   locales: ['en', 'es', 'ca'],
@@ -16,10 +19,18 @@ const isPublicRoute = createRouteMatcher([
   '/:locale',
   '/',
   '/api/proxy(.*)',
+  // #1085: Clerk authenticates by Svix signature, which the API verifies —
+  // `auth.protect()` would answer it with a 401 before it ever got there.
+  `${CLERK_WEBHOOK_RELAY_PATH}(.*)`,
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (req.nextUrl.pathname.startsWith('/api/proxy')) {
+  // Both of these must also skip the i18n routing below, which would answer
+  // Clerk (and the browser's proxy calls) with a redirect to a locale prefix.
+  if (
+    req.nextUrl.pathname.startsWith('/api/proxy') ||
+    req.nextUrl.pathname.startsWith(CLERK_WEBHOOK_RELAY_PATH)
+  ) {
     return NextResponse.next();
   }
   if (!isPublicRoute(req)) {

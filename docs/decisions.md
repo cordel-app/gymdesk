@@ -4,6 +4,23 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 20. Clerk's webhook is relayed by the admin app, and the relay forwards rather than verifies (#1085, 2026-10-06)
+
+**Decision**: Clerk posts its webhook to the **admin app** — `https://admin.vdicube.com/api/webhooks/clerk` on dev, `https://admin.cordel.tech/api/webhooks/clerk` on pro — and that app relays the request to the API's own `/webhooks/clerk` at `CORDEL_FITNESS_API_URL`. The relay is a Next route handler (`apps/admin/src/app/api/webhooks/clerk/route.ts`) over a pure decision module (`apps/admin/src/lib/clerkWebhookRelay.ts`).
+
+**Why**: Clerk is the second of the three things that still needed a public API (#1083 took the first, #1086 the third). The admin app already fronts the API for every browser call through `/api/proxy`, so a relay costs one route; the **members** app would have done equally well — the two have identical middleware and proxy — and admin was chosen so there is one endpoint to keep in step with the Clerk dashboard rather than a choice to re-make.
+
+**Consequences**:
+- The webhook secret never leaves the API. `CLERK_WEBHOOK_SIGNING_SECRET` is unchanged by the move, `verifyWebhook()` is still the first operation of the API route over `express.raw`, and a tampered body is still a 400 **from the API**, relayed as such. The relay verifies nothing and knows nothing.
+- **The API's status code is what Clerk gets**, never a blanket 200: Clerk retries exactly what we report as failed, and a swallowed `user.deleted` leaves an orphaned Clerk account linked to rows that should have been cleaned up (#709). An unreachable API is a **502** and an unset `CORDEL_FITNESS_API_URL` a **500** — both retried, and both replayable from the endpoint's *Replay → Replay missing messages*.
+- The raw body crosses as **bytes** (`req.arrayBuffer()` in, the same buffer out) and the three `svix-*` headers byte for byte, because the signature is computed over `svix-id.svix-timestamp.<body>`. Anything that parsed and re-serialized the body would break a signature this app cannot recompute — #830's rule, applied to a request.
+- `/api/proxy` is deliberately **not** reused: it forwards `authorization`, `x-gym-id`, `x-center-id`, `x-impersonate-as` and `x-locale` and none of the `svix-*` headers, so a webhook sent through it would reach the API unsigned. The relay's own set is the three Svix headers plus the content type, declared once, and no cookie, Authorization or `host` crosses the boundary.
+- The path is exempt from `auth.protect()` **and** from the locale routing in `apps/admin/src/middleware.ts`, through the same early `return NextResponse.next()` `/api/proxy` uses — otherwise Clerk is answered with a 401 or a redirect to `/en/…`.
+- The webhook now depends on the **admin app** being up. A missed delivery is retried by Clerk and replayable, and `user.created` keeps its `POST /staff/link` fallback at sign-in, so the worst case is a delay rather than a lost link.
+- This covers Clerk only. The GitHub Actions nightly runs still call the API directly — #1086, and the open question in #1087.
+
+---
+
 ## 19. Monei's webhook is relayed by the payment app, and nginx is the runtime that relays it (#1083, 2026-10-06)
 
 **Decision**: Monei posts its webhook to the **isolated payment app** — `https://pay.vdicube.com/webhooks/payment` on dev, `https://pay.cordel.tech/webhooks/payment` on pro (`PAYMENT_NOTIFICATION_URL`) — and that app relays the request to the API's own `/webhooks/payment` at its **internal** address. The relay is **nginx itself**, with one `location = /webhooks/payment` block: no Node process, no dependency and no new secret enters that container.
@@ -17,7 +34,7 @@ Short record of the settled choices that are not obvious from the code. Don't re
 - Both API origins the payment image talks to are environment (`CORDEL_FITNESS_API_PUBLIC_URL`, `CORDEL_FITNESS_API_INTERNAL_URL`) rather than literals in the config, because one image tag serves dev and pro. The config is an `envsubst` template; the Dockerfile carries the dev values as image defaults so a container started with no environment behaves as before.
 - The payment app still handles **no card data and no database**, so PCI scope is unchanged (#8): it relays one signed, opaque body.
 - The payment container's own access log drops query strings (`log_format pay_no_query`), which is what the PCI note on this host already required for `?token=<page_token>`.
-- This covers Monei only. Clerk's webhook and the GitHub Actions nightly runs need their own paths before the API can be private — #1085, #1086 and the open question in #1087.
+- This covers Monei only. Clerk's webhook took the same shape one app over in #1085 (see #20 above); the GitHub Actions nightly runs still need their own path before the API can be private — #1086 and the open question in #1087.
 
 ---
 
