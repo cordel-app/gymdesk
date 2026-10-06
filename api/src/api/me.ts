@@ -27,6 +27,7 @@ import { ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-pl
 import { loadPromotionApplications, regularMembershipFee } from './user-memberships';
 import { currentCycleDate, currentMembershipFee } from './membership-fee-pricing';
 import { MEMBER_CURRENT_ASSIGNMENT_ORDER, memberBillingEventForecast } from './me-billing-forecast';
+import { memberProductCatalogue } from './me-products';
 import { deriveBillingEventStatus } from '../domain/billingEventStatus';
 import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
@@ -2109,6 +2110,40 @@ meRouter.get('/billing-event-forecast', requireRole('member'), requireFeatureEna
     next(err);
   }
 });
+
+// #1121 stage 1 §3/§4 — the **Additional Products and Services** the gym offers,
+// as the member's own page lists them.
+//
+// It is a read of `products` and nothing else (§7: no second catalogue), under
+// the predicate `domain/memberProductCatalogue.ts` owns — `status = 'active'`
+// and `enrollment_status = 'public'`, the thread's `Q1`. Stage 1 has no Buy
+// action, so nothing here writes, prices a purchase or knows what the member
+// already holds.
+//
+// Behind **both** feature flags, for the reason My Goals is (#1036): the section
+// it appears in is `member_web.my_membership`, and the catalogue itself is
+// `financials.products` — a gym that switched Products off did not mean "and
+// offer them to members anyway".
+//
+// `resolveMemberId()` is called although the answer is the gym's and not the
+// member's, so a caller who is authenticated but is not a member of this gym is
+// refused here rather than reading its catalogue.
+meRouter.get(
+  '/products',
+  requireRole('member'),
+  requireFeatureEnabled('member_web.my_membership'),
+  requireFeatureEnabled('financials.products'),
+  async (req: Request, res: Response, next: NextFunction) => {
+    const ctx = getTenantContext(req);
+    const { gymId } = ctx;
+    try {
+      await resolveMemberId(gymId, ctx);
+      res.json({ items: await memberProductCatalogue(gymId) });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // Member downloads their own receipt PDF
 meRouter.get('/receipts/:billingEventId', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
