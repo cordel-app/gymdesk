@@ -31,11 +31,17 @@ export interface MembershipPlanCard {
 //
 // Assignments belonging to a soft-deleted Member are excluded: the Member is
 // gone from every other screen, so counting them here would overstate the card.
+//
+// #1108 stage 1: so is a `draft` one. The card counts the Plans a gym has
+// *assigned*, and a Draft is a purchase nobody has committed — it bills nothing
+// and the member does not hold it — so counting it would overstate the card in
+// exactly the way a cancelled assignment would. The list is spelled out rather
+// than left as "not cancelled and not expired" for that reason.
 const ASSIGNED_JOIN = `
   LEFT JOIN user_memberships um
          ON um.membership_plan_id = p.id
         AND um.gym_id = p.gym_id
-        AND um.status NOT IN ('cancelled', 'expired')
+        AND um.status NOT IN ('draft', 'cancelled', 'expired')
         AND NOT (um.status = 'active' AND um.ends_at IS NOT NULL AND um.ends_at < CURDATE())
         AND EXISTS (
               SELECT 1 FROM members m

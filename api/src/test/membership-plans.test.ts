@@ -1492,7 +1492,9 @@ describe('POST /membership-plans/:id/assign', () => {
       .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
 
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('active');
+    // #1108 §1: the Plans page's Assign creates a Draft like every other
+    // assignment path; committing it is `POST /user-memberships/:id/activate`.
+    expect(res.body.status).toBe('draft');
     expect(res.body.member_id).toBe(memberId);
     expect(res.body.membership_plan_id).toBe(planId);
     expect(Array.isArray(res.body.members)).toBe(true);
@@ -1507,7 +1509,7 @@ describe('POST /membership-plans/:id/assign', () => {
       [userMembershipId],
     );
     expect(umRows).toHaveLength(1);
-    expect(umRows[0].status).toBe('active');
+    expect(umRows[0].status).toBe('draft');
     expect(umRows[0].member_id).toBe(memberId);
 
     const { rows: ummRows } = await db.query(
@@ -1523,7 +1525,7 @@ describe('POST /membership-plans/:id/assign', () => {
       [userMembershipId],
     );
     expect(beRows).toHaveLength(1);
-    expect(beRows[0].new_status).toBe('active');
+    expect(beRows[0].new_status).toBe('draft');
     expect(beRows[0].previous_status).toBeNull();
     expect(beRows[0].member_id).toBe(memberId);
   });
@@ -1572,19 +1574,29 @@ describe('POST /membership-plans/:id/assign', () => {
   // only on a second assignment of the same Plan. The replacement path this
   // route grew for it is covered in one-active-membership-plan.test.ts.
 
-  it('returns 409 for a second live membership on a different plan, and cancels nothing', async () => {
+  it('drafts a second membership beside a live one and 409s on the commit, cancelling nothing', async () => {
     const existingPlanId = await createPlan(gymId, { name: 'Assign Existing Active Plan', member_limit: '1' });
     const newPlanId = await createPlan(gymId, { name: 'Assign Parallel Target Plan', member_limit: '1' });
     const memberId = await createMember(gymId);
     await createActiveUserMembership(gymId, memberId, existingPlanId);
 
+    // #1108 stage 1: assigning produces a Draft, which is not the member's plan
+    // (Q2), so #956's refusal moved onto the `draft -> active` commit.
     const res = await request
       .post(`/membership-plans/${newPlanId}/assign`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe('active_plan_exists');
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('draft');
+
+    const commit = await request
+      .post(`/user-memberships/${res.body.id}/activate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({});
+    expect(commit.status).toBe(409);
+    expect(commit.body.error).toBe('active_plan_exists');
 
     // Nothing is cancelled until the admin confirms the replacement.
     const { rows } = await db.query(
@@ -1594,7 +1606,7 @@ describe('POST /membership-plans/:id/assign', () => {
     expect(rows.map((r: any) => r.status)).toEqual(['active']);
   });
 
-  it('returns 409 when the member already has an active membership on the same plan', async () => {
+  it('409s on the commit when the member already has an active membership on the same plan', async () => {
     const planId = await createPlan(gymId, { name: 'Assign Duplicate Target Plan', member_limit: '1' });
     const memberId = await createMember(gymId);
     await createActiveUserMembership(gymId, memberId, planId);
@@ -1604,7 +1616,14 @@ describe('POST /membership-plans/:id/assign', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-01-01' });
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(201);
+
+    const commit = await request
+      .post(`/user-memberships/${res.body.id}/activate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({});
+    expect(commit.status).toBe(409);
   });
 });
 

@@ -25,6 +25,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  activateAssignment,
 } from './helpers';
 
 afterAll(async () => {
@@ -109,6 +110,10 @@ async function assignPlan(gymId: string, planId: number, startsAt = TODAY()): Pr
     .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
     .send({ member_id: await createMember(gymId), membership_plan_id: planId, starts_at: startsAt });
   expect(res.status).toBe(201);
+  // #1108 stage 1: assignment creates a Draft, and this file is about an active
+  // assignment's forecast. (A Draft is projected too — that is Q3's answer —
+  // which is `draft-membership-assignment.test.ts`'s own case.)
+  await activateAssignment(gymId, res.body.id);
   return res.body.id as number;
 }
 

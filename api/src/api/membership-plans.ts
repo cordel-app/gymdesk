@@ -3,7 +3,7 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
-import { effectivePrice, snapshotFeeForAssignment, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
+import { ASSIGNMENT_CREATION_STATUS, effectivePrice, snapshotFeeForAssignment, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
 import { materialiseAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
@@ -759,39 +759,28 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
   const eff = await effectivePrice(Number(req.params.id), gymId, starts_at);
   if (!eff) return res.status(404).json({ error: 'Plan not found' });
 
-  // #956: one Member, one Membership Plan — and this route assigns a set of
-  // them at once, so *every* selected member's live plan is found and locked in
-  // the same transaction as the insert, and `confirm: true` cancels all of them
-  // together. An all-or-nothing answer is the point: a family assignment that
-  // replaced three members' plans and refused the fourth would leave the gym
-  // with three cancellations it did not get to weigh.
-  const confirm = req.body?.confirm === true;
-
+  // #1108 stage 1: the assignment is created as a **Draft**, so #956's one-plan
+  // check no longer runs here — it runs on the `draft -> active` commit
+  // (`POST /user-memberships/:id/activate`), which is where the supersede, the
+  // `confirm` and the 409 live now. #956's all-or-nothing reasoning is
+  // unaffected: this route still creates exactly one assignment covering every
+  // selected member, and that one assignment is committed, or not, as a whole.
   try {
     const outcome = await db.transaction(async (tx) => {
-      const conflicts = await findLiveAssignmentsForMembers(tx, gymId, uniqueMemberIds);
-      if (conflicts.length > 0) {
-        if (!confirm) return { kind: 'conflict' as const, conflicts };
-        const dateError = supersedeStartsAtError(String(starts_at), conflicts);
-        if (dateError) return { kind: 'bad_date' as const, message: dateError };
-        await supersedeLiveAssignments(tx, {
-          gymId, conflicts, newStartsAt: String(starts_at),
-          source: sourceForRole(role), actorUserId: userId,
-        });
-      }
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, base_price, plan_price_id, starts_at, status,
           created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           ownerId, gymId, req.params.id, eff.base_price, eff.plan_price_id, starts_at,
+          ASSIGNMENT_CREATION_STATUS,
           actor.name, actor.type,
         ],
       );
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: ownerId,
-        previousStatus: null, newStatus: 'active',
+        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
         source: sourceForRole(role), actorUserId: userId,
       });
       for (const memberId of uniqueMemberIds) {
@@ -810,12 +799,8 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
         membershipPlanId: Number(req.params.id),
         membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
       });
-      return { kind: 'created' as const, insertId, superseded: conflicts.map((c) => c.id) };
+      return { kind: 'created' as const, insertId };
     });
-    if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
-    if (outcome.kind === 'conflict') {
-      return res.status(409).json(activePlanConflictBody(outcome.conflicts, plan.name ?? null));
-    }
     const insertId = outcome.insertId;
 
     // Auto-apply any Promotion currently targeting this Plan (#376 item 7/8) — best
@@ -839,15 +824,14 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
     const { rows: coveredMembers } = await db.query(MEMBERSHIP_MEMBERS_SELECT, [insertId, gymId]);
     recordAudit(req, {
       action: 'assign_plan', entityType: 'user_membership', entityId: insertId, next: rows[0],
-      previous: outcome.superseded.length > 0
-        ? { superseded_user_membership_ids: outcome.superseded } : undefined,
     });
     res.status(201).json({ ...rows[0], members: coveredMembers });
   } catch (err: any) {
-    // #956 (migration 213): a Member holds at most one live Membership Plan, so
-    // a duplicate key here means a second active row for the owning Member was
-    // inserted concurrently — the check above found nothing to lock and the
-    // restored UNIQUE index is what serialises that case.
+    // #956 (migration 213): a Member holds at most one live Membership Plan.
+    // Since #1108 stage 1 this route inserts a Draft, whose `active_member_key`
+    // is NULL, so the restored UNIQUE index cannot fire here at all — the
+    // serialisation it provides now belongs to the `draft -> active` commit.
+    // The handler stays because the insert can still hit another unique key.
     handleDupEntry(err, res, next, 'One of the selected members already has an active Membership Plan.');
   }
 });

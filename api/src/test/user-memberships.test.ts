@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
+  activateAssignment,
   TEST_AUTH_HEADER,
   TEST_USER_ID,
   cleanupTestGyms,
@@ -387,7 +388,9 @@ describe('POST /user-memberships', () => {
       .send({ member_id: memberId, membership_plan_id: planId, starts_at: '2026-01-01' });
     expect(res.status).toBe(201);
     expect(res.body.member_id).toBe(memberId);
-    expect(res.body.status).toBe('active');
+    // #1108 §1: assigning a plan creates it as a Draft, not an active
+    // membership. Committing it is `POST /:id/activate`'s own transition.
+    expect(res.body.status).toBe('draft');
     expect(res.body.plan_member_limit).toBe('1');
 
     const { rows } = await db.query(
@@ -428,19 +431,32 @@ describe('POST /user-memberships', () => {
     expect(res.status).toBe(404);
   });
 
-  it('returns 409 when the member already has an active membership on the same plan', async () => {
+  it('refuses to commit a second membership on the same plan while the first is live', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
-    await request
+    const first = await request
       .post('/user-memberships')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ member_id: memberId, membership_plan_id: planId, starts_at: '2026-01-01' });
-    const res = await request
+    expect(first.status).toBe(201);
+    await activateAssignment(gymId, first.body.id);
+
+    // #1108 stage 1: a second *Draft* is a legal state — that is the whole point
+    // of Q2's answer, since a replacement has to be configurable beside the plan
+    // it replaces — so the refusal is on the commit, not on the assignment.
+    const second = await request
       .post('/user-memberships')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ member_id: memberId, membership_plan_id: planId, starts_at: '2026-01-02' });
+    expect(second.status).toBe(201);
+
+    const res = await request
+      .post(`/user-memberships/${second.body.id}/activate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({});
     expect(res.status).toBe(409);
   });
 
@@ -451,7 +467,7 @@ describe('POST /user-memberships', () => {
   // and every path it guards are covered in one-active-membership-plan.test.ts;
   // this is the case this file used to assert the other way round.
 
-  it('refuses a second, different plan while the first is still live', async () => {
+  it('refuses to commit a second, different plan while the first is still live', async () => {
     const memberId = await createMember(gymId);
     const standardId = await createPlan(gymId);
     const premiumId = await createPlan(gymId);
@@ -462,22 +478,33 @@ describe('POST /user-memberships', () => {
       .set('x-gym-id', gymId)
       .send({ member_id: memberId, membership_plan_id: standardId, starts_at: '2026-01-01' });
     expect(first.status).toBe(201);
+    await activateAssignment(gymId, first.body.id);
 
     const second = await request
       .post('/user-memberships')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
       .send({ member_id: memberId, membership_plan_id: premiumId, starts_at: '2026-01-15' });
-    expect(second.status).toBe(409);
-    expect(second.body.error).toBe('active_plan_exists');
+    expect(second.status).toBe(201);
+
+    // #1108 stage 1 moved #956's 409 onto the commit. Unconfirmed, it changes
+    // nothing: the first plan is still live and the second is still a Draft.
+    const res = await request
+      .post(`/user-memberships/${second.body.id}/activate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({});
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('active_plan_exists');
 
     const { rows } = await db.query(
       `SELECT membership_plan_id, status FROM user_memberships
        WHERE gym_id = ? AND member_id = ? ORDER BY id ASC`,
       [gymId, memberId],
     );
-    expect(rows).toHaveLength(1);
+    expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({ membership_plan_id: standardId, status: 'active' });
+    expect(rows[1]).toMatchObject({ membership_plan_id: premiumId, status: 'draft' });
   });
 
   // ── #634 §2 — only Active + Public plans are assignable ──
@@ -1070,7 +1097,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(res.status).toBe(400);
   });
 
-  it('supersedes an active membership: old row is cancelled, new row is active, and both appear newest-first', async () => {
+  it('drafts the successor, leaves the old row running, and supersedes it on the commit', async () => {
     const memberId = await createMember(gymId, 'UM Assign Active Member');
     const oldPlanId = await createPlan(gymId);
     const newPlanId = await createPlan(gymId);
@@ -1084,8 +1111,16 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(res.status).toBe(201);
     expect(res.body.id).not.toBe(oldUmId);
     expect(res.body.member_id).toBe(memberId);
-    expect(res.body.status).toBe('active');
+    // #1108 stage 1: the successor is a Draft, and the plan it replaces keeps
+    // running while it is configured — the replacement is what the Draft is for.
+    expect(res.body.status).toBe('draft');
     expect(res.body.membership_plan_id).toBe(newPlanId);
+    const { rows: stillLive } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
+    expect(stillLive[0].status).toBe('active');
+
+    // Committing it is where #956's supersede happens, and it needs the same
+    // explicit confirmation it needed at assignment time.
+    await activateAssignment(gymId, res.body.id, { confirm: true });
 
     // #956 Q3: a superseded row is cancelled with its dates stamped, not expired.
     const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
@@ -1114,7 +1149,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(list.body[1].status).toBe('cancelled');
   });
 
-  it('supersedes a paused membership the same way (old row -> cancelled)', async () => {
+  it('supersedes a paused membership the same way, on the commit (old row -> cancelled)', async () => {
     const memberId = await createMember(gymId, 'UM Assign Paused Member');
     const oldPlanId = await createPlan(gymId);
     const newPlanId = await createPlan(gymId);
@@ -1126,13 +1161,15 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
       .set('x-gym-id', gymId)
       .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('active');
+    expect(res.body.status).toBe('draft');
+    // `paused` counts as the one plan (#956 Q2), so the commit still confirms.
+    await activateAssignment(gymId, res.body.id, { confirm: true });
 
     const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
     expect(oldRows[0].status).toBe('cancelled');
   });
 
-  it('leaves an already-terminal (cancelled) membership untouched while still creating a new active row', async () => {
+  it('leaves an already-terminal (cancelled) membership untouched while still creating a new Draft', async () => {
     const memberId = await createMember(gymId, 'UM Assign Cancelled Member');
     const oldPlanId = await createPlan(gymId);
     const newPlanId = await createPlan(gymId);
@@ -1144,8 +1181,13 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
       .set('x-gym-id', gymId)
       .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
     expect(res.status).toBe(201);
-    expect(res.body.status).toBe('active');
+    expect(res.body.status).toBe('draft');
     expect(res.body.membership_plan_id).toBe(newPlanId);
+
+    // Nothing is live, so the commit needs no confirmation at all.
+    await activateAssignment(gymId, res.body.id);
+    const { rows: newRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [res.body.id]);
+    expect(newRows[0].status).toBe('active');
 
     // The terminal old row is left exactly as it was -- never flipped to 'expired'.
     const { rows: oldRows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [oldUmId]);
@@ -1621,9 +1663,12 @@ describe('DELETE /user-memberships/:id/members/:memberId', () => {
 });
 
 // ─── PUT /user-memberships/:id — status transitions (#511 §10) ───────────────
-// ALLOWED_TRANSITIONS: active -> paused|cancelled; paused -> active|cancelled;
-// cancelled/expired -> (none). Validated for any direct `status` set via PUT.
-// #786 retired 'draft' and 'awaiting_payment': a PUT naming either is a 400.
+// ALLOWED_TRANSITIONS: draft -> active|cancelled; active -> paused|cancelled;
+// paused -> active|cancelled; cancelled/expired -> (none). Validated for any
+// direct `status` set via PUT. #1108 brought `draft` back (migration 227) and
+// left `awaiting_payment` retired, so a PUT naming that one is still a 400 on
+// the vocabulary; `draft` is a 400 on the transition table instead, and
+// committing a Draft goes through POST /:id/activate rather than this route.
 
 describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
   let gymId: string;
@@ -1657,11 +1702,22 @@ describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
     expect(res.body.status).toBe('active');
   });
 
-  it.each(['draft', 'awaiting_payment'])('rejects a PUT to the retired status %s with a 400 (#786)', async (retired) => {
-    const { res, umId } = await seedAndPut('active', retired);
+  it('rejects a PUT to the still-retired status awaiting_payment with a 400 (#786)', async () => {
+    const { res, umId } = await seedAndPut('active', 'awaiting_payment');
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/status must be one of/);
-    expect(res.body.error).not.toMatch(new RegExp(retired));
+    expect(res.body.error).not.toMatch(/awaiting_payment/);
+    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows[0].status).toBe('active');
+  });
+
+  it('rejects active -> draft as a transition rather than as an unknown status (#1108)', async () => {
+    // `draft` is a status the router knows again (migration 227), so the 400 is
+    // the transition table's and not the vocabulary's: nothing ever goes *back*
+    // into a Draft, which is why it has no inbound edge.
+    const { res, umId } = await seedAndPut('active', 'draft');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/Cannot transition/);
     const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
     expect(rows[0].status).toBe('active');
   });
@@ -1690,10 +1746,13 @@ describe('PUT /user-memberships/:id — status transitions (#511 §10)', () => {
   });
 });
 
-// ─── Retired pre-activation statuses (#786) ───────────────────────────────────
+// ─── Retired pre-activation statuses (#786, revisited by #1108) ──────────────
 // #511 stage 1 added 'draft' and 'awaiting_payment' plus a Submit action
 // (draft -> awaiting_payment) that no insert or payment path ever wired. #786
 // retired all three: the route is gone and migration 198 narrowed the CHECK.
+// #1108 stage 1 brought `draft` back — with the insert paths and the commit
+// transition that make it reachable, which is what 198 said was missing — and
+// left `awaiting_payment` and `/submit` retired.
 
 describe('retired pre-activation statuses (#786)', () => {
   let gymId: string;
@@ -1716,22 +1775,44 @@ describe('retired pre-activation statuses (#786)', () => {
     expect(rows[0].status).toBe('active');
   });
 
-  it.each(['draft', 'awaiting_payment'])('the status CHECK refuses a row inserted as %s', async (retired) => {
+  it('the status CHECK still refuses a row inserted as awaiting_payment', async () => {
+    // #1108 stage 1 (migration 227) brought `draft` back and left this one
+    // retired: #1108's second pre-activation state is *Pending Payment*, which
+    // arrives with stage 2's Save & Pay rather than as a value nothing writes.
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     await expect(db.query(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
-       VALUES (?, ?, ?, ?, CURDATE(), 29.99)`,
-      [gymId, memberId, planId, retired],
+       VALUES (?, ?, ?, 'awaiting_payment', CURDATE(), 29.99)`,
+      [gymId, memberId, planId],
     )).rejects.toMatchObject({ code: 'ER_CHECK_CONSTRAINT_VIOLATED' });
   });
 
-  it.each(['draft', 'awaiting_payment'])('the list filter rejects the retired lifecycle_status %s', async (retired) => {
+  it('the status CHECK accepts a row inserted as draft again (#1108, migration 227)', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const { insertId } = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, ?, 'draft', CURDATE(), 29.99)`,
+      [gymId, memberId, planId],
+    );
+    expect(insertId).toBeGreaterThan(0);
+  });
+
+  it('the list filter rejects the retired lifecycle_status awaiting_payment', async () => {
     const res = await request
-      .get(`/user-memberships?lifecycle_status=${retired}`)
+      .get('/user-memberships?lifecycle_status=awaiting_payment')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(400);
+  });
+
+  it('the list filter accepts lifecycle_status=draft', async () => {
+    const res = await request
+      .get('/user-memberships?lifecycle_status=draft')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
   });
 });
 
@@ -2139,6 +2220,10 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
     expect(createRes.status).toBe(201);
     const umId = createRes.body.id;
     await waitForAuditLog(gymId, 'user_membership', umId, 'create');
+    // #1108 stage 1: assignment creates a Draft, and pausing something that has
+    // never been active says nothing — there is no `draft -> paused` edge. The
+    // mutation this test is about is the pause, so the Draft is committed first.
+    await activateAssignment(gymId, umId);
 
     const pauseRes = await request
       .post(`/user-memberships/${umId}/pause`)

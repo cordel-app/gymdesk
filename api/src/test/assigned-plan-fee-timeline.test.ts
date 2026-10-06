@@ -27,6 +27,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  activateAssignment,
 } from './helpers';
 
 afterAll(async () => {
@@ -99,6 +100,9 @@ const assign = (gymId: string, planId: number, memberId: number, startsAt = TODA
 async function assignPlan(gymId: string, planId: number): Promise<number> {
   const res = await assign(gymId, planId, await createMember(gymId));
   expect(res.status).toBe(201);
+  // #1108 stage 1: assignment creates a Draft; this file is about an active
+  // assignment's Membership Fee Simulation.
+  await activateAssignment(gymId, res.body.id);
   return res.body.id as number;
 }
 

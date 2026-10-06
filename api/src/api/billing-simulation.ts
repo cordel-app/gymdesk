@@ -50,7 +50,14 @@ import {
 
 // Statuses whose charges are still ahead of the Member. `cancelled`/`expired`
 // assignments bill nothing further, so they contribute no future charges.
-const SIMULATED_STATUSES = ['active', 'paused'] as const;
+//
+// #1108 stage 1: `draft` is simulated. A projection is the whole point of a
+// Draft — §5 asks what *would* be billed if the configuration were committed —
+// and the ticket's Q3 answer is to read it off the Assigned Plan card's existing
+// Billing Event Forecast rather than a fourth section. Nothing here is
+// persisted or charged either way, and the nightly run's own
+// `WHERE status = 'active'` is what keeps a Draft from billing.
+const SIMULATED_STATUSES = ['draft', 'active', 'paused'] as const;
 
 // mysql2 may return DATE/DATETIME columns as Date objects rather than strings
 // depending on the connection's timezone config (same note as
