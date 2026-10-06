@@ -30,7 +30,10 @@ Tick items off in the PR that completes them.
          includes the payment URL variables `PAYMENT_PAGE_URL`, `PAYMENT_NOTIFICATION_URL`,
          `PAYMENT_OK_URL` and `PAYMENT_KO_URL` with the **production** hosts — `deploy.yml`
          reads them per environment (they were `*.vdicube.com` literals until 2026-09-27) and
-         refuses to deploy while any is empty.
+         refuses to deploy while any is empty. The two return URLs take **no locale
+         segment** (`https://<members host>/payment/success`, not `/es/payment/success`):
+         they are one value for every member, and the Members App's middleware is what
+         localizes the landing (#1081, `docs/payments.md` §A4).
   3. [ ] In `billing-run.yml` and `recurring-booking-run.yml`, change the one line marked
          `# #784: switch to 'production' once the environment exists` from
          `${{ inputs.environment || 'dev' }}` to `${{ inputs.environment || 'production' }}`.
@@ -674,6 +677,16 @@ runbook is how.
       not the API's own route. `PAYMENT_ENV`, `PAYMENT_PAGE_URL`, `PAYMENT_OK_URL`,
       `PAYMENT_KO_URL` and `PAYMENT_NOTIFICATION_URL` set for the live hosts — see the env
       table in `docs/payments.md` § Provider layer for the full list and what reads each.
+      The two return URLs carry **no locale** (#1081), as above.
+- [ ] **#1081 — confirm the localized payment return on a real deployment.** The redirect
+      itself is next-intl's and was exercised in isolation (cookie first, then
+      `Accept-Language`, then `en`, query string preserved); what needs a deployed
+      environment and a hosted-payment return is: (a) a real return from the payment page,
+      3DS included, so the `NEXT_LOCALE` cookie is confirmed to reach that cross-site
+      top-level navigation; (b) the `purpose=card_update` return still polling after the
+      redirect; (c) a signed-out return being sent to sign-in and brought back to the right
+      localized page. Both pages are deliberately not public — each polls an authenticated
+      route.
 - [ ] **#1083 — the webhook relay's own two settings, on each environment.** Neither is a
       repo change; both are wrong by default on pro.
   - [ ] In Oscar's `fitness-pay` quadlet (reference: `infra/payment-app/fitness-pay.container`),

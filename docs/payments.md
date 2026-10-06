@@ -134,6 +134,25 @@ The page then renders Monei's `CardInput`, requires the consent checkbox, and ca
 `monei.confirmPayment()`; 3DS happens inside Monei. Card data never reaches a Gymdesk
 server.
 
+**The return carries no locale** (#1081). `okUrl`/`koUrl` are `PAYMENT_OK_URL` /
+`PAYMENT_KO_URL` verbatim (plus `purpose=card_update` where `withPurposeParam()` appends
+it), and those are **one deploy-time value for every member of every gym** — so the API
+cannot build them per member and they must not name a language: a fixed
+`https://members…/es/payment/success` landed an English- or Catalan-speaking member on the
+Spanish result page. They point at the locale-less `…/payment/success` and
+`…/payment/error`, and the Members App's own middleware is what localizes the landing —
+next-intl's locale detection redirects to the `NEXT_LOCALE` cookie's language, then
+`Accept-Language`, then `en`, preserving the query string that carries `purpose`. A
+signed-in member whose stored `preferred_locale` (#1039) differs is then moved onto it by
+`MemberLocalePreference`, which the locale layout mounts over every route including these
+two, so the stored preference has the last word. Both pages stay **outside**
+`isPublicRoute`: each polls an authenticated route (`/me/payment-requests`,
+`/me/payment-method`), so there is nothing to show a visitor with no session, and
+sign-in-then-back lands on the locale-less path which redirects again.
+`api/src/test/payment-return-locale.unit.test.ts` is the gate — the rule is a property of
+`.env.example` and the Members App middleware, and nothing at runtime would notice a locale
+creeping back in.
+
 ### A5. The webhook settles it
 
 `POST /webhooks/payment` (`api/src/api/webhooks.ts`), mounted in `app.ts` **before**
@@ -718,7 +737,7 @@ never touches the date.
 | `MONEI_ACCOUNT_ID` | optional; needed because this is a MONEI Connect partner account |
 | `PAYMENT_ENV` | informational, reported by `describePaymentDeployment()` |
 | `PAYMENT_PAGE_URL` | builds the `checkoutUrl` (default `https://pay.vdicube.com`) |
-| `PAYMENT_OK_URL`, `PAYMENT_KO_URL` | the hosted page's return URLs |
+| `PAYMENT_OK_URL`, `PAYMENT_KO_URL` | the hosted page's return URLs — **no locale segment** (`https://members…/payment/success`, not `/es/payment/success`), §A4 (#1081) |
 | `PAYMENT_NOTIFICATION_URL` | the `callbackUrl` Monei posts the webhook to — the **payment app's** relay since #1083 (`https://pay.…/webhooks/payment`), not the API |
 | `TRUST_PROXY_HOPS` | optional (default 1) — proxies in front of every route, `trustProxyHops()` |
 | `PAYMENT_WEBHOOK_RELAY_HOPS` | optional (default 0) — the *further* hop `/webhooks/payment` sits behind once the payment app relays it; `paymentWebhookClientKey()`, §A5 (#1083) |
