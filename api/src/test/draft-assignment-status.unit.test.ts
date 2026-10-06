@@ -71,6 +71,14 @@ describe('the status CHECK and the API\'s status list agree', () => {
     expect(routerValues).toContain('draft');
   });
 
+  it('compares the stored CHECK as an exact set, so a six-value one is not accepted', () => {
+    // Migration 185's device. A substring test would let `up` return early on a
+    // database carrying migration 148's six-value CHECK, leaving
+    // `awaiting_payment` legal while nothing can write it.
+    expect(MIGRATION_CODE).toContain('isStatusSet');
+    expect(MIGRATION_CODE).not.toMatch(/clause\.includes\("'draft'"\)/);
+  });
+
   it('does not bring back awaiting_payment, which stays retired', () => {
     // #1108's second pre-activation state is Pending Payment, and it arrives
     // with stage 2's Save & Pay rather than as a value nothing can write.
@@ -95,12 +103,19 @@ describe('every assignment path creates a Draft', () => {
     expect(USER_MEMBERSHIPS).toContain("export const ASSIGNMENT_CREATION_STATUS = 'draft';");
   });
 
-  it('has no INSERT INTO user_memberships that hardcodes a status literal', () => {
+  it('has no INSERT INTO user_memberships that omits the status column or hardcodes a literal', () => {
     for (const source of [USER_MEMBERSHIPS, MEMBERSHIP_PLANS]) {
-      for (const insert of source.matchAll(/INSERT INTO user_memberships[\s\S]*?VALUES \(([^)]*)\)/g)) {
-        // A path writing `'active'` straight into the VALUES list would skip the
-        // Draft state for whichever screen assigns through it.
-        expect(insert[1]).not.toContain("'active'");
+      const inserts = [...source.matchAll(
+        /INSERT INTO user_memberships\s*\(([^)]*)\)[\s\S]*?VALUES \(([^)]*)\)/g,
+      )];
+      expect(inserts.length).toBeGreaterThan(0);
+      for (const insert of inserts) {
+        // The column still DEFAULTs to 'active' (migration 001), so a path that
+        // simply left it out would create an Active plan with no error at all.
+        expect(insert[1]).toContain('status');
+        // And a path writing `'active'` straight into the VALUES list would skip
+        // the Draft state for whichever screen assigns through it.
+        expect(insert[2]).not.toContain("'active'");
       }
     }
   });
