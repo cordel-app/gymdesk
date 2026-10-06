@@ -12,6 +12,7 @@
     "waitlisted": "Waitlisted",
     "membership_status": "Membership",
     "no_membership": "No active membership.",
+    "products_services": "My Products & Services",
     "expires_on": "Expires {date}",
     "class_credits": "Class credits",
     "credits_remaining": "sessions remaining",
