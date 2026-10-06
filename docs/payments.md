@@ -978,9 +978,13 @@ absence into something an alert outside GitHub can see:
   only when the run logs cannot be read.
 - **Unauthenticated**, and it returns nothing else: no counters, no gym, no member.
 - **Outside `/billing/`** on purpose: `/billing/` is the internal-run surface (shared secret plus its
-  own rate limiter), which a Grafana Cloud alert must not share. `/health/runs` is public, so
-  `https://api.vdicube.com/health/runs` is reachable with no proxy change. The global API rate limiter (500 requests / 15 min
-  per IP) applies; one request per rule every 5 minutes is far below it.
+  own rate limiter), which a Grafana Cloud alert must not share. The global API rate limiter
+  (500 requests / 15 min per IP) applies; one request per rule every 5 minutes is far below it.
+- **Read through the admin app** since #1166: `GET https://admin.vdicube.com/api/health/runs`
+  relays to this route at `CORDEL_FITNESS_API_URL` (one path, no headers forwarded, the API's
+  own status and body; 500/502/504 of its own when it cannot ask), so Grafana needs no public
+  API once #1087 closes `api.vdicube.com`. Behind the relay the limiter keys on the admin app,
+  the bucket `/api/proxy` already shares.
 
 **Grafana Cloud setup (manual, not provisioned from the repo — configured 2026-10-06, #872):**
 

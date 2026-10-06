@@ -688,8 +688,11 @@ hardening:
 - [ ] **Route the freshness alerts through the admin app before the API goes private**
       (#1166, ahead of #1087): both rules call `api.vdicube.com/health/runs` directly and
       fire on an unreachable endpoint, so closing the API host first reads as a missed run.
-      Once the admin app serves `GET /api/health/runs`, repoint both rules at
-      `https://admin.vdicube.com/api/health/runs`.
+      The relay (`GET /api/health/runs` on the admin app) is in the repo; once an admin app
+      carrying it is deployed to dev, check `curl https://admin.vdicube.com/api/health/runs`
+      answers the API's body, then change the Infinity URL in both rules
+      (`gymdesk-billing-run-stale`, `gymdesk-recurring-bookings-run-stale`) to it and update
+      `docs/payments.md` → Observability today.
 - [x] **Decide the `/billing/` GitHub Actions IP allowlist** (#783): removed, not
       automated — replaced by a per-route limiter on the internal run routes. The
       allowlist never ran (no nginx on corback), so nothing needs undoing on a server; what is
