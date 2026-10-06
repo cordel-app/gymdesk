@@ -170,30 +170,15 @@ async function createActivityType(
   return { id: insertId, name };
 }
 
-async function createPlan(gymId: string): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status)
-     VALUES (?, ?, 'active', 'staff_only')`,
-    [gymId, `PTS-Plan-${uniq()}`],
-  );
-  return insertId;
-}
-
-async function assignPlan(gymId: string, memberId: number, planId: number): Promise<number> {
-  const { insertId } = await db.query(
-    `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
-     VALUES (?, ?, ?, 'active', ?, 40.00)`,
-    [gymId, memberId, planId, dayOffset(-30)],
-  );
-  return insertId;
-}
-
-async function makePlanEligible(gymId: string, activityTypeId: number, planId: number) {
+/**
+ * #973 stage 1: an Activity Type names the Professional Services that may book
+ * it; a member qualifies by holding sessions for one of them.
+ */
+async function makeServiceEligible(gymId: string, activityTypeId: number, serviceId: number) {
   await db.query(
-    `INSERT INTO activity_type_eligible_plans (gym_id, activity_type_id, membership_plan_id)
+    `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id)
      VALUES (?, ?, ?)`,
-    [gymId, activityTypeId, planId],
+    [gymId, activityTypeId, serviceId],
   );
 }
 
@@ -664,9 +649,13 @@ describe('Activity Type eligibility (#481)', () => {
     service = await createProfessionalService(gymId, `PTS Eligibility PT ${uniq()}`);
     await grantSessions(gymId, memberId, service.id, 10);
 
-    // (a) Not public and no eligible plan → the booking path would 403, so the
-    //     slot must not appear at all.
+    // (a) Not public and requiring a service the Member holds no sessions for
+    //     → the booking path would 403, so the slot must not appear at all.
+    //     (The occurrence itself is delivered by the Member's service, which is
+    //     what makes it a candidate in the first place.)
+    const otherService = await createProfessionalService(gymId, `PTS Eligibility Other ${uniq()}`);
     const restricted = await createActivityType(gymId, { publicEvent: false, maxCapacity: 5 });
+    await makeServiceEligible(gymId, restricted.id, otherService.id);
     await createWeeklySeries(gymId, {
       activityTypeId: restricted.id,
       professionalServiceId: service.id,
@@ -674,12 +663,10 @@ describe('Activity Type eligibility (#481)', () => {
       startTime: '07:00',
     });
 
-    // (b) Not public, but the Member's ACTIVE assignment is on an eligible plan.
-    const planId = await createPlan(gymId);
-    await assignPlan(gymId, memberId, planId);
+    // (b) Not public, but requiring the service the Member holds sessions for.
     const eligible = await createActivityType(gymId, { publicEvent: false, maxCapacity: 5 });
     eligibleActivityId = eligible.id;
-    await makePlanEligible(gymId, eligible.id, planId);
+    await makeServiceEligible(gymId, eligible.id, service.id);
     await createWeeklySeries(gymId, {
       activityTypeId: eligible.id,
       professionalServiceId: service.id,
@@ -688,13 +675,13 @@ describe('Activity Type eligibility (#481)', () => {
     });
   });
 
-  it('drops a non-public Activity Type the Member has no eligible plan for', async () => {
+  it('drops a non-public Activity Type whose required service the Member holds no sessions for', async () => {
     const res = await getSlots(gymId, memberId);
     expect(res.status).toBe(200);
     expect(dayOf(res.body, restrictedWeekday).slots).toEqual([]);
   });
 
-  it('keeps a non-public Activity Type the Member\'s active plan may book', async () => {
+  it('keeps a non-public Activity Type the Member holds sessions for', async () => {
     const res = await getSlots(gymId, memberId);
     const day = dayOf(res.body, eligibleWeekday);
     expect(day.slots).toHaveLength(1);

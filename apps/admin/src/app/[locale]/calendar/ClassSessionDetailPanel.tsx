@@ -110,8 +110,10 @@ const btnBase: React.CSSProperties = {
 // than a hard failure toast.
 // `allowance_exhausted` is gone with Included Services (#635 stage 4): a plan no
 // longer caps bookings per activity type, so the gates that can reject are
-// eligibility and center coverage.
-const OVERRIDABLE_ACCESS_CODES = ['plan_not_eligible', 'plan_required', 'center_not_covered'];
+// eligibility and center coverage. Since #973 stage 1 eligibility is about the
+// Professional Services an activity names (`professional_service_required`),
+// not a Membership Plan list.
+const OVERRIDABLE_ACCESS_CODES = ['professional_service_required', 'plan_required', 'center_not_covered'];
 
 // #979: the 409 codes the API answers when the trainer or space a cancellation
 // freed has been taken by another session since. All four mean one thing to

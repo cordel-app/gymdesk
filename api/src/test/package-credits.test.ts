@@ -57,35 +57,63 @@ async function createMember(gymId: string, centerId: number): Promise<number> {
   return insertId;
 }
 
-async function createMembershipPlan(gymId: string): Promise<number> {
+/**
+ * A gym-owned Professional Service plus its per-gym enable row — what an
+ * Activity Type names as its booking requirement since #973 stage 1.
+ */
+async function createProfessionalService(gymId: string): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, ?, 'active', 'staff_only')`,
-    [gymId, `Plan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`],
+    `INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)`,
+    [gymId, `PC-Service-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`],
+  );
+  await db.query(
+    `INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')`,
+    [gymId, insertId],
   );
   return insertId;
 }
 
 /**
- * Makes activityTypeId "plan-restricted" so a member without a matching plan pays
- * for it out of a class package. Since #635 stage 4 the restriction lives on the
- * Activity Type (`activity_type_eligible_plans`, #481) rather than on the Plan
- * (`plan_allowances`, dropped in migration 177) — a non-public activity that
- * names a plan the booking member is not on.
+ * Makes activityTypeId require `serviceId`, so a member pays for it out of a
+ * class package that grants sessions of that service. Since #973 stage 1 the
+ * restriction is the Professional Services the Activity Type names
+ * (`activity_type_eligible_professional_services`, migration 231) rather than
+ * a Membership Plan list — and a member whose only sessions for the service
+ * come from a purchased package still has the booking debited from it, until
+ * stage 3 moves consumption onto attendance.
  */
-async function restrictActivityType(gymId: string, membershipPlanId: number, activityTypeId: number) {
+async function restrictActivityType(gymId: string, serviceId: number, activityTypeId: number) {
   await db.query('UPDATE activity_types SET public_event = 0 WHERE id = ? AND gym_id = ?', [activityTypeId, gymId]);
   await db.query(
-    `INSERT INTO activity_type_eligible_plans (gym_id, activity_type_id, membership_plan_id) VALUES (?, ?, ?)`,
-    [gymId, activityTypeId, membershipPlanId],
+    `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id) VALUES (?, ?, ?)`,
+    [gymId, activityTypeId, serviceId],
   );
 }
 
-async function createClassPackage(gymId: string, sessions = 10): Promise<number> {
+/**
+ * A class package catalogue row. With `serviceId`, also the Session Product
+ * that traces back to it (migration 103's shape) linked to that service, which
+ * is how a purchased instance of it counts as sessions of the service.
+ */
+async function createClassPackage(gymId: string, sessions = 10, serviceId: number | null = null): Promise<number> {
+  const name = `Package-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   const { insertId } = await db.query(
     `INSERT INTO class_packages (gym_id, name, number_of_sessions, price, validity_days, status)
      VALUES (?, ?, ?, 50, 180, 'active')`,
-    [gymId, `Package-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, sessions],
+    [gymId, name, sessions],
   );
+  if (serviceId !== null) {
+    const { insertId: productId } = await db.query(
+      `INSERT INTO products
+         (gym_id, name, type, units, amount, currency, billing_frequency, status, availability, is_system, class_package_id)
+       VALUES (?, ?, 'sessions', ?, 50.00, 'EUR', NULL, 'active', 'available', 0, ?)`,
+      [gymId, name, sessions, insertId],
+    );
+    await db.query(
+      `INSERT INTO product_professional_services (gym_id, product_id, professional_service_id) VALUES (?, ?, ?)`,
+      [gymId, productId, serviceId],
+    );
+  }
   return insertId;
 }
 
@@ -114,9 +142,9 @@ describe('Package-credit consumption (#372)', () => {
     await createTestMembership(gymId, 'admin');
     centerId = await createCenter(gymId);
     activityTypeId = await createActivityType(gymId);
-    const planId = await createMembershipPlan(gymId);
-    await restrictActivityType(gymId, planId, activityTypeId);
-    classPackageId = await createClassPackage(gymId);
+    const serviceId = await createProfessionalService(gymId);
+    await restrictActivityType(gymId, serviceId, activityTypeId);
+    classPackageId = await createClassPackage(gymId, 10, serviceId);
   });
 
   it('debits a credit on booking and auto-refunds it when cancelled >= 1 day before the session', async () => {

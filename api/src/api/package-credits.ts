@@ -23,13 +23,16 @@ export function getPackageIntent(tx: any) {
  * sessions instead of being refused. Returns whether a credit was claimed; the
  * debit itself happens post-insert in `debitPackageIfClaimed`.
  *
- * Called by `activity-eligibility.ts` — the gate that knows the member's plan
- * does not cover the activity — rather than from a booking access hook of its
- * own. Until #635 stage 4 this module registered that hook itself and decided
- * "is this activity plan-restricted?" from `plan_allowances`; with Included
- * Services retired (migration 177) the one place that answers that question is
- * `activity_type_eligible_plans`, so the claim moved to the gate that reads it
- * and the two no longer have to be registered in a particular order.
+ * Called by `activity-eligibility.ts` — the gate that knows the member
+ * qualifies for the activity only through a purchased package — rather than
+ * from a booking access hook of its own. Until #635 stage 4 this module
+ * registered that hook itself and decided "is this activity plan-restricted?"
+ * from `plan_allowances`; with Included Services retired (migration 177) the
+ * gate read `activity_type_eligible_plans`, and since #973 stage 1 it reads
+ * the Professional Services the activity names (migration 231). The debit on
+ * booking is deliberately unchanged by that stage: consumption on attendance
+ * (#973 `Q2`) is stage 3's ledger, and until it exists this is what keeps a
+ * package finite.
  */
 export async function tryClaimPackageCredit(tx: any, gymId: string, memberId: number): Promise<boolean> {
   const { rows: pkg } = await tx.query(

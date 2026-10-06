@@ -26,9 +26,9 @@ import { memberProfessionalServicesRouter } from './api/member-professional-serv
 import { memberPersonalTrainingSlotsRouter } from './api/member-personal-training-slots';
 import { classSessionsRouter } from './api/calendar-events';
 // Side-effect import: registers the booking access hook for activity-type eligibility
-// (public_event / activity_type_eligible_plans), which since #635 stage 4 is the only
-// plan-based gate and also claims a class-package credit when the plan does not cover
-// the activity (#481).
+// (public_event / activity_type_eligible_professional_services, #973 stage 1 — there is
+// no plan-based gate any more), which also claims a class-package credit when the
+// member qualifies through a purchased package alone.
 import './api/activity-eligibility';
 // Side-effect import: registers the booking access hook for plan center coverage.
 import './api/plan-center-access';

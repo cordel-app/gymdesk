@@ -6,10 +6,12 @@
 // concept must be gone from the real Express + MySQL stack (the endpoints no
 // longer route, no payload carries the field, migration 177 dropped the table),
 // and the two behaviours that used to ride on `plan_allowances` must still work —
-// booking access, which is the Activity Type's own eligible-plan list now, and
-// class packages, which still pay for an activity the member's plan does not
-// grant. The center-coverage check that shared the retired hook's file is
-// exercised too, since it moved to `plan-center-access.ts`.
+// booking access, which since #973 stage 1 is the Activity Type's own list of
+// Professional Services (migration 231 — the eligible-*plan* list that replaced
+// `plan_allowances` is itself gone now), and class packages, which still pay for
+// an activity the member qualifies for only through one. The center-coverage
+// check that shared the retired hook's file is exercised too, since it moved to
+// `plan-center-access.ts`.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
@@ -59,7 +61,7 @@ async function createCenter(gymId: string): Promise<number> {
   return insertId;
 }
 
-/** A non-public activity type: `public_event = 0` makes the eligible-plan list decide. */
+/** A non-public activity type: `public_event = 0` makes the required-service list decide. */
 async function createRestrictedActivityType(gymId: string): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO activity_types (gym_id, name, duration_minutes, max_capacity, status, public_event)
@@ -69,12 +71,41 @@ async function createRestrictedActivityType(gymId: string): Promise<number> {
   return insertId;
 }
 
-async function allowPlanToBook(gymId: string, activityTypeId: number, planId: number) {
-  await db.query(
-    `INSERT INTO activity_type_eligible_plans (gym_id, activity_type_id, membership_plan_id)
-     VALUES (?, ?, ?)`,
-    [gymId, activityTypeId, planId],
+/** A gym-owned Professional Service plus its per-gym enable row. */
+async function createService(gymId: string): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)`,
+    [gymId, `IS Service ${uniq()}`],
   );
+  await db.query(
+    `INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, 'active')`,
+    [gymId, insertId],
+  );
+  return insertId;
+}
+
+/** #973 stage 1: the activity requires sessions of `serviceId`. */
+async function requireService(gymId: string, activityTypeId: number, serviceId: number) {
+  await db.query(
+    `INSERT INTO activity_type_eligible_professional_services (gym_id, activity_type_id, professional_service_id)
+     VALUES (?, ?, ?)`,
+    [gymId, activityTypeId, serviceId],
+  );
+}
+
+/** A Session Product linked to `serviceId` — what grants sessions of it. */
+async function createSessionProduct(gymId: string, serviceId: number, units: number, classPackageId: number | null = null): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO products
+       (gym_id, name, type, units, amount, currency, billing_frequency, status, availability, is_system, class_package_id)
+     VALUES (?, ?, 'sessions', ?, 50.00, 'EUR', NULL, 'active', 'available', 0, ?)`,
+    [gymId, `IS Sessions ${uniq()}`, units, classPackageId],
+  );
+  await db.query(
+    `INSERT INTO product_professional_services (gym_id, product_id, professional_service_id) VALUES (?, ?, ?)`,
+    [gymId, insertId, serviceId],
+  );
+  return insertId;
 }
 
 async function assignActivePlan(gymId: string, memberId: number, planId: number): Promise<number> {
@@ -96,12 +127,14 @@ async function createSession(gymId: string, activityTypeId: number, centerId: nu
   return insertId;
 }
 
-async function givePackage(gymId: string, memberId: number, sessions: number): Promise<number> {
+/** A purchased package of `sessions`; with `serviceId`, one that grants sessions of that service. */
+async function givePackage(gymId: string, memberId: number, sessions: number, serviceId: number | null = null): Promise<number> {
   const { insertId: packageId } = await db.query(
     `INSERT INTO class_packages (gym_id, name, number_of_sessions, price, validity_days, status)
      VALUES (?, ?, ?, 50, 180, 'active')`,
     [gymId, `IS Package ${uniq()}`, sessions],
   );
+  if (serviceId !== null) await createSessionProduct(gymId, serviceId, sessions, packageId);
   const { insertId } = await db.query(
     `INSERT INTO user_class_packages (gym_id, member_id, class_package_id, purchased_at, expires_at, sessions_remaining, status)
      VALUES (?, ?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_DATE(), INTERVAL 180 DAY), ?, 'active')`,
@@ -143,8 +176,9 @@ describe('Included Services are retired (#635 stage 4)', () => {
     expect(await tableExists('plan_allowances')).toBe(false);
   });
 
-  it('keeps activity_type_eligible_plans, which is the relation that replaces it', async () => {
-    expect(await tableExists('activity_type_eligible_plans')).toBe(true);
+  it('replaced it with the Activity Type\'s own relation — Professional Services since #973 (migration 231)', async () => {
+    expect(await tableExists('activity_type_eligible_plans')).toBe(false);
+    expect(await tableExists('activity_type_eligible_professional_services')).toBe(true);
   });
 
   // ── The endpoints ──
@@ -243,24 +277,24 @@ describe('Booking access after Included Services (#635 stage 4)', () => {
     centerId = await createCenter(gymId);
   });
 
-  it('lets a member on an eligible plan book, with no allowance row to configure', async () => {
-    const planId = await createPlan(gymId, 'IS Eligible Plan');
+  it('lets a member with sessions for the required service book, with no allowance row to configure', async () => {
+    const serviceId = await createService(gymId);
     const atId = await createRestrictedActivityType(gymId);
-    await allowPlanToBook(gymId, atId, planId);
+    await requireService(gymId, atId, serviceId);
     const memberId = await createMember(gymId, centerId);
-    await assignActivePlan(gymId, memberId, planId);
+    await givePackage(gymId, memberId, 5, serviceId);
 
     const res = await book(gymId, memberId, await createSession(gymId, atId, centerId));
     expect(res.status).toBe(201);
     expect(res.body.status).toBe('booked');
   });
 
-  it('never caps how many sessions of an activity an eligible plan may book', async () => {
-    const planId = await createPlan(gymId, 'IS Uncapped Plan');
+  it('never caps how many sessions of an activity a member with sessions may book', async () => {
+    const serviceId = await createService(gymId);
     const atId = await createRestrictedActivityType(gymId);
-    await allowPlanToBook(gymId, atId, planId);
+    await requireService(gymId, atId, serviceId);
     const memberId = await createMember(gymId, centerId);
-    await assignActivePlan(gymId, memberId, planId);
+    await givePackage(gymId, memberId, 5, serviceId);
 
     for (let i = 0; i < 3; i++) {
       const res = await book(gymId, memberId, await createSession(gymId, atId, centerId));
@@ -268,25 +302,34 @@ describe('Booking access after Included Services (#635 stage 4)', () => {
     }
   });
 
-  it('rejects a member whose plan is not on the eligible list', async () => {
-    const eligiblePlan = await createPlan(gymId, 'IS Other Plan');
+  it('rejects a member with no sessions for the service the activity requires, naming it', async () => {
+    const serviceId = await createService(gymId);
     const atId = await createRestrictedActivityType(gymId);
-    await allowPlanToBook(gymId, atId, eligiblePlan);
+    await requireService(gymId, atId, serviceId);
     const memberId = await createMember(gymId, centerId);
-    await assignActivePlan(gymId, memberId, await createPlan(gymId, 'IS Wrong Plan'));
+    // Sessions of a *different* service are not sessions of this one.
+    await givePackage(gymId, memberId, 5, await createService(gymId));
 
     const res = await book(gymId, memberId, await createSession(gymId, atId, centerId));
     expect(res.status).toBe(403);
-    expect(res.body.code).toBe('plan_not_eligible');
+    expect(res.body.code).toBe('professional_service_required');
+    expect(res.body.professional_services.map((p: any) => p.id)).toEqual([serviceId]);
   });
 
-  it('lets a class package pay for an activity the plan does not grant, debiting one credit', async () => {
-    const eligiblePlan = await createPlan(gymId, 'IS Package Other Plan');
+  it('a non-public activity that names no service is open to every member (#973 Q3)', async () => {
     const atId = await createRestrictedActivityType(gymId);
-    await allowPlanToBook(gymId, atId, eligiblePlan);
     const memberId = await createMember(gymId, centerId);
-    await assignActivePlan(gymId, memberId, await createPlan(gymId, 'IS Package Wrong Plan'));
-    const userPackageId = await givePackage(gymId, memberId, 5);
+
+    const res = await book(gymId, memberId, await createSession(gymId, atId, centerId));
+    expect(res.status).toBe(201);
+  });
+
+  it('lets a class package pay for an activity the member qualifies for only through it, debiting one credit', async () => {
+    const serviceId = await createService(gymId);
+    const atId = await createRestrictedActivityType(gymId);
+    await requireService(gymId, atId, serviceId);
+    const memberId = await createMember(gymId, centerId);
+    const userPackageId = await givePackage(gymId, memberId, 5, serviceId);
 
     const res = await book(gymId, memberId, await createSession(gymId, atId, centerId));
     expect(res.status).toBe(201);
@@ -297,13 +340,19 @@ describe('Booking access after Included Services (#635 stage 4)', () => {
     expect(Number(rows[0].sessions_remaining)).toBe(4);
   });
 
-  it('charges no credit when the plan already grants the activity', async () => {
-    const planId = await createPlan(gymId, 'IS No Debit Plan');
+  it('charges no credit when an Additional Service on the member\'s plan already grants the sessions', async () => {
+    const serviceId = await createService(gymId);
     const atId = await createRestrictedActivityType(gymId);
-    await allowPlanToBook(gymId, atId, planId);
+    await requireService(gymId, atId, serviceId);
     const memberId = await createMember(gymId, centerId);
-    await assignActivePlan(gymId, memberId, planId);
-    const userPackageId = await givePackage(gymId, memberId, 5);
+    const umId = await assignActivePlan(gymId, memberId, await createPlan(gymId, 'IS No Debit Plan'));
+    const productId = await createSessionProduct(gymId, serviceId, 10);
+    await db.query(
+      `INSERT INTO user_membership_services (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
+       VALUES (?, ?, ?, 1, DATE_SUB(UTC_DATE(), INTERVAL 10 DAY), NULL)`,
+      [gymId, umId, productId],
+    );
+    const userPackageId = await givePackage(gymId, memberId, 5, serviceId);
 
     const res = await book(gymId, memberId, await createSession(gymId, atId, centerId));
     expect(res.status).toBe(201);
@@ -319,7 +368,6 @@ describe('Booking access after Included Services (#635 stage 4)', () => {
   it('still enforces the plan\'s center coverage', async () => {
     const planId = await createPlan(gymId, 'IS Center Plan');
     const atId = await createRestrictedActivityType(gymId);
-    await allowPlanToBook(gymId, atId, planId);
     const coveredCenter = await createCenter(gymId);
     await db.query(
       'INSERT INTO membership_plan_centers (gym_id, membership_plan_id, center_id) VALUES (?, ?, ?)',
@@ -350,8 +398,6 @@ describe('POST /user-memberships/:id/close after Included Services (#635 stage 4
 
   it('closes without a confirmation prompt when there is no pending billing', async () => {
     const planId = await createPlan(gymId, 'IS Close Plan');
-    const atId = await createRestrictedActivityType(gymId);
-    await allowPlanToBook(gymId, atId, planId);
     const memberId = await createMember(gymId);
     const umId = await assignActivePlan(gymId, memberId, planId);
     await db.query('UPDATE user_memberships SET next_billing_date = NULL WHERE id = ?', [umId]);

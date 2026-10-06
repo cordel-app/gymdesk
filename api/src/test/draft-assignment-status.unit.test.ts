@@ -192,7 +192,18 @@ describe('a Draft bills nothing and books nothing', () => {
   });
 
   it('leaves the booking gate reading active assignments only', () => {
-    expect(code(API_SRC, 'api', 'activity-eligibility.ts')).toContain("um.status = 'active'");
+    // #973 stage 1: the gate itself no longer reads `user_memberships` — a
+    // member qualifies through the sessions they hold for a Professional
+    // Service, and the two assignment-backed sources of those (a Promotion's
+    // session grant, an Additional Service) are read by the professional
+    // services loader, which is where the status filter lives now. A Draft
+    // reaching either query would make a Draft's grants bookable.
+    const gate = code(API_SRC, 'api', 'activity-eligibility.ts');
+    expect(gate).not.toContain('FROM user_memberships');
+    expect(gate).toContain('resolveMemberProfessionalServices');
+    const loader = code(API_SRC, 'domain', 'memberProfessionalServices.ts');
+    const assignmentReads = loader.match(/FROM user_memberships um[\s\S]*?WHERE[^;]*?um\.status = 'active'/g) ?? [];
+    expect(assignmentReads).toHaveLength(2);
   });
 });
 

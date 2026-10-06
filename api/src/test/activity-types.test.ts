@@ -729,16 +729,38 @@ describe('public_event', () => {
   });
 });
 
-// ── Eligible plans (#481) ────────────────────────────────────────────────────
+// ── Eligible Professional Services (#481 → #973 stage 1) ────────────────────
 
-describe('GET/PUT /activity-types/:id/eligible-plans', () => {
+describe('GET/PUT /activity-types/:id/eligible-professional-services', () => {
   let epGymId: string;
   let epActivityTypeId: number;
-  let planAId: number;
-  let planBId: number;
+  let serviceAId: number;
+  let serviceBId: number;
+
+  async function createService(gymId: string, name: string, status: 'active' | 'inactive' = 'active'): Promise<number> {
+    const { insertId } = await db.query(
+      `INSERT INTO professional_services (gym_id, name, is_system, system_key) VALUES (?, ?, 0, NULL)`,
+      [gymId, name],
+    );
+    await db.query(
+      `INSERT INTO gym_professional_services (gym_id, professional_service_id, status) VALUES (?, ?, ?)`,
+      [gymId, insertId, status],
+    );
+    return insertId;
+  }
+
+  const getServices = (id: number | string, gymId = epGymId) => request
+    .get(`${BASE}/${id}/eligible-professional-services`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId);
+  const putServices = (id: number | string, body: any, gymId = epGymId) => request
+    .put(`${BASE}/${id}/eligible-professional-services`)
+    .set('Authorization', TEST_AUTH_HEADER)
+    .set('x-gym-id', gymId)
+    .send(body);
 
   beforeAll(async () => {
-    epGymId = await createTestGym('AT Eligible Plans Gym');
+    epGymId = await createTestGym('AT Eligible Services Gym');
     await createTestMembership(epGymId, 'admin');
 
     const atRes = await request
@@ -749,143 +771,118 @@ describe('GET/PUT /activity-types/:id/eligible-plans', () => {
     expect(atRes.status).toBe(201);
     epActivityTypeId = atRes.body.id;
 
-    const { insertId: pA } = await db.query(
-      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, 'Plan A', 'active', 'staff_only')`,
-      [epGymId],
-    );
-    planAId = pA;
-    const { insertId: pB } = await db.query(
-      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, 'Plan B', 'active', 'staff_only')`,
-      [epGymId],
-    );
-    planBId = pB;
+    serviceAId = await createService(epGymId, 'Service A');
+    serviceBId = await createService(epGymId, 'Service B');
   });
 
-  it('returns an empty array when no plans are configured', async () => {
-    const res = await request
-      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', epGymId);
+  it('returns an empty array when no services are configured', async () => {
+    const res = await getServices(epActivityTypeId);
     expect(res.status).toBe(200);
     expect(res.body).toEqual([]);
   });
 
   it('404s GET for a non-existent activity type', async () => {
-    const res = await request
-      .get(`${BASE}/999999/eligible-plans`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', epGymId);
-    expect(res.status).toBe(404);
+    expect((await getServices(999999)).status).toBe(404);
   });
 
   it('404s PUT for a non-existent activity type', async () => {
-    const res = await request
-      .put(`${BASE}/999999/eligible-plans`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', epGymId)
-      .send({ membership_plan_ids: [planAId] });
-    expect(res.status).toBe(404);
+    expect((await putServices(999999, { professional_service_ids: [serviceAId] })).status).toBe(404);
   });
 
-  it('400s when a plan id belongs to another gym', async () => {
-    const otherGymId = await createTestGym('AT Eligible Plans Other Gym');
+  it('400s when a service id belongs to another gym', async () => {
+    const otherGymId = await createTestGym('AT Eligible Services Other Gym');
     await createTestMembership(otherGymId, 'admin');
-    const { insertId: foreignPlanId } = await db.query(
-      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status) VALUES (?, 'Foreign Plan', 'active', 'staff_only')`,
-      [otherGymId],
-    );
-
-    const res = await request
-      .put(`${BASE}/${epActivityTypeId}/eligible-plans`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', epGymId)
-      .send({ membership_plan_ids: [foreignPlanId] });
-    expect(res.status).toBe(400);
+    const foreignId = await createService(otherGymId, 'Foreign Service');
+    expect((await putServices(epActivityTypeId, { professional_service_ids: [foreignId] })).status).toBe(400);
   });
 
-  it('400s for a completely invalid plan id', async () => {
-    const res = await request
-      .put(`${BASE}/${epActivityTypeId}/eligible-plans`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', epGymId)
-      .send({ membership_plan_ids: [999999] });
-    expect(res.status).toBe(400);
+  it('400s for a completely invalid service id, and for a non-array body', async () => {
+    expect((await putServices(epActivityTypeId, { professional_service_ids: [999999] })).status).toBe(400);
+    expect((await putServices(epActivityTypeId, { professional_service_ids: ['x'] })).status).toBe(400);
+    expect((await putServices(epActivityTypeId, { professional_service_ids: 'nope' })).status).toBe(400);
   });
 
-  it('sets eligible plans and GET reflects them, ordered by name', async () => {
-    const putRes = await request
-      .put(`${BASE}/${epActivityTypeId}/eligible-plans`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', epGymId)
-      .send({ membership_plan_ids: [planBId, planAId] });
+  it('400s a service the gym has switched off — it could never make a member eligible', async () => {
+    const inactiveId = await createService(epGymId, 'Inactive Service', 'inactive');
+    expect((await putServices(epActivityTypeId, { professional_service_ids: [inactiveId] })).status).toBe(400);
+  });
+
+  it('sets eligible services and GET reflects them, ordered by name', async () => {
+    const putRes = await putServices(epActivityTypeId, { professional_service_ids: [serviceBId, serviceAId] });
     expect(putRes.status).toBe(204);
 
-    const getRes = await request
-      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
+    const getRes = await getServices(epActivityTypeId);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.map((p: any) => p.name)).toEqual(['Service A', 'Service B']);
+    expect(getRes.body.map((p: any) => p.id).sort()).toEqual([serviceAId, serviceBId].sort());
+  });
+
+  it('GET /activity-types/:id carries the same list (§7)', async () => {
+    const res = await request
+      .get(`${BASE}/${epActivityTypeId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', epGymId);
-    expect(getRes.status).toBe(200);
-    expect(getRes.body.map((p: any) => p.name)).toEqual(['Plan A', 'Plan B']);
-    expect(getRes.body.map((p: any) => p.id).sort()).toEqual([planAId, planBId].sort());
+    expect(res.status).toBe(200);
+    expect(res.body.eligible_professional_services.map((p: any) => p.name)).toEqual(['Service A', 'Service B']);
   });
 
   it('replace-all semantics: a second PUT fully replaces the previous set', async () => {
-    const putRes = await request
-      .put(`${BASE}/${epActivityTypeId}/eligible-plans`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', epGymId)
-      .send({ membership_plan_ids: [planAId] });
-    expect(putRes.status).toBe(204);
-
-    const getRes = await request
-      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', epGymId);
-    expect(getRes.status).toBe(200);
+    expect((await putServices(epActivityTypeId, { professional_service_ids: [serviceAId] })).status).toBe(204);
+    const getRes = await getServices(epActivityTypeId);
     expect(getRes.body).toHaveLength(1);
-    expect(getRes.body[0].id).toBe(planAId);
+    expect(getRes.body[0].id).toBe(serviceAId);
   });
 
-  it('an empty list clears all eligible plans', async () => {
-    const putRes = await request
-      .put(`${BASE}/${epActivityTypeId}/eligible-plans`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', epGymId)
-      .send({ membership_plan_ids: [] });
-    expect(putRes.status).toBe(204);
+  it('keeps a stored service the gym has since switched off when it is re-sent unchanged (#986\'s rule)', async () => {
+    await db.query(
+      `UPDATE gym_professional_services SET status = 'inactive' WHERE gym_id = ? AND professional_service_id = ?`,
+      [epGymId, serviceAId],
+    );
+    expect((await putServices(epActivityTypeId, { professional_service_ids: [serviceAId] })).status).toBe(204);
+    await db.query(
+      `UPDATE gym_professional_services SET status = 'active' WHERE gym_id = ? AND professional_service_id = ?`,
+      [epGymId, serviceAId],
+    );
+  });
 
-    const getRes = await request
-      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
+  it('the duplicate of an activity type names the same services', async () => {
+    const dup = await request
+      .post(`${BASE}/${epActivityTypeId}/duplicate`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', epGymId);
-    expect(getRes.status).toBe(200);
-    expect(getRes.body).toEqual([]);
+    expect(dup.status).toBe(201);
+    const getRes = await getServices(dup.body.id);
+    expect(getRes.body.map((p: any) => p.id)).toEqual([serviceAId]);
   });
 
-  it('returns 404 when reading eligible-plans for an activity type from another gym', async () => {
-    const gymD = await createTestGym('AT Eligible Plans Gym D');
+  it('an empty list clears all eligible services', async () => {
+    expect((await putServices(epActivityTypeId, { professional_service_ids: [] })).status).toBe(204);
+    expect((await getServices(epActivityTypeId)).body).toEqual([]);
+  });
+
+  it('returns 404 when reading eligible services for an activity type from another gym', async () => {
+    const gymD = await createTestGym('AT Eligible Services Gym D');
     await createTestMembership(gymD, 'admin');
-    const res = await request
-      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymD);
-    expect(res.status).toBe(404);
+    expect((await getServices(epActivityTypeId, gymD)).status).toBe(404);
   });
 
-  it('returns 403 for a non-admin role on PUT eligible-plans', async () => {
-    const fdGymId = await createTestGym('AT Eligible Plans FD Gym');
+  it('returns 403 for a non-admin role on PUT', async () => {
+    const fdGymId = await createTestGym('AT Eligible Services FD Gym');
     await createTestMembership(fdGymId, 'front_desk');
     // Insert directly since front_desk cannot POST /activity-types.
     const { insertId: fdActivityTypeId } = await db.query(
       `INSERT INTO activity_types (gym_id, name, max_capacity, status, public_event) VALUES (?, 'FD Test AT', 10, 'active', 0)`,
       [fdGymId],
     );
+    expect((await putServices(fdActivityTypeId, { professional_service_ids: [] }, fdGymId)).status).toBe(403);
+  });
+
+  it('no longer routes the retired eligible-plans endpoints', async () => {
     const res = await request
-      .put(`${BASE}/${fdActivityTypeId}/eligible-plans`)
+      .get(`${BASE}/${epActivityTypeId}/eligible-plans`)
       .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', fdGymId)
-      .send({ membership_plan_ids: [] });
-    expect(res.status).toBe(403);
+      .set('x-gym-id', epGymId);
+    expect(res.status).toBe(404);
   });
 });
 
