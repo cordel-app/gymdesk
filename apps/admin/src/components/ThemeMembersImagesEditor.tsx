@@ -17,9 +17,16 @@ import type { GymStorageBlock } from '@/lib/gymStorageReadiness';
 
 /**
  * The slots, in the order the Members App presents the sections — which is also
- * the order #1038 lists them in, My Goals between My Membership and the general
+ * the order #1038 lists them in, My Goals between My Products and the general
  * background. Mirrors `MEMBER_IMAGE_SLOTS` on the API side (the stored values
  * are the same set; only the order here is the UI's).
+ *
+ * A slot's **label** is the Members App's own name for the section it paints
+ * (`members_image_<slot>`), and its **id** is what the object key and the
+ * `theme_member_images` row are written under — so #1151 renamed the
+ * `membership` slot's label to *My Products*, after #1116 renamed the card,
+ * and left the id exactly as it is. Renaming an id would strand every object
+ * already stored under the old one.
  */
 export const MEMBER_IMAGE_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background'] as const;
 
