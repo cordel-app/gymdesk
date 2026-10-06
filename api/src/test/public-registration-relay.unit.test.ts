@@ -192,7 +192,7 @@ describe('the screen shows the relay, from one setting with no fallback', () => 
   it('deploy.yml forwards both settings to the API', () => {
     for (const name of ['PUBLIC_REGISTRATION_BASE_URL', 'PUBLIC_REGISTRATION_RELAY_HOPS']) {
       expect(DEPLOY).toContain(`${name}: \${{ vars.${name} }}`);
-      expect(DEPLOY).toContain(`Environment=${name}=\${${name}:-}`);
+      expect(DEPLOY).toMatch(new RegExp(`^\\s*${name}=\\$\\{${name}:-\\}$`, 'm'));
       expect(DEPLOY).toMatch(new RegExp(`envs: [^\\n]*\\b${name}\\b`));
     }
   });

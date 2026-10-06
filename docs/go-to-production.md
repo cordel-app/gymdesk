@@ -473,6 +473,24 @@ Tick items off in the PR that completes them.
       configuration today — if a locale is ever added to the frontends, the API must be
       updated in the same deploy or the new language will silently fall back to English.
 
+- [ ] **Clean up after the `_CMDLINE` secret leak** (#1192, found 2026-10-07). Until #1192,
+      `deploy.yml` wrote the API's environment as inline quadlet `Environment=` lines, which
+      quadlet passes as `podman run --env KEY=value`; journald records that command line in the
+      `_CMDLINE` field of podman's own entries, and the Fleet pipeline `policy_alloy_fleet_writer`
+      (`loki.source.journal`, `format_as_json = true`) ships whole entries to Grafana Cloud Loki.
+      Every dev API secret — and the migrations user's `DATABASE_URL` — has been readable in Loki
+      since #448 (2026-09-08). #1192 stops new copies (env file + `-e NAME`). Owner steps:
+      1. [ ] **Rotate** every dev value the API container received: the database password(s),
+             `CLOUDFLARE_R2_SECRET_ACCESS_KEY`, `CLERK_SECRET_KEY`, `CLERK_WEBHOOK_SIGNING_SECRET`,
+             `MONEI_API_KEY`, `MONEI_WEBHOOK_SECRET`, the three `*_INTERNAL_SECRET`s and
+             `DATABASE_URL_MIGRATIONS` — after #1192 is deployed, so the new values do not leak
+             the same way.
+      2. [ ] **Stop shipping `_CMDLINE`** in the Fleet pipeline, so a future process that does take
+             a secret on its command line cannot leak it either (e.g. a `stage.template`/`stage.output`
+             that keeps `MESSAGE` and the fields the pipeline labels, or a `stage.drop` on `_CMDLINE`).
+      3. [ ] **Delete the stored lines** with a Grafana Cloud Loki deletion request for
+             `{host="corback"} |= "_CMDLINE" |= "--env"` over the affected period.
+
 ## 2. Clerk production instance
 
 Clerk Development and Production instances are separate: users, user ids and metadata do
@@ -1322,7 +1340,7 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
       do not trigger a universal link at all.
 - [ ] Push: set `FCM_SERVICE_ACCOUNTS` in the production API environment (#1072 — a JSON object
       keyed by app id; set it **base64-encoded** in GitHub, since `deploy.yml` writes the API's
-      environment as inline quadlet `Environment=` lines) and `MOBILE_DEFAULT_APP_ID` if the
+      environment as one `KEY=value` line each into an env file, #1192) and `MOBILE_DEFAULT_APP_ID` if the
       generic app's id is not `com.cordel.fitness`; run migration 221; verify a notification
       reaches a physical iPhone and a physical Android phone. Until the variable is set the API
       sends no push at all and every alert still reaches the Members App — nothing fails.
