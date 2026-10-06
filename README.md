@@ -177,6 +177,7 @@ Copy each `.env.example` to `.env` and fill in values. Do not commit `.env` file
 | `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` | Optional — locales for translated DB content (defaults: `en,es,ca` / `en`) |
 | `TRUST_PROXY_HOPS` | Optional — reverse-proxy hops in front of the API (default: `1`) |
 | `PAYMENT_WEBHOOK_RELAY_HOPS` | Optional — the *further* hop `POST /webhooks/payment` sits behind once the payment app relays it (default: `0`, #1083) |
+| `INTERNAL_RUN_RELAY_HOPS` | Optional — the *further* hops the four internal run routes sit behind once the nightly workflows post to the admin app's `/api/internal` relay (default: `0`, #1086) |
 | `PUBLIC_REGISTRATION_IP_LIMIT_PER_HOUR` / `PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY` | Optional — website self-registration rate limits (defaults: `60` / `200`) |
 | `API_PUBLIC_URL` | Optional — public API origin shown on System → Website Integration |
 | `LOG_LEVEL` | Optional — logger level (default: `info`) |
@@ -192,7 +193,8 @@ Copy each `.env.example` to `.env` and fill in values. Do not commit `.env` file
 
 | Variable | Description |
 |----------|-------------|
-| `CORDEL_FITNESS_API_URL` | Backend base URL used by the `/api/proxy` route (local: `http://localhost:3000`) |
+| `CORDEL_FITNESS_API_URL` | Backend base URL used by the `/api/proxy` route — and, on admin, by the `/api/webhooks/clerk` (#1085) and `/api/internal` (#1086) relays (local: `http://localhost:3000`) |
+| `INTERNAL_RUN_RELAY_TIMEOUT_MS` | Admin only, optional — how long `/api/internal` waits for the API (default: `660000`, above the longest `--max-time` in `.github/workflows/`, #1086) |
 | `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key |
 | `NEXT_PUBLIC_CLERK_SIGN_IN_URL` | Sign-in path (e.g. `/en/sign-in`) |
 | `NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL` / `NEXT_PUBLIC_CLERK_AFTER_SIGN_UP_URL` | Admin only — post-auth redirects |

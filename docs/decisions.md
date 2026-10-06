@@ -4,6 +4,25 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 21. The GitHub Actions nightly runs are relayed by the admin app, behind an explicit path allowlist (#1086, 2026-10-06)
+
+**Decision**: `.github/workflows/billing-run.yml` and `recurring-booking-run.yml` call the **admin app** — `https://admin.vdicube.com/api/internal/<path>` on dev, `https://admin.cordel.tech/api/internal/<path>` on pro — and that app relays each POST to the API's own route at `CORDEL_FITNESS_API_URL`. The relay is a Next route handler (`apps/admin/src/app/api/internal/[...path]/route.ts`) over a pure decision module (`apps/admin/src/lib/internalRunRelay.ts`) and a transport module (`lib/internalRunUpstream.ts`). `API_BASE_URL` keeps its name and holds the admin origin **plus the prefix**, so the workflows' own `$API_BASE_URL/billing/run` is unchanged.
+
+**Why**: this is the third and last of the things that needed a public API (#1083 took Monei, #1085 Clerk). The admin app already fronts the API for every browser call, so a relay costs one route — but unlike those two, this one is reached by a caller with no signature to verify, so it carries an **explicit allowlist** of the four paths instead: `/billing/run`, `/billing/cleanup`, `/promotion-lifecycle/run`, `/recurring-bookings/run`.
+
+**Consequences**:
+- Neither internal secret leaves the API. The relay compares nothing: each router's `checkInternalSecret()` still answers the `401`, relayed as such, and it still spends #783's failed-secret budget.
+- **The API's own status code and body are what the workflow gets**, byte for byte, because the workflows fail the job on a non-2xx *and* parse the counters out of the body (#778). Three statuses are the relay's own and none is a 200: **404** for a path outside the allowlist, **502**/**504** when it could not reach the API or the API outlived its timeout, **500** when `CORDEL_FITNESS_API_URL` is unset.
+- The upstream call is **`node:http`, not `fetch`**. Node's global fetch abandons a response whose headers take more than 300 s, and `POST /recurring-bookings/run` is allowed 600 s by its workflow, so a long night would have been cut off at five minutes — and a run the API completed but the workflow saw as failed is the worst outcome available here, because #780's guard then refuses the retry as `already_completed_today`. The relay's own wait is `INTERNAL_RUN_RELAY_TIMEOUT_MS` (default 660 000 ms), deliberately above the longest `--max-time` in the workflows so `curl` is always the first to give up.
+- `/api/proxy` is deliberately **not** reused: its header set is `authorization`, `x-gym-id`, `x-center-id`, `x-impersonate-as`, `x-locale` and the content type — a caller's own credentials, and not `x-internal-secret` — so a run sent through it would arrive unauthenticated, and widening that set would put the internal runners behind a route the browser app also uses. The relay's set is `x-internal-secret`, `content-type` and `x-forwarded-for`, declared once.
+- The internal-run budget is keyed on the **client** address, through `internalRunClientKey()` (`api/src/domain/forwardedClient.ts`), which adds `INTERNAL_RUN_RELAY_HOPS` to `TRUST_PROXY_HOPS`. Keyed on the relay, ten wrong-secret guesses from anywhere would answer the nightly run `429` for the rest of the window — and only a 401 spends that budget, so the attack is cheap. The hop is declared per route and defaults to 0, not by raising `TRUST_PROXY_HOPS`, for #1083's reason.
+- The path is exempt from `auth.protect()` **and** from the locale routing in `apps/admin/src/middleware.ts`, through the same early `return NextResponse.next()` the other two use.
+- The nightly runs now depend on the **admin app** being up. A missed night is visible (both workflows raise `::error` on a failure) and #781's 10:00 UTC second attempt still covers the billing run; a missed booking night is recovered by the next one, because the run re-projects its window from *now*.
+- Both GitHub environments' `API_BASE_URL` were repointed at the relay on 2026-10-05, so **the scheduled runs fail until an admin app carrying this route is deployed**. The owner steps — including when `INTERNAL_RUN_RELAY_HOPS` has to be `1` — are in `docs/go-to-production.md` §4b.
+- With this deployed, nothing outside reaches the API's own host any more. Whether it is then actually closed off is the open question in **#1087**, which this ticket does not answer.
+
+---
+
 ## 20. Clerk's webhook is relayed by the admin app, and the relay forwards rather than verifies (#1085, 2026-10-06)
 
 **Decision**: Clerk posts its webhook to the **admin app** — `https://admin.vdicube.com/api/webhooks/clerk` on dev, `https://admin.cordel.tech/api/webhooks/clerk` on pro — and that app relays the request to the API's own `/webhooks/clerk` at `CORDEL_FITNESS_API_URL`. The relay is a Next route handler (`apps/admin/src/app/api/webhooks/clerk/route.ts`) over a pure decision module (`apps/admin/src/lib/clerkWebhookRelay.ts`).
@@ -17,7 +36,7 @@ Short record of the settled choices that are not obvious from the code. Don't re
 - `/api/proxy` is deliberately **not** reused: it forwards `authorization`, `x-gym-id`, `x-center-id`, `x-impersonate-as` and `x-locale` and none of the `svix-*` headers, so a webhook sent through it would reach the API unsigned. The relay's own set is the three Svix headers plus the content type, declared once, and no cookie, Authorization or `host` crosses the boundary.
 - The path is exempt from `auth.protect()` **and** from the locale routing in `apps/admin/src/middleware.ts`, through the same early `return NextResponse.next()` `/api/proxy` uses — otherwise Clerk is answered with a 401 or a redirect to `/en/…`.
 - The webhook now depends on the **admin app** being up. A missed delivery is retried by Clerk and replayable, and `user.created` keeps its `POST /staff/link` fallback at sign-in, so the worst case is a delay rather than a lost link.
-- This covers Clerk only. The GitHub Actions nightly runs still call the API directly — #1086, and the open question in #1087.
+- This covers Clerk only. The GitHub Actions nightly runs took the same shape in #1086 (see #21 above), after which the open question in #1087 is whether the API's host is closed off.
 
 ---
 
@@ -34,7 +53,7 @@ Short record of the settled choices that are not obvious from the code. Don't re
 - Both API origins the payment image talks to are environment (`CORDEL_FITNESS_API_PUBLIC_URL`, `CORDEL_FITNESS_API_INTERNAL_URL`) rather than literals in the config, because one image tag serves dev and pro. The config is an `envsubst` template; the Dockerfile carries the dev values as image defaults so a container started with no environment behaves as before.
 - The payment app still handles **no card data and no database**, so PCI scope is unchanged (#8): it relays one signed, opaque body.
 - The payment container's own access log drops query strings (`log_format pay_no_query`), which is what the PCI note on this host already required for `?token=<page_token>`.
-- This covers Monei only. Clerk's webhook took the same shape one app over in #1085 (see #20 above); the GitHub Actions nightly runs still need their own path before the API can be private — #1086 and the open question in #1087.
+- This covers Monei only. Clerk's webhook took the same shape one app over in #1085 (see #20 above) and the GitHub Actions nightly runs in #1086 (see #21), after which the open question in #1087 is whether the API's host is closed off.
 
 ---
 

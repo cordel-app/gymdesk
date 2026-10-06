@@ -3,26 +3,38 @@
  *
  * The API runs behind Traefik, so `req.ip` is only ever right because
  * `app.set('trust proxy', n)` tells Express how many hops to discount (#599).
- * Since #1083 one route reaches us through **one more** hop: Monei posts its
+ * Since #1083 some routes reach us through **one more** hop: Monei posts its
  * webhook to the isolated payment app (`PAYMENT_NOTIFICATION_URL` →
  * `https://pay.…/webhooks/payment`) and that app's nginx relays it to the API's
  * internal address, so the chain in front of `/webhooks/payment` is one longer
  * than the chain in front of every other route.
  *
- * That matters for exactly one thing: the payment webhook is rate-limited at
- * **60 requests per minute per IP**, and the key is the client address. Count
- * the relay as a client and every webhook of every gym shares one budget — 61
- * payments in a minute and the API starts refusing payment confirmations.
+ * Since #1086 the four internal run routes reach us the same way, one app
+ * over: `.github/workflows/billing-run.yml` and `recurring-booking-run.yml`
+ * post to the **admin app** (`API_BASE_URL` → `https://admin.…/api/internal`),
+ * whose route handler relays the request to the API's internal address and
+ * forwards the `X-Forwarded-For` it was called with.
  *
- * Why this is a per-route hop count rather than `TRUST_PROXY_HOPS = 2`:
+ * That matters for exactly one thing in each case: a per-IP rate limit whose
+ * key is the client address. The payment webhook is allowed **60 requests per
+ * minute per IP** — count the relay as the client and every webhook of every
+ * gym shares one budget, so 61 payments in a minute and the API starts refusing
+ * payment confirmations.
+ *
+ * Why these are per-route hop counts rather than `TRUST_PROXY_HOPS = 2`:
  * raising the global count would make Express trust one *more* entry of
  * `X-Forwarded-For` on every route, including the ones a client can still
  * reach directly — and the entries further left in that header are supplied by
  * whoever is calling. A caller could then choose the address every per-IP
  * limiter in the app buckets them under. The API is not private yet (#1087 is
  * the open question of whether it becomes so), so the extra hop is declared
- * where it is real and nowhere else, and it defaults to 0 — the pre-#1083
- * shape, where `paymentWebhookClientKey()` answers exactly `req.ip`.
+ * where it is real and nowhere else, and each defaults to 0 — the pre-relay
+ * shape, where both key helpers answer exactly `req.ip`.
+ *
+ * Reading the chain from the right is also what makes a forged header harmless:
+ * each proxy *appends* the peer it heard from, so the entries a caller supplied
+ * sit to the left of the ones our own infrastructure wrote, and counting inwards
+ * can only ever land on an address a proxy observed.
  */
 
 /** What `TRUST_PROXY_HOPS` defaults to: one reverse proxy (Traefik). */
@@ -34,6 +46,14 @@ export const TRUST_PROXY_HOPS_DEFAULT = 1;
  * payment app's relay instead.
  */
 export const PAYMENT_WEBHOOK_RELAY_HOPS_DEFAULT = 0;
+
+/**
+ * What `INTERNAL_RUN_RELAY_HOPS` defaults to: none, i.e. the workflows call the
+ * API directly. Set it to the number of further proxies between the admin app's
+ * `/api/internal` relay and the API wherever `API_BASE_URL` points at that
+ * relay instead (#1086).
+ */
+export const INTERNAL_RUN_RELAY_HOPS_DEFAULT = 0;
 
 /**
  * A whole number of hops from the environment, or `fallback`. A negative, a
@@ -55,6 +75,11 @@ export function trustProxyHops(env: NodeJS.ProcessEnv = process.env): number {
 /** How many *further* hops sit in front of `POST /webhooks/payment`. */
 export function paymentWebhookRelayHops(env: NodeJS.ProcessEnv = process.env): number {
   return hopCount(env.PAYMENT_WEBHOOK_RELAY_HOPS, PAYMENT_WEBHOOK_RELAY_HOPS_DEFAULT);
+}
+
+/** How many *further* hops sit in front of the internal run routes. */
+export function internalRunRelayHops(env: NodeJS.ProcessEnv = process.env): number {
+  return hopCount(env.INTERNAL_RUN_RELAY_HOPS, INTERNAL_RUN_RELAY_HOPS_DEFAULT);
 }
 
 /** Only the fields of a request this module reads — so it is unit-testable. */
@@ -111,6 +136,23 @@ export function paymentWebhookClientKey(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const relayHops = paymentWebhookRelayHops(env);
+  if (relayHops === 0) return req.ip ?? '';
+  return forwardedClientAddress(req, trustProxyHops(env) + relayHops) ?? req.ip ?? '';
+}
+
+/**
+ * The rate-limit key for the internal run routes (`POST /billing/run`,
+ * `/billing/cleanup`, `/promotion-lifecycle/run`, `/recurring-bookings/run`):
+ * the client address, counting the configured relay as the extra hop it is.
+ *
+ * With no relay configured this is `req.ip` verbatim, so the limiter behaves
+ * exactly as it did before #1086.
+ */
+export function internalRunClientKey(
+  req: ForwardedRequest,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const relayHops = internalRunRelayHops(env);
   if (relayHops === 0) return req.ip ?? '';
   return forwardedClientAddress(req, trustProxyHops(env) + relayHops) ?? req.ip ?? '';
 }

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import { verifyToken } from '@clerk/backend';
 import { Request, Response, NextFunction } from 'express';
@@ -109,7 +109,7 @@ import { websiteIntegrationRouter } from './api/website-integration';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
 import { internalRunRateLimitConfig, spendsInternalRunBudget } from './domain/internalRunRateLimit';
-import { trustProxyHops } from './domain/forwardedClient';
+import { internalRunClientKey, trustProxyHops } from './domain/forwardedClient';
 import { httpErrorStatus, publicErrorMessage } from './domain/httpErrorResponse';
 
 export const app = express();
@@ -134,6 +134,9 @@ app.use(apiLimiter as any);
 // #783: the internal run routes are authenticated by X-Internal-Secret alone —
 // no nginx allowlist sits in front of them any more — so they get a budget of
 // their own, far below the global one, that only a failed secret (401) spends.
+// Since #1086 those routes are reached through the admin app's `/api/internal`
+// relay, which changes the key below and nothing else: the secret is still
+// compared here, by each router's own `checkInternalSecret()`.
 // See domain/internalRunRateLimit.ts for why a caller holding the secret, and
 // #781's two daily attempts with it, never consume it.
 const internalRunRateLimit = internalRunRateLimitConfig();
@@ -144,6 +147,22 @@ const internalRunLimiter = rateLimit({
   legacyHeaders: false,
   skipSuccessfulRequests: true,
   requestWasSuccessful: (_req, res) => !spendsInternalRunBudget(res.statusCode),
+  // #1086: the key is the client address, not the request's peer. The nightly
+  // workflows post to the admin app's `/api/internal` relay, which forwards the
+  // `X-Forwarded-For` it was called with, so the chain in front of these four
+  // routes is one hop longer than `trust proxy` accounts for. Keyed on the
+  // relay, ten wrong-secret guesses from anywhere would answer the billing run
+  // `429` for the rest of the window — see domain/forwardedClient.ts for why the
+  // extra hop is declared per route and defaults to none (where this is
+  // `req.ip`, exactly as before).
+  keyGenerator: (req) => {
+    const client = internalRunClientKey({
+      ip: req.ip,
+      socketAddress: req.socket.remoteAddress,
+      forwardedFor: req.headers['x-forwarded-for'],
+    });
+    return client === '' ? '' : ipKeyGenerator(client);
+  },
 });
 
 // Clerk webhooks must be mounted BEFORE express.json(): signature verification

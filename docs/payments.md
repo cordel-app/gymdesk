@@ -309,6 +309,20 @@ to provision and rotate.
   workflow sends its secret, and `deploy.yml` writes the same secret into the API's
   quadlet (it refuses to deploy while it is empty). Until 2026-09-27 neither side had it,
   so every scheduled run answered `401` and no recurring charge ran on `dev`.
+- **The call arrives through the admin app** (#1086). `vars.API_BASE_URL` is the admin
+  app's relay prefix — `https://admin.vdicube.com/api/internal` on `dev`,
+  `https://admin.cordel.tech/api/internal` on `pro` — so the workflows still call
+  `$API_BASE_URL/billing/run` unchanged while GitHub's runners no longer need a public
+  API. `apps/admin/src/app/api/internal/[...path]/route.ts` forwards the POST to
+  `CORDEL_FITNESS_API_URL` and hands back the API's own status and body byte for byte,
+  so every check in `billing-run.yml` still reads what the API said. Three statuses are
+  the relay's own rather than the API's: `404` (a path outside its allowlist of these four),
+  `502`/`504` (it could not reach the API, or the API outlived
+  `INTERNAL_RUN_RELAY_TIMEOUT_MS`, default 660 000 ms) and `500` (no API URL configured).
+  It authenticates nothing — `BILLING_INTERNAL_SECRET` never leaves the API and
+  `checkInternalSecret()` still answers the `401`. The one thing that changes on this side
+  is the limiter's **key**, below. Full rules and the gate:
+  `docs/architecture.md` → *Internal run auth*.
 - There is **no** network-layer restriction: `/billing/*` and `/recurring-bookings/*` both
   are reached directly through Traefik with no IP restriction (#783; the nginx allowlist that was meant to sit in front never ran, as there is no nginx on corback). What stands in for one is
   a per-route rate limiter mounted in `api/src/app.ts` ahead of both internal routers
@@ -320,6 +334,13 @@ to provision and rotate.
   so a caller holding the secret — both of #781's daily attempts, and a run the guard
   answers `429 in_progress` or `200 already_completed_today` — never does. Once spent,
   every call from that address is `429` until the window ends, the right secret included.
+  Since #1086 the key is the **client** address rather than the request's peer, through
+  `internalRunClientKey()` (`api/src/domain/forwardedClient.ts`, adding
+  `INTERNAL_RUN_RELAY_HOPS` to `TRUST_PROXY_HOPS`): the relay forwards the
+  `X-Forwarded-For` it was called with, and keyed on the relay itself ten wrong guesses
+  from anywhere would answer the nightly run `429` for the rest of the window. The setting
+  defaults to `0`, where the key is `req.ip` exactly as before, and the hop is declared per
+  route rather than by raising `TRUST_PROXY_HOPS` for #1083's reason.
 - **Which environment** (#784). The job runs in `${{ inputs.environment || 'dev' }}`: a
   manual `workflow_dispatch` picks `dev` or `production` (default `dev`), and a scheduled
   run, which has no inputs, takes the literal on that line — `dev` until the `production`
@@ -746,6 +767,7 @@ never touches the date.
 | `RUN_FRESHNESS_THRESHOLD_HOURS` | optional (default 26, floored at 1) — `runFreshnessThresholdHours()`, `GET /health/runs` (#782) |
 | `RECURRING_BOOKINGS_INTERNAL_SECRET` | `/recurring-bookings/run` |
 | `INTERNAL_RUN_RATE_LIMIT_MAX`, `INTERNAL_RUN_RATE_LIMIT_WINDOW_MINUTES` | optional (default 10 per 15 min, values below 1 ignored) — failed-secret budget per IP on the three internal run routes, §B1 (#783) |
+| `INTERNAL_RUN_RELAY_HOPS` | optional (default 0) — the *further* hops the four internal run routes sit behind once the workflows post to the admin app's `/api/internal` relay; `internalRunClientKey()`, §B1 (#1086) |
 
 The `payment_providers` catalogue (#636, `api/src/api/payment-providers.ts`) names **which**
 adapter a gym uses (`gyms.payment_provider_id` → `provider_key`), never how to authenticate
