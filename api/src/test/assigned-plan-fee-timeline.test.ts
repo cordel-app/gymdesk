@@ -73,9 +73,15 @@ async function createPlan(gymId: string, opts: {
   const cadence = opts.cadence === undefined ? { interval: 1, unit: 'month' } : opts.cadence;
   if (cadence) {
     await db.query(
+      // #1130 stage 1: `auto_renew` is pinned off here rather than left on the
+      // column's own DEFAULT, because every case in this file is about what a
+      // Billing & Duration *means* and not about the cycle starting again —
+      // the same reason `membership-plans.test.ts` and
+      // `plan-duration-billing-frequency.test.ts` pin it.
       `INSERT INTO billing_policies
-         (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
-       VALUES (?, ?, ?, ?)`,
+         (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit,
+          auto_renew)
+       VALUES (?, ?, ?, ?, 0)`,
       [gymId, insertId, cadence.interval, cadence.unit],
     );
   }
