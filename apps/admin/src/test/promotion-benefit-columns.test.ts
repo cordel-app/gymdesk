@@ -101,10 +101,8 @@ describe('#919/#920: locale coverage', () => {
     // resolved in the caller's namespace, which is what lets the Promotion card
     // say "Regular Price" where the Plan card says "Original price".
     'col_original_price', 'col_final_price', 'benefit_total_price',
-    // The Frequency column now shows for the Session and One-off sections too,
-    // whose items carry these two frequencies — and next-intl prints a missing
-    // key verbatim, so an absent one would render "promotions.frequency_once".
-    'frequency_once', 'frequency_per_session',
+    // #1128: a Product's billing frequency is labelled from the one
+    // `billing_frequency` namespace, not from this one.
     // The Membership Fee Promotion column.
     'col_duration',
   ];

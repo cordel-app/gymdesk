@@ -51,6 +51,7 @@ import {
   toProductFormValues,
   visibleProductSections,
 } from './productProfile';
+import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import { Frequency, frequencyOptions, legacyFrequencyLabelKey } from './productFrequency';
 import {
   SESSION_ITEM_TYPE,
@@ -232,6 +233,10 @@ function fmtDate(iso: string | null) {
 
 export default function ProductsPage() {
   const t = useTranslations('products');
+  // #1128: a Product's Billing Frequency is labelled from the one namespace that
+  // labels every billing frequency, so this page, a Membership Plan's benefit
+  // row and an Assigned Plan card cannot name the same frequency three ways.
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
@@ -586,7 +591,7 @@ export default function ProductsPage() {
               >
                 <option value="">—</option>
                 {frequencyOptions(inlineNew.billing_frequency).map((o) => (
-                  <option key={o.value} value={o.value} disabled={o.disabled}>{t(o.labelKey as any)}</option>
+                  <option key={o.value} value={o.value} disabled={o.disabled}>{tFreq(o.labelKey as any)}</option>
                 ))}
               </select>
             </div>
@@ -709,7 +714,7 @@ export default function ProductsPage() {
           // beside the editor's select and nowhere else.
           return (
             <div style={productValueStyle}>
-              {item.billing_frequency ? t(`frequency_${item.billing_frequency}` as any) : EMPTY_VALUE}
+              {billingFrequencyLabel(item.billing_frequency, tFreq) ?? EMPTY_VALUE}
             </div>
           );
         case 'validity_days':
@@ -851,7 +856,7 @@ export default function ProductsPage() {
               >
                 <option value="">{EMPTY_VALUE}</option>
                 {frequencyOptions(editForm.billing_frequency).map((o) => (
-                  <option key={o.value} value={o.value} disabled={o.disabled}>{t(o.labelKey as any)}</option>
+                  <option key={o.value} value={o.value} disabled={o.disabled}>{tFreq(o.labelKey as any)}</option>
                 ))}
               </select>
               {/* #945: the notice names the frequency the row holds, since
@@ -860,7 +865,7 @@ export default function ProductsPage() {
                   `defaultValue` option and would print the key. */}
               {editLegacyFrequencyLabelKey && (
                 <div style={legacyFrequencyNoticeStyle}>
-                  {t('frequency_legacy_notice', { frequency: t(editLegacyFrequencyLabelKey as any) })}
+                  {t('frequency_legacy_notice', { frequency: tFreq(editLegacyFrequencyLabelKey as any) })}
                 </div>
               )}
             </div>
@@ -969,7 +974,7 @@ export default function ProductsPage() {
               : '—'}
           </div>
           <div className={CELL_CLASS.frequency} style={{ ...cellStyle, fontSize: 13, color: '#666' }}>
-            {item.billing_frequency ? t(`frequency_${item.billing_frequency}`) : '—'}
+            {billingFrequencyLabel(item.billing_frequency, tFreq) ?? '—'}
           </div>
           <div className={CELL_CLASS.created_by} style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
             {item.created_by_name ?? '—'}
@@ -1131,7 +1136,7 @@ export default function ProductsPage() {
                 value={withTaxNote(fmtAmount(details.amount, details.currency), details)}
                 hint={noteText(sessionPackageNote(details))}
               />
-              <ModalField label={t('label_frequency')} value={details.billing_frequency ? t(`frequency_${details.billing_frequency}`) : '—'} />
+              <ModalField label={t('label_frequency')} value={billingFrequencyLabel(details.billing_frequency, tFreq) ?? '—'} />
               <ModalField label={t('label_validity_days')} value={details.validity_days != null ? String(details.validity_days) : '—'} />
               <ModalField
                 label={t('label_tax_rate')}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { BILLING_FREQUENCY_NAMESPACE } from '@/lib/billingFrequency';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
@@ -309,19 +310,25 @@ export default function PlansPage() {
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   const { toast } = useToast();
 
-  // #820: how a stored cadence reads on screen — "Month" / "4 Weeks" for the two
-  // configurable ones, and the plain "Every 2 months" form for a Plan configured
-  // before the rule, which still bills on it and must still say so.
+  // #820: how a stored cadence reads on screen — "Monthly" / "Every 4 weeks" for
+  // the two configurable ones (#1128's own words, shared with every Product
+  // billed on the same period), and the plain "Every 2 months" form for a Plan
+  // configured before the rule, which still bills on it and must still say so.
   // The `plans.*` namespace, for helpers that are shared with a screen using
   // `useTranslations('plans')` (the Details modal) and so name their keys
   // unprefixed.
   const planT = (key: string, values?: Record<string, unknown>): string =>
     t(`plans.${key}` as any, values as any);
 
+  // #1128: every billing frequency on this page reads from the one namespace
+  // that labels them, so a Plan cannot name a cadence differently from the
+  // Products billed on it.
+  const tFreq = (key: string): string => t(`${BILLING_FREQUENCY_NAMESPACE}.${key}` as any);
+
   const billingFrequencyText = (interval: number, unit: string): string => {
     const freq = planBillingFrequencyOf(interval, unit);
     return freq
-      ? t(`plans.${PLAN_BILLING_FREQUENCY_OPTIONS[freq].labelKey}` as any)
+      ? tFreq(PLAN_BILLING_FREQUENCY_OPTIONS[freq].labelKey)
       : legacyBillingFrequencyText(interval, unit);
   };
 
@@ -937,7 +944,7 @@ export default function PlansPage() {
           </p>
           <p style={{ ...fieldDescStyle, margin: '0 0 12px' }}>
             {t('plans.default_billing_notice', {
-              billing: t(`plans.${PLAN_BILLING_FREQUENCY_OPTIONS[DEFAULT_PLAN_BILLING_FREQUENCY].labelKey}` as any),
+              billing: tFreq(PLAN_BILLING_FREQUENCY_OPTIONS[DEFAULT_PLAN_BILLING_FREQUENCY].labelKey),
             })}
           </p>
           {inlineNew.error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{inlineNew.error}</p>}
@@ -1285,7 +1292,7 @@ export default function PlansPage() {
                                     unit on screen and never the values. */}
                                 <span style={{ ...fieldDescStyle, whiteSpace: 'nowrap' }}>
                                   {t('plans.periods_unit_suffix', {
-                                    frequency: t(`plans.${PLAN_BILLING_FREQUENCY_OPTIONS[durationForm.billing_frequency].labelKey}` as any),
+                                    frequency: planT(PLAN_BILLING_FREQUENCY_OPTIONS[durationForm.billing_frequency].periodLabelKey),
                                   })}
                                 </span>
                               </div>
@@ -1307,7 +1314,7 @@ export default function PlansPage() {
                             style={{ ...inlineSelectStyle, flex: 1 }}
                           >
                             {PLAN_BILLING_FREQUENCIES.map((freq) => (
-                              <option key={freq} value={freq}>{t(`plans.${PLAN_BILLING_FREQUENCY_OPTIONS[freq].labelKey}` as any)}</option>
+                              <option key={freq} value={freq}>{tFreq(PLAN_BILLING_FREQUENCY_OPTIONS[freq].labelKey)}</option>
                             ))}
                           </select>
                         </div>

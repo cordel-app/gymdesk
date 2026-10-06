@@ -167,7 +167,10 @@ describe('#916: the read-only view renders from the declaration', () => {
   });
 
   it('keeps a missing frequency as a "—" in its own cell', () => {
-    expect(componentSrc).toMatch(/product_billing_frequency[\s\S]{0,140}: '—'/);
+    // #1128: the label — and the decision that an absent or unknown value has
+    // none — is `billingFrequencyLabel()`'s, so the cell reads `?? '—'` rather
+    // than interpolating the column into a key of its own.
+    expect(componentSrc).toMatch(/billingFrequencyLabel\(row\.product_billing_frequency, tFreq\) \?\? '—'/);
   });
 
   it('shows "—" for an item with no price rather than €0.00', () => {
@@ -235,10 +238,9 @@ describe('#919/#920: the Promotions card shares the same declaration', () => {
 describe('#916: locale coverage', () => {
   const REQUIRED = [
     'col_original_price', 'col_final_price', 'benefit_total_price',
-    // The Frequency column now shows for the One-off and Session sections too,
-    // whose items carry these two frequencies — and next-intl prints a missing
-    // key verbatim, so an absent one would render "plans.frequency_once".
-    'frequency_once', 'frequency_per_session',
+    // #1128: the Frequency column's own labels are no longer the page's. A
+    // Product's billing frequency reads from the one `billing_frequency`
+    // namespace, asserted by `api/src/test/billing-frequency-labels.unit.test.ts`.
   ];
 
   for (const code of LOCALE_CODES) {

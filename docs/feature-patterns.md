@@ -107,6 +107,20 @@ Reference implementation: `apps/member/src/components/MemberGoalCard.tsx` + `app
 
 ---
 
+## One vocabulary for a value shown on many screens (#1128)
+
+A stored enum displayed by several pages drifts in its *labels* long before it drifts in its values, because each page resolves `t()` in its own namespace and next-intl has no shared one. A Product's Billing Frequency had reached five namespaces and four spellings of the same month.
+
+The shape that fixes it, and the one to copy:
+
+- **One module decides the key, one namespace holds the words.** `apps/admin/src/lib/billingFrequency.ts` + the `billing_frequency` namespace in en/es/ca. The module exports the namespace name, the key builder (`billingFrequencyLabelKey()`) and a resolver that answers `null` when there is nothing to label (`billingFrequencyLabel()`), so a caller renders `—` rather than printing the key.
+- **A page or component adds a second translator, it does not pass the label down.** `const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE)` beside the page's own `t`, exactly as `tStatus = useTranslations('status')` already does. A shared component that receives `t` as a prop (`ProductBenefits.tsx`) resolves the shared namespace itself — that is what stops the caller's namespace deciding the words.
+- **Keep a different question in a different key.** A Session Benefit's renewal Frequency (#918) and the period noun a duration is counted in (#892) look like the same value and are not: they keep their own keys, and the shared module is never pointed at them.
+- **A derived pair gets one formatter too.** A Membership Plan's cadence is an `(interval, unit)` pair; `cadenceFrequencyLabel()` turns it into the same words, so no surface prints `1 / month`. Put that formatter where every consumer can import it — a page module cannot be imported by a component.
+- **The gate is a locale scan, not a render test.** Every spelling renders fine, which is why nothing notices the drift: `api/src/test/billing-frequency-labels.unit.test.ts` asserts the one namespace covers every stored value, that **no other** namespace carries a copy, that no source builds the key itself, and that the Members App's own map says the same words (the two apps share no module). It lives in the API suite because CI runs `npm test` in `api/` only.
+
+---
+
 ## Standard Error Response
 
 All API errors must return JSON in this shape — never HTML, never a raw string:

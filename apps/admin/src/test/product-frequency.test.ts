@@ -42,6 +42,11 @@ function productsNamespace(code: string): Record<string, string> {
   return (messages.products ?? {}) as Record<string, string>;
 }
 
+function billingFrequencyNamespace(code: string): Record<string, string> {
+  const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
+  return (messages.billing_frequency ?? {}) as Record<string, string>;
+}
+
 describe('the declaration', () => {
   it('offers exactly the four choices the ticket lists, in that order', () => {
     expect(OFFERED_FREQUENCIES).toEqual(['once', 'four_weeks', 'month', 'year']);
@@ -123,14 +128,14 @@ describe('the page renders the declaration, not its own list', () => {
 
   it('flags an item still stored on a retired frequency, naming which one', () => {
     expect(pageSrc).toContain('legacyFrequencyLabelKey(editForm.billing_frequency)');
-    expect(pageSrc).toContain("t('frequency_legacy_notice', { frequency: t(editLegacyFrequencyLabelKey as any) })");
+    expect(pageSrc).toContain("t('frequency_legacy_notice', { frequency: tFreq(editLegacyFrequencyLabelKey as any) })");
   });
 });
 
 // #945 §2: "Configuring a Product within other entities, where the same
 // Billing Frequency selector is used." There is no such other entity — the
 // offered list has exactly one consumer, and every other surface *displays* a
-// stored frequency (`t(`frequency_${value}`)`, legacy values included) rather
+// stored frequency (`billingFrequencyLabel()`, legacy values included) rather
 // than offering it. This pins that, so a second selector cannot appear
 // somewhere that keeps offering Per Session.
 describe('the offered list has one consumer', () => {
@@ -157,12 +162,20 @@ describe('the offered list has one consumer', () => {
 });
 
 describe('translations', () => {
+  // #1128: the labels themselves live in the one `billing_frequency` namespace,
+  // asserted — values and all — by
+  // `api/src/test/billing-frequency-labels.unit.test.ts`. What this file still
+  // owns is that the *option list* keys resolve there and nowhere else.
   it('keeps a label for every option, the retired ones included', () => {
     for (const code of LOCALE_CODES) {
-      const ns = productsNamespace(code);
+      const ns = billingFrequencyNamespace(code);
       for (const f of [...OFFERED_FREQUENCIES, ...LEGACY_FREQUENCIES]) {
-        expect(ns[`frequency_${f}`], `${code}.products.frequency_${f}`).toBeTruthy();
+        expect(ns[`frequency_${f}`], `${code}.billing_frequency.frequency_${f}`).toBeTruthy();
       }
+      expect(
+        productsNamespace(code)[`frequency_${OFFERED_FREQUENCIES[0]}`],
+        `${code}.products still carries a copy of the frequency labels`,
+      ).toBeUndefined();
     }
   });
 

@@ -29,6 +29,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel } from '@/lib/billingFrequency';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { CardDetailRow } from '@/components/CardDetailRow';
@@ -189,6 +190,9 @@ export function AssignedPlanConfiguration({
   assignedPlanId, planStatus, snapshot, cardEditing, canWrite, readOnlyTitle, onChanged,
 }: Props) {
   const t = useTranslations('assigned_plans_page');
+  // #1128: the frozen cadence reads as the frequency it is ("Monthly"), not as
+  // the stored pair ("1 × Month").
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const itemsLoadedRef = useRef(false);
@@ -436,7 +440,11 @@ export function AssignedPlanConfiguration({
           <CardDetailRow
             label={t('label_billing_frequency')}
             value={snapshot.recurring_billing_interval != null && snapshot.recurring_billing_unit
-              ? `${snapshot.recurring_billing_interval} × ${t(`unit_${snapshot.recurring_billing_unit}` as any)}`
+              ? cadenceFrequencyLabel(
+                snapshot.recurring_billing_interval,
+                snapshot.recurring_billing_unit,
+                tFreq,
+              )
               : t('not_configured')}
           />
           <CardDetailRow label={t('label_membership_fee')} value={fmtMoney(snapshot.membership_fee_price)} />

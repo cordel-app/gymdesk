@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { BILLING_FREQUENCY_NAMESPACE } from '@/lib/billingFrequency';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import {
@@ -50,6 +51,8 @@ export function PlanDetailModal({ plan, onClose }: {
 }) {
   const t = useTranslations('plans');
   const tStatus = useTranslations('status');
+  // #1128: the one namespace that labels a billing frequency.
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const unknown = t('details_unknown');
 
   const field = (label: string, value: string | null | undefined) => (
@@ -68,7 +71,7 @@ export function PlanDetailModal({ plan, onClose }: {
 
   const priceLabel = plan.current_price != null ? `€${parseFloat(plan.current_price).toFixed(2)}` : null;
 
-  // #820: the same two labels the Billing frequency dropdown offers, so the
+  // #820/#1128: the same two labels the Billing frequency dropdown offers, so the
   // Details view and the card cannot name the same cadence differently. A Plan
   // configured before the rule still reads as the cadence it bills on.
   const billingFrequency = plan.billing_policy
@@ -77,7 +80,7 @@ export function PlanDetailModal({ plan, onClose }: {
   const billingLabel = !plan.billing_policy
     ? null
     : billingFrequency
-      ? t(PLAN_BILLING_FREQUENCY_OPTIONS[billingFrequency].labelKey as any)
+      ? tFreq(PLAN_BILLING_FREQUENCY_OPTIONS[billingFrequency].labelKey as any)
       : legacyBillingFrequencyText(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit);
   const enrollmentLabel = tStatus(plan.enrollment_status);
 

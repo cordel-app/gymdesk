@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
+import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel } from '@/lib/billingFrequency';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { useModuleAccess } from '@/lib/useModuleAccess';
@@ -92,6 +93,9 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
 }) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
+  // #1128: the Plan's cadence reads in the one billing-frequency vocabulary
+  // ("Monthly", "Every 4 weeks"), never as the stored pair ("1 / month").
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const locale = useLocale();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
@@ -251,7 +255,11 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         {detail.billing_policy && (
           <CardDetailRow
             label={t('label_billing_frequency')}
-            value={`${detail.billing_policy.recurring_billing_interval} / ${detail.billing_policy.recurring_billing_unit}`}
+            value={cadenceFrequencyLabel(
+              detail.billing_policy.recurring_billing_interval,
+              detail.billing_policy.recurring_billing_unit,
+              tFreq,
+            )}
           />
         )}
         <CardDetailRow label={t('label_start_date')} value={fmtDate(detail.starts_at)} />

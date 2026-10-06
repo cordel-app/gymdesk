@@ -184,10 +184,6 @@ describe('Plans: locale coverage', () => {
     'col_quantity',
     'col_frequency',
     'inactive_item_tag',
-    'frequency_week',
-    'frequency_month',
-    'frequency_four_weeks',
-    'frequency_year',
   ];
 
   for (const code of LOCALE_CODES) {

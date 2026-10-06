@@ -269,7 +269,7 @@
       "periodical": "Period benefits"
     },
     "frequency": {
-      "once": "One-off",
+      "once": "Once",
       "per_session": "Per session",
       "week": "Weekly",
       "four_weeks": "Every 4 weeks",

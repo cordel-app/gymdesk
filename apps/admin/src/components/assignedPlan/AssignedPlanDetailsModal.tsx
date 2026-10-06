@@ -1,6 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel } from '@/lib/billingFrequency';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import type { AssignedPlanDetail } from './types';
@@ -19,6 +20,7 @@ export function AssignedPlanDetailsModal({ detail, onClose }: {
 }) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
 
   const field = (label: string, value: string | null | undefined) => (
     <div style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid #f5f5f5' }}>
@@ -44,7 +46,11 @@ export function AssignedPlanDetailsModal({ detail, onClose }: {
         {field(t('detail_effective_price'), fmtMoney(detail.membership_fee))}
         {detail.billing_policy && field(
           t('label_billing_frequency'),
-          `${detail.billing_policy.recurring_billing_interval} / ${detail.billing_policy.recurring_billing_unit}`,
+          cadenceFrequencyLabel(
+            detail.billing_policy.recurring_billing_interval,
+            detail.billing_policy.recurring_billing_unit,
+            tFreq,
+          ),
         )}
         {detail.discount_reason && field(t('label_discount_reason'), detail.discount_reason)}
 

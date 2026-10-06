@@ -134,23 +134,30 @@ describe('the read-only halves name the cadence the same way', () => {
   });
 
   it('describes a new plan\'s default cadence with the option label', () => {
-    expect(pageSrc).toContain('billing: t(`plans.${PLAN_BILLING_FREQUENCY_OPTIONS[DEFAULT_PLAN_BILLING_FREQUENCY].labelKey}` as any)');
+    expect(pageSrc).toContain('billing: tFreq(PLAN_BILLING_FREQUENCY_OPTIONS[DEFAULT_PLAN_BILLING_FREQUENCY].labelKey)');
   });
 });
 
 describe('translations', () => {
-  it.each(LOCALE_CODES)('%s has a label for each option plus the legacy notice', (code) => {
+  // #1128: the frequency's own label left the `plans` namespace for the one
+  // `billing_frequency` namespace every surface reads it from — asserted, in all
+  // three locales, by `api/src/test/billing-frequency-labels.unit.test.ts`. What
+  // stays here is what is still the Plan's own: the period noun a duration is
+  // counted in, and the legacy-cadence notice.
+  it.each(LOCALE_CODES)('%s names one period of each option, plus the legacy notice', (code) => {
     const plans = plansNamespace(code);
     for (const freq of PLAN_BILLING_FREQUENCIES) {
-      const key = PLAN_BILLING_FREQUENCY_OPTIONS[freq].labelKey;
+      const key = PLAN_BILLING_FREQUENCY_OPTIONS[freq].periodLabelKey;
       expect(plans[key], `${code}.plans.${key}`).toBeTruthy();
+      // The frequency label is not duplicated back into this namespace.
+      expect(plans[PLAN_BILLING_FREQUENCY_OPTIONS[freq].labelKey]).toBeUndefined();
     }
     expect(plans.billing_frequency_legacy_notice, `${code}.plans.billing_frequency_legacy_notice`).toContain('{current}');
   });
 
-  it('reads "Month" and "4 Weeks" in English, exactly as the ticket writes them', () => {
+  it('counts a duration in "Month" and "4 Weeks", as #892 §9 writes them', () => {
     const plans = plansNamespace('en');
-    expect(plans.billing_frequency_month).toBe('Month');
-    expect(plans.billing_frequency_four_weeks).toBe('4 Weeks');
+    expect(plans.period_unit_month).toBe('Month');
+    expect(plans.period_unit_four_weeks).toBe('4 Weeks');
   });
 });
