@@ -7,6 +7,9 @@ import {
   simulationPriceLabelKey,
 } from '@/lib/billingEventSimulation';
 import {
+  ExampleTimelineCycleInfo,
+  exampleTimelineCycleNote,
+  exampleTimelineRowCycle,
   exampleTimelineRowTone,
   formatExampleTimelineBilling,
 } from '@/lib/exampleTimeline';
@@ -486,6 +489,12 @@ export interface PlanExampleTimeline {
   currency: string;
   anchorDate: string | null;
   periods: PlanTimelinePeriod[];
+  /**
+   * #1130 stage 2 — the cycle the periods belong to: how long one iteration is
+   * and whether it starts again (the Plan's Auto Renew). `null` for a Plan with
+   * no Billing & Duration configured, which has no cycle to group by.
+   */
+  cycle?: ExampleTimelineCycleInfo | null;
 }
 
 /**
@@ -531,6 +540,30 @@ export function planTimelineRowTone(
   row: Pick<PlanTimelinePeriod, 'status' | 'waived'>,
 ): 'free' | 'regular' | 'benefit' {
   return exampleTimelineRowTone(row);
+}
+
+/**
+ * #1130 stage 2 — the Cycle column, and the marker under the table.
+ *
+ * Both are the shared rules (`lib/exampleTimeline.ts`), re-exported here for
+ * the same reason the Billing cell is: a card under `components/` cannot import
+ * a page module, and the Assigned Plan card renders the very same table. Which
+ * iteration a row sits in and whether the cycle repeats are the engine's
+ * answers — this page only turns the note's *kind* into one of its own keys.
+ */
+export { exampleTimelineRowCycle as planTimelineRowCycle };
+export type { ExampleTimelineCycleInfo };
+
+/** The `plans.*` key for each cycle marker. */
+export const PLAN_TIMELINE_CYCLE_NOTE_KEYS = {
+  repeats: 'timeline_cycle_repeats',
+  once: 'timeline_cycle_once',
+} as const;
+
+/** `plans.timeline_cycle_*`, or `null` where there is no cycle to say anything about. */
+export function planTimelineCycleNoteKey(cycle: ExampleTimelineCycleInfo | null | undefined): string | null {
+  const note = exampleTimelineCycleNote(cycle ?? null);
+  return note ? PLAN_TIMELINE_CYCLE_NOTE_KEYS[note] : null;
 }
 
 /* ── Billing Event Simulation (#915) ──────────────────────────────────────── */

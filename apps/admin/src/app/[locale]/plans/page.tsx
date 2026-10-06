@@ -63,6 +63,8 @@ import {
   memberLimitChipStyle,
   planBillingFrequencyOf,
   planBillingPolicyBody,
+  planTimelineCycleNoteKey,
+  planTimelineRowCycle,
   planTimelineRowTone,
   toPlanGeneralFormValues,
   toPlanGeneralUpdatePayload,
@@ -1504,13 +1506,20 @@ export default function PlansPage() {
                         )}
                         <ExampleTimeline
                           labels={{
+                            // #1130 stage 2 — the Cycle column is rendered only
+                            // for rows that carry an iteration, which is the
+                            // server's answer and not this page's.
+                            cycle: t('plans.col_cycle'),
                             period: t('plans.col_period'),
                             dates: t('plans.col_dates'),
                             status: t('plans.col_status'),
                             billing: t('plans.col_billing'),
                           }}
-                          rows={plan.example_timeline.periods.map((row) => ({
+                          rows={plan.example_timeline.periods.map((row, i) => ({
                             key: row.period,
+                            cycle: planTimelineRowCycle(
+                              plan.example_timeline.periods, plan.example_timeline.cycle, i,
+                            ),
                             period: row.endsOn ? String(row.period) : `${row.period}+`,
                             dates: row.endsOn
                               ? `${fmtTimelineDate(row.startsOn, locale)} – ${fmtTimelineDate(row.endsOn, locale)}`
@@ -1529,6 +1538,15 @@ export default function PlansPage() {
                             ),
                             tone: planTimelineRowTone(row),
                           }))}
+                          cycleNote={(() => {
+                            // §1 — `↻ Repeats indefinitely` after the second
+                            // iteration, or `✓ One cycle only — no renewal` for
+                            // a Plan whose cycle runs through once. Which one is
+                            // the shared rule's answer; the wording is this
+                            // page's key.
+                            const key = planTimelineCycleNoteKey(plan.example_timeline.cycle);
+                            return key ? t(`plans.${key}` as any) : null;
+                          })()}
                           footnotes={
                             <>
                               <p style={{ margin: '8px 0 0', fontSize: 11, color: '#aaa', fontStyle: 'italic' }}>

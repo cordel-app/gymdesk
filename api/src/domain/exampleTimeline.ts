@@ -65,6 +65,16 @@ export interface ExampleTimelineResult {
   /** The date the periods were counted from. */
   anchorDate: string | null;
   periods: ExampleTimelinePeriod[];
+  /**
+   * #1130 stage 2 — the cycle the rows belong to, so the table can group them
+   * and say whether it starts again. `null` for a contract with nothing
+   * configured (there is no cycle to speak of) and on an unavailable
+   * projection; it is `timelineCycleFor()`'s answer, reported rather than
+   * re-derived, because which periods form one iteration and whether it
+   * repeats are the engine's decisions and a second place deciding either is
+   * how a table comes to group rows the run bills differently.
+   */
+  cycle: ExampleTimelineCycle | null;
 }
 
 /** What an adapter answers for one period, given the date it starts on. */
@@ -115,31 +125,47 @@ export const MAX_TIMELINE_PERIODS = 60;
 export const REPEATED_CYCLE_ITERATIONS = 2;
 
 /**
- * #1130 — the repeating cycle this contract is on, when it is on one.
+ * #1130 — the cycle this contract's Free -> Pre-paid -> Paid -> Bonus stretch
+ * forms, and whether it starts again.
  *
- * `null` (or a zero `length`) is the ordinary case and keeps the walk exactly
- * as it was: run until `TRAILING_REGULAR_PERIODS` regular periods have been
- * shown. An adapter passes this only when the duration it prices from actually
- * repeats, so the decision stays `PlanDuration.repeats`' and is not re-derived
- * here.
+ * `null` (or a zero `length`) is the contract with nothing configured: no
+ * cycle, so the walk keeps the rule it has always had — run until
+ * `TRAILING_REGULAR_PERIODS` regular periods have been shown — and the table
+ * groups nothing. A cycle that **repeats** is the only one that changes the
+ * stopping rule; stage 2 reports a non-repeating one too, because `1` beside
+ * the configured stretch and `One cycle only` under it is exactly what a
+ * non-renewing contract has to say.
  */
 export interface ExampleTimelineCycle {
   /** Periods in one iteration — `planDurationCycleLength()`. */
   length: number;
-  /** How many of them to show. `REPEATED_CYCLE_ITERATIONS` in practice. */
+  /**
+   * Whether the iteration starts again — `PlanDuration.repeats`, never
+   * re-derived. It is what decides the stopping rule below *and* which marker
+   * the table prints beside its last row, so the two cannot disagree.
+   */
+  repeats: boolean;
+  /**
+   * How many iterations to show: `REPEATED_CYCLE_ITERATIONS` while it repeats,
+   * `1` otherwise — a contract that runs its durations once has exactly one.
+   */
   iterations: number;
 }
 
 /**
- * #1130 — the repeating cycle to bound the walk by, or `null` for a contract
- * that runs its durations once. One helper, shared by both adapters, so the
- * two timelines cannot bound themselves differently.
+ * #1130 — the cycle to group the rows by (and, while it repeats, to bound the
+ * walk by), or `null` for a contract with no configured durations at all. One
+ * helper, shared by both adapters, so the two timelines cannot bound or group
+ * themselves differently.
  */
 export function timelineCycleFor(duration: PlanDuration): ExampleTimelineCycle | null {
   const length = planDurationCycleLength(duration);
-  return duration.repeats && length > 0
-    ? { length, iterations: REPEATED_CYCLE_ITERATIONS }
-    : null;
+  if (length <= 0) return null;
+  return {
+    length,
+    repeats: duration.repeats,
+    iterations: duration.repeats ? REPEATED_CYCLE_ITERATIONS : 1,
+  };
 }
 
 export interface ExampleTimelineWalkInput {
@@ -198,7 +224,12 @@ export function walkExampleTimeline(input: ExampleTimelineWalkInput): ExampleTim
   const { cadence } = input;
   if (!cadence || !Number.isInteger(Number(cadence.interval)) || Number(cadence.interval) < 1) {
     return {
-      available: false, reason: input.reasonWhenNoCadence, currency: 'EUR', anchorDate: null, periods: [],
+      available: false,
+      reason: input.reasonWhenNoCadence,
+      currency: 'EUR',
+      anchorDate: null,
+      periods: [],
+      cycle: null,
     };
   }
 
@@ -211,10 +242,14 @@ export function walkExampleTimeline(input: ExampleTimelineWalkInput): ExampleTim
 
   // #1130 — a repeating cycle's budget is its own iterations; everything else
   // keeps the trailing-regular rule, so `rowsWanted` is null there and the
-  // loop condition below is the pre-ticket one.
-  const cycleLength = Math.max(0, Math.trunc(input.cycle?.length ?? 0) || 0);
-  const iterations = Math.max(1, Math.trunc(input.cycle?.iterations ?? 0) || 1);
-  const rowsWanted = cycleLength > 0 ? cycleLength * iterations : null;
+  // loop condition below is the pre-ticket one. A cycle that does **not**
+  // repeat is reported for the table to group by (stage 2) and bounds nothing:
+  // its contract still settles into its regular price, and those trailing rows
+  // are what say so.
+  const cycle = input.cycle ?? null;
+  const cycleLength = Math.max(0, Math.trunc(cycle?.length ?? 0) || 0);
+  const iterations = Math.max(1, Math.trunc(cycle?.iterations ?? 0) || 1);
+  const rowsWanted = cycle?.repeats && cycleLength > 0 ? cycleLength * iterations : null;
 
   while (
     (rowsWanted != null ? periods.length < rowsWanted : regularShown < TRAILING_REGULAR_PERIODS)
@@ -239,5 +274,7 @@ export function walkExampleTimeline(input: ExampleTimelineWalkInput): ExampleTim
   const last = periods[periods.length - 1];
   if (last && rowsWanted == null && regularShown === TRAILING_REGULAR_PERIODS) last.endsOn = null;
 
-  return { available: true, reason: null, currency: 'EUR', anchorDate: anchor, periods };
+  return {
+    available: true, reason: null, currency: 'EUR', anchorDate: anchor, periods, cycle: cycleLength > 0 ? cycle : null,
+  };
 }
