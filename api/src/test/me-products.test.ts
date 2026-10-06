@@ -589,7 +589,7 @@ async function grantProduct(
      VALUES (?, ?, ?, ?, ?, ?)`,
     [
       gid, promotionId, productId, opts.quantity ?? 1,
-      opts.action ?? 'percentage_discount', opts.value ?? 50,
+      opts.action ?? 'percentage_discount', opts.value === undefined ? 50 : opts.value,
     ],
   );
 }
@@ -643,7 +643,7 @@ describe('which Promotions the catalogue offers (#1118 §4, the thread’s Q4)',
   it('offers nothing outside the Promotion’s own window, or when it is switched off', async () => {
     const { gid, clerk } = await purchaseGym('Window');
     const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
-    const ended = await createPromotion(gid, { name: 'Ended', endsAt: '2020-01-01' });
+    const ended = await createPromotion(gid, { name: 'Ended', startsAt: '2019-01-01', endsAt: '2020-01-01' });
     const future = await createPromotion(gid, { name: 'Future', startsAt: '2099-01-01' });
     const off = await createPromotion(gid, { name: 'Off', status: 'inactive' });
     for (const id of [ended, future, off]) await grantProduct(gid, id, productId);
@@ -706,8 +706,8 @@ describe('which Promotions the catalogue offers (#1118 §4, the thread’s Q4)',
       'SELECT id FROM members WHERE gym_id = ?', [gid],
     );
     const { insertId: planId } = await db.query(
-      `INSERT INTO membership_plans (gym_id, name, status, base_price)
-       VALUES (?, 'Standard', 'active', 0)`,
+      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, base_price)
+       VALUES (?, 'Standard', 'active', 'public', 0)`,
       [gid],
     );
     await db.query(
