@@ -15,6 +15,9 @@ export const AUDIT_ACTIONS: string[] = [
   'book_recurring_slots', 'update_recurring_slots',
   // #979: a cancelled event put back on the calendar.
   'reactivate',
+  // #1108 stage 2: the Member window's Save & Pay — the commit that raises the
+  // first payment, and the one that activates a plan whose first cycle is free.
+  'save_and_pay',
 ];
 
 interface SimpleEntity {
