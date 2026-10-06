@@ -46,6 +46,17 @@ jobs:
       # #784: the host is the selected environment's `API_BASE_URL` variable
       # (a variable, not a secret: a hostname is not a credential, and seeing it
       # in the log is how a run that hit the wrong API gets diagnosed).
+      #
+      # #1086: that variable is the **admin app's** relay prefix now —
+      # `https://admin.vdicube.com/api/internal` on dev,
+      # `https://admin.cordel.tech/api/internal` on pro — so the API itself does
+      # not have to be reachable from GitHub's runners. Nothing below changes:
+      # the relay forwards `X-Internal-Secret` and the body, and hands back the
+      # API's own status code and body byte for byte, so every check in this
+      # workflow still reads what the API said. Three statuses are the relay's
+      # own rather than the API's: 404 (a path outside its allowlist), 502/504
+      # (it could not reach the API, or the API took longer than its timeout)
+      # and 500 (it has no API URL configured).
       API_BASE_URL: ${{ vars.API_BASE_URL }}
 
     steps:
@@ -58,7 +69,7 @@ jobs:
           # environment's name is deliberately not repeated here — the `environment:`
           # line above is the one place that decides it; the job header shows it.)
           if [ -z "${API_BASE_URL:-}" ]; then
-            echo "::error title=API_BASE_URL is not set::The GitHub environment this job runs in has no API_BASE_URL variable, so the billing run cannot know which API to call — no membership was charged. Add it under Settings -> Environments -> <this job's environment> -> Environment variables (#784)."
+            echo "::error title=API_BASE_URL is not set::The GitHub environment this job runs in has no API_BASE_URL variable, so the billing run cannot know which host to call — no membership was charged. Since #1086 it is the admin app's relay prefix (https://admin.<host>/api/internal). Add it under Settings -> Environments -> <this job's environment> -> Environment variables (#784)."
             exit 1
           fi
           echo "Calling $API_BASE_URL"
@@ -84,7 +95,7 @@ jobs:
           printf 'POST /billing/run -> %s\n' "$body"
 
           if [ "$rc" -ne 0 ]; then
-            echo "::error title=Billing run did not execute::POST /billing/run failed (curl exit $rc) — no membership was charged. Check the API, the X-Internal-Secret pair, the internal-run rate limit (#783: 429 after repeated 401s from one IP), and whether a run is still in progress (#780: a completed run for today answers 200, not a failure)."
+            echo "::error title=Billing run did not execute::POST /billing/run failed (curl exit $rc) — no membership was charged. Check the admin app that relays the call (#1086: a 502/504 is the relay failing to reach the API, a 404 a path outside its allowlist), the API, the X-Internal-Secret pair, the internal-run rate limit (#783: 429 after repeated 401s from one client address), and whether a run is still in progress (#780: a completed run for today answers 200, not a failure)."
             exit 1
           fi
 

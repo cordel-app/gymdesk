@@ -49,6 +49,12 @@ jobs:
     env:
       # #784: the host is the selected environment's `API_BASE_URL` variable
       # (a variable, not a secret: a hostname is not a credential).
+      #
+      # #1086: that variable is the **admin app's** relay prefix now
+      # (`https://admin.<host>/api/internal`), which forwards this POST to the
+      # API and hands back its status and body unchanged — see billing-run.yml
+      # for the three statuses that are the relay's own. The relay waits longer
+      # than the `--max-time` below, so `curl` is still the first to give up.
       API_BASE_URL: ${{ vars.API_BASE_URL }}
 
     steps:
@@ -58,7 +64,7 @@ jobs:
           # No hardcoded fallback — see billing-run.yml. The environment's name
           # is not repeated here: the `environment:` line above decides it.
           if [ -z "${API_BASE_URL:-}" ]; then
-            echo "::error title=API_BASE_URL is not set::The GitHub environment this job runs in has no API_BASE_URL variable, so the recurring booking run cannot know which API to call — the rolling 2-month window did not advance. Add it under Settings -> Environments -> <this job's environment> -> Environment variables (#784)."
+            echo "::error title=API_BASE_URL is not set::The GitHub environment this job runs in has no API_BASE_URL variable, so the recurring booking run cannot know which host to call — the rolling 2-month window did not advance. Add it under Settings -> Environments -> <this job's environment> -> Environment variables (#784)."
             exit 1
           fi
           echo "Calling $API_BASE_URL"
@@ -83,7 +89,7 @@ jobs:
 
           if [ "$rc" -ne 0 ]; then
             printf 'POST /recurring-bookings/run -> %s\n' "$body"
-            echo "::error title=Recurring booking run did not execute::POST /recurring-bookings/run failed (curl exit $rc) — the rolling 2-month window did not advance tonight. Check the API, the X-Internal-Secret pair and the organization.professional_services feature flag."
+            echo "::error title=Recurring booking run did not execute::POST /recurring-bookings/run failed (curl exit $rc) — the rolling 2-month window did not advance tonight. Check the admin app that relays the call (#1086), the API, the X-Internal-Secret pair and the organization.professional_services feature flag."
             exit 1
           fi
 

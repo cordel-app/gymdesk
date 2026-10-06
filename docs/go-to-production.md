@@ -539,10 +539,15 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
 ## 4. API surface
 
 - [ ] Every route mounted in `api/src/app.ts` goes through `requireAuth()` unless it is
-      deliberately public: `/health`, `/docs`, `/public`, `/payment-page`, `/billing` and
-      `/recurring-bookings` (`X-Internal-Secret` + the per-route internal-run limiter, #783
-      — no IP restriction), `/themes`, and the two `/webhooks/*` routes
-      (signature-verified). Re-audit this list before launch.
+      deliberately public: `/health`, `/docs`, `/public`, `/payment-page`, `/billing`,
+      `/promotion-lifecycle` and `/recurring-bookings` (`X-Internal-Secret` + the per-route
+      internal-run limiter, #783 — no IP restriction), `/themes`, and the two `/webhooks/*`
+      routes (signature-verified). Re-audit this list before launch. Note that three of
+      them are no longer called from outside at all: Monei posts to the payment app
+      (#1083), Clerk to the admin app (#1085) and the nightly workflows to the admin app's
+      `/api/internal` (#1086), each of which relays to the API — so what is still owed is
+      not loosening any of these but deciding whether the API's own host stays reachable
+      (#1087).
 - [ ] Decide whether `/docs` (Swagger UI) should be exposed in production.
 - [ ] **Close out `js/missing-rate-limiting`** (#767): `/products` and `/taxes`
       carried `// lgtm[js/missing-rate-limiting]` comments that suppressed nothing (inline
@@ -667,6 +672,37 @@ hardening:
       otherwise). No new secret is owed — the step reuses `BILLING_INTERNAL_SECRET`.
 - [ ] **Bounded automatic retry, then pause** on a rejected recurring charge (#785). See
       the `#640` follow-up item in §5.
+- [ ] **The runs go through the admin app now, so three things are owed on each
+      environment** (#1086). `.github/workflows/billing-run.yml` and
+      `recurring-booking-run.yml` call `$API_BASE_URL/<path>` unchanged; what moved is that
+      `API_BASE_URL` is the **admin app's relay prefix** —
+      `https://admin.vdicube.com/api/internal` on `dev`,
+      `https://admin.cordel.tech/api/internal` on `pro` — and the relay
+      (`apps/admin/src/app/api/internal/[...path]/route.ts`) forwards each POST to the API
+      at `CORDEL_FITNESS_API_URL`, handing back its status and body byte for byte. Both
+      GitHub variables were already set to those values on 2026-10-05, so **the scheduled
+      runs fail on both environments until the admin app carrying that route is deployed**.
+      1. Deploy the admin app, then dispatch `billing-run.yml` against `dev` and confirm
+         the counters come back as before, that a wrong `X-Internal-Secret` is still a
+         `401` (relayed, not invented) and that a path outside the allowlist — e.g.
+         `https://admin.vdicube.com/api/internal/gyms` — is a `404` from the relay.
+      2. **Set `INTERNAL_RUN_RELAY_HOPS=1` on the API** if a reverse proxy sits between the
+         admin container and the API (i.e. the admin app reaches it through Traefik rather
+         than at an internal address). The internal-run budget is keyed per client address
+         and only a failed secret spends it (#783), so keyed on the relay instead, ten wrong
+         guesses from anywhere answer the nightly run `429` for the rest of the window.
+         Check it by sending one wrong-secret POST through the relay and reading which
+         address the API's log attributes it to. Leave it unset where the relay talks to
+         the API directly — the default (0) is then already right.
+      3. Check Traefik's own idle/response timeout on the **admin** host against
+         `/recurring-bookings/run`'s 600 s budget. The relay itself waits 660 s
+         (`INTERNAL_RUN_RELAY_TIMEOUT_MS`), so `curl --max-time 600` is meant to be the
+         first to give up; a shorter timeout at the edge would report a run the API
+         completed as a failure, and #780's guard would then refuse the retry as
+         `already_completed_today`.
+      With this done the API no longer has to be reachable from GitHub's runners — the last
+      of the three inbound paths (#1083 Monei, #1085 Clerk, #1086 these runs). Whether it
+      is then actually closed is the open question in #1087.
 
 ## 5. Payments (Monei / PCI)
 
