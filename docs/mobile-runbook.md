@@ -65,8 +65,9 @@ the iOS `AppDelegate` calls `FirebaseApp.configure()` only when the plist is in
 the bundle).
 
 **Check after an apply:** `git diff apps/mobile/ios apps/mobile/android` names
-the Bundle ID / `applicationId`, the display name and the URL schemes, and
-nothing else.
+the Bundle ID / `applicationId`, the display name, the URL schemes and the
+app-link host (`App.entitlements`' `applinks:…` and `@string/app_link_host`,
+#1076 — both derived from the profile's `serverUrl`), and nothing else.
 
 ## 2. What is still to be supplied for the stage-1 app
 
@@ -88,6 +89,21 @@ These are configuration, not code, and each one is a `docs/go-to-production.md`
   for the Google sheet on Android.
 - **`FCM_SERVICE_ACCOUNTS`** on the API, keyed by this app's id
   (`com.cordel.fitness`) — #1072.
+- **`MOBILE_APP_ASSOCIATIONS`** on the **Members App**, keyed by the same app id
+  (#1076): the Apple **Team ID** and the Android **SHA-256** signing
+  fingerprints. Until it is set,
+  `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`
+  answer `404`, neither platform verifies the domain, and a tapped invitation
+  link opens in the browser and completes there. Note the Android value must
+  include **Play App Signing's** fingerprint and not only the upload key's —
+  Play re-signs the app, and an install verifies against the key it was signed
+  with (`keytool -list -v -keystore …` gives a local key's; the Play Console's
+  *App integrity* page gives Play's).
+- **The *Associated Domains* capability** on the App ID in the Apple Developer
+  portal. The entitlement is committed and `profile:apply` keeps it on the
+  profile's own host, but the capability is what makes a provisioning profile
+  carry it — without it a signed build fails to install or silently ignores
+  universal links.
 - **The Firebase iOS SDK**, which is the one step that needs Xcode:
   *File → Add Package Dependencies…* → `https://github.com/firebase/firebase-ios-sdk`,
   product **FirebaseMessaging**, added to the `App` target. The Swift that uses
@@ -153,6 +169,10 @@ project from §2.
 | 7 | Sign out, then trigger another notification | No banner — the token was deleted *before* the session that authenticated the delete ended (WP2's `unregisterPushToken()`) |
 | 8 | Sign in as a different member on the **same** handset, then notify the first member | No banner on that handset: `UNIQUE (platform, token)` is global and the `POST` re-points the row to whoever signed in last (#1072) |
 | 9 | Release the Members App web build while the app is open and reopen it | The new web release is live with no store review (§2 of the plan) |
+| 10 | `curl -i https://<members host>/.well-known/apple-app-site-association` and `…/assetlinks.json` | `200`, `Content-Type: application/json`, **no redirect**, and the `appID` / `package_name` of this build. A `404` means `MOBILE_APP_ASSOCIATIONS` is unset (#1076) |
+| 11 | Tap an invitation link in **Notes** and in **Mail**, on each phone | The app opens and `/{locale}/link` completes the invitation. On Android check `adb shell pm get-app-links <package>` reads `verified` first — an unverified domain opens the browser |
+| 12 | The same link with the app **not** installed | Opens in the browser and still completes |
+| 13 | The same link from a mail client's own in-app browser | May open in that browser rather than the app. Known caveat, not a defect — the flow never depends on the app receiving the link |
 
 ## 6. Switching profile (the stage-2 rehearsal)
 
@@ -163,12 +183,12 @@ code change"* is checked like this — it needs no Mac:
 cd apps/mobile
 MOBILE_APP_ID=com.example.gymx MOBILE_APP_NAME="Gym X" \
   MOBILE_SERVER_URL=https://members.example.com npm run profile:apply
-git diff --stat apps/mobile                 # four files, no source file
+git diff --stat apps/mobile                 # five files, no source file
 git checkout -- ios android && npm run profile:apply   # back to the stage-1 app
 ```
 
 A real second app is a second file in `profiles/`, its own Bundle ID / package,
-its own Google clients, its own Firebase app, its own signing identity and its
-own store listing — and no change to any `.ts`, `.swift` or `.kt` in this
+its own Google clients, its own Firebase app, its own signing identity, its own
+key in `MOBILE_APP_ASSOCIATIONS` (#1076) and its own store listing — and no change to any `.ts`, `.swift` or `.kt` in this
 workspace. Read `docs/mobile-app.md` §4's open risks (Apple guideline 4.2.6
 above all) before promising a gym its own app.

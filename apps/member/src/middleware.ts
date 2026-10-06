@@ -23,7 +23,12 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
-  if (req.nextUrl.pathname.startsWith('/api/proxy')) {
+  // #1076 (mobile app WP4): the two site-association routes. The canonical
+  // `/.well-known/…` paths never reach this middleware at all (the matcher below
+  // excludes anything containing a dot), and the rewrite onto `/api/well-known`
+  // is internal — this is for a direct request to the internal path, which must
+  // answer the same file rather than a sign-in redirect or a locale prefix.
+  if (req.nextUrl.pathname.startsWith('/api/proxy') || req.nextUrl.pathname.startsWith('/api/well-known')) {
     return NextResponse.next();
   }
   if (!isPublicRoute(req)) {

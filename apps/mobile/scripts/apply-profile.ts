@@ -24,11 +24,12 @@ import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { AppProfileError } from '../src/appProfile';
 import { loadAppProfile } from '../src/loadAppProfile';
-import { androidIdentity, iosIdentity } from '../src/nativeIdentity';
+import { NativeIdentityError, androidIdentity, iosIdentity } from '../src/nativeIdentity';
 import {
   NativeProjectFileError,
   gradleNamespace,
   withAndroidStrings,
+  withAssociatedDomains,
   withBundleIdentifier,
   withGradleApplicationId,
   withPlistString,
@@ -66,6 +67,7 @@ function main(): void {
   console.log(`  app name  : ${profile.appName}`);
   console.log(`  server url: ${profile.serverUrl}`);
   console.log(`  schemes   : ${ios.urlSchemes.join(', ')}`);
+  console.log(`  app links : ${ios.associatedDomains.join(', ')} / ${android.appLinkHost}`);
 
   const edits: (Edit | null)[] = [
     planFileEdit(join(WORKSPACE, 'ios/App/App.xcodeproj/project.pbxproj'), (text) =>
@@ -73,6 +75,12 @@ function main(): void {
     ),
     planFileEdit(join(WORKSPACE, 'ios/App/App/Info.plist'), (text) =>
       withPlistUrlSchemes(withPlistString(text, 'CFBundleDisplayName', ios.displayName), ios.urlSchemes),
+    ),
+    // #1076 (WP4): the `associated-domains` entitlement. Written here for the
+    // reason the Bundle ID is — Xcode seeds the file once and a capability
+    // ticked in its UI would keep the previous profile's host.
+    planFileEdit(join(WORKSPACE, 'ios/App/App/App.entitlements'), (text) =>
+      withAssociatedDomains(text, ios.associatedDomains),
     ),
     planFileEdit(gradlePath, (text) =>
       withGradleApplicationId(text, android.applicationId),
@@ -82,6 +90,7 @@ function main(): void {
         appName: android.appName,
         packageName: android.applicationId,
         customUrlScheme: android.customUrlScheme,
+        appLinkHost: android.appLinkHost,
       }),
     ),
   ];
@@ -137,7 +146,11 @@ function copyFirebaseConfig(profileId: string): number {
 try {
   main();
 } catch (err) {
-  if (err instanceof AppProfileError || err instanceof NativeProjectFileError) {
+  if (
+    err instanceof AppProfileError ||
+    err instanceof NativeProjectFileError ||
+    err instanceof NativeIdentityError
+  ) {
     console.error(`profile:apply failed — ${err.message}`);
     process.exit(1);
   }

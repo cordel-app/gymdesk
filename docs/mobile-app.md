@@ -1,6 +1,6 @@
 # Mobile app (iOS / Android)
 
-**Status: WP1, WP2 and WP3 done; the shell exists but has not been built on a device or published.** Epic:
+**Status: WP1, WP2, WP3 and WP4 done; the shell exists but has not been built on a device or published.** Epic:
 [#1078](https://github.com/cordel-app/gymdesk/issues/1078).
 This file is the plan and the record of what a feasibility spike (2026-10-04) proved. Decisions that are settled live in
 `docs/decisions.md` (#18); what must be true before launch lives in
@@ -310,12 +310,95 @@ package).
   the invitation ticket instead of the email; (2) let a signed-in member attach Apple/Google to an
   existing account; (3) let the gym link manually.
 
-### WP4 — Universal links / app links (#1076)
-- Serve `/.well-known/apple-app-site-association` (`Content-Type: application/json`, no redirect)
-  and `/.well-known/assetlinks.json` from `apps/member`; the middleware matcher already skips paths
-  containing a dot, which must be checked. Add *Associated Domains* to the app.
-- Done when an invitation link (`/link?gym_id=…&__clerk_ticket=…`) opened from Notes or Mail opens
-  the app. Needs the Apple Developer account.
+### WP4 — Universal links / app links (#1076) — **done (code), unverified on a device**
+
+An invitation link tapped in Mail or Notes opens the app rather than the browser. Both platforms
+grant that only when **two halves** line up: the domain publishes a file naming the app, and the
+app declares the domain. Each half is one place.
+
+- **The web half is two routes in `apps/member`**, over two modules: `lib/appAssociations.ts`
+  decides what the files *say* (pure — no `fs`, no `next/*`, so the documents are assertable with
+  no server, no device and no store account) and `lib/wellKnownResponse.ts` decides how they are
+  *served*. `app/api/well-known/apple-app-site-association/route.ts` and
+  `…/well-known/assetlinks/route.ts` hold the route and nothing else, and both are
+  `force-dynamic`: the documents are built from the environment per request, so a statically
+  prerendered route would bake the build container's empty configuration into the deployment.
+- **The canonical paths are reached by a rewrite, never a redirect.** `next.config.js` maps
+  `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json` onto those routes.
+  Apple refuses an association file reached through a redirect, and a rewrite is internal, so the
+  `200` stays on the URL iOS asked for. The handlers live under `app/api/` because a directory
+  beginning with a dot is not a path the app router is guaranteed to publish, and
+  `assetlinks.json`'s extension belongs to the URL rather than to a folder name. The middleware
+  never runs on either canonical path — its matcher excludes anything containing a dot, which both
+  of them do, and the gate asserts that *regex* rather than the comment claiming it, because Apple
+  and Google fetch these with no session and no `Accept-Language` and must not meet Clerk or the
+  locale redirect.
+- **What a build is for is configuration, in one variable keyed by app id.**
+  `MOBILE_APP_ASSOCIATIONS` is a JSON object (or that JSON base64-encoded, for the quadlet
+  environment) naming each app's Apple Team ID and Android SHA-256 signing fingerprints — the
+  shape `FCM_SERVICE_ACCOUNTS` already uses (#1072) and for its reason: a stage-2 per-gym app is a
+  new key, never a code change and never a new variable name to invent. It is env rather than a
+  profile field because `apps/member`'s Docker build copies `apps/member` and `shared` only and
+  cannot see `apps/mobile/profiles/`, and because a Team ID and a release certificate belong to
+  the store account rather than to the shell's source. Either half may be omitted — an iOS-only
+  release is a real state.
+- **A malformed entry is dropped, reported and never published; a file with nothing to say is a
+  404.** These files are fetched by Apple's and Google's CDNs and cached for up to a day, so
+  publishing a wrong `appID` or a SHA-1 where a SHA-256 belongs claims an association that
+  silently cannot work — worse than claiming none. One app's typo therefore costs that app its
+  links and not another app's, the error is logged by the route (the parser is pure and logs
+  nothing), and a `200` carrying an empty `details` array is not an option: it reads as
+  "configured, associates nothing", which is indistinguishable from a working file in a log.
+  That is WP2's "a native control that cannot work is absent, never broken", one layer down.
+- **The native half is written from the app profile by `npm run profile:apply`**, which stays the
+  only writer of a native identity (WP3): the `associated-domains` entitlement
+  (`applinks:<host>`) in `ios/App/App/App.entitlements`, and `@string/app_link_host` for the
+  Android `intent-filter`. The host is **derived**, not configured — it is the host of the
+  profile's own `serverUrl`, because that deployment is what serves the association files, so a
+  field beside it could only ever disagree with the domain Apple and Google verify. Ticking
+  *Associated Domains* in Xcode instead would carry one gym's host into every other profile's
+  build.
+- **Which paths open the app is one declaration, spelled in two syntaxes.** An invitation is
+  `/{locale}/link?gym_id=…&__clerk_ticket=…`, so `APP_LINK_PATH_SEGMENT` is the whole rule and the
+  Apple component (`/*/link`) and the Android `pathPattern` (`/.*/link`) are derived from it. The
+  app claims that path and **not** the whole domain: a filter over `/*` would swallow the OAuth
+  and Clerk redirects a sign-in bounces through, and a link the app takes at the wrong moment has
+  no way back to the browser. `apps/mobile` cannot import that module (another workspace, and the
+  manifest is XML), so `api/src/test/mobile-app-links.unit.test.ts` fails the build when the
+  committed manifest or entitlement stops matching it — a drift is otherwise invisible until the
+  same link opens the app on iOS and the browser on Android.
+- **No new link rule.** WP2's `appUrlOpenPath()` already reads an `https` URL, which is what a
+  universal link arrives as, and already preserves the query (the query *is* the invitation) and
+  the link's own locale. The custom URL scheme stays registered beside the new filter, because it
+  is what still reaches the app from an in-app browser that does not trigger a universal link and
+  from a build whose domain is not verified yet.
+- **Degrading is the point.** With `MOBILE_APP_ASSOCIATIONS` unset both files are a 404,
+  verification fails, and a tapped invitation opens in the browser and completes there — which is
+  exactly today's behaviour. Nothing about the invitation, `POST /me/link` or the member's session
+  changes.
+- Tests: `apps/member/src/test/app-associations.test.ts` (23 — the parse and each of its
+  refusals, both encodings, the per-app isolation of a typo, fingerprint normalization including
+  the SHA-1 mistake, and both documents including their two `null` cases) and the WP3 suite
+  extended for the derived host and the two new transforms, plus
+  `api/src/test/mobile-app-links.unit.test.ts` (11 — the drift gate above: the routes, the
+  rewrite, the middleware regex, the entitlement, the `autoVerify` filter and the one path
+  declaration). Both files were also fetched over a real `next start`: `200` +
+  `application/json` on both canonical paths with the variable set, `404` on both without it, and
+  no redirect either way.
+
+**Not verified here, and WP5's to close:** every acceptance criterion that needs a device. No
+build has been made, so no install has verified an `assetlinks.json` and no link has been tapped
+in Mail or Notes. Two things have to be supplied before either can be: the **Apple Team ID** and
+the **Android signing fingerprints** (upload *and* Play App Signing, which re-signs the app — the
+Play Console's own fingerprint is the one an installed release verifies against), both in
+`MOBILE_APP_ASSOCIATIONS`, and the *Associated Domains* capability on the App ID in the Apple
+Developer portal, which the entitlement alone does not grant. `docs/mobile-runbook.md` §2 and
+`docs/go-to-production.md` §6 carry both.
+
+**Known caveat, by design:** some in-app browsers do not trigger a universal link at all — a mail
+client that opens links in its own WebView, and Gmail on Android for a link in its own viewer.
+The link then opens in that browser and the invitation completes there, which is why the flow must
+never depend on the app receiving it.
 
 ### WP5 — Production and publication (#1077)
 See `docs/go-to-production.md` §6.
