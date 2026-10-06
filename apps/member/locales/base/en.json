@@ -224,8 +224,6 @@
     "member_since": "Member since",
     "starts": "Starts",
     "ends": "Ends",
-    "upcoming_heading": "Upcoming payments",
-    "upcoming_empty": "No upcoming payments.",
     "ongoing": "Ongoing",
     "packages_heading": "Class packages",
     "package_status": {
@@ -236,8 +234,6 @@
     },
     "expires": "expires {date}",
     "benefits_heading": "Included benefits",
-    "history_heading": "Payment history",
-    "history_empty": "No payments recorded yet.",
     "download_receipt": "Download receipt",
     "status": {
       "active": "Active",
@@ -253,9 +249,6 @@
       "status_changed": "Status change",
       "adjustment": "Adjustment",
       "waived_billing": "Fee waived"
-    },
-    "upcoming_status": {
-      "scheduled": "Scheduled"
     },
     "charge_type": {
       "membership_fee": "Membership fee",
@@ -275,6 +268,35 @@
       "four_weeks": "Every 4 weeks",
       "month": "Monthly",
       "year": "Yearly"
+    }
+  },
+  "payments": {
+    "title": "Payments",
+    "summary_next": "Next: {date} · {amount}",
+    "next_heading": "Next Payment",
+    "next_empty": "No payment is scheduled right now.",
+    "past_heading": "Past Billing Events",
+    "past_empty": "No payments recorded yet.",
+    "forecast_heading": "Forecast Billing Events",
+    "forecast_empty": "No further billing events are expected yet.",
+    "forecast_unavailable": "There is nothing to forecast for your plan right now.",
+    "forecast_badge": "Forecast",
+    "total": "Total",
+    "tax_included": "Tax included.",
+    "line_kind_membership_fee": "Membership Plan",
+    "line_kind_product": "Product",
+    "quantity": "× {count}",
+    "treatment_waived": "Included",
+    "treatment_percentage": "{value}% off",
+    "treatment_fixed_discount": "{value} off",
+    "treatment_fixed_price": "Fixed price {value}",
+    "prepaid_periods": "{count, plural, one {# period paid up front} other {# periods paid up front}}",
+    "status": {
+      "paid": "Paid",
+      "failed": "Failed",
+      "pending": "Pending",
+      "scheduled": "Scheduled",
+      "recorded": "Recorded"
     }
   },
   "payment_banner": {

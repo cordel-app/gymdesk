@@ -284,6 +284,7 @@ A boundary *equal* to today would be charged by tonight's run for the same reaso
 | Member's payment history | `GET /me/payment-requests` — excludes `source = 'card_update'` |
 | Member's ledger and receipts | `GET /me/billing-events`, `GET /me/receipts/:billingEventId` |
 | Member's plan, fee and upcoming charges | `GET /me/membership` (`me.ts:1384`) — `membership_fee` and `upcoming_payments` are both computed through `resolveMembershipFee()`, never read from a column |
+| Member's own forecast of future billing events | `GET /me/billing-event-forecast` (#1123) — `assignedPlanBillingForecast()` scoped to the caller, so it is the **same** projection the staff see on the Assigned Plan card (#924 stage 4). The Payments card's *Next Payment* is its first group and *Forecast Billing Events* the rest, which is why neither can quote a total the nightly run will not charge |
 | Staff transaction list / detail | `GET /payment-requests`, `GET /payment-requests/:id` — both exclude `card_update` |
 | Staff ledger | `GET /payments/billing-events` |
 | Members list badge | `GET /members` → `payment_status`, the status of the member's latest non-`card_update` transaction, following `user_membership_members` so a family plan's covered members inherit the owner's (`api/src/api/members.ts:112-120`) |
@@ -650,6 +651,7 @@ each pricing every projected date through the same resolver the run uses:
 | `GET /payments/billing-events` — a rolling 5-date window per active assignment, `type: 'virtual'`, `status: 'scheduled'`, each amount priced for its own date | `api/src/api/payments.ts:310-395` |
 | `GET /payments/dashboard/summary` — `scheduled_this_month` | `api/src/api/payments-dashboard.ts` |
 | `GET /me/membership` — `upcoming_payments` | `api/src/api/me.ts:1453` |
+| `GET /me/billing-event-forecast` — the member's own Billing Event Forecast, one group per future billing date (#1123) | `api/src/api/me-billing-forecast.ts` |
 
 One further projection is scoped to one record rather than the gym:
 `api/src/domain/planExampleTimeline.ts` projects a *Membership Plan's* own Example timeline

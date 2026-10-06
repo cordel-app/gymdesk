@@ -18,6 +18,29 @@ import {
   statusPillStyle,
   statusTone,
 } from '@/lib/memberChrome';
+import {
+  BillingEventCard,
+  type BillingEventCardLine,
+  PaymentsCard,
+  PaymentsSubcard,
+} from '@/components/MemberPaymentsCard';
+import {
+  type BillingEventForecast,
+  type ForecastDate,
+  type ForecastLine,
+  type MemberBillingEvent,
+  EMPTY_FORECAST,
+  billingEventAmount,
+  forecastDatesAfterNext,
+  formatPaymentAmount,
+  formatPaymentDate,
+  lineKindKey,
+  lineTreatmentKey,
+  lineTreatmentName,
+  nextPaymentDate,
+  pastBillingEventGroups,
+  showsRegularPrice,
+} from '@/lib/memberPayments';
 
 type BenefitCategory = 'oneoff' | 'session' | 'periodical';
 
@@ -39,12 +62,6 @@ interface Benefit {
 // The order the Plans, Promotions and Assigned Plans pages list the sections in.
 const BENEFIT_GROUPS: BenefitCategory[] = ['oneoff', 'session', 'periodical'];
 
-interface UpcomingPayment {
-  date: string;
-  amount: string;
-  status: string;
-}
-
 interface Membership {
   id: number;
   membership_plan_id: number | null;
@@ -60,7 +77,12 @@ interface Membership {
   billing_interval: number | null;
   billing_unit: 'day' | 'week' | 'month' | 'year' | null;
   benefits: Benefit[];
-  upcoming_payments: UpcomingPayment[];
+  /**
+   * #635 stage 12 — still served by `GET /me/membership`, and no longer read
+   * here: #1123's Payments card takes the next charge from the Billing Event
+   * Forecast, which carries the lines that make it up as well as the total.
+   */
+  upcoming_payments: unknown[];
 }
 
 interface Promotion { id: number; name: string; description: string | null }
@@ -74,17 +96,12 @@ interface UserPackage {
   status: 'active' | 'consumed' | 'expired' | 'cancelled';
 }
 
-interface BillingEvent {
-  id: number;
-  event_type: 'charge_created' | 'payment_recorded' | 'status_changed' | 'adjustment';
-  charge_type_code: string | null;
-  previous_status: string | null;
-  new_status: string | null;
-  amount: string | null;
-  notes: string | null;
-  created_at: string;
-  receipt_number: string | null;
-}
+/**
+ * #1123 — the ledger row the Payments card's *Past Billing Events* subcard
+ * lists. Its `status` is derived by the API's one implementation (#640), so this
+ * page never asks whether a charge was paid.
+ */
+type BillingEvent = MemberBillingEvent;
 
 interface PaymentRequest {
   id: number;
@@ -118,6 +135,11 @@ export default function MembershipPage() {
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [events, setEvents] = useState<BillingEvent[]>([]);
   const [paymentRequests, setPaymentRequests] = useState<PaymentRequest[]>([]);
+  // #1123 — the one projection both the Next Payment and the Forecast subcards
+  // read. A member with no plan, or one that bills nothing further, answers
+  // `available: false` rather than an error, so a failed fetch is the only thing
+  // that falls back to the empty shape.
+  const [forecast, setForecast] = useState<BillingEventForecast>(EMPTY_FORECAST);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,12 +157,13 @@ export default function MembershipPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [mship, ledger, pkgs, promos, prs] = await Promise.all([
+        const [mship, ledger, pkgs, promos, prs, projection] = await Promise.all([
           apiFetch<{ membership: Membership | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
           apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
+          apiFetch<BillingEventForecast>('/me/billing-event-forecast').catch(() => EMPTY_FORECAST),
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
@@ -148,6 +171,7 @@ export default function MembershipPage() {
         setPackages(pkgs);
         setPromotions(promos);
         setPaymentRequests(prs);
+        setForecast(projection);
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('common.error'));
       } finally {
@@ -211,6 +235,98 @@ export default function MembershipPage() {
     setConsentChecked(false);
     setSubmitError(null);
     setConsentOpen(true);
+  }
+
+  /* ── #1123 Payments ─────────────────────────────────────────────────────── */
+  //
+  // Which rows belong to which subcard is `lib/memberPayments.ts`' decision; the
+  // page's only job is to resolve the labels and hand the component strings it
+  // can render. No amount is computed here — every figure below is the server's,
+  // formatted.
+
+  const nextGroup = nextPaymentDate(forecast);
+  const laterGroups = forecastDatesAfterNext(forecast);
+  const pastGroups = pastBillingEventGroups(events);
+
+  const money = (amount: number | null) => formatPaymentAmount(amount, forecast.currency, locale);
+
+  /** Why a forecast line is not at its regular price, named with its Promotion. */
+  function treatmentLabel(line: ForecastLine): string | null {
+    const key = lineTreatmentKey(line);
+    if (!key) return null;
+    const benefit = line.benefits.find((b) => b.action !== 'no_benefit');
+    // A percentage is a number; a fixed discount or price is money, so it is
+    // written the way every other amount on this card is.
+    const value = benefit?.action === 'percentage_discount'
+      ? String(benefit.value ?? '')
+      : benefit?.value != null ? (money(benefit.value) ?? String(benefit.value)) : '';
+    const label = t(`payments.${key}` as any, { value });
+    const name = lineTreatmentName(line);
+    return name ? `${label} · ${name}` : label;
+  }
+
+  function forecastCardLines(group: ForecastDate): BillingEventCardLine[] {
+    return group.lines.map((line, index) => {
+      const meta = [
+        line.quantity > 1 ? t('payments.quantity', { count: line.quantity }) : null,
+        treatmentLabel(line),
+        // #946 — the one line that collects a Pre-paid Duration up front says how
+        // many periods its amount covers, because the periods after it charge
+        // nothing and an unexplained multiple of the fee reads as an error.
+        line.prepaid_periods != null
+          ? t('payments.prepaid_periods', { count: line.prepaid_periods })
+          : null,
+      ].filter(Boolean).join(' · ');
+      return {
+        key: `${line.kind}-${line.product_id ?? 'fee'}-${index}`,
+        heading: t(`payments.${lineKindKey(line)}` as any),
+        name: line.label,
+        meta: meta || null,
+        amount: money(line.actual_charge),
+        // Only where the two differ: `€50.00 → €50.00` on every ordinary cycle
+        // is a line of the breakdown spent saying nothing.
+        regularAmount: showsRegularPrice(line) ? money(line.regular_price) : null,
+      };
+    });
+  }
+
+  function pastCardLines(group: BillingEvent[]): BillingEventCardLine[] {
+    return group.map((event) => {
+      const transition = event.event_type === 'status_changed' && event.new_status
+        ? `${event.previous_status ? t(`membership.status.${event.previous_status}` as any) : '—'}`
+          + ` → ${t(`membership.status.${event.new_status}` as any)}`
+        : null;
+      return {
+        key: String(event.id),
+        name: t(`membership.event.${event.event_type}` as any)
+          + (event.charge_type_code ? ` · ${t(`membership.charge_type.${event.charge_type_code}` as any)}` : ''),
+        meta: [transition, event.notes].filter(Boolean).join(' · ') || null,
+        amount: money(billingEventAmount(event)),
+        trailing: (
+          <>
+            {/* The status is the event's own, derived once by the API (#640) —
+                a date carrying a settled charge and a rejected one must not be
+                summarised into a single verdict. */}
+            <span style={statusPillStyle(statusTone(event.status))}>
+              {t(`payments.status.${event.status}` as any)}
+            </span>
+            {/* #787 — the receipt number is the gate: the server allocates one
+                only for a payment that was received. */}
+            {event.receipt_number && (
+              <button
+                onClick={() => downloadReceipt(event.id)}
+                disabled={downloadingReceipt === event.id}
+                style={styles.receiptBtn}
+              >
+                {downloadingReceipt === event.id
+                  ? '…'
+                  : `${t('membership.download_receipt')} (${event.receipt_number})`}
+              </button>
+            )}
+          </>
+        ),
+      };
+    });
   }
 
   if (loading) {
@@ -360,77 +476,70 @@ export default function MembershipPage() {
         </section>
       )}
 
-      <section style={styles.section}>
-        <h2 style={styles.h2}>{t('membership.upcoming_heading')}</h2>
-        {membership.upcoming_payments.length === 0 ? (
-          <p style={styles.hint}>{t('membership.upcoming_empty')}</p>
-        ) : (
-          <ul style={styles.eventList}>
-            {membership.upcoming_payments.map((p, i) => (
-              <li key={i} style={styles.eventItem}>
-                <div style={styles.eventLine}>
-                  <span style={styles.eventLabel}>{p.date}</span>
-                  <span style={styles.eventAmount}>{p.amount}</span>
-                </div>
-                <div style={styles.eventSub}>
-                  <EventStatusPill status={p.status} label={t(`membership.upcoming_status.${p.status}` as any)} />
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {/* #1123 — Payments: one collapsed card holding Next Payment, Past
+          Billing Events and Forecast Billing Events. It replaces the page's
+          own *Upcoming payments* and *Payment history* sections: both are
+          absorbed, so neither the ledger nor a projected charge is rendered
+          twice. */}
+      <PaymentsCard
+        title={t('payments.title')}
+        summary={nextGroup
+          ? t('payments.summary_next', {
+            date: formatPaymentDate(nextGroup.date, locale),
+            amount: money(nextGroup.total) ?? '—',
+          })
+          : null}
+      >
+        <PaymentsSubcard title={t('payments.next_heading')} defaultOpen>
+          {nextGroup ? (
+            <BillingEventCard
+              date={formatPaymentDate(nextGroup.date, locale)}
+              total={money(nextGroup.total)}
+              totalLabel={t('payments.total')}
+              lines={forecastCardLines(nextGroup)}
+              prominent
+              footer={forecast.tax_included ? t('payments.tax_included') : null}
+            />
+          ) : (
+            <p style={styles.hint}>{t('payments.next_empty')}</p>
+          )}
+        </PaymentsSubcard>
 
-      <section style={styles.section}>
-        <h2 style={styles.h2}>{t('membership.history_heading')}</h2>
-        {events.length === 0 ? (
-          <p style={styles.hint}>{t('membership.history_empty')}</p>
-        ) : (
-          <ul style={styles.eventList}>
-            {events.map((e) => (
-              <li key={e.id} style={styles.eventItem}>
-                <div style={styles.eventLine}>
-                  <span style={styles.eventLabel}>
-                    {t(`membership.event.${e.event_type}`)}
-                    {e.charge_type_code && ` · ${t(`membership.charge_type.${e.charge_type_code}`)}`}
-                  </span>
-                  {e.amount && (
-                    <span style={styles.eventAmount}>{parseFloat(e.amount).toFixed(2)}</span>
-                  )}
-                </div>
-                <div style={styles.eventSub}>
-                  <span>{e.created_at.slice(0, 10)}</span>
-                  {e.event_type === 'status_changed' && e.new_status && (
-                    <span>
-                      {' · '}
-                      {e.previous_status ? t(`membership.status.${e.previous_status}`) : '—'}
-                      {' → '}
-                      {t(`membership.status.${e.new_status}`)}
-                    </span>
-                  )}
-                  {e.notes && <span> · {e.notes}</span>}
-                  {/* #787: any event carrying a receipt number offers the
-                      download — a recurring charge now gets one too. The
-                      number is the gate: the server only ever allocates it
-                      for a payment that was received. */}
-                  {e.receipt_number && (
-                    <span>
-                      {' · '}
-                      <button
-                        onClick={() => downloadReceipt(e.id)}
-                        disabled={downloadingReceipt === e.id}
-                        style={styles.receiptBtn}
-                      >
-                        {downloadingReceipt === e.id ? '…' : `${t('membership.download_receipt')} (${e.receipt_number})`}
-                      </button>
-                    </span>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+        <PaymentsSubcard title={t('payments.past_heading')}>
+          {pastGroups.length === 0 ? (
+            <p style={styles.hint}>{t('payments.past_empty')}</p>
+          ) : (
+            pastGroups.map((group) => (
+              <BillingEventCard
+                key={group.date}
+                date={formatPaymentDate(group.date, locale)}
+                total={money(group.total)}
+                totalLabel={t('payments.total')}
+                lines={pastCardLines(group.events)}
+              />
+            ))
+          )}
+        </PaymentsSubcard>
+
+        <PaymentsSubcard title={t('payments.forecast_heading')}>
+          {laterGroups.length === 0 ? (
+            <p style={styles.hint}>
+              {forecast.available ? t('payments.forecast_empty') : t('payments.forecast_unavailable')}
+            </p>
+          ) : (
+            laterGroups.map((group) => (
+              <BillingEventCard
+                key={group.date}
+                date={formatPaymentDate(group.date, locale)}
+                total={money(group.total)}
+                totalLabel={t('payments.total')}
+                lines={forecastCardLines(group)}
+                badge={<span style={statusPillStyle('info')}>{t('payments.forecast_badge')}</span>}
+              />
+            ))
+          )}
+        </PaymentsSubcard>
+      </PaymentsCard>
 
       {/* Consent modal */}
       {consentOpen && (
@@ -481,13 +590,9 @@ export default function MembershipPage() {
   );
 }
 
-// #983 — both pills read their tone from `lib/memberChrome.ts`, which is also
-// where the dashboard and My Bookings read theirs: the same billing event
-// status must not be one colour here and another there.
-function EventStatusPill({ status, label }: { status: string; label: string }) {
-  return <span style={{ ...statusPillStyle(statusTone(status)), padding: '2px 8px', fontSize: 11 }}>{label}</span>;
-}
-
+// #983 — the pill reads its tone from `lib/memberChrome.ts`, which is also
+// where the dashboard and My Bookings read theirs: the same status must not be
+// one colour here and another there.
 function StatusPill({ status, label }: { status: string; label: string }) {
   return <span style={{ ...statusPillStyle(statusTone(status)), padding: '4px 12px' }}>{label}</span>;
 }

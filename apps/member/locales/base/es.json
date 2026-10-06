@@ -224,8 +224,6 @@
     "member_since": "Miembro desde",
     "starts": "Inicio",
     "ends": "Fin",
-    "upcoming_heading": "Próximos pagos",
-    "upcoming_empty": "Sin pagos pendientes.",
     "ongoing": "En curso",
     "packages_heading": "Bonos de clases",
     "package_status": {
@@ -236,8 +234,6 @@
     },
     "expires": "caduca el {date}",
     "benefits_heading": "Beneficios incluidos",
-    "history_heading": "Historial de pagos",
-    "history_empty": "Aún no hay pagos registrados.",
     "download_receipt": "Descargar recibo",
     "status": {
       "active": "Activa",
@@ -253,9 +249,6 @@
       "status_changed": "Cambio de estado",
       "adjustment": "Ajuste",
       "waived_billing": "Cuota exenta"
-    },
-    "upcoming_status": {
-      "scheduled": "Programado"
     },
     "charge_type": {
       "membership_fee": "Cuota de membresía",
@@ -275,6 +268,35 @@
       "four_weeks": "Cada 4 semanas",
       "month": "Mensual",
       "year": "Anual"
+    }
+  },
+  "payments": {
+    "title": "Pagos",
+    "summary_next": "Siguiente: {date} · {amount}",
+    "next_heading": "Próximo pago",
+    "next_empty": "Ahora mismo no hay ningún pago programado.",
+    "past_heading": "Eventos de facturación anteriores",
+    "past_empty": "Todavía no hay pagos registrados.",
+    "forecast_heading": "Previsión de eventos de facturación",
+    "forecast_empty": "Todavía no se esperan más eventos de facturación.",
+    "forecast_unavailable": "Ahora mismo no hay nada que prever para tu plan.",
+    "forecast_badge": "Previsión",
+    "total": "Total",
+    "tax_included": "Impuestos incluidos.",
+    "line_kind_membership_fee": "Plan de membresía",
+    "line_kind_product": "Producto",
+    "quantity": "× {count}",
+    "treatment_waived": "Incluido",
+    "treatment_percentage": "{value}% de descuento",
+    "treatment_fixed_discount": "{value} de descuento",
+    "treatment_fixed_price": "Precio fijo {value}",
+    "prepaid_periods": "{count, plural, one {# periodo pagado por adelantado} other {# periodos pagados por adelantado}}",
+    "status": {
+      "paid": "Pagado",
+      "failed": "Fallido",
+      "pending": "Pendiente",
+      "scheduled": "Programado",
+      "recorded": "Registrado"
     }
   },
   "payment_banner": {
