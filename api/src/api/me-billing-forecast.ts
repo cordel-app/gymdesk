@@ -60,6 +60,21 @@ export const MEMBER_CURRENT_ASSIGNMENT_ORDER = `
     um.starts_at DESC`;
 
 /**
+ * The `WHERE` half of that same answer: a **Draft is never the member's plan**
+ * (#1108 Q2). A Draft is staff-side configuration of a purchase that has not
+ * been committed — it is not active, it is not bookable, and it bills nothing —
+ * so neither My Membership nor the Payments card may describe one.
+ *
+ * It is a separate constant only because an `ORDER BY` fragment cannot carry a
+ * predicate; it is the same one place, and both callers append both. Leaving it
+ * out would be worse than showing a Draft: `FIELD()` answers 0 for a value it
+ * does not list, which sorts *first*, so a member holding an Active plan and a
+ * Draft replacement would have had the Draft described to them as their
+ * membership.
+ */
+export const MEMBER_CURRENT_ASSIGNMENT_FILTER = "AND um.status <> 'draft'";
+
+/**
  * Why a member has no forecast. A member with no plan at all, and one whose
  * only plan is `cancelled`/`expired`, both read as "nothing further is
  * scheduled" — a `cancelled` assignment bills nothing, so
@@ -88,6 +103,7 @@ export async function memberBillingEventForecast(
     `SELECT um.id
        FROM user_memberships um
       WHERE um.gym_id = ? AND um.member_id = ?
+      ${MEMBER_CURRENT_ASSIGNMENT_FILTER}
       ${MEMBER_CURRENT_ASSIGNMENT_ORDER}
       LIMIT 1`,
     [gymId, memberId],

@@ -57,31 +57,50 @@ import {
   supersedeLiveAssignments,
 } from './one-active-plan';
 
-// An assignment is `active` from creation and its first payment is collected
-// afterwards (#786). #511 stage 1 added two pre-activation statuses, `draft`
-// and `awaiting_payment`, but no insert path ever produced them and no payment
-// path ever moved a row out of them, so #786 retired both (migration 198
-// narrowed the CHECK back). A payment gate before activation, if one is ever
-// wanted, is a schema widening and a ticket of its own. The ticket's "Closed"
-// action maps onto the existing 'cancelled' value rather than introducing a
-// new terminal status.
-const STATUSES = ['active', 'paused', 'cancelled', 'expired'] as const;
+// #1108 stage 1 — an assignment is created `draft` and becomes `active` through
+// one explicit commit. #511 stage 1 had added two pre-activation statuses,
+// `draft` and `awaiting_payment`, which nothing ever wrote or read, so #786
+// retired both (migration 198 narrowed the CHECK back) and recorded that a
+// payment gate before activation would be "a schema widening and a ticket of
+// its own". #1108 is that ticket; migration 227 is that widening, and it brings
+// back `draft` alone — Pending Payment is stage 2's, arriving with the Save &
+// Pay transaction that produces it rather than as a second value nothing can
+// write. The ticket's "Closed" action still maps onto the existing 'cancelled'
+// value rather than introducing a new terminal status.
+const STATUSES = ['draft', 'active', 'paused', 'cancelled', 'expired'] as const;
 type Status = (typeof STATUSES)[number];
 
 // #511 §10 — the allowed status transitions, enforced by both PUT /:id (when
 // `status` is set directly) and the dedicated /close, /pause and
 // /reactivate actions below. 'expired' has no forward transitions here: it's
 // only ever reached by assign-new-plan's supersede logic, never by request.
+//
+// #1108: `draft` has exactly two, and neither is reachable through `PUT /:id`.
+// `draft -> active` is the commit — it has to run #956's one-plan check and
+// supersede whatever it replaces, so it lives in `POST /:id/activate` and the
+// PUT refuses it the way cancellation is refused and routed to DELETE. A Draft
+// is cancelled through that same DELETE. There is no `draft -> paused`: pausing
+// something that has never been active says nothing.
 const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
+  draft: ['active', 'cancelled'],
   active: ['paused', 'cancelled'],
   paused: ['active', 'cancelled'],
   cancelled: [],
   expired: [],
 };
 
+/**
+ * The status every assignment path creates a row in (#1108 §1). A constant
+ * rather than a literal in three INSERTs, so "a newly assigned plan is a Draft"
+ * is one answer: `POST /`, `POST /:id/assign-new-plan` and
+ * `POST /membership-plans/:id/assign` all write it, and stage 2's Save & Pay is
+ * what moves a row out of it.
+ */
+export const ASSIGNMENT_CREATION_STATUS = 'draft';
+
 // Lifecycle statuses (#410) — the date-aware projection computed in LIST_SELECT below,
 // as opposed to STATUSES which is the raw stored `status` column.
-const LIFECYCLE_STATUSES = ['pending', 'active', 'paused', 'expired', 'cancelled'] as const;
+const LIFECYCLE_STATUSES = ['draft', 'pending', 'active', 'paused', 'expired', 'cancelled'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Accepts repeated `lifecycle_status=a&lifecycle_status=b` or a single comma-separated value.
@@ -112,7 +131,7 @@ export const userMembershipsRouter = Router();
  */
 export const LIFECYCLE_STATUS_SQL = `
   CASE
-    WHEN um.status IN ('paused', 'cancelled', 'expired') THEN um.status
+    WHEN um.status IN ('draft', 'paused', 'cancelled', 'expired') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
     WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
     ELSE 'active'
@@ -642,37 +661,30 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
     // the Member's plan cards can show *Created by* without a per-row audit
     // subquery. One of the three paths that insert a `user_memberships` row.
     const actor = actorSnapshot({ name: actorName, isSuperadmin });
-    // #956: one Member, one Membership Plan. The member's live plan is found and
-    // locked in the same transaction as the insert — outside it there would be a
-    // window in which a second request assigns the same member — and replacing
-    // it takes an explicit `confirm: true`, so the warning the admin is shown
-    // cannot be bypassed by a client that simply posts again.
-    const confirm = req.body?.confirm === true;
-    // Ledger row (P1.6): membership creation is a NULL -> active transition,
+    // #1108 stage 1: the assignment is created as a **Draft**, which is not the
+    // Member's Membership Plan (Q2). So #956's one-plan check does not run here
+    // any more — a Draft replacement has to be configurable *beside* the plan it
+    // replaces — and it runs on the `draft -> active` commit instead
+    // (`POST /:id/activate`), which is where the supersede and the `confirm`
+    // live now. A Draft row's `active_member_key` is NULL (migration 213's
+    // generated column), so the UNIQUE index cannot collide either.
+    //
+    // Ledger row (P1.6): membership creation is a NULL -> draft transition,
     // written in the same transaction as the insert.
     const outcome = await db.transaction(async (tx) => {
-      const conflicts = await findLiveAssignmentsForMembers(tx, gymId, [Number(member_id)]);
-      if (conflicts.length > 0) {
-        if (!confirm) return { kind: 'conflict' as const, conflicts };
-        const dateError = supersedeStartsAtError(String(starts_at), conflicts);
-        if (dateError) return { kind: 'bad_date' as const, message: dateError };
-        await supersedeLiveAssignments(tx, {
-          gymId, conflicts, newStartsAt: String(starts_at),
-          source: sourceForRole(role), actorUserId: userId,
-        });
-      }
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, base_price, plan_price_id,
           discount_reason, discount_expires_at, starts_at, ends_at, status,
           created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           member_id, gymId, membership_plan_id,
           eff.base_price, eff.plan_price_id,
           feeOverride ? String(discount_reason).trim() : null,
           discount_expires_at || null,
           starts_at, ends_at ?? null,
+          ASSIGNMENT_CREATION_STATUS,
           // #958 — who assigned the plan, snapshotted in the same INSERT
           // (migration 215). The Member's MEMBERSHIP PLANS section shows it on
           // every card, which is why it is a column rather than an audit read.
@@ -681,7 +693,7 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
       );
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: Number(member_id),
-        previousStatus: null, newStatus: 'active',
+        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
         source: sourceForRole(role), actorUserId: userId,
       });
       // The paying Member is always the Membership's owner and its first covered Member (#374).
@@ -698,17 +710,11 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         // assignment's agreed regular price, and nothing else stores it (§15).
         membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
       });
-      return { kind: 'created' as const, insertId, superseded: conflicts.map((c) => c.id) };
+      return { kind: 'created' as const, insertId };
     });
-    if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
-    if (outcome.kind === 'conflict') {
-      return res.status(409).json(activePlanConflictBody(outcome.conflicts, await membershipPlanName(gymId, Number(membership_plan_id))));
-    }
     const created = await loadAssignmentRow(gymId, outcome.insertId, false);
     recordAudit(req, {
       action: 'create', entityType: 'user_membership', entityId: outcome.insertId, next: created,
-      previous: outcome.superseded.length > 0
-        ? { superseded_user_membership_ids: outcome.superseded } : undefined,
     });
     res.status(201).json(created);
   } catch (err: any) {
@@ -728,6 +734,23 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
   const role = (req as any).tenantCtx?.role;
   if (status === 'cancelled' && role !== 'admin') {
     return res.status(403).json({ error: 'Only admins can cancel a membership' });
+  }
+  // #1108: committing a Draft goes through POST /:id/activate for the same
+  // reason cancellation goes through DELETE — that transition runs #956's
+  // one-plan check and supersedes whatever it replaces, and a plain `status`
+  // flip here would activate a second live plan for the member with no
+  // confirmation and no cancellation of the first.
+  if (status === 'active') {
+    const { rows: pre } = await db.query<{ status: string }>(
+      'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?',
+      [req.params.id, gymId],
+    );
+    if (pre[0]?.status === 'draft') {
+      return res.status(400).json({
+        error: 'A Draft membership is activated through POST /user-memberships/:id/activate, '
+          + 'which replaces the member\'s current plan.',
+      });
+    }
   }
   try {
     const { userId } = getTenantContext(req);
@@ -821,6 +844,120 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   res.status(204).send();
 });
 
+/**
+ * Commit a Draft assignment: `draft -> active` (#1108 stage 1).
+ *
+ * This is the one place that transition lives, and it is a route of its own
+ * rather than a `status` flip on `PUT /:id` because committing a Draft is the
+ * moment #956's rule is enforced: the Member may have been holding another plan
+ * all along while this one was configured (Q2 — a Draft is deliberately outside
+ * `LIVE_ASSIGNMENT_STATUSES`), so activation is what finds that plan, locks it,
+ * and either answers the 409 the replacement dialog is drawn from or supersedes
+ * it. A plain `PUT` would leave the member with two live plans, no confirmation
+ * and no cancellation of the first; the PUT therefore refuses it and names this
+ * route, exactly as it refuses a cancellation and names DELETE.
+ *
+ * Stage 2's **Save & Pay** is the second caller of this commit rather than a
+ * second commit: it raises the payment, moves the row through Pending Payment
+ * and consolidates the forecast into real Billing Events around the very same
+ * transition. Until it exists this is how a configured Draft becomes the
+ * member's plan, which is also what keeps assignment working between the two
+ * stages.
+ *
+ * The supersede date is the Draft's own `starts_at`, not today: #956 Q3 has the
+ * two plans meet at one date, and that date is when the new one begins.
+ */
+userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId, userId, role } = getTenantContext(req);
+  const confirm = req.body?.confirm === true;
+  try {
+    const outcome = await db.transaction(async (tx) => {
+      const { rows: current } = await tx.query<{
+        id: number; member_id: number; status: string; starts_at: string;
+      }>(
+        `SELECT id, member_id, status, DATE_FORMAT(starts_at, '%Y-%m-%d') AS starts_at
+           FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE`,
+        [req.params.id, gymId],
+      );
+      if (current.length === 0) return { kind: 'not_found' as const };
+      const draft = current[0];
+      // Not a Draft: `draft` is the only status this route moves a row out of,
+      // so an already-active assignment (or a cancelled one) is a 400 naming
+      // what it found rather than a silent no-op. It is also what the loser of
+      // two concurrent activations gets, because the UPDATE below carries
+      // `status = 'draft'` in its own WHERE.
+      if (draft.status !== ASSIGNMENT_CREATION_STATUS) {
+        return { kind: 'not_draft' as const, status: draft.status };
+      }
+
+      // #956, moved here from the three insert paths: everything live that has
+      // to stop for this assignment to be the member's only one. The Draft
+      // itself is not live, so it never appears among its own conflicts.
+      const conflicts = await findLiveAssignmentsForMembers(tx, gymId, [Number(draft.member_id)], {
+        excludeUserMembershipId: Number(draft.id),
+      });
+      if (conflicts.length > 0) {
+        if (!confirm) return { kind: 'conflict' as const, conflicts };
+        const dateError = supersedeStartsAtError(draft.starts_at, conflicts);
+        if (dateError) return { kind: 'bad_date' as const, message: dateError };
+        await supersedeLiveAssignments(tx, {
+          gymId, conflicts, newStartsAt: draft.starts_at,
+          source: sourceForRole(role), actorUserId: userId,
+        });
+      }
+
+      const { rowCount } = await tx.query(
+        `UPDATE user_memberships
+            SET status = 'active', failed_attempts = 0, last_failed_at = NULL
+          WHERE id = ? AND gym_id = ? AND status = ?`,
+        [draft.id, gymId, ASSIGNMENT_CREATION_STATUS],
+      );
+      if (rowCount === 0) return { kind: 'not_draft' as const, status: draft.status };
+      // #790: an assignment joining the run's schedule is never put on a cycle
+      // that has already gone by. A Draft carries no `next_billing_date` at
+      // all — the first payment stamps it — so this is a no-op today and the
+      // one place that answers it either way.
+      await rollStaleNextBillingDateForward(tx, Number(draft.id), gymId);
+      await recordStatusChange(tx, {
+        gymId, userMembershipId: Number(draft.id), memberId: Number(draft.member_id),
+        previousStatus: ASSIGNMENT_CREATION_STATUS, newStatus: 'active',
+        source: sourceForRole(role), actorUserId: userId,
+      });
+      return {
+        kind: 'activated' as const,
+        superseded: conflicts.map((c) => c.id),
+      };
+    });
+    if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (outcome.kind === 'not_draft') {
+      return res.status(400).json({
+        error: `Only a Draft membership can be activated; this one is '${outcome.status}'.`,
+      });
+    }
+    if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'conflict') {
+      const activated = await loadAssignmentRow(gymId, req.params.id);
+      return res.status(409).json(activePlanConflictBody(
+        outcome.conflicts, activated?.plan_name ?? null,
+      ));
+    }
+    const activated = await loadAssignmentRow(gymId, req.params.id);
+    recordAudit(req, {
+      action: 'activate', entityType: 'user_membership', entityId: req.params.id,
+      next: activated,
+      previous: {
+        status: ASSIGNMENT_CREATION_STATUS,
+        ...(outcome.superseded.length > 0
+          ? { superseded_user_membership_ids: outcome.superseded } : {}),
+      },
+    });
+    res.json(activated);
+  } catch (err: any) {
+    handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
+  }
+});
+
+
 // #628: `promotion_ids` is optional — omitted or empty means "assign the plan
 // with no promotions". Returns null when the payload isn't a list of positive
 // integer ids, so the route can answer 400 instead of silently dropping it.
@@ -836,20 +973,21 @@ function parsePromotionIds(raw: unknown): number[] | null {
   return ids;
 }
 
-// Assign New Plan (#412): supersede the member's current plan atomically —
-// cancel the old membership and create the new active one in a single
-// transaction, so the one-active-membership-per-member unique index never
-// sees two active rows for this member at once.
+// Assign New Plan (#412): the member's next Membership Plan, configured as the
+// replacement for the one named in the URL.
 //
-// #956: replacement is this route's whole contract, so the row named in the URL
-// needs no `confirm` — but a member *additionally* covered by another live
-// assignment (a family plan someone else owns, the one overlap the restored
-// index cannot express) does: cancelling a plan the request never named, and
-// taking it away from the other members it covers, is not something a caller
-// asking to replace one assignment has agreed to. Since this ticket the
-// superseded row is `cancelled` with its dates stamped rather than `expired`
-// (Q3) — one rule, in `supersedeLiveAssignments()`, shared with the other two
-// assignment paths.
+// #956 made replacement this route's whole contract and superseded the named
+// row inside the insert transaction. #1108 stage 1 moved that: the successor is
+// created as a **Draft**, so the plan being replaced keeps running while the new
+// one is configured, and `POST /:id/activate` is where every live assignment
+// covering this member is found, 409'd or superseded — one transition rather
+// than four insert paths, and the one place `confirm` is answered. The
+// superseded row is still `cancelled` with its dates stamped rather than
+// `expired` (#956 Q3), through `supersedeLiveAssignments()` and nowhere else.
+//
+// The row named in the URL is therefore still what this route is *about* — it
+// is read for its owner and it is what the Draft replaces — but nothing about
+// it is written here.
 //
 // #628: the caller may also pick the Promotions to apply to the new
 // assignment (`promotion_ids`). They are validated as a set *before* the
@@ -912,35 +1050,26 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       if (current.length === 0) return { kind: 'not_found' as const };
       const prev = current[0];
 
-      // Everything live that has to stop for the new assignment to be the
-      // member's only one: the row named in the URL when it is still live (a
-      // row already cancelled or expired is left exactly as it is), plus
-      // whatever else covers that member.
-      const live = await findLiveAssignmentsForMembers(tx, gymId, [Number(prev.member_id)]);
-      const named = live.filter((a) => a.id === Number(prev.id));
-      const others = live.filter((a) => a.id !== Number(prev.id));
-      if (others.length > 0 && !confirm) return { kind: 'conflict' as const, conflicts: others };
-
-      const conflicts: LiveAssignment[] = [...named, ...others];
-      const dateError = supersedeStartsAtError(String(starts_at), conflicts);
-      if (dateError) return { kind: 'bad_date' as const, message: dateError };
-      await supersedeLiveAssignments(tx, {
-        gymId, conflicts, newStartsAt: String(starts_at),
-        source: sourceForRole(role), actorUserId: userId,
-      });
-
+      // #1108 stage 1: the successor is created as a **Draft**, so nothing is
+      // superseded here. The plan named in the URL keeps running while its
+      // replacement is configured — which is what a Draft is for — and it is
+      // the `draft -> active` commit (`POST /:id/activate`) that finds every
+      // live assignment covering this member, answers the 409 or supersedes
+      // them. That moved #956's whole enforcement, including this route's
+      // `confirm`, onto one transition instead of four insert paths.
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, base_price, plan_price_id,
           discount_reason, discount_expires_at, starts_at, ends_at, status,
           created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           prev.member_id, gymId, membership_plan_id,
           eff.base_price, eff.plan_price_id,
           feeOverride ? String(discount_reason).trim() : null,
           discount_expires_at || null,
           starts_at, ends_at ?? null,
+          ASSIGNMENT_CREATION_STATUS,
           // #958 — the successor is a new Assigned Plan, so it records who
           // assigned *it* (migration 215); the superseded row keeps its own.
           actor.name, actor.type,
@@ -948,7 +1077,7 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       );
       await recordStatusChange(tx, {
         gymId, userMembershipId: insertId, memberId: prev.member_id,
-        previousStatus: null, newStatus: 'active',
+        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
         source: sourceForRole(role), actorUserId: userId,
       });
       await tx.query(
@@ -973,15 +1102,9 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
         // assignment's agreed regular price, and nothing else stores it (§15).
         membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
       });
-      return { kind: 'created' as const, insertId, superseded: conflicts.map((c) => c.id) };
+      return { kind: 'created' as const, insertId };
     });
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
-    if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
-    if (outcome.kind === 'conflict') {
-      return res.status(409).json(activePlanConflictBody(
-        outcome.conflicts, await membershipPlanName(gymId, Number(membership_plan_id)),
-      ));
-    }
     const newId = outcome.insertId;
 
     // Applied after the assignment commits, one at a time, because each apply
@@ -997,10 +1120,11 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
     recordAudit(req, {
       action: 'assign_new_plan', entityType: 'user_membership', entityId: newId,
       next: created,
-      previous: {
-        supersedes_user_membership_id: Number(req.params.id),
-        superseded_user_membership_ids: outcome.superseded,
-      },
+      // The Draft is configured *as* the replacement for the row named in the
+      // URL, so that is what the audit records. Which assignments it actually
+      // supersedes is `POST /:id/activate`'s own audit row, because that is
+      // where the cancellation happens (#1108 stage 1).
+      previous: { supersedes_user_membership_id: Number(req.params.id) },
     });
     res.status(201).json({ ...created, applied_promotion_ids: promotionIds });
   } catch (err: any) {
@@ -1165,7 +1289,9 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
 // A terminal assignment is history: it bills nothing further, so rewriting the
 // configuration it was agreed with would only falsify the record. Same reasoning
 // as ATTACHABLE_STATUSES in user-membership-services.ts.
-const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['active', 'paused'];
+// #1108 §2: a Draft is *fully editable* — it is the pre-checkout configuration
+// state, so every section of its snapshot is writable until it is committed.
+const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['draft', 'active', 'paused'];
 
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 
