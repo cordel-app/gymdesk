@@ -45,7 +45,12 @@ function timeAgo(iso: string, locale: string): string {
  * up a place they could still have, or waits for a queue that no longer
  * exists.
  */
-const DETAIL_TYPES = ['event_reactivated', 'waitlist_closed', 'waitlist_removed'];
+// #1113 §2: `booking_reminder_2h` joins them — the type label is the heading
+// (*Training reminder*) and the detail is the sentence that carries the two
+// hours, with the occurrence's name and its start time already rendered below
+// from the payload. Both halves are locale keys, because next-intl prints a
+// missing key verbatim and a `t()` fallback is not one (CLAUDE.md).
+const DETAIL_TYPES = ['event_reactivated', 'waitlist_closed', 'waitlist_removed', 'booking_reminder_2h'];
 
 export default function NotificationsPage() {
   const t = useTranslations('notifications');

@@ -872,19 +872,21 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id));
-    // Notify fire-and-forget
-    db.query(
-      `SELECT at.name AS title, ce.starts_at FROM calendar_events ce
-       JOIN activity_types at ON at.id = ce.activity_type_id WHERE ce.id = ?`,
-      [class_session_id],
-    ).then(({ rows: si }: any) => {
-      if (si.length > 0) {
-        sendNotification(gymId, memberId,
-          result.status === 'booked' ? 'booking_confirmed' : 'waitlist_joined',
-          'session', Number(class_session_id),
-          { title: si[0].title, starts_at: si[0].starts_at });
-      }
-    }).catch(() => {});
+    // #1113 §1/§7: no alert. The member just performed this action and the
+    // response is their confirmation, so a persistent `booking_confirmed` (or
+    // `waitlist_joined`) row told them something they had just done — which is
+    // the redundancy the ticket removes, at the point the notification is
+    // *generated* rather than by hiding it in the Alerts page (§4).
+    //
+    // The distinction is who acted, not what happened: staff adding a member to
+    // an occurrence or to its waiting list still alerts them (`bookings.ts`,
+    // #980 stage 2's `Q2`), because that is news. Cancelling is the same rule
+    // and already held — `DELETE /me/bookings/:id` below tells the canceller
+    // nothing and alerts only the member it *promotes* off the waiting list.
+    //
+    // What the member does get is the one alert they cannot know about
+    // themselves: the 2-hour reminder (#1113 §2), raised by
+    // `POST /booking-reminders/run` for the booking this request just created.
     res.status(201).json(result);
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'You already have a booking for this session.' });

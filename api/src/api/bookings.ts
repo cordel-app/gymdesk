@@ -251,10 +251,16 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
     );
     const { rows } = await db.query(`${SELECT} WHERE ceb.id = ?`, [result.id]);
     // #980 stage 2 (the thread's `Q2`: every update to the waiting list reaches
-    // the Members App). A member who joins the queue themselves is already
-    // told by `POST /me/bookings`; this is the staff-side half, which raised
-    // nothing at all until now. Only the waitlist case: an enrolment booked by
-    // staff is a different alert and a different ticket.
+    // the Members App). This is the staff-side half, which raised nothing at all
+    // until then. Only the waitlist case: an enrolment booked by staff is a
+    // different alert and a different ticket.
+    //
+    // #1113 §1/§4: it is also now the *only* side that alerts. `POST
+    // /me/bookings` used to raise `waitlist_joined` for a member who joined the
+    // queue themselves and no longer does — the member performed the action and
+    // the response is their confirmation — so this alert means "somebody else
+    // put you on a waiting list", which is news, and the two halves no longer
+    // say the same thing twice.
     if (result.status === 'waitlisted' && rows[0]) {
       sendNotification(gymId, Number(member_id), 'waitlist_joined', 'session',
         Number(class_session_id), { title: rows[0].class_type_name, starts_at: rows[0].session_starts_at });

@@ -18,12 +18,14 @@ import {
 } from '../lib/internalRunRelay';
 
 describe('the allowlist', () => {
-  it('is exactly the four POSTs the workflows make', () => {
+  it('is exactly the POSTs the workflows make', () => {
     expect([...INTERNAL_RUN_API_PATHS]).toEqual([
       '/billing/run',
       '/billing/cleanup',
       '/promotion-lifecycle/run',
       '/recurring-bookings/run',
+      // #1113: the 2-hour training reminder, the one run that is not nightly.
+      '/booking-reminders/run',
     ]);
   });
 
@@ -32,6 +34,7 @@ describe('the allowlist', () => {
     expect(internalRunApiPath(['billing', 'cleanup'])).toBe('/billing/cleanup');
     expect(internalRunApiPath(['promotion-lifecycle', 'run'])).toBe('/promotion-lifecycle/run');
     expect(internalRunApiPath(['recurring-bookings', 'run'])).toBe('/recurring-bookings/run');
+    expect(internalRunApiPath(['booking-reminders', 'run'])).toBe('/booking-reminders/run');
   });
 
   it('refuses anything else, including a prefix of an allowed path', () => {

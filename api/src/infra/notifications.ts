@@ -32,7 +32,24 @@ export type NotificationType =
    * list itself still there. A different fact from `waitlist_closed`, and the
    * Alerts page words the two differently.
    */
-  | 'waitlist_removed';
+  | 'waitlist_removed'
+  /**
+   * #1113 §2: the pre-event training reminder, raised by the scheduled run two
+   * hours before an occurrence the member holds an active booking on.
+   *
+   * A third reminder value on purpose. `booking_reminder_24h` and
+   * `booking_reminder_1h` above have been declared since migration 087 and are
+   * written by nothing; their copy says *"tomorrow"* and *"starting soon"*, so
+   * reusing one would make the Alerts page word this alert as something else.
+   * They stay unwritten rather than deleted — the CHECK is allowed to be a
+   * superset of this union (migration 217's note), never a subset.
+   *
+   * It is also the only booking alert a member's **own** action can lead to,
+   * which is the point of §1/§4: booking, cancelling and leaving a waiting list
+   * now raise nothing at all (the UI already said so), and this one is the
+   * platform telling them something they did not know.
+   */
+  | 'booking_reminder_2h';
 
 export interface NotificationPayload {
   title: string;

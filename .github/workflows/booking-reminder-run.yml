@@ -1,0 +1,134 @@
+name: Booking Reminder Run
+
+# #1113 §2: raises the 2-hour training reminder for every member holding an
+# active booking on an occurrence about to start. The API exposes the run as an
+# endpoint (like /billing/run and /recurring-bookings/run) and this workflow is
+# what fires it, so nothing has to run a timer inside the API process — which
+# would run once per replica.
+#
+# This is the one scheduled run that is NOT nightly, and that is the whole point:
+# a reminder two hours before a 07:00 class has to be raised at 05:00, and one
+# before a 21:00 class at 19:00. So it has a schedule of its own, several times
+# an hour, and — per `api/src/api/promotion-lifecycle.ts`' own rule, that a job
+# with its own workflow gets a secret with it — its own
+# BOOKING_REMINDERS_INTERNAL_SECRET.
+#
+# #780's run log deliberately does not apply here: that guard is "one completed
+# run per UTC date" and would silence every pass but the first of the day. What
+# makes a repeated pass safe is that the alert row *is* the record — a booking
+# whose reminder exists is no longer a candidate (§5) — so a missed pass costs
+# punctuality and nothing else, and a duplicate pass costs nothing at all.
+on:
+  schedule:
+    # Every 15 minutes. GitHub's cron is best-effort and runs late under load,
+    # which is exactly why the API asks for every booked occurrence starting
+    # *within* the next two hours rather than one starting in 115–120 minutes:
+    # a late pass sends the reminder a little closer to the class instead of
+    # dropping it. 15 minutes is the worst-case lateness we accept against a
+    # two-hour lead; raising it is a one-line change here and nothing else.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+    # #784: a manual run picks its GitHub environment (and therefore the API it
+    # calls and the secret it sends). It defaults to `dev`.
+    inputs:
+      environment:
+        description: GitHub environment to run against
+        type: choice
+        options: [dev, production]
+        default: dev
+
+# A pass that is still running when the next one is due must not race it: the
+# two would read the same candidates before either had written a row, and the
+# member would get the reminder twice. The newer pass waits rather than being
+# cancelled, because cancelling the one in flight would leave its reminders
+# half-written.
+concurrency:
+  group: booking-reminder-run-${{ inputs.environment || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  booking-reminder-run:
+    name: 2-hour training reminders
+    runs-on: ubuntu-latest
+    # #784: a manual run uses the environment it was dispatched with; a
+    # scheduled run has no inputs and falls back to the literal below.
+    # #784: switch to 'production' once the environment exists
+    environment: ${{ inputs.environment || 'dev' }}
+    env:
+      # #784: the host is the selected environment's `API_BASE_URL` variable
+      # (a variable, not a secret: a hostname is not a credential).
+      #
+      # #1086: that variable is the **admin app's** relay prefix
+      # (`https://admin.<host>/api/internal`), which forwards this POST to the
+      # API and hands back its status and body unchanged — see billing-run.yml
+      # for the three statuses that are the relay's own. `/booking-reminders/run`
+      # is on its allowlist (`apps/admin/src/lib/internalRunRelay.ts`); a path
+      # that is not would be a 404 from the relay.
+      API_BASE_URL: ${{ vars.API_BASE_URL }}
+
+    steps:
+      - name: Check environment configuration
+        run: |
+          set -euo pipefail
+          # No hardcoded fallback — see billing-run.yml. The environment's name
+          # is not repeated here: the `environment:` line above decides it.
+          if [ -z "${API_BASE_URL:-}" ]; then
+            echo "::error title=API_BASE_URL is not set::The GitHub environment this job runs in has no API_BASE_URL variable, so the booking reminder run cannot know which host to call — no member was reminded of an upcoming training. Add it under Settings -> Environments -> <this job's environment> -> Environment variables (#784)."
+            exit 1
+          fi
+          echo "Calling $API_BASE_URL"
+
+      - name: POST /booking-reminders/run
+        env:
+          BOOKING_REMINDERS_INTERNAL_SECRET: ${{ secrets.BOOKING_REMINDERS_INTERNAL_SECRET }}
+        run: |
+          set -euo pipefail
+
+          # `--fail-with-body` keeps `curl -f`'s non-2xx failure while still
+          # printing what the API said — including the 401 the run answers when
+          # the secret pair is wrong (which is also what a missing
+          # BOOKING_REMINDERS_INTERNAL_SECRET looks like) and the 429 the
+          # internal-run limiter answers (#783).
+          rc=0
+          body="$(curl -sS --fail-with-body -X POST "$API_BASE_URL/booking-reminders/run" \
+            -H "X-Internal-Secret: $BOOKING_REMINDERS_INTERNAL_SECRET" \
+            -H "Content-Type: application/json" \
+            --max-time 120)" || rc=$?
+
+          if [ "$rc" -ne 0 ]; then
+            printf 'POST /booking-reminders/run -> %s\n' "$body"
+            echo "::error title=Booking reminder run did not execute::POST /booking-reminders/run failed (curl exit $rc) — no member was reminded of a training starting in the next two hours. Check the admin app that relays the call (#1086), the API and the X-Internal-Secret pair."
+            exit 1
+          fi
+
+          # #778: `curl -sf` alone only sees the status, so the counters are read
+          # here. `candidates=0` is the ordinary answer for most passes — most
+          # quarter-hours have no class about to start — and is not a failure.
+          if ! counters="$(printf '%s' "$body" \
+            | jq -er '[.candidates, .created, .gyms] | map(numbers) | select(length == 3) | @tsv')"; then
+            printf 'POST /booking-reminders/run -> %s\n' "$body"
+            echo "::error title=Booking reminder run answered an unreadable body::POST /booking-reminders/run returned 2xx but carried no candidates/created/gyms counters. The body is in the step log."
+            exit 1
+          fi
+
+          IFS=$'\t' read -r candidates created gyms <<<"$counters"
+          echo "candidates=$candidates created=$created gyms=$gyms"
+
+          # A gym whose insert failed is reported with its own entry and zero of
+          # its reminders written, so it would otherwise be invisible in
+          # `created`.
+          failed="$(printf '%s' "$body" | jq -er '[.failures[]?] | length')"
+          if [ "$failed" -gt 0 ]; then
+            printf '%s' "$body" | jq -r '.failures[]? | "  gym \(.gym_id): \(.error)"'
+            echo "::error title=Booking reminder run could not write $failed gym(s) reminders::Those members were not reminded of a training starting in the next two hours. See the step log for the reason."
+            exit 1
+          fi
+
+          # `capped` is information rather than a failure: the next pass picks up
+          # what this one left, because a booking stays a candidate until its
+          # alert row exists.
+          if [ "$(printf '%s' "$body" | jq -r '.capped')" = "true" ]; then
+            echo "::warning title=Booking reminder run hit its per-run cap::$created reminder(s) written and more are due; the next pass will raise them. Raise BOOKING_REMINDER_MAX_PER_RUN if this recurs."
+          fi
+
+          echo 'Booking reminder run completed with no failures.'
