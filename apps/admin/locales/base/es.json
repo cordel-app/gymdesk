@@ -1389,7 +1389,8 @@
     "simulation_price_fixed_price": "Precio fijo {amount}",
     "simulation_disclaimer": "Solo es un ejemplo. Las fechas y los importes son ilustrativos y se recalcularán a partir de la fecha real de inscripción de cada cliente. No se muestra la cuota de membresía: depende del plan de membresía al que se aplique esta promoción.",
     "simulation_truncated": "La proyección se ha detenido en su límite de seguridad: no se muestran los eventos de facturación posteriores.",
-    "tax_included_suffix": "IVA incluido"
+    "tax_included_suffix": "IVA incluido",
+    "item_duration_hint": "La duración es el número de periodos de facturación del propio Producto a los que se aplica la promoción. Cuando termina, el Producto continúa a su precio habitual."
   },
   "audit": {
     "title": "Registro de auditoría",
@@ -3521,7 +3522,11 @@
     "frequency_month": "Mensual",
     "frequency_year": "Anual",
     "frequency_week": "Semanal",
-    "frequency_per_session": "Por sesión"
+    "frequency_per_session": "Por sesión",
+    "duration_month": "{count, plural, one {# mes} other {# meses}}",
+    "duration_year": "{count, plural, one {# año} other {# años}}",
+    "duration_week": "{count, plural, one {# semana} other {# semanas}}",
+    "duration_four_weeks": "{count} × 4 semanas"
   },
   "products": {
     "title": "Productos",

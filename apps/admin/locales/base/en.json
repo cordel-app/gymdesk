@@ -1403,7 +1403,8 @@
     "simulation_price_fixed_price": "Fixed price {amount}",
     "simulation_disclaimer": "Example only. Dates and amounts are illustrative and will be recalculated from each customer's actual enrollment date. The Membership Fee is not shown: it belongs to the Membership Plan this Promotion is applied to.",
     "simulation_truncated": "The projection was cut short at its safety limit — later billing events are not shown.",
-    "tax_included_suffix": "VAT included"
+    "tax_included_suffix": "VAT included",
+    "item_duration_hint": "Duration is the number of the promoted Product's own billing periods the promotion applies to. When it ends the Product continues at its regular price."
   },
   "audit": {
     "title": "Audit log",
@@ -3535,7 +3536,11 @@
     "frequency_month": "Monthly",
     "frequency_year": "Yearly",
     "frequency_week": "Weekly",
-    "frequency_per_session": "Per session"
+    "frequency_per_session": "Per session",
+    "duration_month": "{count, plural, one {# month} other {# months}}",
+    "duration_year": "{count, plural, one {# year} other {# years}}",
+    "duration_week": "{count, plural, one {# week} other {# weeks}}",
+    "duration_four_weeks": "{count} × 4 weeks"
   },
   "products": {
     "title": "Products",

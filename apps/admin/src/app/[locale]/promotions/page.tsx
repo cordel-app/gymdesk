@@ -21,6 +21,7 @@ import {
   BillingEventSimulationData,
 } from '@/components/BillingEventSimulation';
 import {
+  BenefitQuantityColumn,
   ProductBenefitEditor,
   ProductBenefitRow,
   ProductBenefitView,
@@ -209,6 +210,15 @@ const PRODUCT_BENEFIT_SECTIONS: {
   emptyKey: string;
   addKey: string;
   showFrequency: boolean;
+  /**
+   * #1135: what this section's number column counts. `duration` for the
+   * Periodical section alone — a Promotion's periodical grant covers *periods*
+   * of the Product's own frequency (`promotion_periodical.quantity` is what
+   * `buildItemStream()` counts them with), while a Session or One-off grant
+   * counts units. Declared here rather than in the JSX so both halves of the
+   * card ask one answer.
+   */
+  quantityColumn?: BenefitQuantityColumn;
 }[] = [
   // #919/#920: `showFrequency` is true for all three, not only the Periodical
   // section. The flag is the *page's* now rather than the section's — one grid
@@ -218,7 +228,7 @@ const PRODUCT_BENEFIT_SECTIONS: {
   // columns after it shift. Same answer #916 gave the Membership Plan card.
   { section: 'session', titleKey: 'section_session_benefits', emptyKey: 'no_session_benefits', addKey: 'add_session_benefit', showFrequency: true },
   { section: 'oneoff', titleKey: 'section_oneoff_benefits', emptyKey: 'no_oneoff_benefits', addKey: 'add_oneoff_benefit', showFrequency: true },
-  { section: 'periodical', titleKey: 'section_period_benefits', emptyKey: 'no_period_benefits', addKey: 'add_period_benefit', showFrequency: true },
+  { section: 'periodical', titleKey: 'section_period_benefits', emptyKey: 'no_period_benefits', addKey: 'add_period_benefit', showFrequency: true, quantityColumn: 'duration' },
 ];
 
 // #900: `Expired` is a status the sweep writes (POST /promotion-lifecycle/run),
@@ -430,6 +440,17 @@ export default function PromotionsPage() {
 
     const promo = expandedId !== NEW_ID ? rows.find((r) => r.id === expandedId) : undefined;
     if (!useForm && !promo) { setTimeline(null); setTimelineError(null); return; }
+
+    // #1135: the Membership Fee Simulation is about a fee a Product Promotion
+    // does not have, so it is not fetched and not rendered for one. Read from the
+    // same place the card reads its target — the unsaved radio while the main
+    // configuration is a form, the stored value otherwise — so switching the
+    // radio clears it at once without saving anything.
+    if (!targetsMembershipPlan(useForm ? editForm.applies_to : promo!.applies_to)) {
+      setTimeline(null);
+      setTimelineError(null);
+      return;
+    }
 
     const { free_months, paid_months, pay_beforehand_months, bonus_months } = useForm
       ? editForm
@@ -1038,6 +1059,7 @@ export default function PromotionsPage() {
     setDraft: (fn: (prev: ProductBenefit[]) => ProductBenefit[]) => void;
     categoryItems: Product[];
     showFrequency: boolean;
+    quantityColumn?: BenefitQuantityColumn;
   }) {
     return (
       <ProductBenefitEditor
@@ -1047,6 +1069,9 @@ export default function PromotionsPage() {
         setDraft={opts.setDraft}
         categoryItems={opts.categoryItems}
         showFrequency={opts.showFrequency}
+        // #1135: the Periodical section's number is a Duration in the Product's
+        // own billing periods; the other two count units.
+        quantityColumn={opts.quantityColumn}
         benefitContext="promotion"
         // #959: Mandatory / Optional per configured item — whether the member may
         // decline it when the Promotion is assigned. Promotions only (the ticket
@@ -1061,6 +1086,7 @@ export default function PromotionsPage() {
   // shows until its own Edit button is pressed (#627).
   function renderProductBenefitView(
     emptyKey: string, rows: ProductBenefit[], showFrequency: boolean,
+    quantityColumn?: BenefitQuantityColumn,
   ) {
     return (
       <ProductBenefitView
@@ -1068,6 +1094,9 @@ export default function PromotionsPage() {
         emptyKey={emptyKey}
         rows={rows}
         showFrequency={showFrequency}
+        // #1135: the read-only half of the same column — `3 months` where the
+        // editor holds `3`.
+        quantityColumn={quantityColumn}
         benefitContext="promotion"
         // #959: the read-only half of the same column — the card says what the
         // editor holds.
@@ -1299,7 +1328,16 @@ export default function PromotionsPage() {
         </div>
         )}
 
-        {/* Billing & Duration */}
+        {/* Billing & Duration — #1135: the Free / Paid / Pre-paid / Bonus months
+            are the span of the Membership Fee Promotion and of the Promotion's
+            own Membership Fee Simulation (`promotionTimeline.ts`); they decide
+            nothing about a granted Product, whose coverage is its own grant's
+            Duration. So the section is absent — not disabled — for a Product
+            Promotion, exactly as #926 left Suitable Membership Plans and the
+            Membership Fee Promotion. The stored months are untouched: the draft
+            still carries them, so a save while the target is a Product writes
+            them back unchanged and switching the target back shows them again. */}
+        {targetsMembershipPlan(editForm.applies_to) && (
         <div style={subSectionSt}>
           <CardSectionHeader title={t('section_billing_duration')} />
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 16px' }}>
@@ -1321,6 +1359,7 @@ export default function PromotionsPage() {
             </div>
           </div>
         </div>
+        )}
 
       </>
     );
@@ -1522,10 +1561,14 @@ export default function PromotionsPage() {
               setDraft: productSectionSetDraft(cfg.section),
               categoryItems: productSectionItems(cfg.section),
               showFrequency: cfg.showFrequency,
+              quantityColumn: cfg.quantityColumn,
             })}
             {renderSectionError(sectionError)}
           </>
-        ) : renderProductBenefitView(cfg.emptyKey, productSectionSaved(promo.id, cfg.section), cfg.showFrequency)}
+        ) : renderProductBenefitView(
+          cfg.emptyKey, productSectionSaved(promo.id, cfg.section), cfg.showFrequency,
+          cfg.quantityColumn,
+        )}
       </div>
     );
   }
@@ -1579,8 +1622,12 @@ export default function PromotionsPage() {
             the Promotion's own Free / Paid / Bonus timeline (the Membership Fee
             Promotion's own span), while the Billing Event Simulation below it
             is one group per billing *date* over the Products the
-            Promotion affects. Neither replaces the other (#922). */}
-        {renderTimeline()}
+            Promotion affects. Neither replaces the other (#922).
+
+            #1135: the first is a Membership Fee projection, so it is absent for
+            a Product Promotion; the second is about the Products themselves and
+            stays for both targets. */}
+        {cardTargetsMembershipPlan(promo) && renderTimeline()}
         {renderBillingEventSimulation(promo)}
       </div>
     );
@@ -1601,6 +1648,7 @@ export default function PromotionsPage() {
               setDraft: productSectionSetDraft(cfg.section),
               categoryItems: productSectionItems(cfg.section),
               showFrequency: cfg.showFrequency,
+              quantityColumn: cfg.quantityColumn,
             })}
           </div>
         ))}
@@ -1610,7 +1658,7 @@ export default function PromotionsPage() {
             {renderMembershipFeeEditor(NEW_ID)}
           </div>
         )}
-        {renderTimeline()}
+        {targetsMembershipPlan(editForm.applies_to) && renderTimeline()}
         {renderSectionActions(handleCreate)}
       </div>
     );
@@ -1637,8 +1685,9 @@ export default function PromotionsPage() {
           <p style={{ margin: '2px 0', fontSize: 13 }}>{t(targetLabelKey as any)}</p>
         </div>
 
-        {/* Billing & Duration summary */}
-        {(free > 0 || paid > 0 || bonus > 0) && (
+        {/* Billing & Duration summary — #1135: Membership-Plan-specific, so
+            absent for a Product Promotion exactly as it is in the form above. */}
+        {targetsMembershipPlan(target) && (free > 0 || paid > 0 || bonus > 0) && (
           <div style={subSectionSt}>
             <CardSectionHeader title={t('section_billing_duration')} />
             {/* #879: the look of this summary now lives in the shared

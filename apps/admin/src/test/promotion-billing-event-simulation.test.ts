@@ -41,7 +41,10 @@ describe('Promotions: Billing Event Simulation', () => {
   });
 
   it('keeps the Example Timeline beside it — neither projection replaces the other', () => {
-    expect(pageSrc).toContain('{renderTimeline()}');
+    // #1135: the Membership Fee projection is a Membership Plan Promotion's, so
+    // it is rendered behind the card's own target predicate; the Billing Event
+    // Simulation is about the Products themselves and stays for both targets.
+    expect(pageSrc).toContain('cardTargetsMembershipPlan(promo) && renderTimeline()');
     expect(pageSrc).toContain('{renderBillingEventSimulation(promo)}');
   });
 

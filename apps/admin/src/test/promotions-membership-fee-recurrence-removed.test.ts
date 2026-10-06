@@ -163,7 +163,12 @@ describe('Promotions: Membership Fee recurrence fields removed (#814)', () => {
     expect(code, 'the Product sections no longer render through the shared editor')
       .toContain('benefitContext="promotion"');
     const sharedSrc = stripComments(readFileSync(SHARED_EDITOR, 'utf-8'));
-    expect(sharedSrc, 'the shared editor lost its Quantity column').toContain("t('col_quantity')");
+    // #1135: the column header is resolved through `benefitQuantityLabelKey()`
+    // rather than typed into the editor, because the Periodical section names
+    // the same number *Duration* — so what this asserts is that `col_quantity`
+    // is still what the helper answers for every other section.
+    expect(sharedSrc, 'the shared editor lost its Quantity column')
+      .toMatch(/return column === 'duration' \? 'col_duration' : 'col_quantity';/);
   });
 
   it('has an identical "promotions" key set across every supported locale (en/es/ca)', () => {

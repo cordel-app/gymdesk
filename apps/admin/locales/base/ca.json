@@ -1389,7 +1389,8 @@
     "simulation_price_fixed_price": "Preu fix {amount}",
     "simulation_disclaimer": "Només és un exemple. Les dates i els imports són il·lustratius i es recalcularan a partir de la data real d'inscripció de cada client. No es mostra la quota de membresia: depèn del pla de membresia al qual s'apliqui aquesta promoció.",
     "simulation_truncated": "La projecció s'ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors.",
-    "tax_included_suffix": "IVA inclòs"
+    "tax_included_suffix": "IVA inclòs",
+    "item_duration_hint": "La durada és el nombre de períodes de facturació del propi Producte als quals s'aplica la promoció. Quan acaba, el Producte continua al seu preu habitual."
   },
   "audit": {
     "title": "Registre d'auditoria",
@@ -3548,7 +3549,11 @@
     "frequency_month": "Mensual",
     "frequency_year": "Anual",
     "frequency_week": "Setmanal",
-    "frequency_per_session": "Per sessió"
+    "frequency_per_session": "Per sessió",
+    "duration_month": "{count, plural, one {# mes} other {# mesos}}",
+    "duration_year": "{count, plural, one {# any} other {# anys}}",
+    "duration_week": "{count, plural, one {# setmana} other {# setmanes}}",
+    "duration_four_weeks": "{count} × 4 setmanes"
   },
   "products": {
     "title": "Productes",

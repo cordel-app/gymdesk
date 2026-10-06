@@ -152,3 +152,55 @@ export function cadenceFrequencyLabel(
   if (freq) return tFreq(billingFrequencyLabelKey(freq) as string);
   return legacyCadenceText(Number(interval), String(unit));
 }
+
+// ─── How long N of those periods is ──────────────────────────────────────────
+//
+// #1135 — a Periodic Promotion is configured for a **number of periods** of the
+// promoted Product's own frequency ("Duration 3" on a monthly Product means
+// three months), so a surface showing that number needs the *period* sentence
+// rather than the frequency label: `3 months`, never `3 Monthly`.
+//
+// It lives here, in the one module that owns how a frequency reads, for #1128's
+// reason — the sentence would otherwise be spelled once per surface — and in the
+// same namespace, under its own `duration_*` keys, because it is a different
+// sentence about the same stored value. It is deliberately **not**
+// `plans.period_unit_*`, which is the noun a Plan's own Billing & Duration
+// counts in (`2 × 4 Weeks`, #892 §9) and is left exactly as it is.
+//
+// `once` and `per_session` get no key at all: neither names a period, so there
+// is no such thing as three of them, and `null` is what makes a caller fall back
+// to the bare number instead of printing `billing_frequency.duration_once`
+// (next-intl prints a missing key verbatim).
+const PERIOD_FREQUENCIES: readonly LabelledBillingFrequency[] = ['four_weeks', 'month', 'year', 'week'];
+
+/**
+ * The key inside `BILLING_FREQUENCY_NAMESPACE` that says how long `count`
+ * periods of this frequency is, or `null` for a value that names no period.
+ * The message takes `count` and handles its own plural, so no caller composes
+ * one.
+ */
+export function billingFrequencyDurationKey(value: unknown): string | null {
+  return typeof value === 'string'
+    && (PERIOD_FREQUENCIES as readonly string[]).includes(value)
+    ? `duration_${value}`
+    : null;
+}
+
+/**
+ * `3 months` — what a duration of `count` periods of this frequency reads as, or
+ * `null` when there is nothing to say (no frequency, a non-period one, or a
+ * count that is not a positive whole number). A caller renders the stored number
+ * on its own for `null`; this is the one place that decides which it is.
+ */
+export function billingFrequencyDurationLabel(
+  value: unknown,
+  count: number,
+  // `Record<string, number>` rather than a wider value type so a next-intl
+  // translator can be handed over directly, the way `billingFrequencyLabel()`
+  // already is — the message takes one number and nothing else.
+  tFreq: (key: string, values?: Record<string, number>) => string,
+): string | null {
+  if (!Number.isInteger(count) || count <= 0) return null;
+  const key = billingFrequencyDurationKey(value);
+  return key ? tFreq(key, { count }) : null;
+}
