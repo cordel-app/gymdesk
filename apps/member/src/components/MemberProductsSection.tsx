@@ -1,11 +1,12 @@
 'use client';
 
-import { type CSSProperties } from 'react';
+import { type CSSProperties, type ReactNode } from 'react';
 import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
 
 /**
- * #1121 stage 1 — the look of the **Additional Products and Services**
- * subsection: the heading §3 asks for and one card per Product (§4).
+ * #1121 stages 1 and 2 — the look of the **Additional Products and Services**
+ * subsection: the heading §3 asks for, one card per Product (§4), and the
+ * action or state that card carries (§6).
  *
  * It is this ticket's `NutritionItemRow` (#932) and `MemberPaymentsCard`
  * (#1123): one place owns the chrome, and it **resolves nothing** — every
@@ -16,9 +17,12 @@ import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
  *
  * Three of its answers are the rule rather than the implementation.
  *
- *  - **A card holds no control.** Stage 1 is the read-only catalogue: the Buy
- *    action is stage 2's, and it will arrive as a `trailing` slot the page
- *    fills rather than as a second card shape.
+ *  - **A card holds no control of its own.** The Buy button and the
+ *    *Purchased* / *Pending payment* pill arrive from the page as one
+ *    `action` node, so this file decides neither what the action does nor
+ *    whether it exists — a recurring Product simply has nothing in that slot
+ *    (#1073: a control that cannot work is absent, never broken) — and there
+ *    is no second card shape for a Product the member already holds.
  *  - **Nothing is laid out in a row that cannot wrap.** §9 forbids horizontal
  *    scrolling, so the name and the price are a `flexWrap` pair — the card
  *    narrows instead of scrolling.
@@ -39,6 +43,11 @@ export interface MemberProductCardItem {
   frequency?: string | null;
   /** Whatever the page composed about the item — its package size, its tax. */
   meta?: string | null;
+  /**
+   * The card's one action row: the Buy button, or the pill that says what the
+   * member already holds. Nothing when neither applies.
+   */
+  action?: ReactNode;
 }
 
 export function MemberProductsSection({ title, emptyLabel, items }: {
@@ -66,6 +75,7 @@ export function MemberProductsSection({ title, emptyLabel, items }: {
               </div>
               {item.description && <p style={styles.description}>{item.description}</p>}
               {item.meta && <p style={styles.meta}>{item.meta}</p>}
+              {item.action && <div style={styles.action}>{item.action}</div>}
             </li>
           ))}
         </ul>
@@ -89,6 +99,10 @@ const styles: Record<string, CSSProperties> = {
   frequency: { fontSize: 12.5, color: memberTheme.textMuted },
   description: { margin: '6px 0 0', fontSize: 13, color: memberTheme.textSecondary, lineHeight: 1.5 },
   meta: { margin: '4px 0 0', fontSize: 12, color: memberTheme.textMuted },
+  // §8 puts the action at the card's trailing edge, and §9 forbids horizontal
+  // scrolling — so it wraps onto its own line on a narrow phone rather than
+  // squeezing the price.
+  action: { display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 10 },
   emptyCard: { ...sectionCardStyle, borderRadius: 10, padding: '16px 14px' },
   empty: { margin: 0, fontSize: 13, color: memberTheme.textMuted },
 };

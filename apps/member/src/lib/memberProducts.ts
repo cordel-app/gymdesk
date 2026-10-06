@@ -1,4 +1,4 @@
-// #1121 stage 1 — everything the Members App's **Additional Products and
+// #1121 stages 1 and 2 — everything the Members App's **Additional Products and
 // Services** subsection decides or formats, and nothing it draws.
 //
 // The split is `memberPayments.ts`' (#1123) and `NutritionItemRow`'s (#932):
@@ -32,6 +32,9 @@
 
 import { formatPaymentAmount } from './memberPayments';
 
+/** The three states §6 asks the member to be able to tell apart. */
+export type ProductPurchaseState = 'available' | 'pending_payment' | 'purchased';
+
 /** The wire shape of one item of `GET /me/products`. */
 export interface MemberProduct {
   id: number;
@@ -44,6 +47,15 @@ export interface MemberProduct {
   price_incl_tax: number | null;
   currency: string;
   tax_included: boolean;
+  /** #1121 stage 2 — what this member has done about this Product (§6). */
+  purchase_state: ProductPurchaseState;
+  /**
+   * Whether the Buy action exists for this member. The server's answer, never
+   * derived here: a recurring Product and an unpriced one are both
+   * unpurchasable in stage 2, and a page deciding that for itself would offer a
+   * button the route refuses (or hide one it would have accepted).
+   */
+  purchasable: boolean;
 }
 
 /** A locale key plus whatever it interpolates, for the page to resolve. */
@@ -100,4 +112,59 @@ export function productPackageNote(product: MemberProduct): ProductNote | null {
  */
 export function productTaxNoteKey(product: MemberProduct): string | null {
   return product.tax_included ? 'membership.product_tax_included' : null;
+}
+
+/* ── #1121 stage 2: buying one ─────────────────────────────────────────────── */
+
+/**
+ * Which **status word** a purchase state reads as, for `statusTone()`.
+ *
+ * The tone map is `memberChrome.ts`' one answer for the whole app (#983), so
+ * this module names a status it already knows rather than a colour or a tone of
+ * its own: a purchase waiting for its payment is `pending` (warning) and a
+ * completed one is `active` (success), exactly as a membership in those states.
+ * `available` has no pill at all — there is nothing to report about a Product
+ * the member has not touched.
+ */
+export function purchaseStateStatusWord(state: ProductPurchaseState): string | null {
+  if (state === 'pending_payment') return 'pending';
+  if (state === 'purchased') return 'active';
+  return null;
+}
+
+/** Which locale key names a purchase state, or `null` where none is shown. */
+export function purchaseStateKey(state: ProductPurchaseState): string | null {
+  if (state === 'pending_payment') return 'membership.product_state_pending';
+  if (state === 'purchased') return 'membership.product_state_purchased';
+  return null;
+}
+
+/**
+ * Whether the Buy action is rendered for this Product.
+ *
+ * It is the server's `purchasable` and nothing else. In particular a recurring
+ * Product renders **no action at all** rather than a disabled button or an
+ * explanation: stage 2 buys a one-off (the thread's `Q3`), and #1073's rule is
+ * that a control which cannot work is absent, never broken.
+ */
+export function showsBuyAction(product: MemberProduct): boolean {
+  return product.purchasable && product.purchase_state === 'available';
+}
+
+/**
+ * Which locale key explains a refused purchase.
+ *
+ * The API answers the refusal **code** in `error` (`purchase_pending`,
+ * `recurring_not_supported`, `no_price`), so the member reads it in their own
+ * language rather than the route's English. An unrecognised message — a 500, a
+ * network failure, a rate limit — falls back to the generic key, decided here
+ * before `t()` is called because next-intl prints a missing key verbatim.
+ */
+export function purchaseErrorKey(message: string | null | undefined): string {
+  switch (message) {
+    case 'purchase_pending': return 'membership.product_purchase_pending_error';
+    case 'recurring_not_supported': return 'membership.product_purchase_recurring_error';
+    case 'no_price': return 'membership.product_purchase_unpriced_error';
+    default: return 'membership.product_purchase_error';
+  }
 }

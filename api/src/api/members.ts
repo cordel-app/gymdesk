@@ -108,10 +108,14 @@ membersRouter.get('/', async (req, res) => {
             -- #788: a card replacement is a payment_requests row with no money
             -- in it, so the latest one must not become the member's payment
             -- status — a pending verification would read as an unpaid fee.
+            -- #1121 stage 2 excludes a product purchase for the same reason,
+            -- the other way round: it *is* money, but it is not the membership
+            -- fee this column is about, so a member halfway through buying a
+            -- locker would read as owing their fee.
             (SELECT pr.status
              FROM payment_requests pr
              WHERE pr.gym_id = m.gym_id
-               AND pr.source <> 'card_update'
+               AND pr.source NOT IN ('card_update', 'product_purchase')
                AND (pr.member_id = m.id
                     OR pr.user_membership_id IN (
                          SELECT umm.user_membership_id FROM user_membership_members umm

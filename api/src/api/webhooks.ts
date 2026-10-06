@@ -8,6 +8,8 @@ import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import { stampFirstNextBillingDate } from '../domain/nextBillingDateStamp';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
+import { PRODUCT_PURCHASE_SOURCE } from '../domain/memberProductPurchase';
+import { cancelProductPurchase, completeProductPurchase } from './me-products';
 import { paymentWebhookClientKey } from '../domain/forwardedClient';
 
 /**
@@ -241,6 +243,63 @@ paymentWebhookRouter.post(
         });
 
         req.log.info({ orderId: payload.orderId, paymentRequestId: pr.id }, 'Payment webhook: card updated');
+      } else if (payload.status === 'completed' && pr.source === PRODUCT_PURCHASE_SOURCE) {
+        // #1121 stage 2: a Product the member bought. It settles no membership
+        // cycle, which is what every difference from the fee branch below comes
+        // from:
+        //
+        //  * it writes a `payment_recorded` Billing Event with **no**
+        //    `user_membership_id` (migration 228 made the column nullable) —
+        //    money did arrive, so it belongs in the ledger both the member's
+        //    Payments card and the staff pages read, and it is receipt-able by
+        //    the existing predicate (#787) because it is a real payment;
+        //  * it stamps **no** `next_billing_date` and clears **none** of #785's
+        //    dunning counters: a rejected membership cycle is still owed after
+        //    a member buys a locker, and only something that settles *that*
+        //    cycle may clear the pair;
+        //  * it stores **no** card. A one-off purchase authorises one charge,
+        //    so the token this payment may have produced is not the member
+        //    agreeing to recurring charges — #788's replacement flow and the
+        //    first fee payment are where a card comes from.
+        //
+        // The purchase's own `UPDATE` is constrained on `pending_payment`, so a
+        // webhook delivered twice completes one row (#1118 §10).
+        await db.transaction(async (tx) => {
+          await tx.query(
+            `UPDATE payment_requests
+             SET status = 'completed', provider_ref = ?, completed_at = UTC_TIMESTAMP()
+             WHERE id = ?`,
+            [payload.providerRef, pr.id],
+          );
+
+          const { insertId: billingEventId } = await tx.query(
+            `INSERT INTO billing_events
+               (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
+             VALUES (?, NULL, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
+            [pr.gym_id, pr.member_id, pr.amount, pr.charge_type_id],
+          );
+
+          await tx.query(
+            `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
+            [billingEventId, pr.id],
+          );
+
+          const completed = await completeProductPurchase(tx, pr.id, billingEventId);
+          if (completed === 0) {
+            // The payment is real either way, so the Billing Event above
+            // stands; what is missing is a purchase row to mark, which means
+            // one of the two was already completed or was never written.
+            req.log.warn(
+              { orderId: payload.orderId, paymentRequestId: pr.id },
+              'Payment webhook: product purchase payment with no pending purchase to complete',
+            );
+          }
+        });
+
+        req.log.info(
+          { orderId: payload.orderId, paymentRequestId: pr.id },
+          'Payment webhook: product purchase completed',
+        );
       } else if (payload.status === 'completed') {
         if (pr.status === 'expired') {
           req.log.warn(
@@ -322,6 +381,13 @@ paymentWebhookRouter.post(
           `UPDATE payment_requests SET status = ?, provider_ref = ? WHERE id = ?`,
           [payload.status, payload.providerRef, pr.id],
         );
+        // #1121 stage 2: a purchase nobody paid for is `cancelled` rather than
+        // left pending — §6's "failed/cancelled payments do not create a
+        // completed purchase" in one direction, and in the other the thing that
+        // frees the pending key so the member can try again.
+        if (pr.source === PRODUCT_PURCHASE_SOURCE) {
+          await cancelProductPurchase(db, pr.id);
+        }
         req.log.info({ orderId: payload.orderId, status: payload.status }, 'Payment webhook: terminal non-success status');
       } else {
         // 'pending' is an intermediate status (Monei's AUTHORIZED/PENDING/

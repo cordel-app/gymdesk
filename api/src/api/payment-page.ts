@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { db } from '../infra/db';
 import { CARD_UPDATE_SOURCE, withPurposeParam, type PaymentPagePurpose } from '../domain/storedCards';
+import { PRODUCT_PURCHASE_SOURCE } from '../domain/memberProductPurchase';
 
 export const paymentPageRouter = Router();
 
@@ -29,6 +30,7 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
         `SELECT pr.id, pr.amount, pr.currency, pr.provider_ref, pr.source,
                 g.name AS gym_name,
                 m.name AS member_name,
+                mprod.product_name,
                 bp.recurring_billing_interval,
                 bp.recurring_billing_unit,
                 t.id AS theme_id, t.logo_mime AS theme_logo_mime,
@@ -38,7 +40,12 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
          FROM payment_requests pr
          JOIN gyms g ON g.id = pr.gym_id
          JOIN members m ON m.id = pr.member_id
-         JOIN user_memberships um ON um.id = pr.user_membership_id
+         -- #1121 stage 2: LEFT, because a product purchase belongs to the
+         -- member and names no assignment (migration 228 made the column
+         -- nullable). An INNER JOIN answered "token not found or expired" for
+         -- every purchase, which is indistinguishable from a real expiry.
+         LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
+         LEFT JOIN member_products mprod ON mprod.payment_request_id = pr.id
          LEFT JOIN billing_policies bp
            ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
          LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
@@ -102,8 +109,14 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
     // verification. It is told which, rather than inferring it from `amount`: a
     // fee resolved to 0 is not payable at all (the routes refuse it), and a page
     // guessing from the number would offer "save card" for a free cycle.
+    //
+    // #1121 stage 2 adds the third: a one-off product purchase, which shows an
+    // amount like a fee but authorises one charge rather than a recurring one —
+    // so the consent sentence differs and the source is what says so.
     const purpose: PaymentPagePurpose =
-      row.source === CARD_UPDATE_SOURCE ? 'card_update' : 'membership_fee';
+      row.source === CARD_UPDATE_SOURCE ? 'card_update'
+        : row.source === PRODUCT_PURCHASE_SOURCE ? 'product_purchase'
+          : 'membership_fee';
 
     res.json({
       paymentId: row.provider_ref,
@@ -112,6 +125,10 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       currency: row.currency,
       gymName: row.gym_name,
       memberName: row.member_name,
+      // #1121 stage 2: what is being bought, for the one-off consent sentence.
+      // The snapshot's name (`member_products.product_name`), never the live
+      // catalogue's — the page must say what the member agreed to buy.
+      itemName: row.product_name ?? null,
       billingInterval,
       logoUrl,
       logoContainsGymName: !!row.theme_logo_contains_gym_name,
@@ -120,13 +137,15 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       // these have to carry the same `purpose` marker the provider-side
       // `completeUrl`/`cancelUrl` were created with (#788) — otherwise a card
       // update lands on the member app's return page as if a fee had been paid,
-      // and it polls a payment that will never exist.
-      okUrl: purpose === 'card_update'
-        ? withPurposeParam(process.env.PAYMENT_OK_URL ?? '', purpose)
-        : (process.env.PAYMENT_OK_URL ?? ''),
-      koUrl: purpose === 'card_update'
-        ? withPurposeParam(process.env.PAYMENT_KO_URL ?? '', purpose)
-        : (process.env.PAYMENT_KO_URL ?? ''),
+      // and it polls a payment that will never exist. Written as "everything
+      // except the fee carries its purpose" since #1121 stage 2, so a fourth
+      // purpose cannot be added and silently left off these two.
+      okUrl: purpose === 'membership_fee'
+        ? (process.env.PAYMENT_OK_URL ?? '')
+        : withPurposeParam(process.env.PAYMENT_OK_URL ?? '', purpose),
+      koUrl: purpose === 'membership_fee'
+        ? (process.env.PAYMENT_KO_URL ?? '')
+        : withPurposeParam(process.env.PAYMENT_KO_URL ?? '', purpose),
     });
   } catch (err) {
     res.status(500).json({ error: 'Internal server error' });

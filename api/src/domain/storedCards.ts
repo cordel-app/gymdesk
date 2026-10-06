@@ -21,8 +21,14 @@ export const CARD_UPDATE_SOURCE = 'card_update';
  * token response, and the member app's return page in a `purpose` query
  * parameter, because both render a card replacement differently from a charge
  * (no amount, a different consent sentence, "save card" instead of "pay now").
+ *
+ * #1121 stage 2 adds `product_purchase` for the same reason the value exists at
+ * all: the consent sentence is a statement about what is being authorised, and
+ * a membership fee's ("…until you cancel your membership") is not true of a
+ * one-off purchase. It is derived from `payment_requests.source` on the page
+ * side, exactly as `card_update` is, so no caller has to keep the two in step.
  */
-export type PaymentPagePurpose = 'membership_fee' | 'card_update';
+export type PaymentPagePurpose = 'membership_fee' | 'card_update' | 'product_purchase';
 
 /** Assignment statuses the nightly run can still bill, or resume and bill. */
 const BILLABLE_STATUSES = new Set(['active', 'paused']);
