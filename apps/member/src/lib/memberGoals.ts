@@ -123,14 +123,35 @@ export const emptyGoalForm: GoalFormValues = {
 };
 
 /**
+ * #1115 §2 — the draft an inline `Add personal goal` card opens with: today's
+ * date in **Start date**, and nothing else filled in.
+ *
+ * The date is the form's rather than the server's because it is a field the
+ * member may still change before saving (§2's "must still be able to modify
+ * it"), and it is `todayInputValue()`'s UTC day — the same one the Add reading
+ * dialog defaults to, so the two cannot disagree about what today is.
+ */
+export function newGoalForm(now?: Date): GoalFormValues {
+  return { ...emptyGoalForm, start_date: todayInputValue(now) };
+}
+
+/**
  * §5 — picking a Gym Goal pre-fills the target it carries, which is what makes
- * the modal's `Target` and `Unit` fields show `3` and `Kg` the moment
+ * the form's `Target` and `Unit` fields show `3` and `Kg` the moment
  * `Lose weight` is chosen. A goal with no target of its own pre-fills nothing
  * rather than zero.
+ *
+ * It is applied **over the draft the member is already filling in** (#1115 §2),
+ * not over an empty form: the inline card opens with today's Start date, and a
+ * picker that reset the form would wipe that — and the notes and dates typed
+ * before the goal was chosen with it.
  */
-export function formForAssignableGoal(goal: AssignableGoal): GoalFormValues {
+export function formForAssignableGoal(
+  goal: AssignableGoal,
+  current: GoalFormValues = emptyGoalForm,
+): GoalFormValues {
   return {
-    ...emptyGoalForm,
+    ...current,
     personal_goal_id: String(goal.id),
     target_value: goal.target_value === null || goal.target_value === undefined ? '' : String(goal.target_value),
     target_unit: goal.target_unit ?? '',
@@ -162,9 +183,17 @@ export const NOTES_MAX_LENGTH = 1000;
  * assertable (the rule `calendarEventDisplay.ts` already follows).
  *
  * It is deliberately the client half of the server's rules and not a second set
- * of them — a unit with no value is what `chk_mpgoal_target_unit` refuses, and a
- * target date before the start date is what `chk_mpgoal_dates` does. The server
- * still checks both; this only avoids a round trip to be told so.
+ * of them — a target date before the start date is what `chk_mpgoal_dates`
+ * refuses. The server still checks it; this only avoids a round trip to be told
+ * so.
+ *
+ * It does **not** refuse a unit with no value, although
+ * `chk_mpgoal_target_unit` does: since #1115 §1 the unit is **read-only** and is
+ * the Gym Goal's own, so a member who clears the target has not made a mistake
+ * they could correct — `toGoalUpdatePayload()` drops the unit with the value it
+ * qualified instead, and the row that reaches the database still satisfies the
+ * CHECK. Refusing it here would leave the card unsavable with no editable field
+ * to fix.
  */
 export function goalFormError(values: GoalFormValues, { requireGoal }: { requireGoal: boolean }): string | null {
   if (requireGoal && !values.personal_goal_id) return 'goals.error_goal_required';
@@ -177,10 +206,7 @@ export function goalFormError(values: GoalFormValues, { requireGoal }: { require
     if (value > TARGET_VALUE_MAX) return 'goals.error_target_max';
   }
   const unit = values.target_unit.trim();
-  if (unit !== '') {
-    if (rawValue === '') return 'goals.error_unit_without_value';
-    if (unit.length > TARGET_UNIT_MAX_LENGTH) return 'goals.error_unit_length';
-  }
+  if (unit !== '' && unit.length > TARGET_UNIT_MAX_LENGTH) return 'goals.error_unit_length';
   if (values.start_date && values.target_date && values.target_date < values.start_date) {
     return 'goals.error_dates';
   }
@@ -194,7 +220,7 @@ export function goalFormError(values: GoalFormValues, { requireGoal }: { require
  * An empty field is sent as an explicit `null` rather than omitted, because the
  * two mean different things to the API: omitting `target_value` **inherits the
  * Gym Goal's** (§8's snapshot, which the server takes), while `null` is the
- * member deliberately clearing it. The dialog pre-fills from the catalogue and
+ * member deliberately clearing it. The card pre-fills from the catalogue and
  * then submits exactly what is on screen, so what it sends is what the member
  * saw — a field they emptied stays empty instead of coming back filled.
  */
@@ -209,6 +235,11 @@ export function toGoalCreatePayload(values: GoalFormValues) {
  * What `PUT /me/personal-goals/:id` is sent. `personal_goal_id` is **not** in
  * it: the assignment's goal is immutable, and changing it is a remove plus an
  * add (§12).
+ *
+ * The unit **follows the value** (#1115 §1): it is read-only and belongs to the
+ * Gym Goal, so a target the member cleared takes its unit with it rather than
+ * leaving a unit qualifying nothing — which is exactly what
+ * `chk_mpgoal_target_unit` refuses, and which the member has no field to fix.
  */
 export function toGoalUpdatePayload(values: GoalFormValues) {
   const rawValue = values.target_value.trim();
@@ -216,7 +247,7 @@ export function toGoalUpdatePayload(values: GoalFormValues) {
   const notes = values.notes.trim();
   return {
     target_value: rawValue === '' ? null : Number(rawValue),
-    target_unit: unit === '' ? null : unit,
+    target_unit: rawValue === '' || unit === '' ? null : unit,
     start_date: values.start_date || null,
     target_date: values.target_date || null,
     notes: notes === '' ? null : notes,
@@ -496,4 +527,26 @@ export function readingAxisLabel(at: number, locale: string): string {
   const date = new Date(at);
   if (Number.isNaN(date.getTime())) return '';
   return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+/* ── #1115: the goal card ─────────────────────────────────────────────────────
+ * The card's **header** (§1) is the goal's name, its target and how far along it
+ * is — the one line a member reads with every card collapsed. The three values
+ * are already the lib's (`goalDisplayName()`, `formatGoalTarget()`,
+ * `formatProgressPercent()`); what is left is how they are joined, which is
+ * decided here rather than in the page for `NutritionItemRow`'s reason: a
+ * separator typed into a screen is a second place that words a goal. */
+
+/**
+ * The card header's second line, from the parts the page has already resolved
+ * and translated — `Target: 70 kg · 65%`.
+ *
+ * A part that is absent is **left out rather than placeholdered**, and all parts
+ * absent answers `null`, which the card renders as no line at all: a goal with
+ * no target and no reading shows its name alone, never `Target: — · —%` or a
+ * dangling separator (`calendarEventMeta.ts`'s rule, one screen over).
+ */
+export function goalSummaryLine(parts: (string | null | undefined)[]): string | null {
+  const present = parts.filter((part): part is string => typeof part === 'string' && part.trim() !== '');
+  return present.length === 0 ? null : present.join(' · ');
 }

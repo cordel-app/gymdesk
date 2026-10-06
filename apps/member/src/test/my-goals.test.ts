@@ -11,7 +11,9 @@ import {
   goalFormError,
   goalStatusKey,
   goalStatusToneKey,
+  goalSummaryLine,
   isLiveGoal,
+  newGoalForm,
   toGoalCreatePayload,
   toGoalUpdatePayload,
   type MemberGoal,
@@ -201,17 +203,19 @@ describe('the form (§5, §9)', () => {
     expect(goalFormError({ ...base, target_value: 'abc' }, { requireGoal: true })).toBe('goals.error_target_number');
     expect(goalFormError({ ...base, target_value: '-1' }, { requireGoal: true })).toBe('goals.error_target_negative');
     expect(goalFormError({ ...base, target_value: '1e12' }, { requireGoal: true })).toBe('goals.error_target_max');
-    expect(goalFormError({ ...base, target_unit: 'kg' }, { requireGoal: true })).toBe('goals.error_unit_without_value');
     expect(goalFormError({ ...base, target_value: '3', target_unit: 'x'.repeat(21) }, { requireGoal: true })).toBe('goals.error_unit_length');
     expect(goalFormError({ ...base, start_date: '2026-06-01', target_date: '2026-01-01' }, { requireGoal: true })).toBe('goals.error_dates');
     expect(goalFormError({ ...base, notes: 'n'.repeat(1001) }, { requireGoal: true })).toBe('goals.error_notes_length');
   });
 
-  // A value with no unit is incomplete rather than contradictory, and the one
-  // direction `chk_mpgoal_target_unit` refuses is the one checked here.
-  it('allows a value with no unit, and a zero target', () => {
+  // A value with no unit is incomplete rather than contradictory, so it is
+  // allowed — and since #1115 §1 made the unit read-only, a unit left behind by
+  // a cleared target is not a member error either: the payload drops it, so the
+  // row still satisfies `chk_mpgoal_target_unit` and the card stays savable.
+  it('allows a value with no unit, a zero target, and a unit whose value was cleared', () => {
     const base = { ...emptyGoalForm, personal_goal_id: '4' };
     expect(goalFormError({ ...base, target_value: '5' }, { requireGoal: true })).toBeNull();
+    expect(goalFormError({ ...base, target_unit: 'kg' }, { requireGoal: true })).toBeNull();
     expect(goalFormError({ ...base, target_value: '0', target_unit: 'kg' }, { requireGoal: true })).toBeNull();
   });
 
@@ -250,9 +254,10 @@ describe('the page reuses the app rather than restating it (§19, §983)', () =>
 
   it('renders every dialog through the one shared shell rather than a second overlay', () => {
     expect(pageSrc).toContain('<MemberDialog');
-    // Add/Edit, #1037's Add reading, and the removal confirmation — three uses
-    // of one shell, not three overlays.
-    expect(pageSrc.match(/<MemberDialog/g)).toHaveLength(3);
+    // #1037's Add reading and the removal confirmation — two uses of one shell,
+    // not two overlays. Add and Edit are **not** among them since #1115: both
+    // are inline states of a card.
+    expect(pageSrc.match(/<MemberDialog/g)).toHaveLength(2);
     expect(pageSrc).not.toContain("position: 'fixed'");
   });
 
@@ -538,7 +543,7 @@ describe('#1037 the Add reading dialog (§3, §21, §30, §32)', () => {
     expect(pageSrc).toContain("openReading(goal, 'reading')");
     expect(pageSrc).toContain("openReading(goal, 'initial')");
     // A past goal is read-only: no reading action anywhere in that section.
-    const past = pageSrc.slice(pageSrc.indexOf('pastGoals.length > 0'), pageSrc.indexOf('{/* Add / Edit */}'));
+    const past = pageSrc.slice(pageSrc.indexOf('pastGoals.length > 0'), pageSrc.indexOf('goal-reading-title'));
     expect(past).not.toContain('openReading');
     expect(pageSrc).toMatch(/await load\(\);\s*\n\s*setEditing\(null\);\s*\n\s*setNotice\(t\(kind/);
   });
@@ -606,5 +611,126 @@ describe('#1037 stage 4 the progress chart', () => {
     // `formatReadingValue(null, …)` is `null`, which the page turns into no label.
     expect(formatReadingValue(null, 'kg')).toBeNull();
     expect(pageSrc).toContain('target === null ? null');
+  });
+});
+
+/* ── #1115 — the Personal Goal cards ─────────────────────────────────────────
+ * Each live goal is an individual card, collapsed by default, whose header
+ * carries the name, the target and the progress; creating and editing happen
+ * **inline in the card** rather than in a dialog, and the card's `⋮` is the
+ * contextual menu §4 asks for.
+ *
+ * What is pinned here is what cannot be seen from a type: that no modal is used
+ * for either form, that the unit is read-only, that the card's chrome lives in
+ * one component which resolves nothing, and that the draft opens on today. */
+
+describe('#1115 the card header and its summary (§1)', () => {
+  const cardSrc = read(join(SRC, 'components', 'MemberGoalCard.tsx'));
+
+  it('joins the parts the page resolved, and leaves out what is absent', () => {
+    expect(goalSummaryLine(['Target: 70 kg', '65%'])).toBe('Target: 70 kg · 65%');
+    expect(goalSummaryLine(['Target: 70 kg', null])).toBe('Target: 70 kg');
+    expect(goalSummaryLine([null, '65%'])).toBe('65%');
+  });
+
+  // A goal with no target and no reading shows its name alone — never
+  // `Target: — · —%`, and never a dangling separator.
+  it('answers null when there is nothing to say', () => {
+    expect(goalSummaryLine([null, undefined])).toBeNull();
+    expect(goalSummaryLine([])).toBeNull();
+    expect(goalSummaryLine(['  ', null])).toBeNull();
+  });
+
+  it('is rendered by the one card component, which resolves no label of its own', () => {
+    expect(pageSrc).toContain('<MemberGoalCard');
+    expect(cardSrc).not.toContain('useTranslations');
+    expect(cardSrc).not.toMatch(/\bt\(/);
+    // #983 — the card spells no colour; every surface is memberChrome's.
+    expect(cardSrc.match(/#[0-9a-fA-F]{3,8}\b/g) ?? []).toEqual([]);
+    expect(cardSrc).toContain('memberTheme');
+  });
+
+  it('starts collapsed, and expanding is the page\'s own state', () => {
+    expect(pageSrc).toContain('useState<Record<number, boolean>>({})');
+    expect(pageSrc).toContain('expanded={Boolean(expanded[goal.id])}');
+    expect(cardSrc).toContain('aria-expanded={expanded}');
+    // Expanding is presentation: it must not fetch (#955's rule).
+    const toggle = pageSrc.slice(pageSrc.indexOf('function toggleCard'));
+    expect(toggle.slice(0, toggle.indexOf('}'))).not.toContain('apiFetch');
+  });
+
+  it('keeps the menu out of the element that toggles the card (§4)', () => {
+    // A nested button is invalid HTML and `stopPropagation()` is a rule an edit
+    // can forget, so the `⋮` is a sibling of the header button.
+    expect(cardSrc).toContain('{menu && <CardMenu');
+    expect(cardSrc).toContain('aria-haspopup="menu"');
+    expect(cardSrc).toContain('role="menuitem"');
+    // It closes on Escape and on a tap outside, so it cannot sit over the page.
+    expect(cardSrc).toContain("'Escape'");
+  });
+});
+
+describe('#1115 creating and editing are inline (§2, §3)', () => {
+  const now = new Date('2026-09-22T12:00:00.000Z');
+
+  it('opens the draft with today in Start date and nothing else (§2)', () => {
+    expect(newGoalForm(now)).toEqual({ ...emptyGoalForm, start_date: '2026-09-22' });
+  });
+
+  it('keeps the draft\'s own fields when a goal is picked', () => {
+    const draft = { ...newGoalForm(now), notes: 'half marathon' };
+    const picked = formForAssignableGoal(
+      { id: 4, slug: 'weight_loss', name: 'Weight Loss', description: null, target_value: 3, target_unit: 'kg' },
+      draft,
+    );
+    expect(picked).toEqual({ ...draft, personal_goal_id: '4', target_value: '3', target_unit: 'kg' });
+  });
+
+  it('renders one form for both states, so they cannot drift apart', () => {
+    expect(pageSrc).toContain("function goalForm(mode: 'add' | 'edit'");
+    expect(pageSrc).toContain("goalForm('add')");
+    expect(pageSrc).toContain("goalForm('edit', goal)");
+    // Neither is a dialog: the two remaining `<MemberDialog`s are the reading
+    // one and the removal confirmation, asserted above.
+    const addCard = pageSrc.slice(pageSrc.indexOf("goalForm('add')") - 400, pageSrc.indexOf("goalForm('add')"));
+    expect(addCard).toContain('<MemberGoalCard');
+    expect(addCard).not.toContain('<MemberDialog');
+  });
+
+  it('shows the unit as a value rather than asking for it (§1)', () => {
+    const form = pageSrc.slice(pageSrc.indexOf("function goalForm("), pageSrc.indexOf('if (loading)'));
+    expect(form).toContain('goals.field_unit');
+    // One `<input>` per editable field — the unit is not one of them.
+    expect(form).not.toMatch(/value=\{form\.target_unit\}/);
+    expect(form).toContain('readOnlyValue');
+  });
+
+  // The unit belongs to the Gym Goal, so a cleared target takes it with it:
+  // `chk_mpgoal_target_unit` refuses a unit qualifying nothing, and the member
+  // has no field to fix it with.
+  it('drops the unit with the value it qualified', () => {
+    expect(toGoalUpdatePayload({ ...emptyGoalForm, target_unit: 'kg' }).target_unit).toBeNull();
+    expect(toGoalUpdatePayload({ ...emptyGoalForm, target_value: '0', target_unit: 'kg' }).target_unit).toBe('kg');
+  });
+
+  it('offers Edit and Remove on every saved card (§4)', () => {
+    const menu = pageSrc.slice(pageSrc.indexOf('function cardMenu'), pageSrc.indexOf('function pastSummary'));
+    expect(menu).toContain("goals.edit");
+    expect(menu).toContain("goals.remove");
+    expect(menu).toContain('danger: true');
+    // #1037's two reading writers move into the same menu, so they are reachable
+    // with every card closed.
+    expect(menu).toContain("openReading(goal, 'reading')");
+    expect(menu).toContain("openReading(goal, 'initial')");
+  });
+
+  it('has its two new strings in all three languages', () => {
+    for (const code of LOCALE_CODES) {
+      const goals = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8')).goals;
+      for (const key of ['summary_target', 'menu_label', 'add']) {
+        expect(goals[key], `${code}.${key}`).toBeTruthy();
+      }
+      expect(goals.summary_target, code).toContain('{value}');
+    }
   });
 });

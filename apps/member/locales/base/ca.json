@@ -412,9 +412,8 @@
     "loading": "Carregant els teus objectius…",
     "error": "No hem pogut carregar els teus objectius.",
     "empty": "Encara no tens cap objectiu.",
-    "add": "Afegir objectiu",
+    "add": "Afegir objectiu personal",
     "edit": "Editar",
-    "edit_title": "Editar objectiu",
     "remove": "Eliminar",
     "remove_title": "Vols eliminar l'objectiu?",
     "remove_confirm": "Segur que vols eliminar “{name}” dels teus objectius?",
@@ -443,7 +442,6 @@
     "error_target_number": "La fita ha de ser un número.",
     "error_target_negative": "La fita no pot ser negativa.",
     "error_target_max": "La fita és massa gran.",
-    "error_unit_without_value": "Introdueix una fita abans que la seva unitat.",
     "error_unit_length": "La unitat és massa llarga.",
     "error_dates": "La data objectiu ha de ser igual o posterior a la d'inici.",
     "error_notes_length": "Les notes són massa llargues.",
@@ -478,7 +476,9 @@
     "error_reading_negative": "La mesura no pot ser negativa.",
     "error_reading_max": "La mesura és massa gran.",
     "error_reading_date_required": "Tria una data.",
-    "error_reading_date_future": "La data no pot ser futura."
+    "error_reading_date_future": "La data no pot ser futura.",
+    "summary_target": "Fita: {value}",
+    "menu_label": "Accions de l’objectiu"
   },
   "exercise_media": {
     "image": "Imatge de l'exercici",

@@ -412,9 +412,8 @@
     "loading": "Cargando tus objetivos…",
     "error": "No hemos podido cargar tus objetivos.",
     "empty": "Todavía no tienes ningún objetivo.",
-    "add": "Añadir objetivo",
+    "add": "Añadir objetivo personal",
     "edit": "Editar",
-    "edit_title": "Editar objetivo",
     "remove": "Eliminar",
     "remove_title": "¿Eliminar objetivo?",
     "remove_confirm": "¿Seguro que quieres eliminar “{name}” de tus objetivos?",
@@ -443,7 +442,6 @@
     "error_target_number": "La meta debe ser un número.",
     "error_target_negative": "La meta no puede ser negativa.",
     "error_target_max": "La meta es demasiado grande.",
-    "error_unit_without_value": "Introduce una meta antes que su unidad.",
     "error_unit_length": "La unidad es demasiado larga.",
     "error_dates": "La fecha objetivo debe ser igual o posterior a la de inicio.",
     "error_notes_length": "Las notas son demasiado largas.",
@@ -478,7 +476,9 @@
     "error_reading_negative": "La medición no puede ser negativa.",
     "error_reading_max": "La medición es demasiado grande.",
     "error_reading_date_required": "Elige una fecha.",
-    "error_reading_date_future": "La fecha no puede ser futura."
+    "error_reading_date_future": "La fecha no puede ser futura.",
+    "summary_target": "Meta: {value}",
+    "menu_label": "Acciones del objetivo"
   },
   "exercise_media": {
     "image": "Imagen del ejercicio",
