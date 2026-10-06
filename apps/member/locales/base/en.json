@@ -9,6 +9,7 @@
     "loading": "Loading…",
     "next_booking": "Next booking",
     "no_upcoming_booking": "No upcoming bookings.",
+    "more_bookings_that_day": "+{count} more {count, plural, one {booking} other {bookings}} that day",
     "waitlisted": "Waitlisted",
     "membership_status": "Membership",
     "no_membership": "No active membership.",
