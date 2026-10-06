@@ -13,7 +13,8 @@ Tick items off in the PR that completes them.
 - [x] **Workflows parametrised by GitHub environment** (#784). `billing-run.yml`,
       `recurring-booking-run.yml`, `deploy.yml`, `deploy-admin.yml`, `deploy-member.yml`
       and `deploy-payment.yml` take a `workflow_dispatch` input `environment` (`dev` |
-      `production`, default `dev`) and run in `${{ inputs.environment || 'dev' }}`, so a
+      `pro`, default `dev` — the production environment is named **`pro`**, and the choice
+      offered `production` until 2026-10-06, an environment that does not exist) and run in `${{ inputs.environment || 'dev' }}`, so a
       schedule or a push to `main` still targets `dev` until the steps below are done. The
       two scheduled workflows read their host from the environment **variable**
       `vars.API_BASE_URL` and go red with an explicit error when it is missing — there is no
@@ -22,8 +23,9 @@ Tick items off in the PR that completes them.
   1. [ ] Add the variable **`API_BASE_URL`** (`https://api.vdicube.com`) to the **`dev`**
          environment's *variables* (not secrets). It must exist before the #784 PR merges,
          or the next nightly billing and recurring booking runs fail at their first step.
-  2. [ ] Create the **`production`** environment (Settings → Environments) with the secrets
-         `BILLING_INTERNAL_SECRET`, `RECURRING_BOOKINGS_INTERNAL_SECRET` and every secret
+  2. [ ] Create the **`pro`** environment (Settings → Environments) — created 2026-10-04 with
+         `BILLING_INTERNAL_SECRET` and `RECURRING_BOOKINGS_INTERNAL_SECRET`, and since
+         2026-10-06 `BOOKING_REMINDERS_INTERNAL_SECRET`; still to confirm: every secret
          the four deploy workflows read, the variable `API_BASE_URL` (the production API's
          origin) plus the other variables the deploy workflows read, **required reviewers**
          for deployments, and a deployment branch rule allowing **`main` only**. That
@@ -34,12 +36,12 @@ Tick items off in the PR that completes them.
          segment** (`https://<members host>/payment/success`, not `/es/payment/success`):
          they are one value for every member, and the Members App's middleware is what
          localizes the landing (#1081, `docs/payments.md` §A4).
-  3. [ ] In `billing-run.yml` and `recurring-booking-run.yml`, change the one line marked
-         `# #784: switch to 'production' once the environment exists` from
-         `${{ inputs.environment || 'dev' }}` to `${{ inputs.environment || 'production' }}`.
-         From then on the schedules target `production` only and `dev` is run by manual
+  3. [ ] In `billing-run.yml`, `recurring-booking-run.yml` and `booking-reminder-run.yml`,
+         change the one line marked `# #784: switch to 'pro' once that environment carries
+         live gyms` from `${{ inputs.environment || 'dev' }}` to
+         `${{ inputs.environment || 'pro' }}`. From then on the schedules target `pro` only and `dev` is run by manual
          dispatch (the input still defaults to `dev`).
-  4. [ ] **Route the `production` environment's failure notifications to the people who
+  4. [ ] **Route the `pro` environment's failure notifications to the people who
          act on payments** (#784 §3). The environment is the alerting channel (#778): a
          nightly run that fails a charge, or does not execute at all, turns `billing-run.yml`
          red, and the email goes to whoever GitHub notifies for that workflow — by default

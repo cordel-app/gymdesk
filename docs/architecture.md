@@ -1411,7 +1411,7 @@ Notes:
 
 ## CI/CD Configuration (GitHub Actions)
 
-Config is split by scope. **Environment-dependent** values live in GitHub *Environments* (repo Settings → Environments); workflows read them via `secrets.*` / `vars.*`. `ci.yml`, `deploy-alloy.yml` and `debug-vps.yml` declare `environment: dev`; the billing run, the recurring booking run and the four deploy workflows declare `environment: ${{ inputs.environment || 'dev' }}`, with a `workflow_dispatch` choice input (`dev` | `production`, default `dev`) (#784). When PRO arrives, create a `production` environment with the same names and flip the scheduled workflows' fallback to `'production'` — the owner steps are in `docs/go-to-production.md` §1.
+Config is split by scope. **Environment-dependent** values live in GitHub *Environments* (repo Settings → Environments); workflows read them via `secrets.*` / `vars.*`. `ci.yml`, `deploy-alloy.yml` and `debug-vps.yml` declare `environment: dev`; the billing run, the recurring booking run and the four deploy workflows declare `environment: ${{ inputs.environment || 'dev' }}`, with a `workflow_dispatch` choice input (`dev` | `pro`, default `dev`) (#784). The production environment is named **`pro`** (created 2026-10-04) — the choice offered `production` until a dispatch on it was found to target an environment that does not exist; `api/src/test/workflow-environments.unit.test.ts` holds the set. When PRO carries live gyms, flip the scheduled workflows' fallback to `'pro'` — the owner steps are in `docs/go-to-production.md` §1.
 
 ### Environment-scoped (per env: `dev` today, `production` later)
 
