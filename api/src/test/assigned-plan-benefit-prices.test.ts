@@ -26,6 +26,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
+  activateAssignment,
 } from './helpers';
 
 afterAll(async () => {
@@ -113,6 +114,10 @@ describe('Assigned Plan Benefit prices (#924 stage 1)', () => {
       .set('x-gym-id', gymId)
       .send({ member_id: memberId, membership_plan_id: planId, starts_at: today() });
     expect(res.status).toBe(201);
+    // #1108 stage 1: assignment creates a Draft. What this file is about is
+    // what an active assignment's benefit rows cost, so the Draft is committed
+    // here rather than in every test.
+    await activateAssignment(gymId, res.body.id);
     return res.body.id;
   }
 

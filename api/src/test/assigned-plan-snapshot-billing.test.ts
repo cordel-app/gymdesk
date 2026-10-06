@@ -24,6 +24,7 @@ vi.mock('../payments', async (importOriginal) => ({
   }),
 }));
 import {
+  activateAssignment,
   TEST_AUTH_HEADER,
   cleanupTestGyms,
   createTestGym,
@@ -106,9 +107,15 @@ async function addPlanBenefit(
   );
 }
 
-const assign = (gymId: string, body: Record<string, unknown>) =>
-  request.post('/user-memberships')
+// #1108 stage 1: every assignment path creates a **Draft**, and what this file
+// is about is what a committed assignment prices and bills — so the helper
+// commits it. The Draft state itself is `draft-membership-assignment.test.ts`'s.
+const assign = async (gymId: string, body: Record<string, unknown>) => {
+  const res = await request.post('/user-memberships')
     .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send(body);
+  if (res.status === 201) await activateAssignment(gymId, res.body.id);
+  return res;
+};
 
 const getSimulation = (gymId: string, memberId: number) =>
   request.get(`/user-memberships/member/${memberId}/billing-simulation`)

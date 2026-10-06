@@ -14,6 +14,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
+  activateAssignment,
   TEST_AUTH_HEADER,
   cleanupTestGyms,
   createTestGym,
@@ -63,12 +64,18 @@ async function createMember(gymId: string): Promise<number> {
   return insertId;
 }
 
-const assign = (gymId: string, planId: number, memberId: number) =>
-  request
+// #1108 stage 1: every assignment path creates a **Draft**, and what this file
+// is about is what a committed assignment prices and bills — so the helper
+// commits it. The Draft state itself is `draft-membership-assignment.test.ts`'s.
+const assign = async (gymId: string, planId: number, memberId: number) => {
+  const res = await request
     .post('/user-memberships')
     .set('Authorization', TEST_AUTH_HEADER)
     .set('x-gym-id', gymId)
     .send({ member_id: memberId, membership_plan_id: planId, starts_at: dayOffset(0) });
+  if (res.status === 201) await activateAssignment(gymId, res.body.id);
+  return res;
+};
 
 const putFeeBenefit = (gymId: string, umId: number, body: Record<string, unknown>) =>
   request
