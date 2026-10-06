@@ -350,7 +350,12 @@ for (const { path, category } of CATEGORY_BENEFIT_ROUTES) {
     const seen = new Set<number>();
     for (const item of items) {
       const productId = parseInt(item.product_id, 10);
-      const quantity = parseInt(item.quantity, 10);
+      // #1135 §13: read as a whole number rather than truncated to one.
+      // `parseInt('3.5')` is 3, so a Duration of 3.5 periods used to be stored
+      // silently as 3 — the value the gym configured and the value the
+      // simulation counts have to be the same number, and a count of periods has
+      // no fractional form. A positive integer passes exactly as it did.
+      const quantity = Number(item.quantity);
       if (!Number.isInteger(productId) || productId <= 0) {
         return res.status(400).json({ error: 'product_id is required' });
       }

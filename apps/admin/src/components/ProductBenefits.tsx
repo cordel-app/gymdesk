@@ -24,7 +24,11 @@
 
 import React from 'react';
 import { useTranslations } from 'next-intl';
-import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
+import {
+  BILLING_FREQUENCY_NAMESPACE,
+  billingFrequencyDurationLabel,
+  billingFrequencyLabel,
+} from '@/lib/billingFrequency';
 import { primaryBtnSmall } from '@/components/ui';
 import { rowRemoveBtnStyle } from '@/components/formChrome';
 import {
@@ -339,6 +343,14 @@ const lineTotalSt: React.CSSProperties = {
   display: 'block', fontSize: 11, color: '#888', fontVariantNumeric: 'tabular-nums',
 };
 const mutedValueSt: React.CSSProperties = { color: '#888' };
+/**
+ * #1135: the derived meaning under a Duration input — `3 months` under `3`. Same
+ * secondary voice as the line total under a price, because it is the same kind
+ * of thing: what the number above it works out to, never a second field.
+ */
+const derivedValueSt: React.CSSProperties = {
+  display: 'block', fontSize: 11, color: '#888', marginTop: 2,
+};
 const hintSt: React.CSSProperties = { margin: 0, fontSize: 13, color: '#888' };
 /**
  * #896 §14: the value input names itself, because what it holds depends on the
@@ -434,6 +446,33 @@ export const PRODUCT_BENEFIT_COLUMNS: readonly ProductBenefitColumn[] = [
  */
 export type BenefitFrequencyColumn = 'item' | 'benefit';
 
+/**
+ * #1135 — *what* the shared number column counts.
+ *
+ *   `quantity` — how many of the item the line carries. The answer for every
+ *                section but one: a Session grant's units, a One-off's units, a
+ *                Membership Plan's "units billed each occurrence".
+ *   `duration`  — how many of the **item's own billing periods** the line
+ *                applies to. A Promotion's Periodical grant, and only that one:
+ *                `promotion_periodical.quantity` is what the billing engine
+ *                counts periods with (`buildItemStream()` covers an occurrence
+ *                while `occurrence < firstCovered + quantity`, and
+ *                `collectBillableItems()` fixes such a grant's billed quantity
+ *                to 1 — "the grant covers periods, it does not say how many
+ *                lockers"), so the column is relabelled rather than joined by a
+ *                second one, and nothing is stored differently.
+ *
+ * It is one column either way, for the reason `BenefitFrequencyColumn` is: the
+ * three sections of a card read as one table (#916), so a per-section meaning is
+ * a label and a caption, never a column of its own.
+ */
+export type BenefitQuantityColumn = 'quantity' | 'duration';
+
+/** Which of the caller's keys heads that column. One place, both halves of the card. */
+export function benefitQuantityLabelKey(column: BenefitQuantityColumn): string {
+  return column === 'duration' ? 'col_duration' : 'col_quantity';
+}
+
 /** How little the flexible name column may be squeezed to before the table scrolls. */
 export const BENEFIT_ITEM_COLUMN_MIN_WIDTH = 180;
 
@@ -443,6 +482,8 @@ export function productBenefitColumns(opts: {
   showPrices: boolean;
   /** #959 — a Promotion's Requirement column. Absent means not rendered at all. */
   showRequirement?: boolean;
+  /** #1135 — what the number column counts here. Defaults to a quantity. */
+  quantityColumn?: BenefitQuantityColumn;
 }): ProductBenefitColumn[] {
   return PRODUCT_BENEFIT_COLUMNS.filter((col) => {
     if (col.key === 'frequency') return opts.showFrequency;
@@ -450,7 +491,12 @@ export function productBenefitColumns(opts: {
     if (col.key === 'requirement') return opts.showRequirement === true;
     if (col.key === 'original_price' || col.key === 'final_price') return opts.showPrices;
     return true;
-  });
+  }).map((col) => (col.key === 'quantity'
+    // #1135: the same column, named for what it counts in this section. The
+    // declaration stays the one place a column's width, order and alignment
+    // live — only its label key moves.
+    ? { ...col, labelKey: benefitQuantityLabelKey(opts.quantityColumn ?? 'quantity') }
+    : col));
 }
 
 /**
@@ -471,7 +517,8 @@ export function formatBenefitPrice(amount: number): string {
 /** The editable grid: item picker + quantity (+ the item's own, read-only frequency). */
 export function ProductBenefitEditor({
   t, addKey, draft, setDraft, categoryItems, showFrequency, enforceMandatory = false,
-  benefitContext, frequencyColumn = 'item', showRequirement = false,
+  benefitContext, frequencyColumn = 'item', quantityColumn = 'quantity',
+  showRequirement = false,
 }: {
   t: Translate;
   addKey: string;
@@ -485,6 +532,15 @@ export function ProductBenefitEditor({
    * predates the ticket keeps the read-only item frequency it had.
    */
   frequencyColumn?: BenefitFrequencyColumn;
+  /**
+   * #1135: `'duration'` names the number column *Duration* and captions it with
+   * how long that many of the item's own billing periods is (`3 months`). The
+   * Promotion card's Periodical section, and nothing else — a Membership Plan's
+   * periodical benefit quantity is units billed each occurrence, which is a
+   * different question. Defaults to `'quantity'`, so every caller that predates
+   * the ticket is unchanged, and the stored field is the same one either way.
+   */
+  quantityColumn?: BenefitQuantityColumn;
   /**
    * #896 stage 4: which option set the line's pricing treatment is chosen
    * from — `'promotion'` for all five, `'plan'` for the three a Membership Plan
@@ -525,7 +581,9 @@ export function ProductBenefitEditor({
   // when the caller named a context, so the grid is the same three or four
   // columns it has always been for a caller that did not.
   const columns = [
-    '1.3fr', '80px',
+    // #1135: a Duration cell carries its derived `3 months` under the input, so
+    // its track is a little wider than a bare quantity's.
+    '1.3fr', quantityColumn === 'duration' ? '110px' : '80px',
     ...(showFrequency ? ['100px'] : []),
     ...(benefitContext ? ['130px', '110px'] : []),
     ...(showRequirement ? ['130px'] : []),
@@ -541,7 +599,7 @@ export function ProductBenefitEditor({
           }}
         >
           <span style={colHeaderSt}>{t('col_product')}</span>
-          <span style={colHeaderSt}>{t('col_quantity')}</span>
+          <span style={colHeaderSt}>{t(benefitQuantityLabelKey(quantityColumn))}</span>
           {showFrequency && <span style={colHeaderSt}>{t('col_frequency')}</span>}
           {benefitContext && <span style={colHeaderSt}>{t('col_item_action')}</span>}
           {benefitContext && <span />}
@@ -568,11 +626,25 @@ export function ProductBenefitEditor({
                     ))}
                   </select>
                 )}
-                <input
-                  type="number" min="1" value={row.quantity}
-                  onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { quantity: parseInt(e.target.value, 10) || 1 })}
-                  style={{ ...inlineSelectSt, width: '100%' }}
-                />
+                <span>
+                  <input
+                    type="number" min="1" step="1" value={row.quantity}
+                    onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, { quantity: parseInt(e.target.value, 10) || 1 })}
+                    style={{ ...inlineSelectSt, width: '100%' }}
+                  />
+                  {/* #1135: `3` is what is stored and typed; `3 months` is what
+                      it means, derived from the item's own frequency and never
+                      asked for. An item whose frequency names no period (`Once`,
+                      a legacy `Per session`) gets no caption rather than a
+                      sentence about three of nothing. */}
+                  {quantityColumn === 'duration' && (
+                    <span style={derivedValueSt}>
+                      {billingFrequencyDurationLabel(
+                        row.product_billing_frequency, Number(row.quantity), tFreq,
+                      ) ?? '\u00a0'}
+                    </span>
+                  )}
+                </span>
                 {showFrequency && (frequencyColumn === 'benefit' ? (
                   // #918: the one editable Frequency — how often this benefit's
                   // sessions are renewed. `—` is a real stored value (no
@@ -686,6 +758,13 @@ export function ProductBenefitEditor({
       {frequencyColumn === 'benefit' && showFrequency && (
         <p style={{ ...hintSt, marginBottom: 8 }}>{t('session_frequency_hint')}</p>
       )}
+      {/* #1135: what Duration counts, and that the Product keeps billing at its
+          regular price once the promotion has run out (§15). A form's
+          explanatory sentence stays in the form (#797), so it is never rendered
+          beside the read-only values. */}
+      {quantityColumn === 'duration' && draft.length > 0 && (
+        <p style={{ ...hintSt, marginBottom: 8 }}>{t('item_duration_hint')}</p>
+      )}
       {/* #959: what Mandatory and Optional mean for the member. A form's
           explanatory sentence stays in the form (#797), so it is never rendered
           beside the read-only values. */}
@@ -741,7 +820,8 @@ function BenefitPriceCell({
 /** Read-only counterpart — what a section shows until its own Edit button is pressed. */
 export function ProductBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
-  showPrices = false, frequencyColumn = 'item', showRequirement = false,
+  showPrices = false, frequencyColumn = 'item', quantityColumn = 'quantity',
+  showRequirement = false,
 }: {
   t: Translate;
   emptyKey: string;
@@ -749,6 +829,11 @@ export function ProductBenefitView({
   showFrequency: boolean;
   /** #918 — see `BenefitFrequencyColumn`. The read-only half of the same column. */
   frequencyColumn?: BenefitFrequencyColumn;
+  /**
+   * #1135 — see `BenefitQuantityColumn`. The read-only half of the same column,
+   * so the card says what the editor behind `⋮ → Edit` holds (#797).
+   */
+  quantityColumn?: BenefitQuantityColumn;
   /**
    * #896 stage 4: renders the line's configured treatment as a column of its
    * own, so the read-only half of the card says exactly what the editor behind
@@ -781,6 +866,7 @@ export function ProductBenefitView({
   // vanishing and shifting the columns after it out of line (#916).
   const columns = productBenefitColumns({
     showFrequency, showAction: benefitContext != null, showPrices, showRequirement,
+    quantityColumn,
   });
 
   const cell = (col: ProductBenefitColumn, row: ProductBenefitRow): React.ReactNode => {
@@ -795,6 +881,14 @@ export function ProductBenefitView({
           </>
         );
       case 'quantity':
+        // #1135: a Duration reads as what it means — `3 months` rather than `3`,
+        // from the item's own frequency. The stored number is the fallback, for
+        // an item whose frequency names no period at all.
+        if (quantityColumn === 'duration') {
+          return billingFrequencyDurationLabel(
+            row.product_billing_frequency, Number(row.quantity), tFreq,
+          ) ?? row.quantity;
+        }
         return row.quantity;
       case 'frequency':
         // #918: a Session Benefit section shows the renewal Frequency the Plan
