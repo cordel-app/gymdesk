@@ -10,7 +10,7 @@ import { POST } from '../app/api/webhooks/clerk/route';
 
 const BODY = JSON.stringify({ type: 'user.deleted', data: { id: 'user_2abc' } });
 
-function webhookRequest(body: string | Uint8Array = BODY): NextRequest {
+function webhookRequest(body: BodyInit = BODY): NextRequest {
   return new NextRequest('https://admin.vdicube.com/api/webhooks/clerk', {
     method: 'POST',
     headers: {
