@@ -67,11 +67,23 @@
  *    `stampFirstNextBillingDate()` on it, and the staff and member request
  *    lists LEFT JOIN `user_memberships` already.
  *
- * Cost: `ADD CONSTRAINT … CHECK` is `ALGORITHM=COPY` and the `MODIFY` is a
- * second rebuild, so this copies `payment_requests` twice under a metadata
- * lock — the same price 111, 165 and 195 paid, and each statement is guarded so
- * a re-run after a partial failure copies nothing. MySQL commits DDL
- * implicitly, so every statement here stands on its own.
+ * Cost: `ADD CONSTRAINT … CHECK` is `ALGORITHM=COPY` — it rebuilds the table
+ * and **blocks concurrent DML**, which is the statement to plan a deploy
+ * around, the same price 111, 165 and 195 paid. The `MODIFY` to NULLable is
+ * `ALGORITHM=INPLACE`: it rebuilds too, but permits writes. Both are guarded,
+ * so a re-run after a partial failure touches nothing. MySQL commits DDL
+ * implicitly, so every statement here stands on its own — and the table is one
+ * `CREATE`, which is why the generated column and its UNIQUE index need no
+ * repair block of the kind migration 212 carries (it adds both to a table that
+ * may already exist).
+ *
+ * One interaction to remember rather than to guard here: `payment_request_id`
+ * is `ON DELETE SET NULL`, and `cancelAbandonedPurchases()` reaches a stuck
+ * `pending_payment` row *through* that column. A future retention sweep that
+ * deletes settled `payment_requests` rows would therefore need a time-based
+ * fallback (`payment_request_id IS NULL AND created_at < …`), or the UNIQUE key
+ * below would refuse that member that Product for ever. Nothing deletes a
+ * request today — `POST /billing/cleanup` expires them.
  */
 
 const TABLE = 'member_products';
@@ -164,7 +176,7 @@ exports.up = async (knex) => {
         status               VARCHAR(20)   NOT NULL DEFAULT 'pending_payment',
         -- The snapshot: what the member was shown and charged, frozen.
         product_name         VARCHAR(255)  NOT NULL,
-        product_type         VARCHAR(32)   NOT NULL,
+        product_type         VARCHAR(20)   NOT NULL,
         billing_frequency    VARCHAR(20)   NULL,
         units                INT UNSIGNED  NULL,
         amount               DECIMAL(10,2) NOT NULL,
@@ -178,6 +190,10 @@ exports.up = async (knex) => {
         billing_event_id     INT UNSIGNED  NULL,
         purchased_at         DATETIME      NULL,
         created_at           DATETIME      NOT NULL DEFAULT (UTC_TIMESTAMP()),
+        -- No \`modified_by\` pair beside it, deliberately: every writer of this
+        -- column is the payment webhook or the cleanup sweep, and neither is a
+        -- person with a name to snapshot (#1051's own argument for leaving
+        -- \`user_memberships\`' modified actor derived).
         modified_at          DATETIME      NULL,
         created_by_name      VARCHAR(255)  NULL,
         created_by_type      VARCHAR(20)   NULL,
@@ -196,6 +212,20 @@ exports.up = async (knex) => {
         -- gym-wide read the Admin side (#1118 §12) will add.
         KEY ${PREFIX}_member_index (gym_id, member_id, status),
         KEY ${PREFIX}_product_index (gym_id, product_id),
+        -- \`cancelAbandonedPurchases()\` is the one read that narrows this table
+        -- on \`status\` with no gym and no member (it runs system-wide from
+        -- \`POST /billing/cleanup\`), and neither key above leads with it.
+        -- \`${PREFIX}_pending_purchase_key\` cannot serve it either: MySQL matches a
+        -- generated-column index only for a query that spells the generating
+        -- expression, not a literal \`status = 'pending_payment'\`.
+        KEY ${PREFIX}_status_index (status, payment_request_id),
+        -- Declared rather than left to InnoDB, which would auto-create one named
+        -- after each constraint: the composite keys above lead with \`gym_id\`, so
+        -- these three FK columns back no index of their own (migration 212's
+        -- convention).
+        KEY ${PREFIX}_member_fk_index (member_id),
+        KEY ${PREFIX}_product_fk_index (product_id),
+        KEY ${PREFIX}_billing_event_fk_index (billing_event_id),
         CONSTRAINT ${PREFIX}_gym_fk FOREIGN KEY (gym_id)
           REFERENCES gyms(id) ON DELETE CASCADE,
         CONSTRAINT ${PREFIX}_member_fk FOREIGN KEY (member_id)
@@ -236,17 +266,20 @@ exports.down = async (knex) => {
   // All or nothing, decided before anything is touched — migration 195's shape.
   // Restoring NOT NULL is only possible while the column holds no NULL, and a
   // product purchase has no assignment to fill in, so a `product_purchase` row
-  // cannot be rolled back either. Dropping the table while such rows remain
-  // would leave a schema that is neither 227 nor 228: payment requests for
-  // purchases whose purchases are gone.
+  // cannot be rolled back either. The purchases themselves are counted too, and
+  // not only the requests behind them: `payment_request_id` is `ON DELETE SET
+  // NULL`, so a purchase outlives its request and a table still holding the
+  // record of money that moved must not be dropped silently.
+  const purchases = (await knex.schema.hasTable(TABLE))
+    ? ` + (SELECT COUNT(*) FROM ${TABLE})`
+    : '';
   const blockers = await countRows(
     knex,
     `SELECT (SELECT COUNT(*) FROM payment_requests WHERE source = '${PURCHASE_SOURCE}')`
-    + ' + (SELECT COUNT(*) FROM payment_requests WHERE user_membership_id IS NULL) AS n',
+    + ' + (SELECT COUNT(*) FROM payment_requests WHERE user_membership_id IS NULL)'
+    + `${purchases} AS n`,
   );
   if (blockers > 0) return;
-
-  await knex.schema.dropTableIfExists(TABLE);
 
   if (await membershipIsNullable(knex)) {
     await knex.raw('ALTER TABLE payment_requests MODIFY COLUMN `user_membership_id` INT UNSIGNED NOT NULL');
@@ -258,6 +291,13 @@ exports.down = async (knex) => {
   if (await sourceCheckAllows(knex, PURCHASE_SOURCE)) {
     await setSourceCheck(knex, SOURCES.filter((s) => s !== PURCHASE_SOURCE));
   }
+
+  // Dropped **last**: it is the one statement here that cannot be re-run back
+  // into place, and migrations 165 and 195 order their own irreversible step
+  // the same way. Dropping it first would mean a failure in either reversion
+  // above left the schema in the state the guard exists to prevent — neither
+  // 227 nor 228.
+  await knex.schema.dropTableIfExists(TABLE);
 };
 
 exports.TABLE = TABLE;

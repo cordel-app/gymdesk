@@ -35,6 +35,7 @@ import {
   productPackageNote,
   productPriceText,
   productTaxNoteKey,
+  isMembershipFeeRequest,
   purchaseErrorKey,
   purchaseStateKey,
   purchaseStateStatusWord,
@@ -220,7 +221,7 @@ export default function MembershipPage() {
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
   const pendingRequest = paymentRequests
-    .find(r => r.status === 'pending' && r.source !== 'product_purchase') ?? null;
+    .find(r => r.status === 'pending' && isMembershipFeeRequest(r.source)) ?? null;
   const showStartPayment = !pendingRequest
     && membership?.status === 'active'
     && membership?.membership_fee != null

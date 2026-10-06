@@ -284,7 +284,7 @@ paymentWebhookRouter.post(
             [billingEventId, pr.id],
           );
 
-          const completed = await completeProductPurchase(tx, pr.id, billingEventId);
+          const completed = await completeProductPurchase(tx, pr.gym_id, pr.id, billingEventId);
           if (completed === 0) {
             // The payment is real either way, so the Billing Event above
             // stands; what is missing is a purchase row to mark, which means
@@ -386,7 +386,7 @@ paymentWebhookRouter.post(
         // completed purchase" in one direction, and in the other the thing that
         // frees the pending key so the member can try again.
         if (pr.source === PRODUCT_PURCHASE_SOURCE) {
-          await cancelProductPurchase(db, pr.id);
+          await cancelProductPurchase(db, pr.gym_id, pr.id);
         }
         req.log.info({ orderId: payload.orderId, status: payload.status }, 'Payment webhook: terminal non-success status');
       } else {

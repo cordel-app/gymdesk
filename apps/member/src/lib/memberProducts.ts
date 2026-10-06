@@ -117,6 +117,26 @@ export function productTaxNoteKey(product: MemberProduct): string | null {
 /* ── #1121 stage 2: buying one ─────────────────────────────────────────────── */
 
 /**
+ * `payment_requests.source` of a product purchase (migration 228), mirrored
+ * here because the Members App has to tell one from a membership fee.
+ *
+ * `GET /me/payment-requests` keeps **listing** a purchase — it is money, unlike
+ * #788's card verification, and the member's payment history is where money
+ * goes. What it is not is the *membership fee*, which is what the page's
+ * "finish your payment" prompt is about, so the distinction is drawn by
+ * `isMembershipFeeRequest()` below rather than by a literal in a page.
+ */
+export const PRODUCT_PURCHASE_SOURCE = 'product_purchase';
+
+/**
+ * Whether a payment request is one of the member's **membership fee** payments
+ * — the ones the Pay-now prompt and the consent modal are about.
+ */
+export function isMembershipFeeRequest(source: string | null | undefined): boolean {
+  return source !== PRODUCT_PURCHASE_SOURCE;
+}
+
+/**
  * Which **status word** a purchase state reads as, for `statusTone()`.
  *
  * The tone map is `memberChrome.ts`' one answer for the whole app (#983), so

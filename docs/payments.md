@@ -295,13 +295,13 @@ A boundary *equal* to today would be charged by tonight's run for the same reaso
 
 | Surface | Route |
 |---|---|
-| Member's payment history | `GET /me/payment-requests` — excludes `source = 'card_update'` |
+| Member's payment history | `GET /me/payment-requests` — excludes `source = 'card_update'`; a `product_purchase` row **is** listed (it is money), and the page's "finish your payment" prompt is what filters it out (#1121 stage 2) |
 | Member's ledger and receipts | `GET /me/billing-events`, `GET /me/receipts/:billingEventId` |
 | Member's plan, fee and upcoming charges | `GET /me/membership` (`me.ts:1384`) — `membership_fee` and `upcoming_payments` are both computed through `resolveMembershipFee()`, never read from a column |
 | Member's own forecast of future billing events | `GET /me/billing-event-forecast` (#1123) — `assignedPlanBillingForecast()` scoped to the caller, so it is the **same** projection the staff see on the Assigned Plan card (#924 stage 4). The Payments card's *Next Payment* is its first group and *Forecast Billing Events* the rest, which is why neither can quote a total the nightly run will not charge |
 | Staff transaction list / detail | `GET /payment-requests`, `GET /payment-requests/:id` — both exclude `card_update` |
 | Staff ledger | `GET /payments/billing-events` |
-| Members list badge | `GET /members` → `payment_status`, the status of the member's latest non-`card_update` transaction, following `user_membership_members` so a family plan's covered members inherit the owner's (`api/src/api/members.ts:112-120`) |
+| Members list badge | `GET /members` → `payment_status`, the status of the member's latest transaction that is neither `card_update` nor `product_purchase`, following `user_membership_members` so a family plan's covered members inherit the owner's (`api/src/api/members.ts:112-120`). The column is about the **membership fee**: a member halfway through buying a locker is not a member owing their fee |
 
 ---
 
@@ -603,7 +603,7 @@ The grace period is `abandonedRequestHours()` — `PAYMENT_REQUEST_ABANDONED_HOU
 a checkout takes. It is added in SQL, keeping the comparison in the same UTC clock
 `page_token_expires` was written against.
 
-Answers `{ expired, expired_unopened, expired_abandoned }`. **`expired` stays the total**,
+Answers `{ expired, expired_unopened, expired_abandoned, purchases_cancelled }`. **`expired` stays the total**,
 because `.github/workflows/billing-run.yml` parses that field by name (#778); the two
 components are reported beside it, not instead of it. It runs twice a day because the
 workflow does (#781), which is harmless: expiring stale pending requests is idempotent.
@@ -614,6 +614,60 @@ workflow does (#781), which is harmless: expiring stale pending requests is idem
 > `payment_methods` row, no `next_billing_date`, and the member app still offering to pay.
 > Do not collapse the two deadlines back into one, and do not add a shorter window that
 > expires an opened request.
+
+Since #1121 stage 2 it runs a third statement, and it is about `member_products` rather than
+about money: every purchase still `pending_payment` whose payment request is no longer
+pending becomes `cancelled` (`cancelAbandonedPurchases()`,
+`api/src/api/me-products.ts`). The pending key is UNIQUE, so a purchase left pending by an
+expired request or a `failed` webhook that never arrived would block that member from ever
+buying the Product again. It is keyed on the **request's own status**, including the rows the
+two statements above just expired, so there is no second definition of when an attempt is
+over, and it is reported beside the totals rather than folded into `expired`.
+
+---
+
+## D. Product purchase (member, one-off)
+
+A member buying a Product from the Members App (#1121 stage 2, §5/§6) — self-service and
+final, no staff approval (the thread's `Q3`). It reuses §A's infrastructure end to end and
+adds no second payment mechanism:
+
+1. **`POST /me/products/:id/purchase`** (`api/src/api/me-products.ts`) reads the Product
+   through `memberProductCatalogueSql()` — the very predicate that decided what the member
+   was *shown* (stage 1), so a `staff_only`, inactive or deleted Product is a 404 here as
+   surely as it is absent there. A member must not be able to buy what they cannot be shown.
+2. It refuses, as a code the Members App translates: `recurring_not_supported` (stage 2 buys
+   a **one-off**; `isRecurringFrequency()` decides, #550), `no_price`, and
+   `purchase_pending` (409 — a checkout already in flight).
+3. It charges the **quoted** figure: the VAT-inclusive `price_incl_tax` the catalogue
+   showed, through `toMinorUnits()` at the provider boundary. Nothing re-rates or divides it
+   (a Sessions package is the price of the whole package, #942).
+4. One transaction writes the `payment_requests` row (`source = 'product_purchase'`,
+   `user_membership_id` **NULL**, `consent_given_at` stamped — the member goes through the
+   hosted page's consent) and the `member_products` row (`pending_payment`, carrying the
+   snapshot). The member is handed the checkout URL.
+5. **The hosted page** words it as a one-off: `GET /payment-page/token/:token` reports
+   `purpose: 'product_purchase'` plus the snapshot's `itemName`, and the page's consent
+   sentence says *Es un pago único* rather than the fee's "until you cancel your
+   membership".
+6. **§A5's webhook** settles it on its own branch: the request is completed, a
+   `payment_recorded` Billing Event is written with **no** `user_membership_id` (money did
+   arrive, so it belongs in the ledger the member's Payments card and the staff pages read),
+   and the purchase becomes `active` with `purchased_at`. That branch deliberately stores
+   **no card** (a one-off authorises one charge; #788 is where a card comes from), stamps
+   **no** `next_billing_date` and clears **none** of #785's dunning counters — a rejected
+   membership cycle is still owed after a member buys a locker. A `failed` or `expired`
+   outcome cancels the purchase instead.
+7. Idempotency (#1118 §10) is the webhook's existing "already processed, skipping" guard,
+   `UNIQUE (payment_request_id)` and the purchase `UPDATE`'s own `status = 'pending_payment'`
+   constraint — so a retried delivery completes one row and writes one Billing Event.
+
+**Not here yet**: a recurring Product. `Q3` asks for the system to "create or update the
+billing event plan for such member", which is a second recurring schedule beside
+`user_memberships.next_billing_date` and therefore a change to what the nightly run charges,
+not a shop. Until that stage lands, a recurring Product is offered with **no Buy action at
+all** (#1073: a control that cannot work is absent, never broken). Promotions on a purchase
+are #1118's, and the Admin-side view of a member's purchases is #1118 §12's.
 
 ---
 
@@ -633,8 +687,12 @@ verification. Not a ledger: it is the transaction table.
 - `page_token CHAR(36)` UNIQUE + `page_token_expires` — the hosted page's single-use token.
   On a row still `pending`, `page_token IS NULL` means the page was opened.
 - `status` ∈ `pending | completed | failed | expired` (`chk_payment_requests_status`).
-- `source` ∈ `admin | customer | billing_run | retry | manual | card_update`
-  (`chk_payment_requests_source`, widened by 111, 165 and **195**).
+- `source` ∈ `admin | customer | billing_run | retry | manual | card_update |
+  product_purchase` (`chk_payment_requests_source`, widened by 111, 165, **195** and
+  **228**).
+- `user_membership_id` — **nullable** since migration 228 (#1121 stage 2): a member's
+  product purchase belongs to the member, and under #956 they may hold no plan at all.
+  Every reader LEFT JOINs the assignment.
 - `attempt` (default 1), `failure_code`, `failure_message`, `notes` — #640.
 - `consent_given_at` (member's MIT consent), `initiated_by` (staff Clerk user id).
 
@@ -680,6 +738,27 @@ counters (`processed, succeeded, failed, waived` / `processed, created, skipped,
 notified`). Both deliberately have **no `gym_id`** (migration 111's exception): a nightly
 run is a system-wide job, not tenant data. `status` ∈ `in_progress | completed | failed`
 (`chk_<table>_status`).
+
+**`member_products`** (migration 228, #1121 stage 2) — one row per Product a **member**
+bought from the Members App. A snapshot of what was bought (`product_name`,
+`product_type`, `billing_frequency`, `units`, `amount` **VAT-inclusive**, `currency`,
+`tax_rate_percent`) beside `product_id`, the link to the live Product — #635 §16's rule one
+table over, so a Product renamed, repriced or retired afterwards moves nothing about a
+purchase already made.
+
+- `status` ∈ `pending_payment | active | cancelled` (`chk_mprod_status`). "Available" is
+  the **absence** of a row; `cancelled` is where a purchase whose payment failed or expired
+  goes, which is also what frees the key below so the member can try again.
+- `pending_purchase_key` — a VIRTUAL generated column, UNIQUE, non-NULL only while the row
+  is `pending_payment`: one checkout in flight per (member, Product), so a double-tapped
+  Buy cannot produce two. An `active` purchase deliberately does **not** block a second
+  one — nothing in `products` says an item may be bought once.
+- `payment_request_id` UNIQUE (FK `ON DELETE SET NULL`) and `billing_event_id` — one
+  purchase per payment, which is what makes the webhook idempotent.
+- `created_by_name`/`created_by_type` — #799's actor snapshot; `member` for a self-service
+  purchase.
+- FK to `products` is **RESTRICT**: a purchase is the record of money that moved, so a
+  Product may not be hard-deleted under it (the catalogue's own removal is a soft delete).
 
 **`receipt_sequences`** (migration 114) — `PRIMARY KEY (gym_id, year)`, `last_seq`. The
 gapless per-gym, per-year counter behind a receipt number.

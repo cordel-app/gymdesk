@@ -289,15 +289,19 @@ async function hasPendingPurchase(
  */
 export async function completeProductPurchase(
   tx: Tx,
+  gymId: string,
   paymentRequestId: number,
   billingEventId: number | null,
 ): Promise<number> {
   const { rowCount } = await tx.query(
+    // `gym_id` is in the WHERE although `payment_request_id` is unique on its
+    // own: every query of a domain table filters by the gym (CLAUDE.md), and
+    // the webhook has the request's own `gym_id` in hand.
     `UPDATE member_products
         SET status = 'active', purchased_at = UTC_TIMESTAMP(),
             billing_event_id = ?, modified_at = UTC_TIMESTAMP()
-      WHERE payment_request_id = ? AND status = ?`,
-    [billingEventId, paymentRequestId, PENDING_PURCHASE_STATUS],
+      WHERE gym_id = ? AND payment_request_id = ? AND status = ?`,
+    [billingEventId, gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
   );
   return rowCount;
 }
@@ -312,13 +316,14 @@ export async function completeProductPurchase(
  */
 export async function cancelProductPurchase(
   conn: Pick<typeof db, 'query'> | Tx,
+  gymId: string,
   paymentRequestId: number,
 ): Promise<number> {
   const { rowCount } = await conn.query(
     `UPDATE member_products
         SET status = 'cancelled', modified_at = UTC_TIMESTAMP()
-      WHERE payment_request_id = ? AND status = ?`,
-    [paymentRequestId, PENDING_PURCHASE_STATUS],
+      WHERE gym_id = ? AND payment_request_id = ? AND status = ?`,
+    [gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
   );
   return rowCount;
 }
@@ -333,6 +338,10 @@ export async function cancelProductPurchase(
  * member from ever buying that Product again. Keyed on the request's own status
  * rather than on a clock of its own, so there is no second definition of when a
  * payment attempt is over.
+ *
+ * The one read here with no `gym_id` in it, and deliberately: like the nightly
+ * run it is called once for the whole deployment by an internal route, not on
+ * behalf of a tenant, so narrowing it to a gym would mean asking it per gym.
  */
 export async function cancelAbandonedPurchases(
   conn: Pick<typeof db, 'query'> = db,
