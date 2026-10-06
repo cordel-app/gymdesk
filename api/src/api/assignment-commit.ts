@@ -49,6 +49,7 @@ export type CommitOutcome =
   | { kind: 'not_found' }
   | { kind: 'not_committable'; status: string }
   | { kind: 'conflict'; conflicts: LiveAssignment[] }
+  | { kind: 'pending_conflict'; pendingIds: number[] }
   | { kind: 'bad_date'; message: string }
   | { kind: 'committed'; previousStatus: string; memberId: number; superseded: number[] };
 
@@ -67,13 +68,38 @@ async function lockAssignment(tx: Tx, gymId: string, id: number | string) {
  * itself. The owner is unioned in because a row written before #374's
  * covered-member table may carry no `user_membership_members` row at all.
  */
-async function liveConflicts(tx: Tx, gymId: string, row: { id: number; member_id: number }): Promise<LiveAssignment[]> {
+async function coveredMemberIds(tx: Tx, gymId: string, row: { id: number; member_id: number }): Promise<number[]> {
   const { rows: coveredRows } = await tx.query<{ member_id: number }>(
     `SELECT member_id FROM user_membership_members WHERE user_membership_id = ? AND gym_id = ?`,
     [row.id, gymId],
   );
-  const coveredMemberIds = [...new Set([Number(row.member_id), ...coveredRows.map((r) => Number(r.member_id))])];
-  return findLiveAssignmentsForMembers(tx, gymId, coveredMemberIds, { excludeUserMembershipId: Number(row.id) });
+  return [...new Set([Number(row.member_id), ...coveredRows.map((r) => Number(r.member_id))])];
+}
+
+async function liveConflicts(tx: Tx, gymId: string, row: { id: number; member_id: number }): Promise<LiveAssignment[]> {
+  return findLiveAssignmentsForMembers(tx, gymId, await coveredMemberIds(tx, gymId, row), { excludeUserMembershipId: Number(row.id) });
+}
+
+/**
+ * A **pending** row of another assignment covering one of the same members is
+ * a conflict of its own kind: it is never superseded (it is not live), but a
+ * second plan committed beside it would meet, at its own activation, a
+ * conflict nobody confirmed — so the second commit is refused outright until
+ * the pending one is paid or discarded.
+ */
+async function pendingConflicts(tx: Tx, gymId: string, row: { id: number; member_id: number }): Promise<number[]> {
+  const ids = await coveredMemberIds(tx, gymId, row);
+  const marks = ids.map(() => '?').join(',');
+  const { rows } = await tx.query<{ id: number }>(
+    `SELECT DISTINCT um.id
+       FROM user_memberships um
+       LEFT JOIN user_membership_members umm ON umm.user_membership_id = um.id AND umm.gym_id = um.gym_id
+      WHERE um.gym_id = ? AND um.status = ? AND um.id <> ?
+        AND (um.member_id IN (${marks}) OR umm.member_id IN (${marks}))
+      FOR UPDATE`,
+    [gymId, PENDING_PAYMENT_STATUS, row.id, ...ids, ...ids],
+  );
+  return rows.map((r) => Number(r.id));
 }
 
 /** `draft → active` or `pending_payment → active`, superseding on `confirm`. */
@@ -81,6 +107,9 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
   const row = await lockAssignment(tx, input.gymId, input.userMembershipId);
   if (!row) return { kind: 'not_found' };
   if (!input.fromStatuses.includes(row.status)) return { kind: 'not_committable', status: row.status };
+
+  const pending = await pendingConflicts(tx, input.gymId, row);
+  if (pending.length > 0) return { kind: 'pending_conflict', pendingIds: pending };
 
   const conflicts = await liveConflicts(tx, input.gymId, row);
   if (conflicts.length > 0) {
@@ -117,6 +146,7 @@ export type SubmitOutcome =
   | { kind: 'not_found' }
   | { kind: 'not_committable'; status: string }
   | { kind: 'conflict'; conflicts: LiveAssignment[] }
+  | { kind: 'pending_conflict'; pendingIds: number[] }
   | { kind: 'bad_date'; message: string }
   | { kind: 'submitted'; memberId: number };
 
@@ -129,6 +159,9 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
   const row = await lockAssignment(tx, input.gymId, input.userMembershipId);
   if (!row) return { kind: 'not_found' };
   if (row.status !== DRAFT_STATUS) return { kind: 'not_committable', status: row.status };
+
+  const pending = await pendingConflicts(tx, input.gymId, row);
+  if (pending.length > 0) return { kind: 'pending_conflict', pendingIds: pending };
 
   const conflicts = await liveConflicts(tx, input.gymId, row);
   if (conflicts.length > 0) {

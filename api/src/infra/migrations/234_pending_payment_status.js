@@ -13,10 +13,16 @@
  *     └──────────┴─────────────────┴───────────┴──► cancelled
  *
  * It is 227's device exactly — the stored CHECK's literal set compared as an
- * exact set, so a six-value CHECK from a database where 148's `down` ran is
- * not mistaken for this one; `down` refuses to narrow while a row holds the
- * value, for 198's reason — and it pays `ALGORITHM=COPY` once more, which
- * 227's header already said stage 2 would.
+ * exact set — and here that is load-bearing in a way it was not in 227: on a
+ * database where 198's `down` ever ran, 148's `awaiting_payment` CHECK is in
+ * place and it has **six** values, as this one does, so a length or substring
+ * test would let `up` return early with `pending_payment` still refused.
+ * `down` refuses to narrow while a row holds the value, for 198's reason, and
+ * nothing may be writing the value while it runs; a re-run of either direction
+ * repairs a table left with no CHECK. It pays `ALGORITHM=COPY` once more, which
+ * 227's header already said stage 2 would — merge it outside the nightly runs
+ * (03:00, 06:00 and 10:00 UTC), since the rebuild waits on any open
+ * transaction on `user_memberships` and queues every write behind itself.
  *
  * `awaiting_payment` (#511) stays retired: it is not this value, nothing
  * writes it, and a CHECK listing it would make a status insertable that no
@@ -91,8 +97,13 @@ exports.down = async (knex) => {
     const list = sample.map((r) => `#${r.id} (gym ${r.gym_id}, ${r.status})`).join(', ');
     throw new Error(
       `234_pending_payment_status: ${total} user_memberships row(s) hold a status the narrow ` +
-      `CHECK would refuse: ${list}${total > sample.length ? ', …' : ''}. Roll the application ` +
-      'half back first and move those rows on (activate or cancel them), then retry.',
+      `CHECK would refuse: ${list}${total > sample.length ? ', …' : ''}. Stop writes to this ` +
+      'value first (roll the application half back, or stop the API), then resolve each row by ' +
+      'SQL: cancel or let POST /billing/cleanup expire its pending payment_requests row, and set ' +
+      'status to `draft` (the stage-1 build re-commits it through POST /user-memberships/:id/activate) ' +
+      'or `cancelled`. The stage-1 build can neither activate nor close a pending_payment row, and ' +
+      'reads it as Active. Re-run afterwards, which also repairs a table left with no CHECK. ' +
+      'Nothing has been touched.',
     );
   }
   await setStatusCheck(knex, NARROW);

@@ -382,22 +382,20 @@ paymentWebhookRouter.post(
           // A row in any other status is untouched, so a renewal paid through
           // the checkout link changes nothing here.
           if (pr.user_membership_id != null) {
-            const { rows: umRows } = await tx.query<{ status: string }>(
-              'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?',
-              [pr.user_membership_id, pr.gym_id],
-            );
-            if (umRows[0]?.status === PENDING_PAYMENT_STATUS) {
-              const committed = await commitAssignment(tx, {
-                gymId: pr.gym_id, userMembershipId: pr.user_membership_id,
-                fromStatuses: [PENDING_PAYMENT_STATUS], confirm: true,
-                source: 'provider', actorUserId: null,
-              });
-              if (committed.kind !== 'committed') {
-                req.log.warn(
-                  { orderId: payload.orderId, userMembershipId: pr.user_membership_id, outcome: committed.kind },
-                  'Payment webhook: pending membership could not be activated',
-                );
-              }
+            const committed = await commitAssignment(tx, {
+              gymId: pr.gym_id, userMembershipId: pr.user_membership_id,
+              fromStatuses: [PENDING_PAYMENT_STATUS], confirm: true,
+              source: 'provider', actorUserId: null,
+            });
+            // `not_committable` is the ordinary case — a renewal paid on an
+            // already-active row. Anything else is a paid row left pending,
+            // which staff must resolve by hand, so it is an error rather than
+            // a warning.
+            if (committed.kind !== 'committed' && committed.kind !== 'not_committable') {
+              req.log.error(
+                { orderId: payload.orderId, userMembershipId: pr.user_membership_id, outcome: committed },
+                'Payment webhook: a paid membership pending payment could not be activated',
+              );
             }
           }
         });

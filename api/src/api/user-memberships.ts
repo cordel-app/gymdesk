@@ -766,6 +766,18 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
       });
     }
   }
+  // #1108 stage 2: a pending row is locked — its dates and its negotiated fee
+  // are part of what Save & Pay committed, so none of them move until it is
+  // paid or discarded.
+  if ('starts_at' in req.body || 'ends_at' in req.body || 'discount_reason' in req.body || 'discount_expires_at' in req.body) {
+    const { rows: pre } = await db.query<{ status: string }>(
+      'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?',
+      [req.params.id, gymId],
+    );
+    if (pre[0]?.status === PENDING_PAYMENT_STATUS) {
+      return res.status(400).json({ error: 'A membership pending payment is locked; cancel it to change its configuration.' });
+    }
+  }
   if (status === PENDING_PAYMENT_STATUS) {
     return res.status(400).json({
       error: 'A Draft moves to pending payment through POST /user-memberships/:id/save-and-pay.',
@@ -904,6 +916,13 @@ userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), asyn
       });
     }
     if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'pending_conflict') {
+      return res.status(409).json({
+        error: 'plan_pending_payment',
+        message: 'This member already has a membership awaiting payment. Pay or cancel it first.',
+        pending_user_membership_ids: outcome.pendingIds,
+      });
+    }
     if (outcome.kind === 'conflict') {
       const activated = await loadAssignmentRow(gymId, req.params.id);
       return res.status(409).json(activePlanConflictBody(
@@ -966,6 +985,13 @@ userMembershipsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), 
       });
     }
     if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'pending_conflict') {
+      return res.status(409).json({
+        error: 'plan_pending_payment',
+        message: 'This member already has a membership awaiting payment. Pay or cancel it first.',
+        pending_user_membership_ids: outcome.pendingIds,
+      });
+    }
     if (outcome.kind === 'conflict') {
       const row = await loadAssignmentRow(gymId, req.params.id);
       return res.status(409).json(activePlanConflictBody(outcome.conflicts, row?.plan_name ?? null));
@@ -1028,6 +1054,13 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       });
     }
     if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'pending_conflict') {
+      return res.status(409).json({
+        error: 'plan_pending_payment',
+        message: 'This member already has a membership awaiting payment. Pay or cancel it first.',
+        pending_user_membership_ids: outcome.pendingIds,
+      });
+    }
     if (outcome.kind === 'conflict') {
       // Unreachable with `confirm: true`; typed for completeness.
       const row = await loadAssignmentRow(gymId, req.params.id);

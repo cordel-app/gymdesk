@@ -50,7 +50,7 @@ const MIGRATION = read(API_SRC, 'infra', 'migrations', '234_pending_payment_stat
 // The same file with its header prose removed: that prose *names*
 // `awaiting_payment` to say it stays retired, which is the opposite of the drift
 // the assertion below is looking for.
-const MIGRATION_CODE = code(API_SRC, 'infra', 'migrations', '227_draft_membership_status.js');
+const MIGRATION_CODE = code(API_SRC, 'infra', 'migrations', '234_pending_payment_status.js');
 const USER_MEMBERSHIPS = code(API_SRC, 'api', 'user-memberships.ts');
 
 describe('the status CHECK and the API\'s status list agree', () => {

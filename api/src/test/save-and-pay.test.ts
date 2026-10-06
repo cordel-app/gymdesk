@@ -191,6 +191,33 @@ describe('POST /user-memberships/:id/save-and-pay', () => {
   });
 });
 
+describe('a Pending Payment row blocks a second assignment for the same member', () => {
+  it('refuses Save & Pay and activation of another Draft with 409 plan_awaiting_payment until it is paid or discarded', async () => {
+    const memberId = await createMember();
+    const pending = await assignDraft(memberId, await createPaidPlan());
+    await api('post', `/user-memberships/${pending}/save-and-pay`).send({});
+
+    const second = await assignDraft(memberId, await createFreePlan(), '2026-06-01');
+    const refused = await api('post', `/user-memberships/${second}/save-and-pay`).send({ confirm: true });
+    expect(refused.status).toBe(409);
+    expect(refused.body.error).toBe('plan_pending_payment');
+    expect(refused.body.pending_user_membership_ids).toEqual([pending]);
+    expect((await api('post', `/user-memberships/${second}/activate`).send({ confirm: true })).status).toBe(409);
+    expect(await status(second)).toBe('draft');
+
+    await api('post', `/user-memberships/${pending}/close`).send({});
+    expect((await api('post', `/user-memberships/${second}/activate`).send({})).status).toBe(200);
+  });
+
+  it('locks the dates and the negotiated fee of a pending row', async () => {
+    const memberId = await createMember();
+    const umId = await assignDraft(memberId, await createPaidPlan());
+    await api('post', `/user-memberships/${umId}/save-and-pay`).send({});
+    expect((await api('put', `/user-memberships/${umId}`).send({ starts_at: '2026-05-01' })).status).toBe(400);
+    expect((await api('put', `/user-memberships/${umId}`).send({ ends_at: '2027-05-01' })).status).toBe(400);
+  });
+});
+
 describe('a Pending Payment row is locked', () => {
   it('refuses the edits a Draft allowed, a PUT to active, and still closes', async () => {
     const memberId = await createMember();

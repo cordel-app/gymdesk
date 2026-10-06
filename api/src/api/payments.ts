@@ -147,37 +147,41 @@ paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) 
   }
 
   try {
-    const row = await insertAndFetch(
-      `INSERT INTO billing_events
-       (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        gymId, user_membership_id ?? null, memberId, event_type, charge_type_id ?? null,
-        source ?? sourceForRole(role), userId, parsedAmount,
-        notes && String(notes).trim() ? String(notes).trim() : null,
-      ],
-      `${LIST_SELECT} WHERE be.id = ?`,
-      (id) => [id],
-    );
-    recordAudit(req, { action: 'append', entityType: 'billing_event', entityId: row.id, next: row });
-
     // #1108 stage 2: money recorded against a Pending Payment row is its first
     // payment, so the row is committed exactly as `POST /user-memberships/:id/record-payment`
-    // commits it — one rule, however the cash was recorded.
-    if (event_type === 'payment_recorded' && user_membership_id) {
-      await db.transaction(async (tx) => {
-        const { rows: umRows } = await tx.query<{ status: string }>(
-          'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [user_membership_id, gymId],
-        );
-        if (umRows[0]?.status !== PENDING_PAYMENT_STATUS) return;
-        await commitAssignment(tx, {
+    // commits it — one rule, however the cash was recorded, and one transaction
+    // with the ledger row, so neither can land without the other. A row in any
+    // other status is the ordinary case and commits nothing.
+    const row = await db.transaction(async (tx) => {
+      const { insertId } = await tx.query(
+        `INSERT INTO billing_events
+         (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          gymId, user_membership_id ?? null, memberId, event_type, charge_type_id ?? null,
+          source ?? sourceForRole(role), userId, parsedAmount,
+          notes && String(notes).trim() ? String(notes).trim() : null,
+        ],
+      );
+      if (event_type === 'payment_recorded' && user_membership_id) {
+        const outcome = await commitAssignment(tx, {
           gymId, userMembershipId: user_membership_id, fromStatuses: [PENDING_PAYMENT_STATUS],
           confirm: true, source: sourceForRole(role), actorUserId: userId,
         });
-      });
-    }
+        if (outcome.kind !== 'committed' && outcome.kind !== 'not_committable' && outcome.kind !== 'not_found') {
+          throw Object.assign(
+            new Error(outcome.kind === 'bad_date' ? outcome.message : `Membership could not be activated: ${outcome.kind}`),
+            { status: 400 },
+          );
+        }
+      }
+      const { rows } = await tx.query(`${LIST_SELECT} WHERE be.id = ?`, [insertId]);
+      return rows[0];
+    });
+    recordAudit(req, { action: 'append', entityType: 'billing_event', entityId: row.id, next: row });
     res.status(201).json(row);
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.status) return res.status(err.status).json({ error: err.message });
     next(err);
   }
 });
