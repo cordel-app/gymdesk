@@ -55,6 +55,22 @@ describe('the card is renamed (#1116 §1)', () => {
   });
 });
 
+describe('the card always has a visual (#1150)', () => {
+  it('shows a Products icon only while the slot has no artwork', () => {
+    expect(homeSrc).toContain("useSectionImageUrl('membership') !== null");
+    expect(grid).toContain('{!hasProductsImage && <span style={styles.tileIcon}>');
+  });
+
+  it('says My Products, without Services, in every language', () => {
+    for (const code of LOCALE_CODES) {
+      const messages = JSON.parse(
+        readFileSync(join(MEMBER, 'locales', 'base', `${code}.json`), 'utf-8'),
+      );
+      expect(messages.home.products_services, code).not.toMatch(/Servei|Servicio|Service/);
+    }
+  });
+});
+
 describe('the card is a cell of the tile grid (#1116 §2, §3)', () => {
   it('renders inside the grid, after My Goals', () => {
     expect(grid).toContain('<MembersSectionCard slot="membership"');
