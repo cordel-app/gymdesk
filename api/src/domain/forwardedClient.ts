@@ -15,6 +15,10 @@
  * whose route handler relays the request to the API's internal address and
  * forwards the `X-Forwarded-For` it was called with.
  *
+ * Since #1175 gym websites' sign-ups do too: WordPress posts to the admin app's
+ * `/api/public/gyms/:gymRef/registrations`, whose route handler relays it to
+ * `/public/gyms/:gymRef/registrations` here and forwards `X-Forwarded-For`.
+ *
  * That matters for exactly one thing in each case: a per-IP rate limit whose
  * key is the client address. The payment webhook is allowed **60 requests per
  * minute per IP** — count the relay as the client and every webhook of every
@@ -56,6 +60,14 @@ export const PAYMENT_WEBHOOK_RELAY_HOPS_DEFAULT = 0;
 export const INTERNAL_RUN_RELAY_HOPS_DEFAULT = 0;
 
 /**
+ * What `PUBLIC_REGISTRATION_RELAY_HOPS` defaults to: none, i.e. gym websites
+ * post to the API directly. Set it to the number of further proxies between
+ * the admin app's registration relay and the API wherever the websites post to
+ * that relay instead (#1175).
+ */
+export const PUBLIC_REGISTRATION_RELAY_HOPS_DEFAULT = 0;
+
+/**
  * A whole number of hops from the environment, or `fallback`. A negative, a
  * fraction and anything non-numeric fall back; `0` is a legitimate value for
  * both settings (no proxy at all / no relay) and is honoured.
@@ -80,6 +92,11 @@ export function paymentWebhookRelayHops(env: NodeJS.ProcessEnv = process.env): n
 /** How many *further* hops sit in front of the internal run routes. */
 export function internalRunRelayHops(env: NodeJS.ProcessEnv = process.env): number {
   return hopCount(env.INTERNAL_RUN_RELAY_HOPS, INTERNAL_RUN_RELAY_HOPS_DEFAULT);
+}
+
+/** How many *further* hops sit in front of `POST /public/gyms/:gymRef/registrations`. */
+export function publicRegistrationRelayHops(env: NodeJS.ProcessEnv = process.env): number {
+  return hopCount(env.PUBLIC_REGISTRATION_RELAY_HOPS, PUBLIC_REGISTRATION_RELAY_HOPS_DEFAULT);
 }
 
 /** Only the fields of a request this module reads — so it is unit-testable. */
@@ -153,6 +170,25 @@ export function internalRunClientKey(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const relayHops = internalRunRelayHops(env);
+  if (relayHops === 0) return req.ip ?? '';
+  return forwardedClientAddress(req, trustProxyHops(env) + relayHops) ?? req.ip ?? '';
+}
+
+/**
+ * The per-IP rate-limit key for `POST /public/gyms/:gymRef/registrations`
+ * (`PUBLIC_REGISTRATION_IP_LIMIT_PER_HOUR`): the website's address, counting the
+ * configured relay as the extra hop it is. Keyed on the relay instead, every
+ * gym's website would share one hourly budget, and one busy or abused site
+ * would answer every other gym's sign-ups `429` (#1175).
+ *
+ * With no relay configured this is `req.ip` verbatim, so the limiter behaves
+ * exactly as it did before #1175.
+ */
+export function publicRegistrationClientKey(
+  req: ForwardedRequest,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const relayHops = publicRegistrationRelayHops(env);
   if (relayHops === 0) return req.ip ?? '';
   return forwardedClientAddress(req, trustProxyHops(env) + relayHops) ?? req.ip ?? '';
 }

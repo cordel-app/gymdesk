@@ -96,6 +96,50 @@ describe('website-integration — auth and role guards', () => {
   );
 });
 
+// #1175: the URL a gym is told to post to is the admin app's registration
+// relay, from one setting — never derived from PAYMENT_NOTIFICATION_URL, which
+// #1083 moved to the payment host (a URL that answers 405).
+describe('website-integration — the endpoint URL', () => {
+  const saved = {
+    base: process.env.PUBLIC_REGISTRATION_BASE_URL,
+    notification: process.env.PAYMENT_NOTIFICATION_URL,
+  };
+  const restore = () => {
+    for (const [name, value] of [
+      ['PUBLIC_REGISTRATION_BASE_URL', saved.base],
+      ['PAYMENT_NOTIFICATION_URL', saved.notification],
+    ] as const) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+  };
+
+  it('is the relay base plus the endpoint path, a trailing slash tolerated', async () => {
+    process.env.PUBLIC_REGISTRATION_BASE_URL = 'https://admin.example.test/api/';
+    process.env.PAYMENT_NOTIFICATION_URL = 'https://pay.example.test/webhooks/payment';
+    try {
+      const res = await authed('get', BASE, gymId);
+      expect(res.status).toBe(200);
+      expect(res.body.endpoint_url).toBe(`https://admin.example.test/api/public/gyms/${ref}/registrations`);
+    } finally {
+      restore();
+    }
+  });
+
+  it('is null when the base is unset, whatever PAYMENT_NOTIFICATION_URL says', async () => {
+    delete process.env.PUBLIC_REGISTRATION_BASE_URL;
+    process.env.PAYMENT_NOTIFICATION_URL = 'https://pay.example.test/webhooks/payment';
+    try {
+      const res = await authed('get', BASE, gymId);
+      expect(res.status).toBe(200);
+      expect(res.body.endpoint_url).toBeNull();
+      expect(res.body.endpoint_path).toBe(`/public/gyms/${ref}/registrations`);
+    } finally {
+      restore();
+    }
+  });
+});
+
 describe('website-integration — key lifecycle', () => {
   let firstKey: string;
   let secondKey: string;

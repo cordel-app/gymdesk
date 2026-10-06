@@ -596,6 +596,22 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       open alerts, dismiss them with that reasoning rather than bolting a second limiter
       onto two routes; if it has none, nothing is owed. Worth deciding before launch either
       way, since 500/15 min is a *global* default nobody has tuned per route.
+- [ ] **Move website registrations onto the admin relay** (#1175), per environment, before
+      #1087 closes the API host:
+      1. Set the GitHub variable **`PUBLIC_REGISTRATION_BASE_URL`** to the admin relay base
+         (`https://admin.vdicube.com/api` on `dev`, `https://admin.cordel.tech/api` on `pro`)
+         and redeploy the API; Website Integration then shows
+         `…/api/public/gyms/<gymRef>/registrations`. Until it is set the page shows the path
+         alone, which is still better than the pay-host URL it showed after #1083.
+      2. Set **`PUBLIC_REGISTRATION_RELAY_HOPS`** (GitHub variable) to the number of proxies
+         between the admin relay and the API — `1` if the relay reaches the API through
+         corback's Traefik, `0` if it reaches the container directly — or every gym's website
+         shares one 60/hour budget. Same question as `INTERNAL_RUN_RELAY_HOPS` (§4b).
+      3. With an admin app carrying the route deployed, send the health-check probe
+         (`{"name":"test","email":""}` with a gym's key) through the relay: `200`.
+      4. Tell every gym with a key (`SELECT id, name FROM gyms WHERE website_api_key_prefix IS
+         NOT NULL`) to replace its WordPress endpoint with the one on its Website Integration
+         page, and confirm each with the probe.
 - [ ] Re-point every live website integration at the `{gymId}-{gym-name}` registration
       endpoint (#645) and decide whether to keep accepting the legacy `{gym-slug}` form.
       The fallback exists only so sites configured before #645 keep working; each gym's

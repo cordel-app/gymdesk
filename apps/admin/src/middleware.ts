@@ -10,6 +10,9 @@ import { INTERNAL_RUN_RELAY_PATH } from '@/lib/internalRunRelay';
 // #1166: the one path Grafana's run-freshness alerts read, declared beside the
 // relay for the same reason.
 import { HEALTH_RUNS_RELAY_PATH } from '@/lib/healthRunsRelay';
+// #1175: the one route shape gym websites post sign-ups to, declared beside
+// the relay for the same reason.
+import { isPublicRegistrationRelayPath } from '@/lib/publicRegistrationRelay';
 
 const handleI18nRouting = createIntlMiddleware({
   locales: ['en', 'es', 'ca'],
@@ -40,13 +43,17 @@ const isPublicRoute = createRouteMatcher([
 
 export default clerkMiddleware(async (auth, req) => {
   // All of these must also skip the i18n routing below, which would answer
-  // Clerk, GitHub's runners, Grafana (and the browser's proxy calls) with a redirect to
+  // Clerk, GitHub's runners, Grafana, gym websites (and the browser's proxy calls) with a redirect to
   // a locale prefix.
   if (
     req.nextUrl.pathname.startsWith('/api/proxy') ||
     req.nextUrl.pathname.startsWith(CLERK_WEBHOOK_RELAY_PATH) ||
     req.nextUrl.pathname.startsWith(INTERNAL_RUN_RELAY_PATH) ||
-    req.nextUrl.pathname === HEALTH_RUNS_RELAY_PATH
+    req.nextUrl.pathname === HEALTH_RUNS_RELAY_PATH ||
+    // #1175: a gym's website authenticates with its own `x-api-key`, which the
+    // API compares, and carries no Clerk session. An exact shape rather than a
+    // prefix, so nothing else under `/api/public` is exempt.
+    isPublicRegistrationRelayPath(req.nextUrl.pathname)
   ) {
     return NextResponse.next();
   }

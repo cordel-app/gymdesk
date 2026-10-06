@@ -11,17 +11,15 @@ import { generateWebsiteApiKey } from '../infra/website-api-key';
  */
 export const websiteIntegrationRouter = Router();
 
-// The API's own public origin. API_PUBLIC_URL wins; otherwise it is derived
-// from PAYMENT_NOTIFICATION_URL, which already points at this API in every
-// deployed environment. Null when neither is set — the UI then shows the path.
-function apiPublicOrigin(): string | null {
-  const explicit = process.env.API_PUBLIC_URL?.replace(/\/+$/, '');
-  if (explicit) return explicit;
-  try {
-    return new URL(process.env.PAYMENT_NOTIFICATION_URL ?? '').origin;
-  } catch {
-    return null;
-  }
+// #1175: where a gym's website reaches this route from outside — the admin
+// app's registration relay, e.g. `https://admin.vdicube.com/api`, which serves
+// `/public/gyms/:gymRef/registrations` under it. One explicit setting and no
+// fallback: deriving it from PAYMENT_NOTIFICATION_URL (as before #1175) showed
+// every gym the payment host once #1083 moved that variable there, a URL that
+// answers 405. Null when unset — the UI then shows the path alone.
+function publicRegistrationBaseUrl(): string | null {
+  const base = process.env.PUBLIC_REGISTRATION_BASE_URL?.trim().replace(/\/+$/, '');
+  return base ? base : null;
 }
 
 async function loadStatus(gymId: string) {
@@ -37,7 +35,7 @@ async function loadStatus(gymId: string) {
   // is not guaranteed to be URL-safe.
   const gymRef = `${gym.id}-${encodeURIComponent(gym.slug)}`;
   const endpointPath = `/public/gyms/${gymRef}/registrations`;
-  const origin = apiPublicOrigin();
+  const base = publicRegistrationBaseUrl();
   return {
     configured: !!gym.website_api_key_prefix,
     key_prefix: gym.website_api_key_prefix,
@@ -45,7 +43,7 @@ async function loadStatus(gymId: string) {
     slug: gym.slug,
     gym_ref: gymRef,
     endpoint_path: endpointPath,
-    endpoint_url: origin ? `${origin}${endpointPath}` : null,
+    endpoint_url: base ? `${base}${endpointPath}` : null,
   };
 }
 

@@ -7,7 +7,7 @@ The call is made **by the WordPress server (PHP), never by the visitor's browser
 ## 1. Get the endpoint and the key (Gymdesk admin)
 
 1. Sign in to the admin app as a **superadmin**, open **Cordel → Gyms**, expand the gym's card and scroll to **Website Integration** (#1052 — it was **System → Website Integration** on the gym's own Configuration group until then).
-2. Copy the **Registration endpoint**. It looks like `https://<api-host>/public/gyms/<gym-id>-<gym-name>/registrations`.
+2. Copy the **Registration endpoint**. It looks like `https://admin.<host>/api/public/gyms/<gym-id>-<gym-name>/registrations` — the admin app relays it to the API (#1175). An endpoint on `api.<host>` (configured before #1175) keeps working only until the API host is closed (#1087); update it to the one this page shows.
    The id at the front is what identifies the gym, so two gyms with the same name never share an endpoint (#645). Always copy the endpoint from this page rather than typing it — the name after the id is only there for readability and is ignored.
 3. Click **Generate key** and copy the key (`gdk_…`). It is shown once. If it is lost, use **Rotate key** — the old key stops working immediately.
 
