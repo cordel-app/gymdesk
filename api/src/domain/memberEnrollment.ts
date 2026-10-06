@@ -24,6 +24,6 @@ export function latestEnrollmentStatusSql(alias: string): string {
   return `(SELECT um.status
              FROM user_memberships um
             WHERE um.member_id = ${alias}.id AND um.gym_id = ${alias}.gym_id
-              AND um.status <> 'draft'
+              AND um.status NOT IN ('draft', 'pending_payment')
             ORDER BY um.created_at DESC, um.id DESC LIMIT 1)`;
 }

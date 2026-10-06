@@ -75,15 +75,20 @@ describe('#786 — no awaiting_payment status in the admin', () => {
 // #1108 stage 1 — the Draft Assigned Plan's own admin half. The source scan
 // above cannot assert this (it is about an absence), so the presence is asserted
 // here, beside it, rather than in a second file about the same four sources.
-describe('#1108 stage 1 — the admin commits a Draft through the activation route', () => {
-  it('offers Activate for a Draft and nothing else out of it', () => {
+describe('#1108 — the admin commits a Draft through Save & Pay (stage 2 over stage 1\'s activation route)', () => {
+  it('offers Save & Pay for a Draft, and the two payments for a Pending Payment row, and nothing else out of them', () => {
     const row = sources['AssignedPlanExpandedRow.tsx'];
     expect(row).toContain("detail.status === 'draft'");
-    expect(row).toContain("t('action_activate')");
+    expect(row).toContain("t('action_save_and_pay')");
+    expect(row).toContain("detail.status === 'pending_payment'");
+    expect(row).toContain("t('action_record_cash_payment')");
+    expect(row).toContain("t('action_send_payment_link')");
     // The commit is its own route, so #956's check and the supersede cannot be
     // bypassed by a plain status flip.
-    expect(row).toMatch(/\/activate/);
+    expect(row).toMatch(/\/save-and-pay/);
+    expect(row).toMatch(/\/record-payment/);
     expect(row).not.toMatch(/runAction\('activate'\)/);
+    expect(row).not.toMatch(/runAction\('save_and_pay'\)/);
   });
 
   it('raises the shared replacement dialog from the activation\'s own 409', () => {
@@ -96,10 +101,13 @@ describe('#1108 stage 1 — the admin commits a Draft through the activation rou
     expect(sources['page.tsx']).toMatch(/LIFECYCLE_STATUSES[^=]*=\s*\[[^\]]*'draft'/);
   });
 
-  it.each(LOCALE_CODES)('%s labels the Activate action', (code) => {
+  it.each(LOCALE_CODES)('%s labels the Save & Pay, cash payment and payment link actions, and the Pending Payment status', (code) => {
     const locale = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
     // next-intl prints a missing key verbatim, so an absent one would render as
-    // `assigned_plans_page.action_activate` in the context menu.
-    expect(locale.assigned_plans_page.action_activate).toBeTruthy();
+    // `assigned_plans_page.action_save_and_pay` in the context menu.
+    for (const key of ['action_save_and_pay', 'action_record_cash_payment', 'action_send_payment_link', 'record_cash_confirm', 'payment_link_message']) {
+      expect(locale.assigned_plans_page[key], key).toBeTruthy();
+    }
+    expect(locale.status.pending_payment).toBeTruthy();
   });
 });

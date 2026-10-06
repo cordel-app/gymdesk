@@ -52,7 +52,8 @@ import type { AssignedPlanDetail } from './types';
 // Mirrors CLOSEABLE_FROM in api/src/api/user-memberships.ts. #1108 stage 1:
 // `draft` is in it because closing is how a Draft is discarded — there is no
 // expiry sweep (Q1a), so staff need a way out of a Draft that is not activation.
-const CLOSEABLE_STATUSES = ['draft', 'active', 'paused'];
+// #1108 stage 2: a Pending Payment row is discarded the way a Draft is.
+const CLOSEABLE_STATUSES = ['draft', 'pending_payment', 'active', 'paused'];
 
 // The statuses whose configuration can still be edited at all — a cancelled or
 // expired assignment bills nothing further, so Edit mode has nothing to offer
@@ -123,6 +124,9 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   const [closeWarnings, setCloseWarnings] = useState<string[]>([]);
   // #956's replacement conflict, answered by the activation since #1108 stage 1.
   const [replacement, setReplacement] = useState<ActivePlanConflict | null>(null);
+  // #1108 stage 2: the two ways a Pending Payment row is paid from here.
+  const [paymentStep, setPaymentStep] = useState<'none' | 'confirm_cash'>('none');
+  const [paymentLink, setPaymentLink] = useState<string | null>(null);
 
   // #613: impersonation-aware; actions that apply to the plan's status are shown, disabled when not permitted.
   const { canWrite: canWritePayments, isAdmin, readOnlyTitle } = useModuleAccess('PAYMENTS');
@@ -161,21 +165,21 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   }
 
   /**
-   * Commit the Draft: `POST /:id/activate` (#1108 stage 1).
+   * **Save & Pay** (#1108 stage 2): `POST /:id/save-and-pay`, the point of no
+   * return for a Draft. The row becomes Pending Payment — locked, waiting for
+   * the member's card payment or a cash payment recorded here — or goes
+   * straight to Active when its first cycle owes nothing.
    *
-   * The 409 it may answer is #956's replacement conflict, moved onto this
-   * transition from the four assignment paths — the member can have been
-   * holding another plan the whole time this Draft was configured — so the same
-   * shared `ReplacePlanDialog` names what the resend will cancel, recognised by
-   * shape through `activePlanConflict()` rather than by status code alone.
-   *
-   * Stage 2 replaces this action with the Member-level **Save & Pay**, which
-   * raises the payment around the very same commit.
+   * The 409 it may answer is #956's replacement conflict, asked here so the
+   * replacement is confirmed before the member is asked to pay; the same
+   * shared `ReplacePlanDialog` names what the activation will cancel,
+   * recognised by shape through `activePlanConflict()` rather than by status
+   * code alone.
    */
-  async function activateDraft(confirmReplacement = false) {
+  async function saveAndPay(confirmReplacement = false) {
     setActionBusy(true);
     try {
-      await apiFetch(`/user-memberships/${assignedPlanId}/activate`, {
+      await apiFetch(`/user-memberships/${assignedPlanId}/save-and-pay`, {
         method: 'POST',
         body: JSON.stringify(confirmReplacement ? { confirm: true } : {}),
       });
@@ -189,6 +193,38 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         setReplacement(null);
         toast(err.message ?? t('error_generic'));
       }
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  /** A cash / manual first payment: `POST /:id/record-payment` writes it and activates. */
+  async function recordCashPayment() {
+    setActionBusy(true);
+    try {
+      await apiFetch(`/user-memberships/${assignedPlanId}/record-payment`, { method: 'POST', body: JSON.stringify({}) });
+      setPaymentStep('none');
+      await loadDetail();
+      onChanged();
+    } catch (err: any) {
+      setPaymentStep('none');
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  /** A staff-raised checkout link (`POST /payment-requests`), shown to copy for the member. */
+  async function sendPaymentLink() {
+    setActionBusy(true);
+    try {
+      const result = await apiFetch<{ checkoutUrl: string }>('/payment-requests', {
+        method: 'POST',
+        body: JSON.stringify({ user_membership_id: assignedPlanId }),
+      });
+      setPaymentLink(result.checkoutUrl);
+    } catch (err: any) {
+      toast(err.message ?? t('error_generic'));
     } finally {
       setActionBusy(false);
     }
@@ -248,9 +284,11 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // the Assigned Plans page outside the mode (#897).
   const editing = !embedded && isEditing;
 
-  // #1108 stage 1: only a Draft can be activated, and that is the one action a
-  // Draft offers beyond editing and discarding it.
-  const canActivate = detail.status === 'draft';
+  // #1108: a Draft is committed through Save & Pay (stage 2), the one action it
+  // offers beyond editing and discarding it; a Pending Payment row offers the
+  // two ways its first payment arrives.
+  const canSaveAndPay = detail.status === 'draft';
+  const canRecordPayment = detail.status === 'pending_payment';
   const canPause = detail.status === 'active';
   const canReactivate = detail.status === 'paused';
   const canClose = CLOSEABLE_STATUSES.includes(detail.status);
@@ -270,11 +308,17 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       }]
       : []),
     { label: t('action_details'), onClick: () => setShowDetails(true) },
-    ...(canActivate
+    ...(canSaveAndPay
       // Not passed by reference: the click's `MouseEvent` would land in
       // `confirmReplacement` and confirm the replacement on the first attempt
       // (#956's own rule for these handlers).
-      ? [{ label: t('action_activate'), onClick: () => activateDraft(), ...write }]
+      ? [{ label: t('action_save_and_pay'), onClick: () => saveAndPay(), ...write }]
+      : []),
+    ...(canRecordPayment
+      ? [
+        { label: t('action_record_cash_payment'), onClick: () => setPaymentStep('confirm_cash'), ...write },
+        { label: t('action_send_payment_link'), onClick: () => sendPaymentLink(), ...write },
+      ]
       : []),
     ...(canPause ? [{ label: t('action_pause'), onClick: () => runAction('pause'), ...write }] : []),
     ...(canReactivate ? [{ label: t('action_reactivate'), onClick: () => runAction('reactivate'), ...write }] : []),
@@ -515,8 +559,32 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         conflict={replacement}
         newPlanName={detail.plan_name}
         busy={actionBusy}
-        onConfirm={() => activateDraft(true)}
+        onConfirm={() => saveAndPay(true)}
         onCancel={() => setReplacement(null)}
+      />
+
+      {/* #1108 stage 2 — the cash payment is confirmed before it is written,
+          with the amount the first cycle resolves to. */}
+      <ConfirmDialog
+        open={paymentStep === 'confirm_cash'}
+        message={t('record_cash_confirm', { amount: fmtMoney(detail.membership_fee) })}
+        confirmLabel={t('record_cash_confirm_label')}
+        cancelLabel={t('action_close_dismiss_payment')}
+        onConfirm={recordCashPayment}
+        onCancel={() => setPaymentStep('none')}
+      />
+      {/* The checkout link is single-use and expires in ten minutes, so it is
+          shown once to copy rather than stored anywhere in the page. */}
+      <ConfirmDialog
+        open={paymentLink !== null}
+        message={`${t('payment_link_message')}\n\n${paymentLink ?? ''}`}
+        confirmLabel={t('action_copy_link')}
+        cancelLabel={t('action_close_dismiss_payment')}
+        onConfirm={async () => {
+          try { await navigator.clipboard.writeText(paymentLink ?? ''); toast(t('link_copied'), 'success'); } catch { /* clipboard unavailable: the link is on screen */ }
+          setPaymentLink(null);
+        }}
+        onCancel={() => setPaymentLink(null)}
       />
 
       {/* #630: the menu action reads "Cancel" now, so the dialog can't label both

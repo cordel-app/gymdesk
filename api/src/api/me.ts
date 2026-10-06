@@ -1827,9 +1827,11 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     let sql = `SELECT um.id, m.email AS member_email
        FROM user_memberships um
        JOIN members m ON m.id = um.member_id
-       WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'`;
+       WHERE um.gym_id = ? AND um.member_id = ? AND um.status IN ('pending_payment', 'active')`;
     if (requestedId !== null) { sql += ' AND um.id = ?'; params.push(requestedId); }
-    sql += ' ORDER BY um.starts_at DESC, um.id DESC';
+    // #1108 stage 2: a row awaiting its first payment is the one Pay now is
+    // for, ahead of a plan already active.
+    sql += " ORDER BY FIELD(um.status, 'pending_payment', 'active'), um.starts_at DESC, um.id DESC";
     const { rows: umRows } = await db.query<{ id: number; member_email: string }>(sql, params);
     if (!umRows[0]) return res.status(404).json({ error: 'No active membership found' });
     const um = umRows[0];

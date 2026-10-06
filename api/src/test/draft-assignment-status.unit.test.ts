@@ -44,7 +44,9 @@ function code(...parts: string[]): string {
     .replace(/(^|[^:])\/\/.*$/gm, '$1');
 }
 
-const MIGRATION = read(API_SRC, 'infra', 'migrations', '227_draft_membership_status.js');
+// #1108 stage 2 (migration 234) widened the CHECK once more, for
+// `pending_payment`; its WIDE/NARROW pair is the current definition.
+const MIGRATION = read(API_SRC, 'infra', 'migrations', '234_pending_payment_status.js');
 // The same file with its header prose removed: that prose *names*
 // `awaiting_payment` to say it stays retired, which is the opposite of the drift
 // the assertion below is looking for.
@@ -52,7 +54,7 @@ const MIGRATION_CODE = code(API_SRC, 'infra', 'migrations', '227_draft_membershi
 const USER_MEMBERSHIPS = code(API_SRC, 'api', 'user-memberships.ts');
 
 describe('the status CHECK and the API\'s status list agree', () => {
-  it('migration 227 widens the CHECK to exactly the five statuses the router accepts', () => {
+  it('migration 234 widens the CHECK to exactly the six statuses the router accepts', () => {
     // The widened list in the migration…
     const wide = MIGRATION.match(/const WIDE = \[([^\]]*)\]/);
     const narrow = MIGRATION.match(/const NARROW = \[([^\]]*)\]/);
@@ -86,13 +88,18 @@ describe('the status CHECK and the API\'s status list agree', () => {
     expect(USER_MEMBERSHIPS).not.toContain('awaiting_payment');
   });
 
-  it('declares draft -> active and draft -> cancelled, and nothing else, as the Draft\'s transitions', () => {
+  it('declares draft -> pending_payment / active / cancelled, and pending_payment -> active / cancelled, and nothing else', () => {
     const table = USER_MEMBERSHIPS.match(/const ALLOWED_TRANSITIONS[\s\S]*?\n\};/);
     expect(table).toBeTruthy();
     const draftRow = table![0].match(/draft: \[([^\]]*)\]/);
     expect(draftRow).toBeTruthy();
     const targets = [...draftRow![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
-    expect(targets.sort()).toEqual(['active', 'cancelled']);
+    expect(targets.sort()).toEqual(['active', 'cancelled', 'pending_payment']);
+    // #1108 stage 2: the locked state between the two.
+    const pendingRow = table![0].match(/pending_payment: \[([^\]]*)\]/);
+    expect(pendingRow).toBeTruthy();
+    const pendingTargets = [...pendingRow![1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1]);
+    expect(pendingTargets.sort()).toEqual(['active', 'cancelled']);
   });
 });
 
@@ -166,12 +173,12 @@ describe('a Draft is not the member\'s Membership Plan', () => {
     // Active member would otherwise overwrite their status on the Members list
     // and drop them out of the Nutrition Dashboard's active count.
     expect(latestEnrollmentStatusSql('m').replace(/\s+/g, ' '))
-      .toContain("um.status <> 'draft'");
+      .toContain("um.status NOT IN ('draft', 'pending_payment')");
   });
 
   it('is excluded from the two member-facing reads, by the constant beside the ordering', () => {
     const forecast = code(API_SRC, 'api', 'me-billing-forecast.ts');
-    expect(forecast).toContain("export const MEMBER_CURRENT_ASSIGNMENT_FILTER = \"AND um.status <> 'draft'\";");
+    expect(forecast).toContain("export const MEMBER_CURRENT_ASSIGNMENT_FILTER = \"AND um.status NOT IN ('draft', 'pending_payment')\";");
     // Both callers append both halves: the ordering alone would sort a Draft
     // first, because FIELD() answers 0 for a value it does not list.
     for (const source of [forecast, code(API_SRC, 'api', 'me.ts')]) {
@@ -182,7 +189,7 @@ describe('a Draft is not the member\'s Membership Plan', () => {
 
   it('is excluded from the Financials dashboard\'s assigned-plan count', () => {
     expect(code(API_SRC, 'api', 'financials-dashboard.ts'))
-      .toContain("um.status NOT IN ('draft', 'cancelled', 'expired')");
+      .toContain("um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'expired')");
   });
 });
 
@@ -247,9 +254,10 @@ describe('the admin app mirrors the status model', () => {
     }
   });
 
-  it('offers Activate for a Draft and routes it through the activation endpoint', () => {
+  it('offers Save & Pay for a Draft and routes it through the commit endpoint (#1108 stage 2)', () => {
     expect(CARD).toContain("detail.status === 'draft'");
-    expect(CARD).toContain('/activate');
+    expect(CARD).toContain('/save-and-pay');
+    expect(CARD).toContain('/record-payment');
     // #956's one dialog, raised by the activation now that the four assignment
     // paths no longer 409.
     expect(CARD).toContain('ReplacePlanDialog');

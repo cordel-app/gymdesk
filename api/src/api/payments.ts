@@ -17,6 +17,7 @@ import {
 } from '../domain/billingEventStatus';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordManualPayment, retryBillingEventPayment } from '../domain/billingEventPayments';
+import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import {
   FEE_ASSIGNMENT_COLUMNS,
@@ -159,6 +160,22 @@ paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) 
       (id) => [id],
     );
     recordAudit(req, { action: 'append', entityType: 'billing_event', entityId: row.id, next: row });
+
+    // #1108 stage 2: money recorded against a Pending Payment row is its first
+    // payment, so the row is committed exactly as `POST /user-memberships/:id/record-payment`
+    // commits it — one rule, however the cash was recorded.
+    if (event_type === 'payment_recorded' && user_membership_id) {
+      await db.transaction(async (tx) => {
+        const { rows: umRows } = await tx.query<{ status: string }>(
+          'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [user_membership_id, gymId],
+        );
+        if (umRows[0]?.status !== PENDING_PAYMENT_STATUS) return;
+        await commitAssignment(tx, {
+          gymId, userMembershipId: user_membership_id, fromStatuses: [PENDING_PAYMENT_STATUS],
+          confirm: true, source: sourceForRole(role), actorUserId: userId,
+        });
+      });
+    }
     res.status(201).json(row);
   } catch (err) {
     next(err);

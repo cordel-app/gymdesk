@@ -7,6 +7,7 @@ import { recordPlatformAudit } from '../infra/audit';
 import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import { stampFirstNextBillingDate } from '../domain/nextBillingDateStamp';
+import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
 import { PRODUCT_PURCHASE_SOURCE } from '../domain/memberProductPurchase';
 import { cancelProductPurchase, completeProductPurchase } from './me-products';
@@ -371,6 +372,32 @@ paymentWebhookRouter.post(
             // assignment's own via ASSIGNMENT_CADENCE (LEFT JOIN, #635 stage 3).
             if (pr.user_membership_id != null) {
               await stampFirstNextBillingDate(tx, pr.user_membership_id, pr.gym_id);
+            }
+          }
+
+          // #1108 stage 2: a first payment on a Pending Payment row is what
+          // activates it — the same commit `POST /:id/activate` runs, with the
+          // replacement the staff confirmed at Save & Pay taken as given (the
+          // money has arrived; a paid-up member must not be left planless).
+          // A row in any other status is untouched, so a renewal paid through
+          // the checkout link changes nothing here.
+          if (pr.user_membership_id != null) {
+            const { rows: umRows } = await tx.query<{ status: string }>(
+              'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?',
+              [pr.user_membership_id, pr.gym_id],
+            );
+            if (umRows[0]?.status === PENDING_PAYMENT_STATUS) {
+              const committed = await commitAssignment(tx, {
+                gymId: pr.gym_id, userMembershipId: pr.user_membership_id,
+                fromStatuses: [PENDING_PAYMENT_STATUS], confirm: true,
+                source: 'provider', actorUserId: null,
+              });
+              if (committed.kind !== 'committed') {
+                req.log.warn(
+                  { orderId: payload.orderId, userMembershipId: pr.user_membership_id, outcome: committed.kind },
+                  'Payment webhook: pending membership could not be activated',
+                );
+              }
             }
           }
         });

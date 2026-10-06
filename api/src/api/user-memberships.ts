@@ -49,13 +49,12 @@ import {
 import {
   LiveAssignment,
   activePlanConflictBody,
-  supersedeStartsAtError,
 } from '../domain/oneActivePlan';
 import {
   findLiveAssignmentsForMembers,
   membershipPlanName,
-  supersedeLiveAssignments,
 } from './one-active-plan';
+import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
 // one explicit commit. #511 stage 1 had added two pre-activation statuses,
@@ -67,7 +66,7 @@ import {
 // Pay transaction that produces it rather than as a second value nothing can
 // write. The ticket's "Closed" action still maps onto the existing 'cancelled'
 // value rather than introducing a new terminal status.
-const STATUSES = ['draft', 'active', 'paused', 'cancelled', 'expired'] as const;
+const STATUSES = ['draft', 'pending_payment', 'active', 'paused', 'cancelled', 'expired'] as const;
 type Status = (typeof STATUSES)[number];
 
 // #511 §10 — the allowed status transitions, enforced by both PUT /:id (when
@@ -81,8 +80,15 @@ type Status = (typeof STATUSES)[number];
 // PUT refuses it the way cancellation is refused and routed to DELETE. A Draft
 // is cancelled through that same DELETE. There is no `draft -> paused`: pausing
 // something that has never been active says nothing.
+//
+// #1108 stage 2: `pending_payment` sits between the two. `draft -> pending_payment`
+// is Save & Pay (`POST /:id/save-and-pay`) and `pending_payment -> active` is
+// the payment's confirmation (the webhook, or `POST /:id/record-payment`); a
+// `PUT` reaches neither, for the reason above. A pending row is cancelled
+// through DELETE / close, as a Draft is.
 const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
-  draft: ['active', 'cancelled'],
+  draft: ['pending_payment', 'active', 'cancelled'],
+  pending_payment: ['active', 'cancelled'],
   active: ['paused', 'cancelled'],
   paused: ['active', 'cancelled'],
   cancelled: [],
@@ -100,7 +106,7 @@ export const ASSIGNMENT_CREATION_STATUS = 'draft';
 
 // Lifecycle statuses (#410) — the date-aware projection computed in LIST_SELECT below,
 // as opposed to STATUSES which is the raw stored `status` column.
-const LIFECYCLE_STATUSES = ['draft', 'pending', 'active', 'paused', 'expired', 'cancelled'] as const;
+const LIFECYCLE_STATUSES = ['draft', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancelled'] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Accepts repeated `lifecycle_status=a&lifecycle_status=b` or a single comma-separated value.
@@ -131,7 +137,7 @@ export const userMembershipsRouter = Router();
  */
 export const LIFECYCLE_STATUS_SQL = `
   CASE
-    WHEN um.status IN ('draft', 'paused', 'cancelled', 'expired') THEN um.status
+    WHEN um.status IN ('draft', 'pending_payment', 'paused', 'cancelled', 'expired') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
     WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
     ELSE 'active'
@@ -751,6 +757,19 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           + 'which replaces the member\'s current plan.',
       });
     }
+    // #1108 stage 2: a Pending Payment row becomes active when its payment is
+    // confirmed — the webhook, or POST /:id/record-payment — never by hand.
+    if (pre[0]?.status === PENDING_PAYMENT_STATUS) {
+      return res.status(400).json({
+        error: 'A membership pending payment is activated by its payment: the hosted checkout, '
+          + 'or POST /user-memberships/:id/record-payment for a cash payment.',
+      });
+    }
+  }
+  if (status === PENDING_PAYMENT_STATUS) {
+    return res.status(400).json({
+      error: 'A Draft moves to pending payment through POST /user-memberships/:id/save-and-pay.',
+    });
   }
   try {
     const { userId } = getTenantContext(req);
@@ -871,86 +890,15 @@ userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), asyn
   const { gymId, userId, role } = getTenantContext(req);
   const confirm = req.body?.confirm === true;
   try {
-    const outcome = await db.transaction(async (tx) => {
-      const { rows: current } = await tx.query<{
-        id: number; member_id: number; status: string; starts_at: string;
-      }>(
-        `SELECT id, member_id, status, DATE_FORMAT(starts_at, '%Y-%m-%d') AS starts_at
-           FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE`,
-        [req.params.id, gymId],
-      );
-      if (current.length === 0) return { kind: 'not_found' as const };
-      const draft = current[0];
-      // Not a Draft: `draft` is the only status this route moves a row out of,
-      // so an already-active assignment (or a cancelled one) is a 400 naming
-      // what it found rather than a silent no-op. It is also what the loser of
-      // two concurrent activations gets, because the UPDATE below carries
-      // `status = 'draft'` in its own WHERE.
-      if (draft.status !== ASSIGNMENT_CREATION_STATUS) {
-        return { kind: 'not_draft' as const, status: draft.status };
-      }
-
-      // #956, moved here from the three insert paths: everything live that has
-      // to stop for this assignment to be the member's only one. The Draft
-      // itself is not live, so it never appears among its own conflicts.
-      //
-      // The question is asked for **every Member this Draft covers**, not just
-      // its owner (#956 Q4): a family assignment carries one `user_memberships`
-      // row owned by one Member and a `user_membership_members` row per covered
-      // Member, so committing it has to find — and `confirm` has to cancel —
-      // the plans of all of them at once. Reading `draft.member_id` alone would
-      // leave a covered Member holding both their own plan and this one, which
-      // is the overlap `active_member_key` cannot express and the reason
-      // `POST /membership-plans/:id/assign` passed its whole selected set
-      // before this transition existed. The owner is unioned in because a row
-      // written before #374's covered-member table may carry no
-      // `user_membership_members` row at all.
-      const { rows: coveredRows } = await tx.query<{ member_id: number }>(
-        `SELECT member_id FROM user_membership_members
-          WHERE user_membership_id = ? AND gym_id = ?`,
-        [draft.id, gymId],
-      );
-      const coveredMemberIds = [...new Set([
-        Number(draft.member_id),
-        ...coveredRows.map((r) => Number(r.member_id)),
-      ])];
-      const conflicts = await findLiveAssignmentsForMembers(tx, gymId, coveredMemberIds, {
-        excludeUserMembershipId: Number(draft.id),
-      });
-      if (conflicts.length > 0) {
-        if (!confirm) return { kind: 'conflict' as const, conflicts };
-        const dateError = supersedeStartsAtError(draft.starts_at, conflicts);
-        if (dateError) return { kind: 'bad_date' as const, message: dateError };
-        await supersedeLiveAssignments(tx, {
-          gymId, conflicts, newStartsAt: draft.starts_at,
-          source: sourceForRole(role), actorUserId: userId,
-        });
-      }
-
-      const { rowCount } = await tx.query(
-        `UPDATE user_memberships
-            SET status = 'active', failed_attempts = 0, last_failed_at = NULL
-          WHERE id = ? AND gym_id = ? AND status = ?`,
-        [draft.id, gymId, ASSIGNMENT_CREATION_STATUS],
-      );
-      if (rowCount === 0) return { kind: 'not_draft' as const, status: draft.status };
-      // #790: an assignment joining the run's schedule is never put on a cycle
-      // that has already gone by. A Draft carries no `next_billing_date` at
-      // all — the first payment stamps it — so this is a no-op today and the
-      // one place that answers it either way.
-      await rollStaleNextBillingDateForward(tx, Number(draft.id), gymId);
-      await recordStatusChange(tx, {
-        gymId, userMembershipId: Number(draft.id), memberId: Number(draft.member_id),
-        previousStatus: ASSIGNMENT_CREATION_STATUS, newStatus: 'active',
-        source: sourceForRole(role), actorUserId: userId,
-      });
-      return {
-        kind: 'activated' as const,
-        superseded: conflicts.map((c) => c.id),
-      };
-    });
+    // #1108 stage 2: the transition itself lives in `assignment-commit.ts`,
+    // shared with the two payment-confirmation callers; this route is the
+    // commit with no payment around it — a free plan, or a staff shortcut.
+    const outcome = await db.transaction((tx) => commitAssignment(tx, {
+      gymId, userMembershipId: String(req.params.id), fromStatuses: [ASSIGNMENT_CREATION_STATUS],
+      confirm, source: sourceForRole(role), actorUserId: userId,
+    }));
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
-    if (outcome.kind === 'not_draft') {
+    if (outcome.kind === 'not_committable') {
       return res.status(400).json({
         error: `Only a Draft membership can be activated; this one is '${outcome.status}'.`,
       });
@@ -975,6 +923,128 @@ userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), asyn
     res.json(activated);
   } catch (err: any) {
     handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
+  }
+});
+
+/**
+ * #1108 stage 2 — **Save & Pay**: the point of no return for a Draft.
+ *
+ * `draft -> pending_payment`: the configuration is committed and locked (a
+ * pending row is in none of the editable, attachable or applicable status
+ * lists), #956's one-plan rule is asked now — `409 active_plan_exists` unless
+ * `confirm: true` — so the replacement is confirmed before the member is asked
+ * to pay, and the payment is then collected around the row: the member's own
+ * Pay now (`POST /me/payment-requests` accepts a pending row), a staff-raised
+ * checkout link (`POST /payment-requests`), or a cash payment
+ * (`POST /:id/record-payment`). The provider's webhook or the cash route is
+ * what moves it on to `active`.
+ *
+ * A Draft that owes **nothing** for its first cycle — a free plan, a Free
+ * Period — has no payment to wait for, so it is committed straight to
+ * `active` here: a pending state nothing can ever confirm would strand it.
+ */
+userMembershipsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId, userId, role } = getTenantContext(req);
+  const confirm = req.body?.confirm === true;
+  try {
+    const fee = await currentMembershipFee(gymId, Number(req.params.id));
+    if (fee == null) return res.status(404).json({ error: 'Membership not found' });
+    const owesNothing = !(fee > 0);
+
+    const outcome: CommitOutcome | SubmitOutcome = await db.transaction(async (tx) => owesNothing
+      ? commitAssignment(tx, {
+        gymId, userMembershipId: String(req.params.id), fromStatuses: [ASSIGNMENT_CREATION_STATUS],
+        confirm, source: sourceForRole(role), actorUserId: userId,
+      })
+      : submitForPayment(tx, {
+        gymId, userMembershipId: String(req.params.id), confirm, source: sourceForRole(role), actorUserId: userId,
+      }));
+    if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (outcome.kind === 'not_committable') {
+      return res.status(400).json({
+        error: `Only a Draft membership can be saved and paid; this one is '${outcome.status}'.`,
+      });
+    }
+    if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'conflict') {
+      const row = await loadAssignmentRow(gymId, req.params.id);
+      return res.status(409).json(activePlanConflictBody(outcome.conflicts, row?.plan_name ?? null));
+    }
+    const row = await loadAssignmentRow(gymId, req.params.id);
+    recordAudit(req, {
+      action: owesNothing ? 'activate' : 'save_and_pay', entityType: 'user_membership', entityId: req.params.id,
+      next: row, previous: { status: ASSIGNMENT_CREATION_STATUS },
+    });
+    res.json({ ...row, membership_fee: fee });
+  } catch (err: any) {
+    next(err);
+  }
+});
+
+/**
+ * #1108 stage 2 — a **cash / manual** first payment confirms a Pending
+ * Payment row: one `payment_recorded` Billing Event (`source` from the role,
+ * the membership-fee charge type, the fee the cycle resolves to unless an
+ * explicit amount is given) and the very same commit the webhook runs, in one
+ * transaction. No card is stored and no `next_billing_date` is stamped — a cash
+ * member has no card for the nightly run to charge, exactly as before.
+ */
+userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId, userId, role } = getTenantContext(req);
+  const { amount, notes } = req.body ?? {};
+  try {
+    const fee = await currentMembershipFee(gymId, Number(req.params.id));
+    if (fee == null) return res.status(404).json({ error: 'Membership not found' });
+    let paid = fee;
+    if (amount != null && amount !== '') {
+      const parsed = parseFloat(String(amount));
+      if (isNaN(parsed) || parsed <= 0) return res.status(400).json({ error: 'amount must be greater than 0' });
+      paid = parsed;
+    }
+    const { rows: ctRows } = await db.query<{ id: number }>(
+      `SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1`,
+    );
+    if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
+
+    const outcome = await db.transaction(async (tx) => {
+      const committed = await commitAssignment(tx, {
+        gymId, userMembershipId: String(req.params.id), fromStatuses: [PENDING_PAYMENT_STATUS],
+        confirm: true, source: sourceForRole(role), actorUserId: userId,
+      });
+      if (committed.kind !== 'committed') return committed;
+      await tx.query(
+        `INSERT INTO billing_events
+           (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
+         VALUES (?, ?, ?, 'payment_recorded', ?, ?, ?, ?, ?)`,
+        [gymId, req.params.id, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), userId,
+         typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null],
+      );
+      return committed;
+    });
+    if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (outcome.kind === 'not_committable') {
+      return res.status(400).json({
+        error: `Only a membership pending payment can have its payment recorded; this one is '${outcome.status}'.`,
+      });
+    }
+    if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
+    if (outcome.kind === 'conflict') {
+      // Unreachable with `confirm: true`; typed for completeness.
+      const row = await loadAssignmentRow(gymId, req.params.id);
+      return res.status(409).json(activePlanConflictBody(outcome.conflicts, row?.plan_name ?? null));
+    }
+    const row = await loadAssignmentRow(gymId, req.params.id);
+    recordAudit(req, {
+      action: 'record_payment', entityType: 'user_membership', entityId: req.params.id,
+      next: row,
+      previous: {
+        status: PENDING_PAYMENT_STATUS, amount: paid.toFixed(2),
+        ...(outcome.superseded.length > 0 ? { superseded_user_membership_ids: outcome.superseded } : {}),
+      },
+    });
+    res.json(row);
+  } catch (err: any) {
+    next(err);
   }
 });
 
@@ -1228,7 +1298,7 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // that is not activation. Closing one is also always warning-free, because
 // `computeUnusedValueWarnings()` reads `next_billing_date`, which a Draft has
 // never had.
-const CLOSEABLE_FROM: readonly Status[] = ['draft', 'active', 'paused'];
+const CLOSEABLE_FROM: readonly Status[] = ['draft', 'pending_payment', 'active', 'paused'];
 
 // #511 stage 3 also counted a `session_count` allowance with sessions left in
 // its current recurrence window as unused value about to be lost. #635 stage 4

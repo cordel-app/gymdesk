@@ -53,6 +53,8 @@ const LIVE_STATUSES = new Set(['active', 'paused']);
  * `LIVE_STATUSES` and is also not "recent": see `countsAsRecentMembership()`.
  */
 const DRAFT_STATUS = 'draft';
+/** #1108 stage 2: a row awaiting its first payment is a Draft that is locked — still nobody's plan. */
+const PENDING_PAYMENT_STATUS = 'pending_payment';
 
 export interface NewMemberAssignment {
   id: number;
@@ -144,7 +146,7 @@ export function countsAsRecentMembership(
   // Draft's `starts_at` is by definition inside the window. Checked before the
   // live-status set rather than relying on `draft` being absent from it, because
   // that absence alone is not what makes this right.
-  if (assignment.status === DRAFT_STATUS) return false;
+  if (assignment.status === DRAFT_STATUS || assignment.status === PENDING_PAYMENT_STATUS) return false;
   if (LIVE_STATUSES.has(assignment.status)) return true;
 
   const startsAt = toDateOnly(assignment.starts_at);

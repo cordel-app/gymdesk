@@ -74,11 +74,29 @@ and supersedes on `confirm: true` through `supersedeLiveAssignments()` exactly a
 paths used to. `PUT /user-memberships/:id` refuses the flip and names this route, the way a
 cancellation is refused and routed to `DELETE`.
 
-Once active, the first payment is collected as A3–A6 describe, and nothing about it moves
-`um.status`: the webhook's `completed` branch stamps `next_billing_date`, and the nightly run
-skips the assignment until a card is on file. Stage 2 of #1108 is **Save & Pay** — the same
-commit with the payment raised around it, a *Pending Payment* state between the two and the
-forecast consolidated into real Billing Events — see
+Since #1108 stage 2 the ordinary path is **Save & Pay** — `POST /user-memberships/:id/save-and-pay`
+— rather than that route: it is the point of no return for a Draft. The one-plan rule is asked
+there (`409 active_plan_exists` unless `confirm: true`), so the replacement is confirmed before
+the member is asked to pay, and the row moves to **`pending_payment`**: locked (it is in none of
+the editable, attachable or applicable status lists), not the member's plan, not bookable, still
+projected. A Draft whose first cycle owes **nothing** — a free plan, a Free Period — is committed
+straight to `active` by the same route, because a pending state nothing can confirm would strand
+it. Three things then move a pending row to `active`, all through the one `commitAssignment()` in
+`api/src/api/assignment-commit.ts`, which supersedes whatever is still live with the confirmation
+taken as given (the money has arrived, and a paid-up member must not be left planless):
+
+- the provider's `completed` webhook (A5) — the member's own *Pay now* (`POST /me/payment-requests`
+  accepts a pending row, ahead of an active one) or a staff-raised checkout link (`POST /payment-requests`);
+- `POST /user-memberships/:id/record-payment` — a cash / manual first payment: one `payment_recorded`
+  Billing Event at the fee the cycle resolves to (or an explicit `amount`) plus the commit, one
+  transaction, no card stored and no `next_billing_date` stamped;
+- a `payment_recorded` event appended through `POST /payments` against a pending row, so the
+  Payments page's own recording activates it too.
+
+Nothing is superseded at Save & Pay time: a payment that never arrives leaves the member's
+current plan exactly as it was, and the pending row is discarded through `POST /:id/close`.
+The webhook's `completed` branch still stamps `next_billing_date` (card) and the nightly run
+skips a card-less assignment, as before — see
 [Assigned Plan status model](#assigned-plan-status-model).
 
 ### A3. A payment request is raised
@@ -854,11 +872,11 @@ nightly run (automatically, per settled charge).
 ### Assigned Plan status model
 
 `STATUSES` and `ALLOWED_TRANSITIONS` in `api/src/api/user-memberships.ts`, and the
-`user_memberships_status_check` CHECK (current definition: migration 227):
+`user_memberships_status_check` CHECK (current definition: migration 234):
 
 ```
-draft ──► active ◄──► paused
-  └─────────┴───────────┴──► cancelled
+draft ──► pending_payment ──► active ◄──► paused
+  └──────────┴─────────────────┴───────────┴──► cancelled
 expired (assign-new-plan's own supersede on pre-#1108 rows)
 ```
 
@@ -910,6 +928,26 @@ Pay transaction that produces it rather than as a value nothing can write for a 
 >   payment paths — its own ticket, not a revert of this one. **That ticket is #1108**, whose
 >   stage 1 did the widening (migration 227) and put the activation write in one explicit
 >   route; the webhook and manual-payment half is its stage 2.
+
+> **Decisions (2026-10-07, #1108 stage 2)** — change them here if they turn out wrong:
+> - **Pending Payment is `pending_payment`** (migration 234), written only by
+>   `POST /user-memberships/:id/save-and-pay`; `awaiting_payment` stays retired.
+> - **The one-plan rule is asked at Save & Pay and performed at activation.** The 409 and
+>   the `confirm` are Save & Pay's, so staff confirm the replacement before the member pays;
+>   the supersede runs when the payment is confirmed, with that confirmation taken as given.
+>   Nothing is cancelled while the payment is outstanding.
+> - **A Draft that owes nothing activates immediately** from Save & Pay — there is no
+>   payment to wait for, and a pending state nothing can confirm would strand it.
+> - **The forecast is not pre-persisted as Billing Events.** The ticket's "consolidate the
+>   simulation into real Billing Events" is read as the invariant it names — the real events
+>   must match the simulation — which holds by construction because the Billing Event
+>   Forecast is the same engine the nightly run prices from (#635 stage 12); writing two
+>   cycles of future events into the ledger would be a second record of one fact for the run
+>   to reconcile, and is not done. The ledger stays what was charged.
+> - **A cash first payment stamps no `next_billing_date`** and stores no card: a cash
+>   member has nothing for the nightly run to charge, exactly as a cash member had before.
+> - **`POST /:id/activate` stays**, API-only (the card offers Save & Pay): a commit with no
+>   payment around it, for a free plan or a staff shortcut, over the same `commitAssignment()`.
 
 > **Decisions (2026-10-06, #1108 stage 1)** — change them here if they turn out wrong:
 > - A Draft is **not** the member's Membership Plan: it is outside

@@ -58,7 +58,7 @@ import {
 // Billing Event Forecast rather than a fourth section. Nothing here is
 // persisted or charged either way, and the nightly run's own
 // `WHERE status = 'active'` is what keeps a Draft from billing.
-const SIMULATED_STATUSES = ['draft', 'active', 'paused'] as const;
+const SIMULATED_STATUSES = ['draft', 'pending_payment', 'active', 'paused'] as const;
 
 // mysql2 may return DATE/DATETIME columns as Date objects rather than strings
 // depending on the connection's timezone config (same note as
