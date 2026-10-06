@@ -15,6 +15,7 @@ import {
   StorageOperationError,
 } from '../infra/storage';
 import { themeLogoUrl } from '../domain/themeLogo';
+import { seedDefaultGymProducts } from './gym-default-products';
 import { logger } from '../lib/logger';
 
 export const gymsRouter = Router();
@@ -48,28 +49,6 @@ const PLATFORM_GYM_SELECT = `
     pp.provider_key AS payment_provider_key, pp.status AS payment_provider_status,
     pp.is_default AS payment_provider_is_default
 `;
-
-// #371: system Product seeded for every gym (existing gyms backfilled
-// by migration 124; this keeps gyms created afterwards in sync).
-const SYSTEM_PT_PACKAGE_NAME = 'Personal Training Class Package (10 Sessions)';
-
-async function seedSystemPtPackage(gymId: string) {
-  await db.query(
-    `INSERT INTO products
-       (gym_id, name, type, units, status, enrollment_status, is_system,
-        validity_days, tax_rate_id, currency, tax_behavior, created_at, modified_at)
-     SELECT ?, ?, 'sessions', 10, 'active', 'staff_only', 1, 182,
-       (SELECT tr.id FROM tax_rates tr
-        WHERE tr.gym_id = ? AND tr.is_system = 1 AND tr.deleted_at IS NULL
-        ORDER BY tr.id LIMIT 1),
-       'EUR', 'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP()
-     FROM DUAL
-     WHERE NOT EXISTS (
-       SELECT 1 FROM products gc WHERE gc.gym_id = ? AND gc.is_system = 1 AND gc.name = ?
-     )`,
-    [gymId, SYSTEM_PT_PACKAGE_NAME, gymId, gymId, SYSTEM_PT_PACKAGE_NAME],
-  );
-}
 
 // #599: gym rows are read with `g.*`, so the website API key hash must be
 // dropped before a row is serialised — into a response or an audit payload.
@@ -297,14 +276,9 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
       "INSERT INTO centers (gym_id, name, status) VALUES (?, ?, 'active')",
       [id, name],
     );
-    // #543: name/type must be seeded from charge_types here too — they're
-    // the Products catalogue columns (added by migration 102 as a
-    // one-time backfill), not generated from charge_type_id at read time.
-    await db.query(
-      `INSERT IGNORE INTO products (gym_id, charge_type_id, name, type, is_system, created_at)
-       SELECT ?, id, name, 'fee', 1, UTC_TIMESTAMP() FROM charge_types WHERE is_product = 1`,
-      [id],
-    );
+    // #1149: the tax rate is seeded **before** the Products, because their
+    // prices are stored VAT-inclusive of it — a seed that ran the other way
+    // round would leave every default Product un-rated.
     await db.query(
       `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at)
        VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP())`,
@@ -315,7 +289,10 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
        SELECT ?, id, 'active', UTC_TIMESTAMP() FROM professional_services WHERE is_system = 1`,
       [id],
     );
-    await seedSystemPtPackage(id);
+    // #1149: the gym's default Products — one writer for both creation paths,
+    // configured from `domain/defaultGymProducts.ts` (#543's rule unchanged:
+    // a System Product's name and type still come from `charge_types`).
+    await seedDefaultGymProducts(id);
     const { rows } = await db.query(
       `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
       [id],
@@ -466,13 +443,9 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
     "INSERT INTO centers (gym_id, name, status) VALUES (?, ?, 'active')",
     [newId, newName],
   );
-  // #543: name/type must be seeded from charge_types here too — see the
-  // matching comment on the POST /gyms insert above.
-  await db.query(
-    `INSERT IGNORE INTO products (gym_id, charge_type_id, name, type, created_at)
-     SELECT ?, id, name, 'fee', UTC_TIMESTAMP() FROM charge_types WHERE is_product = 1`,
-    [newId],
-  );
+  // #1149: the tax rate first, then the same default Products a gym created
+  // from scratch receives — the duplicate is a new gym, and its own insert had
+  // drifted (it wrote no `is_system`, so every seeded Product read as Custom).
   await db.query(
     `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at)
      VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP())`,
@@ -483,7 +456,7 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
      SELECT ?, id, 'active', UTC_TIMESTAMP() FROM professional_services WHERE is_system = 1`,
     [newId],
   );
-  await seedSystemPtPackage(newId);
+  await seedDefaultGymProducts(newId);
   const { rows } = await db.query(
     `SELECT g.* ${PLATFORM_GYM_SELECT} FROM gyms g ${PLATFORM_GYM_JOIN} WHERE g.id = ?`,
     [newId],

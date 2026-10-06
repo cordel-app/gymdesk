@@ -323,7 +323,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     // #413 serves the Plan's own Tax rate; #817 also needs the rate the money is
     // actually computed at, which for a Plan that never picked one ("Default" in
     // the Pricing editor) is the gym's system rate — the same row the editor's
-    // own live preview resolves to, and the same one `seedSystemPtPackage()`
+    // own live preview resolves to, and the same one `seedDefaultGymProducts()`
     // picks. One query for both, so the list endpoint's per-plan round trips do
     // not grow: the Plan's explicit rate is what the card *displays*, the system
     // rate is the fallback the net/gross split is *derived* from.
