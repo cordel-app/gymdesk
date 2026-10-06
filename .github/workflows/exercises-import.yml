@@ -99,11 +99,15 @@ jobs:
             # The script exits non-zero if any exercise failed, so a red run is
             # the notification; read the report for `Potential duplicates` and
             # `New muscles created`, which are reported and never acted on.
+            # `-e NAME` with no value copies it from this shell's environment, so
+            # no value — the password above all — appears on podman's command
+            # line, which journald records and ships to Loki (#1192).
+            export CORDEL_FITNESS_DB_HOST CORDEL_FITNESS_DB_USER CORDEL_FITNESS_DB_PASSWORD CORDEL_FITNESS_DB_NAME
             podman run --rm \
-              ${FREE_EXERCISE_DB_URL:+-e FREE_EXERCISE_DB_URL="$FREE_EXERCISE_DB_URL"} \
-              -e CORDEL_FITNESS_DB_HOST="$CORDEL_FITNESS_DB_HOST" \
-              -e CORDEL_FITNESS_DB_USER="$CORDEL_FITNESS_DB_USER" \
-              -e CORDEL_FITNESS_DB_PASSWORD="$CORDEL_FITNESS_DB_PASSWORD" \
-              -e CORDEL_FITNESS_DB_NAME="$CORDEL_FITNESS_DB_NAME" \
+              ${FREE_EXERCISE_DB_URL:+-e FREE_EXERCISE_DB_URL} \
+              -e CORDEL_FITNESS_DB_HOST \
+              -e CORDEL_FITNESS_DB_USER \
+              -e CORDEL_FITNESS_DB_PASSWORD \
+              -e CORDEL_FITNESS_DB_NAME \
               "$IMAGE" \
               node dist/scripts/import-free-exercise-db.js $ARGS

@@ -120,6 +120,9 @@ jobs:
           # `parseServiceAccounts()` accepts either form.
           FCM_SERVICE_ACCOUNTS: ${{ secrets.FCM_SERVICE_ACCOUNTS }}
           MOBILE_DEFAULT_APP_ID: ${{ vars.MOBILE_DEFAULT_APP_ID }}
+          # The migrations user's DDL credentials, handed to the migration
+          # container through the environment rather than its command line.
+          DATABASE_URL_MIGRATIONS: ${{ secrets.DATABASE_URL_MIGRATIONS }}
           # #1177 — proxy hops (`api/src/domain/forwardedClient.ts`). This job is the
           # only writer of the API's environment: the script below deletes every
           # `Environment=` line of the unit before writing this block, so a value
@@ -139,7 +142,7 @@ jobs:
           host: ${{ secrets.CORBACK_SSH_HOST }}
           username: podman
           key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
-          envs: APP_NODE_ENV,APP_PORT,CLERK_SECRET_KEY,CLERK_PUBLISHABLE_KEY,CLERK_WEBHOOK_SIGNING_SECRET,CORDEL_FITNESS_DB_HOST,CORDEL_FITNESS_DB_USER,CORDEL_FITNESS_DB_PASSWORD,CORDEL_FITNESS_DB_NAME,CORDEL_FITNESS_ADMIN_URL,CORDEL_FITNESS_MEMBERS_URL,CLOUDFLARE_R2_ENDPOINT,CLOUDFLARE_R2_ACCESS_KEY_ID,CLOUDFLARE_R2_SECRET_ACCESS_KEY,CLOUDFLARE_R2_BUCKET,CLOUDFLARE_R2_PUBLIC_URL,PAYMENT_PROVIDER,PAYMENT_PAGE_URL,PAYMENT_NOTIFICATION_URL,PAYMENT_OK_URL,PAYMENT_KO_URL,MONEI_API_KEY,MONEI_WEBHOOK_SECRET,MONEI_ACCOUNT_ID,BILLING_INTERNAL_SECRET,RECURRING_BOOKINGS_INTERNAL_SECRET,BOOKING_REMINDERS_INTERNAL_SECRET,FCM_SERVICE_ACCOUNTS,MOBILE_DEFAULT_APP_ID,TRUST_PROXY_HOPS,PAYMENT_WEBHOOK_RELAY_HOPS,INTERNAL_RUN_RELAY_HOPS,PUBLIC_REGISTRATION_BASE_URL,PUBLIC_REGISTRATION_RELAY_HOPS
+          envs: APP_NODE_ENV,APP_PORT,CLERK_SECRET_KEY,CLERK_PUBLISHABLE_KEY,CLERK_WEBHOOK_SIGNING_SECRET,CORDEL_FITNESS_DB_HOST,CORDEL_FITNESS_DB_USER,CORDEL_FITNESS_DB_PASSWORD,CORDEL_FITNESS_DB_NAME,CORDEL_FITNESS_ADMIN_URL,CORDEL_FITNESS_MEMBERS_URL,CLOUDFLARE_R2_ENDPOINT,CLOUDFLARE_R2_ACCESS_KEY_ID,CLOUDFLARE_R2_SECRET_ACCESS_KEY,CLOUDFLARE_R2_BUCKET,CLOUDFLARE_R2_PUBLIC_URL,PAYMENT_PROVIDER,PAYMENT_PAGE_URL,PAYMENT_NOTIFICATION_URL,PAYMENT_OK_URL,PAYMENT_KO_URL,MONEI_API_KEY,MONEI_WEBHOOK_SECRET,MONEI_ACCOUNT_ID,BILLING_INTERNAL_SECRET,RECURRING_BOOKINGS_INTERNAL_SECRET,BOOKING_REMINDERS_INTERNAL_SECRET,FCM_SERVICE_ACCOUNTS,MOBILE_DEFAULT_APP_ID,TRUST_PROXY_HOPS,PAYMENT_WEBHOOK_RELAY_HOPS,INTERNAL_RUN_RELAY_HOPS,PUBLIC_REGISTRATION_BASE_URL,PUBLIC_REGISTRATION_RELAY_HOPS,DATABASE_URL_MIGRATIONS
           script: |
             set -euo pipefail
 
@@ -162,8 +165,10 @@ jobs:
 
             # Run DB migrations from the VPS (HeatWave is VCN-private; the CI
             # runner cannot reach it). Uses the DDL-privileged migrations user.
-            podman run --rm \
-              -e DATABASE_URL="${{ secrets.DATABASE_URL_MIGRATIONS }}" \
+            # `-e NAME` with no value copies it from this shell's environment, so
+            # the credentials never appear on podman's command line (#1192).
+            DATABASE_URL="$DATABASE_URL_MIGRATIONS" podman run --rm \
+              -e DATABASE_URL \
               ghcr.io/${{ env.IMAGE_NAME }}:latest \
               npx knex migrate:latest --knexfile knexfile.cjs
 
@@ -185,10 +190,16 @@ jobs:
               echo "WARNING: BOOKING_REMINDERS_INTERNAL_SECRET is empty — POST /booking-reminders/run will answer 401 (#1113)"
             fi
 
-            # Values are written as inline Environment= lines directly into the
-            # quadlet unit file (no separate EnvironmentFile) — GitHub stays the
-            # single source of truth and this block is fully regenerated on
-            # every deploy, so nothing here is ever hand-edited on the VPS.
+            # The values go into an env file only the `podman` user can read, and
+            # the unit carries one `EnvironmentFile=` line pointing at it, which
+            # quadlet turns into `podman run --env-file <path>`. Never inline
+            # `Environment=KEY=value` lines (the pre-#1192 shape): quadlet passes
+            # those as `--env KEY=value` on podman's command line, journald
+            # records that command line in the `_CMDLINE` field of podman's own
+            # log entries, and the host's log shipper sends it to Grafana Cloud
+            # Loki — every secret below was readable there. GitHub stays the
+            # single source of truth: the file is regenerated on every deploy and
+            # is never hand-edited on the VPS.
             CF="$HOME/.config/containers/systemd/fitness-api.container"
             if [ ! -f "$CF" ]; then echo "ERROR: quadlet $CF not found"; exit 1; fi
             if ! grep -q '^\[Container\]$' "$CF"; then
@@ -197,55 +208,66 @@ jobs:
 
             umask 077
             cp "$CF" "$CF.bak.$(date +%s)"
-            # Keep only the 3 most recent backups — they now carry secrets too.
+            # Keep only the 3 most recent backups — older ones still carry the
+            # inline secrets of the pre-#1192 shape.
             ls -t "$CF".bak.* 2>/dev/null | tail -n +4 | xargs -r rm -f
 
-            ENV_BLOCK="$(mktemp)"
-            cat > "$ENV_BLOCK" <<ENVEOF
-            Environment=NODE_ENV=${APP_NODE_ENV}
-            Environment=PORT=${APP_PORT}
-            Environment=CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
-            Environment=CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
-            Environment=CLERK_WEBHOOK_SIGNING_SECRET=${CLERK_WEBHOOK_SIGNING_SECRET}
-            Environment=CORDEL_FITNESS_DB_HOST=${CORDEL_FITNESS_DB_HOST}
-            Environment=CORDEL_FITNESS_DB_USER=${CORDEL_FITNESS_DB_USER}
-            Environment=CORDEL_FITNESS_DB_PASSWORD=${CORDEL_FITNESS_DB_PASSWORD}
-            Environment=CORDEL_FITNESS_DB_NAME=${CORDEL_FITNESS_DB_NAME}
-            Environment=CORDEL_FITNESS_ADMIN_URL=${CORDEL_FITNESS_ADMIN_URL}
-            Environment=CORDEL_FITNESS_MEMBERS_URL=${CORDEL_FITNESS_MEMBERS_URL}
-            Environment=CLOUDFLARE_R2_ENDPOINT=${CLOUDFLARE_R2_ENDPOINT:-}
-            Environment=CLOUDFLARE_R2_ACCESS_KEY_ID=${CLOUDFLARE_R2_ACCESS_KEY_ID:-}
-            Environment=CLOUDFLARE_R2_SECRET_ACCESS_KEY=${CLOUDFLARE_R2_SECRET_ACCESS_KEY:-}
-            Environment=CLOUDFLARE_R2_BUCKET=${CLOUDFLARE_R2_BUCKET:-}
-            Environment=CLOUDFLARE_R2_PUBLIC_URL=${CLOUDFLARE_R2_PUBLIC_URL:-}
-            Environment=PAYMENT_PROVIDER=${PAYMENT_PROVIDER}
-            Environment=PAYMENT_PAGE_URL=${PAYMENT_PAGE_URL}
-            Environment=PAYMENT_NOTIFICATION_URL=${PAYMENT_NOTIFICATION_URL}
-            Environment=PAYMENT_OK_URL=${PAYMENT_OK_URL}
-            Environment=PAYMENT_KO_URL=${PAYMENT_KO_URL}
-            Environment=MONEI_API_KEY=${MONEI_API_KEY}
-            Environment=MONEI_WEBHOOK_SECRET=${MONEI_WEBHOOK_SECRET}
-            Environment=MONEI_ACCOUNT_ID=${MONEI_ACCOUNT_ID}
-            Environment=BILLING_INTERNAL_SECRET=${BILLING_INTERNAL_SECRET}
-            Environment=RECURRING_BOOKINGS_INTERNAL_SECRET=${RECURRING_BOOKINGS_INTERNAL_SECRET}
-            Environment=BOOKING_REMINDERS_INTERNAL_SECRET=${BOOKING_REMINDERS_INTERNAL_SECRET:-}
-            Environment=FCM_SERVICE_ACCOUNTS=${FCM_SERVICE_ACCOUNTS:-}
-            Environment=MOBILE_DEFAULT_APP_ID=${MOBILE_DEFAULT_APP_ID:-}
-            Environment=TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-}
-            Environment=PAYMENT_WEBHOOK_RELAY_HOPS=${PAYMENT_WEBHOOK_RELAY_HOPS:-}
-            Environment=INTERNAL_RUN_RELAY_HOPS=${INTERNAL_RUN_RELAY_HOPS:-}
-            Environment=PUBLIC_REGISTRATION_BASE_URL=${PUBLIC_REGISTRATION_BASE_URL:-}
-            Environment=PUBLIC_REGISTRATION_RELAY_HOPS=${PUBLIC_REGISTRATION_RELAY_HOPS:-}
+            ENV_DIR="$HOME/.config/fitness-api"
+            ENV_FILE="$ENV_DIR/api.env"
+            mkdir -p "$ENV_DIR"
+            chmod 700 "$ENV_DIR"
+            # podman's --env-file format: one KEY=value per line, the value taken
+            # literally to the end of the line (no quoting, no expansion), so a
+            # multi-line value must be base64-encoded first (FCM_SERVICE_ACCOUNTS
+            # already is). Written to a temporary file and moved into place, so a
+            # failed write never leaves the API with half an environment.
+            ENV_TMP="$(mktemp "$ENV_DIR/api.env.XXXXXX")"
+            cat > "$ENV_TMP" <<ENVEOF
+            NODE_ENV=${APP_NODE_ENV}
+            PORT=${APP_PORT}
+            CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+            CLERK_PUBLISHABLE_KEY=${CLERK_PUBLISHABLE_KEY}
+            CLERK_WEBHOOK_SIGNING_SECRET=${CLERK_WEBHOOK_SIGNING_SECRET}
+            CORDEL_FITNESS_DB_HOST=${CORDEL_FITNESS_DB_HOST}
+            CORDEL_FITNESS_DB_USER=${CORDEL_FITNESS_DB_USER}
+            CORDEL_FITNESS_DB_PASSWORD=${CORDEL_FITNESS_DB_PASSWORD}
+            CORDEL_FITNESS_DB_NAME=${CORDEL_FITNESS_DB_NAME}
+            CORDEL_FITNESS_ADMIN_URL=${CORDEL_FITNESS_ADMIN_URL}
+            CORDEL_FITNESS_MEMBERS_URL=${CORDEL_FITNESS_MEMBERS_URL}
+            CLOUDFLARE_R2_ENDPOINT=${CLOUDFLARE_R2_ENDPOINT:-}
+            CLOUDFLARE_R2_ACCESS_KEY_ID=${CLOUDFLARE_R2_ACCESS_KEY_ID:-}
+            CLOUDFLARE_R2_SECRET_ACCESS_KEY=${CLOUDFLARE_R2_SECRET_ACCESS_KEY:-}
+            CLOUDFLARE_R2_BUCKET=${CLOUDFLARE_R2_BUCKET:-}
+            CLOUDFLARE_R2_PUBLIC_URL=${CLOUDFLARE_R2_PUBLIC_URL:-}
+            PAYMENT_PROVIDER=${PAYMENT_PROVIDER}
+            PAYMENT_PAGE_URL=${PAYMENT_PAGE_URL}
+            PAYMENT_NOTIFICATION_URL=${PAYMENT_NOTIFICATION_URL}
+            PAYMENT_OK_URL=${PAYMENT_OK_URL}
+            PAYMENT_KO_URL=${PAYMENT_KO_URL}
+            MONEI_API_KEY=${MONEI_API_KEY}
+            MONEI_WEBHOOK_SECRET=${MONEI_WEBHOOK_SECRET}
+            MONEI_ACCOUNT_ID=${MONEI_ACCOUNT_ID}
+            BILLING_INTERNAL_SECRET=${BILLING_INTERNAL_SECRET}
+            RECURRING_BOOKINGS_INTERNAL_SECRET=${RECURRING_BOOKINGS_INTERNAL_SECRET}
+            BOOKING_REMINDERS_INTERNAL_SECRET=${BOOKING_REMINDERS_INTERNAL_SECRET:-}
+            FCM_SERVICE_ACCOUNTS=${FCM_SERVICE_ACCOUNTS:-}
+            MOBILE_DEFAULT_APP_ID=${MOBILE_DEFAULT_APP_ID:-}
+            TRUST_PROXY_HOPS=${TRUST_PROXY_HOPS:-}
+            PAYMENT_WEBHOOK_RELAY_HOPS=${PAYMENT_WEBHOOK_RELAY_HOPS:-}
+            INTERNAL_RUN_RELAY_HOPS=${INTERNAL_RUN_RELAY_HOPS:-}
+            PUBLIC_REGISTRATION_BASE_URL=${PUBLIC_REGISTRATION_BASE_URL:-}
+            PUBLIC_REGISTRATION_RELAY_HOPS=${PUBLIC_REGISTRATION_RELAY_HOPS:-}
             ENVEOF
+            chmod 600 "$ENV_TMP"
+            mv -f "$ENV_TMP" "$ENV_FILE"
 
-            # Drop this unit's previous Environment=/EnvironmentFile= lines,
-            # then insert the fresh GitHub-sourced block right after
-            # [Container].
+            # Drop this unit's previous Environment=/EnvironmentFile= lines —
+            # including any inline secrets a pre-#1192 deploy left there — then
+            # point it at the file, right after [Container].
             sed -i '/^Environment=/d; /^EnvironmentFile=/d' "$CF"
-            sed -i "/^\[Container\]$/r $ENV_BLOCK" "$CF"
-            rm -f "$ENV_BLOCK"
+            sed -i "/^\[Container\]$/a EnvironmentFile=$ENV_FILE" "$CF"
 
-            # Retire the old EnvironmentFile-based secrets file (superseded above).
+            # Retire the old EnvironmentFile-based secrets file (#448's shape).
             rm -f "$HOME/fitness-api.env"
 
             systemctl --user daemon-reload

@@ -119,7 +119,8 @@ beyond the bullet list, because WP2 and WP5 both depend on it.
   large dependency for one signed HTTP call, and the legacy server-key API is decommissioned.
 - **Credentials are one variable**, `FCM_SERVICE_ACCOUNTS`: a JSON object keyed by **app id**
   (design rule 2), each value a Google service-account JSON, accepted raw or **base64-encoded**
-  because `deploy.yml` writes the API's environment as inline quadlet `Environment=` lines. A
+  because `deploy.yml` writes the API's environment as one `KEY=value` line each into an env
+  file (#1192), which takes no multi-line value. A
   stage-2 per-gym app is therefore a new key, not a code change; a token whose `app_id` has no
   entry is skipped rather than failed, which is what that app's unconfigured Firebase project
   looks like. `MOBILE_DEFAULT_APP_ID` overrides the app id a registration defaults to.
