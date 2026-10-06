@@ -2,6 +2,8 @@
 
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
+import { DEFAULT_GYM_PRODUCTS } from '../domain/defaultGymProducts';
+import { seedDefaultGymProducts } from '../api/gym-default-products';
 import {
   TEST_AUTH_HEADER,
   cleanupTestGyms,
@@ -163,7 +165,7 @@ describe('POST /platform/gyms', () => {
     expect(second.status).toBe(409);
   });
 
-  it('seeds the system Personal Training 10-session package as active/staff_only, priced with the gym system tax rate', async () => {
+  it('seeds the system Personal Training 10-session package as active/public, priced with the gym system tax rate', async () => {
     const res = await platformCreateGym({ name: 'PT Package Seed Test Gym' });
     expect(res.status).toBe(201);
 
@@ -179,16 +181,19 @@ describe('POST /platform/gyms', () => {
       [res.body.id, 'Personal Training Class Package (10 Sessions)'],
     );
     expect(rows).toHaveLength(1);
+    // #1149: the package is Public and priced at €500 for the ten sessions
+    // (`amount` prices the whole package, #942) — it was staff-only and
+    // unpriced until the default catalogue was declared.
     expect(rows[0]).toMatchObject({
       type: 'sessions',
       units: 10,
       status: 'active',
-      enrollment_status: 'staff_only',
+      enrollment_status: 'public',
       is_system: 1,
       validity_days: 182,
       tax_rate_id: taxRows[0].id,
-      amount: null,
     });
+    expect(Number(rows[0].amount)).toBe(500);
   });
 
   // #543: the charge-type-based system Products (Registration Fee,
@@ -215,6 +220,69 @@ describe('POST /platform/gyms', () => {
     const seededNames = rows.map((r: { name: string }) => r.name).sort();
     const chargeTypeNames = chargeTypeRows.map((r: { name: string }) => r.name).sort();
     expect(seededNames).toEqual(chargeTypeNames);
+  });
+
+  // #1149: a new gym opens its Products page onto a configured catalogue —
+  // every default's price, frequency, status, enrollment and mandatory flag,
+  // not a name and seven dashes.
+  it('seeds every default Product with the configuration #1149 declares', async () => {
+    const res = await platformCreateGym({ name: 'Default Products Seed Test Gym' });
+    expect(res.status).toBe(201);
+
+    const { rows: taxRows } = await db.query(
+      `SELECT id FROM tax_rates WHERE gym_id = ? AND is_system = 1 AND deleted_at IS NULL`,
+      [res.body.id],
+    );
+    const { rows } = await db.query(
+      `SELECT name, type, units, amount, billing_frequency, status, enrollment_status,
+              is_system, mandatory, tax_rate_id, tax_behavior, currency
+       FROM products WHERE gym_id = ?`,
+      [res.body.id],
+    );
+    expect(rows).toHaveLength(DEFAULT_GYM_PRODUCTS.length);
+
+    for (const expected of DEFAULT_GYM_PRODUCTS) {
+      const row = rows.find((r: { name: string }) => r.name === expected.name);
+      expect(row, `no seeded Product named ${expected.name}`).toBeDefined();
+      expect(row).toMatchObject({
+        type: expected.type,
+        units: expected.units,
+        billing_frequency: expected.billingFrequency,
+        status: expected.status,
+        enrollment_status: expected.enrollmentStatus,
+        is_system: 1,
+        mandatory: expected.mandatory ? 1 : 0,
+        // §5: the declared prices are VAT-inclusive of the gym's own rate.
+        tax_behavior: 'inclusive',
+        currency: 'EUR',
+        tax_rate_id: taxRows[0].id,
+      });
+      // An unpriced default stays NULL — it reads as `—`, never €0.00.
+      if (expected.amount === null) expect(row.amount).toBeNull();
+      else expect(Number(row.amount)).toBe(expected.amount);
+    }
+  });
+
+  // §7: re-running the seed is a no-op, and never overwrites a gym's own edit.
+  it('re-seeding adds no duplicate and does not overwrite a modified Product', async () => {
+    const res = await platformCreateGym({ name: 'Default Products Idempotency Gym' });
+    expect(res.status).toBe(201);
+    const newGymId = res.body.id as string;
+
+    await db.query(
+      `UPDATE products SET amount = 99.00, status = 'inactive' WHERE gym_id = ? AND name = ?`,
+      [newGymId, 'Locker Rental'],
+    );
+    await seedDefaultGymProducts(newGymId);
+
+    const { rows } = await db.query(
+      `SELECT name, amount, status FROM products WHERE gym_id = ?`,
+      [newGymId],
+    );
+    expect(rows).toHaveLength(DEFAULT_GYM_PRODUCTS.length);
+    const locker = rows.find((r: { name: string }) => r.name === 'Locker Rental');
+    expect(Number(locker.amount)).toBe(99);
+    expect(locker.status).toBe('inactive');
   });
 });
 
@@ -457,7 +525,7 @@ describe('POST /platform/gyms/:id/duplicate', () => {
       [res.body.id, 'Personal Training Class Package (10 Sessions)'],
     );
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ is_system: 1, status: 'active', enrollment_status: 'staff_only' });
+    expect(rows[0]).toMatchObject({ is_system: 1, status: 'active', enrollment_status: 'public' });
   });
 
   // #543: same regression as the create-gym seeding, on the duplicate path.

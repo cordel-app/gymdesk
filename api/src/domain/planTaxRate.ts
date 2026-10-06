@@ -3,7 +3,7 @@
  *
  * A Plan's `tax_rate_id` is nullable, and the Pricing editor offers that as
  * **Default**: the Plan bills at the gym's own system rate (`tax_rates.is_system`,
- * seeded per gym as "Standard VAT" — the same row `seedSystemPtPackage()` picks).
+ * seeded per gym as "Standard VAT" — the same row `seedDefaultGymProducts()` picks).
  *
  * Those are two different questions and the card asks both:
  *
