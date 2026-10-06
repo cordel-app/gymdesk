@@ -11,6 +11,7 @@ import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
 import { PRODUCT_PURCHASE_SOURCE } from '../domain/memberProductPurchase';
 import { cancelProductPurchase, completeProductPurchase } from './me-products';
 import { paymentWebhookClientKey } from '../domain/forwardedClient';
+import { commitAssignment } from './assignment-commit';
 
 /**
  * Clerk webhook receiver. `user.deleted` (#709) removes every Gymdesk link to
@@ -346,6 +347,52 @@ paymentWebhookRouter.post(
              WHERE id = ? AND gym_id = ?`,
             [pr.user_membership_id, pr.gym_id],
           );
+
+          // #1108 stage 2 — Save & Pay's other half: the money has arrived, so
+          // the assignment it was raised for becomes the member's plan. This is
+          // the `pending_payment -> active` transition, and it is the *same*
+          // commit the staff route runs (`commitAssignment()`), in this
+          // transaction, so a member can never be charged and left with an
+          // uncommitted plan.
+          //
+          // `confirm: true` deliberately: #956's replacement is confirmed by
+          // staff at Save & Pay, before the member is asked for money, and
+          // refusing to activate a membership somebody has paid for — because of
+          // a conflict they already confirmed, or one created while the member
+          // was on the checkout page — would leave money taken for a plan that
+          // never started. A conflict found here is therefore superseded, which
+          // is the one place a plan is cancelled by this flow.
+          //
+          // Every other completed fee payment reads `not_committable` (the
+          // assignment is already `active`, which is the ordinary case for a
+          // first payment under the pre-#1108 flow and for one a member raises
+          // themselves) and is logged rather than treated as a failure.
+          if (pr.user_membership_id != null) {
+            const commit = await commitAssignment(tx, {
+              gymId: pr.gym_id,
+              id: pr.user_membership_id,
+              confirm: true,
+              actor: { source: 'provider', actorUserId: null },
+            });
+            if (commit.kind === 'activated') {
+              req.log.info(
+                {
+                  orderId: payload.orderId,
+                  userMembershipId: pr.user_membership_id,
+                  superseded: commit.superseded,
+                },
+                'Payment webhook: membership activated',
+              );
+            } else if (commit.kind !== 'not_committable') {
+              // A `conflict` cannot happen (`confirm` is true) and `not_found`
+              // would mean the assignment vanished under a committed payment, so
+              // either is a state worth seeing rather than a silent pass.
+              req.log.warn(
+                { orderId: payload.orderId, userMembershipId: pr.user_membership_id, outcome: commit.kind },
+                'Payment webhook: membership could not be activated',
+              );
+            }
+          }
 
           if (payload.paymentToken && payload.sequenceId) {
             await tx.query(

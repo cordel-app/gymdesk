@@ -41,7 +41,7 @@ const ASSIGNED_JOIN = `
   LEFT JOIN user_memberships um
          ON um.membership_plan_id = p.id
         AND um.gym_id = p.gym_id
-        AND um.status NOT IN ('draft', 'cancelled', 'expired')
+        AND um.status NOT IN ('draft', 'pending_payment', 'cancelled', 'expired')
         AND NOT (um.status = 'active' AND um.ends_at IS NOT NULL AND um.ends_at < CURDATE())
         AND EXISTS (
               SELECT 1 FROM members m

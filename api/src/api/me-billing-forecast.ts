@@ -37,6 +37,7 @@ import { db } from '../infra/db';
 import type { AssignmentBillingEventSimulationResult } from '../domain/assignmentBillingEventSimulation';
 import { emptyBillingEventSimulation } from '../domain/billingEventSimulation';
 import { assignedPlanBillingForecast } from './assigned-plan-billing-forecast';
+import { excludePreActivationSql } from '../domain/assignmentCommit';
 
 /**
  * Which of a Member's `user_memberships` rows is *the* one their own pages are
@@ -60,19 +61,20 @@ export const MEMBER_CURRENT_ASSIGNMENT_ORDER = `
     um.starts_at DESC`;
 
 /**
- * The `WHERE` half of that same answer: a **Draft is never the member's plan**
- * (#1108 Q2). A Draft is staff-side configuration of a purchase that has not
- * been committed — it is not active, it is not bookable, and it bills nothing —
- * so neither My Membership nor the Payments card may describe one.
+ * The `WHERE` half of that same answer: a **pre-activation assignment is never
+ * the member's plan** (#1108 Q2). A Draft is staff-side configuration of a
+ * purchase that has not been committed, and a Pending Payment is one whose charge
+ * the provider has not confirmed — neither is active, neither is bookable and
+ * neither bills anything, so neither My Membership nor the Payments card may
+ * describe one.
  *
  * It is a separate constant only because an `ORDER BY` fragment cannot carry a
  * predicate; it is the same one place, and both callers append both. Leaving it
- * out would be worse than showing a Draft: `FIELD()` answers 0 for a value it
- * does not list, which sorts *first*, so a member holding an Active plan and a
- * Draft replacement would have had the Draft described to them as their
- * membership.
+ * out would be worse than showing one: `FIELD()` answers 0 for a value it does
+ * not list, which sorts *first*, so a member holding an Active plan and a Draft
+ * replacement would have had the Draft described to them as their membership.
  */
-export const MEMBER_CURRENT_ASSIGNMENT_FILTER = "AND um.status <> 'draft'";
+export const MEMBER_CURRENT_ASSIGNMENT_FILTER = `AND ${excludePreActivationSql('um')}`;
 
 /**
  * Why a member has no forecast. A member with no plan at all, and one whose

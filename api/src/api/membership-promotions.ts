@@ -24,6 +24,7 @@ import {
   isNewMemberForNewAssignment,
   NEW_MEMBERS_ONLY_ERROR,
 } from './new-member-eligibility';
+import { preActivationLockReason } from '../domain/assignmentCommit';
 
 /**
  * P4.4: apply/revoke promotions on a user_membership.
@@ -551,6 +552,13 @@ export async function applyPromotionToMembership(
     );
     if (umRows.length === 0) throw Object.assign(new Error('Membership not found'), { status: 404 });
     const um = umRows[0];
+    // #1108 stage 2: a Pending Payment assignment's configuration is locked —
+    // Save & Pay has raised a charge for exactly the Promotions it carries, so
+    // applying another one would make the amount the member is being asked for
+    // stop matching what they are buying. A Draft is still freely configurable
+    // (§3), which is the whole point of one.
+    const lockReason = preActivationLockReason(um.status);
+    if (lockReason) throw Object.assign(new Error(lockReason), { status: 409 });
     // Priced before anything is written, so the adjustment below is the
     // difference this application makes (#635 stage 15 — nothing is stored, so
     // "the previous price" has to be resolved rather than read).
@@ -888,6 +896,10 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
       );
       if (umRows.length === 0) throw Object.assign(new Error('Membership not found'), { status: 404 });
       const um = umRows[0];
+      // #1108 stage 2 — see `applyPromotionToMembership()` above: a locked
+      // configuration is locked whichever route reaches it.
+      const lockReason = preActivationLockReason(um.status);
+      if (lockReason) throw Object.assign(new Error(lockReason), { status: 409 });
 
       // Load promotion
       const { rows: promoRows } = await tx.query(
@@ -991,6 +1003,16 @@ membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'
   const promotionId = parseInt(String(req.params.promotionId), 10);
   try {
     const result = await db.transaction(async (tx) => {
+      // #1108 stage 2: revoking is as much a change to what the member is being
+      // charged for as applying, so a Pending Payment refuses it too. Read under
+      // the same transaction as the UPDATE, so a Save & Pay landing in between
+      // cannot let a revoke through.
+      const { rows: umRows } = await tx.query<{ status: string }>(
+        'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
+        [umId, gymId],
+      );
+      const lockReason = preActivationLockReason(umRows[0]?.status);
+      if (lockReason) throw Object.assign(new Error(lockReason), { status: 409 });
       // Priced before the revoke, for the adjustment below.
       const feeBefore = (await currentMembershipFeeInTx(tx, gymId, umId))?.price ?? null;
       // #511 (stage 3): revoked_at stamps precisely when this promotion

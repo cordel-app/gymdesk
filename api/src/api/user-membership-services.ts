@@ -4,6 +4,7 @@ import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { classifyProduct } from '../domain/productClassification';
 import { SimulationService, ProductFrequency } from '../domain/billingSimulation';
+import { preActivationLockReason } from '../domain/assignmentCommit';
 
 /**
  * #631 — Additional Periodic Services on an Assigned Plan.
@@ -37,6 +38,10 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 // a Draft is for — they are added before the purchase is committed and they
 // show up in its Billing Event Forecast. They bill nothing while the assignment
 // is a Draft, because the nightly run reads `status = 'active'`.
+// #1108 stage 2: `pending_payment` is deliberately absent. Save & Pay has raised
+// a charge for exactly the configuration this list guards, so attaching another
+// Product to it would make the amount the member is being asked for stop matching
+// what they are buying.
 const ATTACHABLE_STATUSES = ['draft', 'active', 'paused'];
 
 const DUPLICATE_ERROR = 'This service is already attached to the Assigned Plan for that period';
@@ -245,7 +250,10 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   const plan = await loadAssignedPlan(gymId, (req.params as any).id);
   if (!plan) return res.status(404).json({ error: 'Membership not found' });
   if (!ATTACHABLE_STATUSES.includes(plan.status)) {
-    return res.status(409).json({ error: 'Services cannot be added to a cancelled or expired Assigned Plan' });
+    return res.status(409).json({
+      error: preActivationLockReason(plan.status)
+        ?? 'Services cannot be added to a cancelled or expired Assigned Plan',
+    });
   }
 
   const { product_id, quantity, starts_at } = req.body ?? {};

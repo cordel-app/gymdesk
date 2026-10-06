@@ -52,9 +52,26 @@ import {
   supersedeStartsAtError,
 } from '../domain/oneActivePlan';
 import {
+  DRAFT_ASSIGNMENT_STATUS,
+  PENDING_PAYMENT_ASSIGNMENT_STATUS,
+  isPreActivationStatus,
+  preActivationLockReason,
+} from '../domain/assignmentCommit';
+import {
+  commitAssignment,
+  liveConflictsFor,
+  lockAssignmentForCommit,
+  lockAssignmentForPayment,
+} from './assignment-commit';
+import {
+  checkoutUrlForToken,
+  createMembershipFeeProviderOrder,
+  insertMembershipFeePaymentRequest,
+  membershipFeeChargeTypeId,
+} from './membership-fee-payment-request';
+import {
   findLiveAssignmentsForMembers,
   membershipPlanName,
-  supersedeLiveAssignments,
 } from './one-active-plan';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
@@ -67,7 +84,16 @@ import {
 // Pay transaction that produces it rather than as a second value nothing can
 // write. The ticket's "Closed" action still maps onto the existing 'cancelled'
 // value rather than introducing a new terminal status.
-const STATUSES = ['draft', 'active', 'paused', 'cancelled', 'expired'] as const;
+//
+// #1108 stage 2 adds the second one, `pending_payment` (migration 233): the
+// window between Save & Pay raising the charge and the provider confirming it.
+// The two pre-activation statuses and what separates them live in
+// `domain/assignmentCommit.ts` — a Draft is configurable, a Pending Payment is
+// locked — and both are outside the live-plan statuses.
+const STATUSES = [
+  DRAFT_ASSIGNMENT_STATUS, PENDING_PAYMENT_ASSIGNMENT_STATUS,
+  'active', 'paused', 'cancelled', 'expired',
+] as const;
 type Status = (typeof STATUSES)[number];
 
 // #511 §10 — the allowed status transitions, enforced by both PUT /:id (when
@@ -75,14 +101,22 @@ type Status = (typeof STATUSES)[number];
 // /reactivate actions below. 'expired' has no forward transitions here: it's
 // only ever reached by assign-new-plan's supersede logic, never by request.
 //
-// #1108: `draft` has exactly two, and neither is reachable through `PUT /:id`.
-// `draft -> active` is the commit — it has to run #956's one-plan check and
-// supersede whatever it replaces, so it lives in `POST /:id/activate` and the
-// PUT refuses it the way cancellation is refused and routed to DELETE. A Draft
-// is cancelled through that same DELETE. There is no `draft -> paused`: pausing
+// #1108: neither pre-activation status has a transition reachable through
+// `PUT /:id`. `-> active` is the commit — it has to run #956's one-plan check and
+// supersede whatever it replaces, so it lives in `commitAssignment()` and the PUT
+// refuses it the way cancellation is refused and routed to DELETE. Both are
+// cancelled through that same DELETE. There is no `draft -> paused`: pausing
 // something that has never been active says nothing.
+//
+// Stage 2's one addition is `draft -> pending_payment`, written only by
+// `POST /:id/save-and-pay`. There is deliberately **no** `pending_payment ->
+// draft`: unlocking a configuration the member is already being asked to pay for
+// would let the amount on the hosted page stop matching the plan it buys, so the
+// way out of a Pending Payment nobody pays is `/close`, exactly as it is for a
+// Draft nobody commits.
 const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
-  draft: ['active', 'cancelled'],
+  draft: ['pending_payment', 'active', 'cancelled'],
+  pending_payment: ['active', 'cancelled'],
   active: ['paused', 'cancelled'],
   paused: ['active', 'cancelled'],
   cancelled: [],
@@ -96,11 +130,13 @@ const ALLOWED_TRANSITIONS: Record<Status, readonly Status[]> = {
  * `POST /membership-plans/:id/assign` all write it, and stage 2's Save & Pay is
  * what moves a row out of it.
  */
-export const ASSIGNMENT_CREATION_STATUS = 'draft';
+export const ASSIGNMENT_CREATION_STATUS = DRAFT_ASSIGNMENT_STATUS;
 
 // Lifecycle statuses (#410) — the date-aware projection computed in LIST_SELECT below,
 // as opposed to STATUSES which is the raw stored `status` column.
-const LIFECYCLE_STATUSES = ['draft', 'pending', 'active', 'paused', 'expired', 'cancelled'] as const;
+const LIFECYCLE_STATUSES = [
+  'draft', 'pending_payment', 'pending', 'active', 'paused', 'expired', 'cancelled',
+] as const;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Accepts repeated `lifecycle_status=a&lifecycle_status=b` or a single comma-separated value.
@@ -131,7 +167,7 @@ export const userMembershipsRouter = Router();
  */
 export const LIFECYCLE_STATUS_SQL = `
   CASE
-    WHEN um.status IN ('draft', 'paused', 'cancelled', 'expired') THEN um.status
+    WHEN um.status IN ('draft', 'pending_payment', 'paused', 'cancelled', 'expired') THEN um.status
     WHEN um.starts_at > CURDATE() THEN 'pending'
     WHEN um.ends_at IS NOT NULL AND um.ends_at < CURDATE() THEN 'expired'
     ELSE 'active'
@@ -735,20 +771,21 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
   if (status === 'cancelled' && role !== 'admin') {
     return res.status(403).json({ error: 'Only admins can cancel a membership' });
   }
-  // #1108: committing a Draft goes through POST /:id/activate for the same
-  // reason cancellation goes through DELETE — that transition runs #956's
-  // one-plan check and supersedes whatever it replaces, and a plain `status`
-  // flip here would activate a second live plan for the member with no
+  // #1108: committing a pre-activation assignment goes through its own route for
+  // the same reason cancellation goes through DELETE — that transition runs
+  // #956's one-plan check and supersedes whatever it replaces, and a plain
+  // `status` flip here would activate a second live plan for the member with no
   // confirmation and no cancellation of the first.
   if (status === 'active') {
     const { rows: pre } = await db.query<{ status: string }>(
       'SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?',
       [req.params.id, gymId],
     );
-    if (pre[0]?.status === 'draft') {
+    if (isPreActivationStatus(pre[0]?.status)) {
       return res.status(400).json({
-        error: 'A Draft membership is activated through POST /user-memberships/:id/activate, '
-          + 'which replaces the member\'s current plan.',
+        error: 'A membership that has not been committed is activated through '
+          + 'POST /user-memberships/:id/save-and-pay, which raises the payment and replaces the '
+          + 'member\'s current plan when it is confirmed.',
       });
     }
   }
@@ -762,6 +799,13 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
         [req.params.id, gymId],
       );
       if (current.length === 0) return { kind: 'not_found' } as const;
+      // #1108 stage 2 — Save & Pay is the point of no return (§6): once a charge
+      // has been raised for this configuration, the configuration may not move.
+      // Stated here rather than relying on an allowlist, because this route is
+      // the one write path on an assignment that is not gated on a status list at
+      // all — it edits the dates, the negotiated fee and the status itself.
+      const lockReason = preActivationLockReason(current[0].status);
+      if (lockReason) return { kind: 'locked', message: lockReason } as const;
       // #511 §10 — validate any direct status flip against the transition table,
       // same as the dedicated /close, /pause and /reactivate actions.
       if (status && status !== current[0].status
@@ -807,6 +851,7 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
       return { kind: 'ok' } as const;
     });
     if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (result.kind === 'locked') return res.status(409).json({ error: result.message });
     if (result.kind === 'invalid_transition') {
       return res.status(400).json({ error: `Cannot transition a membership from '${result.from}' to '${status}'` });
     }
@@ -845,114 +890,38 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
 });
 
 /**
- * Commit a Draft assignment: `draft -> active` (#1108 stage 1).
+ * Commit a pre-activation assignment: `draft | pending_payment -> active`
+ * (#1108 stage 1, widened by stage 2).
  *
- * This is the one place that transition lives, and it is a route of its own
- * rather than a `status` flip on `PUT /:id` because committing a Draft is the
- * moment #956's rule is enforced: the Member may have been holding another plan
- * all along while this one was configured (Q2 — a Draft is deliberately outside
- * `LIVE_ASSIGNMENT_STATUSES`), so activation is what finds that plan, locks it,
+ * The transition itself is `commitAssignment()` (`api/src/api/assignment-commit.ts`),
+ * which stage 2 extracted so that the webhook and Save & Pay could reach the very
+ * same write rather than growing a second one. This route is the staff-initiated
+ * caller of it: it exists because committing is the moment #956's rule is
+ * enforced — the Member may have been holding another plan all along while this
+ * one was configured (Q2 — a Draft is deliberately outside
+ * `LIVE_ASSIGNMENT_STATUSES`) — so activation is what finds that plan, locks it,
  * and either answers the 409 the replacement dialog is drawn from or supersedes
  * it. A plain `PUT` would leave the member with two live plans, no confirmation
- * and no cancellation of the first; the PUT therefore refuses it and names this
- * route, exactly as it refuses a cancellation and names DELETE.
+ * and no cancellation of the first; the PUT therefore refuses it and names
+ * Save & Pay, which is the admin app's single entry point since stage 2 (§7).
  *
- * Stage 2's **Save & Pay** is the second caller of this commit rather than a
- * second commit: it raises the payment, moves the row through Pending Payment
- * and consolidates the forecast into real Billing Events around the very same
- * transition. Until it exists this is how a configured Draft becomes the
- * member's plan, which is also what keeps assignment working between the two
- * stages.
- *
- * The supersede date is the Draft's own `starts_at`, not today: #956 Q3 has the
- * two plans meet at one date, and that date is when the new one begins.
+ * It is kept beside Save & Pay rather than folded into it because the two answer
+ * different questions: this one commits a configuration whose payment is being
+ * settled some other way, and Save & Pay is the one that raises a payment.
+ * Nothing in the admin app calls it any more.
  */
 userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   const confirm = req.body?.confirm === true;
   try {
-    const outcome = await db.transaction(async (tx) => {
-      const { rows: current } = await tx.query<{
-        id: number; member_id: number; status: string; starts_at: string;
-      }>(
-        `SELECT id, member_id, status, DATE_FORMAT(starts_at, '%Y-%m-%d') AS starts_at
-           FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE`,
-        [req.params.id, gymId],
-      );
-      if (current.length === 0) return { kind: 'not_found' as const };
-      const draft = current[0];
-      // Not a Draft: `draft` is the only status this route moves a row out of,
-      // so an already-active assignment (or a cancelled one) is a 400 naming
-      // what it found rather than a silent no-op. It is also what the loser of
-      // two concurrent activations gets, because the UPDATE below carries
-      // `status = 'draft'` in its own WHERE.
-      if (draft.status !== ASSIGNMENT_CREATION_STATUS) {
-        return { kind: 'not_draft' as const, status: draft.status };
-      }
-
-      // #956, moved here from the three insert paths: everything live that has
-      // to stop for this assignment to be the member's only one. The Draft
-      // itself is not live, so it never appears among its own conflicts.
-      //
-      // The question is asked for **every Member this Draft covers**, not just
-      // its owner (#956 Q4): a family assignment carries one `user_memberships`
-      // row owned by one Member and a `user_membership_members` row per covered
-      // Member, so committing it has to find — and `confirm` has to cancel —
-      // the plans of all of them at once. Reading `draft.member_id` alone would
-      // leave a covered Member holding both their own plan and this one, which
-      // is the overlap `active_member_key` cannot express and the reason
-      // `POST /membership-plans/:id/assign` passed its whole selected set
-      // before this transition existed. The owner is unioned in because a row
-      // written before #374's covered-member table may carry no
-      // `user_membership_members` row at all.
-      const { rows: coveredRows } = await tx.query<{ member_id: number }>(
-        `SELECT member_id FROM user_membership_members
-          WHERE user_membership_id = ? AND gym_id = ?`,
-        [draft.id, gymId],
-      );
-      const coveredMemberIds = [...new Set([
-        Number(draft.member_id),
-        ...coveredRows.map((r) => Number(r.member_id)),
-      ])];
-      const conflicts = await findLiveAssignmentsForMembers(tx, gymId, coveredMemberIds, {
-        excludeUserMembershipId: Number(draft.id),
-      });
-      if (conflicts.length > 0) {
-        if (!confirm) return { kind: 'conflict' as const, conflicts };
-        const dateError = supersedeStartsAtError(draft.starts_at, conflicts);
-        if (dateError) return { kind: 'bad_date' as const, message: dateError };
-        await supersedeLiveAssignments(tx, {
-          gymId, conflicts, newStartsAt: draft.starts_at,
-          source: sourceForRole(role), actorUserId: userId,
-        });
-      }
-
-      const { rowCount } = await tx.query(
-        `UPDATE user_memberships
-            SET status = 'active', failed_attempts = 0, last_failed_at = NULL
-          WHERE id = ? AND gym_id = ? AND status = ?`,
-        [draft.id, gymId, ASSIGNMENT_CREATION_STATUS],
-      );
-      if (rowCount === 0) return { kind: 'not_draft' as const, status: draft.status };
-      // #790: an assignment joining the run's schedule is never put on a cycle
-      // that has already gone by. A Draft carries no `next_billing_date` at
-      // all — the first payment stamps it — so this is a no-op today and the
-      // one place that answers it either way.
-      await rollStaleNextBillingDateForward(tx, Number(draft.id), gymId);
-      await recordStatusChange(tx, {
-        gymId, userMembershipId: Number(draft.id), memberId: Number(draft.member_id),
-        previousStatus: ASSIGNMENT_CREATION_STATUS, newStatus: 'active',
-        source: sourceForRole(role), actorUserId: userId,
-      });
-      return {
-        kind: 'activated' as const,
-        superseded: conflicts.map((c) => c.id),
-      };
-    });
+    const outcome = await db.transaction((tx) => commitAssignment(tx, {
+      gymId, id: String(req.params.id), confirm,
+      actor: { source: sourceForRole(role), actorUserId: userId },
+    }));
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
-    if (outcome.kind === 'not_draft') {
+    if (outcome.kind === 'not_committable') {
       return res.status(400).json({
-        error: `Only a Draft membership can be activated; this one is '${outcome.status}'.`,
+        error: `Only a membership awaiting activation can be activated; this one is '${outcome.status}'.`,
       });
     }
     if (outcome.kind === 'bad_date') return res.status(400).json({ error: outcome.message });
@@ -967,13 +936,296 @@ userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), asyn
       action: 'activate', entityType: 'user_membership', entityId: req.params.id,
       next: activated,
       previous: {
-        status: ASSIGNMENT_CREATION_STATUS,
+        status: outcome.previousStatus,
         ...(outcome.superseded.length > 0
           ? { superseded_user_membership_ids: outcome.superseded } : {}),
       },
     });
     res.json(activated);
   } catch (err: any) {
+    handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
+  }
+});
+
+/**
+ * What **Save & Pay** is about to do, for the Member-level action area (§7).
+ *
+ * One read rather than three: which of the Member's assignments is still waiting
+ * to be committed, what the first cycle costs, and — for one already locked —
+ * the charge that is outstanding and the link that pays it. A Member with nothing
+ * to commit answers `{ assignment: null }` rather than a 404, so the action area
+ * renders nothing instead of treating the ordinary case as an error (the shape
+ * `GET /me/membership`'s `{ membership: null }` established).
+ *
+ * It sits under `/member/:memberId/` rather than taking the id of an assignment
+ * the caller would first have to find, which is also what keeps it out of
+ * `GET /:id`'s way: three path segments, so Express cannot read `member` as an
+ * assignment id.
+ *
+ * The amount is `currentMembershipFee()` and never a second arithmetic: it is the
+ * very number the charge will be raised for, which is the same number the
+ * Membership Fee Simulation on the plan's own card quotes (#635 stage 12's rule).
+ */
+userMembershipsRouter.get('/member/:memberId/save-and-pay', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const memberId = Number(req.params.memberId);
+    if (!Number.isInteger(memberId) || memberId <= 0) {
+      return res.status(400).json({ error: 'memberId must be a positive integer' });
+    }
+    const { rows } = await db.query<{
+      id: number; status: string; plan_name: string | null; starts_at: Date | string;
+    }>(
+      `SELECT um.id, um.status, p.name AS plan_name, um.starts_at
+         FROM user_memberships um
+         LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
+        WHERE um.gym_id = ? AND um.member_id = ? AND um.status IN (?, ?)
+        ORDER BY FIELD(um.status, ?, ?), um.created_at DESC, um.id DESC
+        LIMIT 1`,
+      [
+        gymId, memberId,
+        DRAFT_ASSIGNMENT_STATUS, PENDING_PAYMENT_ASSIGNMENT_STATUS,
+        // A locked one first: it is the one with money outstanding, so it is what
+        // staff need to see even if a Draft was configured after it.
+        PENDING_PAYMENT_ASSIGNMENT_STATUS, DRAFT_ASSIGNMENT_STATUS,
+      ],
+    );
+    if (!rows[0]) return res.json({ assignment: null });
+    const assignment = rows[0];
+
+    const amountDue = await currentMembershipFee(gymId, Number(assignment.id));
+    const payment = assignment.status === PENDING_PAYMENT_ASSIGNMENT_STATUS
+      ? await loadOutstandingFeePayment(gymId, Number(assignment.id))
+      : null;
+
+    res.json({
+      assignment: {
+        id: assignment.id,
+        status: assignment.status,
+        plan_name: assignment.plan_name,
+        // What Save & Pay will charge now. 0 is a real answer, not a missing one:
+        // a Plan sold with a Free Period owes nothing for its first cycle, and
+        // Save & Pay then commits it with no payment at all.
+        amount_due: amountDue ?? 0,
+        currency: 'EUR',
+      },
+      payment,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * The outstanding charge of a locked assignment, as the action area reports it.
+ *
+ * The checkout link is only offered while the hosted page's token may still be
+ * opened: a `page_token` that has been used is cleared (#789), and an expired one
+ * opens nothing — in both cases the way forward is a fresh Save & Pay, so handing
+ * staff a link that cannot work would be worse than handing them none (#1073's
+ * "a control that cannot work is absent, never broken", one layer over).
+ */
+async function loadOutstandingFeePayment(gymId: string, userMembershipId: number) {
+  const { rows } = await db.query<{
+    id: number; status: string; amount: string; page_token: string | null;
+    page_token_expires: Date | string | null; created_at: Date | string;
+  }>(
+    `SELECT id, status, amount, page_token, page_token_expires, created_at
+       FROM payment_requests
+      WHERE gym_id = ? AND user_membership_id = ? AND source = 'admin'
+      ORDER BY created_at DESC, id DESC LIMIT 1`,
+    [gymId, userMembershipId],
+  );
+  const pr = rows[0];
+  if (!pr) return null;
+  const openable = pr.status === 'pending' && pr.page_token != null
+    && pr.page_token_expires != null && new Date(pr.page_token_expires).getTime() > Date.now();
+  return {
+    id: pr.id,
+    status: pr.status,
+    amount: Number(pr.amount),
+    created_at: pr.created_at,
+    checkout_url: openable ? checkoutUrlForToken(pr.page_token as string) : null,
+  };
+}
+
+/**
+ * **Save & Pay** (#1108 §6–§9): commit the Draft's configuration and raise the
+ * charge that activates it.
+ *
+ * This is the single completion action, and the admin app offers it from the
+ * Member-level action area rather than from inside the Membership Plans section
+ * (§7). What it is *not* is a synchronous "validate, charge, activate"
+ * transaction: the first payment in this product is customer-initiated, staff
+ * have no way to take a card (by design — card data never reaches a Gymdesk
+ * server), so "process the payment" is the hosted page the member opens and the
+ * webhook that reports it. Hence the lifecycle the owner's Q1 answer names:
+ *
+ *   Draft -> Save & Pay -> Pending Payment -> Active
+ *
+ * Four of its answers are the rule rather than the implementation.
+ *
+ * **Nothing is partially committed** (§8's last acceptance criterion). The
+ * provider call happens with nothing written, so a provider that throws leaves a
+ * Draft a Draft; the `payment_requests` row and the `draft -> pending_payment`
+ * lock are written in one transaction, so there is never a charge with no lock or
+ * a lock with no charge; and the member's current plan is **not** cancelled here
+ * — #956's supersede stays on the commit (`commitAssignment()`), so a member who
+ * abandons the checkout page leaves the plan they already hold exactly as it was.
+ * What this route does promise is that the configuration stops moving, because
+ * the amount on the hosted page has to keep matching the plan it buys.
+ *
+ * **A first cycle that owes nothing is committed outright.** A Plan sold with a
+ * Free Period, a Promotion that waives the first months, a Bonus Duration: there
+ * is no payment to raise, so there is nothing to wait for. Without this branch
+ * such a plan could never be activated at all, and inventing a €0 provider order
+ * for it would put a zero-amount payment in the member's history (#788's reason
+ * for keeping verifications out of it).
+ *
+ * **The replacement confirmation is asked here and acted on at the commit.** The
+ * 409 is the same `active_plan_exists` body the shared `ReplacePlanDialog` is
+ * drawn from, so staff see what committing will cancel *before* the member is
+ * asked for money. `confirm` is their acknowledgement and nothing is written for
+ * it: the webhook commits with `confirm: true` because by then the money has
+ * arrived, and refusing to activate a membership somebody has paid for would be
+ * the worse failure.
+ *
+ * **It may be called again on a locked assignment.** The hosted page's token
+ * lives ten minutes, so an abandoned checkout is the ordinary case and the link
+ * will usually be dead — a Pending Payment that could not be re-charged would be
+ * a membership nobody can rescue. Re-raising expires the previous pending request
+ * first, in the same transaction, so two live orders for one assignment cannot
+ * both complete.
+ */
+userMembershipsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId, userId, role } = getTenantContext(req);
+  const confirm = req.body?.confirm === true;
+  const actor = { source: sourceForRole(role), actorUserId: userId };
+  try {
+    // 1. Validate, under the lock, with nothing written: is this committable at
+    //    all, and does the Member hold a plan this will cancel?
+    const checked = await db.transaction(async (tx) => {
+      const row = await lockAssignmentForCommit(tx, gymId, String(req.params.id));
+      if (!row) return { kind: 'not_found' as const };
+      if (!isPreActivationStatus(row.status)) {
+        return { kind: 'not_committable' as const, status: row.status };
+      }
+      const conflicts = await liveConflictsFor(tx, gymId, row);
+      if (conflicts.length > 0) {
+        if (!confirm) return { kind: 'conflict' as const, conflicts };
+        const dateError = supersedeStartsAtError(row.starts_at, conflicts);
+        if (dateError) return { kind: 'bad_date' as const, message: dateError };
+      }
+      return { kind: 'ok' as const, row };
+    });
+    if (checked.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (checked.kind === 'not_committable') {
+      return res.status(400).json({
+        error: `Only a membership awaiting payment can be committed; this one is '${checked.status}'.`,
+      });
+    }
+    if (checked.kind === 'bad_date') return res.status(400).json({ error: checked.message });
+    if (checked.kind === 'conflict') {
+      const current = await loadAssignmentRow(gymId, req.params.id);
+      return res.status(409).json(activePlanConflictBody(
+        checked.conflicts, current?.plan_name ?? null,
+      ));
+    }
+
+    // 2. What the first cycle costs. The same `currentMembershipFee()` the staff
+    //    screens and the nightly run read, so Save & Pay cannot ask for a number
+    //    the Membership Fee Simulation does not show.
+    const fee = await currentMembershipFee(gymId, Number(checked.row.id));
+    if (fee == null) return res.status(404).json({ error: 'Membership not found' });
+
+    // 3a. Nothing owed: commit outright, no provider call and no payment row.
+    if (!(fee > 0)) {
+      const outcome = await db.transaction((tx) => commitAssignment(tx, {
+        gymId, id: String(req.params.id), confirm: true, actor,
+      }));
+      if (outcome.kind !== 'activated') {
+        // Only reachable if the row moved between the two transactions, which is
+        // what the status in the message says.
+        return res.status(409).json({
+          error: 'This membership changed while it was being committed; reload and try again.',
+        });
+      }
+      const activated = await loadAssignmentRow(gymId, req.params.id);
+      recordAudit(req, {
+        action: 'save_and_pay', entityType: 'user_membership', entityId: req.params.id,
+        next: activated,
+        previous: {
+          status: outcome.previousStatus,
+          ...(outcome.superseded.length > 0
+            ? { superseded_user_membership_ids: outcome.superseded } : {}),
+        },
+      });
+      return res.json({ assignment: activated, payment: null, activated: true });
+    }
+
+    // 3b. Money owed: raise the charge, then lock the configuration to it.
+    const chargeTypeId = await membershipFeeChargeTypeId();
+    if (chargeTypeId == null) {
+      return res.status(500).json({ error: 'charge_type membership_fee not configured' });
+    }
+    const { rows: memberRows } = await db.query<{ member_id: number; member_email: string }>(
+      `SELECT um.member_id, m.email AS member_email
+         FROM user_memberships um JOIN members m ON m.id = um.member_id
+        WHERE um.id = ? AND um.gym_id = ?`,
+      [req.params.id, gymId],
+    );
+    if (!memberRows[0]) return res.status(404).json({ error: 'Membership not found' });
+    const { member_id: memberId, member_email: memberEmail } = memberRows[0];
+
+    const order = await createMembershipFeeProviderOrder({ fee, memberEmail });
+    req.log.info(
+      { orderId: order.orderId, providerOrderId: order.providerOrderId, memberId, userMembershipId: req.params.id },
+      'Save & Pay payment request created',
+    );
+
+    const written = await db.transaction(async (tx) => {
+      const row = await lockAssignmentForCommit(tx, gymId, String(req.params.id));
+      if (!row || !isPreActivationStatus(row.status)) return { kind: 'moved' as const };
+      // One live order per assignment: the previous pending request is expired
+      // here rather than left alongside, so a member who still has the old link
+      // open cannot pay a configuration this one has replaced.
+      await tx.query(
+        `UPDATE payment_requests SET status = 'expired'
+          WHERE gym_id = ? AND user_membership_id = ? AND status = 'pending' AND source = 'admin'`,
+        [gymId, req.params.id],
+      );
+      const payment = await insertMembershipFeePaymentRequest(tx, {
+        gymId, userMembershipId: Number(row.id), memberId: Number(memberId),
+        fee, chargeTypeId, order, initiator: { kind: 'staff', userId },
+      });
+      // Already locked by an earlier Save & Pay: the charge is replaced and the
+      // status is where it belongs, so there is no second ledger row to write.
+      if (row.status === DRAFT_ASSIGNMENT_STATUS) {
+        await lockAssignmentForPayment(tx, {
+          gymId, id: row.id, memberId: Number(row.member_id), actor,
+        });
+      }
+      return { kind: 'ok' as const, payment };
+    });
+    if (written.kind === 'moved') {
+      return res.status(409).json({
+        error: 'This membership changed while it was being committed; reload and try again.',
+      });
+    }
+
+    const locked = await loadAssignmentRow(gymId, req.params.id);
+    recordAudit(req, {
+      action: 'save_and_pay', entityType: 'user_membership', entityId: req.params.id,
+      next: locked,
+      previous: { status: checked.row.status },
+    });
+    res.json({
+      assignment: locked,
+      payment: { ...written.payment, amount: fee, currency: 'EUR' },
+      activated: false,
+    });
+  } catch (err: any) {
+    req.log.error({ err: (err as Error).message }, 'Save & Pay failed');
     handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
   }
 });
@@ -1228,7 +1480,13 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // that is not activation. Closing one is also always warning-free, because
 // `computeUnusedValueWarnings()` reads `next_billing_date`, which a Draft has
 // never had.
-const CLOSEABLE_FROM: readonly Status[] = ['draft', 'active', 'paused'];
+// #1108: both pre-activation statuses are closeable, and for the same reason —
+// a Draft nobody commits and a Pending Payment nobody pays are discarded rather
+// than left on the member for ever (Q1a: no expiry). Neither has ever had a
+// `next_billing_date`, so closing one is warning-free.
+const CLOSEABLE_FROM: readonly Status[] = [
+  DRAFT_ASSIGNMENT_STATUS, PENDING_PAYMENT_ASSIGNMENT_STATUS, 'active', 'paused',
+];
 
 // #511 stage 3 also counted a `session_count` allowance with sessions left in
 // its current recurrence window as unused value about to be lost. #635 stage 4
@@ -1320,6 +1578,22 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
 // state, so every section of its snapshot is writable until it is committed.
 const SNAPSHOT_EDITABLE_STATUSES: readonly Status[] = ['draft', 'active', 'paused'];
 
+/**
+ * Why this assignment's configuration may not be written.
+ *
+ * #1108 stage 2: `pending_payment` is refused by every editing allowlist simply
+ * by not being named in one, which is the right mechanism — the lock is the
+ * absence of a grant rather than a second rule each path has to remember — but
+ * "with status 'pending_payment'" does not tell staff what to do about it. So the
+ * one sentence that does (`preActivationLockReason()`) is preferred where it
+ * applies, and every other status keeps the message it had.
+ */
+function notEditableMessage(status: string): string {
+  return preActivationLockReason(status)
+    ?? `Cannot edit the configuration of a membership with status '${status}'`;
+}
+
+
 const BILLING_UNITS = ['day', 'week', 'month', 'year'] as const;
 
 /**
@@ -1381,7 +1655,7 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
   const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
   if (!um) return res.status(404).json({ error: 'Membership not found' });
   if (!SNAPSHOT_EDITABLE_STATUSES.includes(um.status as Status)) {
-    return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${um.status}'` });
+    return res.status(400).json({ error: notEditableMessage(um.status as string) });
   }
 
   // Only the fields the caller sent are written, so a section's editor can save
@@ -1466,7 +1740,7 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
     });
     if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
     if (result.kind === 'not_editable') {
-      return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${result.status}'` });
+      return res.status(400).json({ error: notEditableMessage(result.status) });
     }
 
     recordAudit(req, {
@@ -1527,7 +1801,7 @@ userMembershipsRouter.put('/:id/fee-benefit', requireModuleWrite('PAYMENTS'), as
   const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
   if (!um) return res.status(404).json({ error: 'Membership not found' });
   if (!SNAPSHOT_EDITABLE_STATUSES.includes(um.status as Status)) {
-    return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${um.status}'` });
+    return res.status(400).json({ error: notEditableMessage(um.status as string) });
   }
 
   const rawAction = req.body?.action;
@@ -1569,7 +1843,7 @@ userMembershipsRouter.put('/:id/fee-benefit', requireModuleWrite('PAYMENTS'), as
     });
     if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
     if (result.kind === 'not_editable') {
-      return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${result.status}'` });
+      return res.status(400).json({ error: notEditableMessage(result.status) });
     }
 
     recordAudit(req, {
@@ -1616,7 +1890,7 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
     const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
     if (!um) return res.status(404).json({ error: 'Membership not found' });
     if (!SNAPSHOT_EDITABLE_STATUSES.includes(um.status as Status)) {
-      return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${um.status}'` });
+      return res.status(400).json({ error: notEditableMessage(um.status as string) });
     }
 
     const parsed: { product_id: number; quantity: number }[] = [];
@@ -1690,7 +1964,7 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
       });
       if (applied.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
       if (applied.kind === 'not_editable') {
-        return res.status(400).json({ error: `Cannot edit the configuration of a membership with status '${applied.status}'` });
+        return res.status(400).json({ error: notEditableMessage(applied.status) });
       }
 
       recordAudit(req, {

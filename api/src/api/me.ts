@@ -1,4 +1,3 @@
-import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createClerkClient } from '@clerk/backend';
@@ -11,8 +10,6 @@ import { validateRequest as validateSharedRequest } from './shared-training-requ
 import { planTreeSelect } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
-import { getPaymentProvider } from '../payments';
-import { toMinorUnits } from '../payments/money';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import { STAFF_EMAIL_CONFLICT, isStaffLoginEmail } from '../infra/staff-access';
 import { localizedNameExpr, loadQualitiesMap } from '../domain/nutritionLibrary';
@@ -47,6 +44,11 @@ import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
+import {
+  createMembershipFeeProviderOrder,
+  insertMembershipFeePaymentRequest,
+  membershipFeeChargeTypeId,
+} from './membership-fee-payment-request';
 import { assignableTrainersSql } from '../domain/trainerAssignment';
 import {
   createCardUpdateRequest,
@@ -1824,10 +1826,15 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     if (!umRows[0]) return res.status(404).json({ error: 'No active membership found' });
     const um = umRows[0];
 
-    const { rows: ctRows } = await db.query<{ id: number }>(
-      `SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1`,
-    );
-    if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
+    // #1108 stage 2: the charge type, the provider call and the
+    // `payment_requests` row are `membership-fee-payment-request.ts`' now. What
+    // stays this route's is who initiated the payment — a member clicking Pay
+    // *is* the consent (`consent_given_at`, `source = 'customer'`), which a
+    // staff-raised request has no business stamping.
+    const chargeTypeId = await membershipFeeChargeTypeId();
+    if (chargeTypeId == null) {
+      return res.status(500).json({ error: 'charge_type membership_fee not configured' });
+    }
 
     // #635 stage 15 — the Member is asked for the fee resolved on the cycle they
     // are next charged for, the same number My Membership shows them and the
@@ -1837,38 +1844,18 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     if (!(fee > 0)) {
       return res.status(400).json({ error: 'This membership owes nothing for its current billing cycle' });
     }
-    const amount = toMinorUnits(fee);
-    const orderId = crypto.randomUUID();
-    const pageToken = crypto.randomUUID();
-    const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
 
-    req.log.info({ orderId, memberId, amount }, 'Member payment request created');
-
-    const provider = getPaymentProvider();
-    const result = await provider.createPaymentRequest({
-      orderId,
-      amount,
-      currency: 'EUR',
-      description: 'Membership fee',
-      memberEmail: um.member_email,
-      okUrl: process.env.PAYMENT_OK_URL ?? '',
-      koUrl: process.env.PAYMENT_KO_URL ?? '',
-      notificationUrl: process.env.PAYMENT_NOTIFICATION_URL ?? '',
-    });
-
-    req.log.info({ orderId, providerOrderId: result.providerOrderId }, 'Provider API call succeeded');
-
-    const { insertId } = await db.query(
-      `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
-          status, provider, provider_order, provider_ref, page_token, page_token_expires,
-          consent_given_at, source)
-       VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
-      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, orderId, result.providerOrderId, pageToken, pageTokenExpires],
+    const order = await createMembershipFeeProviderOrder({ fee, memberEmail: um.member_email });
+    req.log.info(
+      { orderId: order.orderId, providerOrderId: order.providerOrderId, memberId },
+      'Member payment request created',
     );
 
-    const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;
-    res.status(201).json({ id: insertId, checkoutUrl });
+    const { id, checkoutUrl } = await insertMembershipFeePaymentRequest(db, {
+      gymId, userMembershipId: um.id, memberId, fee, chargeTypeId, order,
+      initiator: { kind: 'member' },
+    });
+    res.status(201).json({ id, checkoutUrl });
   } catch (err: any) {
     req.log.error({ err: (err as Error).message }, 'Member payment request creation failed');
     if (err.status) return res.status(err.status).json({ error: err.message });

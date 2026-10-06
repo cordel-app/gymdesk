@@ -37,6 +37,8 @@
  * the Member configuration read and the Members list) can never drift apart.
  */
 
+import { isPreActivationStatus } from './assignmentCommit';
+
 /** The trailing window, in months, a Member must have been away for (#927). */
 export const NEW_MEMBER_WINDOW_MONTHS = 6;
 
@@ -47,12 +49,6 @@ export const NEW_MEMBER_WINDOW_MONTHS = 6;
  * billing ahead of it is, by definition, a current membership.
  */
 const LIVE_STATUSES = new Set(['active', 'paused']);
-
-/**
- * The pre-activation status (#1108 stage 1). A Draft is deliberately not in
- * `LIVE_STATUSES` and is also not "recent": see `countsAsRecentMembership()`.
- */
-const DRAFT_STATUS = 'draft';
 
 export interface NewMemberAssignment {
   id: number;
@@ -138,13 +134,14 @@ function terminalEnd(
 export function countsAsRecentMembership(
   assignment: NewMemberAssignment, cutoff: string, siblings: readonly NewMemberAssignment[] = [],
 ): boolean {
-  // #1108 stage 1: a **Draft counts as nothing**. It is a purchase nobody has
-  // committed, so it neither makes its Member current nor ends their absence —
-  // and the test below it would have disqualified every Draft outright, since a
-  // Draft's `starts_at` is by definition inside the window. Checked before the
-  // live-status set rather than relying on `draft` being absent from it, because
-  // that absence alone is not what makes this right.
-  if (assignment.status === DRAFT_STATUS) return false;
+  // #1108: a **pre-activation assignment counts as nothing**. A Draft is a
+  // purchase nobody has committed and a Pending Payment one the provider has not
+  // confirmed, so neither makes its Member current nor ends their absence — and
+  // the test below would have disqualified both outright, since their `starts_at`
+  // is by definition inside the window. Checked before the live-status set rather
+  // than relying on their absence from it, because that absence alone is not what
+  // makes this right.
+  if (isPreActivationStatus(assignment.status)) return false;
   if (LIVE_STATUSES.has(assignment.status)) return true;
 
   const startsAt = toDateOnly(assignment.starts_at);
