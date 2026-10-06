@@ -288,7 +288,12 @@ export default function HomePage() {
         </section>
       )}
 
-      {/* Main navigation — each tile carries its own theme background image (#728) */}
+      {/* Main navigation — each tile carries its own theme background image
+          (#728) — plus My Products & Services, which since #1116 is a cell of
+          this same grid rather than a full-width row underneath it: that is
+          what puts it beside My Goals in the last row, at the tiles' own width,
+          gap and (grid `stretch`) height, with no second grid and no layout of
+          its own. */}
       <section style={styles.tileGrid}>
         <NavTile slot="calendar" icon="📅" label={t('nav.calendar')} onClick={() => router.push(`/${locale}/calendar`)} />
         {featureEnabled('member_web.my_training_plan') && (
@@ -303,18 +308,15 @@ export default function HomePage() {
         {featureEnabled('member_web.my_goals') && (
           <NavTile slot="personal_goals" icon="🎯" label={t('nav.goals')} onClick={() => router.push(`/${locale}/goals`)} />
         )}
-      </section>
 
-      {/* My Membership */}
-      {featureEnabled('member_web.my_membership') && (
-        <section style={styles.section}>
-          <MembersSectionCard slot="membership" style={styles.card} onClick={() => router.push(`/${locale}/membership`)} role="button" tabIndex={0}>
-            <div style={styles.membershipRow}>
-              <p style={styles.planName}>{t('membership.title')}</p>
-              {!loading && membership && (
-                <StatusPill status={membership.status} label={t(`membership.status.${membership.status}`)} />
-              )}
-            </div>
+        {/* My Products & Services (#1116) — the same card, the same slot
+            artwork, the same contents and the same destination as the
+            My Membership card it replaces. Its body is a column so the status
+            badge sits at the bottom right of a half-width cell instead of
+            being squeezed beside a wrapping title. */}
+        {featureEnabled('member_web.my_membership') && (
+          <MembersSectionCard slot="membership" style={styles.productsTile} onClick={() => router.push(`/${locale}/membership`)} role="button" tabIndex={0}>
+            <p style={styles.planName}>{t('home.products_services')}</p>
             <p style={styles.bookingSub}>
               {loading
                 ? t('home.loading')
@@ -322,9 +324,14 @@ export default function HomePage() {
                   ? (membership.plan_name ?? '—') + (membership.ends_at ? ` · ${t('home.expires_on', { date: dateOnly(membership.ends_at) })}` : ` · ${t('membership.ongoing')}`)
                   : t('home.no_membership')}
             </p>
+            {!loading && membership && (
+              <div style={styles.productsStatusRow}>
+                <StatusPill status={membership.status} label={t(`membership.status.${membership.status}`)} />
+              </div>
+            )}
           </MembersSectionCard>
-        </section>
-      )}
+        )}
+      </section>
     </main>
   );
 }
@@ -374,7 +381,6 @@ const styles: Record<string, React.CSSProperties> = {
   bookingRow:      { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
   bookingName:     { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
   bookingSub:      { margin: '4px 0 0', fontSize: 13, color: memberTheme.textMuted },
-  membershipRow:   { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginBottom: 6 },
   planName:        { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
   messageBanner:   { ...noticeStyle('success'), marginBottom: 16 },
   pillWait:        statusPillStyle('warning'),
@@ -390,6 +396,8 @@ const styles: Record<string, React.CSSProperties> = {
   goalsRow:        { padding: '10px 0 0' },
   tileGrid:        { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 },
   tile:            { ...sectionCardStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, padding: '24px 8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer' },
+  productsTile:    { ...sectionCardStyle, display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 14, padding: '18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer', textAlign: 'left' },
+  productsStatusRow: { marginTop: 'auto', paddingTop: 10, display: 'flex', justifyContent: 'flex-end' },
   tileIcon:        { fontSize: 32 },
   tileWithImage:   { minHeight: 110 },
   tileLabel:       { fontSize: 13, fontWeight: 600, color: memberTheme.text, textAlign: 'center' },
