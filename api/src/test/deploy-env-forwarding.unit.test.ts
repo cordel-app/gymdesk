@@ -88,6 +88,13 @@ describe('the settings the API reads are the settings deploy.yml writes', () => 
     expect(DEPLOY).toContain('chmod 600 "$ENV_TMP"');
   });
 
+  it('sends the API’s output to journald, where the log collector reads it (#1186)', () => {
+    // corfront's units carry LogDriver=journald; the API's named none, so not
+    // one line it wrote reached Loki. Removed and re-added every deploy.
+    expect(DEPLOY).toContain("sed -i '/^LogDriver=/d' \"$CF\"");
+    expect(DEPLOY).toContain('sed -i "/^\\[Container\\]$/a LogDriver=journald" "$CF"');
+  });
+
   it('still replaces the unit’s whole environment, which is why the above matters', () => {
     // If this ever stops being true, a hand-set value would survive and the
     // gate's premise should be revisited rather than silently kept.
