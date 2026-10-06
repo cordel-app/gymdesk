@@ -1582,6 +1582,13 @@ export default function PlansPage() {
                       simulation={plan.billing_event_simulation}
                       t={(key, values) => t(`plans.${key}` as any, values as any)}
                       formatDate={(date) => fmtTimelineDate(date, locale)}
+                      cycleNote={(() => {
+                        // #1130 stage 3 — the same marker the Membership Fee
+                        // Simulation above carries, from the same rule and the
+                        // same key: the two sections tell one story (§3).
+                        const key = planTimelineCycleNoteKey(plan.billing_event_simulation?.cycle);
+                        return key ? t(`plans.${key}` as any) : null;
+                      })()}
                     />
 
                   </div>

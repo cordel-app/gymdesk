@@ -50,6 +50,12 @@
 
 import { SimulationAssignment, computeBillingSimulation } from './billingSimulation';
 import {
+  periodContaining,
+  timelineCycleFor,
+  timelineCycleHorizon,
+} from './exampleTimeline';
+import { planDurationCycleIteration } from './planDuration';
+import {
   BillingEventSimulationResult,
   SIMULATED_CYCLES,
   emptyBillingEventSimulation,
@@ -92,10 +98,20 @@ export function computeAssignmentBillingEventSimulation(
 ): AssignmentBillingEventSimulationResult {
   const from = (input.from ?? todayUtc()).slice(0, 10);
 
+  // #1130 stage 3 — the cycle this contract's own frozen `auto_renew` describes,
+  // from the same helper the Membership Fee Simulation above this section asks.
+  // A repeating one is also the horizon, counted from the **same** period that
+  // table starts at (the one containing today), so the two cover the same dates
+  // and the card cannot group a third iteration of cards the rows never list.
+  const duration = input.assignment.planDuration;
+  const startsAt = input.assignment.startsAt.slice(0, 10);
+  const cycle = timelineCycleFor(duration);
+  const { startOn } = periodContaining(startsAt, from, duration.cadence);
   const simulation = computeBillingSimulation({
     assignments: [input.assignment],
     minimumCycles: SIMULATED_CYCLES,
     horizonFrom: from,
+    horizonUntil: timelineCycleHorizon(startOn, duration.cadence, cycle) ?? undefined,
     maxMonths: input.maxMonths,
   });
   if (!simulation.available) return emptyBillingEventSimulation(NOTHING_TO_BILL_REASON);
@@ -105,7 +121,13 @@ export function computeAssignmentBillingEventSimulation(
   // sections are composed. An assignment bills what it was agreed with, frozen,
   // so flagging one of its lines from today's catalogue would claim something
   // about this contract that the contract never captured.
-  const grouped = groupBillingEventsByDate(simulation, new Map(), { from });
+  const grouped = groupBillingEventsByDate(simulation, new Map(), {
+    from,
+    // The real iteration, counted from the contract's own `starts_at`: a member
+    // on their third cycle reads `3` and `4` rather than being relabelled `1`
+    // and `2`, exactly as the rows above do.
+    iterationOf: (date) => planDurationCycleIteration(duration, startsAt, date),
+  });
   if (grouped.dates.length === 0) return emptyBillingEventSimulation(NOTHING_TO_BILL_REASON);
 
   return {
@@ -119,6 +141,7 @@ export function computeAssignmentBillingEventSimulation(
     horizon_date: simulation.horizon_date,
     tax_included: true,
     truncated: simulation.truncated,
+    cycle,
     ...grouped,
   };
 }

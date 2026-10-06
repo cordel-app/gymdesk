@@ -191,6 +191,11 @@ export function computePromotionBillingEventSimulation(
     horizon_date: simulation.horizon_date,
     tax_included: true,
     truncated: simulation.truncated,
+    // #1130 stage 3 — a Promotion has no Billing & Duration of its own
+    // (`NO_PLAN_DURATION` above), so there is no cycle to group its cards by and
+    // no `↻ Repeats indefinitely` to claim. The section renders exactly as it
+    // did before that ticket, which is why no `iterationOf` is passed either.
+    cycle: null,
     // Mandatory is a Membership Plan's question (#893): a Promotion grants what
     // it grants, so no line here is flagged.
     ...groupBillingEventsByDate(simulation, new Map()),

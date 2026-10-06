@@ -34,21 +34,14 @@
 //
 // Nothing is persisted and nothing is charged.
 
-import { advanceBillingDate } from './billingDate';
 import { MembershipFeeContext, resolveMembershipFee } from './billingSimulation';
 import { PlanDurationCadence, withDurationCadence } from './planDuration';
 import {
   ExampleTimelineResult,
+  periodContaining,
   timelineCycleFor,
   walkExampleTimeline,
 } from './exampleTimeline';
-
-/**
- * Nothing stops a gym back-dating `starts_at`, so the walk to the current
- * period is bounded: 1200 periods is a century of monthly billing, and a row
- * set that cannot reach today is reported as it is rather than looped over.
- */
-const MAX_ELAPSED_PERIODS = 1200;
 
 const NO_CADENCE_REASON =
   'This assigned plan has no billing frequency, so there is nothing to simulate.';
@@ -101,7 +94,9 @@ export function computeAssignmentExampleTimeline(
     ? { ...input.context, planDuration: withDurationCadence(input.context.planDuration, cadence) }
     : input.context;
 
-  const { startOn, firstPeriod } = currentPeriod(startsAt, today, cadence);
+  // #1130 stage 3 — the shared rule, because the Billing Event Forecast beside
+  // this table counts its displayed iterations from the very same period.
+  const { startOn, firstPeriod } = periodContaining(startsAt, today, cadence);
 
   return walkExampleTimeline({
     cadence,
@@ -143,24 +138,4 @@ export function computeAssignmentExampleTimeline(
       };
     },
   });
-}
-
-/**
- * The period `today` falls in, counted from `startsAt` — where the first row
- * starts and which period number it carries. An assignment that has not
- * started yet begins at its own first period.
- */
-function currentPeriod(
-  startsAt: string, today: string, cadence: PlanDurationCadence | null,
-): { startOn: string; firstPeriod: number } {
-  if (!cadence) return { startOn: startsAt, firstPeriod: 1 };
-  let cursor = startsAt;
-  let index = 0;
-  while (index < MAX_ELAPSED_PERIODS) {
-    const next = advanceBillingDate(cursor, cadence.interval, cadence.unit);
-    if (next > today) break;
-    cursor = next;
-    index++;
-  }
-  return { startOn: cursor, firstPeriod: index + 1 };
 }

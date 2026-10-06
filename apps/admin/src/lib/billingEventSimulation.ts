@@ -10,6 +10,11 @@
 // each falls on, which benefit applies and what it costs are billing rules and
 // are never re-derived here.
 
+import type {
+  ExampleTimelineCycleInfo,
+  ExampleTimelineRowCycle,
+} from './exampleTimeline';
+
 /** Why a line's charge differs from its regular price. */
 export interface BillingEventSimulationBenefit {
   source: 'promotion' | 'membership_plan' | 'personal';
@@ -43,6 +48,14 @@ export interface BillingEventSimulationDate {
   date: string;
   lines: BillingEventSimulationLine[];
   total: number;
+  /**
+   * #1130 stage 3 — which iteration of the contract's configured cycle this
+   * billing date falls in, or `null` where there is none to name it with. The
+   * server's answer (`planDurationCycleIteration()`), never derived here: the
+   * cards must group by the iterations the engine bills, not by a count the
+   * page keeps for itself.
+   */
+  cycle?: number | null;
 }
 
 export interface BillingEventSimulationData {
@@ -55,6 +68,13 @@ export interface BillingEventSimulationData {
   truncated: boolean;
   dates: BillingEventSimulationDate[];
   total: number;
+  /**
+   * #1130 stage 3 — the cycle those dates belong to, as the engine reports it;
+   * `null` for a contract with no Billing & Duration, for a Promotion and on an
+   * unavailable projection. It is the very value the Membership Fee Simulation
+   * beside it carries, so `exampleTimelineCycleNote()` words both markers.
+   */
+  cycle?: ExampleTimelineCycleInfo | null;
 }
 
 /**
@@ -149,4 +169,46 @@ export function everyPeriodExpanded(
   expanded: Record<string, boolean>,
 ): boolean {
   return dates.length > 0 && dates.every((group) => expanded[group.date] === true);
+}
+
+
+/* ── #1130 stage 3: the cycle a billing-period card belongs to ─────────────── */
+//
+// Stage 2 gave the Membership Fee Simulation a `Cycle` column, one thin line per
+// displayed iteration and a marker saying whether the cycle starts again. §2 of
+// the ticket asks the Billing Event Simulation for the same story over its
+// existing cards — "a lightweight presentation layer around the existing
+// billing-event cards", no table, no bordered container, no horizontal divider.
+//
+// So this is the card-shaped counterpart of `exampleTimelineRowCycle()`, and it
+// derives **nothing** about the cycle: which iteration a date belongs to is the
+// server's `group.cycle`, and all that is left is where one iteration's run of
+// cards ends so its line can stop short of the next one's.
+
+/**
+ * The cycle gutter of each billing-period card, in order: the iteration's
+ * number on the **first** card of its run (and on the first card rendered,
+ * which for an Assigned Plan's forecast may be mid-iteration), and whether the
+ * thin line beside it stops here so the next iteration's does not touch it.
+ *
+ * `null` for a card that belongs to no displayed iteration — the regular billing
+ * dates a non-repeating contract settles into after its single pass, which carry
+ * neither a number nor a line, exactly as the fee table's trailing rows do.
+ *
+ * The cell shape is the fee table's own (`ExampleTimelineRowCycle`), because it
+ * is one grouping language rendered over two layouts.
+ */
+export function billingEventCycleCells(
+  dates: readonly Pick<BillingEventSimulationDate, 'cycle'>[],
+): (ExampleTimelineRowCycle | null)[] {
+  return dates.map((group, index) => {
+    const iteration = group.cycle ?? null;
+    if (iteration == null) return null;
+    const previous = dates[index - 1]?.cycle ?? null;
+    const next = dates[index + 1]?.cycle ?? null;
+    return {
+      label: index === 0 || previous !== iteration ? String(iteration) : null,
+      endsSegment: next !== iteration,
+    };
+  });
 }

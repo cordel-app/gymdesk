@@ -321,6 +321,24 @@ export interface BillingSimulationInput {
    * (nothing is re-anchored) and only extends how far forward it runs.
    */
   horizonFrom?: string;
+  /**
+   * #1130 stage 3 — the last billing date the projection runs to, for a
+   * contract whose Free -> Pre-paid -> Paid -> Bonus stretch **repeats**.
+   *
+   * Such a contract never reaches a regular charge (stage 1 — a renewing cycle
+   * never settles into `pay_regular`), so the default horizon rule has nothing
+   * to find: every stream walked to `MAX_SIMULATION_MONTHS` and the projection
+   * reported itself `truncated` while showing an arbitrary 36 months of a cycle
+   * that might be 15 periods or 40. The cycle is the horizon instead — the very
+   * span the Membership Fee Simulation bounds its rows by
+   * (`timelineCycleHorizon()`), so the two sections of one card cover the same
+   * dates — and the safety cap is raised to contain it.
+   *
+   * Omitted by every caller whose cycle does not repeat, which is every caller
+   * that existed before the ticket: the first-regular-charge rule and the
+   * `minimumCycles` floor then apply exactly as they did.
+   */
+  horizonUntil?: string;
 }
 
 /** Why an actual charge differs from the regular price. */
@@ -1411,28 +1429,44 @@ export function computeBillingSimulation(input: BillingSimulationInput): Billing
   // anchor, because a cap counted from a `starts_at` three years ago lands in
   // the past and would project nothing at all for the cycles still ahead.
   const horizonFrom = maxDate(startDate, input.horizonFrom ?? startDate);
-  const cap = advanceBillingDate(horizonFrom, input.maxMonths ?? MAX_SIMULATION_MONTHS, 'month');
+  const safetyCap = advanceBillingDate(horizonFrom, input.maxMonths ?? MAX_SIMULATION_MONTHS, 'month');
+  // #1130 stage 3 — a repeating cycle brings its own horizon. The safety cap is
+  // raised to contain it, because a cycle longer than `MAX_SIMULATION_MONTHS`
+  // would otherwise be cut mid-iteration and reported as truncated for a
+  // projection that is in fact complete.
+  const until = input.horizonUntil ? input.horizonUntil.slice(0, 10) : null;
+  const cap = until != null ? maxDate(safetyCap, until) : safetyCap;
 
   // Pass 1 — each stream's own first regular (unbenefited) charge, and (#915)
   // the caller's floor of N complete cycles of that stream, whichever is later.
   const minimumCycles = Math.max(0, Math.trunc(input.minimumCycles ?? 0) || 0);
   let horizon = startDate;
   let truncated = false;
-  for (const stream of streams) {
-    const { events, capped } = walkStream(stream, cap, (_d, r) => !r.promotional && !r.pending);
-    if (capped) truncated = true;
-    const last = events[events.length - 1];
-    if (last) horizon = maxDate(horizon, last.date);
-    // Counted from this stream's first occurrence at or after the anchor, not
-    // from its own start, for the same reason: N cycles of a stream that began
-    // years ago are already behind us. For a stream that starts at the anchor —
-    // every stream of a hypothetical assignment — the two are the same date, so
-    // the Plan and Promotion previews are unaffected.
-    const floor = cyclesFrom(
-      firstOccurrenceFrom(stream.start, horizonFrom, stream.cadence), minimumCycles, stream.cadence,
-    );
-    const bounded = stream.end != null ? minDate(floor, stream.end) : floor;
-    horizon = maxDate(horizon, minDate(bounded, cap));
+  if (until != null) {
+    // The cycle *is* the horizon, so there is no pass 1 to run and nothing to
+    // truncate: both of the rules it applies exist to find the end of a
+    // configuration that ends, and this one does not. Bounding the per-stream
+    // floor by it is deliberate — a yearly Product inside a 15-period cycle
+    // shows the charges that fall within the two displayed iterations, and not
+    // a third iteration's worth of dates the fee table beside it does not list.
+    horizon = minDate(maxDate(startDate, until), cap);
+  } else {
+    for (const stream of streams) {
+      const { events, capped } = walkStream(stream, cap, (_d, r) => !r.promotional && !r.pending);
+      if (capped) truncated = true;
+      const last = events[events.length - 1];
+      if (last) horizon = maxDate(horizon, last.date);
+      // Counted from this stream's first occurrence at or after the anchor, not
+      // from its own start, for the same reason: N cycles of a stream that began
+      // years ago are already behind us. For a stream that starts at the anchor —
+      // every stream of a hypothetical assignment — the two are the same date, so
+      // the Plan and Promotion previews are unaffected.
+      const floor = cyclesFrom(
+        firstOccurrenceFrom(stream.start, horizonFrom, stream.cadence), minimumCycles, stream.cadence,
+      );
+      const bounded = stream.end != null ? minDate(floor, stream.end) : floor;
+      horizon = maxDate(horizon, minDate(bounded, cap));
+    }
   }
 
   // Pass 2 — every stream now runs to the shared horizon.

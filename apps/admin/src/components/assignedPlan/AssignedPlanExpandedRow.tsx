@@ -456,6 +456,13 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           simulation={detail.billing_event_simulation}
           t={(key, values) => t(key as any, values as any)}
           formatDate={(date) => fmtTimelineDate(date, locale)}
+          cycleNote={(() => {
+            // #1130 stage 3 — the same marker the Membership Fee Simulation
+            // above carries: whether this contract's cycle starts again is the
+            // engine's answer, and the card only words it.
+            const note = exampleTimelineCycleNote(detail.billing_event_simulation?.cycle ?? null);
+            return note ? t(ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS[note] as any) : null;
+          })()}
         />
       </CardSection>
 
