@@ -1201,7 +1201,13 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // proceeding (409 + `confirm: true` to resend, same contract as
 // activity-type-schedule-rules.ts's confirm_cancel_booked guard), and stamps
 // closed_at separately from the admin-settable `ends_at`.
-const CLOSEABLE_FROM: readonly Status[] = ['active', 'paused'];
+// #1108 stage 1: `draft` closes too, and this is how a Draft is discarded —
+// Q1a's answer is that a Draft with no payment behind it simply sits there
+// until staff cancel or delete it, with no expiry sweep, so it needs a way out
+// that is not activation. Closing one is also always warning-free, because
+// `computeUnusedValueWarnings()` reads `next_billing_date`, which a Draft has
+// never had.
+const CLOSEABLE_FROM: readonly Status[] = ['draft', 'active', 'paused'];
 
 // #511 stage 3 also counted a `session_count` allowance with sessions left in
 // its current recurrence window as unused value about to be lost. #635 stage 4

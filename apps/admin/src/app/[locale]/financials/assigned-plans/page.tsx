@@ -10,7 +10,7 @@ import { AssignedPlansTable, type AssignedPlanTableRow } from '@/components/assi
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type LifecycleStatus = 'pending' | 'active' | 'paused' | 'expired' | 'cancelled';
+type LifecycleStatus = 'draft' | 'pending' | 'active' | 'paused' | 'expired' | 'cancelled';
 
 interface AssignedPlan extends AssignedPlanTableRow {
   member_name: string;
@@ -21,7 +21,11 @@ interface AssignedPlan extends AssignedPlanTableRow {
 
 interface MemberHit { id: number; name: string; email: string }
 
-const LIFECYCLE_STATUSES: LifecycleStatus[] = ['pending', 'active', 'paused', 'expired', 'cancelled'];
+// Mirrors LIFECYCLE_STATUSES in api/src/api/user-memberships.ts, which is what
+// the `lifecycle_status` query parameter accepts. #1108 stage 1 added `draft`:
+// every new assignment is created in it, so a filter that could not name it
+// would hide the newest rows behind an otherwise complete status list.
+const LIFECYCLE_STATUSES: LifecycleStatus[] = ['draft', 'pending', 'active', 'paused', 'expired', 'cancelled'];
 
 // ── Member search (inline filter — mirrors payments/billing-events' MemberFilter) ──
 

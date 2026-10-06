@@ -3650,6 +3650,7 @@
     "action_details": "Details",
     "action_edit": "Edit",
     "action_done_editing": "Done Editing",
+    "action_activate": "Activate",
     "action_pause": "Pause",
     "action_reactivate": "Reactivate",
     "action_close": "Cancel",
