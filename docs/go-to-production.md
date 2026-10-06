@@ -684,10 +684,11 @@ hardening:
       contact point (the firing test above was routed to the `empty` contact point, so no
       delivery has been attempted yet), and add a production contact point when there is a
       production stack.
-- [ ] **Keep `/health/runs` reachable from Grafana Cloud** when #1087 decides whether the
-      API's host is closed off: both freshness rules call `api.vdicube.com` directly and
-      fire on an unreachable endpoint, so closing it without a route for the prober reads as
-      a missed run.
+- [ ] **Route the freshness alerts through the admin app before the API goes private**
+      (#1166, ahead of #1087): both rules call `api.vdicube.com/health/runs` directly and
+      fire on an unreachable endpoint, so closing the API host first reads as a missed run.
+      Once the admin app serves `GET /api/health/runs`, repoint both rules at
+      `https://admin.vdicube.com/api/health/runs`.
 - [x] **Decide the `/billing/` GitHub Actions IP allowlist** (#783): removed, not
       automated — replaced by a per-route limiter on the internal run routes. The
       allowlist never ran (no nginx on corback), so nothing needs undoing on a server; what is
