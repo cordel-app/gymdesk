@@ -66,7 +66,7 @@ describe('toPlanDurationRepeats', () => {
   });
 
   // The safe direction: `false` is what every assignment written before
-  // migration 229 means and what the engine did before this ticket, so an
+  // migration 230 means and what the engine did before this ticket, so an
   // unreadable value costs the renewal rather than inventing one.
   it('answers false for anything it cannot read as a number', () => {
     expect(toPlanDurationRepeats(null)).toBe(false);

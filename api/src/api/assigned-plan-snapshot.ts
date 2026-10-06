@@ -136,7 +136,7 @@ export interface AssignedPlanSnapshot extends AssignedPlanBillingSnapshot {
   /**
    * #1130 — does this assignment's Billing & Duration cycle start again when it
    * ends? Frozen from the Plan's `billing_policies.auto_renew` at assignment
-   * time (migration 229).
+   * time (migration 230).
    *
    * Outside `AssignedPlanBillingSnapshot` for `personal_fee_benefit`'s reason:
    * the column is NOT NULL with a default, so it has an answer for every row,
@@ -272,7 +272,7 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
    * #1130 — `auto_renew` is written only when the assignment is being created.
    *
    * It is the one snapshot column that must not be *materialised*: an
-   * assignment created before migration 229 is non-repeating today (the
+   * assignment created before migration 230 is non-repeating today (the
    * column's backfilled 0), so writing the live Plan's flag onto it the first
    * time staff edit an unrelated benefit section would start a second Free /
    * Pre-paid / Bonus cycle on a contract already past its first one, which is
@@ -374,7 +374,7 @@ export async function materialiseAssignedPlanSnapshot(tx: Tx, params: {
 }): Promise<boolean> {
   if (await hasAssignedPlanSnapshot(tx, params.gymId, params.userMembershipId)) return false;
   // #1130 — everything else here is "write down what this assignment resolves
-  // live today"; `auto_renew` already has a stored answer (migration 229's
+  // live today"; `auto_renew` already has a stored answer (migration 230's
   // backfilled 0) and capturing the Plan's current flag would change what the
   // assignment bills from its second cycle on. See the note on the UPDATE.
   await snapshotAssignedPlan(tx, { ...params, captureAutoRenew: false });
@@ -538,7 +538,7 @@ export const ASSIGNMENT_CADENCE = {
  * Deliberately **not** a `COALESCE` onto `bp.auto_renew`, which is the shape
  * every other snapshot column here takes and is the one way this goes wrong:
  * `billing_policies.auto_renew` is `NOT NULL DEFAULT true`, so falling back to
- * it would make every assignment written before migration 229 renew — the
+ * it would make every assignment written before migration 230 renew — the
  * retroactive billing change the ticket's answer A exists to prevent. The
  * column is NOT NULL with its own backfilled default, so it always has an
  * answer and there is nothing to fall back *to*.

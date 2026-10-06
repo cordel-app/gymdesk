@@ -402,7 +402,7 @@ async function enrichPlan(plan: PlanRow, gymId: string): Promise<object> {
     // #1130 — a Plan's own previews read the Plan's **live** `auto_renew`,
     // not a snapshot: this is the catalogue as it stands now, which is what a
     // gym owner configuring it is asking about. An assignment reads its own
-    // frozen flag instead (migration 229), which is why the two can differ for
+    // frozen flag instead (migration 230), which is why the two can differ for
     // a member enrolled before the Plan's Auto Renew was last changed.
     // A Plan with no billing policy has no cadence to step a cycle by, so it
     // renews nothing — `billingPolicy` being null answers false.

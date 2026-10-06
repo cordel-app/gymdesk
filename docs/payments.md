@@ -456,7 +456,7 @@ Simulation, `GET /me/membership`, the Promotion apply/revoke adjustment and ever
 screen (through `currentMembershipFee()` / `currentMembershipFees()`). So what the run
 charges cannot drift from what the member was shown.
 
-**The Billing & Duration it prices against is a cycle (#1130, migration 229).** Free ->
+**The Billing & Duration it prices against is a cycle (#1130, migration 230).** Free ->
 Pre-paid -> Paid -> Bonus used to run once, after which the contract billed its regular fee
 for ever; `billing_policies.auto_renew` was stored, shown on the Plan card and read by
 nothing. It is read now, through the assignment's **own** frozen copy

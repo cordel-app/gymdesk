@@ -6,7 +6,7 @@
 // captured from its Plan when the assignment is created and never written onto
 // one that already exists.
 //
-// That distinction is the whole safety argument of the ticket. Migration 229
+// That distinction is the whole safety argument of the ticket. Migration 230
 // backfills every existing row to 0, so no live assignment's billing moves on
 // deploy — but `materialiseAssignedPlanSnapshot()` would undo exactly that if it
 // captured the Plan's current flag, because it runs the first time staff edit

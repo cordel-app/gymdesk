@@ -91,7 +91,7 @@
 //
 // Where the flag comes from is the other half of the answer, and it is not this
 // module's: `repeats` is the assignment's **own** `user_memberships.auto_renew`
-// (migration 229), snapshotted from the Plan at assignment time like every
+// (migration 230), snapshotted from the Plan at assignment time like every
 // other commercial term (#635 §13/§17) and backfilled to 0, so no assignment
 // that already exists has its billing moved by the deploy (answer **A**). The
 // Plan's own previews read the Plan's live `billing_policies.auto_renew`,
@@ -180,7 +180,7 @@ export function toPlanDurationCadence(interval: unknown, unit: unknown): PlanDur
  * differently.
  *
  * Anything it cannot read as a number is **false**, and that direction is
- * deliberate: false is what every assignment written before migration 229
+ * deliberate: false is what every assignment written before migration 230
  * means and what the engine did before this ticket, so an unreadable value
  * costs the renewal rather than inventing one — the same way round as the
  * column's own `DEFAULT 0`.
@@ -344,7 +344,7 @@ function elapsedCycles(duration: PlanDuration, startsAt: string, date: string): 
  * iteration of the cycle it actually falls in, so a `12 prepaid + 3 bonus`
  * contract reads Pre-paid again at period 16 rather than settling into its
  * regular price. With `repeats` off — every assignment that existed before
- * migration 229, and every Plan whose Auto Renew is unticked — the offset is
+ * migration 230, and every Plan whose Auto Renew is unticked — the offset is
  * zero and this is the one-shot timeline it has always been.
  */
 export function classifyPlanDurationPeriod(
