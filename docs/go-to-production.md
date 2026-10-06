@@ -666,28 +666,33 @@ hardening:
       recovered by the next one, because the run re-projects the rolling window from *now*.
       Still to do before the first real gym: confirm on a live day that the 10:00 run is
       green and charges nobody, and that a manually skipped 06:00 run is charged at 10:00.
-- [ ] **A freshness alert** when no run has completed in 26 hours (#782) — the only signal
-      that covers "nothing reached the API at all", which no red workflow can report
-      because there is no run. The repo half is done: `GET /health/runs` (unauthenticated,
-      outside `/billing/`, so with no IP restriction) answers
-      `{ billing, recurring_bookings }` with `{ last_completed_at, age_hours, stale }` each
-      (threshold `RUN_FRESHNESS_THRESHOLD_HOURS`, default 26). Still to do, by hand in
-      Grafana Cloud — nothing in the repo provisions Grafana:
-      1. *Synthetics → Add new check → HTTP*: job `gymdesk-run-freshness`, `GET
-         https://api.vdicube.com/health/runs`, no auth, every **15 min**, timeout 10 s,
-         2–3 probe locations.
-      2. Validation: status `200`, plus JSON path assertions `$.billing.stale` equals
-         `false` and `$.recurring_bookings.stale` equals `false`.
-      3. Confirm a contact point already reaches the owner (email/Slack); add one only if
-         none does.
-      4. Alert rule: fire after **2 consecutive failed executions** of the check (e.g.
-         `max_over_time(probe_success{job="gymdesk-run-freshness"}[30m]) == 0`), routed to
-         that contact point.
-      5. Prove it: flip one assertion to `$.billing.stale` equals `true`, confirm the alert
-         fires within ~30 min, then set it back (`deploy.yml` does not forward
-         `RUN_FRESHNESS_THRESHOLD_HOURS`, so changing it in GitHub proves nothing).
-      Instructions sent to Oscar on Slack on 2026-09-27.
-      Full rationale in `docs/payments.md` → Observability today.
+- [x] **A freshness alert** when no run has completed in 26 hours (#782, #872) — the only
+      signal that covers "nothing reached the API at all", which no red workflow can report
+      because there is no run. `GET /health/runs` (unauthenticated, outside `/billing/`)
+      answers `{ billing, recurring_bookings }` with `{ last_completed_at, age_hours, stale }`
+      each (threshold `RUN_FRESHNESS_THRESHOLD_HOURS`, default 26). Configured by hand in
+      Grafana Cloud on 2026-10-06 (stack `maroonyogurt3482`, folder **Gymdesk**, group
+      `run-freshness`, every 5 min): two alert rules that read
+      `https://api.vdicube.com/health/runs` through the **Infinity** data source —
+      *nightly billing run is stale* (`severity=critical`) and *recurring bookings run is
+      stale* (`severity=warning`) — each firing after 10 min of `stale: true`, with **No data
+      and Error → Alerting** so an unreachable endpoint fires too, routed by the default
+      policy to the `gymdesk-dev` contact point (email to Xavier and Oscar). Proved on
+      2026-10-06 with a temporary inverted copy that fired and resolved within two
+      evaluations. Full setup in `docs/payments.md` → Observability today.
+- [x] **Prove the freshness alert's email arrives**: *Test* on the `gymdesk-dev` contact
+      point delivered `[FIRING:1] TestAlert Grafana` from
+      `grafana@maroonyogurt3482.grafana.net` on 2026-10-06 18:17 UTC (received by Xavier).
+- [ ] **A production contact point** for the freshness alerts once there is a production
+      stack, tested the same way.
+- [ ] **Route the freshness alerts through the admin app before the API goes private**
+      (#1166, ahead of #1087): both rules call `api.vdicube.com/health/runs` directly and
+      fire on an unreachable endpoint, so closing the API host first reads as a missed run.
+      The relay (`GET /api/health/runs` on the admin app) is in the repo; once an admin app
+      carrying it is deployed to dev, check `curl https://admin.vdicube.com/api/health/runs`
+      answers the API's body, then change the Infinity URL in both rules
+      (`gymdesk-billing-run-stale`, `gymdesk-recurring-bookings-run-stale`) to it and update
+      `docs/payments.md` → Observability today.
 - [x] **Decide the `/billing/` GitHub Actions IP allowlist** (#783): removed, not
       automated — replaced by a per-route limiter on the internal run routes. The
       allowlist never ran (no nginx on corback), so nothing needs undoing on a server; what is

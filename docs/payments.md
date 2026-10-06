@@ -962,11 +962,9 @@ Stated in full in `CLAUDE.md`; linked here so one page can point at all of them.
 | Staff ledger with a `failed` filter, and per-event transactions | Payments → Billing Events |
 | Monthly counters | `GET /payments/dashboard/summary` (#674) |
 | Per-member badge | `GET /members` → `payment_status` |
-| When each nightly run last **completed**, and whether that is overdue | `GET /health/runs` (#782) — unauthenticated, read by a Grafana Cloud synthetic check (below) |
+| When each nightly run last **completed**, and whether that is overdue | `GET /health/runs` (#782) — unauthenticated, read by two Grafana Cloud alert rules (below, #872) |
 
-**What does not exist:** an in-app staff alert for failed payments awaiting action (#779), a
-Grafana-side alert on the freshness endpoint below (#782 — the endpoint exists, the check and
-its alert rule are configured by hand and still pending, see `docs/go-to-production.md`), any
+**What does not exist:** an in-app staff alert for failed payments awaiting action (#779), any
 reconciliation job against the provider, and any member notification of a failed internal
 charge (decision 2026-09-26: internal only).
 
@@ -974,7 +972,7 @@ charge (decision 2026-09-26: internal only).
 
 Every other signal above needs a run to have *happened*: a day on which GitHub never fired the
 cron writes no log line, no run-log row and no red workflow. `GET /health/runs` turns that
-absence into something a prober outside GitHub can see:
+absence into something an alert outside GitHub can see:
 
 ```json
 {
@@ -992,46 +990,56 @@ absence into something a prober outside GitHub can see:
   hours, below 1 ignored — `runFreshnessThresholdHours()` / `evaluateRunFreshness()` in
   `api/src/domain/runFreshness.ts`, pure and unit-tested). A log that never completed a run
   answers `last_completed_at: null` and `stale: true`.
-- **200 whenever the database answers**, stale or not — the prober asserts on `stale`. **503**
+- **200 whenever the database answers**, stale or not — the alert rules read `stale`. **503**
   only when the run logs cannot be read.
 - **Unauthenticated**, and it returns nothing else: no counters, no gym, no member.
 - **Outside `/billing/`** on purpose: `/billing/` is the internal-run surface (shared secret plus its
-  own rate limiter), which a Grafana Cloud prober must not share. `/health/runs` is public, so
-  `https://api.vdicube.com/health/runs` is reachable with no proxy change. The global API rate limiter (500 requests / 15 min
-  per IP) applies; a probe every few minutes from a handful of locations is far below it.
+  own rate limiter), which a Grafana Cloud alert must not share. The global API rate limiter
+  (500 requests / 15 min per IP) applies; one request per rule every 5 minutes is far below it.
+- **Read through the admin app** since #1166: `GET https://admin.vdicube.com/api/health/runs`
+  relays to this route at `CORDEL_FITNESS_API_URL` (one path, no headers forwarded, the API's
+  own status and body; 500/502/504 of its own when it cannot ask), so Grafana needs no public
+  API once #1087 closes `api.vdicube.com`. Behind the relay the limiter keys on the admin app,
+  the bucket `/api/proxy` already shares.
 
-**Grafana Cloud setup (manual, not provisioned from the repo):**
+**Grafana Cloud setup (manual, not provisioned from the repo — configured 2026-10-06, #872):**
 
-1. *Testing & synthetics → Synthetics → Add new check → HTTP*. Job name
-   `gymdesk-run-freshness`, target `https://api.vdicube.com/health/runs`, method `GET`, no
-   headers, no auth.
-2. Frequency **every 15 minutes** (`900s`), timeout 10 s, 2–3 probe locations (e.g. Frankfurt,
-   London, Paris).
-3. Validation: *valid status codes* `200`; add two **JSON path value assertions**:
-   `$.billing.stale` equals `false`, and `$.recurring_bookings.stale` equals `false`. A 503,
-   a timeout or either `stale: true` fails the check.
-4. *Alerting → Contact points*: confirm one already exists that reaches the owner (email or
-   Slack); create one only if none does.
-5. Alert rule on the check (the synthetic check's built-in *alert sensitivity*, or a Grafana
-   alert rule on `probe_success{job="gymdesk-run-freshness"}`): fire when the check has
-   **failed on 2 consecutive executions** (i.e. `max_over_time(probe_success[30m]) == 0`,
-   pending period 0), routed to that contact point, labelled `severity=critical`.
-6. Verify: temporarily flip one assertion to `$.billing.stale` equals `true`, confirm the
-   alert fires within ~30 min, then set it back to `false`. (Setting
-   `RUN_FRESHNESS_THRESHOLD_HOURS` in the GitHub environment does nothing: `deploy.yml` does
-   not forward it, so the API always runs on the 26 h default.)
+- Stack `maroonyogurt3482`, folder **Gymdesk** (uid `gymdesk`), rule group `run-freshness`,
+  evaluated every **5 min**.
+- Two Grafana-managed alert rules, one per run, each a single **Infinity** query
+  (`grafanacloud-infinity`, backend parser) on `GET https://api.vdicube.com/health/runs` with
+  root selector `billing` or `recurring_bookings`, the `stale` field as a boolean column and a
+  computed column `stale ? 1 : 0`, followed by a threshold `> 0`:
+
+  | Rule (uid) | Severity |
+  |---|---|
+  | *Gymdesk: nightly billing run is stale* (`gymdesk-billing-run-stale`) | `critical` |
+  | *Gymdesk: recurring bookings run is stale* (`gymdesk-recurring-bookings-run-stale`) | `warning` |
+
+- Pending period **10 min**; **No data → Alerting** and **Error → Alerting**, so a 503, a
+  timeout or an unreachable host fires the same alert as a stale run — the summary says so.
+- No `notification_settings` of their own: the default notification policy routes them to the
+  `gymdesk-dev` contact point (email to Xavier and Oscar), group wait 30 s, repeat 4 h.
+- Verify by copying a rule with the computed column inverted (`stale ? 0 : 1`), a 1-minute
+  group and `notification_settings.receiver = empty`: it fires on the next evaluation and
+  resolves once the column is put back (done 2026-10-06). Changing
+  `RUN_FRESHNESS_THRESHOLD_HOURS` in the GitHub environment does nothing: `deploy.yml` does
+  not forward it, so the API always runs on the 26 h default.
 
 > **Decisions (2026-09-27, #782)** — change them here if they turn out wrong:
-> - Option (b): a DB-backed freshness endpoint probed by a Grafana Cloud synthetic check —
->   not a Loki query on the `billing/run: complete` log line and not a GitHub-scheduled
+> - Option (b): a DB-backed freshness endpoint read from Grafana Cloud — not a Loki query on the `billing/run: complete` log line and not a GitHub-scheduled
 >   check, because a GitHub-hosted check shares GitHub's failure modes, which are exactly
 >   what this alert exists to catch.
 > - The endpoint is unauthenticated at `GET /health/runs`, outside `/billing/`, so the internal-run
 >   secret and rate limiter never apply to the prober and no internal secret is handed to Grafana. It leaks one timestamp per internal job and nothing tenant-scoped.
 > - One endpoint for both runs, default threshold 26 h (a daily run plus the 06:00/10:00
 >   UTC spread), configurable through `RUN_FRESHNESS_THRESHOLD_HOURS`.
-> - Grafana (check, alert rule, contact point) is configured by hand, not provisioned from
->   the repo — nothing in `infra/` provisions Grafana today.
+> - Grafana (alert rules, contact point) is configured by hand, not provisioned from the
+>   repo — nothing in `infra/` provisions Grafana today (#872 Q1: UI).
+> - (#872, 2026-10-06) The rules query the endpoint through the Infinity data source rather
+>   than a Synthetic Monitoring check: one rule per run gives each its own severity, which a
+>   single check asserting both flags cannot, and there is no probe to keep alive. It still
+>   runs from Grafana Cloud, never from GitHub.
 
 ### Manual test runbook
 

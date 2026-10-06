@@ -7,6 +7,9 @@ import { CLERK_WEBHOOK_RELAY_PATH } from '@/lib/clerkWebhookRelay';
 // #1086: the one prefix the GitHub Actions nightly runs call, declared beside
 // what that relay forwards for the same reason.
 import { INTERNAL_RUN_RELAY_PATH } from '@/lib/internalRunRelay';
+// #1166: the one path Grafana's run-freshness alerts read, declared beside the
+// relay for the same reason.
+import { HEALTH_RUNS_RELAY_PATH } from '@/lib/healthRunsRelay';
 
 const handleI18nRouting = createIntlMiddleware({
   locales: ['en', 'es', 'ca'],
@@ -30,16 +33,20 @@ const isPublicRoute = createRouteMatcher([
   // (or a redirect) before it ever got there, and a missed billing night is a
   // day nobody is charged on.
   `${INTERNAL_RUN_RELAY_PATH}(.*)`,
+  // #1166: `/health/runs` is unauthenticated by design (#782) and Grafana
+  // carries no Clerk session — a 401 here would fire both freshness alerts.
+  HEALTH_RUNS_RELAY_PATH,
 ]);
 
 export default clerkMiddleware(async (auth, req) => {
   // All of these must also skip the i18n routing below, which would answer
-  // Clerk, GitHub's runners (and the browser's proxy calls) with a redirect to
+  // Clerk, GitHub's runners, Grafana (and the browser's proxy calls) with a redirect to
   // a locale prefix.
   if (
     req.nextUrl.pathname.startsWith('/api/proxy') ||
     req.nextUrl.pathname.startsWith(CLERK_WEBHOOK_RELAY_PATH) ||
-    req.nextUrl.pathname.startsWith(INTERNAL_RUN_RELAY_PATH)
+    req.nextUrl.pathname.startsWith(INTERNAL_RUN_RELAY_PATH) ||
+    req.nextUrl.pathname === HEALTH_RUNS_RELAY_PATH
   ) {
     return NextResponse.next();
   }
