@@ -893,7 +893,28 @@ userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), asyn
       // #956, moved here from the three insert paths: everything live that has
       // to stop for this assignment to be the member's only one. The Draft
       // itself is not live, so it never appears among its own conflicts.
-      const conflicts = await findLiveAssignmentsForMembers(tx, gymId, [Number(draft.member_id)], {
+      //
+      // The question is asked for **every Member this Draft covers**, not just
+      // its owner (#956 Q4): a family assignment carries one `user_memberships`
+      // row owned by one Member and a `user_membership_members` row per covered
+      // Member, so committing it has to find — and `confirm` has to cancel —
+      // the plans of all of them at once. Reading `draft.member_id` alone would
+      // leave a covered Member holding both their own plan and this one, which
+      // is the overlap `active_member_key` cannot express and the reason
+      // `POST /membership-plans/:id/assign` passed its whole selected set
+      // before this transition existed. The owner is unioned in because a row
+      // written before #374's covered-member table may carry no
+      // `user_membership_members` row at all.
+      const { rows: coveredRows } = await tx.query<{ member_id: number }>(
+        `SELECT member_id FROM user_membership_members
+          WHERE user_membership_id = ? AND gym_id = ?`,
+        [draft.id, gymId],
+      );
+      const coveredMemberIds = [...new Set([
+        Number(draft.member_id),
+        ...coveredRows.map((r) => Number(r.member_id)),
+      ])];
+      const conflicts = await findLiveAssignmentsForMembers(tx, gymId, coveredMemberIds, {
         excludeUserMembershipId: Number(draft.id),
       });
       if (conflicts.length > 0) {
