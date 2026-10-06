@@ -124,13 +124,26 @@ describe('Add Product is a themed button (#957 §3, §4)', () => {
   });
 });
 
+/**
+ * #1118 §11 renames the Member card's section to **Products & Services**, which
+ * is the one string of this set allowed to say *Services* again — and it is a
+ * widening rather than a relapse: the section now holds the Products a member
+ * bought from the Members App (§12) *beside* the periodic Services staff attach
+ * to an Assigned Plan, so it names both. #957's rule is unchanged everywhere
+ * else, including for the Assigned Plan card's own section, which keeps
+ * *Additional Products*.
+ */
+const NAMES_BOTH: ReadonlyArray<string> = ['members.section_additional_services'];
+
 describe('The section speaks Product, not Service (#957 §1)', () => {
   it('says Product in every locale, for every string the section renders', () => {
     for (const code of LOCALE_CODES) {
       for (const [namespace, key] of SECTION_STRINGS) {
         const value = messages[code][namespace]?.[key];
         expect(value, `${code}.json is missing ${namespace}.${key}`).toBeTruthy();
-        expect(value, `${code}.json ${namespace}.${key} still says "service"`).not.toMatch(SERVICE_WORDS);
+        if (!NAMES_BOTH.includes(`${namespace}.${key}`)) {
+          expect(value, `${code}.json ${namespace}.${key} still says "service"`).not.toMatch(SERVICE_WORDS);
+        }
         expect(value, `${code}.json ${namespace}.${key} does not say "product"`).toMatch(PRODUCT_WORDS);
       }
     }

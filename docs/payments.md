@@ -644,9 +644,9 @@ over, and it is reported beside the totals rather than folded into `expired`.
 
 ## D. Product purchase (member, one-off)
 
-A member buying a Product from the Members App (#1121 stage 2, §5/§6) — self-service and
-final, no staff approval (the thread's `Q3`). It reuses §A's infrastructure end to end and
-adds no second payment mechanism:
+A member buying a Product from the Members App (#1121 stage 2, §5/§6; Promotions on it
+#1118) — self-service and final, no staff approval (the thread's `Q3`). It reuses §A's
+infrastructure end to end and adds no second payment mechanism:
 
 1. **`POST /me/products/:id/purchase`** (`api/src/api/me-products.ts`) reads the Product
    through `memberProductCatalogueSql()` — the very predicate that decided what the member
@@ -656,12 +656,28 @@ adds no second payment mechanism:
    a **one-off**; `isRecurringFrequency()` decides, #550), `no_price`, and
    `purchase_pending` (409 — a checkout already in flight).
 3. It charges the **quoted** figure: the VAT-inclusive `price_incl_tax` the catalogue
-   showed, through `toMinorUnits()` at the provider boundary. Nothing re-rates or divides it
-   (a Sessions package is the price of the whole package, #942).
+   showed, or — where the member applied a Promotion — that Promotion's own final price,
+   through `toMinorUnits()` at the provider boundary. Nothing re-rates or divides it (a
+   Sessions package is the price of the whole package, #942).
+3b. **An applied Promotion (#1118 §5)** is named by the request as a `promotion_id` and
+   nothing else: the route re-reads it through the very loader that produced the offer
+   (`loadPromotionOffers()`, `api/src/api/member-product-promotions.ts`) and prices the
+   charge from the answer, so a price named by the browser is ignored and a Promotion that
+   expired, was switched off or was re-configured between the quote and the Buy answers
+   `409 promotion_not_applicable` rather than charging a price the gym no longer offers.
+   Which Promotions are offered at all is `api/src/domain/memberProductPromotion.ts`' one
+   rule (the Promotion's own grant row for that Product — the thread's `Q4`, no second
+   relation — `applies_to = 'product'`, inside its window, `only_applicable_for_new_members`
+   through #927, and only where it prices the Product **lower than its own price and above
+   nothing**).
 4. One transaction writes the `payment_requests` row (`source = 'product_purchase'`,
    `user_membership_id` **NULL**, `consent_given_at` stamped — the member goes through the
-   hosted page's consent) and the `member_products` row (`pending_payment`, carrying the
-   snapshot). The member is handed the checkout URL.
+   hosted page's consent), the `member_products` row (`pending_payment`, carrying the
+   snapshot) and, where one was applied, the `member_product_promotions` row that freezes
+   the Promotion (migration 229: its name, its `(action, value)` pair, its duration in
+   billing cycles and both amounts). The member is handed the checkout URL. Tapping *Apply
+   promotion* in the app persists nothing — §7 binds the snapshot to "the resulting
+   purchase", so there is nothing for it to hang off before one exists.
 5. **The hosted page** words it as a one-off: `GET /payment-page/token/:token` reports
    `purpose: 'product_purchase'` plus the snapshot's `itemName`, and the page's consent
    sentence says *Es un pago único* rather than the fee's "until you cancel your
@@ -673,17 +689,29 @@ adds no second payment mechanism:
    **no card** (a one-off authorises one charge; #788 is where a card comes from), stamps
    **no** `next_billing_date` and clears **none** of #785's dunning counters — a rejected
    membership cycle is still owed after a member buys a locker. A `failed` or `expired`
-   outcome cancels the purchase instead.
+   outcome cancels the purchase instead. The Billing Event carries `payment_requests.amount`,
+   which is the **discounted** figure where a Promotion was applied — #1118 §14's "the
+   resulting Billing Events must be generated using the Promotion snapshot", true by
+   construction rather than by a second pricing path.
 7. Idempotency (#1118 §10) is the webhook's existing "already processed, skipping" guard,
    `UNIQUE (payment_request_id)` and the purchase `UPDATE`'s own `status = 'pending_payment'`
    constraint — so a retried delivery completes one row and writes one Billing Event.
+8. **Afterwards**, staff read the purchase and its frozen Promotion at
+   `GET /members/:id/products` → the Member card's **Products & Services** section (#1118
+   §11–§13). That read joins neither `products` nor `promotions`: every column on screen is
+   the purchase's or the application's own snapshot, so a Promotion later edited from 50% to
+   30% still reads 50% there.
 
 **Not here yet**: a recurring Product. `Q3` asks for the system to "create or update the
 billing event plan for such member", which is a second recurring schedule beside
 `user_memberships.next_billing_date` and therefore a change to what the nightly run charges,
 not a shop. Until that stage lands, a recurring Product is offered with **no Buy action at
-all** (#1073: a control that cannot work is absent, never broken). Promotions on a purchase
-are #1118's, and the Admin-side view of a member's purchases is #1118 §12's.
+all** (#1073: a control that cannot work is absent, never broken) — and a Periodic
+Promotion grant's duration therefore has no purchase to apply to yet, which is why §6's
+"duration in billing cycles" is reported on the offer and reads as nothing for the one-off
+grants that *are* purchasable (the thread's `Q5`). A Promotion that prices a Product to
+nothing is also not offered: this flow buys a Product by paying for it, and granting one for
+free is a decision a ticket has to take.
 
 ---
 
@@ -775,6 +803,33 @@ purchase already made.
   purchase.
 - FK to `products` is **RESTRICT**: a purchase is the record of money that moved, so a
   Product may not be hard-deleted under it (the catalogue's own removal is a soft delete).
+- `amount` is always **what was charged**. Where a Promotion was applied that is the
+  discounted figure, and the regular price it was discounted from lives on the application
+  below — so there is no second money column here and no "was it discounted?" flag.
+
+**`member_product_promotions`** (migration 229, #1118) — the Promotion a member applied to a
+purchase, frozen. The sibling of the three `user_membership_promotion_*_snapshot` tables and
+for the same reason (#635 §16): `promotion_name`, `benefit_action`, `benefit_value`,
+`duration_cycles` and both amounts (`regular_amount`, `final_amount`, VAT-inclusive) beside
+`promotion_id`, the link to the live Promotion.
+
+- `UNIQUE (member_product_id)` — **at most one Promotion per purchase**. §4/§5/§13 all speak
+  of *the* Promotion on a Product, so the rule is the database's rather than the route's and
+  a retry or a second caller cannot stack one.
+- `chk_mprodp_action` / `chk_mprodp_value` mirror migration 203's **Promotion-side** pair (all five
+  actions, the same value rule): an application is read in the Promotion's own option set,
+  never a Plan's, or a `fixed_discount` would normalize away and the Admin would quote the
+  full price for a line the member was promised at another one.
+- `chk_mprodp_amounts` — both non-negative and `final_amount <= regular_amount`. It is
+  deliberately a **superset** of the one writer's rule (an offer is only ever made where it
+  prices the Product lower than its own price and above nothing), as is the action CHECK: the
+  narrow rule lives in the loader, where it can change without an `ALTER`, and tightening
+  either would foreclose a later free-grant path or break the exact mirror of 203 the
+  vocabulary rests on. Migration 229's header carries the argument.
+- `duration_cycles` is **nullable**: only a Periodic grant's quantity is a Duration (#1135),
+  and a one-off Product has no billing cycles to express one in (#1118's `Q5`).
+- FK to `promotions` is **RESTRICT** (a Promotion's own removal is a soft delete), to
+  `member_products` **CASCADE** (a purchase and what it was priced under are one record).
 
 **`receipt_sequences`** (migration 114) — `PRIMARY KEY (gym_id, year)`, `last_seq`. The
 gapless per-gym, per-year counter behind a receipt number.

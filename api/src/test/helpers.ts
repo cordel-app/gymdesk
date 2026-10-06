@@ -122,6 +122,11 @@ export async function cleanupTestGyms() {
   // NULL, so leaving it would null the link rather than fail) and well before
   // `products`, whose FK from here is ON DELETE RESTRICT — a purchase is the
   // record of money that moved, so a Product may not be hard-deleted under it.
+  // #1118: before `member_products` (CASCADE would take them anyway) and well
+  // before `promotions`, whose FK from here is ON DELETE RESTRICT for the same
+  // reason the Product's is — the application is the record of what the member
+  // was charged under.
+  await db.query(`DELETE FROM member_product_promotions WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_products WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_requests WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_methods WHERE gym_id IN (${marks})`, ids);

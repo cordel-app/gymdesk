@@ -32,6 +32,26 @@ import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
  *    description cannot push the figure out of sight.
  */
 
+/**
+ * #1118 §4/§5 — the Promotion block under a Product's own information: what it
+ * is called, what it does, how long it lasts and the action that applies it.
+ *
+ * Every string arrives resolved, and `applied` is what turns *Apply promotion*
+ * into *Promotion applied* — the card decides neither.
+ */
+export interface MemberProductCardPromotion {
+  key: string;
+  /** The heading the block sits under — *Promotion*. */
+  heading: string;
+  name: string;
+  /** *50% discount*; `null` for a treatment with nothing to say. */
+  benefit?: string | null;
+  /** *3 billing cycles*; `null` for a Promotion that names no period (§6). */
+  duration?: string | null;
+  /** The action, or the applied-state label. The page composes it. */
+  action?: ReactNode;
+}
+
 /** One Product as the card draws it, with every string already resolved. */
 export interface MemberProductCardItem {
   key: string;
@@ -39,10 +59,18 @@ export interface MemberProductCardItem {
   description?: string | null;
   /** The price, formatted; `null` renders `—`. */
   price: string | null;
+  /**
+   * The Product's own price, struck through, shown only where an applied
+   * Promotion made it differ from `price` (#1118 §5). Never both the same
+   * figure twice.
+   */
+  regularPrice?: string | null;
   /** *Monthly*, *Yearly*: shown beside the price for a recurring item only. */
   frequency?: string | null;
   /** Whatever the page composed about the item — its package size, its tax. */
   meta?: string | null;
+  /** #1118 §4 — the Promotions offered on it, or the one it was bought under. */
+  promotions?: MemberProductCardPromotion[];
   /**
    * The card's one action row: the Buy button, or the pill that says what the
    * member already holds. Nothing when neither applies.
@@ -69,12 +97,32 @@ export function MemberProductsSection({ title, emptyLabel, items }: {
               <div style={styles.head}>
                 <span style={styles.name}>{item.name}</span>
                 <span style={styles.priceGroup}>
+                  {item.regularPrice && (
+                    <span style={styles.regularPrice}>{item.regularPrice}</span>
+                  )}
                   <span style={styles.price}>{item.price ?? '—'}</span>
                   {item.frequency && <span style={styles.frequency}>/ {item.frequency}</span>}
                 </span>
               </div>
               {item.description && <p style={styles.description}>{item.description}</p>}
               {item.meta && <p style={styles.meta}>{item.meta}</p>}
+              {/* §4: directly below the Product's own information, and clearly
+                  associated with it (§17) — inside the Product's card, never a
+                  card of its own. */}
+              {(item.promotions ?? []).map((promotion) => (
+                <div key={promotion.key} style={styles.promotion}>
+                  <span style={styles.promotionHeading}>{promotion.heading}</span>
+                  <span style={styles.promotionName}>{promotion.name}</span>
+                  {(promotion.benefit || promotion.duration) && (
+                    <span style={styles.promotionBenefit}>
+                      {[promotion.benefit, promotion.duration].filter(Boolean).join(' · ')}
+                    </span>
+                  )}
+                  {promotion.action && (
+                    <div style={styles.promotionAction}>{promotion.action}</div>
+                  )}
+                </div>
+              ))}
               {item.action && <div style={styles.action}>{item.action}</div>}
             </li>
           ))}
@@ -96,6 +144,13 @@ const styles: Record<string, CSSProperties> = {
   name: { fontSize: 14.5, fontWeight: 600, color: memberTheme.text, minWidth: 0 },
   priceGroup: { display: 'flex', alignItems: 'baseline', gap: 4, flexWrap: 'wrap' },
   price: { fontSize: 15, fontWeight: 700, color: memberTheme.text, fontVariantNumeric: 'tabular-nums' },
+  // The price it was before the Promotion. Struck through and muted rather than
+  // coloured: #983 keeps every Members App colour in `memberChrome.ts`, and a
+  // discount is not one of the four status tones.
+  regularPrice: {
+    fontSize: 12.5, color: memberTheme.textMuted, textDecoration: 'line-through',
+    fontVariantNumeric: 'tabular-nums',
+  },
   frequency: { fontSize: 12.5, color: memberTheme.textMuted },
   description: { margin: '6px 0 0', fontSize: 13, color: memberTheme.textSecondary, lineHeight: 1.5 },
   meta: { margin: '4px 0 0', fontSize: 12, color: memberTheme.textMuted },
@@ -103,6 +158,24 @@ const styles: Record<string, CSSProperties> = {
   // scrolling — so it wraps onto its own line on a narrow phone rather than
   // squeezing the price.
   action: { display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  // The Promotion block: separated from the Product's own lines by the app's
+  // one divider colour, with no border, background or hue of its own.
+  promotion: {
+    display: 'flex', flexDirection: 'column', gap: 2,
+    marginTop: 10, paddingTop: 10,
+    borderTop: `1px solid ${memberTheme.separator}`,
+  },
+  promotionHeading: {
+    fontSize: 11, fontWeight: 700, letterSpacing: 0.4,
+    textTransform: 'uppercase', color: memberTheme.textMuted,
+  },
+  promotionName: { fontSize: 13.5, fontWeight: 600, color: memberTheme.text },
+  promotionBenefit: { fontSize: 12.5, color: memberTheme.textSecondary },
+  // §17: an obvious, reachable action — its own line, at the card's trailing
+  // edge, wrapping rather than squeezing the sentence beside it.
+  promotionAction: {
+    display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 8,
+  },
   emptyCard: { ...sectionCardStyle, borderRadius: 10, padding: '16px 14px' },
   empty: { margin: 0, fontSize: 13, color: memberTheme.textMuted },
 };
