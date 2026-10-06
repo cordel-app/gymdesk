@@ -109,15 +109,17 @@ import { websiteIntegrationRouter } from './api/website-integration';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
 import { internalRunRateLimitConfig, spendsInternalRunBudget } from './domain/internalRunRateLimit';
+import { trustProxyHops } from './domain/forwardedClient';
 import { httpErrorStatus, publicErrorMessage } from './domain/httpErrorResponse';
 
 export const app = express();
 
 // #599: the API runs behind a reverse proxy (Traefik on corfront). Without this,
 // req.ip is the proxy's address for every request, so every per-IP rate limiter
-// collapses into a single bucket shared by all clients.
-const trustProxyHops = Number(process.env.TRUST_PROXY_HOPS ?? 1);
-app.set('trust proxy', Number.isInteger(trustProxyHops) && trustProxyHops >= 0 ? trustProxyHops : 1);
+// collapses into a single bucket shared by all clients. The count is read in one
+// place (domain/forwardedClient.ts), because since #1083 one route sits behind
+// one more hop than the rest and has to add to this number rather than replace it.
+app.set('trust proxy', trustProxyHops());
 
 app.use(requestLogger);
 

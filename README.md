@@ -176,9 +176,17 @@ Copy each `.env.example` to `.env` and fill in values. Do not commit `.env` file
 | `CLOUDFLARE_R2_PUBLIC_URL` | Optional: the bucket's public origin (r2.dev URL or custom domain) that stored image URLs are built on. Unset falls back to endpoint + bucket, which browsers cannot read |
 | `SUPPORTED_LOCALES` / `DEFAULT_LOCALE` | Optional — locales for translated DB content (defaults: `en,es,ca` / `en`) |
 | `TRUST_PROXY_HOPS` | Optional — reverse-proxy hops in front of the API (default: `1`) |
+| `PAYMENT_WEBHOOK_RELAY_HOPS` | Optional — the *further* hop `POST /webhooks/payment` sits behind once the payment app relays it (default: `0`, #1083) |
 | `PUBLIC_REGISTRATION_IP_LIMIT_PER_HOUR` / `PUBLIC_REGISTRATION_GYM_LIMIT_PER_DAY` | Optional — website self-registration rate limits (defaults: `60` / `200`) |
 | `API_PUBLIC_URL` | Optional — public API origin shown on System → Website Integration |
 | `LOG_LEVEL` | Optional — logger level (default: `info`) |
+
+**Payment page** (`apps/payment`, container environment — the config is an `envsubst` template)
+
+| Variable | Description |
+|----------|-------------|
+| `CORDEL_FITNESS_API_PUBLIC_URL` | API origin the browser-facing proxies (`/payment-page/`, `/themes/`) call |
+| `CORDEL_FITNESS_API_INTERNAL_URL` | API origin the `/webhooks/payment` relay calls — the internal address, no trailing slash (#1083) |
 
 **Admin** (`apps/admin/.env`) / **Member** (`apps/member/.env`)
 

@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { verifyWebhook } from '@clerk/backend/webhooks';
 import { linkGymInvite } from '../infra/staff-access';
 import { unlinkClerkAccount } from '../infra/clerk-account-links';
@@ -8,6 +8,7 @@ import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import { stampFirstNextBillingDate } from '../domain/nextBillingDateStamp';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
+import { paymentWebhookClientKey } from '../domain/forwardedClient';
 
 /**
  * Clerk webhook receiver. `user.deleted` (#709) removes every Gymdesk link to
@@ -100,11 +101,26 @@ clerkWebhookRouter.post('/', async (req: Request, res: Response) => {
 
 export const paymentWebhookRouter = Router();
 
+// 60/min per IP. The key is the client address, not the request's peer: since
+// #1083 Monei posts to the isolated payment app, whose nginx relays the request
+// to the API's internal address, so the chain in front of this one route is one
+// hop longer than `trust proxy` accounts for. Counting the relay as the client
+// would put every gym's payment confirmations in one 60/min bucket — see
+// domain/forwardedClient.ts for why the extra hop is declared per route and
+// defaults to none (where this is `req.ip`, exactly as before).
 const paymentWebhookRateLimit = rateLimit({
   windowMs: 60 * 1000,
   max: 60,
   standardHeaders: true,
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const client = paymentWebhookClientKey({
+      ip: req.ip,
+      socketAddress: req.socket.remoteAddress,
+      forwardedFor: req.headers['x-forwarded-for'],
+    });
+    return client === '' ? '' : ipKeyGenerator(client);
+  },
   handler: (_req, res) => res.status(429).json({ error: 'Too many requests' }),
 });
 

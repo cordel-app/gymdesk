@@ -136,9 +136,36 @@ server.
 
 ### A5. The webhook settles it
 
-`POST /webhooks/payment` (`api/src/api/webhooks.ts`), mounted in `app.ts:124` **before**
+`POST /webhooks/payment` (`api/src/api/webhooks.ts`), mounted in `app.ts` **before**
 `express.json()` with `express.raw({ type: '*/*' })` so the HMAC can be verified against the
 exact bytes Monei signed. 60 req/min per IP.
+
+**Since #1083 Monei does not call this route directly.** It posts to the isolated payment
+app — `PAYMENT_NOTIFICATION_URL` is `https://pay.vdicube.com/webhooks/payment` on dev and
+`https://pay.cordel.tech/webhooks/payment` on pro — and that app's nginx relays the request
+here at the API's **internal** address, so the provider needs no public route to the API.
+The relay is one `location = /webhooks/payment` block in
+`apps/payment/templates/default.conf.template`, and three of its properties are the point
+(`decisions.md` #19):
+
+- **It verifies nothing.** The body and Monei's signature header are relayed byte for byte,
+  `parseWebhook()` is still the first operation of this route, and `MONEI_WEBHOOK_SECRET`
+  never leaves the API. A tampered body is still a 400 from the API, relayed as such.
+- **Monei gets the API's own status code.** `proxy_intercept_errors` stays off and the block
+  has no `return` and no `error_page`: a blanket 200 loses a confirmation, because Monei
+  retries exactly what we report as failed. An unreachable or slow API is a 502/504, which
+  is also a retry.
+- **The 60/min budget is keyed on the client, not on the relay.** This is the one route that
+  sits behind one more proxy than `trust proxy` accounts for, so the key comes from
+  `paymentWebhookClientKey()` (`api/src/domain/forwardedClient.ts`), which adds
+  `PAYMENT_WEBHOOK_RELAY_HOPS` to `TRUST_PROXY_HOPS`. Keyed on the relay, one gym's payment
+  traffic would spend every gym's budget. The setting defaults to `0`, where the key is
+  `req.ip` exactly as before #1083; the extra hop is declared per route rather than by
+  raising `TRUST_PROXY_HOPS`, because a global raise makes Express trust one more
+  caller-supplied `X-Forwarded-For` entry on every route that is still publicly reachable.
+
+Nothing below this paragraph changes with the relay — the route, its branches and its
+idempotency are what they were.
 
 - `parseWebhook()` verifies the HMAC as its **first** operation
   (`api/src/payments/providers/monei/webhook.ts`: `HMAC-SHA256` over `${t}.${rawBody}`,
@@ -692,7 +719,9 @@ never touches the date.
 | `PAYMENT_ENV` | informational, reported by `describePaymentDeployment()` |
 | `PAYMENT_PAGE_URL` | builds the `checkoutUrl` (default `https://pay.vdicube.com`) |
 | `PAYMENT_OK_URL`, `PAYMENT_KO_URL` | the hosted page's return URLs |
-| `PAYMENT_NOTIFICATION_URL` | the `callbackUrl` Monei posts the webhook to |
+| `PAYMENT_NOTIFICATION_URL` | the `callbackUrl` Monei posts the webhook to — the **payment app's** relay since #1083 (`https://pay.…/webhooks/payment`), not the API |
+| `TRUST_PROXY_HOPS` | optional (default 1) — proxies in front of every route, `trustProxyHops()` |
+| `PAYMENT_WEBHOOK_RELAY_HOPS` | optional (default 0) — the *further* hop `/webhooks/payment` sits behind once the payment app relays it; `paymentWebhookClientKey()`, §A5 (#1083) |
 | `BILLING_INTERNAL_SECRET` | `/billing/run`, `/billing/cleanup` |
 | `PAYMENT_REQUEST_ABANDONED_HOURS` | optional (default 24, floored at 1) — `abandonedRequestHours()`, §B8 |
 | `RUN_FRESHNESS_THRESHOLD_HOURS` | optional (default 26, floored at 1) — `runFreshnessThresholdHours()`, `GET /health/runs` (#782) |
@@ -838,7 +867,9 @@ In `api/.env`: `MONEI_API_KEY` and `MONEI_WEBHOOK_SECRET` from the Monei **test*
 `BILLING_INTERNAL_SECRET` you like. `PAYMENT_NOTIFICATION_URL` must be a URL Monei can
 reach — use a tunnel (`cloudflared tunnel --url http://localhost:3000`) and point it at
 `/webhooks/payment`, or skip the hosted page entirely and drive the webhook by hand
-(step 7b).
+(step 7b). Nothing relays locally: #1083's relay is a block of the payment *container's*
+nginx config, and local development runs no such container, so the tunnel still points at
+the API's own route and `PAYMENT_WEBHOOK_RELAY_HOPS` stays unset.
 
 ```bash
 npm run dev:api      # :3000

@@ -4,6 +4,23 @@ Short record of the settled choices that are not obvious from the code. Don't re
 
 ---
 
+## 19. Monei's webhook is relayed by the payment app, and nginx is the runtime that relays it (#1083, 2026-10-06)
+
+**Decision**: Monei posts its webhook to the **isolated payment app** — `https://pay.vdicube.com/webhooks/payment` on dev, `https://pay.cordel.tech/webhooks/payment` on pro (`PAYMENT_NOTIFICATION_URL`) — and that app relays the request to the API's own `/webhooks/payment` at its **internal** address. The relay is **nginx itself**, with one `location = /webhooks/payment` block: no Node process, no dependency and no new secret enters that container.
+
+**Why**: it is the last thing the provider needed a public API for. nginx is already the payment app's runtime and already proxies two API paths for the browser (`/payment-page/`, `/themes/`), so a relay costs one block of configuration; a small Node server would be a second runtime to patch, and anything that parses and re-serializes the body would break the HMAC the API verifies over the exact bytes Monei signed.
+
+**Consequences**:
+- The webhook secret never leaves the API. The relay verifies nothing and knows nothing: `parseWebhook()` is still the first operation of the route, over `express.raw`, so a tampered body is still a 400 **from the API**, relayed as such.
+- **The API's status code is what Monei gets.** `proxy_intercept_errors` stays off and the block contains no `return` and no `error_page`: a blanket 200 would lose a payment confirmation, since Monei retries exactly what we report as failed. An unreachable or slow API is a 502/504, which is a retry too.
+- The API's `/webhooks/payment` is **one route behind one more proxy** than every other route, and its 60/min budget is keyed on the client. That extra hop is declared per route (`PAYMENT_WEBHOOK_RELAY_HOPS`, `api/src/domain/forwardedClient.ts`) and **not** by raising `TRUST_PROXY_HOPS`: a global raise would make Express trust one more caller-supplied `X-Forwarded-For` entry on every route that is still publicly reachable, letting a caller choose the bucket every per-IP limiter counts them in.
+- Both API origins the payment image talks to are environment (`CORDEL_FITNESS_API_PUBLIC_URL`, `CORDEL_FITNESS_API_INTERNAL_URL`) rather than literals in the config, because one image tag serves dev and pro. The config is an `envsubst` template; the Dockerfile carries the dev values as image defaults so a container started with no environment behaves as before.
+- The payment app still handles **no card data and no database**, so PCI scope is unchanged (#8): it relays one signed, opaque body.
+- The payment container's own access log drops query strings (`log_format pay_no_query`), which is what the PCI note on this host already required for `?token=<page_token>`.
+- This covers Monei only. Clerk's webhook and the GitHub Actions nightly runs need their own paths before the API can be private — #1085, #1086 and the open question in #1087.
+
+---
+
 ## 18. The Members App reaches the stores as a Capacitor shell; one generic app first, per-gym apps later (2026-10-04)
 
 **Decision**: the iOS and Android app is a **Capacitor 8 shell that loads the deployed Members App** (`server.url`). There is no second front end and no React Native rewrite. **Stage 1 is one generic app, "Cordel Fitness"**, published by us; the gym's theme is applied after sign-in, as on the web. **Stage 2 is one app per gym**, built only when a gym asks for it, and it is designed for now: a gym app is another *profile* of the same shell, never a fork. Social sign-in inside the app is **native** (Google, and Sign in with Apple on iOS) and its ID token is handed to Clerk (`authenticateWithGoogleOneTap`); Clerk's default OAuth redirect is not used there. Bundle ID of the generic app: `com.cordel.fitness`.
@@ -225,7 +242,7 @@ Short record of the settled choices that are not obvious from the code. Don't re
 - `apps/payment/` is a new app in the monorepo: static HTML/JS/CSS only, served by nginx, no Node.js runtime.
 - **No JavaScript frameworks** in `apps/payment/` — vanilla only. No React, no Angular, no jQuery. The only external script is `https://js.monei.com/v2/monei.js`.
 - `fitness-pay` is the fourth Podman container on corfront, alongside `fitness-admin` and `fitness-members`.
-- The only bridge to the main API is `GET /payment-page/token/:token` — a read-only, unauthenticated, rate-limited endpoint that returns display fields only (amount, gymName, memberName). The token is a UUID v4, single-use, 10-minute TTL.
+- The only bridge the **browser** has to the main API is `GET /payment-page/token/:token` — a read-only, unauthenticated, rate-limited endpoint that returns display fields only (amount, gymName, memberName). The token is a UUID v4, single-use, 10-minute TTL. Since #1083 the container also relays Monei's webhook server-side (#19); it still reads no card data and no database.
 - `MONEI_ACCOUNT_ID` (public key) is the only Monei config baked into the payment page. `MONEI_API_KEY` and `MONEI_WEBHOOK_SECRET` never leave the API container.
 - **PCI DSS v4.0 Req 6.4.3**: every third-party script on the payment page must have an SRI hash and be in a maintained inventory (`apps/payment/SCRIPT-INVENTORY.md`). Contact Monei for a versioned URL + `sha384` hash before go-live. If unavailable, a real-time page-integrity monitoring service (e.g. c/side, Reflectiz) is the compensating control.
 - **Monei AoC**: Monei's current Attestation of Compliance must be obtained before production go-live. SAQ A eligibility is void without it.
