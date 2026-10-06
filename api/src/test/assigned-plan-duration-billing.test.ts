@@ -64,8 +64,12 @@ async function createPlan(gymId: string, durations: {
     [gymId, planId],
   );
   await db.query(
-    `INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
-     VALUES (?, ?, 1, 'month')`,
+    // #1130 stage 1: `auto_renew` is pinned off rather than left on the
+    // column's own DEFAULT, because every case here is about what one
+    // Billing & Duration *means* and not about the cycle starting again.
+    `INSERT INTO billing_policies
+       (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit, auto_renew)
+     VALUES (?, ?, 1, 'month', 0)`,
     [gymId, planId],
   );
   return planId;
