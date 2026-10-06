@@ -152,7 +152,7 @@ describe('computeAssignmentBillingEventSimulation', () => {
     // fee line is a €0 billing event with its regular price beside it — never a
     // dropped line (#915's "a waived line is still a billing event").
     const result = forecast({
-      planDuration: toPlanDuration(60, 0, 0, 0, MONTHLY),
+      planDuration: toPlanDuration(60, 0, 0, 0, MONTHLY, false),
     });
     const fee = linesOn(result, '2026-10-15').find((l) => l.kind === 'membership_fee')!;
     expect(fee.actual_charge).toBe(0);

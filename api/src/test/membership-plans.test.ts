@@ -1187,11 +1187,18 @@ async function setBillingPolicy(
   planId: number,
   interval: number,
   unit: string,
+  // #1130 — Auto Renew is pinned rather than left to the column's own
+  // `DEFAULT true`, because it now decides whether the Plan's Billing &
+  // Duration cycle *repeats*: the cases below are about what the durations
+  // mean, so they say "runs once" out loud. The renewal case pins it the other
+  // way.
+  autoRenew = false,
 ): Promise<void> {
   await db.query(
-    `INSERT INTO billing_policies (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
-     VALUES (?, ?, ?, ?)`,
-    [gymId, planId, interval, unit],
+    `INSERT INTO billing_policies
+       (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit, auto_renew)
+     VALUES (?, ?, ?, ?, ?)`,
+    [gymId, planId, interval, unit, autoRenew ? 1 : 0],
   );
 }
 
@@ -1276,6 +1283,35 @@ describe('GET /membership-plans/:id/example-timeline', () => {
 
     const { rows: afterRows } = await db.query('SELECT COUNT(*) AS n FROM billing_events');
     expect(Number(afterRows[0].n)).toBe(Number(beforeRows[0].n));
+  });
+
+  // #1130 — with Auto Renew on, the configured stretch is a *cycle*: the table
+  // shows two complete iterations rather than running out into the regular
+  // price, because that is what the contract now bills (`PlanDuration.repeats`
+  // reaches the nightly run through the same classifier).
+  it('repeats the configured cycle when the plan renews', async () => {
+    const renewingId = await createPlan(gymId, { name: 'Renewing Timeline Plan' });
+    await setPlanPrice(gymId, renewingId, 60);
+    await setBillingPolicy(gymId, renewingId, 1, 'month', true);
+    await request
+      .put(`/membership-plans/${renewingId}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ free_periods: 1, paid_periods: 2, bonus_periods: 1 });
+
+    const res = await request
+      .get(`/membership-plans/${renewingId}/example-timeline`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.periods.map((p: any) => p.status)).toEqual([
+      'free_plan', 'pay_plan', 'pay_plan', 'bonus_plan',
+      'free_plan', 'pay_plan', 'pay_plan', 'bonus_plan',
+    ]);
+    // No `pay_regular` to trail, so nothing is open-ended: what says the cycle
+    // carries on is the marker beside the table (stage 2), not a Bonus period
+    // claiming to run for ever.
+    expect(res.body.periods.filter((p: any) => p.endsOn === null)).toHaveLength(0);
   });
 
   it('embeds the same projection on GET /membership-plans/:id as example_timeline', async () => {

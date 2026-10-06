@@ -456,6 +456,22 @@ Simulation, `GET /me/membership`, the Promotion apply/revoke adjustment and ever
 screen (through `currentMembershipFee()` / `currentMembershipFees()`). So what the run
 charges cannot drift from what the member was shown.
 
+**The Billing & Duration it prices against is a cycle (#1130, migration 230).** Free ->
+Pre-paid -> Paid -> Bonus used to run once, after which the contract billed its regular fee
+for ever; `billing_policies.auto_renew` was stored, shown on the Plan card and read by
+nothing. It is read now, through the assignment's **own** frozen copy
+(`user_memberships.auto_renew`, `ASSIGNMENT_AUTO_RENEW`): with it set,
+`classifyPlanDurationPeriod()` classifies a date inside whichever iteration of the cycle it
+falls in, so a `12 pre-paid + 3 bonus` contract is Pre-paid again at period 16 and
+`prepaidPeriodsDueOn()` collects the whole lump a second time there; `pay_regular` is
+unreachable for such a contract. With it unset — every assignment that existed before the
+migration, which the column's `NOT NULL DEFAULT 0` backfilled, and every Plan whose Auto
+Renew is unticked — the engine is exactly what it was: one cycle, then the regular price,
+and the membership does **not** expire (the ticket's answer C — "one cycle only" is about the
+benefit cycle, never about billing stopping). Because the flag lives on the assignment and is
+captured at creation, deploying this moved no live member's billing, and a Plan whose Auto
+Renew is changed later cannot move a contract already agreed (#635 §13/§17).
+
 Since #635 stage 15 (migration 191) this is unconditional: there is no
 `billing.date_aware_membership_fee` flag, no stored `user_memberships.final_price`, and no
 Membership Fee Drift report. `advanceBillingDate()` (`api/src/domain/billingDate.ts`)

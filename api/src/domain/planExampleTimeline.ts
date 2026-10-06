@@ -48,7 +48,9 @@
 import {
   ExampleTimelineResult,
   MAX_TIMELINE_PERIODS,
+  REPEATED_CYCLE_ITERATIONS,
   TRAILING_REGULAR_PERIODS,
+  timelineCycleFor,
   walkExampleTimeline,
 } from './exampleTimeline';
 import {
@@ -130,7 +132,7 @@ export interface PlanExampleTimelineResult extends ExampleTimelineResult {
   periods: PlanExampleTimelinePeriod[];
 }
 
-export { TRAILING_REGULAR_PERIODS, MAX_TIMELINE_PERIODS };
+export { TRAILING_REGULAR_PERIODS, MAX_TIMELINE_PERIODS, REPEATED_CYCLE_ITERATIONS };
 
 const NO_CADENCE_REASON = 'Configure a billing frequency to preview an example timeline.';
 
@@ -154,6 +156,11 @@ export function computePlanExampleTimeline(input: PlanExampleTimelineInput): Pla
   return walkExampleTimeline({
     cadence,
     anchorDate: anchor,
+    // #1130 — when the Plan's Auto Renew is on, the stopping rule is two
+    // complete iterations of the configured cycle rather than two trailing
+    // regular periods, because such a contract never reaches one. The decision
+    // is the duration's (`repeats`), never re-derived here.
+    cycle: timelineCycleFor(duration),
     reasonWhenNoCadence: NO_CADENCE_REASON,
     priceOn: (startsOn) => {
       const status = classifyPlanDurationPeriod(duration, anchor, startsOn);

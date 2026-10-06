@@ -39,6 +39,7 @@ import { MembershipFeeContext, resolveMembershipFee } from './billingSimulation'
 import { PlanDurationCadence, withDurationCadence } from './planDuration';
 import {
   ExampleTimelineResult,
+  timelineCycleFor,
   walkExampleTimeline,
 } from './exampleTimeline';
 
@@ -107,6 +108,10 @@ export function computeAssignmentExampleTimeline(
     anchorDate: startsAt,
     startOn,
     firstPeriod,
+    // #1130 — the same bound the Plan preview takes, from the same helper and
+    // off this assignment's **own** frozen `auto_renew`: a renewing contract
+    // has no regular period for the trailing rule to find.
+    cycle: timelineCycleFor(context.planDuration),
     reasonWhenNoCadence: NO_CADENCE_REASON,
     priceOn: (periodStartsOn) => {
       const regular = input.regularFeeOn(periodStartsOn);

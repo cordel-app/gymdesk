@@ -82,6 +82,9 @@ async function createMember(): Promise<number> {
 async function createPlan(
   cadence: { interval: number; unit: string },
   durations: { free?: number | null; paid?: number | null; bonus?: number | null; prepaid?: number | null } = {},
+  // #1130 — pinned off, because Auto Renew now decides whether the cycle
+  // repeats and every case here is about the *unit* a duration is counted in.
+  autoRenew = false,
 ): Promise<number> {
   const { free = null, paid = null, bonus = null, prepaid = null } = durations;
   const { insertId: planId } = await db.query(
@@ -98,9 +101,9 @@ async function createPlan(
   );
   await db.query(
     `INSERT INTO billing_policies
-       (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit)
-     VALUES (?, ?, ?, ?)`,
-    [gymId, planId, cadence.interval, cadence.unit],
+       (gym_id, membership_plan_id, recurring_billing_interval, recurring_billing_unit, auto_renew)
+     VALUES (?, ?, ?, ?, ?)`,
+    [gymId, planId, cadence.interval, cadence.unit, autoRenew ? 1 : 0],
   );
   return planId;
 }

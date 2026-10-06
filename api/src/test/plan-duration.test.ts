@@ -28,13 +28,14 @@ const TWO_MONTHS: PlanDurationCadence = { interval: 2, unit: 'month' };
 
 describe('toPlanDuration', () => {
   it('normalizes NULL columns to zero — "never configured" bills like "no such period"', () => {
-    expect(toPlanDuration(null, null, null, null, MONTH)).toEqual(NO_PLAN_DURATION);
+    expect(toPlanDuration(null, null, null, null, MONTH, false)).toEqual(NO_PLAN_DURATION);
   });
 
   it('accepts the strings mysql2 can hand back for an INT column', () => {
-    expect(toPlanDuration('1', '12', '2', '3', FOUR_WEEKS))
+    expect(toPlanDuration('1', '12', '2', '3', FOUR_WEEKS, false))
       .toEqual({
         freePeriods: 1, paidPeriods: 12, bonusPeriods: 2, prepaidPeriods: 3, cadence: FOUR_WEEKS,
+        repeats: false,
       });
   });
 
@@ -43,13 +44,13 @@ describe('toPlanDuration', () => {
   // validated the bound, or edited straight in the DB) is clamped rather than
   // allowed to prepay periods the contract never had.
   it('clamps the prepaid periods to the paid ones', () => {
-    expect(toPlanDuration(0, 3, 0, 5, MONTH).prepaidPeriods).toBe(3);
-    expect(toPlanDuration(0, 0, 0, 2, MONTH).prepaidPeriods).toBe(0);
-    expect(toPlanDuration(1, 12, 2, null, MONTH).prepaidPeriods).toBe(0);
+    expect(toPlanDuration(0, 3, 0, 5, MONTH, false).prepaidPeriods).toBe(3);
+    expect(toPlanDuration(0, 0, 0, 2, MONTH, false).prepaidPeriods).toBe(0);
+    expect(toPlanDuration(1, 12, 2, null, MONTH, false).prepaidPeriods).toBe(0);
   });
 
   it('clamps a negative or non-numeric value to zero rather than inverting a boundary', () => {
-    expect(toPlanDuration(-3, 'nonsense', undefined, undefined, MONTH)).toEqual(NO_PLAN_DURATION);
+    expect(toPlanDuration(-3, 'nonsense', undefined, undefined, MONTH, false)).toEqual(NO_PLAN_DURATION);
   });
 
   // #892 — a count with no cadence is meaningless, so an unusable pair falls
@@ -60,7 +61,7 @@ describe('toPlanDuration', () => {
     expect(toPlanDurationCadence(0, 'month')).toEqual(DEFAULT_PLAN_DURATION_CADENCE);
     expect(toPlanDurationCadence(-2, 'week')).toEqual(DEFAULT_PLAN_DURATION_CADENCE);
     expect(toPlanDurationCadence(1, 'fortnight')).toEqual(DEFAULT_PLAN_DURATION_CADENCE);
-    expect(toPlanDuration(1, 1, 1, 0, undefined as any).cadence).toEqual(DEFAULT_PLAN_DURATION_CADENCE);
+    expect(toPlanDuration(1, 1, 1, 0, undefined as any, false).cadence).toEqual(DEFAULT_PLAN_DURATION_CADENCE);
   });
 
   it('keeps a cadence outside #820\'s two choices exactly as stored', () => {
@@ -69,13 +70,13 @@ describe('toPlanDuration', () => {
 
   // §6 — changing the Billing Frequency changes the unit, never the numbers.
   it('re-binds a duration to another cadence without touching its counts', () => {
-    const monthly = toPlanDuration(1, 2, 3, 1, MONTH);
+    const monthly = toPlanDuration(1, 2, 3, 1, MONTH, false);
     expect(withDurationCadence(monthly, FOUR_WEEKS)).toEqual({ ...monthly, cadence: FOUR_WEEKS });
   });
 });
 
 describe('classifyPlanDurationPeriod', () => {
-  const duration = toPlanDuration(1, 2, 2, 0, MONTH); // free 1 · paid 2 · bonus 2
+  const duration = toPlanDuration(1, 2, 2, 0, MONTH, false); // free 1 · paid 2 · bonus 2
 
   it('is the free period from the start date up to (not including) the next month', () => {
     expect(classifyPlanDurationPeriod(duration, START, START)).toBe('free_plan');
@@ -99,7 +100,7 @@ describe('classifyPlanDurationPeriod', () => {
   });
 
   it('skips a period configured as zero', () => {
-    const noFree = toPlanDuration(0, 1, 1, 0, MONTH);
+    const noFree = toPlanDuration(0, 1, 1, 0, MONTH, false);
     expect(classifyPlanDurationPeriod(noFree, START, START)).toBe('pay_plan');
     expect(classifyPlanDurationPeriod(noFree, START, '2026-04-15')).toBe('bonus_plan');
   });
@@ -114,7 +115,7 @@ describe('classifyPlanDurationPeriod', () => {
   // before an earlier one.
   it('keeps its boundaries in order for a start date at the end of a month', () => {
     const endOfMonth = '2026-01-31';
-    const long = toPlanDuration(1, 1, 1, 0, MONTH);
+    const long = toPlanDuration(1, 1, 1, 0, MONTH, false);
     expect(classifyPlanDurationPeriod(long, endOfMonth, '2026-02-28')).toBe('free_plan');
     expect(classifyPlanDurationPeriod(long, endOfMonth, '2026-03-03')).toBe('pay_plan');
     expect(classifyPlanDurationPeriod(long, endOfMonth, '2026-03-31')).toBe('bonus_plan');
@@ -162,7 +163,7 @@ describe('classifyPlanDurationPeriod across billing frequencies', () => {
   });
 
   it('the Pre-paid Duration is the first of the paid periods, in the same unit', () => {
-    const d = toPlanDuration(0, 3, 0, 2, FOUR_WEEKS);
+    const d = toPlanDuration(0, 3, 0, 2, FOUR_WEEKS, false);
     expect(classifyPlanDurationPeriod(d, anchor, anchor)).toBe('prepaid_plan');
     expect(classifyPlanDurationPeriod(d, anchor, '2026-02-25')).toBe('prepaid_plan'); // < 1 Jan + 56d
     expect(classifyPlanDurationPeriod(d, anchor, '2026-02-26')).toBe('pay_plan');
