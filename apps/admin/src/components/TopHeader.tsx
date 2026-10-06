@@ -9,6 +9,7 @@ import { GymSelector } from './GymSelector';
 import { ImpersonationDialog } from './ImpersonationDialog';
 import { useGym } from '@/context/GymContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
+import { publicAppTitle } from '@/lib/appTitle';
 
 export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const { isSuperadmin, activeGym, gyms, loading } = useGym();
@@ -63,11 +64,14 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
         </button>
         {logoSrc && (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoSrc} alt={activeGym?.name ?? 'Gymdesk'} style={{ height: 32, width: 'auto', objectFit: 'contain' }} />
+          <img src={logoSrc} alt={activeGym?.name ?? publicAppTitle()} style={{ height: 32, width: 'auto', objectFit: 'contain' }} />
         )}
         {(!logoSrc || !theme?.logo_contains_gym_name) && (
           <strong style={{ fontSize: 18 }}>
-            {activeGym?.name ?? 'Gymdesk'}
+            {/* #1114 — the slot is the gym's name; what stands in for it until
+                one is resolved is the application's own name, from the one
+                module that composes it. Nothing here spells it. */}
+            {activeGym?.name ?? publicAppTitle()}
           </strong>
         )}
       </div>

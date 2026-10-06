@@ -10,9 +10,15 @@ import { FeatureFlagsProvider } from '@/context/FeatureFlagsContext';
 import { AppShell } from '@/components/AppShell';
 import { ToastProvider } from '@/components/Toast';
 import { ThemeProvider } from '@/components/ThemeProvider';
+import { publicAppTitle } from '@/lib/appTitle';
 
+// #1114 — the browser title names the application and the environment
+// (`(Dev) Admin - Cordel.tech Fitness`), and `lib/appTitle.ts` is the one place
+// it is composed. Nothing here spells it: a literal would make the two apps'
+// titles two things to keep in step, and this app has no say in which
+// environment it is deployed to.
 export const metadata: Metadata = {
-  title: 'Gymdesk',
+  title: publicAppTitle(),
   description: 'Gym Management Backoffice',
 };
 

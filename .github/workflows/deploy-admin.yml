@@ -51,8 +51,15 @@ jobs:
           platforms: linux/arm64
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
           no-cache: true
+          # #1114 — NEXT_PUBLIC_APP_ENV_LABEL / NEXT_PUBLIC_APP_BRAND_NAME are the
+          # browser title's environment label and brand. GitHub *variables* rather
+          # than secrets (neither is one) and per environment, so a `production`
+          # build cannot carry the dev title; unset, the title reads the app's own
+          # role alone rather than a wrong brand.
           build-args: |
             NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_APP_ENV_LABEL=${{ vars.APP_ENV_LABEL }}
+            NEXT_PUBLIC_APP_BRAND_NAME=${{ vars.APP_BRAND_NAME }}
 
       - name: Deploy to corfront
         uses: appleboy/ssh-action@v1

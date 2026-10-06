@@ -45,6 +45,20 @@ Tick items off in the PR that completes them.
          red, and the email goes to whoever GitHub notifies for that workflow — by default
          the committer of the last workflow change. This is a GitHub notification setting,
          not a repo file, so nothing in the repository can verify it.
+- [ ] **Set the two application-title variables per environment** (#1114). `APP_ENV_LABEL`
+      and `APP_BRAND_NAME` are GitHub environment **variables** (not secrets), passed by
+      `deploy-admin.yml` / `deploy-member.yml` as the `NEXT_PUBLIC_APP_ENV_LABEL` /
+      `NEXT_PUBLIC_APP_BRAND_NAME` build args and composed with each app's own role into the
+      browser title:
+  - [ ] `dev`: `APP_ENV_LABEL=Dev`, `APP_BRAND_NAME=Cordel.tech Fitness` ⇒
+        `(Dev) Admin - Cordel.tech Fitness` and `(Dev) Members - Cordel.tech Fitness`.
+  - [ ] `production`: `APP_ENV_LABEL` **empty or absent**, `APP_BRAND_NAME=Cordel.tech` ⇒
+        `Admin - Cordel.tech` and `Members - Cordel.tech`. A production build carrying the
+        label would title every tab `(Dev) …`.
+  - Neither has a code default, so until they are set the titles read `Admin` / `Members`
+    alone — correct but unbranded, and never the retired `Gymdesk`. Both are baked in at
+    **build time** like `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY`, so changing either needs a
+    rebuild of that app's image, not a container restart.
 - [ ] Runtime env stays GitHub-sourced: `deploy.yml` writes it into the Podman quadlet on
       every deploy. Do not hand-edit the VPS. Any env var added for production must also be
       forwarded in the workflow's `env:` / `envs:` / heredoc block, or it never reaches the

@@ -24,6 +24,15 @@ ENV NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=$NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY \
     NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL=$NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL \
     NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL=$NEXT_PUBLIC_CLERK_SIGN_UP_FALLBACK_REDIRECT_URL
 
+# #1114: the browser title's two configurable parts — the environment label and
+# the brand — composed with this app's own role by `src/lib/appTitle.ts`. Empty
+# by default: a build whose environment did not set them reads `Admin` alone,
+# which is accurate, rather than claiming a brand or an environment it is not in.
+ARG NEXT_PUBLIC_APP_ENV_LABEL=
+ARG NEXT_PUBLIC_APP_BRAND_NAME=
+ENV NEXT_PUBLIC_APP_ENV_LABEL=$NEXT_PUBLIC_APP_ENV_LABEL \
+    NEXT_PUBLIC_APP_BRAND_NAME=$NEXT_PUBLIC_APP_BRAND_NAME
+
 RUN npm run build --workspace=apps/admin
 
 FROM node:20-alpine AS runner
