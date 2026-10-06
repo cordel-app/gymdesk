@@ -224,8 +224,6 @@
     "member_since": "Membre des de",
     "starts": "Inici",
     "ends": "Fi",
-    "upcoming_heading": "Propers pagaments",
-    "upcoming_empty": "Sense pagaments pendents.",
     "ongoing": "En curs",
     "packages_heading": "Bons de classes",
     "package_status": {
@@ -236,8 +234,6 @@
     },
     "expires": "caduca el {date}",
     "benefits_heading": "Beneficis inclosos",
-    "history_heading": "Historial de pagaments",
-    "history_empty": "Encara no hi ha pagaments registrats.",
     "download_receipt": "Descarregar rebut",
     "status": {
       "active": "Activa",
@@ -253,9 +249,6 @@
       "status_changed": "Canvi d'estat",
       "adjustment": "Ajust",
       "waived_billing": "Quota exempta"
-    },
-    "upcoming_status": {
-      "scheduled": "Programat"
     },
     "charge_type": {
       "membership_fee": "Quota de membresia",
@@ -275,6 +268,35 @@
       "four_weeks": "Cada 4 setmanes",
       "month": "Mensual",
       "year": "Anual"
+    }
+  },
+  "payments": {
+    "title": "Pagaments",
+    "summary_next": "Següent: {date} · {amount}",
+    "next_heading": "Pròxim pagament",
+    "next_empty": "Ara mateix no hi ha cap pagament programat.",
+    "past_heading": "Esdeveniments de facturació anteriors",
+    "past_empty": "Encara no hi ha pagaments registrats.",
+    "forecast_heading": "Previsió d'esdeveniments de facturació",
+    "forecast_empty": "Encara no s'esperen més esdeveniments de facturació.",
+    "forecast_unavailable": "Ara mateix no hi ha res a preveure per al teu pla.",
+    "forecast_badge": "Previsió",
+    "total": "Total",
+    "tax_included": "Impostos inclosos.",
+    "line_kind_membership_fee": "Pla de membresia",
+    "line_kind_product": "Producte",
+    "quantity": "× {count}",
+    "treatment_waived": "Inclòs",
+    "treatment_percentage": "{value}% de descompte",
+    "treatment_fixed_discount": "{value} de descompte",
+    "treatment_fixed_price": "Preu fix {value}",
+    "prepaid_periods": "{count, plural, one {# període pagat per endavant} other {# períodes pagats per endavant}}",
+    "status": {
+      "paid": "Pagat",
+      "failed": "Fallit",
+      "pending": "Pendent",
+      "scheduled": "Programat",
+      "recorded": "Registrat"
     }
   },
   "payment_banner": {

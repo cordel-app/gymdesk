@@ -26,6 +26,8 @@ import { loadMemberImagesByTheme } from './theme-member-images';
 import { ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
 import { loadPromotionApplications, regularMembershipFee } from './user-memberships';
 import { currentCycleDate, currentMembershipFee } from './membership-fee-pricing';
+import { MEMBER_CURRENT_ASSIGNMENT_ORDER, memberBillingEventForecast } from './me-billing-forecast';
+import { deriveBillingEventStatus } from '../domain/billingEventStatus';
 import { resolveMembershipFee } from '../domain/billingSimulation';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration, toPlanDurationCadence } from '../domain/planDuration';
@@ -1485,9 +1487,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
        WHERE um.gym_id = ? AND um.member_id = ?
-       ORDER BY
-         FIELD(um.status, 'active','paused','expired','cancelled'),
-         um.starts_at DESC
+       ${MEMBER_CURRENT_ASSIGNMENT_ORDER}
        LIMIT 1`,
       [gymId, memberId],
     );
@@ -2061,17 +2061,50 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
       `SELECT COUNT(*) AS total FROM billing_events be WHERE be.gym_id = ? AND be.member_id = ?`,
       [gymId, memberId],
     );
-    const { rows } = await db.query(
+    // #1123 §4 — each past event reports its `status` ("Status: Paid"), derived
+    // by the one implementation the staff ledger reads it through
+    // (`deriveBillingEventStatus`, #640/#787: the latest transaction's status,
+    // falling back to what the event type itself says). A second rule here
+    // would let the member's Payments card call an event paid that the
+    // Payments dashboard calls failed.
+    const { rows } = await db.query<any>(
       `SELECT be.id, be.user_membership_id, be.event_type, be.previous_status, be.new_status,
               be.amount, be.notes, be.created_at, be.receipt_number,
-              ct.code AS charge_type_code
+              ct.code AS charge_type_code,
+              (SELECT pr.status FROM payment_requests pr
+                WHERE pr.billing_event_id = be.id
+                ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
        FROM billing_events be
        LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
        WHERE be.gym_id = ? AND be.member_id = ?
        ORDER BY be.created_at DESC, be.id DESC LIMIT ${limit} OFFSET ${offset}`,
       [gymId, memberId],
     );
-    res.json({ items: rows, total: Number(countRows[0].total), limit, offset });
+    const items = rows.map(({ latest_tx_status, ...row }) => ({
+      ...row,
+      status: deriveBillingEventStatus(row.event_type, latest_tx_status),
+    }));
+    res.json({ items, total: Number(countRows[0].total), limit, offset });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// #1123 §5 — the member's own **Forecast Billing Events**: the Billing Event
+// Forecast of the plan they hold, one group per future billing date, every
+// amount the engine's.
+//
+// It is the Assigned Plan card's projection scoped to the caller
+// (`memberBillingEventForecast`), so the Payments card's *Next Payment* — its
+// first group, per the thread's "the next billing event in time" — is the same
+// number the nightly run will charge. The route adds nothing of its own: no
+// horizon, no pricing and no second read of the configuration.
+meRouter.get('/billing-event-forecast', requireRole('member'), requireFeatureEnabled('member_web.my_membership'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    res.json(await memberBillingEventForecast(gymId, memberId));
   } catch (err) {
     next(err);
   }
