@@ -18,6 +18,13 @@ const SRC = join(__dirname, '..');
 const DEPLOY = readFileSync(join(ROOT, '.github', 'workflows', 'deploy.yml'), 'utf8');
 const FORWARDED_CLIENT = readFileSync(join(SRC, 'domain', 'forwardedClient.ts'), 'utf8');
 
+/** The heredoc that becomes the API's env file (`cat > "$ENV_TMP" <<ENVEOF`). */
+const ENV_FILE_BLOCK = (() => {
+  const start = DEPLOY.indexOf('cat > "$ENV_TMP" <<ENVEOF');
+  const end = DEPLOY.indexOf('ENVEOF', start + 30);
+  return start === -1 || end === -1 ? '' : DEPLOY.slice(start, end);
+})();
+
 function productionSources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
     const path = join(dir, name);
@@ -43,9 +50,10 @@ function expectForwarded(name: string, source: 'vars' | 'secrets') {
   expect(DEPLOY, `${name} mapped from ${source}`).toContain(`${name}: \${{ ${source}.${name} }}`);
   // 2. Passed over SSH.
   expect(DEPLOY, `${name} in envs:`).toMatch(new RegExp(`envs: [^\\n]*\\b${name}\\b`));
-  // 3. Written into the unit.
-  expect(DEPLOY, `${name} written as Environment=`).toMatch(
-    new RegExp(`Environment=${name}=\\$\\{${name}(:-)?\\}`),
+  // 3. Written into the API's env file (#1192 — never an inline
+  //    `Environment=` line, whose value lands on podman's command line).
+  expect(ENV_FILE_BLOCK, `${name} written into the env file`).toMatch(
+    new RegExp(`^\\s*${name}=\\$\\{${name}(:-)?\\}$`, 'm'),
   );
 }
 
@@ -70,6 +78,14 @@ describe('the settings the API reads are the settings deploy.yml writes', () => 
 
   it('forwards every internal-run secret from a GitHub secret', () => {
     for (const name of INTERNAL_SECRETS) expectForwarded(name, 'secrets');
+  });
+
+  it('writes the environment into a file, never onto podman’s command line (#1192)', () => {
+    expect(ENV_FILE_BLOCK).not.toBe('');
+    // The unit points at the file; no inline value is written into it.
+    expect(DEPLOY).toContain('sed -i "/^\\[Container\\]$/a EnvironmentFile=$ENV_FILE" "$CF"');
+    expect(DEPLOY).not.toMatch(/^\s*Environment=[A-Z_]+=/m);
+    expect(DEPLOY).toContain('chmod 600 "$ENV_TMP"');
   });
 
   it('still replaces the unit’s whole environment, which is why the above matters', () => {
