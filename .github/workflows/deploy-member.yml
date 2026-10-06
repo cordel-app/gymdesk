@@ -110,16 +110,20 @@ jobs:
               echo "--- localhost resolves to ---"; getent ahosts localhost || true
               echo "--- listeners on :8082 ---"; ss -tlnp 2>/dev/null | grep ':8082' || echo "nothing listening on :8082"
               echo "--- published ports ---"; podman port fitness-members 2>&1 || true
-              echo "--- proxy variables ---"; p=$(env | grep -i -E '^(http|https|no|all)_proxy=' | sed -E 's#(://)[^@/]*@#\1***@#'); echo "${p:-none set}"
+              echo "--- proxy variables ---"; p=$(env | grep -i -E '^(http|https|no|all)_proxy=' | sed -E 's#(://)[^@/]*@#\1***@#' || true); echo "${p:-none set}"
               echo "--- from inside the container ---"
               podman exec fitness-members node -e "fetch('http://127.0.0.1:8082/en').then(r=>console.log('HTTP',r.status)).catch(e=>console.log('error',e.cause?.code||e.message))" 2>&1 || true
             }
 
+            # 127.0.0.1, never `localhost`: on corfront `localhost` resolves to ::1 first,
+            # pasta accepts the IPv6 connection and the app inside answers only IPv4, so
+            # the connection is reset and curl never falls back (every frontend deploy
+            # failed this check from 2026-10-04 ~22:00 UTC until this was found, #1171).
             # Next.js answers its first request late (cold start, port forward
             # still wiring up), so retry for up to ~60s instead of one shot.
             ok=0
             for i in $(seq 1 20); do
-              if curl -sf --max-time 10 -o /dev/null http://localhost:8082/en; then ok=1; break; fi
+              if curl -sf --max-time 10 -o /dev/null http://127.0.0.1:8082/en; then ok=1; break; fi
               sleep 3
             done
             [ "$ok" = 1 ] || \

@@ -105,13 +105,17 @@ jobs:
               echo "--- localhost resolves to ---"; getent ahosts localhost || true
               echo "--- listeners on :8083 ---"; ss -tlnp 2>/dev/null | grep ':8083' || echo "nothing listening on :8083"
               echo "--- published ports ---"; podman port fitness-pay 2>&1 || true
-              echo "--- proxy variables ---"; p=$(env | grep -i -E '^(http|https|no|all)_proxy=' | sed -E 's#(://)[^@/]*@#\1***@#'); echo "${p:-none set}"
+              echo "--- proxy variables ---"; p=$(env | grep -i -E '^(http|https|no|all)_proxy=' | sed -E 's#(://)[^@/]*@#\1***@#' || true); echo "${p:-none set}"
               echo "--- from inside the container ---"
               podman exec fitness-pay sh -c 'curl -sS -o /dev/null -w "HTTP %{http_code}\n" http://127.0.0.1:8083/ 2>&1 || wget -qS -O /dev/null http://127.0.0.1:8083/ 2>&1 | head -1' 2>&1 || true
             }
 
+            # 127.0.0.1, never `localhost`: on corfront `localhost` resolves to ::1 first,
+            # pasta accepts the IPv6 connection and the app inside answers only IPv4, so
+            # the connection is reset and curl never falls back (every frontend deploy
+            # failed this check from 2026-10-04 ~22:00 UTC until this was found, #1171).
             sleep 3
-            curl -sf --max-time 10 -o /dev/null http://localhost:8083/ || \
+            curl -sf --max-time 10 -o /dev/null http://127.0.0.1:8083/ || \
               { echo "ERROR: payment page not responding on :8083"; diagnose; systemctl --user status fitness-pay.service --no-pager || true; podman logs fitness-pay 2>/dev/null || true; exit 1; }
 
             # #1083 — the webhook relay, end to end. Monei's own dashboard
@@ -120,6 +124,6 @@ jobs:
             # a 2xx here means the relay reached the API at the internal
             # address this container is configured with. A failure means
             # payments would not be confirmed, so it fails the deploy.
-            curl -sf --max-time 10 -o /dev/null http://localhost:8083/webhooks/payment || \
+            curl -sf --max-time 10 -o /dev/null http://127.0.0.1:8083/webhooks/payment || \
               { echo "ERROR: webhook relay not reaching the API (CORDEL_FITNESS_API_INTERNAL_URL)"; podman logs fitness-pay 2>/dev/null | tail -40 || true; exit 1; }
             echo "Health check OK"
