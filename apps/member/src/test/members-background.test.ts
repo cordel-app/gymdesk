@@ -170,6 +170,7 @@ describe('the Members App knows only URLs (#725 §Members App Rendering)', () =>
   });
 
   it('clears the background back to the theme colour when nothing is configured', () => {
-    expect(componentSrc).toContain("body.style.removeProperty('background')");
+    expect(componentSrc).toContain('body.style.background = memberTheme.pageBackground');
+    expect(componentSrc).not.toContain("removeProperty('background')");
   });
 });

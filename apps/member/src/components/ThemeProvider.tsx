@@ -22,7 +22,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // own variables so a Members App setting sharing a variable with its
     // source (the page background, the calendar surfaces, the titles) wins.
     applyMembersAppTokens(tokens);
-  }, [theme?.id]);
+  }, [theme?.id, theme?.tokens]);
 
   return <>{children}</>;
 }

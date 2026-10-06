@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { DEFAULT_TOKENS, type ThemeTokens } from '@/lib/themeTokens';
+import { memberTheme } from '@/lib/memberChrome';
 import { MEMBERS_APP_SETTINGS, membersAppVarValue } from '@/lib/membersAppTokens';
 import {
   BACKGROUND_SCRIM_ALPHA,
@@ -23,9 +24,11 @@ import {
  * `ThemeProvider`, which is what already writes the theme's colours to the
  * document, and follows the same rule: one effect, no markup.
  *
- * When the slot is not configured the body's background is cleared back to the
- * value the stylesheet gives it — `var(--gd-app-bg)`, the theme background
- * colour — which is the only fallback #725 allows. Nothing is fetched for a
+ * When the slot is not configured the body's background is set back to
+ * `var(--gd-app-bg)`, the theme background colour — the only fallback #725
+ * allows. It is written rather than removed (#1153): the layout's own inline
+ * `background` is what paints the Members App colour, and removing the
+ * property deleted it, leaving the body unpainted. Nothing is fetched for a
  * `null` slot: there is no URL to fetch.
  */
 export function MembersBackground() {
@@ -46,8 +49,8 @@ export function MembersBackground() {
     if (!body) return;
     const value = backgroundStyleValue(url, hexToRgba(pageBackground, BACKGROUND_SCRIM_ALPHA));
     if (value) body.style.background = value;
-    else body.style.removeProperty('background');
-    return () => { body.style.removeProperty('background'); };
+    else body.style.background = memberTheme.pageBackground;
+    return () => { body.style.background = memberTheme.pageBackground; };
   }, [url, pageBackground]);
 
   return null;
