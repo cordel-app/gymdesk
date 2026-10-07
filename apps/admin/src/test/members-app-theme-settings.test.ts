@@ -88,6 +88,8 @@ const TICKET_MAPPING: [string, string | null][] = [
   ['label_members_text1_color', 'Primary Text Color'],
   ['label_members_text2_color', 'Secondary Text Color'],
   ['label_members_text3_color', 'Muted Text Color'],
+  ['label_members_primary_button_color', 'Primary Button'],
+  ['label_members_secondary_button_color', 'Secondary Button'],
   ['label_members_calendar_bg', 'Calendar background'],
   ['label_members_calendar_header_color', 'Calendar header background'],
   ['label_members_calendar_buttons_color', 'Navigation button background'],
@@ -105,6 +107,7 @@ describe('#833 Members App settings: the declaration', () => {
       'group_members_background',
       'group_members_section_cards',
       'group_members_text',
+      'group_members_buttons',
       'group_members_calendar',
       'group_members_inputs',
     ]);

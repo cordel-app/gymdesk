@@ -60,6 +60,8 @@ export const MEMBERS_APP_SETTING_TYPES: Record<string, MembersAppSettingType> = 
   text1Color:                        'color',
   text2Color:                        'color',
   text3Color:                        'color',
+  primaryButtonColor:                'color',
+  secondaryButtonColor:              'color',
   calendarBackgroundColor:           'color',
   calendarHeaderColor:               'color',
   calendarButtonsColor:              'color',
