@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db } from '../infra/db';
+import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { parseQuery, z } from '../infra/validate';
 import { recordStatusChange, sourceForRole } from './billing-events';
@@ -29,6 +29,7 @@ import {
   loadAssignedPlanSnapshot,
   materialiseAssignedPlanSnapshot,
   snapshotAssignedPlan,
+  syncMandatoryProductQuantities,
   writeAssignedPlanBenefitSection,
 } from './assigned-plan-snapshot';
 import {
@@ -1884,10 +1885,13 @@ userMembershipsRouter.post('/:id/members', requireModuleWrite('PAYMENTS'), async
           + 'Membership Plan. Close it before adding them to this one.',
       });
     }
-    await db.query(
-      'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 0)',
-      [gymId, req.params.id, member_id],
-    );
+    await db.transaction(async (tx) => {
+      await tx.query(
+        'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 0)',
+        [gymId, req.params.id, member_id],
+      );
+      await resyncMemberCountQuantities(tx, gymId, req.params.id as string);
+    });
     const { rows } = await db.query(MEMBERS_SELECT, [req.params.id, gymId]);
     recordAudit(req, { action: 'add_member', entityType: 'user_membership', entityId: req.params.id, next: { member_id } });
     res.status(201).json(rows);
@@ -1895,6 +1899,29 @@ userMembershipsRouter.post('/:id/members', requireModuleWrite('PAYMENTS'), async
     handleDupEntry(err, res, next, 'This Member is already covered by this Membership.');
   }
 });
+
+/**
+ * #1187 §10 — the covered-Member count changed, so the catalogue-mandatory lines
+ * of the Assigned Plan follow it. Only an assignment whose snapshot is still
+ * editable (not cancelled or expired) is touched, and an uncaptured one is
+ * materialised first so the live fallback does not drop the other sections.
+ * Billing Events already written are never recalculated.
+ */
+async function resyncMemberCountQuantities(tx: Tx, gymId: string, id: string): Promise<void> {
+  const { rows } = await tx.query(
+    `SELECT id, membership_plan_id, status, starts_at FROM user_memberships
+     WHERE id = ? AND gym_id = ? FOR UPDATE`,
+    [id, gymId],
+  );
+  const um = rows[0];
+  if (!um || !SNAPSHOT_EDITABLE_STATUSES.includes(um.status as Status)) return;
+  await materialiseAssignedPlanSnapshot(tx, {
+    gymId, userMembershipId: Number(um.id),
+    membershipPlanId: um.membership_plan_id != null ? Number(um.membership_plan_id) : null,
+    membershipFeePrice: await snapshotFeeForAssignment(gymId, um),
+  });
+  await syncMandatoryProductQuantities(tx, gymId, Number(um.id));
+}
 
 userMembershipsRouter.delete('/:id/members/:memberId', requireModuleWrite('PAYMENTS'), async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -1904,10 +1931,13 @@ userMembershipsRouter.delete('/:id/members/:memberId', requireModuleWrite('PAYME
   );
   if (rows.length === 0) return res.status(404).json({ error: 'This Member is not covered by this Membership.' });
   if (rows[0].is_owner) return res.status(400).json({ error: 'Cannot remove the Membership owner.' });
-  await db.query(
-    'DELETE FROM user_membership_members WHERE user_membership_id = ? AND member_id = ? AND gym_id = ?',
-    [req.params.id, req.params.memberId, gymId],
-  );
+  await db.transaction(async (tx) => {
+    await tx.query(
+      'DELETE FROM user_membership_members WHERE user_membership_id = ? AND member_id = ? AND gym_id = ?',
+      [req.params.id, req.params.memberId, gymId],
+    );
+    await resyncMemberCountQuantities(tx, gymId, req.params.id as string);
+  });
   recordAudit(req, { action: 'remove_member', entityType: 'user_membership', entityId: req.params.id, previous: { member_id: req.params.memberId } });
   res.status(204).send();
 });

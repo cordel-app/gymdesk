@@ -1,5 +1,6 @@
 import { db, Tx } from '../infra/db';
 import { toPlanBenefitMandatory } from '../domain/planBenefitMandatory';
+import { coveredMemberCount } from '../domain/assignedBenefitQuantity';
 import { PersonalFeeBenefit, toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDurationRepeats } from '../domain/planDuration';
 import { PlanBenefitPrices } from '../domain/planBenefitPrices';
@@ -331,6 +332,42 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
       [gymId, userMembershipId, membershipPlanId, gymId],
     );
   }
+  // #1187 — every creation path inserts the covered Members before it
+  // snapshots, so the per-Member quantity is settled here, once.
+  await syncMandatoryProductQuantities(tx, gymId, userMembershipId);
+}
+
+/**
+ * #1187 — sets the quantity of every catalogue-mandatory line (`products.mandatory
+ * = 1`) of this assignment's three snapshot sections to the number of Members it
+ * covers, counted from `user_membership_members` (owner included). The SQL half
+ * of `resolveAssignedPlanBenefitQuantity()`.
+ *
+ * Idempotent, and it touches only the assignment's own snapshot rows: Billing
+ * Events already written are the record of what was billed and are never
+ * recalculated (§11), the Plan's configured quantity is not read or written, and
+ * a line the Plan-level `mandatory` flag lets a Member decline is simply absent
+ * when declined, so there is nothing here to special-case.
+ */
+export async function syncMandatoryProductQuantities(
+  tx: Tx, gymId: string, userMembershipId: number,
+): Promise<void> {
+  const { rows } = await tx.query(
+    'SELECT COUNT(*) AS n FROM user_membership_members WHERE user_membership_id = ? AND gym_id = ?',
+    [userMembershipId, gymId],
+  );
+  const memberCount = coveredMemberCount(rows[0]?.n);
+  for (const category of CATEGORIES) {
+    const table = BENEFIT_TABLE_BY_CATEGORY[category];
+    await tx.query(
+      `UPDATE ${table} b
+       JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
+       SET b.quantity = ?
+       WHERE b.user_membership_id = ? AND b.gym_id = ? AND gc.mandatory = 1
+         AND b.quantity <> ?`,
+      [memberCount, userMembershipId, gymId, memberCount],
+    );
+  }
 }
 
 /**
@@ -520,6 +557,9 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
       [gymId, userMembershipId, item.quantity, item.product_id, gymId],
     );
   }
+  // #1187 — a catalogue-mandatory line's quantity is read-only: whatever the
+  // editor sent, it stays the covered-Member count.
+  await syncMandatoryProductQuantities(tx, gymId, userMembershipId);
 }
 
 /* ── Stage 3: billing reads the snapshot ─────────────────────────────────── */
