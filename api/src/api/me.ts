@@ -1031,7 +1031,9 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
         grace_hours: CANCELLATION_GRACE_HOURS,
       });
     }
-    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
+    // #1189 stage 3: a member's cancellation that reaches here was allowed
+    // free of charge (outside the notice window, or inside the grace period).
+    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { spendLateCancel: false });
     if (cancelResult.promotedMemberId) {
       sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
         rows[0].class_session_id, { title: rows[0].title, starts_at: rows[0].starts_at });
