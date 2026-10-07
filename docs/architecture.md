@@ -715,6 +715,7 @@ A Membership Plan Product benefit is **`No benefit`, `Waive` or `% Discount`**. 
 - **The retirement machinery is kept, empty.** `LEGACY_PLAN_BENEFIT_ACTIONS` is `[]`, so `isRetiredBenefitAction()` is false everywhere and the disabled-option branch in `ProductBenefits.tsx` never renders; a future retirement reuses the same split (offered vs. stored). Rows stored while the percentage was retired are ordinary percentage lines and keep pricing as stored.
 - **The report script is gone.** `plans:percentage-benefits` existed to find lines that could no longer be configured; there are none now.
 - **Stages 2–3 of #1184** (a per-benefit `mandatory` flag, declining optional benefits at assignment) are separate changes.
+- **Per-Member quantity on an Assigned Plan (#1187).** A line whose Product has `products.mandatory = 1` is billed once per covered Member: `syncMandatoryProductQuantities()` sets its snapshot quantity to the `user_membership_members` count (owner included) at assignment (inside `snapshotAssignedPlan()`), after a section edit, and when a Member is added or removed. The Plan's configured quantity and existing Billing Events are never touched; the rule is the catalogue flag's, not the Plan-level `mandatory` Yes/No.
 
 ### Session Benefit renewal Frequency (#918, migration 205)
 
