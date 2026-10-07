@@ -324,7 +324,7 @@ describe('Booking access after Included Services (#635 stage 4)', () => {
     expect(res.status).toBe(201);
   });
 
-  it('lets a class package pay for an activity the member qualifies for only through it, debiting one credit', async () => {
+  it('lets a class package pay for an activity the member qualifies for only through it, debiting nothing at booking (#1189 stage 3)', async () => {
     const serviceId = await createService(gymId);
     const atId = await createRestrictedActivityType(gymId);
     await requireService(gymId, atId, serviceId);
@@ -337,7 +337,7 @@ describe('Booking access after Included Services (#635 stage 4)', () => {
     const { rows } = await db.query(
       'SELECT sessions_remaining FROM user_class_packages WHERE id = ?', [userPackageId],
     );
-    expect(Number(rows[0].sessions_remaining)).toBe(4);
+    expect(Number(rows[0].sessions_remaining)).toBe(5);
   });
 
   it('charges no credit when an Additional Service on the member\'s plan already grants the sessions', async () => {
