@@ -101,14 +101,15 @@ describe('the My Goals slot (#1038)', () => {
   it('sits between My Membership and the general background', () => {
     const declared = imagesEditorSrc.match(/export const MEMBER_IMAGE_SLOTS = \[([^\]]+)\]/)?.[1] ?? '';
     const parsed = [...declared.matchAll(/'([a-z_]+)'/g)].map((m) => m[1]);
-    expect(parsed).toEqual(['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background']);
+    // #1158's `next_bookings` sits beside the My Bookings tile it must never share an object with.
+    expect(parsed).toEqual(['training', 'nutrition', 'calendar', 'bookings', 'next_bookings', 'membership', 'personal_goals', 'background']);
   });
 
   it('is labelled in en, es and ca, in both namespaces', () => {
     for (const code of LOCALE_CODES) {
       for (const ns of NAMESPACES) {
         const section = locales[code][ns] as Record<string, string>;
-        for (const key of ['group_members_images', 'members_image_personal_goals']) {
+        for (const key of ['group_members_images', 'members_image_personal_goals', 'members_image_next_bookings']) {
           expect(typeof section?.[key], `${code}.${ns}.${key}`).toBe('string');
           expect(section[key].trim().length, `${code}.${ns}.${key}`).toBeGreaterThan(0);
         }
@@ -122,6 +123,7 @@ describe('the My Goals slot (#1038)', () => {
     // decides where the object lives.
     for (const src of [gymPageSrc, basePageSrc]) {
       expect(src).not.toContain('personal_goals');
+      expect(src).not.toContain('next_bookings');
     }
   });
 });

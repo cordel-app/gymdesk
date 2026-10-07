@@ -106,7 +106,12 @@ describe('the card is a cell of the tile grid (#1116 §2, §3)', () => {
 
 describe('nothing else about the card changes (#1116 §4)', () => {
   it('keeps its theme artwork slot, and adds no new one', () => {
-    expect(homeSrc.match(/slot="/g)).toHaveLength(6);
+    // Six surfaces took artwork when #1116 landed; #1158 added the seventh, the
+    // My Next Bookings card — a different card with a slot of its own, rendered
+    // once per state (loading, a booking, none), so three more occurrences.
+    expect(homeSrc.match(/slot="/g)).toHaveLength(9);
+    expect(homeSrc.match(/slot="membership"/g)).toHaveLength(1);
+    expect(homeSrc.match(/slot="next_bookings"/g)).toHaveLength(3);
   });
 
   it('keeps its feature flag, its destination and its contents', () => {

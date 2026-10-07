@@ -9,9 +9,12 @@
 /**
  * The slots the API sends, one per Members section. Mirrors
  * `MEMBER_IMAGE_SLOTS` on the API side; `personal_goals` is #1038's seventh,
- * for the My Goals section.
+ * for the My Goals section, and `next_bookings` #1158's eighth, for the
+ * dashboard's My Next Bookings card — a card and not a page, so it is painted
+ * by `MembersSectionCard` alone and deliberately absent from `SECTION_SLOTS`
+ * below, as `calendar` is.
  */
-export const MEMBER_BACKGROUND_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background'] as const;
+export const MEMBER_BACKGROUND_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'next_bookings', 'membership', 'personal_goals', 'background'] as const;
 
 export type MemberBackgroundSlot = (typeof MEMBER_BACKGROUND_SLOTS)[number];
 

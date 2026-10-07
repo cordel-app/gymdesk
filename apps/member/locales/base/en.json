@@ -7,7 +7,7 @@
     "hint": "Members only. Ask your gym for an invitation.",
     "dashboard_title": "Home",
     "loading": "Loading…",
-    "next_booking": "Next booking",
+    "next_booking": "My Next Bookings",
     "no_upcoming_booking": "No upcoming bookings.",
     "more_bookings_that_day": "+{count} more {count, plural, one {booking} other {bookings}} that day",
     "waitlisted": "Waitlisted",

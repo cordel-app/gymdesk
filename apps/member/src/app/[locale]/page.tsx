@@ -225,10 +225,16 @@ export default function HomePage() {
       {featureEnabled('member_web.my_bookings') && (
         <section style={styles.section}>
           <h2 style={styles.h2}>{t('home.next_booking')}</h2>
+          {/* #1158 — the card paints the Theme's My Next Bookings artwork
+              (`next_bookings`) behind the contents it always had; with no image
+              it is the same Section Card surface as every other card. Its body
+              is a structure of its own, so `nextBookingCard` keeps the block
+              layout and left alignment it spells (the #1116 products-card
+              rule), and the content stays above the image untouched. */}
           {loading ? (
-            <div style={styles.card}><p style={styles.hint}>{t('home.loading')}</p></div>
+            <MembersSectionCard slot="next_bookings" style={styles.nextBookingCard}><p style={styles.hint}>{t('home.loading')}</p></MembersSectionCard>
           ) : nextBooking ? (
-            <div style={{ ...styles.card, cursor: 'pointer' }} onClick={goToBookings}>
+            <MembersSectionCard slot="next_bookings" style={{ ...styles.nextBookingCard, cursor: 'pointer' }} onClick={goToBookings}>
               <div style={styles.bookingRow}>
                 <div>
                   <p style={styles.bookingName}>{nextBooking.class_type_name}</p>
@@ -258,9 +264,9 @@ export default function HomePage() {
               {sameDayMore > 0 && (
                 <p style={styles.bookingSub}>{t('home.more_bookings_that_day', { count: sameDayMore })}</p>
               )}
-            </div>
+            </MembersSectionCard>
           ) : (
-            <div style={{ ...styles.card, cursor: 'pointer' }} onClick={goToBookings}>
+            <MembersSectionCard slot="next_bookings" style={{ ...styles.nextBookingCard, cursor: 'pointer' }} onClick={goToBookings}>
               <p style={styles.hint}>{t('home.no_upcoming_booking')}</p>
               <button
                 style={styles.btnSecondary}
@@ -268,7 +274,7 @@ export default function HomePage() {
               >
                 {t('home.browse_calendar')}
               </button>
-            </div>
+            </MembersSectionCard>
           )}
         </section>
       )}
@@ -400,6 +406,7 @@ const styles: Record<string, React.CSSProperties> = {
   section:         { marginBottom: 20 },
   h2:              { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:            { ...sectionCardStyle, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'default' },
+  nextBookingCard: { ...sectionCardStyle, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'default', display: 'block', textAlign: 'left' },
   bookingRow:      { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
   bookingName:     { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
   bookingSub:      { margin: '4px 0 0', fontSize: 13, color: memberTheme.textMuted },

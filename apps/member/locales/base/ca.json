@@ -7,7 +7,7 @@
     "hint": "Només per a membres. Demana una invitació al teu gimnàs.",
     "dashboard_title": "Inici",
     "loading": "Carregant…",
-    "next_booking": "Propera reserva",
+    "next_booking": "Les meves properes reserves",
     "no_upcoming_booking": "No tens reserves properes.",
     "more_bookings_that_day": "+{count} {count, plural, one {reserva més} other {reserves més}} aquell dia",
     "waitlisted": "En llista d'espera",

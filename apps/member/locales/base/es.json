@@ -7,7 +7,7 @@
     "hint": "Solo para miembros. Pide una invitación a tu gimnasio.",
     "dashboard_title": "Inicio",
     "loading": "Cargando…",
-    "next_booking": "Próxima reserva",
+    "next_booking": "Mis próximas reservas",
     "no_upcoming_booking": "No tienes reservas próximas.",
     "more_bookings_that_day": "+{count} {count, plural, one {reserva más} other {reservas más}} ese día",
     "waitlisted": "En lista de espera",

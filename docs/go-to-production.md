@@ -190,6 +190,17 @@ Tick items off in the PR that completes them.
       before narrowing the constraint, so stop the API, or at least any
       Members-image upload, before rolling back; the R2 objects survive under
       their keys either way, as a removed slot's always has (#725).
+- [ ] **Migration 235 needs no maintenance window** (#1158). The same CHECK
+      swap as 219, one slot further: it adds `next_bookings`, the dashboard's
+      My Next Bookings card, to `chk_theme_member_images_slot`, with the same
+      cost (a millisecond `theme_member_images` rebuild), the same guard on the
+      live clause and the same deploy-order argument — the CHECK is widened
+      before any code that offers the eighth slot goes live. Its `down`
+      deletes the `next_bookings` rows first, so the same rollback precaution
+      applies; and because `npm run db:migrate:down` is `migrate:rollback`
+      (the whole batch), rolling 235 back that way when 234 landed in the same
+      deploy also reverts 234's `user_memberships` status CHECK — step one
+      migration with `migrate:down` instead.
 - [ ] **Run migration 203 in a maintenance window** (#896 stage 1). Twelve tables
       gain an `(action, value)` pair, and each one takes a CHECK — which MySQL 8
       applies with ALGORITHM=COPY, exactly as migration 170's does. The file is

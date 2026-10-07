@@ -92,7 +92,7 @@ describe('nothing else about the slot moved (#1151)', () => {
 
   it('adds no second slot for the same card', () => {
     expect(MEMBER_IMAGE_SLOTS).not.toContain('products');
-    expect(MEMBER_IMAGE_SLOTS).toHaveLength(7);
+    expect(MEMBER_IMAGE_SLOTS).toHaveLength(8);
     for (const code of LOCALE_CODES) {
       const admin = messages('admin', code);
       for (const ns of THEME_NAMESPACES) {
@@ -103,9 +103,12 @@ describe('nothing else about the slot moved (#1151)', () => {
 
   it('leaves every other slot label alone', () => {
     const untouched: Record<string, Record<string, string>> = {
-      en: { training: 'My Training Plan', nutrition: 'My Nutrition', calendar: 'Calendar', bookings: 'My Bookings', personal_goals: 'My Goals', background: 'General background' },
-      es: { training: 'Mi plan de entrenamiento', nutrition: 'Mi nutrición', calendar: 'Calendario', bookings: 'Mis reservas', personal_goals: 'Mis objetivos', background: 'Fondo general' },
-      ca: { training: "El meu pla d'entrenament", nutrition: 'La meva nutrició', calendar: 'Calendari', bookings: 'Les meves reserves', personal_goals: 'Els meus objectius', background: 'Fons general' },
+      // #1158's `next_bookings` is labelled after the dashboard card it paints
+      // (*My Next Bookings*), which is also what the Members App calls that
+      // card — a slot's label is the Members App's own name for its section.
+      en: { training: 'My Training Plan', nutrition: 'My Nutrition', calendar: 'Calendar', bookings: 'My Bookings', next_bookings: 'My Next Bookings', personal_goals: 'My Goals', background: 'General background' },
+      es: { training: 'Mi plan de entrenamiento', nutrition: 'Mi nutrición', calendar: 'Calendario', bookings: 'Mis reservas', next_bookings: 'Mis próximas reservas', personal_goals: 'Mis objetivos', background: 'Fondo general' },
+      ca: { training: "El meu pla d'entrenament", nutrition: 'La meva nutrició', calendar: 'Calendari', bookings: 'Les meves reserves', next_bookings: 'Les meves properes reserves', personal_goals: 'Els meus objectius', background: 'Fons general' },
     };
     for (const code of LOCALE_CODES) {
       const admin = messages('admin', code);

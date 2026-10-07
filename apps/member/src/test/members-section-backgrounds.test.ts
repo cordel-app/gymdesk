@@ -51,9 +51,19 @@ describe('the home sections map to their own images (#728 §Home Page Mapping)',
     expect(homeSrc).toContain('<MembersSectionCard slot="membership"');
   });
 
-  it('leaves the Next Booking card alone — it is not one of the sections', () => {
-    // The only surfaces that take artwork are the five tiles and My Membership.
-    expect(homeSrc.match(/slot="/g)).toHaveLength(6);
+  it('paints the Next Booking card with its own slot, never the My Bookings tile\'s (#1158)', () => {
+    // The surfaces that take artwork: the five tiles, My Membership and — since
+    // #1158 — the My Next Bookings card, in each of its three states.
+    expect(homeSrc.match(/slot="/g)).toHaveLength(9);
+    expect(homeSrc.match(/<MembersSectionCard slot="next_bookings"/g)).toHaveLength(3);
+    // Its body is a structure of its own (block layout, left-aligned text), so
+    // it keeps what it spells over the Section Cards text placement (#1152).
+    const card = homeSrc.match(/nextBookingCard:\s*\{[^}]*\}/)![0];
+    expect(card).toContain("display: 'block'");
+    expect(card).toContain("textAlign: 'left'");
+    expect(card).toContain('...sectionCardStyle');
+    // My Bookings keeps its tile and its slot.
+    expect(homeSrc).toContain('slot="bookings"');
   });
 
   it('keeps the general page background on #725\'s component rather than restating it here', () => {

@@ -427,7 +427,7 @@ describe('Base Theme payloads carry the Members configuration', () => {
 
     const theme = res.body.find((t: any) => t.id === baseThemeId);
     expect(Object.keys(theme.members_images).sort()).toEqual(
-      ['background_url', 'bookings_url', 'calendar_url', 'membership_url', 'nutrition_url', 'personal_goals_url', 'training_url'],
+      ['background_url', 'bookings_url', 'calendar_url', 'membership_url', 'next_bookings_url', 'nutrition_url', 'personal_goals_url', 'training_url'],
     );
     expect(theme.members_images.membership_url).toContain(keyFor(baseThemeId, THEME_NAME, 'membership'));
     expect(theme.members_images.training_url).toBeNull();

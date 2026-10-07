@@ -3,7 +3,7 @@
 //
 //   {bucket}/gyms/{gym_id}-{gym_name}/themes/{theme_id}-{theme_name}/
 //     ├── logo/logo.{extension}
-//     └── members_app/{training,nutrition,calendar,bookings,membership,personal_goals,background}.png
+//     └── members_app/{training,nutrition,calendar,bookings,next_bookings,membership,personal_goals,background}.png
 //
 //   {bucket}/cordel/themes/{theme_id}-{theme_name}/   (a Base Theme: no gym root)
 //     └── … the same two leaves
@@ -98,6 +98,7 @@ describe('the Members App slots (#829 §3)', () => {
           `${themeFolder}/members_app/bookings.png`,
           `${themeFolder}/members_app/calendar.png`,
           `${themeFolder}/members_app/membership.png`,
+          `${themeFolder}/members_app/next_bookings.png`,
           `${themeFolder}/members_app/nutrition.png`,
           `${themeFolder}/members_app/personal_goals.png`,
           `${themeFolder}/members_app/training.png`,

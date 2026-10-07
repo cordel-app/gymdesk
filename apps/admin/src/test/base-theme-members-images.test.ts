@@ -17,7 +17,7 @@ const LOCALES_DIR = join(__dirname, '..', '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 /** The slots, one per Members section — #732's six plus #1038's My Goals. */
-const SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background'] as const;
+const SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'next_bookings', 'membership', 'personal_goals', 'background'] as const;
 
 function stripComments(src: string): string {
   return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');

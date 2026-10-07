@@ -45,8 +45,10 @@ describe('Members image slots (#725, #1038)', () => {
     expect([...MEMBER_IMAGE_SLOTS]).toEqual([
       // #725's six, in its own order…
       'training', 'nutrition', 'calendar', 'bookings', 'background', 'membership',
-      // …and #1038's seventh, for the My Goals section.
+      // …and #1038's seventh, for the My Goals section…
       'personal_goals',
+      // …and #1158's eighth, for the dashboard's My Next Bookings card.
+      'next_bookings',
     ]);
   });
 
@@ -61,14 +63,14 @@ describe('Members image slots (#725, #1038)', () => {
    * CLAUDE.md's "two places" rule for this list, as a gate rather than a note:
    * a slot added to `MEMBER_IMAGE_SLOTS` alone uploads the object to R2 and
    * *then* fails the insert against `chk_theme_member_images_slot`, leaving an
-   * orphan and a 500. Migration 219 is the CHECK's current definition, so the
+   * orphan and a 500. Migration 235 is the CHECK's current definition, so the
    * two are compared directly — and the slot names are compared as a **set**,
    * because the order in a CHECK is irrelevant while the order in the list is
    * the UI's business.
    */
-  it('is mirrored by the CHECK in migration 219', () => {
+  it('is mirrored by the CHECK in migration 235', () => {
     const migration = readFileSync(
-      join(__dirname, '..', 'infra', 'migrations', '219_theme_member_images_personal_goals_slot.js'),
+      join(__dirname, '..', 'infra', 'migrations', '235_theme_member_images_next_bookings_slot.js'),
       'utf-8',
     );
     const declared = migration.match(/const SLOTS = \[([^\]]+)\]/)?.[1] ?? '';
@@ -87,6 +89,18 @@ describe('Members image slots (#725, #1038)', () => {
   it('stores My Goals as `personal_goals.png`', () => {
     expect(buildThemeMemberImageKey('cordel', THEME_ID, 'Dark Modern', 'personal_goals'))
       .toBe(`cordel/themes/${THEME_ID}-DarkModern/members_app/personal_goals.png`);
+  });
+
+  /**
+   * #1158 asked for `members_app/bookings.png`, which is the My Bookings tile's
+   * key already: the two cards must not share an object (the ticket's own §6),
+   * so the dashboard card's slot is `next_bookings`, stored under its own name.
+   */
+  it('stores My Next Bookings as `next_bookings.png`, beside and never over `bookings.png` (#1158)', () => {
+    expect(buildThemeMemberImageKey('cordel', THEME_ID, 'Dark Modern', 'next_bookings'))
+      .toBe(`cordel/themes/${THEME_ID}-DarkModern/members_app/next_bookings.png`);
+    expect(buildThemeMemberImageKey('cordel', THEME_ID, 'Dark Modern', 'bookings'))
+      .toBe(`cordel/themes/${THEME_ID}-DarkModern/members_app/bookings.png`);
   });
 });
 
@@ -189,6 +203,7 @@ describe('the API shape (#725 §Database / Storage References)', () => {
       background_url: null,
       membership_url: null,
       personal_goals_url: null,
+      next_bookings_url: null,
     });
   });
 
@@ -204,8 +219,16 @@ describe('the API shape (#725 §Database / Storage References)', () => {
   it('leaves every other slot untouched when one is configured', () => {
     const urls = memberImageUrls([{ slot: 'bookings', object_key: 'k', modified_at: null }]);
     expect(urls.bookings_url).toContain('/k');
-    expect([urls.training_url, urls.nutrition_url, urls.calendar_url, urls.background_url, urls.membership_url, urls.personal_goals_url])
-      .toEqual([null, null, null, null, null, null]);
+    expect([urls.training_url, urls.nutrition_url, urls.calendar_url, urls.background_url, urls.membership_url, urls.personal_goals_url, urls.next_bookings_url])
+      .toEqual([null, null, null, null, null, null, null]);
+  });
+
+  it('resolves the My Next Bookings slot like any other, and leaves My Bookings alone (#1158)', () => {
+    const urls = memberImageUrls([
+      { slot: 'next_bookings', object_key: 'cordel/themes/t/members_app/next_bookings.png', modified_at: null },
+    ]);
+    expect(urls.next_bookings_url).toContain('/members_app/next_bookings.png');
+    expect(urls.bookings_url).toBeNull();
   });
 
   it('resolves the My Goals slot like any other (#1038)', () => {

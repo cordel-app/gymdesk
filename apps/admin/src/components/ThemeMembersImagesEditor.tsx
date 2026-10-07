@@ -7,7 +7,9 @@ import type { GymStorageBlock } from '@/lib/gymStorageReadiness';
 // #725: the Members App background images of one Custom Theme — one fixed slot
 // per Members section, edited inside the existing Theme editor. Since #1038 it
 // renders as the `Images` subsection of **Members App** rather than as a
-// top-level Theme section, and it carries My Goals (`personal_goals`) too.
+// top-level Theme section, and it carries My Goals (`personal_goals`) too, and
+// since #1158 My Next Bookings (`next_bookings`), the dashboard card's own
+// artwork beside — never shared with — the My Bookings tile's.
 //
 // Presentational, like the rest of `ThemeSectionEditor`: it never fetches,
 // never uploads and never persists. The page owns the draft (a picked file, a
@@ -28,7 +30,7 @@ import type { GymStorageBlock } from '@/lib/gymStorageReadiness';
  * and left the id exactly as it is. Renaming an id would strand every object
  * already stored under the old one.
  */
-export const MEMBER_IMAGE_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background'] as const;
+export const MEMBER_IMAGE_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'next_bookings', 'membership', 'personal_goals', 'background'] as const;
 
 export type MemberImageSlot = (typeof MEMBER_IMAGE_SLOTS)[number];
 

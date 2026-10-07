@@ -113,7 +113,7 @@ arrived with its writer.
 **The `members_app/` slot names above are the target, not the code.** The seven slots
 `MEMBER_IMAGE_SLOTS` (`api/src/domain/themeMemberImages.ts`) and the
 `chk_theme_member_images_slot` CHECK accept are still `training`, `nutrition`,
-`calendar`, `bookings`, `background`, `membership` and `personal_goals` (#1038), so
+`calendar`, `bookings`, `background`, `membership`, `personal_goals` (#1038) and `next_bookings` (#1158, the dashboard's My Next Bookings card, beside and never over `bookings.png`), so
 `goals.png` and `products_services.png` are two renames nobody has ticketed yet — a
 slot name is a stored object key, so changing one is a migration plus a sweep, not a
 line in this file.

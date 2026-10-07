@@ -32,9 +32,17 @@ const libSrc = stripComments(readFileSync(LIB_PATH, 'utf-8'));
 describe('which background a page uses (#725)', () => {
   it('knows the slots the API sends', () => {
     expect([...MEMBER_BACKGROUND_SLOTS]).toEqual(
-      // #1038 adds `personal_goals`, for the My Goals section.
-      ['training', 'nutrition', 'calendar', 'bookings', 'membership', 'personal_goals', 'background'],
+      // #1038 adds `personal_goals`, for the My Goals section; #1158
+      // `next_bookings`, for the dashboard's My Next Bookings card.
+      ['training', 'nutrition', 'calendar', 'bookings', 'next_bookings', 'membership', 'personal_goals', 'background'],
     );
+  });
+
+  it('never maps a page to the next_bookings slot — it paints a dashboard card, not a page (#1158)', () => {
+    expect(libSrc).not.toMatch(/:\s*'next_bookings'/);
+    // My Bookings' own page keeps its own slot, untouched.
+    expect(slotForPathname('/en/schedule')).toBe('bookings');
+    expect(slotForPathname('/en/next-bookings')).toBe('background');
   });
 
   // #1038 added the slot so a Theme could carry the My Goals artwork; #1036

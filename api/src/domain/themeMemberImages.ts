@@ -20,13 +20,20 @@ import {
  * #1038 adds the seventh, `personal_goals`, for the My Goals section, and the
  * rule that governed the six governs it: this list is **one** of the two places
  * a slot is written down, the other being the `chk_theme_member_images_slot`
- * CHECK (migration 181, current definition migration 218). Adding a slot here
+ * CHECK (migration 181, then 219, current definition migration 235). Adding a slot here
  * alone uploads the object to R2 and *then* fails the insert, leaving an orphan
  * and a 500 (CLAUDE.md), so a new slot goes in both — and the key it is stored
  * under is the slot's own name (`personal_goals.png`), which is why the name is
  * the stored value and not a label.
+ *
+ * #1158 adds the eighth, `next_bookings`, for the dashboard's My Next Bookings
+ * card (current CHECK definition: migration 235). The ticket asked for
+ * `bookings.png`, and that key is already the My Bookings tile's — `bookings`
+ * has been a slot since #725 — so a card stored under it would share that
+ * tile's artwork, which is what the ticket's own §6 forbids; the slot is named
+ * for the card it paints, and never for the tile beside it.
  */
-export const MEMBER_IMAGE_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'background', 'membership', 'personal_goals'] as const;
+export const MEMBER_IMAGE_SLOTS = ['training', 'nutrition', 'calendar', 'bookings', 'background', 'membership', 'personal_goals', 'next_bookings'] as const;
 
 export type MemberImageSlot = (typeof MEMBER_IMAGE_SLOTS)[number];
 
