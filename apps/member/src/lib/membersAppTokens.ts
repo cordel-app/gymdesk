@@ -248,6 +248,26 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     source: { kind: 'color', key: 'mutedTextColor', labelKey: 'label_muted_text_color' },
     cssVar: '--gd-text-muted',
   },
+  // ── Buttons (Members App) ─────────────────────────────────────────────────
+  // #1212 — both write the same variables the Members App's `memberTheme`
+  // already reads for its primary and secondary buttons, so nothing downstream
+  // needs a rule of its own.
+  {
+    key: 'primaryButtonColor',
+    section: 'group_members_buttons',
+    labelKey: 'label_members_primary_button_color',
+    type: 'color',
+    source: { kind: 'color', key: 'primaryButton', labelKey: 'label_primary_btn' },
+    cssVar: '--gd-primary-btn',
+  },
+  {
+    key: 'secondaryButtonColor',
+    section: 'group_members_buttons',
+    labelKey: 'label_members_secondary_button_color',
+    type: 'color',
+    source: { kind: 'color', key: 'secondaryButton', labelKey: 'label_secondary_btn' },
+    cssVar: '--gd-secondary-btn',
+  },
   {
     key: 'calendarBackgroundColor',
     section: 'group_members_calendar',
