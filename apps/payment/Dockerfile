@@ -8,7 +8,8 @@ FROM nginx:alpine
 # exactly as this app did before the webhook relay existed.
 #
 # CORDEL_FITNESS_API_INTERNAL_URL is the address *this container* reaches the API
-# at, used by the webhook relay only. Give it no trailing slash.
+# at, used by the webhook relay only. Give it no trailing slash. Both defaults
+# are the API's public hostname, which #1087 restricts to corfront at corback.
 ENV CORDEL_FITNESS_API_PUBLIC_URL=https://api.vdicube.com \
     CORDEL_FITNESS_API_INTERNAL_URL=https://api.vdicube.com
 
