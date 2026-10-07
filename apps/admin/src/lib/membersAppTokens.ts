@@ -183,6 +183,14 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
   },
   // ── Section Cards (Members App) ───────────────────────────────────────────
   {
+    key: 'sectionCardsBackgroundColor',
+    section: 'group_members_background',
+    labelKey: 'label_members_card_bg_color',
+    type: 'color',
+    source: { kind: 'color', key: 'cardBackground', labelKey: 'label_card_bg' },
+    cssVar: '--gd-card-bg',
+  },
+  {
     key: 'sectionCardsBorderColor',
     section: 'group_members_section_cards',
     labelKey: 'label_members_card_border_color',
@@ -305,6 +313,30 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     cssVar: '--gd-font-h3',
   },
   // ── Calendar (Members App) ────────────────────────────────────────────────
+  {
+    key: 'text1Color',
+    section: 'group_members_text',
+    labelKey: 'label_members_text1_color',
+    type: 'color',
+    source: { kind: 'color', key: 'textColor', labelKey: 'label_text_color' },
+    cssVar: '--gd-text',
+  },
+  {
+    key: 'text2Color',
+    section: 'group_members_text',
+    labelKey: 'label_members_text2_color',
+    type: 'color',
+    source: { kind: 'color', key: 'secondaryTextColor', labelKey: 'label_secondary_text_color' },
+    cssVar: '--gd-text-secondary',
+  },
+  {
+    key: 'text3Color',
+    section: 'group_members_text',
+    labelKey: 'label_members_text3_color',
+    type: 'color',
+    source: { kind: 'color', key: 'mutedTextColor', labelKey: 'label_muted_text_color' },
+    cssVar: '--gd-text-muted',
+  },
   {
     key: 'calendarBackgroundColor',
     section: 'group_members_calendar',
