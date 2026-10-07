@@ -149,7 +149,7 @@ describe('the payload keeps the API\'s replace-all rule', () => {
 
   it('seeds a new line with the default only where the column is shown', () => {
     expect(componentSrc).toContain(
-      "showRequirement ? { requirement: DEFAULT_PROMOTION_ITEM_REQUIREMENT } : undefined,",
+      "...(showRequirement ? { requirement: DEFAULT_PROMOTION_ITEM_REQUIREMENT } : {}),",
     );
   });
 });

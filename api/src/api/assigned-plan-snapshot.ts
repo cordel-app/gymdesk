@@ -1,4 +1,5 @@
 import { db, Tx } from '../infra/db';
+import { toPlanBenefitMandatory } from '../domain/planBenefitMandatory';
 import { PersonalFeeBenefit, toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDurationRepeats } from '../domain/planDuration';
 import { PlanBenefitPrices } from '../domain/planBenefitPrices';
@@ -104,6 +105,8 @@ export interface AssignedPlanBenefitRow extends PlanBenefitPrices {
    * row the Plan never configured one on (the dropdown's `—`).
    */
   frequency: SessionBenefitFrequency | null;
+  /** #1184 stage 2 — whether the member could decline this benefit when it was assigned. */
+  mandatory: boolean;
 }
 
 /** The assignment's frozen Billing & Duration, cadence and regular fee. */
@@ -200,6 +203,9 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
     // #918 — only `user_membership_session` has the column; the other two read
     // `undefined`, which normalizes to `null`.
     frequency: toSessionBenefitFrequency(row.frequency),
+    // #1184 stage 2 — what the assignment was agreed with; `true` for a row
+    // written before the column.
+    mandatory: toPlanBenefitMandatory(row.mandatory),
     /**
      * #924 stage 1 — what this line costs before and after its own treatment,
      * VAT included, from the one module the Plan and Promotion sections price
@@ -310,12 +316,13 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
     await tx.query(
       `INSERT INTO ${target}
          (gym_id, user_membership_id, product_id, quantity,
-          item_name, item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`
+          item_name, item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`,
+          mandatory
           ${sessionFrequency ? ', frequency' : ''})
        SELECT ?, ?, b.product_id, b.quantity,
               ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
               gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency,
-              b.\`action\`, b.\`value\`
+              b.\`action\`, b.\`value\`, b.mandatory
               ${sessionFrequency ? ', b.frequency' : ''}
        FROM ${source} b
        JOIN products gc ON gc.id = b.product_id
@@ -479,8 +486,8 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
         `INSERT INTO ${table}
            (gym_id, user_membership_id, product_id, quantity,
             item_name, item_type, item_billing_frequency, unit_price, currency,
-            \`action\`, \`value\`${sessionFrequency ? ', frequency' : ''})
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${sessionFrequency ? ', ?' : ''})`,
+            \`action\`, \`value\`, mandatory${sessionFrequency ? ', frequency' : ''})
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${sessionFrequency ? ', ?' : ''})`,
         [
           gymId, userMembershipId, item.product_id, item.quantity,
           previous.item_name, previous.item_type, previous.item_billing_frequency,
@@ -488,6 +495,8 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
           // #896 stage 1: a kept line keeps its pricing treatment for the same
           // reason it keeps its frozen price — this edit did not mention it.
           previous.action, previous.value,
+          // #1184 stage 2: and its Mandatory flag — what was agreed.
+          previous.mandatory ? 1 : 0,
           ...(sessionFrequency ? [previous.frequency ?? null] : []),
         ],
       );

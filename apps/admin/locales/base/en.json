@@ -1230,6 +1230,10 @@
     "simulation_truncated": "The projection was cut short at its safety limit — later billing events are not shown.",
     "col_original_price": "Original price",
     "col_final_price": "Final price",
+    "col_plan_mandatory": "Mandatory",
+    "plan_mandatory_yes": "Yes",
+    "plan_mandatory_no": "No",
+    "plan_mandatory_hint": "Mandatory benefits are always included when this Plan is assigned. Optional ones can be declined by the member or staff at assignment.",
     "benefit_total_price": "Total {amount}"
   },
   "prices": {

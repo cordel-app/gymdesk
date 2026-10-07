@@ -1216,6 +1216,10 @@
     "simulation_truncated": "La projecció s'ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors.",
     "col_original_price": "Preu original",
     "col_final_price": "Preu final",
+    "col_plan_mandatory": "Obligatori",
+    "plan_mandatory_yes": "Sí",
+    "plan_mandatory_no": "No",
+    "plan_mandatory_hint": "Els beneficis obligatoris s'inclouen sempre quan s'assigna aquest pla. Els opcionals els pot rebutjar el membre o el personal en assignar-lo.",
     "benefit_total_price": "Total {amount}"
   },
   "prices": {

@@ -52,8 +52,19 @@ describe('#916: one shared column declaration', () => {
     // what the declaration pins is the order, not the length.
     expect(keysOf([...PRODUCT_BENEFIT_COLUMNS])).toEqual([
       'item', 'quantity', 'frequency', 'action', 'requirement',
-      'original_price', 'final_price',
+      'original_price', 'final_price', 'mandatory',
     ]);
+  });
+
+  it('puts the Plan benefit Mandatory flag last, beside Actions, and only when asked (#1184)', () => {
+    const at = (key: ProductBenefitColumnKey) =>
+      PRODUCT_BENEFIT_COLUMNS.findIndex((c) => c.key === key);
+    expect(at('mandatory')).toBe(PRODUCT_BENEFIT_COLUMNS.length - 1);
+    expect(at('mandatory')).toBeGreaterThan(at('final_price'));
+    const base = { showFrequency: true, showAction: true, showPrices: true };
+    expect(keysOf(productBenefitColumns(base))).not.toContain('mandatory');
+    expect(keysOf(productBenefitColumns({ ...base, showPlanMandatory: true })).slice(-2))
+      .toEqual(['final_price', 'mandatory']);
   });
 
   it('keeps Benefit between Frequency and the prices, never after them', () => {
@@ -68,7 +79,7 @@ describe('#916: one shared column declaration', () => {
     const align = Object.fromEntries(PRODUCT_BENEFIT_COLUMNS.map((c) => [c.key, c.align]));
     expect(align).toMatchObject({
       item: 'left', quantity: 'right', frequency: 'left', action: 'left',
-      requirement: 'left', original_price: 'right', final_price: 'right',
+      requirement: 'left', original_price: 'right', final_price: 'right', mandatory: 'left',
     });
   });
 

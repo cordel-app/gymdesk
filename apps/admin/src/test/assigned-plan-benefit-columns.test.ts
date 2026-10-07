@@ -62,11 +62,13 @@ describe('#924 §1/§4: the snapshot sections render from the shared grid', () =
     // #959's Requirement is a *Promotion* line's flag, so these Plan-side
     // snapshot sections do not opt in and their grid is the six columns it was.
     expect(configSrc).not.toContain('showRequirement');
+    // #1184: nor a Plan benefit's Mandatory column, which the snapshot editor cannot write.
+    expect(configSrc).not.toContain('showPlanMandatory');
     expect(
       productBenefitColumns({ showFrequency: true, showAction: true, showPrices: true })
         .map((c) => c.key),
     ).toEqual(
-      PRODUCT_BENEFIT_COLUMNS.map((c) => c.key).filter((k) => k !== 'requirement'),
+      PRODUCT_BENEFIT_COLUMNS.map((c) => c.key).filter((k) => k !== 'requirement' && k !== 'mandatory'),
     );
   });
 
