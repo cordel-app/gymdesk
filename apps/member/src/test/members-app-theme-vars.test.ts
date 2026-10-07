@@ -337,3 +337,22 @@ describe('Members App theme settings: where they are painted (#833, #983)', () =
     expect(background).not.toContain('colors?.pageBackground');
   });
 });
+
+describe('Section Cards border width accepts bare pixels (#1216)', () => {
+  const widthVar = (value?: string): string => {
+    const tokens = { ...DEFAULT_TOKENS, membersApp: value === undefined ? undefined : { sectionCardsBorderWidth: value } } as ThemeTokens;
+    return membersAppCssVars(tokens)['--gd-members-card-border-width'];
+  };
+
+  it('reads a bare number as pixels', () => {
+    expect(widthVar('1')).toBe('1px');
+    expect(widthVar('2')).toBe('2px');
+    expect(widthVar('0')).toBe('0px');
+  });
+
+  it('leaves a value with a unit, and the inherited value, as they were', () => {
+    expect(widthVar('1px')).toBe('1px');
+    expect(widthVar('0.5px')).toBe('0.5px');
+    expect(widthVar()).toBe('1px');
+  });
+});

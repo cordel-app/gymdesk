@@ -349,6 +349,11 @@ export function isMembersAppFontSize(value: unknown): boolean {
   return Number.isInteger(n) && n >= MEMBERS_APP_FONT_SIZE.min && n <= MEMBERS_APP_FONT_SIZE.max;
 }
 
+/** A bare number (`1`, `0`, `0.5`) is pixels; a value with a unit is left as typed (#1216). */
+function cssLength(value: string): string {
+  return /^\d+(\.\d+)?$/.test(value) ? `${value}px` : value;
+}
+
 /**
  * The value to write for one Members App CSS variable. A stored value that is
  * unusable falls back to the inherited Admin value rather than reaching the
@@ -376,7 +381,7 @@ export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetti
       return alignmentCssValue(setting.type, value) ?? alignmentCssValue(setting.type, inherited) ?? 'center';
     case 'length':
     default:
-      return typeof value === 'string' && value.trim() !== '' ? value.trim() : String(inherited);
+      return cssLength(typeof value === 'string' && value.trim() !== '' ? value.trim() : String(inherited));
   }
 }
 
