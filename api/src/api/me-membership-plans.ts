@@ -11,6 +11,7 @@ import {
 } from './user-memberships';
 import { recordStatusChange } from './billing-events';
 import { snapshotAssignedPlan } from './assigned-plan-snapshot';
+import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { applyPromotionToMembership, validatePromotionSelection } from './membership-promotions';
 import { currentMembershipFee } from './membership-fee-pricing';
 import { commitAssignment, submitForPayment } from './assignment-commit';
@@ -204,6 +205,11 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       }
     }
 
+    // #1184 stage 3: the same rule the staff paths run — a mandatory benefit
+    // cannot be declined and an unknown Product cannot be injected.
+    const declinedResult = await resolveDeclinedBenefits(gymId, planId, req.body?.declined_benefits);
+    if (declinedResult.error !== undefined) return res.status(400).json({ error: declinedResult.error });
+
     // The Draft, written as `POST /user-memberships` writes one.
     const umId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
@@ -225,6 +231,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       await snapshotAssignedPlan(tx, {
         gymId, userMembershipId: insertId, membershipPlanId: planId,
         membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
+        declinedBenefits: declinedResult.declined,
       });
       return Number(insertId);
     });

@@ -260,6 +260,13 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
    * load-bearing case — see the note on the UPDATE below.
    */
   captureAutoRenew?: boolean;
+  /**
+   * #1184 stage 3 — optional Plan benefits the assigner declined. Already
+   * validated by `resolveDeclinedBenefits()`; the lines are simply not copied,
+   * so billing and every projection read the accepted set and the Plan itself
+   * is untouched.
+   */
+  declinedBenefits?: Array<{ section: string; product_id: number }>;
 }): Promise<void> {
   const { gymId, userMembershipId, membershipPlanId, membershipFeePrice } = params;
   const captureAutoRenew = params.captureAutoRenew !== false;
@@ -314,6 +321,10 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
     // change what an existing member was agreed. Only the session tables carry
     // the column.
     const sessionFrequency = category === 'session';
+    const declinedIds = (params.declinedBenefits ?? [])
+      .filter((d) => d.section === category).map((d) => d.product_id);
+    const declinedClause = declinedIds.length > 0
+      ? `AND b.product_id NOT IN (${declinedIds.map(() => '?').join(',')})` : '';
     await tx.query(
       `INSERT INTO ${target}
          (gym_id, user_membership_id, product_id, quantity,
@@ -328,8 +339,8 @@ export async function snapshotAssignedPlan(tx: Tx, params: {
        FROM ${source} b
        JOIN products gc ON gc.id = b.product_id
        LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-       WHERE b.membership_plan_id = ? AND b.gym_id = ?`,
-      [gymId, userMembershipId, membershipPlanId, gymId],
+       WHERE b.membership_plan_id = ? AND b.gym_id = ? ${declinedClause}`,
+      [gymId, userMembershipId, membershipPlanId, gymId, ...declinedIds],
     );
   }
   // #1187 — every creation path inserts the covered Members before it

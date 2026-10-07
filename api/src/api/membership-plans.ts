@@ -7,6 +7,7 @@ import { ASSIGNMENT_CREATION_STATUS, effectivePrice, snapshotFeeForAssignment, L
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
 import { materialiseAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
+import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { computePriceFields, validateTaxRateId } from './products';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { activePlanConflictBody, supersedeStartsAtError } from '../domain/oneActivePlan';
@@ -772,6 +773,11 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
   const eff = await effectivePrice(Number(req.params.id), gymId, starts_at);
   if (!eff) return res.status(404).json({ error: 'Plan not found' });
 
+  // #1184 stage 3: optional benefits declined for this assignment, validated by
+  // the one rule every assignment path shares.
+  const declinedResult = await resolveDeclinedBenefits(gymId, Number(req.params.id), req.body?.declined_benefits);
+  if (declinedResult.error !== undefined) return res.status(400).json({ error: declinedResult.error });
+
   // #1108 stage 1: the assignment is created as a **Draft**, so #956's one-plan
   // check no longer runs here — it runs on the `draft -> active` commit
   // (`POST /user-memberships/:id/activate`), which is where the supersede, the
@@ -811,6 +817,7 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
         gymId, userMembershipId: insertId,
         membershipPlanId: Number(req.params.id),
         membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
+        declinedBenefits: declinedResult.declined,
       });
       return { kind: 'created' as const, insertId };
     });
