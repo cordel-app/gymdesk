@@ -155,6 +155,8 @@ export function mergeMandatoryBenefits<T extends PlanBenefitRow>(
       // included at its own price until someone saves the section and edits it.
       action: DEFAULT_BENEFIT_ACTION,
       value: null,
+      // #1184 stage 2: no row exists, so nothing was configured — mandatory, the default.
+      mandatory: true,
     }));
   return [...stored, ...missing];
 }
@@ -180,6 +182,12 @@ export interface PlanBenefitWrite {
    * the session section has the column; the other two ignore it.
    */
   frequency?: SessionBenefitFrequency | null;
+  /**
+   * #1184 stage 2 — the line's own Mandatory Yes/No. Absent means the request
+   * named none and the line keeps what it is stored with; a mandatory *Product*
+   * re-added below carries none either, so preserving it never changes it.
+   */
+  mandatory?: boolean;
 }
 
 /**

@@ -1419,6 +1419,7 @@ export default function PlansPage() {
                               frequencyColumn={frequencyColumn}
                               enforceMandatory
                               benefitContext="plan"
+                              showPlanMandatory
                             />
                             {sectionSaveActions({
                               onCancel: cancelBenefitEdit,
@@ -1440,6 +1441,7 @@ export default function PlansPage() {
                                computed for each row — the page formats, it
                                never prices (#817). */
                             showPrices
+                            showPlanMandatory
                           />
                         )}
                       </div>

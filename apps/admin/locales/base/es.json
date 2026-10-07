@@ -1216,6 +1216,10 @@
     "simulation_truncated": "La proyección se ha detenido en su límite de seguridad: no se muestran los eventos de facturación posteriores.",
     "col_original_price": "Precio original",
     "col_final_price": "Precio final",
+    "col_plan_mandatory": "Obligatorio",
+    "plan_mandatory_yes": "Sí",
+    "plan_mandatory_no": "No",
+    "plan_mandatory_hint": "Los beneficios obligatorios se incluyen siempre al asignar este plan. Los opcionales los puede rechazar el miembro o el personal al asignarlo.",
     "benefit_total_price": "Total {amount}"
   },
   "prices": {

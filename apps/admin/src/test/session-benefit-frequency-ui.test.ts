@@ -87,7 +87,7 @@ describe('the Frequency column stays one column', () => {
     expect(PRODUCT_BENEFIT_COLUMNS.map((c) => c.key)).toEqual([
       // #959 appended Requirement after Benefit; Frequency's position is unmoved.
       'item', 'quantity', 'frequency', 'action', 'requirement',
-      'original_price', 'final_price',
+      'original_price', 'final_price', 'mandatory',
     ]);
   });
 

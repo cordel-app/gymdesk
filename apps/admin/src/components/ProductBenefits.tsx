@@ -117,6 +117,18 @@ export interface ProductBenefitRow {
    */
   requirement?: PromotionItemRequirement;
   /**
+   * #1184 stage 2 — a **Membership Plan** benefit's own Mandatory Yes/No: `true`
+   * means the member must keep it when the Plan is assigned, `false` that they
+   * may decline it. Optional, and the key's absence is load-bearing like the
+   * three above: the section `PUT`s are replace-all and read "not mentioned" as
+   * *keep what is stored*, so a section that does not configure it (every
+   * Promotion section, the Assigned Plan snapshot editor) submits none.
+   *
+   * Not `product_mandatory` (the catalogue item's #893 flag) and not a
+   * Promotion line's `requirement`.
+   */
+  mandatory?: boolean;
+  /**
    * #916 — what the row costs, VAT included, as the server computed it
    * (`domain/planBenefitPrices.ts` over `applyLineBenefit()`): the Product
    * Item's own unit price, the same price after this row's treatment, and the
@@ -250,6 +262,8 @@ export const toBenefitItems = (draft: ProductBenefitRow[]) =>
     // carries the key, so a section that does not configure it cannot reset what
     // is stored.
     if (b.requirement !== undefined) line.requirement = b.requirement;
+    // #1184: and a Plan benefit's Mandatory flag, under the same rule.
+    if (b.mandatory !== undefined) line.mandatory = b.mandatory;
     if (b.action === undefined) return line;
     return {
       ...line,
@@ -403,7 +417,8 @@ export const mandatoryTagStyle: React.CSSProperties = {
  * shifting everything after it.
  */
 export type ProductBenefitColumnKey =
-  'item' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price' | 'final_price';
+  'item' | 'quantity' | 'frequency' | 'action' | 'requirement' | 'original_price' | 'final_price'
+  | 'mandatory';
 
 export interface ProductBenefitColumn {
   key: ProductBenefitColumnKey;
@@ -429,6 +444,11 @@ export const PRODUCT_BENEFIT_COLUMNS: readonly ProductBenefitColumn[] = [
   { key: 'requirement', labelKey: 'col_requirement', width: 120, align: 'left' },
   { key: 'original_price', labelKey: 'col_original_price', width: 130, align: 'right' },
   { key: 'final_price', labelKey: 'col_final_price', width: 130, align: 'right' },
+  // #1184 stage 2: a Membership Plan benefit's own Mandatory Yes/No is the last
+  // data column, immediately before Actions — never between Frequency and
+  // Benefit. It is the Plan relationship's flag and not `products.mandatory`
+  // (the tag beside the item name) nor a Promotion line's Requirement above.
+  { key: 'mandatory', labelKey: 'col_plan_mandatory', width: 100, align: 'left' },
 ];
 
 /**
@@ -482,6 +502,8 @@ export function productBenefitColumns(opts: {
   showPrices: boolean;
   /** #959 — a Promotion's Requirement column. Absent means not rendered at all. */
   showRequirement?: boolean;
+  /** #1184 — a Membership Plan benefit's Mandatory column. Absent means not rendered at all. */
+  showPlanMandatory?: boolean;
   /** #1135 — what the number column counts here. Defaults to a quantity. */
   quantityColumn?: BenefitQuantityColumn;
 }): ProductBenefitColumn[] {
@@ -489,6 +511,7 @@ export function productBenefitColumns(opts: {
     if (col.key === 'frequency') return opts.showFrequency;
     if (col.key === 'action') return opts.showAction;
     if (col.key === 'requirement') return opts.showRequirement === true;
+    if (col.key === 'mandatory') return opts.showPlanMandatory === true;
     if (col.key === 'original_price' || col.key === 'final_price') return opts.showPrices;
     return true;
   }).map((col) => (col.key === 'quantity'
@@ -518,7 +541,7 @@ export function formatBenefitPrice(amount: number): string {
 export function ProductBenefitEditor({
   t, addKey, draft, setDraft, categoryItems, showFrequency, enforceMandatory = false,
   benefitContext, frequencyColumn = 'item', quantityColumn = 'quantity',
-  showRequirement = false,
+  showRequirement = false, showPlanMandatory = false,
 }: {
   t: Translate;
   addKey: string;
@@ -568,6 +591,13 @@ export function ProductBenefitEditor({
    * `mandatory` flag beside it.
    */
   showRequirement?: boolean;
+  /**
+   * #1184 stage 2: a **Membership Plan** benefit's Mandatory Yes/No, a checkbox
+   * at the end of the line's configuration. The Plans page only; off by default
+   * so every other caller's grid is exactly what it was. Independent of
+   * `enforceMandatory` above, which is the catalogue's flag.
+   */
+  showPlanMandatory?: boolean;
 }) {
   // #1128: a billing frequency reads the same on every page, so its label is
   // the one shared namespace's and not the caller's `t`.
@@ -587,6 +617,7 @@ export function ProductBenefitEditor({
     ...(showFrequency ? ['100px'] : []),
     ...(benefitContext ? ['130px', '110px'] : []),
     ...(showRequirement ? ['130px'] : []),
+    ...(showPlanMandatory ? ['90px'] : []),
     '28px',
   ].join(' ');
   return (
@@ -604,6 +635,7 @@ export function ProductBenefitEditor({
           {benefitContext && <span style={colHeaderSt}>{t('col_item_action')}</span>}
           {benefitContext && <span />}
           {showRequirement && <span style={colHeaderSt}>{t('col_requirement')}</span>}
+          {showPlanMandatory && <span style={colHeaderSt}>{t('col_plan_mandatory')}</span>}
           <span />
           {draft.map((row, idx) => {
             const mandatory = enforceMandatory && isMandatoryBenefitRow(row);
@@ -740,6 +772,20 @@ export function ProductBenefitEditor({
                     ))}
                   </select>
                 )}
+                {showPlanMandatory && (
+                  // #1184: Yes by default; checked means the member must keep it.
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
+                    <input
+                      type="checkbox"
+                      checked={row.mandatory !== false}
+                      onChange={(e) => updateBenefitRow(setDraft, categoryItems, idx, {
+                        mandatory: e.target.checked,
+                      })}
+                      aria-label={t('col_plan_mandatory')}
+                    />
+                    {row.mandatory !== false ? t('plan_mandatory_yes') : t('plan_mandatory_no')}
+                  </label>
+                )}
                 {mandatory ? <span /> : (
                   <button
                     onClick={() => setDraft((prev) => prev.filter((_, i) => i !== idx))}
@@ -771,13 +817,20 @@ export function ProductBenefitEditor({
       {showRequirement && draft.length > 0 && (
         <p style={{ ...hintSt, marginBottom: 8 }}>{t('item_requirement_hint')}</p>
       )}
+      {/* #1184: what Mandatory means for the member at assignment. */}
+      {showPlanMandatory && draft.length > 0 && (
+        <p style={{ ...hintSt, marginBottom: 8 }}>{t('plan_mandatory_hint')}</p>
+      )}
       {hasMoreToAdd && (
         <button
           onClick={() => addBenefitRow(
             setDraft, categoryItems, draft,
             // A new line carries the key only where the caller configures it, so
             // a section that does not keeps submitting payloads without it.
-            showRequirement ? { requirement: DEFAULT_PROMOTION_ITEM_REQUIREMENT } : undefined,
+            {
+              ...(showRequirement ? { requirement: DEFAULT_PROMOTION_ITEM_REQUIREMENT } : {}),
+              ...(showPlanMandatory ? { mandatory: true } : {}),
+            },
           )}
           style={primaryBtnSmall()}
         >{t(addKey)}</button>
@@ -821,7 +874,7 @@ function BenefitPriceCell({
 export function ProductBenefitView({
   t, emptyKey, rows, showFrequency, enforceMandatory = false, benefitContext,
   showPrices = false, frequencyColumn = 'item', quantityColumn = 'quantity',
-  showRequirement = false,
+  showRequirement = false, showPlanMandatory = false,
 }: {
   t: Translate;
   emptyKey: string;
@@ -856,6 +909,8 @@ export function ProductBenefitView({
    * list). See `ProductBenefitEditor`'s own prop.
    */
   showRequirement?: boolean;
+  /** #1184: the read-only half of the Plan benefit's Mandatory column. */
+  showPlanMandatory?: boolean;
 }) {
   // #1128: a billing frequency reads the same on every page, so its label is
   // the one shared namespace's and not the caller's `t`.
@@ -866,7 +921,7 @@ export function ProductBenefitView({
   // vanishing and shifting the columns after it out of line (#916).
   const columns = productBenefitColumns({
     showFrequency, showAction: benefitContext != null, showPrices, showRequirement,
-    quantityColumn,
+    showPlanMandatory, quantityColumn,
   });
 
   const cell = (col: ProductBenefitColumn, row: ProductBenefitRow): React.ReactNode => {
@@ -902,6 +957,9 @@ export function ProductBenefitView({
         // #959: the stored value, normalized — a line written before the column
         // existed reads `Mandatory`, which is what it means, never an empty cell.
         return t(promotionItemRequirementLabelKey(row.requirement));
+      case 'mandatory':
+        // #1184: a row written before the column reads Yes, which is what it means.
+        return row.mandatory === false ? t('plan_mandatory_no') : t('plan_mandatory_yes');
       case 'original_price':
         return (
           <BenefitPriceCell
