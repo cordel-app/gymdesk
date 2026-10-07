@@ -92,6 +92,8 @@ const TICKET_MAPPING: [string, string | null][] = [
   ['label_members_secondary_button_color', 'Secondary Button'],
   ['label_members_calendar_bg', 'Calendar background'],
   ['label_members_calendar_header_color', 'Calendar header background'],
+  ['label_members_calendar_active_area_bg', 'Calendar Active Area Background'],
+  ['label_members_calendar_inactive_area_bg', 'Calendar Inactive Area Background'],
   ['label_members_calendar_buttons_color', 'Navigation button background'],
   ['label_members_calendar_time_col_bg', 'Time column background'],
   ['label_members_calendar_time_col_text', 'Time column text'],

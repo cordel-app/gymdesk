@@ -60,6 +60,7 @@ export interface ThemeTokens {
     calendarTimeAxisBackground: string;
     calendarTimeAxisText: string;
     calendarWeekendBackground: string;
+    calendarActiveAreaBackground: string;
     calendarDisabledSlotBackground: string;
     calendarEventBackground: string;
     calendarEventBorder: string;
@@ -101,6 +102,7 @@ export const CALENDAR_COLOR_VARS: Record<string, string> = {
   calendarTimeAxisBackground:     '--gd-calendar-time-axis-bg',
   calendarTimeAxisText:           '--gd-calendar-time-axis-text',
   calendarWeekendBackground:      '--gd-calendar-weekend-bg',
+  calendarActiveAreaBackground:   '--gd-calendar-active-area-bg',
   calendarDisabledSlotBackground: '--gd-calendar-disabled-slot-bg',
   calendarEventBackground:        '--gd-calendar-event-bg',
   calendarEventBorder:            '--gd-calendar-event-border',
@@ -206,6 +208,7 @@ export const DEFAULT_TOKENS: ThemeTokens = {
     calendarTimeAxisBackground:     '#ffffff',
     calendarTimeAxisText:           '#6b7280',
     calendarWeekendBackground:      '#ffffff',
+    calendarActiveAreaBackground:   '#ffffff',
     calendarDisabledSlotBackground: '#f7f7f7',
     calendarEventBackground:        '#6c63ff',
     calendarEventBorder:            '#6c63ff',

@@ -65,6 +65,8 @@ export const MEMBERS_APP_SETTING_TYPES: Record<string, MembersAppSettingType> = 
   calendarBackgroundColor:           'color',
   calendarHeaderColor:               'color',
   calendarButtonsColor:              'color',
+  calendarActiveAreaColor:           'color',
+  calendarInactiveAreaColor:         'color',
   calendarTimeColumnBackgroundColor: 'color',
   calendarTimeColumnTextColor:       'color',
   calendarModalBackgroundColor:      'color',

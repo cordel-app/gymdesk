@@ -370,6 +370,22 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     cssVar: '--gd-calendar-bg',
   },
   {
+    key: 'calendarActiveAreaColor',
+    section: 'group_members_calendar',
+    labelKey: 'label_members_calendar_active_area_bg',
+    type: 'color',
+    source: { kind: 'color', key: 'calendarActiveAreaBackground', labelKey: 'label_calendar_active_area_bg' },
+    cssVar: '--gd-calendar-active-area-bg',
+  },
+  {
+    key: 'calendarInactiveAreaColor',
+    section: 'group_members_calendar',
+    labelKey: 'label_members_calendar_inactive_area_bg',
+    type: 'color',
+    source: { kind: 'color', key: 'calendarDisabledSlotBackground', labelKey: 'label_calendar_disabled_slot_bg' },
+    cssVar: '--gd-calendar-disabled-slot-bg',
+  },
+  {
     key: 'calendarHeaderColor',
     section: 'group_members_calendar',
     labelKey: 'label_members_calendar_header_color',
