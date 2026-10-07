@@ -31,9 +31,14 @@ import { db } from '../infra/db';
  *      an assignment (#631), counted only while their window is open and
  *      only when the attached Product is itself a session package.
  *
- * A fourth source lands with #635, which moves Session Benefits onto the
- * Membership Plan itself; `loadMemberProfessionalServiceGrants` is where it
- * will be added.
+ *   4. `user_membership_session` — the Session Benefits of the Membership
+ *      Plan itself (#635/#918), added by #1189 stage 2. Read from the
+ *      **Assigned Plan snapshot**, never the live `membership_plan_session`
+ *      catalogue (#635 §13–§17), and counted only while the assignment is
+ *      `active` — a Draft, a Pending Payment row, a paused or a cancelled one
+ *      grants nothing. A renewal Frequency (#918) is not multiplied in: there
+ *      is no allowance ledger yet (stage 3), so `quantity` is the sessions the
+ *      plan includes.
  *
  * **Overlapping counts are intentional.** A session package is linked to
  * Professional Services many-to-many (a mixed PT + Physiotherapy package is
@@ -45,7 +50,11 @@ import { db } from '../infra/db';
  * `sources` so a caller that needs the underlying balance can see it.
  */
 
-export type ProfessionalServiceGrantKind = 'class_package' | 'promotion_session' | 'membership_service';
+export type ProfessionalServiceGrantKind =
+  | 'class_package'
+  | 'promotion_session'
+  | 'membership_service'
+  | 'plan_session';
 
 /** One row as the three loader queries return it, before aggregation. */
 export interface ProfessionalServiceGrantRow {
@@ -228,7 +237,34 @@ export async function loadMemberProfessionalServiceGrants(
     [gymId, memberId],
   );
 
-  return [...packageRows, ...promotionRows, ...serviceRows];
+  const { rows: planRows } = await db.query<ProfessionalServiceGrantRow>(
+    `SELECT ps.id             AS professional_service_id,
+            ps.name           AS professional_service_name,
+            'plan_session'    AS kind,
+            umss.id           AS reference_id,
+            gc.id             AS product_id,
+            gc.name           AS product_name,
+            umss.quantity     AS sessions
+     FROM user_memberships um
+     JOIN user_membership_session umss
+       ON umss.user_membership_id = um.id AND umss.gym_id = um.gym_id
+     JOIN products gc ON gc.id = umss.product_id
+     JOIN product_professional_services sips
+       ON sips.product_id = gc.id AND sips.gym_id = um.gym_id
+     JOIN professional_services ps
+       ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
+     JOIN gym_professional_services gps
+       ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
+     WHERE um.gym_id = ? AND um.status = 'active'
+       AND (um.member_id = ?
+            OR EXISTS (SELECT 1 FROM user_membership_members umm
+                       WHERE umm.user_membership_id = um.id AND umm.member_id = ?))
+       AND um.starts_at <= UTC_DATE()
+       AND (um.ends_at IS NULL OR um.ends_at >= UTC_DATE())`,
+    [gymId, memberId, memberId],
+  );
+
+  return [...packageRows, ...promotionRows, ...serviceRows, ...planRows];
 }
 
 /** The Member's Professional Services with their session counts, ready to serve. */

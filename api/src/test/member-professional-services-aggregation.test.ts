@@ -39,6 +39,18 @@ describe('aggregateProfessionalServiceGrants', () => {
     expect(result[0].sources.map((s) => s.kind)).toEqual(['class_package', 'promotion_session']);
   });
 
+  it('adds the Membership Plan\'s own Session Benefit as a fourth source (#1189)', () => {
+    // 10-session package + 4 sessions the plan itself includes = 14.
+    const result = aggregateProfessionalServiceGrants([
+      grant({ sessions: 10 }),
+      grant({ kind: 'plan_session', reference_id: 7, product_id: 902, sessions: 4 }),
+    ]);
+
+    expect(result).toHaveLength(1);
+    expect(result[0].sessions).toBe(14);
+    expect(result[0].sources.map((s) => s.kind)).toEqual(['class_package', 'plan_session']);
+  });
+
   it('keeps each Professional Service separate and sorts them by name', () => {
     const result = aggregateProfessionalServiceGrants([
       grant({ professional_service_id: 2, professional_service_name: 'Physiotherapy', sessions: 3 }),
