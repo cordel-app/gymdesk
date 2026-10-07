@@ -10,8 +10,8 @@
 #
 #   ${CORDEL_FITNESS_API_PUBLIC_URL}  the API as the browser-facing proxies reach it
 #   ${CORDEL_FITNESS_API_INTERNAL_URL} the API as *this container* reaches it, for the
-#                                      webhook relay — the internal address, so Monei's
-#                                      webhook no longer needs the API to be public
+#                                      webhook relay (it may be the same hostname:
+#                                      #1087 restricts who may call it, not its name)
 #
 # The Dockerfile gives both the dev value as an image default, so a container
 # started with no environment behaves exactly as this app did before #1083.
@@ -55,8 +55,8 @@ server {
 
     # #1083 — Monei's webhook relay. Monei posts to this host
     # (PAYMENT_NOTIFICATION_URL) and nginx hands the request to the API's own
-    # /webhooks/payment by its internal address, so the API needs no public
-    # route for the provider.
+    # /webhooks/payment at CORDEL_FITNESS_API_INTERNAL_URL, so the provider never
+    # posts to the API's host itself.
     #
     # Everything here is deliberate:
     #

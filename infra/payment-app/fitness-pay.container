@@ -19,9 +19,12 @@ LogDriver=journald
 PublishPort=8083:80
 # #1083 — two origins, because Monei's webhook is relayed by this container.
 #   PUBLIC:   what the browser-facing proxies (/payment-page/, /themes/) call.
-#   INTERNAL: what POST /webhooks/payment is handed to — the API's internal
-#             address, so the provider no longer needs a public route to it.
-# No trailing slash on either. On pro these are the pro API's addresses.
+#   INTERNAL: what POST /webhooks/payment is handed to, so the provider no
+#             longer posts to the API's host itself.
+# Both may be the API's public hostname (#1087): the host stays public by name
+# and corback allows only corfront's address through, so this container reaches
+# it as an allowed caller. No trailing slash on either. On pro these are the pro
+# API's addresses.
 Environment=CORDEL_FITNESS_API_PUBLIC_URL="https://api.vdicube.com"
 Environment=CORDEL_FITNESS_API_INTERNAL_URL="https://api.vdicube.com"
 
