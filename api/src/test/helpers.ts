@@ -221,6 +221,10 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM products WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM tax_rates WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM gym_professional_services WHERE gym_id IN (${marks})`, ids);
+  // #1181: both FKs are ON DELETE CASCADE (and the `personal_goals` delete
+  // above already took the gym-owned-goal rows), so the `gyms` delete would
+  // clear this anyway — listed for the same readable-order reason.
+  await db.query(`DELETE FROM gym_personal_goals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM professional_services WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM billing_events WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM user_membership_promotion_session_snapshot WHERE gym_id IN (${marks})`, ids);

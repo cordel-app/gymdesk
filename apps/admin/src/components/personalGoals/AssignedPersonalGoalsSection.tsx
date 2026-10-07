@@ -14,7 +14,7 @@ import {
   cardSectionLabelStyle, formFieldLabelStyle, formValueStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
 import { cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
-import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalDisplayName } from '@/components/goalLibrary/goalProfile';
+import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalAvailability, goalDisplayName } from '@/components/goalLibrary/goalProfile';
 import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalDetailsModal } from './AssignedPersonalGoalDetailsModal';
 import { GoalReadingHeader } from './GoalReadingHeader';
@@ -150,7 +150,9 @@ export function AssignedPersonalGoalsSection({
     if (!ready) return;
     apiFetch<MemberOption[]>('/members').then(setMembers).catch(() => {});
     apiFetch<GoalListResponse>(`${GOAL_API_ROOTS.gym.personal}?limit=200`)
-      .then((data) => setGoals(data.items))
+      // #1181 — a goal the gym deactivated is not offered for a new assignment
+      // (the server refuses it either way); the picker lists what it may pick.
+      .then((data) => setGoals(data.items.filter((goal) => goalAvailability(goal) === 'active')))
       .catch(() => {});
   }, [apiFetch, ready]);
 

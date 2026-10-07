@@ -3,7 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { handleDupEntry } from '../infra/db-helpers';
-import { GOAL_LIBRARY_FEATURE_KEYS } from '../domain/goalLibrary';
+import { GOAL_LIBRARY_FEATURE_KEYS, gymGoalStatusSql } from '../domain/goalLibrary';
 import { resolveMemberId } from './me';
 import {
   endDateTransition,
@@ -178,13 +178,15 @@ mePersonalGoalsRouter.get('/available', async (req, res, next) => {
        FROM personal_goals pg
        WHERE (pg.gym_id IS NULL OR pg.gym_id = ?)
          AND pg.status != 'deleted'
+         -- #1181: a goal the gym deactivated is not offered for a new assignment.
+         AND ${gymGoalStatusSql('pg')} = 'active'
          AND NOT EXISTS (
            SELECT 1 FROM member_personal_goals mpg
            WHERE mpg.personal_goal_id = pg.id AND mpg.member_id = ? AND mpg.gym_id = ?
              AND mpg.deleted_at IS NULL AND mpg.status = 'in_progress'
          )
        ORDER BY pg.name ASC, pg.id ASC`,
-      [gymId, memberId, gymId],
+      [gymId, gymId, memberId, gymId],
     );
     res.json({
       goals: rows.map((row: any) => ({
@@ -233,11 +235,17 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
     const memberId = await resolveMemberId(gymId, ctx);
 
     const { rows: goalRows } = await db.query(
-      `SELECT id, name, target_value, target_unit FROM personal_goals
-       WHERE id = ? AND (gym_id IS NULL OR gym_id = ?) AND status != 'deleted'`,
-      [goalId, gymId],
+      `SELECT pg.id, pg.name, pg.target_value, pg.target_unit, ${gymGoalStatusSql('pg')} AS gym_status
+       FROM personal_goals pg
+       WHERE pg.id = ? AND (pg.gym_id IS NULL OR pg.gym_id = ?) AND pg.status != 'deleted'`,
+      [gymId, goalId, gymId],
     );
     if (goalRows.length === 0) return res.status(404).json({ error: 'Personal goal not found' });
+    // #1181 — enforced server-side as on the staff path: a deactivated goal is
+    // not assignable, however the picker was reached.
+    if (goalRows[0].gym_status !== 'active') {
+      return res.status(409).json({ error: 'This Personal Goal is inactive for this gym', code: 'goal_inactive' });
+    }
 
     // #1034 §7 — the snapshot is the server's: a field the request does not
     // mention inherits the Gym Goal as it stands now, an explicit `null` is

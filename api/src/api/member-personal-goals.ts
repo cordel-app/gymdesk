@@ -7,7 +7,7 @@ import { actorSnapshot, clampLimit, clampOffset } from '../domain/nutritionLibra
 // The catalogue's own feature key, so this router and `/personal-goals` are
 // gated by one declaration (#1070 — a feature-level permission override applies
 // to the key, so the two halves of Personal Goals cannot be granted apart).
-import { GOAL_LIBRARY_FEATURE_KEYS } from '../domain/goalLibrary';
+import { GOAL_LIBRARY_FEATURE_KEYS, gymGoalStatusSql } from '../domain/goalLibrary';
 import {
   PERSONAL_GOAL_ASSIGNMENT_STATUSES,
   buildAssignmentListWhere,
@@ -283,11 +283,18 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     // a retired one is not — assigning a goal the gym has deleted is how a list
     // comes to name something the catalogue no longer offers.
     const { rows: goalRows } = await db.query(
-      `SELECT id, name, target_value, target_unit FROM personal_goals
-       WHERE id = ? AND (gym_id IS NULL OR gym_id = ?) AND status != 'deleted'`,
-      [goalId, gymId],
+      `SELECT pg.id, pg.name, pg.target_value, pg.target_unit, ${gymGoalStatusSql('pg')} AS gym_status
+       FROM personal_goals pg
+       WHERE pg.id = ? AND (pg.gym_id IS NULL OR pg.gym_id = ?) AND pg.status != 'deleted'`,
+      [gymId, goalId, gymId],
     );
     if (goalRows.length === 0) return res.status(404).json({ error: 'Personal goal not found' });
+    // #1181 — a goal this gym has deactivated is still in the catalogue (and
+    // every existing assignment of it stands), but it is not offered for a new
+    // one; enforced here, not only hidden in the picker.
+    if (goalRows[0].gym_status !== 'active') {
+      return res.status(409).json({ error: 'This Personal Goal is inactive for this gym', code: 'goal_inactive' });
+    }
 
     // #1034 §7 — **the snapshot is the server's, not the form's.** A field the
     // request does not mention inherits the catalogue's own value, so an

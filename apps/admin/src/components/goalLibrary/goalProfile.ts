@@ -80,6 +80,49 @@ export function goalKindHasImage(kind: GoalKind): boolean {
 }
 
 /**
+ * #1181 — which kinds a gym **configures** rather than only reads, mirroring
+ * `GYM_CONFIGURABLE_GOAL_KINDS` in `api/src/domain/goalLibrary.ts`: a per-gym
+ * availability state (Activate / Deactivate, `gym_status` on the row) and a
+ * Duplicate that copies any visible goal into a new gym-owned one. Exactly one
+ * does. `GoalLibrarySection` asks it once, so the Status column, the two menu
+ * items and the row's availability cannot disagree — and for a kind that has
+ * none, none of them is rendered (#974: never a control the route would 404).
+ */
+export const GYM_CONFIGURABLE_GOAL_KINDS: readonly GoalKind[] = ['personal'];
+
+export function goalKindIsGymConfigurable(kind: GoalKind): boolean {
+  return GYM_CONFIGURABLE_GOAL_KINDS.includes(kind);
+}
+
+export type GymGoalStatus = 'active' | 'inactive';
+
+/**
+ * This gym's availability state for the goal (#1181): the API's `gym_status`,
+ * and **active when the row carries none** — the platform list (which has no
+ * gym) and a kind a gym does not configure both read as available, which is
+ * also the API's own default for a goal with no configuration row.
+ */
+export function goalAvailability(goal: Pick<GoalRow, 'gym_status'>): GymGoalStatus {
+  return goal.gym_status ?? 'active';
+}
+
+/** How much of a description the list shows before `…`; the full text stays in the expanded row and Details. */
+export const DESCRIPTION_PREVIEW_LENGTH = 80;
+
+/**
+ * The description as the list shows it (#1181 §3): clipped at a word boundary
+ * where it can be, never altered where it is stored — the row and the Details
+ * modal still read the whole value.
+ */
+export function truncateDescription(text: string | null | undefined, max = DESCRIPTION_PREVIEW_LENGTH): string {
+  const value = (text ?? '').trim();
+  if (value.length <= max) return value;
+  const cut = value.slice(0, max);
+  const atWord = cut.lastIndexOf(' ');
+  return `${(atWord > max / 2 ? cut.slice(0, atWord) : cut).trimEnd()}…`;
+}
+
+/**
  * The ceiling the API enforces from the PNG's own IHDR — **at most** 512×512,
  * not an exact square (the answer on #1035 `Q3`). Mirrors
  * `PERSONAL_GOAL_IMAGE_MAX_SIZE` in `api/src/domain/personalGoalImages.ts`, so
@@ -161,6 +204,14 @@ export interface GoalRow {
    */
   image_url?: string | null;
   status: 'active' | 'deleted';
+  /**
+   * #1181 — this gym's availability state for the goal (`gym_personal_goals`),
+   * reported by the gym-facing router for a configurable kind and **absent** on
+   * the platform list, which has no gym. `active | inactive`; a System goal is
+   * inactive for one gym and active for another without its own row moving.
+   * Read through `goalAvailability()`, never directly.
+   */
+  gym_status?: GymGoalStatus;
   created_at: string;
   created_by_name: string | null;
   modified_at: string | null;

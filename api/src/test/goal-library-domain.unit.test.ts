@@ -13,6 +13,9 @@ import {
   buildGoalListWhere,
   isGoalLibraryKind,
   normalizeGoalName,
+  GYM_CONFIGURABLE_GOAL_KINDS,
+  goalKindIsGymConfigurable,
+  gymGoalStatusSql,
 } from '../domain/goalLibrary';
 import { AUDIT_ENTITY_REGISTRY } from '../infra/audit-registry';
 
@@ -142,5 +145,20 @@ describe('buildGoalListWhere', () => {
     const built = buildGoalListWhere("'; DROP TABLE personal_goals; --", ['1 = 1']);
     expect(built.where).not.toContain('DROP');
     expect(built.params).toEqual(["%'; DROP TABLE personal_goals; --%", "%'; DROP TABLE personal_goals; --%"]);
+  });
+});
+
+
+describe('per-gym configurable kinds (#1181)', () => {
+  it('is exactly Personal Goals, and the SQL reads a missing row as active', () => {
+    expect([...GYM_CONFIGURABLE_GOAL_KINDS]).toEqual(['personal']);
+    expect(goalKindIsGymConfigurable('personal')).toBe(true);
+    expect(goalKindIsGymConfigurable('nutrition')).toBe(false);
+    const sql = gymGoalStatusSql('g');
+    expect(sql).toContain("COALESCE((SELECT gpg.status FROM gym_personal_goals gpg");
+    expect(sql).toContain('gpg.personal_goal_id = g.id AND gpg.gym_id = ?');
+    expect(sql.trim().endsWith("'active')")).toBe(true);
+    // Exactly one bind, the gym's, so a caller adds one parameter per use.
+    expect(sql.match(/\?/g)).toHaveLength(1);
   });
 });

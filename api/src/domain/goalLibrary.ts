@@ -115,6 +115,46 @@ export function goalKindHasImage(kind: GoalLibraryKind): boolean {
 }
 
 /**
+ * #1181 — which kinds a gym **configures** rather than only reads: a per-gym
+ * availability state (`gym_personal_goals`, migration 236; Activate /
+ * Deactivate) and a Duplicate that copies any visible goal, a System one
+ * included, into a new gym-owned row. Exactly one does, for the reason exactly
+ * one is measurable and exactly one has an image: the ticket is about Personal
+ * Goals and Nutrition Goals are deliberately untouched, so the factory asks
+ * this once and registers the three routes — and projects `gym_status` — only
+ * for a kind that has them, never a route that writes nowhere.
+ *
+ * Giving a second kind the pair therefore goes in **three** places: this list,
+ * a per-gym configuration table of its own (there is no `kind` column to share
+ * one, by migration 206's design), and the admin's mirror
+ * (`GYM_CONFIGURABLE_GOAL_KINDS` in `apps/admin/src/components/goalLibrary/goalProfile.ts`).
+ */
+export const GYM_CONFIGURABLE_GOAL_KINDS: readonly GoalLibraryKind[] = ['personal'];
+
+export function goalKindIsGymConfigurable(kind: GoalLibraryKind): boolean {
+  return GYM_CONFIGURABLE_GOAL_KINDS.includes(kind);
+}
+
+/** What `gym_personal_goals.status` may hold. Mirrored by `chk_gpg_status` (migration 236). */
+export const GYM_GOAL_STATUSES = ['active', 'inactive'] as const;
+export type GymGoalStatus = (typeof GYM_GOAL_STATUSES)[number];
+
+/**
+ * A gym's availability state for one Personal Goal, as SQL: the gym's own row
+ * when it has written one and **`active` when it has not** — a System goal
+ * Cordel adds later is available everywhere without a writer visiting every
+ * gym, which is the ticket's "no explicit configuration must not silently
+ * become unavailable". It is a correlated subquery rather than a JOIN so every
+ * reader — the catalogue list, the single-row read, both assignment paths and
+ * the member's `/available` — spells the rule once and binds one `?` (the gym)
+ * where the expression sits.
+ */
+export function gymGoalStatusSql(goalAlias: string): string {
+  return `COALESCE((SELECT gpg.status FROM gym_personal_goals gpg
+    WHERE gpg.personal_goal_id = ${goalAlias}.id AND gpg.gym_id = ?), 'active')`;
+}
+
+/**
  * The System rows migration 206 seeds, in display order.
  *
  * The slugs are the ones the Nutrition Plan routers already validate a plan

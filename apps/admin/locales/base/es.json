@@ -3285,7 +3285,15 @@
     "image_error_unreadable": "No se ha podido leer ese archivo como imagen.",
     "image_error_too_large_dimensions": "La imagen debe ser de 512×512 píxeles como máximo.",
     "image_error_upload_failed": "No se ha podido subir la imagen.",
-    "image_error_remove_failed": "No se ha podido eliminar la imagen."
+    "image_error_remove_failed": "No se ha podido eliminar la imagen.",
+    "duplicate": "Duplicar",
+    "duplicated": "Meta duplicada.",
+    "activate": "Activar",
+    "deactivate": "Desactivar",
+    "activated": "Meta activada para este gimnasio.",
+    "deactivated": "Meta desactivada para este gimnasio.",
+    "status_inactive": "Inactivo",
+    "inactive_assign_hint": "Esta meta está inactiva en este gimnasio. Actívala para asignarla."
   },
   "assigned_personal_goals": {
     "title": "Objetivos Personales Asignados",

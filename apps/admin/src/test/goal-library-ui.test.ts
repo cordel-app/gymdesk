@@ -5,6 +5,7 @@ import {
   GOAL_API_ROOTS,
   GOAL_AUDIT_ENTITIES,
   GOAL_KINDS,
+  GYM_CONFIGURABLE_GOAL_KINDS,
   IMAGE_GOAL_KINDS,
   LIBRARY_TABS,
   MEASURABLE_GOAL_KINDS,
@@ -12,6 +13,7 @@ import {
   SYSTEM_GOAL_SLUGS,
   emptyGoalForm,
   formatGoalTarget,
+  goalAvailability,
   goalDisplayName,
   goalFormError,
   goalKindHasImage,
@@ -20,6 +22,7 @@ import {
   isSystemGoal,
   toGoalFormValues,
   toGoalPayload,
+  truncateDescription,
   type GoalRow,
 } from '@/components/goalLibrary/goalProfile';
 // The declarations this page mirrors are the API's — imported directly, the way
@@ -27,6 +30,7 @@ import {
 import {
   GOAL_LIBRARY_AUDIT_ENTITIES,
   GOAL_LIBRARY_KINDS,
+  GYM_CONFIGURABLE_GOAL_KINDS as API_GYM_CONFIGURABLE_GOAL_KINDS,
   IMAGE_GOAL_KINDS as API_IMAGE_GOAL_KINDS,
   MEASURABLE_GOAL_KINDS as API_MEASURABLE_GOAL_KINDS,
   SYSTEM_GOALS,
@@ -389,15 +393,88 @@ describe('read-only expanded row, editing behind the context menu (#797–#800)'
 
   it('gates every write on the page\'s own permission', () => {
     const menu = slice('<ContextMenu items={[', '/>', sectionSrc);
-    // Edit, Delete and — since #1034 §4 — Assign goal to member. Details is a
-    // read and is deliberately not among them.
-    expect(menu.match(/disabled: !canWrite/g)?.length).toBe(3);
+    // Edit, Delete, Assign goal to member (#1034 §4) and — since #1181 —
+    // Duplicate and Activate / Deactivate (one item, two spellings). Details
+    // is a read and is deliberately not among them.
+    expect(menu.match(/disabled: !canWrite/g)?.length).toBe(6);
     // The section decides no permission of its own (#806).
     expect(sectionSrc).not.toContain('useModuleAccess');
   });
 
   it('keeps a System row read-only in a gym\'s library (§5)', () => {
     expect(sectionSrc).toContain("scope === 'platform' || !isSystemGoal(goal)");
+  });
+
+  /** #1181 — Duplicate, per-gym Activate / Deactivate and the standard header. */
+  describe('Duplicate and per-gym availability (#1181)', () => {
+    const menu = slice('<ContextMenu items={[', '/>', sectionSrc);
+
+    it('mirrors the API\'s declaration of which kinds a gym configures', () => {
+      expect([...GYM_CONFIGURABLE_GOAL_KINDS]).toEqual([...API_GYM_CONFIGURABLE_GOAL_KINDS]);
+      expect(GYM_CONFIGURABLE_GOAL_KINDS).toEqual(['personal']);
+      // Asked once, and only in a gym's own library — the platform list has no gym.
+      expect(sectionSrc).toContain("const configurable = scope === 'gym' && goalKindIsGymConfigurable(kind);");
+      expect(sectionSrc).not.toMatch(/kind === 'personal'/);
+    });
+
+    it('offers Duplicate first and the availability toggle second, in the shared danger styling for Deactivate only', () => {
+      expect(menu.indexOf("label('duplicate')")).toBeLessThan(menu.indexOf("label('deactivate')"));
+      expect(menu.indexOf("label('deactivate')")).toBeLessThan(menu.indexOf("label('edit')"));
+      const toggle = slice("available\n", "] : []),", menu);
+      expect(toggle).toContain("label('deactivate')");
+      expect(toggle).toContain("label('activate')");
+      expect(slice("label('deactivate')", "}", toggle)).toContain('danger: true');
+      expect(slice("label('activate')", "}", toggle)).not.toContain('danger');
+      // Immediate, no confirmation dialog.
+      expect(sectionSrc).toContain("await apiFetch(`${basePath}/${goal.id}/duplicate`, { method: 'POST' });");
+      expect(slice('async function duplicate(', 'async function setAvailability(', sectionSrc)).not.toContain('ConfirmDialog');
+    });
+
+    it('reads the gym\'s availability through one helper and never the goal\'s own row', () => {
+      expect(goalAvailability({ gym_status: 'inactive' })).toBe('inactive');
+      expect(goalAvailability({ gym_status: 'active' })).toBe('active');
+      // The platform list carries no `gym_status`, and so does a kind a gym does not configure.
+      expect(goalAvailability({})).toBe('active');
+      expect(sectionSrc).toContain('const status = configurable ? goalAvailability(goal) : goal.status;');
+      // An inactive goal is not offered for assignment, and the item says why.
+      expect(menu).toContain('disabled: !canWrite || !available');
+      expect(menu).toContain("label('inactive_assign_hint')");
+    });
+
+    it('renders the standard header: Name, Description, Target, Created At, Created By, Status, Actions', () => {
+      const columns = slice('const columns: Column<GoalRow>[] = [', 'const pageStart', sectionSrc);
+      const headers = [...columns.matchAll(/header: (label\('[a-z_]+'\)|'')/g)].map((m) => m[1]);
+      expect(headers).toEqual([
+        "label('label_name')", "label('label_description')", "label('col_target')",
+        "label('created_at')", "label('created_by')", "label('col_status')", "''",
+      ]);
+      // The description is clipped in the row and whole elsewhere; the stored value is untouched.
+      expect(columns).toContain('truncateDescription(goal.description)');
+      expect(truncateDescription('Short')).toBe('Short');
+      expect(truncateDescription('a'.repeat(100))).toBe(`${'a'.repeat(80)}…`);
+      expect(truncateDescription('word '.repeat(30).trim()).endsWith('…')).toBe(true);
+      expect(truncateDescription(null)).toBe('');
+      // Created At is the standard formatter; Created By the masked snapshot.
+      expect(columns).toContain('formatTimestamp(goal.created_at)');
+      expect(columns).toContain('displayValue(goal.created_by_name)');
+      expect(columns).not.toContain("label('col_type')");
+    });
+
+    it('labels every new action and state in every locale', () => {
+      for (const code of ['en', 'es', 'ca'] as const) {
+        const ns = (locales as any)[code] as Record<string, string>;
+        for (const key of ['duplicate', 'duplicated', 'activate', 'deactivate', 'activated', 'deactivated', 'status_inactive', 'inactive_assign_hint', 'created_at', 'created_by']) {
+          expect(typeof ns[key], `${code}.goal_library.${key}`).toBe('string');
+        }
+      }
+    });
+
+    it('keeps the pickers to goals the gym offers', () => {
+      for (const file of ['AssignedPersonalGoalsSection.tsx', 'MemberPersonalGoals.tsx']) {
+        const src = readFileSync(join(__dirname, '..', 'components', 'personalGoals', file), 'utf-8');
+        expect(src, file).toContain("data.items.filter((goal) => goalAvailability(goal) === 'active')");
+      }
+    });
   });
 
   it('renders the inline form in the row, never a modal (#800)', () => {
@@ -435,7 +512,7 @@ describe('chrome (#724, #912, #929)', () => {
 
   it('shows a row\'s state through StatusBadge, in its own column', () => {
     expect(sectionSrc).toContain('<StatusBadge');
-    expect(sectionSrc).toContain("label(`status_${goal.status}`)");
+    expect(sectionSrc).toContain("label(`status_${status}`)");
   });
 });
 

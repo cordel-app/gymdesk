@@ -3299,7 +3299,15 @@
     "image_error_unreadable": "That file could not be read as an image.",
     "image_error_too_large_dimensions": "Image must be at most 512×512 pixels.",
     "image_error_upload_failed": "The image could not be uploaded.",
-    "image_error_remove_failed": "The image could not be removed."
+    "image_error_remove_failed": "The image could not be removed.",
+    "duplicate": "Duplicate",
+    "duplicated": "Goal duplicated.",
+    "activate": "Activate",
+    "deactivate": "Deactivate",
+    "activated": "Goal activated for this gym.",
+    "deactivated": "Goal deactivated for this gym.",
+    "status_inactive": "Inactive",
+    "inactive_assign_hint": "This goal is inactive for this gym. Activate it to assign it."
   },
   "assigned_personal_goals": {
     "title": "Assigned Personal Goals",

@@ -289,6 +289,14 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
        SELECT ?, id, 'active', UTC_TIMESTAMP() FROM professional_services WHERE is_system = 1`,
       [id],
     );
+    // #1181: every System Personal Goal starts available to the new gym — an
+    // explicit `active` row per goal, `gym_professional_services`' pattern. A
+    // goal Cordel adds later reads as active with no row (`gymGoalStatusSql()`).
+    await db.query(
+      `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status)
+       SELECT ?, id, 'active' FROM personal_goals WHERE gym_id IS NULL AND status <> 'deleted'`,
+      [id],
+    );
     // #1149: the gym's default Products — one writer for both creation paths,
     // configured from `domain/defaultGymProducts.ts` (#543's rule unchanged:
     // a System Product's name and type still come from `charge_types`).
@@ -454,6 +462,11 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
   await db.query(
     `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at)
      SELECT ?, id, 'active', UTC_TIMESTAMP() FROM professional_services WHERE is_system = 1`,
+    [newId],
+  );
+  await db.query(
+    `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status)
+     SELECT ?, id, 'active' FROM personal_goals WHERE gym_id IS NULL AND status <> 'deleted'`,
     [newId],
   );
   await seedDefaultGymProducts(newId);

@@ -14,7 +14,7 @@ import {
   formValueStyle, inlineActionsRowStyle, secondaryBtnSmall,
 } from '@/components/formChrome';
 import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
-import { displayValue } from '@/components/nutritionLibrary/nutritionItemProfile';
+import { displayValue, formatTimestamp } from '@/components/nutritionLibrary/nutritionItemProfile';
 import {
   IMAGE_PREVIEW_THUMBNAIL_SIZE, imagePreviewFrameStyle, imagePreviewImageStyle,
 } from '@/components/imagePreviewFrame';
@@ -23,8 +23,9 @@ import { GoalDetailsModal } from './GoalDetailsModal';
 import { GoalImageField } from './GoalImageField';
 import {
   GOAL_API_ROOTS, GoalFormValues, GoalKind, GoalListResponse, GoalRow, GoalScope,
-  emptyGoalForm, formatGoalTarget, goalDisplayName, goalFormError, goalKindHasImage,
-  isMeasurableGoalKind, isSystemGoal, toGoalFormValues, toGoalPayload,
+  emptyGoalForm, formatGoalTarget, goalAvailability, goalDisplayName, goalFormError, goalKindHasImage,
+  goalKindIsGymConfigurable, isMeasurableGoalKind, isSystemGoal, toGoalFormValues, toGoalPayload,
+  truncateDescription,
 } from './goalProfile';
 
 const LIMIT = 20;
@@ -78,6 +79,11 @@ export function GoalLibrarySection({
   // cannot disagree about whether this kind has an image — and for a kind that
   // has none, neither is rendered at all.
   const hasImage = goalKindHasImage(kind);
+  // #1181: asked once, so the Status column, the Duplicate and the Activate /
+  // Deactivate items cannot disagree about whether this kind is one a gym
+  // configures — and only a gym's own library configures anything: the
+  // platform list has no gym whose state it could hold.
+  const configurable = scope === 'gym' && goalKindIsGymConfigurable(kind);
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
@@ -210,6 +216,34 @@ export function GoalLibrarySection({
     } catch (e: any) {
       setEditError(e.message ?? label('error_generic'));
     } finally { setEditSaving(false); }
+  }
+
+  /* ── Duplicate, Activate / Deactivate (#1181) ───────────────────────────── */
+
+  /** An immediate action (no confirmation): the new gym-owned copy is in the reloaded list. */
+  async function duplicate(goal: GoalRow) {
+    try {
+      await apiFetch(`${basePath}/${goal.id}/duplicate`, { method: 'POST' });
+      toast(label('duplicated'));
+      load();
+    } catch (e: any) {
+      toast(e.message ?? label('error_generic'));
+    }
+  }
+
+  /**
+   * The gym's own availability state for the goal — never the goal's row, and
+   * never a soft delete: a System goal deactivated here is still the platform's
+   * and still another gym's, and an existing assignment of it stands.
+   */
+  async function setAvailability(goal: GoalRow, action: 'activate' | 'deactivate') {
+    try {
+      const updated = await apiFetch<GoalRow>(`${basePath}/${goal.id}/${action}`, { method: 'POST' });
+      applyGoalChange(updated);
+      toast(label(action === 'activate' ? 'activated' : 'deactivated'));
+    } catch (e: any) {
+      toast(e.message ?? label('error_generic'));
+    }
   }
 
   async function confirmDelete() {
@@ -369,6 +403,19 @@ export function GoalLibrarySection({
         </span>
       ),
     },
+    // #1181 §3 — the standard entity columns: Name, Description, Target,
+    // Created At, Created By, Status, Actions. The description is clipped for
+    // the row and whole in the expanded row and in Details; the value stored is
+    // never touched.
+    {
+      header: label('label_description'),
+      mobile: 'secondary',
+      render: (goal) => (
+        <span style={{ fontSize: 13 }} title={goal.description ?? undefined}>
+          {goal.description ? truncateDescription(goal.description) : '—'}
+        </span>
+      ),
+    },
     // Declared conditionally rather than rendered as `—` for a kind that has no
     // such column at all: this is not a value a Nutrition Goal is missing, it is
     // a field that kind does not have (`Column.mobile` keeps a *present* column's
@@ -380,20 +427,30 @@ export function GoalLibrarySection({
       render: (goal: GoalRow) => <span style={{ fontSize: 13 }}>{formatGoalTarget(goal)}</span>,
     }] : []),
     {
-      header: label('col_type'),
-      width: 120,
+      header: label('created_at'),
+      width: 150,
       mobile: 'secondary',
-      render: (goal) => (
-        <span style={{ fontSize: 13 }}>
-          {goal.gym_id === null ? label('ownership_system') : label('ownership_gym')}
-        </span>
-      ),
+      render: (goal) => <span style={{ fontSize: 13 }}>{formatTimestamp(goal.created_at)}</span>,
     },
     {
+      // The actor snapshot, masked for a System row by the API (#799): a gym is
+      // shown `—`, never a Cordel employee's name.
+      header: label('created_by'),
+      width: 150,
+      mobile: 'secondary',
+      render: (goal) => <span style={{ fontSize: 13 }}>{displayValue(goal.created_by_name)}</span>,
+    },
+    {
+      // This gym's availability state for a configurable kind (#1181), the
+      // row's own lifecycle otherwise — two different axes, and soft deletion
+      // is never shown here because a deleted row is not listed.
       header: label('col_status'),
       width: 120,
       mobile: 'keep',
-      render: (goal) => <StatusBadge status={goal.status} label={label(`status_${goal.status}`)} />,
+      render: (goal) => {
+        const status = configurable ? goalAvailability(goal) : goal.status;
+        return <StatusBadge status={status} label={label(`status_${status}`)} />;
+      },
     },
     {
       header: '',
@@ -402,8 +459,23 @@ export function GoalLibrarySection({
       render: (goal) => {
         // A gym may not edit or delete a System row; Cordel administers those.
         const writable = scope === 'platform' || !isSystemGoal(goal);
+        const available = goalAvailability(goal) === 'active';
         return (
           <ContextMenu items={[
+            // #1181 — Duplicate first, for a System goal and the gym's own alike:
+            // the copy is always a new gym-owned goal. Immediate, no dialog.
+            ...(configurable ? [
+              { label: label('duplicate'), onClick: () => duplicate(goal), disabled: !canWrite, title: readOnlyTitle },
+            ] : []),
+            // #1181 — the gym's own availability state. Deactivate takes the
+            // shared danger styling (it removes the goal from what members and
+            // staff may pick), Activate the normal one — the Professional
+            // Services pattern.
+            ...(configurable ? [
+              available
+                ? { label: label('deactivate'), onClick: () => setAvailability(goal, 'deactivate'), disabled: !canWrite, title: readOnlyTitle, danger: true }
+                : { label: label('activate'), onClick: () => setAvailability(goal, 'activate'), disabled: !canWrite, title: readOnlyTitle },
+            ] : []),
             ...(writable ? [
               { label: label('edit'), onClick: () => openInlineEdit(goal), disabled: !canWrite, title: readOnlyTitle },
             ] : []),
@@ -411,12 +483,14 @@ export function GoalLibrarySection({
             // gym may not *edit* a platform row but may certainly assign it,
             // which is the catalogue's own gym-facing visibility rule (#947 §5)
             // and exactly what `POST /member-personal-goals` already accepts.
-            // It is not destructive, so it carries no `danger` flag.
+            // It is not destructive, so it carries no `danger` flag. Since
+            // #1181 an inactive goal is not assignable — the server refuses it
+            // — so the item is disabled, with the reason, rather than offered.
             ...(onAssign ? [{
               label: label('assign_to_member'),
               onClick: () => onAssign(goal),
-              disabled: !canWrite,
-              title: readOnlyTitle,
+              disabled: !canWrite || !available,
+              title: !available ? label('inactive_assign_hint') : readOnlyTitle,
             }] : []),
             ...(writable ? [
               { label: label('delete'), onClick: () => setDeleting(goal), disabled: !canWrite, title: readOnlyTitle, danger: true },

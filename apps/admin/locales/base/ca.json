@@ -3312,7 +3312,15 @@
     "image_error_unreadable": "No s'ha pogut llegir aquest fitxer com a imatge.",
     "image_error_too_large_dimensions": "La imatge ha de ser de 512×512 píxels com a màxim.",
     "image_error_upload_failed": "No s'ha pogut pujar la imatge.",
-    "image_error_remove_failed": "No s'ha pogut eliminar la imatge."
+    "image_error_remove_failed": "No s'ha pogut eliminar la imatge.",
+    "duplicate": "Duplicar",
+    "duplicated": "Fita duplicada.",
+    "activate": "Activar",
+    "deactivate": "Desactivar",
+    "activated": "Fita activada per a aquest gimnàs.",
+    "deactivated": "Fita desactivada per a aquest gimnàs.",
+    "status_inactive": "Inactiu",
+    "inactive_assign_hint": "Aquesta fita està inactiva en aquest gimnàs. Activa-la per assignar-la."
   },
   "assigned_personal_goals": {
     "title": "Objectius Personals Assignats",

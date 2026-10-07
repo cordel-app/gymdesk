@@ -201,6 +201,15 @@ Tick items off in the PR that completes them.
       (the whole batch), rolling 235 back that way when 234 landed in the same
       deploy also reverts 234's `user_memberships` status CHECK — step one
       migration with `migrate:down` instead.
+- [ ] **Migration 236 needs no maintenance window** (#1181). It creates
+      `gym_personal_goals` and backfills an `active` row per gym × visible
+      Personal Goal (tens of rows per gym) with `INSERT IGNORE`, so a re-run is
+      a no-op and no existing table is altered. Deploy order is already safe:
+      the readers resolve a missing row as `active`, so the new code is correct
+      before and after the backfill lands. Its `down` drops the table, which
+      returns every gym to "every visible goal is available" — a gym's
+      deactivations are the one thing lost, so export them first if any gym has
+      used the feature.
 - [ ] **Run migration 203 in a maintenance window** (#896 stage 1). Twelve tables
       gain an `(action, value)` pair, and each one takes a CHECK — which MySQL 8
       applies with ALGORITHM=COPY, exactly as migration 170's does. The file is

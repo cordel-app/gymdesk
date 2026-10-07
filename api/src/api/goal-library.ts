@@ -10,6 +10,8 @@ import {
   GoalLibraryKind,
   buildGoalListWhere,
   goalKindHasImage,
+  goalKindIsGymConfigurable,
+  gymGoalStatusSql,
   isMeasurableGoalKind,
   normalizeGoalName,
 } from '../domain/goalLibrary';
@@ -26,6 +28,7 @@ import {
 } from '../domain/personalGoalImages';
 import {
   buildStorageObjectUrl,
+  copyStorageObject,
   deleteStorageObject,
   describeStorageError,
   ensureStorageFolders,
@@ -76,6 +79,10 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   // Nutrition Goal's `/:id/image` is a 404 rather than a write to a column that
   // does not exist.
   const hasImage = goalKindHasImage(kind);
+  // #1181: the same declaration-rather-than-branch rule for the per-gym
+  // availability state and the Duplicate: asked once, so `gym_status` is
+  // projected and the three routes are registered only for a kind that has them.
+  const configurable = goalKindIsGymConfigurable(kind);
   // #1070: writes are gated on this catalogue's own feature key rather than on
   // `NUTRITION` alone, so a feature-level override reaches exactly the catalogue
   // it was declared for. With no override declared the guard answers precisely
@@ -90,9 +97,11 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
    * administered from Cordel — so their actor names are Cordel employees' and are
    * not published to every tenant. A gym's own rows carry theirs.
    */
-  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit,' : ''}${hasImage ? ' g.image_url,' : ''}
+  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit,' : ''}${hasImage ? ' g.image_url,' : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g', { maskPlatformActors: true })}`;
+  /** The parameters `COLUMNS` binds before a query's own — the gym of `gym_status`, for a configurable kind. */
+  const columnParams = (gymId: string): unknown[] => (configurable ? [gymId] : []);
 
   /**
    * `target_value` is a DECIMAL, which mysql2 hands back as a string. Every
@@ -111,9 +120,24 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     };
   }
 
-  async function loadGoal(id: unknown) {
-    const { rows } = await db.query(`SELECT ${COLUMNS} FROM ${table} g WHERE g.id = ?`, [id]);
+  async function loadGoal(id: unknown, gymId: string) {
+    const { rows } = await db.query(`SELECT ${COLUMNS} FROM ${table} g WHERE g.id = ?`, [...columnParams(gymId), id]);
     return rows[0] ? shapeGoal(rows[0]) : undefined;
+  }
+
+  /**
+   * The gym's own R2 folder prefix, or null for a gym whose bucket was never
+   * initialized. An upload needs somewhere to put the object, so that case is
+   * a 409; removing an image needs no folder at all — the reference is the
+   * gym's to clear either way, and an object that cannot be identified as the
+   * gym's is not deleted anyway (`loadExerciseForMedia()`'s rule, #719).
+   */
+  async function gymStorageFolderPrefix(gymId: string): Promise<string | null> {
+    const { rows } = await db.query<{ storage_folder_prefix: string | null }>(
+      'SELECT storage_folder_prefix FROM gyms WHERE id = ? AND deleted_at IS NULL',
+      [gymId],
+    );
+    return rows[0]?.storage_folder_prefix ?? null;
   }
 
   /**
@@ -159,7 +183,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // seeded with, so the order is stable rather than per-request.
       const { rows } = await db.query(
         `SELECT ${COLUMNS} FROM ${table} g WHERE ${where} ORDER BY g.name ASC LIMIT ${limit} OFFSET ${offset}`,
-        params,
+        [...columnParams(gymId), ...params],
       );
       res.json({ items: rows.map(shapeGoal), total: countRows[0]?.total ?? 0, limit, offset });
     } catch (err) { next(err); }
@@ -196,17 +220,22 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
       // `slug` is deliberately not written: it is a System row's label handle and
       // `chk_<prefix>_slug_system_only` refuses one on a gym row.
-      const { insertId } = await db.query(
-        `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit,' : ''}
-           status, created_by_name, created_by_type)
-         VALUES (?, ?, ?,${measurable ? ' ?, ?,' : ''} 'active', ?, ?)`,
-        [
-          gymId, name.value, description.value ?? null,
-          ...(measurable ? [target.value.value ?? null, target.value.unit ?? null] : []),
-          actor.name, actor.type,
-        ],
-      );
-      const goal = await loadGoal(insertId);
+      const insertId = await db.transaction(async (tx) => {
+        const { insertId: goalId } = await tx.query(
+          `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit,' : ''}
+             status, created_by_name, created_by_type)
+           VALUES (?, ?, ?,${measurable ? ' ?, ?,' : ''} 'active', ?, ?)`,
+          [
+            gymId, name.value, description.value ?? null,
+            ...(measurable ? [target.value.value ?? null, target.value.unit ?? null] : []),
+            actor.name, actor.type,
+          ],
+        );
+        // #1181 — a gym's own goal starts available to that gym, explicitly.
+        if (configurable) await writeGymGoalStatus(tx, gymId, goalId, 'active', actor);
+        return goalId as number;
+      });
+      const goal = await loadGoal(insertId, gymId);
       recordAudit(req, { action: 'create', entityType, entityId: insertId, next: goal });
       res.status(201).json(goal);
     } catch (err) { next(err); }
@@ -269,7 +298,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       params.push(id);
       await db.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`, params);
 
-      const goal = await loadGoal(id);
+      const goal = await loadGoal(id, gymId);
       recordAudit(req, {
         action: 'update', entityType, entityId: id,
         previous: shapeGoal(existing[0]), next: goal,
@@ -295,21 +324,6 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   // written until the bytes pass, which is how "an invalid upload does not
   // replace or delete the existing image" holds.
   if (hasImage) {
-    /**
-     * The gym's own R2 folder prefix, or null for a gym whose bucket was never
-     * initialized. An upload needs somewhere to put the object, so that case is
-     * a 409; removing an image needs no folder at all — the reference is the
-     * gym's to clear either way, and an object that cannot be identified as the
-     * gym's is not deleted anyway (`loadExerciseForMedia()`'s rule, #719).
-     */
-    async function gymStorageFolderPrefix(gymId: string): Promise<string | null> {
-      const { rows } = await db.query<{ storage_folder_prefix: string | null }>(
-        'SELECT storage_folder_prefix FROM gyms WHERE id = ? AND deleted_at IS NULL',
-        [gymId],
-      );
-      return rows[0]?.storage_folder_prefix ?? null;
-    }
-
     /**
      * The gym-owned, editable goal this request is about, or the response that
      * says why there isn't one.
@@ -471,7 +485,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
           // its image predates this shape.
           await sweepReplacedImage(folderPrefix, goal.id, goal.image_url, url);
 
-          const updated = await loadGoal(goal.id);
+          const updated = await loadGoal(goal.id, gymId);
           recordAudit(req, {
             action: 'update', entityType, entityId: goal.id,
             previous: { image_url: goal.image_url }, next: { image_url: url },
@@ -505,12 +519,164 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
         await sweepReplacedImage(folderPrefix, goal.id, goal.image_url, null);
 
-        const updated = await loadGoal(goal.id);
+        const updated = await loadGoal(goal.id, gymId);
         recordAudit(req, {
           action: 'update', entityType, entityId: goal.id,
           previous: { image_url: goal.image_url }, next: { image_url: null },
         });
         res.json(updated);
+      } catch (err) { next(err); }
+    });
+  }
+
+  /* ── Per-gym availability and Duplicate (#1181) ─────────────────────────── */
+  //
+  // Registered only for a kind a gym configures (`goalKindIsGymConfigurable()`),
+  // so a Nutrition Goal's `/:id/activate` is a 404 rather than a write to a
+  // table that does not exist for it.
+
+  /**
+   * The one writer of `gym_personal_goals`: an upsert keyed on the UNIQUE
+   * `(gym_id, personal_goal_id)`, so activating and deactivating are idempotent
+   * and never touch the goal's own row — a System goal's definition is shared
+   * by every gym and is not this gym's to change (the ticket's architectural
+   * requirement, and `gym_professional_services`' pattern).
+   */
+  async function writeGymGoalStatus(
+    q: { query: typeof db.query },
+    gymId: string,
+    goalId: number | string,
+    status: 'active' | 'inactive',
+    actor: { name: string | null; type: string | null },
+  ): Promise<void> {
+    await q.query(
+      `INSERT INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by_name, created_by_type)
+       VALUES (?, ?, ?, ?, ?) AS incoming
+       ON DUPLICATE KEY UPDATE
+         status = incoming.status,
+         modified_at = UTC_TIMESTAMP(),
+         modified_by_name = incoming.created_by_name,
+         modified_by_type = incoming.created_by_type`,
+      [gymId, goalId, status, actor.name, actor.type],
+    );
+  }
+
+  /** A goal the gym can see — a System one or its own — and the 404/409 when it cannot. */
+  async function loadVisibleGoal(req: any, res: any) {
+    const { gymId } = getTenantContext(req);
+    const { rows } = await db.query(
+      `SELECT id, gym_id, name, description, status${measurable ? ', target_value, target_unit' : ''}${hasImage ? ', image_url' : ''}
+       FROM ${table} WHERE id = ? AND (gym_id IS NULL OR gym_id = ?)`,
+      [req.params.id, gymId],
+    );
+    if (rows.length === 0) { res.status(404).json({ error: 'Goal not found' }); return null; }
+    if (rows[0].status === 'deleted') { res.status(409).json({ error: 'Goal is deleted' }); return null; }
+    return rows[0];
+  }
+
+  if (configurable) {
+    for (const [action, status] of [['activate', 'active'], ['deactivate', 'inactive']] as const) {
+      router.post(`/:id/${action}`, requireWrite, async (req, res, next) => {
+        const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+        const actor = actorSnapshot({ name: actorName, isSuperadmin });
+        try {
+          const source = await loadVisibleGoal(req, res);
+          if (!source) return;
+          const before = await loadGoal(source.id, gymId);
+          await writeGymGoalStatus(db, gymId, source.id, status, actor);
+          const goal = await loadGoal(source.id, gymId);
+          // For a System goal this is a gym-level configuration change, not an
+          // edit of the definition: the entity is still the goal (so the Audit
+          // Log's filter finds it), the gym and actor are the request's, and
+          // what moved is the gym's own state.
+          recordAudit(req, {
+            action, entityType, entityId: source.id, entityName: source.name,
+            previous: { gym_status: before?.gym_status ?? null }, next: { gym_status: goal?.gym_status ?? null },
+          });
+          res.json(goal);
+        } catch (err) { next(err); }
+      });
+    }
+
+    /**
+     * Copies the source goal's image object into the gym's own key for the new
+     * goal — never a shared reference: the key carries the goal's id, so two
+     * goals cannot point at one object, and a System image under `cordel/goals/`
+     * is read and never written (#1041's rule for cloning a Theme's assets). A
+     * URL that is not an object of this bucket is carried over as the reference
+     * it is. Best-effort: a failed copy leaves the duplicate with no image and
+     * an error in the log, never a half-created goal.
+     */
+    async function copyGoalImageForDuplicate(
+      gymId: string,
+      sourceUrl: string,
+      goalId: number,
+      goalName: string,
+    ): Promise<string | null> {
+      const sourceKey = storageKeyFromObjectUrl(sourceUrl);
+      if (!sourceKey) return sourceUrl;
+      if (!isStorageConfigured()) return null;
+      const folderPrefix = await gymStorageFolderPrefix(gymId);
+      if (!folderPrefix) return null;
+      const destKey = buildGymPersonalGoalImageKey(folderPrefix, goalId, goalName);
+      try {
+        await ensureStorageFolders(gymPersonalGoalImageFolderKeys(folderPrefix));
+        return await copyStorageObject(sourceKey, destKey);
+      } catch (err: any) {
+        const details = err instanceof StorageOperationError
+          ? err.details
+          : describeStorageError(err, { operation: 'copyStorageObject', key: destKey });
+        logger.error({ err, details, gymId, goalId, sourceKey }, 'Duplicating a personal goal could not copy its image');
+        return null;
+      }
+    }
+
+    router.post('/:id/duplicate', requireWrite, async (req, res, next) => {
+      const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+      const actor = actorSnapshot({ name: actorName, isSuperadmin });
+      try {
+        const source = await loadVisibleGoal(req, res);
+        if (!source) return;
+        // The Professional Services convention, and a 409 on a second copy
+        // rather than a silently numbered name.
+        const newName = `${source.name} - Copy`;
+        const { rows: existing } = await db.query(
+          `SELECT id FROM ${table} WHERE gym_id = ? AND name = ? AND status != 'deleted'`,
+          [gymId, newName],
+        );
+        if (existing.length > 0) return res.status(409).json({ error: 'A goal with this name already exists' });
+
+        // The definition fields and nothing else: no slug (a System row's label
+        // handle), no source ownership, no actors, no image yet — the object is
+        // copied once the row has the id its key is built from.
+        const insertId = await db.transaction(async (tx) => {
+          const { insertId: goalId } = await tx.query(
+            `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit,' : ''}
+               status, created_by_name, created_by_type)
+             VALUES (?, ?, ?,${measurable ? ' ?, ?,' : ''} 'active', ?, ?)`,
+            [
+              gymId, newName, source.description ?? null,
+              ...(measurable ? [source.target_value ?? null, source.target_unit ?? null] : []),
+              actor.name, actor.type,
+            ],
+          );
+          await writeGymGoalStatus(tx, gymId, goalId, 'active', actor);
+          return goalId as number;
+        });
+
+        if (hasImage && source.image_url) {
+          const imageUrl = await copyGoalImageForDuplicate(gymId, source.image_url, insertId, newName);
+          if (imageUrl) {
+            await db.query(`UPDATE ${table} SET image_url = ? WHERE id = ? AND gym_id = ?`, [imageUrl, insertId, gymId]);
+          }
+        }
+
+        const goal = await loadGoal(insertId, gymId);
+        recordAudit(req, {
+          action: 'duplicate', entityType, entityId: insertId, entityName: newName,
+          previous: { source_id: source.id, source_gym_id: source.gym_id }, next: goal,
+        });
+        res.status(201).json(goal);
       } catch (err) { next(err); }
     });
   }
