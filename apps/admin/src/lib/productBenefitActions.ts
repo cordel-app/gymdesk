@@ -39,11 +39,13 @@ export const PROMOTION_ITEM_ACTIONS: readonly ProductBenefitAction[] = [
  * §5/§16 — what a Membership Plan may configure. A strict subset: "Membership
  * Plans cannot configure `Fixed discount` or `Fixed Price`", and since #997 not
  * `% Discount` either — a Plan benefit is charged at the Product's normal price
- * or waived outright.
+ * or waived outright. #1184 stage 1 reversed #997's retirement of `% Discount`, so it
+ * is offered again; `Fixed discount` and `Fixed Price` stay Promotion-only.
  */
 export const PLAN_BENEFIT_ACTIONS: readonly ProductBenefitAction[] = [
   'no_benefit',
   'waive',
+  'percentage_discount',
 ];
 
 /**
@@ -55,9 +57,7 @@ export const PLAN_BENEFIT_ACTIONS: readonly ProductBenefitAction[] = [
  *
  * A Promotion retires nothing (§8), so this is empty in that context.
  */
-export const LEGACY_PLAN_BENEFIT_ACTIONS: readonly ProductBenefitAction[] = [
-  'percentage_discount',
-];
+export const LEGACY_PLAN_BENEFIT_ACTIONS: readonly ProductBenefitAction[] = [];
 
 /** Everything a Plan-side row may hold — what a read answers with. */
 export const STORED_PLAN_BENEFIT_ACTIONS: readonly ProductBenefitAction[] = [

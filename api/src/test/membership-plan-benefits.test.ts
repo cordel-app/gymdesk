@@ -740,14 +740,22 @@ describe('Membership Plan benefit actions', () => {
     expect(cleared.body[0]).toMatchObject({ action: 'no_benefit', value: null });
   });
 
-  // #997 §1/§7 — `% Discount` is no longer one of the two a Plan may configure.
-  it('refuses a new percentage discount, by name', async () => {
+  // #1184 stage 1 — `% Discount` is one of the three a Plan may configure.
+  it('accepts a percentage discount, and holds it to 0..100', async () => {
     const res = await putSession([
       { product_id: itemId, quantity: 4, action: 'percentage_discount', value: 20 },
     ]);
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain('no longer offered');
-    expect(res.body.error).toContain('no_benefit, waive');
+    expect(res.status).toBe(200);
+    expect(res.body[0]).toMatchObject({ quantity: 4, action: 'percentage_discount', value: 20 });
+
+    const over = await putSession([
+      { product_id: itemId, quantity: 4, action: 'percentage_discount', value: 120 },
+    ]);
+    expect(over.status).toBe(400);
+    const missing = await putSession([
+      { product_id: itemId, quantity: 4, action: 'percentage_discount' },
+    ]);
+    expect(missing.status).toBe(400);
   });
 
   it('refuses the two actions §16 keeps out of a Membership Plan', async () => {
@@ -809,20 +817,12 @@ describe('Membership Plan benefit actions', () => {
   });
 });
 
-// ─── #997: `% Discount` retired from a Membership Plan benefit ────────────────
+// ─── #1184 stage 1: `% Discount` is offered on a Membership Plan again ───────
 //
-// Retired is not deleted: migration 203's CHECK still permits the value, so a
-// row stored before the ticket keeps pricing exactly as the gym agreed (§6 —
-// "existing `% Discount` configurations must not silently produce incorrect
-// prices", and "do not silently convert an existing percentage discount to
-// `Waive`"). What changed is only what may be *configured*.
-//
-// §8 — that a **Promotion** still configures all five actions — is
-// `promotions.test.ts`'s "stores all five actions a Promotion may configure",
-// which is unchanged by this ticket and is the assertion that would fail if the
-// retirement leaked across contexts.
+// #997 retired it; #1184 reverses that. A row stored while it was retired is
+// an ordinary percentage line now and keeps pricing as stored.
 
-describe('Membership Plan benefit % Discount retired (#997)', () => {
+describe('Membership Plan benefit % Discount offered again (#1184)', () => {
   let gymId: string;
   let planId: number;
   let legacyId: number;
@@ -840,75 +840,44 @@ describe('Membership Plan benefit % Discount retired (#997)', () => {
     .set('x-gym-id', gymId);
 
   beforeAll(async () => {
-    gymId = await createTestGym('MPB Retired Gym');
+    gymId = await createTestGym('MPB Percentage Gym');
     await createTestMembership(gymId, 'admin');
-    planId = await createPlan(gymId, 'MPB Retired Plan');
-    legacyId = await createProduct(gymId, 'Retired Legacy Fee', 'fee', 'once');
-    freshId = await createProduct(gymId, 'Retired Fresh Fee', 'fee', 'once');
+    planId = await createPlan(gymId, 'MPB Percentage Plan');
+    legacyId = await createProduct(gymId, 'Percentage Stored Fee', 'fee', 'once');
+    freshId = await createProduct(gymId, 'Percentage Fresh Fee', 'fee', 'once');
     await addLegacyPercentageBenefit(
       'membership_plan_oneoff', gymId, planId, legacyId, 2, 20,
     );
   });
 
-  it('reads a stored percentage back as itself, not as the neutral default', async () => {
-    // Reading it as `no_benefit` would quote the full price for a line the gym
-    // agreed at a discount — and the first unrelated save would make that true.
+  it('reads a stored percentage back as itself', async () => {
     const res = await getOneoff();
     expect(res.status).toBe(200);
     const row = res.body.find((r: any) => r.product_id === legacyId);
     expect(row).toMatchObject({ action: 'percentage_discount', value: 20, quantity: 2 });
   });
 
-  it('refuses the action on a line that does not already store it', async () => {
-    const res = await putOneoff([
-      { product_id: legacyId, quantity: 2, action: 'percentage_discount', value: 20 },
-      { product_id: freshId, quantity: 1, action: 'percentage_discount', value: 10 },
-    ]);
-    expect(res.status).toBe(400);
-    expect(res.body.error).toContain('no longer offered');
-    // The replace-all never ran, so the legacy line is still there.
-    const after = await getOneoff();
-    expect(after.body.find((r: any) => r.product_id === legacyId).value).toBe(20);
-    expect(after.body.find((r: any) => r.product_id === freshId)).toBeUndefined();
-  });
-
-  it('refuses a different percentage on the legacy line — kept, never renegotiated', async () => {
+  it('configures a new percentage and a changed one, and a quantity-only save keeps the pair', async () => {
     const res = await putOneoff([
       { product_id: legacyId, quantity: 2, action: 'percentage_discount', value: 50 },
+      { product_id: freshId, quantity: 1, action: 'percentage_discount', value: 10 },
     ]);
+    expect(res.status).toBe(200);
+    expect(res.body.find((r: any) => r.product_id === legacyId)).toMatchObject({ value: 50 });
+    expect(res.body.find((r: any) => r.product_id === freshId)).toMatchObject({ value: 10 });
+
+    const qty = await putOneoff([
+      { product_id: legacyId, quantity: 7 },
+      { product_id: freshId, quantity: 1, action: 'percentage_discount', value: 10 },
+    ]);
+    expect(qty.status).toBe(200);
+    expect(qty.body.find((r: any) => r.product_id === legacyId))
+      .toMatchObject({ quantity: 7, action: 'percentage_discount', value: 50 });
+  });
+
+  it('still refuses the two monetary actions on a Plan', async () => {
+    const res = await putOneoff([{ product_id: freshId, quantity: 1, action: 'fixed_price', value: 5 }]);
     expect(res.status).toBe(400);
-    expect(res.body.error).toContain('no longer offered');
-  });
-
-  it('lets the legacy line be edited — the pair survives a quantity-only save', async () => {
-    const res = await putOneoff([{ product_id: legacyId, quantity: 7 }]);
-    expect(res.status).toBe(200);
-    expect(res.body.find((r: any) => r.product_id === legacyId))
-      .toMatchObject({ quantity: 7, action: 'percentage_discount', value: 20 });
-  });
-
-  it('accepts the stored pair carried back unchanged', async () => {
-    // What the editor submits for a legacy line: the disabled option's own
-    // value, so an unrelated edit of the section neither 400s nor rewrites it.
-    const res = await putOneoff([
-      { product_id: legacyId, quantity: 7, action: 'percentage_discount', value: 20 },
-    ]);
-    expect(res.status).toBe(200);
-    expect(res.body.find((r: any) => r.product_id === legacyId))
-      .toMatchObject({ action: 'percentage_discount', value: 20 });
-  });
-
-  it('is corrected by choosing one of the two that remain', async () => {
-    const res = await putOneoff([{ product_id: legacyId, quantity: 7, action: 'waive' }]);
-    expect(res.status).toBe(200);
-    expect(res.body.find((r: any) => r.product_id === legacyId))
-      .toMatchObject({ action: 'waive', value: null });
-
-    // …and once corrected there is no way back to it.
-    const back = await putOneoff([
-      { product_id: legacyId, quantity: 7, action: 'percentage_discount', value: 20 },
-    ]);
-    expect(back.status).toBe(400);
   });
 });
 

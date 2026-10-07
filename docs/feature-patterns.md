@@ -2166,11 +2166,10 @@ follow, and a fourth retirement will need them both.
   and leave the transaction's own `FOR UPDATE` read as the only thing that
   decides what a kept line is written with.
 - **A retirement with existing rows ships a report, not a migration.** `npm run
-  plans:percentage-benefits` is the "identified and handled through an explicit
-  data-cleanup process" half of the ticket: an operator script beside the other
-  read-only ones, listing the catalogue lines a human can correct in the editor
-  separately from the Assigned Plan snapshot lines that are what a member was
-  agreed at and are deliberately left alone.
+  plans:percentage-benefits` was the "identified and handled through an explicit
+  data-cleanup process" half of the ticket (removed by #1184 stage 1, which
+  offered the percentage on a Plan again and left `LEGACY_PLAN_BENEFIT_ACTIONS`
+  empty; the machinery above stays as the template for a later retirement).
 
 ### Renaming a label two entities share (#815)
 
