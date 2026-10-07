@@ -32,7 +32,7 @@
     "training": "El Meu Pla d'Entrenament",
     "bookings": "Les Meves Reserves",
     "nutrition": "La Meva Nutrició",
-    "membership": "Els Meus Productes i Serveis",
+    "membership": "Els Meus Productes",
     "profile": "Perfil",
     "alerts": "Alertes",
     "goals": "Els Meus Objectius"
@@ -222,7 +222,7 @@
     "detail_booking_reminder_2h": "Tens aquest entrenament reservat en 2 hores."
   },
   "membership": {
-    "title": "Els Meus Productes i Serveis",
+    "title": "Els Meus Productes",
     "loading": "Carregant…",
     "empty": "Encara no tens cap quota assignada. Demana-la al teu gimnàs.",
     "price": "Preu mensual",

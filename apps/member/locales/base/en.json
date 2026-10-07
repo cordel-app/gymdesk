@@ -32,7 +32,7 @@
     "training": "My Training Plan",
     "bookings": "My Bookings",
     "nutrition": "My Nutrition",
-    "membership": "My Products and Services",
+    "membership": "My Products",
     "profile": "Profile",
     "alerts": "Alerts",
     "goals": "My Goals"
@@ -222,7 +222,7 @@
     "detail_booking_reminder_2h": "You have this training booked in 2 hours."
   },
   "membership": {
-    "title": "My Products and Services",
+    "title": "My Products",
     "loading": "Loading…",
     "empty": "You don't have a membership yet. Ask your gym to set one up.",
     "price": "Monthly price",
