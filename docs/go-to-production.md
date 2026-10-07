@@ -508,7 +508,7 @@ Clerk Development and Production instances are separate: users, user ids and met
 - [ ] Re-create the Clerk webhook endpoint on the production instance, subscribed to **`user.created` and `user.deleted`** (#709),
       and set its `CLERK_WEBHOOK_SIGNING_SECRET`. **(#1085)** Its URL is the **admin app's** relay, not the API:
       `https://admin.cordel.tech/api/webhooks/clerk` on pro (`https://admin.vdicube.com/api/webhooks/clerk` on dev).
-      The admin container therefore needs `CORDEL_FITNESS_API_URL` pointing at the API's internal address — the relay
+      The admin container therefore needs `CORDEL_FITNESS_API_URL` pointing at the API (its hostname may stay public: #1087 allows only corfront through) — the relay
       forwards the raw body and the three `svix-*` headers byte for byte and the API still verifies the signature, so the
       signing secret does not change and never leaves the API. After pointing the endpoint at the new URL, send a test
       event from the Clerk dashboard and confirm a **2xx**: a 404 means the admin app has not been redeployed with the
