@@ -98,10 +98,12 @@ function fmtMoney(v: string | number | null) {
  * (#797). Expanding a plan on the Member page reads it; editing the assignment
  * stays on the Assigned Plans page, which is where its own card lives.
  */
-export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false }: {
+export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false, viewAsMemberId }: {
   assignedPlanId: number;
   onChanged: () => void;
   embedded?: boolean;
+  /** #1191: the Member whose context this is; a Linked one reads and never edits. */
+  viewAsMemberId?: number;
 }) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
@@ -142,7 +144,9 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
     setLoading(true);
     setError(null);
     try {
-      const data = await apiFetch<AssignedPlanDetail>(`/user-memberships/${assignedPlanId}`);
+      const data = await apiFetch<AssignedPlanDetail>(
+        `/user-memberships/${assignedPlanId}${viewAsMemberId != null ? `?as_member_id=${viewAsMemberId}` : ''}`,
+      );
       setDetail(data);
     } catch {
       setError(t('expanded_error'));
@@ -283,6 +287,8 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // section's controls are absent rather than disabled, exactly as they are on
   // the Assigned Plans page outside the mode (#897).
   const editing = !embedded && isEditing;
+  // #1191: a Linked context has no Billing Events section at all.
+  const isLinked = detail?.assignment_relationship === 'linked';
 
   // #1108: a Draft is committed through Save & Pay (stage 2), the one action it
   // offers beyond editing and discarding it; a Pending Payment row offers the
@@ -526,7 +532,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         />
       </CardSection>
 
-      <CardSection label={t('section_billing_events')}>
+      {!isLinked && <CardSection label={t('section_billing_events')}>
         {!detail.billing_events.available ? (
           <p style={dim}>{detail.billing_events.reason}</p>
         ) : detail.billing_events.events.length === 0 ? (
@@ -546,7 +552,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
             ))}
           </div>
         )}
-      </CardSection>
+      </CardSection>}
 
       {showDetails && (
         <AssignedPlanDetailsModal detail={detail} onClose={() => setShowDetails(false)} />

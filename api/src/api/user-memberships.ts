@@ -56,6 +56,7 @@ import {
   findLiveAssignmentsForMembers,
   membershipPlanName,
 } from './one-active-plan';
+import { LINKED_READ_ONLY_ERROR, MEMBER_MEMBERSHIP_SQL, assignmentRelationship, AssignmentRelationship } from '../domain/assignmentRelationship';
 import { CommitOutcome, PENDING_PAYMENT_STATUS, SubmitOutcome, commitAssignment, submitForPayment } from './assignment-commit';
 
 // #1108 stage 1 — an assignment is created `draft` and becomes `active` through
@@ -119,6 +120,45 @@ const lifecycleStatusParam = z.preprocess((v) => {
 }, z.array(z.enum(LIFECYCLE_STATUSES)).optional());
 
 export const userMembershipsRouter = Router();
+
+// ─── Primary / Linked context (#1191) ─────────────────────────────────────────
+// A multi-member Membership is one contract. A caller viewing it from a covered
+// Member's context names that Member with `?as_member_id=`; the context decides
+// what it may do, and the server enforces it rather than the UI hiding buttons:
+// a `linked` context reads the contract and never changes it, and never reads
+// its Billing Events. Without the parameter nothing changes (the staff
+// "contract" view is the Primary one).
+async function viewContext(
+  gymId: string, req: any, userMembershipId: string | number,
+): Promise<{ status: 'none' } | { status: 'invalid' } | { status: 'ok'; relationship: AssignmentRelationship }> {
+  const raw = req.query?.as_member_id;
+  if (raw === undefined) return { status: 'none' };
+  const memberId = Number(raw);
+  if (!Number.isInteger(memberId) || memberId <= 0) return { status: 'invalid' };
+  const { rows } = await db.query(
+    `SELECT um.member_id FROM user_memberships um
+     WHERE um.id = ? AND um.gym_id = ? AND ${MEMBER_MEMBERSHIP_SQL}`,
+    [userMembershipId, gymId, memberId, memberId],
+  );
+  if (rows.length === 0) return { status: 'invalid' };
+  return { status: 'ok', relationship: assignmentRelationship(memberId, rows[0].member_id) };
+}
+
+userMembershipsRouter.use('/:id', async (req, res, next) => {
+  if (req.method === 'GET' || req.method === 'HEAD') return next();
+  try {
+    const { gymId } = getTenantContext(req);
+    const ctx = await viewContext(gymId, req, req.params.id);
+    if (ctx.status === 'invalid') return res.status(404).json({ error: 'Membership not found' });
+    if (ctx.status === 'ok' && ctx.relationship === 'linked') {
+      return res.status(403).json({
+        error: LINKED_READ_ONLY_ERROR,
+        message: 'A linked Member cannot change the Membership; use the primary Member.',
+      });
+    }
+    next();
+  } catch (err) { next(err); }
+});
 
 // List joined to member + plan for display (rows returned by SELECT * plus display names).
 //
@@ -204,7 +244,9 @@ userMembershipsRouter.get('/', async (req, res) => {
   const params: any[] = [gymId];
   let inner = `${LIST_SELECT} WHERE um.gym_id = ?`;
   if (q.status) { inner += ' AND um.status = ?'; params.push(q.status); }
-  if (q.member_id !== undefined) { inner += ' AND um.member_id = ?'; params.push(q.member_id); }
+  // #1191: a Member's Assigned Plans are the Memberships they own OR are covered
+  // by. The join is an EXISTS, so the contract still appears once in the list.
+  if (q.member_id !== undefined) { inner += ` AND ${MEMBER_MEMBERSHIP_SQL}`; params.push(q.member_id, q.member_id); }
   if (q.start_date) { inner += ' AND (um.ends_at IS NULL OR um.ends_at >= ?)'; params.push(q.start_date); }
   if (q.end_date) { inner += ' AND um.starts_at <= ?'; params.push(q.end_date); }
   if (q.nif_nie_passport) { inner += ' AND m.nif_nie_passport LIKE ?'; params.push(`%${q.nif_nie_passport}%`); }
@@ -225,7 +267,13 @@ userMembershipsRouter.get('/', async (req, res) => {
   // no date in it could not say that a cycle is inside a Free Period, or that an
   // applied Promotion's discount has already ended.
   const fees = await currentMembershipFees(gymId, rows.map((r: any) => Number(r.id)));
-  res.json(rows.map((r: any) => ({ ...r, membership_fee: fees.get(Number(r.id)) ?? null })));
+  res.json(rows.map((r: any) => ({
+    ...r,
+    membership_fee: fees.get(Number(r.id)) ?? null,
+    ...(q.member_id !== undefined
+      ? { assignment_relationship: assignmentRelationship(q.member_id, r.member_id) }
+      : {}),
+  })));
 });
 
 // #511 (stage 2 — Assigned Plan Details modal): "modified" means the latest
@@ -251,6 +299,7 @@ userMembershipsRouter.get('/', async (req, res) => {
 // per row is exactly what #511 declined to pay — so the creation actor is
 // snapshotted onto the row by the three paths that insert one (migration 215,
 // backfilled from these same audit rows) and read as the plain column it is.
+const LINKED_BILLING_EVENTS_REASON = 'Billing Events are available from the primary Member of this Membership.';
 const CREATION_ACTIONS = ['create', 'assign_new_plan', 'assign_plan'];
 
 async function loadAuditMetadata(gymId: string, userMembershipId: string | number) {
@@ -439,7 +488,14 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     // what billing and the Billing Simulation read.
     loadAssignedPlanSnapshot(gymId, um.id),
   ]);
-  const billingEvents = await computeBillingEventsView(gymId, um);
+  // #1191 — Billing Events are Membership-level and belong to the Primary
+  // context alone: a Linked view carries none, and says why.
+  const ctx = await viewContext(gymId, req, um.id);
+  if (ctx.status === 'invalid') return res.status(404).json({ error: 'Membership not found' });
+  const relationship = ctx.status === 'ok' ? ctx.relationship : null;
+  const billingEvents = relationship === 'linked'
+    ? { available: false, reason: LINKED_BILLING_EVENTS_REASON, events: [] }
+    : await computeBillingEventsView(gymId, um);
   // One pricing row for both answers: what this cycle costs, and what every
   // cycle from here on will (#924 stage 3). Loading it twice is two queries for
   // one question.
@@ -463,6 +519,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
     promotions,
     additional_services: additionalServices,
     billing_events: billingEvents,
+    assignment_relationship: relationship,
     // #924 stage 3 (§7) — the Membership Fee Simulation: the Membership Plan
     // card's Example Timeline for this contract, priced by the same
     // `resolveMembershipFee()` the nightly run charges with. Read-only,
@@ -513,6 +570,11 @@ userMembershipsRouter.get('/:id/billing-event-simulation', async (req, res, next
 // same computeBillingEventsView() the :id response above embeds it from.
 userMembershipsRouter.get('/:id/billing-events', async (req, res) => {
   const { gymId } = getTenantContext(req);
+  const ctx = await viewContext(gymId, req, req.params.id);
+  if (ctx.status === 'invalid') return res.status(404).json({ error: 'Membership not found' });
+  if (ctx.status === 'ok' && ctx.relationship === 'linked') {
+    return res.status(403).json({ error: LINKED_READ_ONLY_ERROR, message: LINKED_BILLING_EVENTS_REASON });
+  }
   const { rows } = await db.query(
     `SELECT id, membership_plan_id, status, base_price, starts_at, ends_at,
             recurring_billing_interval, recurring_billing_unit

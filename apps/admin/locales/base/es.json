@@ -3923,7 +3923,10 @@
     "simulation_price_fixed_price": "Precio fijo {amount}",
     "simulation_prepaid_periods": "{count, plural, one {# periodo prepagado} other {# periodos prepagados}}",
     "simulation_disclaimer": "Proyección de la configuración propia de este plan asignado, incluidas sus promociones aplicadas. Los eventos de facturación futuros son una proyección y aún no se han facturado.",
-    "simulation_truncated": "La proyección se ha detenido en su límite de seguridad: no se muestran los eventos de facturación posteriores."
+    "simulation_truncated": "La proyección se ha detenido en su límite de seguridad: no se muestran los eventos de facturación posteriores.",
+    "col_relationship": "Relación",
+    "relationship_primary": "Principal",
+    "relationship_linked": "Vinculado"
   },
   "taxes": {
     "title": "Impuestos",
