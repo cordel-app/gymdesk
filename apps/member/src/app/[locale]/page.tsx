@@ -285,12 +285,6 @@ export default function HomePage() {
           ) : (
             <MembersSectionCard slot="next_bookings" style={{ ...styles.nextBookingCard, cursor: 'pointer' }} onClick={goToBookings}>
               <p style={styles.hint}>{t('home.no_upcoming_booking')}</p>
-              <button
-                style={styles.btnSecondary}
-                onClick={(e) => { e.stopPropagation(); router.push(`/${locale}/calendar`); }}
-              >
-                {t('home.browse_calendar')}
-              </button>
             </MembersSectionCard>
           )}
         </section>
@@ -355,22 +349,21 @@ export default function HomePage() {
         {featureEnabled('member_web.my_membership') && (
           <MembersSectionCard slot="membership" style={styles.productsTile} onClick={() => router.push(`/${locale}/membership`)} role="button" tabIndex={0}>
             {!hasProductsImage && <span style={styles.tileIcon}>🛍️</span>}
-            <p style={styles.productsTitle}>{t('home.products_services')}</p>
-            <p style={styles.bookingSub}>
-              {loading
-                ? t('home.loading')
-                : membership
-                  ? (membership.plan_name ?? '—') + (membership.ends_at ? ` · ${t('home.expires_on', { date: dateOnly(membership.ends_at) })}` : ` · ${t('membership.ongoing')}`)
-                  : t('home.no_membership')}
-            </p>
-            {!loading && (
-              <p style={styles.bookingSub}>{t('home.active_products', { count: activeProducts })}</p>
-            )}
-            {!loading && membership && (
-              <div style={styles.productsStatusRow}>
-                <StatusPill status={membership.status} label={t(`membership.status.${membership.status}`)} />
-              </div>
-            )}
+            <span style={styles.tileLabel}>{t('home.products_services')}</span>
+            {/* #1218 — the plan and the product count sit left-aligned at the
+                bottom of the card, under the title the tiles' own way. */}
+            <div style={styles.productsInfo}>
+              <p style={styles.bookingSub}>
+                {loading
+                  ? t('home.loading')
+                  : membership
+                    ? `${membership.plan_name ?? '—'} (${t(`membership.status.${membership.status}`)})`
+                    : t('home.no_plan')}
+              </p>
+              {!loading && (
+                <p style={styles.bookingSub}>{t('home.additional_products', { count: activeProducts })}</p>
+              )}
+            </div>
           </MembersSectionCard>
         )}
       </section>
@@ -409,13 +402,6 @@ function NavTile({ slot, icon, label, onClick }: { slot: MemberBackgroundSlot; i
   );
 }
 
-function StatusPill({ status, label }: { status: string; label: string }) {
-  // #983 — the tone and its two colours are `lib/memberChrome.ts`'s: the same
-  // four Assigned Plan statuses are shown here, on My Membership and on My
-  // Bookings, and three copies of the map were three places to theme.
-  return <span style={{ ...statusPillStyle(statusTone(status)), padding: '4px 12px' }}>{label}</span>;
-}
-
 const styles: Record<string, React.CSSProperties> = {
   center:          { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground, padding: 24 },
   landingCard:     { ...sectionCardStyle, borderRadius: 16, padding: '48px 40px', maxWidth: 400, width: '100%', textAlign: 'center', boxShadow: '0 2px 16px rgba(0,0,0,0.08)' },
@@ -446,9 +432,8 @@ const styles: Record<string, React.CSSProperties> = {
   goalsRow:        { padding: '10px 0 0' },
   tileGrid:        { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 },
   tile:            { ...sectionCardStyle, gap: 8, borderRadius: 14, padding: '24px 8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer' },
-  productsTile:    { ...sectionCardStyle, display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 14, padding: '18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer', textAlign: 'center', alignItems: 'center', justifyContent: 'center' },
-  productsTitle:   { margin: 0, fontSize: 17, fontWeight: 700 },
-  productsStatusRow: { marginTop: 'auto', paddingTop: 10, display: 'flex', justifyContent: 'center' },
+  productsTile:    { ...sectionCardStyle, gap: 8, borderRadius: 14, padding: '24px 8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer' },
+  productsInfo:    { marginTop: 'auto', paddingTop: 10, textAlign: 'left', alignSelf: 'stretch' },
   tileIcon:        { fontSize: 32 },
   tileWithImage:   { minHeight: 110 },
   tileLabel:       { fontWeight: 600 },
