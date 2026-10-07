@@ -7,6 +7,14 @@ import { getTenantContext, requireRole, TenantContext } from '../infra/tenantCon
 import { getCenterContext } from '../infra/centerContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
 import { bookMemberOnSession, cancelBooking } from './bookings';
+import {
+  memberCancellation,
+  professionalServiceLinkedSql,
+  secondsSinceBookedSql,
+  secondsUntilStartSql,
+  withoutCancellationTiming,
+} from './booking-cancellation';
+import { CANCELLATION_GRACE_HOURS, CANCELLATION_NOTICE_HOURS } from '../domain/bookingCancellation';
 import { validateRequest as validateSharedRequest } from './shared-training-requests';
 import { planTreeSelect } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
@@ -598,10 +606,13 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
       params.push(...allowedCenterIds);
     }
     const { rows } = await db.query(
-      `SELECT ceb.id, ceb.status, ceb.waitlist_position, ceb.booked_at, ceb.cancelled_at,
+      `SELECT ceb.id, ceb.status, ceb.waitlist_position, ceb.booked_at AS booked_on, ceb.cancelled_at,
               ceb.calendar_event_id AS class_session_id,
               ce.starts_at, ce.ends_at, ce.status AS session_status,
-              at.name AS class_name, at.description
+              at.name AS class_name, at.description,
+              ${secondsUntilStartSql('ce')} AS seconds_until_start,
+              ${secondsSinceBookedSql('ceb')} AS seconds_since_booked,
+              ${professionalServiceLinkedSql('ce')} AS professional_service
        FROM calendar_event_bookings ceb
        JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
        JOIN activity_types at ON at.id = ce.activity_type_id
@@ -609,7 +620,13 @@ meRouter.get('/bookings', requireRole('member'), requireFeatureEnabled('calendar
        ORDER BY ce.starts_at ASC`,
       params,
     );
-    res.json(rows);
+    // #1162 — `booked_on` is the row's own `booked_at`, and whether the booking
+    // can still be cancelled is decided from the same numbers the DELETE uses.
+    res.json(rows.map((r: any) => ({
+      ...withoutCancellationTiming(r),
+      professional_service: !!Number(r.professional_service),
+      ...memberCancellation(r),
+    })));
   } catch (err) {
     next(err);
   }
@@ -767,6 +784,21 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 WHERE ceb.calendar_event_id = ce.id AND ceb.member_id = ? AND ceb.status <> 'cancelled'
                 LIMIT 1
               ) AS my_booking_id,
+              -- #1162: when the member's own booking was created, and the two
+              -- numbers the cancellation rule is decided from (in SQL, so no
+              -- DATETIME crosses a timezone on the way to the decision).
+              (
+                SELECT ceb.booked_at FROM calendar_event_bookings ceb
+                WHERE ceb.calendar_event_id = ce.id AND ceb.member_id = ? AND ceb.status <> 'cancelled'
+                LIMIT 1
+              ) AS booked_on,
+              (
+                SELECT ${secondsSinceBookedSql('ceb')} FROM calendar_event_bookings ceb
+                WHERE ceb.calendar_event_id = ce.id AND ceb.member_id = ? AND ceb.status <> 'cancelled'
+                LIMIT 1
+              ) AS seconds_since_booked,
+              ${secondsUntilStartSql('ce')} AS seconds_until_start,
+              ${professionalServiceLinkedSql('ce')} AS professional_service,
               (
                 SELECT str.id FROM calendar_event_shared_training_requests str
                 WHERE str.calendar_event_id = ce.id AND str.requesting_member_id = ?
@@ -800,7 +832,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
        LEFT JOIN gym_memberships tm ON tm.id = ce.trainer_membership_id
        WHERE ${where.join(' AND ')}
        ORDER BY ce.starts_at ASC`,
-      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
+      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
     );
     const now = new Date();
     const shaped = rows.map((r: any) => {
@@ -835,12 +867,16 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
       }
 
       return {
-        ...r,
+        ...withoutCancellationTiming(r),
         allows_shared_booking: allowsShared,
         is_shareable: isShareable,
         access_locked: accessLocked,
         spots_left: Math.max(0, cap - booked),
-        can_cancel: new Date(r.starts_at) > now,
+        // #1162 — the same rule the DELETE enforces: cancellable while the
+        // event is 24 hours away or the booking is under 2 hours old; a
+        // waiting-list place is leavable until the event starts.
+        ...memberCancellation(r, r.my_booking_status ?? null),
+        professional_service: !!Number(r.professional_service),
         availability_state,
         // #503 stage 5: unified member read model — additive next to
         // availability_state, which stays as the source of booking-action UI.
@@ -947,8 +983,11 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      `SELECT ceb.id, ceb.calendar_event_id AS class_session_id, ce.starts_at,
-              at.name AS title
+      `SELECT ceb.id, ceb.status, ceb.calendar_event_id AS class_session_id, ce.starts_at,
+              at.name AS title,
+              ${secondsUntilStartSql('ce')} AS seconds_until_start,
+              ${secondsSinceBookedSql('ceb')} AS seconds_since_booked,
+              ${professionalServiceLinkedSql('ce')} AS professional_service
        FROM calendar_event_bookings ceb
        JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
        JOIN activity_types at ON at.id = ce.activity_type_id
@@ -956,8 +995,20 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
       [req.params.id, gymId, memberId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Booking not found' });
-    if (new Date(rows[0].starts_at) <= new Date()) {
-      return res.status(400).json({ error: 'Cannot cancel a booking after the session has started.' });
+    // #1162 §9 — enforced here, from the same numbers the reads report
+    // `can_cancel` from, so the Members App reflects the server's answer.
+    const { can_cancel, cancellation_block } = memberCancellation(rows[0]);
+    if (!can_cancel) {
+      if (cancellation_block === 'already_started') {
+        return res.status(400).json({ error: 'Cannot cancel a booking after the session has started.', code: 'already_started' });
+      }
+      return res.status(409).json({
+        error: `Bookings cannot be cancelled less than ${CANCELLATION_NOTICE_HOURS} hours before the event starts, once the booking is more than ${CANCELLATION_GRACE_HOURS} hours old.`,
+        code: 'cancellation_window_closed',
+        professional_service: !!Number(rows[0].professional_service),
+        notice_hours: CANCELLATION_NOTICE_HOURS,
+        grace_hours: CANCELLATION_GRACE_HOURS,
+      });
     }
     const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
     if (cancelResult.promotedMemberId) {

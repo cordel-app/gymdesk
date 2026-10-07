@@ -20,6 +20,7 @@ async function packageCredits() {
 const SELECT = `
   SELECT ceb.*,
          ceb.calendar_event_id AS class_session_id,
+         ceb.booked_at AS booked_on,
          m.name AS member_name, m.email AS member_email,
          ce.starts_at AS session_starts_at, ce.ends_at AS session_ends_at,
          ce.status AS session_status,

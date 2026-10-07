@@ -142,7 +142,11 @@
     "past_status_pending": "Booked",
     "past_status_cancelled": "Cancelled",
     "capacity_detail": "{booked} / {capacity} booked",
-    "cancelled_at_detail": "Cancelled on {date}"
+    "cancelled_at_detail": "Cancelled on {date}",
+    "booked_on_detail": "Booked on {date}",
+    "cancel_unavailable_title": "Cancellation unavailable.",
+    "cancel_unavailable_service": "Bookings for professional services cannot be cancelled less than 24 hours before the event starts.",
+    "cancel_unavailable_generic": "Bookings cannot be cancelled less than 24 hours before the event starts."
   },
   "member_calendar": {
     "filter_all": "All",

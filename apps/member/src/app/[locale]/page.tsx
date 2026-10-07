@@ -20,6 +20,7 @@ import {
   statusPillStyle,
   statusTone,
 } from '@/lib/memberChrome';
+import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
 import { goalDetail, goalLabel, type NutritionGoalItem } from '@/lib/nutritionFood';
 
@@ -33,6 +34,11 @@ interface UpcomingBooking {
   center_name: string | null;
   my_booking_status: 'booked' | 'waitlisted' | 'attended' | 'no_show' | null;
   my_booking_id: number | null;
+  /** #1162 — when the booking was created, and whether it can still be cancelled. */
+  booked_on: string | null;
+  can_cancel: boolean;
+  cancellation_block: CancellationBlock;
+  professional_service: boolean;
 }
 
 interface Membership {
@@ -247,12 +253,15 @@ export default function HomePage() {
                   <p style={styles.bookingSub}>
                     {dateOnly(nextBooking.starts_at)} · {timeOnly(nextBooking.starts_at)}–{timeOnly(nextBooking.ends_at)}
                   </p>
+                  {nextBooking.booked_on && (
+                    <p style={styles.bookingSub}>{t(BOOKED_ON_KEY, { date: `${dateOnly(nextBooking.booked_on)} · ${timeOnly(nextBooking.booked_on)}` })}</p>
+                  )}
                 </div>
                 {nextBooking.my_booking_status === 'waitlisted' && (
                   <span style={styles.pillWait}>{t('home.waitlisted')}</span>
                 )}
               </div>
-              {nextBooking.my_booking_id && nextBooking.my_booking_status === 'booked' && (
+              {nextBooking.my_booking_id && nextBooking.my_booking_status === 'booked' && nextBooking.can_cancel && (
                 <button
                   style={styles.btnCancel}
                   disabled={cancelPending}
@@ -260,6 +269,12 @@ export default function HomePage() {
                 >
                   {cancelPending ? '…' : t('member_schedule.cancel_booking')}
                 </button>
+              )}
+              {nextBooking.my_booking_id && nextBooking.my_booking_status === 'booked' && cancellationNoticeKey(nextBooking) && (
+                /* #1162 §5 — the explanation stands where the action was. */
+                <div style={styles.cancelNotice} onClick={(e) => e.stopPropagation()}>
+                  <strong>{t(CANCELLATION_NOTICE_TITLE_KEY)}</strong> {t(cancellationNoticeKey(nextBooking)!)}
+                </div>
               )}
               {sameDayMore > 0 && (
                 <p style={styles.bookingSub}>{t('home.more_bookings_that_day', { count: sameDayMore })}</p>
@@ -412,6 +427,7 @@ const styles: Record<string, React.CSSProperties> = {
   bookingSub:      { margin: '4px 0 0', fontSize: 13, color: memberTheme.textMuted },
   planName:        { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
   messageBanner:   { ...noticeStyle('success'), marginBottom: 16 },
+  cancelNotice:    { ...noticeStyle('warning'), fontSize: 13, marginTop: 8 },
   pillWait:        statusPillStyle('warning'),
   hint:            { color: memberTheme.textMuted, fontSize: 14, margin: '4px 0 12px' },
   btnPrimary:      { ...primaryButtonStyle, display: 'block', width: '100%', padding: '14px 0', fontSize: 16, fontWeight: 600, marginBottom: 16 },

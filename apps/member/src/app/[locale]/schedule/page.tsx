@@ -15,6 +15,7 @@ import {
   sectionCardStyle,
   statusPillStyle,
 } from '@/lib/memberChrome';
+import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
 
 interface Session {
   id: number;
@@ -34,6 +35,10 @@ interface Session {
   my_booking_id: number | null;
   access_locked: boolean;
   can_cancel: boolean;
+  /** #1162 — when the member's own booking was created, and why it cannot be cancelled when it cannot. */
+  booked_on: string | null;
+  cancellation_block: CancellationBlock;
+  professional_service: boolean;
 }
 
 interface PastBooking {
@@ -202,6 +207,9 @@ export default function MemberSchedulePage() {
                       <div style={styles.sub}>
                         {t('member_schedule.capacity_detail', { booked: s.booked_count, capacity: s.effective_capacity })}
                       </div>
+                      {s.my_booking_id && s.booked_on && (
+                        <div style={styles.sub}>{t(BOOKED_ON_KEY, { date: `${dayKey(s.booked_on)} · ${timeOnly(s.booked_on)}` })}</div>
+                      )}
                     </div>
                   )}
                   <div style={{ marginTop: 10, display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
@@ -209,6 +217,12 @@ export default function MemberSchedulePage() {
                       <button style={styles.btnCancel} disabled={isBusy} onClick={() => cancelSession(s.my_booking_id!, s.id)}>
                         {isBusy ? '…' : t('member_schedule.cancel_booking')}
                       </button>
+                    ) : myStatus && s.my_booking_id && cancellationNoticeKey(s) ? (
+                      /* #1162 §5 — the explanation stands where the action was,
+                         rather than the action silently disappearing. */
+                      <div style={styles.cancelNotice}>
+                        <strong>{t(CANCELLATION_NOTICE_TITLE_KEY)}</strong> {t(cancellationNoticeKey(s)!)}
+                      </div>
                     ) : myStatus ? null : spots > 0 ? (
                       <button style={styles.btnBook} disabled={isBusy} onClick={() => bookSession(s.id)}>
                         {isBusy ? '…' : t('member_schedule.book')}
@@ -274,6 +288,7 @@ const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
   title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   message: { ...noticeStyle('success'), marginBottom: 16 },
+  cancelNotice: { ...noticeStyle('warning'), fontSize: 13, flex: 1 },
   sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: memberTheme.title3, fontFamily: memberTheme.title3Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card: { ...sectionCardStyle, borderRadius: 10, padding: 14, marginBottom: 10, cursor: 'pointer' },

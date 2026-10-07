@@ -16,7 +16,9 @@ import {
   primaryButtonStyle,
   secondaryButtonStyle,
   statusPillStyle,
+  noticeStyle,
 } from '@/lib/memberChrome';
+import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
 import {
   EVENT_STATUS_CHIP_STYLE,
   eventBackgroundColor,
@@ -47,6 +49,10 @@ interface ScheduleSession {
   booked_count: number;
   spots_left: number;
   my_booking_id: number | null;
+  /** #1162 — when the member's own booking was created, and why it cannot be cancelled when it cannot. */
+  booked_on: string | null;
+  cancellation_block: CancellationBlock;
+  professional_service: boolean;
   my_booking_status: 'booked' | 'waitlisted' | null;
   my_waitlist_position: number | null;
   my_shared_request_id: number | null;
@@ -79,6 +85,8 @@ interface ScheduleSession {
 
 export default function MemberCalendarPage() {
   const t = useTranslations('member_calendar');
+  // #1162 — the cancellation copy lives once, in `member_schedule`, for the three screens that offer the action.
+  const tRoot = useTranslations();
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
@@ -493,6 +501,11 @@ export default function MemberCalendarPage() {
               {selected.center_name ? ` · ${selected.center_name}` : ''}
               {selected.space_name ? ` · ${selected.space_name}` : ''}
             </p>
+            {selected.my_booking_id && selected.booked_on && (
+              <p style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
+                {tRoot(BOOKED_ON_KEY, { date: new Date(selected.booked_on).toLocaleString(locale, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) })}
+              </p>
+            )}
 
             {/* #503 stage 7: the three-badge breakdown agreed on the issue thread —
                 lifecycle status, occupancy status (+ aggregate count), and waitlist
@@ -529,6 +542,12 @@ export default function MemberCalendarPage() {
                 <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn(memberTheme.statusError)}>
                   {t('action_cancel_booking')}
                 </button>
+              )}
+              {selected.availability_state === 'BOOKED_BY_MEMBER' && cancellationNoticeKey(selected) && (
+                /* #1162 §5 — the explanation stands where the action was. */
+                <div style={{ ...noticeStyle('warning'), fontSize: 13 }}>
+                  <strong>{tRoot(CANCELLATION_NOTICE_TITLE_KEY)}</strong> {tRoot(cancellationNoticeKey(selected)!)}
+                </div>
               )}
               {selected.availability_state === 'WAITLISTED_BY_MEMBER' && selected.can_cancel && (
                 <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn(memberTheme.textMuted)}>

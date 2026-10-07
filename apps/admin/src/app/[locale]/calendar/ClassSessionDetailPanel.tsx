@@ -70,6 +70,8 @@ interface Booking {
   member_email: string;
   status: string;
   waitlist_position: number | null;
+  /** #1162 — when the booking was created (`calendar_event_bookings.booked_at`), the value the cancellation rule is decided from. */
+  booked_on: string | null;
 }
 
 interface Space { id: number; name: string; status?: string; center_id?: number | null }
@@ -147,6 +149,11 @@ function fmt(iso: string) {
 
 function fmtTime(iso: string) {
   return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** #1162 §7 — `6 Oct 2026, 16:32`: the booking's creation time, in the row, never a column of the calendar. */
+function fmtBookedOn(iso: string) {
+  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 export function ClassSessionDetailPanel({
@@ -797,6 +804,9 @@ export function ClassSessionDetailPanel({
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{b.member_name}</div>
                   <div style={{ fontSize: 11, color: '#6b7280' }}>{b.member_email}</div>
+                  {b.booked_on && (
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Booked on: {fmtBookedOn(b.booked_on)}</div>
+                  )}
                 </div>
                 {canWrite && !isCancelled && (
                   <button

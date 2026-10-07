@@ -142,7 +142,11 @@
     "past_status_pending": "Reservada",
     "past_status_cancelled": "Cancelada",
     "capacity_detail": "{booked} / {capacity} reservadas",
-    "cancelled_at_detail": "Cancelada el {date}"
+    "cancelled_at_detail": "Cancelada el {date}",
+    "booked_on_detail": "Reservado el {date}",
+    "cancel_unavailable_title": "Cancelación no disponible.",
+    "cancel_unavailable_service": "Las reservas de servicios profesionales no se pueden cancelar con menos de 24 horas de antelación al inicio del evento.",
+    "cancel_unavailable_generic": "Las reservas no se pueden cancelar con menos de 24 horas de antelación al inicio del evento."
   },
   "member_calendar": {
     "filter_all": "Todos",
