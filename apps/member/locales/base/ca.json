@@ -14,6 +14,7 @@
     "membership_status": "Quota",
     "no_membership": "Sense quota activa.",
     "products_services": "Els Meus Productes",
+    "active_products": "{count, plural, one {# producte actiu} other {# productes actius}}",
     "expires_on": "Venç el {date}",
     "class_credits": "Crèdits de classes",
     "credits_remaining": "sessions disponibles",

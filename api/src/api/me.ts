@@ -1589,7 +1589,14 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     const pending_membership = pendingRows[0]
       ? { ...pendingRows[0], starts_at: toDateOnly(pendingRows[0].starts_at), membership_fee: await currentMembershipFee(gymId, Number(pendingRows[0].id)) }
       : null;
-    if (!current) return res.json({ membership: null, past_memberships: [], pending_membership });
+    // #1197: the dashboard card's "N active products" — the member's own
+    // active `member_products` purchases (#1121 stage 2), nothing else.
+    const { rows: activeProductRows } = await db.query(
+      `SELECT COUNT(*) AS n FROM member_products WHERE gym_id = ? AND member_id = ? AND status = 'active'`,
+      [gymId, memberId],
+    );
+    const active_products_count = Number(activeProductRows[0]?.n ?? 0);
+    if (!current) return res.json({ membership: null, past_memberships: [], pending_membership, active_products_count });
 
     const um = current;
     // The assignment's own benefit rows, never the Plan's live sections — the
@@ -1662,6 +1669,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       membership: { ...membership, membership_fee, benefits, upcoming_payments },
       past_memberships,
       pending_membership,
+      active_products_count,
     });
   } catch (err) {
     next(err);

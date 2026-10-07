@@ -89,6 +89,7 @@ export default function HomePage() {
   const [nextBooking, setNextBooking] = useState<UpcomingBooking | null | undefined>(undefined);
   const [sameDayMore, setSameDayMore] = useState(0);
   const [membership, setMembership] = useState<Membership | null | undefined>(undefined);
+  const [activeProducts, setActiveProducts] = useState(0);
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null);
   const [alert, setAlert] = useState<NotificationItem | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,7 +104,7 @@ export default function HomePage() {
 
       const [sessions, mship, notifs, nutrition] = await Promise.all([
         apiFetch<UpcomingBooking[]>(`/me/schedule?to=${to.toISOString()}`),
-        apiFetch<{ membership: Membership | null }>('/me/membership').catch(() => ({ membership: null })),
+        apiFetch<{ membership: Membership | null; active_products_count?: number }>('/me/membership').catch(() => ({ membership: null, active_products_count: 0 })),
         apiFetch<{ items: NotificationItem[] }>('/me/notifications?limit=5').catch(() => ({ items: [] })),
         apiFetch<{ plan: NutritionPlan | null }>('/me/nutrition-plan').catch(() => ({ plan: null })),
       ]);
@@ -118,6 +119,7 @@ export default function HomePage() {
           : 0,
       );
       setMembership(mship.membership);
+      setActiveProducts(mship.active_products_count ?? 0);
       setAlert(notifs.items.find((n) => n.read_at === null) ?? null);
       setNutritionPlan(nutrition.plan);
     } catch {
@@ -361,6 +363,9 @@ export default function HomePage() {
                   ? (membership.plan_name ?? '—') + (membership.ends_at ? ` · ${t('home.expires_on', { date: dateOnly(membership.ends_at) })}` : ` · ${t('membership.ongoing')}`)
                   : t('home.no_membership')}
             </p>
+            {!loading && (
+              <p style={styles.bookingSub}>{t('home.active_products', { count: activeProducts })}</p>
+            )}
             {!loading && membership && (
               <div style={styles.productsStatusRow}>
                 <StatusPill status={membership.status} label={t(`membership.status.${membership.status}`)} />
@@ -441,9 +446,9 @@ const styles: Record<string, React.CSSProperties> = {
   goalsRow:        { padding: '10px 0 0' },
   tileGrid:        { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 },
   tile:            { ...sectionCardStyle, gap: 8, borderRadius: 14, padding: '24px 8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer' },
-  productsTile:    { ...sectionCardStyle, display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 14, padding: '18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer', textAlign: 'left' },
+  productsTile:    { ...sectionCardStyle, display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 14, padding: '18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer', textAlign: 'center', alignItems: 'center', justifyContent: 'center' },
   productsTitle:   { margin: 0, fontSize: 17, fontWeight: 700 },
-  productsStatusRow: { marginTop: 'auto', paddingTop: 10, display: 'flex', justifyContent: 'flex-end' },
+  productsStatusRow: { marginTop: 'auto', paddingTop: 10, display: 'flex', justifyContent: 'center' },
   tileIcon:        { fontSize: 32 },
   tileWithImage:   { minHeight: 110 },
   tileLabel:       { fontWeight: 600 },
