@@ -32,7 +32,7 @@
     "training": "Mi Plan de Entrenamiento",
     "bookings": "Mis Reservas",
     "nutrition": "Mi Nutrición",
-    "membership": "Mis Productos y Servicios",
+    "membership": "Mis Productos",
     "profile": "Perfil",
     "alerts": "Alertas",
     "goals": "Mis Objetivos"
@@ -222,7 +222,7 @@
     "detail_booking_reminder_2h": "Tienes este entreno reservado en 2 horas."
   },
   "membership": {
-    "title": "Mis Productos y Servicios",
+    "title": "Mis Productos",
     "loading": "Cargando…",
     "empty": "Aún no tienes una cuota asignada. Pídelo a tu gimnasio.",
     "price": "Precio mensual",

@@ -243,10 +243,10 @@ describe('the route is gated by both flags (#1121 stage 1)', () => {
 });
 
 describe('the copy (#1121 §1, §3, §5)', () => {
-  it('the section is My Products and Services in every locale', () => {
-    expect(messages('en').membership.title).toBe('My Products and Services');
-    expect(messages('es').membership.title).toBe('Mis Productos y Servicios');
-    expect(messages('ca').membership.title).toBe('Els Meus Productes i Serveis');
+  it('the section is My Products in every locale', () => {
+    expect(messages('en').membership.title).toBe('My Products');
+    expect(messages('es').membership.title).toBe('Mis Productos');
+    expect(messages('ca').membership.title).toBe('Els Meus Productes');
   });
 
   // §1: "The new name should be used consistently throughout the Members App
