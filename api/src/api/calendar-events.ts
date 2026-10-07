@@ -27,6 +27,8 @@ import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
 import { sendBulkNotification } from '../infra/notifications';
 import { bookMemberOnSession } from './bookings';
+import { spendSessionForBooking } from './service-consumption';
+import { resolveRequestActor } from '../domain/auditActor';
 import { parseProfessionalServiceId, validateProfessionalServiceId } from '../domain/professionalServices';
 import { isAssignableTrainer } from '../domain/trainerAssignment';
 import { withEventExecutionStatus, type EventExecutionInput } from '../domain/eventExecutionStatus';
@@ -1021,23 +1023,35 @@ classSessionsRouter.post('/:id/reactivate', requireModuleWrite('CALENDAR'), asyn
 classSessionsRouter.post('/:id/bulk-present',
   requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'),
   async (req, res) => {
-    const { gymId, gymMembershipId } = getTenantContext(req);
+    const ctx = getTenantContext(req);
+    const { gymId, gymMembershipId } = ctx;
     const { rows: session } = await db.query(
       "SELECT id FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND deleted_at IS NULL",
       [req.params.id, gymId],
     );
     if (session.length === 0) return res.status(404).json({ error: 'Session not found' });
 
-    const { rowCount } = await db.query(
-      `UPDATE calendar_event_bookings
-       SET attendance_status = 'present',
-           attendance_recorded_at = UTC_TIMESTAMP(),
-           attendance_recorded_by_membership_id = ?,
-           modified_at = UTC_TIMESTAMP(),
-           modified_by_membership_id = ?
-       WHERE calendar_event_id = ? AND gym_id = ? AND status = 'booked' AND attendance_status = 'pending'`,
-      [gymMembershipId, gymMembershipId, req.params.id, gymId],
-    );
+    // #1189 stage 3: attendance is what spends a session, so each booking
+    // marked present here spends one (idempotent per booking).
+    const actor = resolveRequestActor(ctx);
+    const rowCount = await db.transaction(async (tx) => {
+      const { rows: pending } = await tx.query(
+        "SELECT id FROM calendar_event_bookings WHERE calendar_event_id = ? AND gym_id = ? AND status = 'booked' AND attendance_status = 'pending' FOR UPDATE",
+        [req.params.id, gymId],
+      );
+      const { rowCount: updated } = await tx.query(
+        `UPDATE calendar_event_bookings
+         SET attendance_status = 'present',
+             attendance_recorded_at = UTC_TIMESTAMP(),
+             attendance_recorded_by_membership_id = ?,
+             modified_at = UTC_TIMESTAMP(),
+             modified_by_membership_id = ?
+         WHERE calendar_event_id = ? AND gym_id = ? AND status = 'booked' AND attendance_status = 'pending'`,
+        [gymMembershipId, gymMembershipId, req.params.id, gymId],
+      );
+      for (const b of pending) await spendSessionForBooking(tx, gymId, Number(b.id), 'attendance', actor);
+      return updated;
+    });
     res.json({ updated: rowCount });
   },
 );
@@ -1045,7 +1059,8 @@ classSessionsRouter.post('/:id/bulk-present',
 classSessionsRouter.post('/:id/walk-in',
   requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'),
   async (req, res, next) => {
-    const { gymId, gymMembershipId } = getTenantContext(req);
+    const ctx = getTenantContext(req);
+    const { gymId, gymMembershipId } = ctx;
     const { member_id } = req.body;
     if (!member_id) return res.status(400).json({ error: 'member_id is required' });
 
@@ -1076,6 +1091,8 @@ classSessionsRouter.post('/:id/walk-in',
            WHERE id = ?`,
           [gymMembershipId, gymMembershipId, booking.id],
         );
+        // #1189 stage 3: a walk-in is attendance, so it spends a session.
+        await spendSessionForBooking(tx, gymId, booking.id, 'attendance', resolveRequestActor(ctx));
         return booking.id;
       });
 

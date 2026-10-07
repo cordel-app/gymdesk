@@ -4,7 +4,14 @@ import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tena
 import { handleDupEntry } from '../infra/db-helpers';
 import { recordAudit } from '../infra/audit';
 import { sendNotification } from '../infra/notifications';
+import { resolveRequestActor } from '../domain/auditActor';
+import { isLateCancellation, reasonForAttendance } from '../domain/serviceConsumption';
 // Late-imported by callers to avoid a cycle (package-credits imports registerBookingAccessHook).
+let serviceConsumptionModule: typeof import('./service-consumption') | null = null;
+async function serviceConsumption() {
+  if (!serviceConsumptionModule) serviceConsumptionModule = await import('./service-consumption');
+  return serviceConsumptionModule;
+}
 let packageCreditsModule: typeof import('./package-credits') | null = null;
 async function packageCredits() {
   if (!packageCreditsModule) packageCreditsModule = await import('./package-credits');
@@ -145,8 +152,6 @@ export async function bookMemberOnSession(
          VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
         [gymId, session[0].center_id, memberId, sessionId],
       );
-      const pc = await packageCredits();
-      await pc.debitPackageIfClaimed(tx, insertId, gymId);
       return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
     }
 
@@ -166,11 +171,17 @@ export async function bookMemberOnSession(
 }
 
 /** Cancel + promote the next waitlist row inside one transaction. */
-export async function cancelBooking(gymId: string, bookingId: number, actorMembershipId?: number | null) {
+export async function cancelBooking(
+  gymId: string,
+  bookingId: number,
+  actorMembershipId?: number | null,
+  opts: { actor?: string | null; spendLateCancel?: boolean } = {},
+) {
   return db.transaction(async (tx) => {
     const { rows: bookingRows } = await tx.query(
       `SELECT ceb.id, ceb.member_id, ceb.calendar_event_id, ceb.status, ceb.user_class_package_id,
-              ce.starts_at AS session_starts_at
+              ce.starts_at AS session_starts_at,
+              TIMESTAMPDIFF(SECOND, UTC_TIMESTAMP(), ce.starts_at) AS seconds_until_start
        FROM calendar_event_bookings ceb
        JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
        WHERE ceb.id = ? AND ceb.gym_id = ? FOR UPDATE`,
@@ -184,6 +195,15 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
       "UPDATE calendar_event_bookings SET status='cancelled', cancelled_at=UTC_TIMESTAMP(), modified_at=UTC_TIMESTAMP(), modified_by_membership_id=? WHERE id = ?",
       [actorMembershipId ?? null, bookingId],
     );
+
+    // #1189 stage 3: a cancellation inside the notice window spends a session
+    // (booking itself never does). A waiting-list place is not a booking, and a
+    // caller that has already allowed the cancellation free of charge — a
+    // member inside the grace period — passes `spendLateCancel: false`.
+    if (b.status === 'booked' && opts.spendLateCancel !== false && isLateCancellation(Number(b.seconds_until_start))) {
+      const sc = await serviceConsumption();
+      await sc.spendSessionForBooking(tx, gymId, bookingId, 'late_cancel', opts.actor ?? null);
+    }
 
     if (b.user_class_package_id) {
       const { rows: dayRows } = await tx.query(
@@ -228,8 +248,6 @@ export async function cancelBooking(gymId: string, bookingId: number, actorMembe
       try { await hook(tx, gymId, promotedMemberId, sessionRow[0].activity_type_id, sessionRow[0].center_id); }
       catch { /* promotion never fails */ }
     }
-    const pc = await packageCredits();
-    await pc.debitPackageIfClaimed(tx, waitRows[0].id, gymId);
 
     return {
       promoted: waitRows[0].id, promotedMemberId: waitRows[0].member_id,
@@ -298,7 +316,7 @@ bookingsRouter.delete('/:id', requireModuleWrite('MEMBERS'), async (req, res, ne
         WHERE ceb.id = ? AND ceb.gym_id = ?`,
       [req.params.id, gymId],
     );
-    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
+    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { actor: resolveRequestActor(getTenantContext(req)) });
     if (cancelResult.promotedMemberId && sessionRows.length > 0) {
       sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
         sessionRows[0].calendar_event_id, { title: sessionRows[0].title, starts_at: sessionRows[0].starts_at });
@@ -319,34 +337,52 @@ bookingsRouter.delete('/:id', requireModuleWrite('MEMBERS'), async (req, res, ne
   }
 });
 
-bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
   const { status } = req.body;
   if (!['present', 'absent'].includes(status)) {
     return res.status(400).json({ error: "status must be 'present' or 'absent'" });
   }
+  // #1189 stage 3: marking someone absent spends their session automatically
+  // (a no-show); `consume: false` is staff's "return class" answer. Present
+  // always spends under `attendance`. Idempotent per booking either way.
+  const consume = req.body.consume === undefined ? true : req.body.consume === true;
+  const actor = resolveRequestActor(ctx);
 
-  const { rows: current } = await db.query(
-    `SELECT attendance_status FROM calendar_event_bookings WHERE id = ? AND gym_id = ? AND status = 'booked'`,
-    [req.params.id, gymId],
-  );
-  if (current.length === 0) {
-    return res.status(404).json({ error: 'Booking not found or not eligible for attendance (must be booked, not waitlisted or cancelled)' });
+  try {
+    const { rows: current } = await db.query(
+      `SELECT attendance_status FROM calendar_event_bookings WHERE id = ? AND gym_id = ? AND status = 'booked'`,
+      [req.params.id, gymId],
+    );
+    if (current.length === 0) {
+      return res.status(404).json({ error: 'Booking not found or not eligible for attendance (must be booked, not waitlisted or cancelled)' });
+    }
+
+    await db.transaction(async (tx) => {
+      await tx.query(
+        `UPDATE calendar_event_bookings
+         SET attendance_status = ?,
+             attendance_recorded_at = UTC_TIMESTAMP(),
+             attendance_recorded_by_membership_id = ?,
+             modified_at = UTC_TIMESTAMP(),
+             modified_by_membership_id = ?
+         WHERE id = ? AND gym_id = ?`,
+        [status, gymMembershipId, gymMembershipId, req.params.id, gymId],
+      );
+      const sc = await serviceConsumption();
+      if (status === 'absent' && !consume) {
+        await sc.returnSessionForBooking(tx, gymId, Number(req.params.id), actor);
+      } else {
+        await sc.spendSessionForBooking(tx, gymId, Number(req.params.id), reasonForAttendance(status), actor);
+      }
+    });
+
+    const { rows } = await db.query(`${SELECT} WHERE ceb.id = ? AND ceb.gym_id = ?`, [req.params.id, gymId]);
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
   }
-
-  await db.query(
-    `UPDATE calendar_event_bookings
-     SET attendance_status = ?,
-         attendance_recorded_at = UTC_TIMESTAMP(),
-         attendance_recorded_by_membership_id = ?,
-         modified_at = UTC_TIMESTAMP(),
-         modified_by_membership_id = ?
-     WHERE id = ? AND gym_id = ?`,
-    [status, gymMembershipId, gymMembershipId, req.params.id, gymId],
-  );
-
-  const { rows } = await db.query(`${SELECT} WHERE ceb.id = ? AND ceb.gym_id = ?`, [req.params.id, gymId]);
-  res.json(rows[0]);
 });
 
 /**

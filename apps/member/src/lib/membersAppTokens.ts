@@ -324,6 +324,14 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     source: { kind: 'color', key: 'inputBackgroundColor', labelKey: 'label_input_background_color' },
     cssVar: '--gd-members-calendar-modal-input-bg',
   },
+  {
+    key: 'inputBackgroundColor',
+    section: 'group_members_inputs',
+    labelKey: 'label_members_input_bg',
+    type: 'color',
+    source: { kind: 'color', key: 'inputBackgroundColor', labelKey: 'label_input_background_color' },
+    cssVar: '--gd-input-bg',
+  },
 ];
 
 export function adminSourceValue(tokens: ThemeTokens, source: MembersAppSource): string | number {

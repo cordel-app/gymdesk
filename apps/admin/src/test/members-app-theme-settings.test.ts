@@ -97,10 +97,11 @@ const TICKET_MAPPING: [string, string | null][] = [
   ['label_members_calendar_time_col_text', 'Time column text'],
   ['label_members_calendar_modal_bg', 'Modal Background'],
   ['label_members_calendar_modal_input_bg', 'Input Background Color'],
+  ['label_members_input_bg', 'Input Background Color'],
 ];
 
 describe('#833 Members App settings: the declaration', () => {
-  it('declares the six sections the ticket names, in order', () => {
+  it('declares the sections the tickets name, in order', () => {
     expect(MEMBERS_APP_SECTIONS).toEqual([
       'group_members_header',
       'group_members_background',
@@ -108,6 +109,7 @@ describe('#833 Members App settings: the declaration', () => {
       'group_members_text',
       'group_members_buttons',
       'group_members_calendar',
+      'group_members_inputs',
     ]);
     // Every section has at least one setting, and every setting belongs to one
     // of them — so a setting can never be declared into a section that is
