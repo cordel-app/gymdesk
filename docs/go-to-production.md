@@ -515,6 +515,15 @@ Clerk Development and Production instances are separate: users, user ids and met
       route, a 401 or a redirect to `/en/…` means the middleware exemption is missing, and a 502 means
       `CORDEL_FITNESS_API_URL` is wrong. Anything missed in the switch-over is replayable from the endpoint's
       *Replay → Replay missing messages*.
+  - [ ] **pro** (Clerk Production instance): Dashboard → Configure → Webhooks → Add Endpoint →
+        `https://admin.cordel.tech/api/webhooks/clerk`, events `user.created` + `user.deleted`, **enabled**. Copy the
+        endpoint's signing secret into the pro API's `CLERK_WEBHOOK_SIGNING_SECRET` (GitHub secret → `deploy.yml`) and
+        redeploy the API. Confirm the **pro admin container** has `CORDEL_FITNESS_API_URL` set to the pro API's
+        internal address, then send a test event and confirm a 2xx. Do not leave a second endpoint pointing at the
+        API directly (`https://api.cordel.tech/webhooks/clerk`): both would deliver every event.
+  - [ ] **dev** (Clerk Development instance): edit the existing endpoint's URL to
+        `https://admin.vdicube.com/api/webhooks/clerk`; its signing secret does not change. Send a test event and
+        confirm a 2xx.
 - [ ] Recreate the customised *Invitation* email template (Spanish/Catalan/English via `lang`
       conditionals — see `docs/wordpress-integration.md`) on the production instance; templates
       belong to each instance and are not copied over. Custom templates are a Clerk **premium**
