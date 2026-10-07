@@ -84,11 +84,11 @@ describe('the option sets mirror the API declaration', () => {
     expect([...PROMOTION_ITEM_ACTIONS]).toEqual(apiActions('PROMOTION_ITEM_ACTIONS'));
   });
 
-  it('offers a Membership Plan the same two the API allows it (§16, #997)', () => {
+  it('offers a Membership Plan the same three the API allows it (§16, #1184)', () => {
     expect([...PLAN_BENEFIT_ACTIONS]).toEqual(apiActions('PLAN_BENEFIT_ACTIONS'));
-    // Spelled out too: a Plan must never be able to pick a monetary treatment,
-    // and since #997 not a percentage either.
-    expect(PLAN_BENEFIT_ACTIONS).not.toContain('percentage_discount');
+    // Spelled out too: a Plan must never be able to pick a monetary treatment;
+    // #1184 restored the percentage.
+    expect(PLAN_BENEFIT_ACTIONS).toContain('percentage_discount');
     expect(PLAN_BENEFIT_ACTIONS).not.toContain('fixed_discount');
     expect(PLAN_BENEFIT_ACTIONS).not.toContain('fixed_price');
   });
@@ -97,7 +97,7 @@ describe('the option sets mirror the API declaration', () => {
     expect([...LEGACY_PLAN_BENEFIT_ACTIONS]).toEqual(apiActions('LEGACY_PLAN_BENEFIT_ACTIONS'));
     expect([...STORED_PLAN_BENEFIT_ACTIONS])
       .toEqual([...PLAN_BENEFIT_ACTIONS, ...LEGACY_PLAN_BENEFIT_ACTIONS]);
-    expect(isRetiredBenefitAction('plan', 'percentage_discount')).toBe(true);
+    expect(isRetiredBenefitAction('plan', 'percentage_discount')).toBe(false);
     // §8: a Promotion retires nothing, so no option of its own disappears.
     expect(isRetiredBenefitAction('promotion', 'percentage_discount')).toBe(false);
     expect(isRetiredBenefitAction('plan', 'fixed_price')).toBe(false);

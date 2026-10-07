@@ -63,18 +63,20 @@ export const PROMOTION_ITEM_ACTIONS: readonly PromotionBenefitAction[] = [
  * a fixed price on it would be a second price list beside the Product's
  * own. Widening this is a product decision, and it moves the CHECK with it.
  *
- * #997 narrowed it again, to two: a Plan benefit is now either charged at the
- * Product's normal price or waived outright. See `LEGACY_PLAN_BENEFIT_ACTIONS`
- * below for what that did *not* do to the rows that already store a
- * percentage.
+ * #997 narrowed it to two (`no_benefit`, `waive`) and #1184 stage 1 reversed
+ * that: `percentage_discount` is offered again, so a Plan benefit is charged at
+ * the Product's normal price, waived outright or discounted by a percentage.
+ * `LEGACY_PLAN_BENEFIT_ACTIONS` is therefore empty — the retirement machinery
+ * below is kept (it is what a future retirement reuses) but retires nothing.
  */
 export type PlanBenefitAction = Extract<
-  PromotionBenefitAction, 'no_benefit' | 'waive'
+  PromotionBenefitAction, 'no_benefit' | 'waive' | 'percentage_discount'
 >;
 
 export const PLAN_BENEFIT_ACTIONS: readonly PlanBenefitAction[] = [
   'no_benefit',
   'waive',
+  'percentage_discount',
 ];
 
 /**
@@ -104,9 +106,7 @@ export const PLAN_BENEFIT_ACTIONS: readonly PlanBenefitAction[] = [
  * A **Promotion** is untouched (§8): it still configures all five actions, and
  * `percentage_discount` is retired only in the `plan` context.
  */
-export const LEGACY_PLAN_BENEFIT_ACTIONS: readonly PromotionBenefitAction[] = [
-  'percentage_discount',
-];
+export const LEGACY_PLAN_BENEFIT_ACTIONS: readonly PromotionBenefitAction[] = [];
 
 /**
  * Everything a Plan-side row may hold — what migration 203's CHECK permits and

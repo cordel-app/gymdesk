@@ -282,24 +282,6 @@ Tick items off in the PR that completes them.
       could only do it by rebuilding `user_memberships` fails loudly instead. A
       maintenance window is wanted for the sweep's locks (it is a full scan of
       `user_memberships`, which carries no index on `status`) rather than for the DDL.
-- [ ] **Run `npm run plans:percentage-benefits` and clean up what it finds** (#997).
-      `% Discount` is no longer a treatment a Membership Plan benefit can be
-      configured with, but nothing was converted and nothing was backfilled: §6
-      forbids both directions, since rewriting a stored 20 % to `Waive` makes a €20
-      item free and reading it as `No benefit` charges €20 for a line agreed at €16.
-      So migration 203's `chk_<table>_action` still permits the value, a line that
-      holds it keeps billing at its discount, and this read-only report is the
-      identification step the ticket's "explicit migration/data-cleanup process"
-      means. Its first half lists every `membership_plan_{session,oneoff,periodical}`
-      line still carrying one — each correctable in that Plan's Benefit section by
-      picking `No benefit` or `Waive`, which is the only way the value ever leaves a
-      row. Its second half lists the `user_membership_{session,oneoff,periodical}`
-      snapshot lines: those are what members were **agreed** at and what the nightly
-      run charges them, so correcting one is renegotiating a contract rather than
-      tidying a catalogue, and fixing the Plan leaves them untouched by design
-      (#635 §17). There is no deadline and no migration waiting on it — the rows are
-      correct as they stand; the report exists so a gym can decide, Plan by Plan,
-      whether it still wants the discount it configured before the option went away.
 - [ ] **Time migration 175's backfill before running it** (#635 stage 2). The DDL is
       cheap — six nullable column adds on `user_memberships` plus three new tables —
       but the file ends with data statements that touch every existing row: one
