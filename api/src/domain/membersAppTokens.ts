@@ -67,6 +67,7 @@ export const MEMBERS_APP_SETTING_TYPES: Record<string, MembersAppSettingType> = 
   calendarTimeColumnTextColor:       'color',
   calendarModalBackgroundColor:      'color',
   calendarModalInputBackgroundColor: 'color',
+  inputBackgroundColor:              'color',
 };
 
 export const MEMBERS_APP_SETTING_KEYS = Object.keys(MEMBERS_APP_SETTING_TYPES);

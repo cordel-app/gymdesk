@@ -105,7 +105,8 @@ export type MembersAppSection =
   | 'group_members_background'
   | 'group_members_section_cards'
   | 'group_members_text'
-  | 'group_members_calendar';
+  | 'group_members_calendar'
+  | 'group_members_inputs';
 
 /** Section order in the editor (§1). */
 export const MEMBERS_APP_SECTIONS: MembersAppSection[] = [
@@ -114,6 +115,7 @@ export const MEMBERS_APP_SECTIONS: MembersAppSection[] = [
   'group_members_section_cards',
   'group_members_text',
   'group_members_calendar',
+  'group_members_inputs',
 ];
 
 // §8's mapping, in the order the ticket lists it. Every source below is an
@@ -397,6 +399,17 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     type: 'color',
     source: { kind: 'color', key: 'inputBackgroundColor', labelKey: 'label_input_background_color' },
     cssVar: '--gd-members-calendar-modal-input-bg',
+  },
+  {
+    // #1213 — the text-input fill. Writes `--gd-input-bg`, the very variable
+    // `memberTheme.inputBackground` (and so every `inputStyle` consumer) reads,
+    // so no input component spells a colour of its own.
+    key: 'inputBackgroundColor',
+    section: 'group_members_inputs',
+    labelKey: 'label_members_input_bg',
+    type: 'color',
+    source: { kind: 'color', key: 'inputBackgroundColor', labelKey: 'label_input_background_color' },
+    cssVar: '--gd-input-bg',
   },
 ];
 

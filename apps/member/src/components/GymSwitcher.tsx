@@ -23,7 +23,7 @@ export function GymSwitcher() {
           borderRadius: 6,
           border: `1px solid ${memberTheme.inputBorder}`,
           fontSize: 14,
-          background: 'inherit',
+          background: memberTheme.inputBackground,
           color: 'inherit',
         }}
         aria-label={t('gym_switcher_label')}
