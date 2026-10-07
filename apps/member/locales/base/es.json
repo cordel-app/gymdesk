@@ -14,6 +14,7 @@
     "membership_status": "Cuota",
     "no_membership": "Sin cuota activa.",
     "products_services": "Mis Productos",
+    "active_products": "{count, plural, one {# producto activo} other {# productos activos}}",
     "expires_on": "Vence el {date}",
     "class_credits": "Créditos de clases",
     "credits_remaining": "sesiones disponibles",

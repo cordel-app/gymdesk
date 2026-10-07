@@ -14,6 +14,7 @@
     "membership_status": "Membership",
     "no_membership": "No active membership.",
     "products_services": "My Products",
+    "active_products": "{count, plural, one {# active product} other {# active products}}",
     "expires_on": "Expires {date}",
     "class_credits": "Class credits",
     "credits_remaining": "sessions remaining",
