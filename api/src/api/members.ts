@@ -1,3 +1,4 @@
+import { memberInviteMetadata } from '../domain/memberInviteTarget';
 import { Router } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
@@ -328,6 +329,7 @@ membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res
     const invitation = await clerkClient.invitations.createInvitation({
       emailAddress: rows[0].email,
       redirectUrl: `${memberAppUrl}/en/link?gym_id=${gymId}`,
+      publicMetadata: memberInviteMetadata(gymId, String(req.params.id)),
     });
     await db.query('UPDATE members SET invitation_id = ? WHERE id = ?', [invitation.id, req.params.id]);
     recordAudit(req, { action: 'invite', entityType: 'member', entityId: req.params.id, next: { email: rows[0].email } });
@@ -355,6 +357,7 @@ membersRouter.post('/:id/reinvite', requireModuleWrite('MEMBERS'), async (req, r
     const invitation = await clerkClient.invitations.createInvitation({
       emailAddress: rows[0].email,
       redirectUrl: `${memberAppUrl}/en/link?gym_id=${gymId}`,
+      publicMetadata: memberInviteMetadata(gymId, String(req.params.id)),
     });
     await db.query('UPDATE members SET invitation_id = ? WHERE id = ?', [invitation.id, req.params.id]);
     recordAudit(req, { action: 'reinvite', entityType: 'member', entityId: req.params.id, next: { email: rows[0].email } });
