@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { Tabs } from '@/components/Tabs';
 import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
@@ -92,6 +93,16 @@ const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
 // Base Theme and a Custom one (#678); see renderInlineEditor().
 type SectionKey = 'branding' | 'typography' | 'colors' | 'assignments' | 'members_app';
 
+/** #1211: the Theme editor's four tabs; each section belongs to exactly one. */
+type SettingsTab = 'general' | 'assignments' | 'global_style' | 'members_app_style';
+const SETTINGS_TABS: { id: SettingsTab; labelKey: string }[] = [
+  { id: 'general', labelKey: 'tab_general' },
+  { id: 'assignments', labelKey: 'tab_assignments' },
+  { id: 'global_style', labelKey: 'tab_global_style' },
+  { id: 'members_app_style', labelKey: 'tab_members_app_style' },
+];
+const ALL_SECTIONS: SectionKey[] = ['branding', 'typography', 'colors', 'assignments', 'members_app'];
+
 const emptyForm = { name: '', description: '', logoContainsGymName: false, tokens: DEFAULT_TOKENS };
 
 /** One entry per Members image slot — the draft's shape for all three maps. */
@@ -178,7 +189,8 @@ export default function GymThemesPage() {
   const [statusFilter, setStatusFilter] = useState('');
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(['assignments']));
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>('general');
+  const [openSections, setOpenSections] = useState<Set<SectionKey>>(new Set(ALL_SECTIONS));
   const [editForm, setEditForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   // #828: the Theme whose bucket initialization is in flight, so the menu item
@@ -258,7 +270,8 @@ export default function GymThemesPage() {
     guardUnsaved(() => {
       if (expandedId === theme.id) { applyTokens(currentLiveTokens()); setExpandedId(null); return; }
       setExpandedId(theme.id);
-      setOpenSections(new Set<SectionKey>(['assignments']));
+      setOpenSections(new Set<SectionKey>(ALL_SECTIONS));
+      setSettingsTab('general');
       // Merge with defaults so themes saved before #489 stage 2 (missing the newer
       // semantic color fields) still populate every color picker with a sensible value.
       const tokens: ThemeTokens = {
@@ -820,8 +833,8 @@ export default function GymThemesPage() {
         )}
 
         <div style={{ marginTop: 12 }}>
-          {renderSection(t('section_assignments'), 'assignments', renderAssignmentsContent(theme))}
-
+          <Tabs tabs={SETTINGS_TABS} active={settingsTab} onChange={setSettingsTab} label={(k) => t(k)} />
+          {settingsTab === 'general' && (<>
           {renderSection(t('section_branding'), 'branding', (
             <ThemeBrandingEditor
               values={{ name: editForm.name, description: editForm.description, logoContainsGymName: editForm.logoContainsGymName }}
@@ -836,6 +849,12 @@ export default function GymThemesPage() {
             />
           ))}
 
+          </>)}
+          {settingsTab === 'assignments' && (<>
+          {renderSection(t('section_assignments'), 'assignments', renderAssignmentsContent(theme))}
+
+          </>)}
+          {settingsTab === 'global_style' && (<>
           {renderSection(t('section_colors'), 'colors', (
             <ThemeColorsEditor tokens={editForm.tokens} onChange={updateTokens} namespace="gym_themes" t={t} readOnly={isBase} />
           ))}
@@ -844,6 +863,8 @@ export default function GymThemesPage() {
             <ThemeTypographyEditor tokens={editForm.tokens} onChange={updateTokens} t={t} readOnly={isBase} />
           ))}
 
+          </>)}
+          {settingsTab === 'members_app_style' && (<>
           {/* #833 — the Members App's own settings, each inheriting from its
               Admin source until this Theme overrides it. The same component
               renders on the Base Themes screen, so both Theme kinds get one
@@ -873,6 +894,7 @@ export default function GymThemesPage() {
               )}
             />
           ))}
+          </>)}
         </div>
 
         {/* #985 — a Base Theme now gets the same Save pair: its configuration is
