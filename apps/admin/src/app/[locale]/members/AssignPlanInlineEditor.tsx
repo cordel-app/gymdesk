@@ -15,6 +15,10 @@ import {
   secondaryBtnSmall,
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
+import {
+  BENEFIT_ENDPOINTS, benefitKey, declinedPayload, toAssignableBenefits,
+  type AssignableBenefit,
+} from '@/lib/declinedBenefits';
 
 interface Membership {
   id: number;
@@ -74,6 +78,10 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
   const [promotions, setPromotions] = useState<Promotion[]>([]);
   const [promotionsLoading, setPromotionsLoading] = useState(false);
   const [selectedPromotionIds, setSelectedPromotionIds] = useState<number[]>([]);
+  // #1184 stage 3: every benefit of the chosen Plan starts included; an optional
+  // one (Mandatory = No) may be unticked, a mandatory one may not.
+  const [benefits, setBenefits] = useState<AssignableBenefit[]>([]);
+  const [declinedKeys, setDeclinedKeys] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<ActivePlanConflict | null>(null);
@@ -96,6 +104,26 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
 
     return () => { cancelled = true; };
   }, [planId]);
+
+  useEffect(() => {
+    setDeclinedKeys(new Set());
+    if (!planId) { setBenefits([]); return; }
+    let cancelled = false;
+    Promise.all(BENEFIT_ENDPOINTS.map(([section, path]) =>
+      apiFetch<any[]>(`/membership-plans/${planId}/${path}`)
+        .then((rows) => toAssignableBenefits(section, rows))
+        .catch(() => [] as AssignableBenefit[]),
+    )).then((groups) => { if (!cancelled) setBenefits(groups.flat()); });
+    return () => { cancelled = true; };
+  }, [planId]);
+
+  function toggleBenefit(b: AssignableBenefit) {
+    setDeclinedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(benefitKey(b))) next.delete(benefitKey(b)); else next.add(benefitKey(b));
+      return next;
+    });
+  }
 
   const isStackable = (p: Promotion) => !!p.stackable;
   const selected = promotions.filter((p) => selectedPromotionIds.includes(p.id));
@@ -127,6 +155,7 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
           membership_plan_id: parseInt(planId, 10),
           starts_at: startsAt,
           promotion_ids: selectedPromotionIds,
+          declined_benefits: declinedPayload(benefits, declinedKeys),
           ...(confirmReplacement ? { confirm: true } : {}),
         }),
       });
@@ -173,6 +202,35 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
         disabled={saving}
         style={inputStyle}
       />
+
+      {planId && benefits.length > 0 && (
+        <>
+          <div style={{ ...sectionLabelStyle, marginTop: 6 }}>{t('members.assign_new_plan_section_benefits')}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
+            {benefits.map((b) => (
+              <label
+                key={benefitKey(b)}
+                title={b.mandatory ? t('members.assign_new_plan_benefit_mandatory_hint') : undefined}
+                style={promotionRowStyle(!declinedKeys.has(benefitKey(b)), b.mandatory)}
+              >
+                <input
+                  type="checkbox"
+                  checked={b.mandatory || !declinedKeys.has(benefitKey(b))}
+                  disabled={saving || b.mandatory}
+                  onChange={() => toggleBenefit(b)}
+                  style={{ marginRight: 8 }}
+                />
+                <span style={{ flex: 1, minWidth: 0 }}>{b.product_name}</span>
+                <span style={stackTagStyle(!b.mandatory)}>
+                  {b.mandatory
+                    ? t('members.assign_new_plan_benefit_mandatory')
+                    : t('members.assign_new_plan_benefit_optional')}
+                </span>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
 
       <div style={{ ...sectionLabelStyle, marginTop: 6 }}>{t('members.assign_new_plan_section_promotions')}</div>
       {!planId ? (

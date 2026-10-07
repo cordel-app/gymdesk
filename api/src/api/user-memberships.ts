@@ -32,6 +32,7 @@ import {
   syncMandatoryProductQuantities,
   writeAssignedPlanBenefitSection,
 } from './assigned-plan-snapshot';
+import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import {
   ProductBenefitCategory,
   classifyProduct,
@@ -648,6 +649,12 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
   const eff = await effectivePrice(Number(membership_plan_id), gymId, starts_at);
   if (!eff) return res.status(404).json({ error: 'Plan not found' });
 
+  // #1184 stage 3: optional Plan benefits declined for this assignment — one
+  // shared rule (`domain/declinedPlanBenefits.ts`), enforced here whatever the
+  // checkboxes sent.
+  const declinedResult = await resolveDeclinedBenefits(gymId, Number(membership_plan_id), req.body.declined_benefits);
+  if (declinedResult.error !== undefined) return res.status(400).json({ error: declinedResult.error });
+
   // Snapshot: base_price + plan_price_id reference the price at signup, and the
   // assignment's own Membership Fee is frozen onto it by `snapshotAssignedPlan`
   // below. #635 stage 15: a negotiated fee is a different *value of that same
@@ -716,6 +723,7 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         // A negotiated fee is frozen in place of the catalogue one: it is this
         // assignment's agreed regular price, and nothing else stores it (§15).
         membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
+        declinedBenefits: declinedResult.declined,
       });
       return { kind: 'created' as const, insertId };
     });
@@ -1139,6 +1147,12 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
   const eff = await effectivePrice(Number(membership_plan_id), gymId, starts_at);
   if (!eff) return res.status(404).json({ error: 'Plan not found' });
 
+  // #1184 stage 3: optional Plan benefits declined for this assignment — one
+  // shared rule (`domain/declinedPlanBenefits.ts`), enforced here whatever the
+  // checkboxes sent.
+  const declinedResult = await resolveDeclinedBenefits(gymId, Number(membership_plan_id), req.body.declined_benefits);
+  if (declinedResult.error !== undefined) return res.status(400).json({ error: declinedResult.error });
+
   const feeOverride = membership_fee_price != null && membership_fee_price !== '';
   const parsedFee = feeOverride ? parseFloat(membership_fee_price) : eff.price;
   if (feeOverride) {
@@ -1226,6 +1240,7 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
         // A negotiated fee is frozen in place of the catalogue one: it is this
         // assignment's agreed regular price, and nothing else stores it (§15).
         membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
+        declinedBenefits: declinedResult.declined,
       });
       return { kind: 'created' as const, insertId };
     });
