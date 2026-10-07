@@ -134,7 +134,7 @@ export function MemberProductsSection({ title, emptyLabel, items }: {
 
 const styles: Record<string, CSSProperties> = {
   section: { marginTop: 24 },
-  heading: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: memberTheme.title2 },
+  heading: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   list: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
   card: { ...sectionCardStyle, borderRadius: 10, padding: '12px 14px' },
   head: {

@@ -265,13 +265,13 @@ export default function TrainingPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   message: { ...noticeStyle('success'), marginBottom: 12 },
   weekdayBar: { display: 'flex', gap: 4, marginBottom: 16, overflowX: 'auto' },
   weekdayBtn: { flex: 1, padding: '10px 0', background: memberTheme.surface, color: memberTheme.textMuted, border: 'none', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer' },
   weekdayBtnActive: { background: memberTheme.primaryButton, color: memberTheme.primaryButtonText },
   planCard: { ...sectionCardStyle, padding: 16, marginBottom: 16 },
-  planName: { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.title2 },
+  planName: { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   planDesc: { margin: '4px 0 12px', fontSize: 13, color: memberTheme.textMuted },
   blockCard: { borderTop: `1px solid ${memberTheme.separator}`, paddingTop: 10, marginTop: 10 },
   blockHead: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 },

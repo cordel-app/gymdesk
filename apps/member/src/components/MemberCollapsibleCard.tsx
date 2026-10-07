@@ -62,7 +62,7 @@ const styles: Record<string, CSSProperties> = {
     width: '100%', padding: '14px 16px', background: 'none', border: 'none',
     cursor: 'pointer', textAlign: 'left', font: 'inherit',
   },
-  title: { fontSize: 15, fontWeight: 700, color: memberTheme.title2 },
+  title: { fontSize: 15, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   right: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' },
   summary: { fontSize: 12.5, color: memberTheme.textMuted },
   caret: { fontSize: 12, color: memberTheme.textMuted },

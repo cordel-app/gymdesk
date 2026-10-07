@@ -2,10 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
+  MEMBERS_APP_FONT_SIZE,
+  MEMBERS_APP_HORIZONTAL_ALIGNMENTS,
   MEMBERS_APP_SECTIONS,
   MEMBERS_APP_SETTINGS,
+  MEMBERS_APP_VERTICAL_ALIGNMENTS,
   adminSourceValue,
+  alignmentCssValue,
   effectiveMembersAppValue,
+  inheritedMembersAppValue,
   isMembersAppOverridden,
   membersAppCssVars,
   membersAppSettingsFor,
@@ -53,8 +58,13 @@ const locales = Object.fromEntries(
   LOCALE_CODES.map((c) => [c, JSON.parse(readFileSync(join(LOCALES_DIR, `${c}.json`), 'utf-8'))]),
 ) as Record<(typeof LOCALE_CODES)[number], Record<string, Record<string, unknown>>>;
 
-/** §8's mapping, transcribed from the ticket — Members App setting → Admin source label. */
-const TICKET_MAPPING: [string, string][] = [
+/**
+ * §8's mapping, transcribed from the ticket — Members App setting → Admin
+ * source label — plus #1152's eight: the three Title fonts and the five
+ * Section Cards text settings, of which the size and the two positions
+ * inherit from nothing (`null`) because the Admin theme has no counterpart.
+ */
+const TICKET_MAPPING: [string, string | null][] = [
   ['label_members_header_color', 'Header Background'],
   ['label_members_header_text_color', 'Header Text'],
   ['label_members_header_text_font', 'Header text font'],
@@ -63,9 +73,17 @@ const TICKET_MAPPING: [string, string][] = [
   ['label_members_background_color', 'Page Background'],
   ['label_members_card_border_color', 'Card Border'],
   ['label_members_card_border_width', 'Card border width'],
+  ['label_members_card_text_color', 'Primary Text Color'],
+  ['label_members_card_text_size', null],
+  ['label_members_card_text_font', 'Typography body Font Family'],
+  ['label_members_card_text_vertical', null],
+  ['label_members_card_text_horizontal', null],
   ['label_members_title1_color', 'Typography h1 Color'],
+  ['label_members_title1_font', 'Typography h1 Font Family'],
   ['label_members_title2_color', 'Typography h2 Color'],
+  ['label_members_title2_font', 'Typography h2 Font Family'],
   ['label_members_title3_color', 'Typography h3 Color'],
+  ['label_members_title3_font', 'Typography h3 Font Family'],
   ['label_members_calendar_bg', 'Calendar background'],
   ['label_members_calendar_header_color', 'Calendar header background'],
   ['label_members_calendar_buttons_color', 'Navigation button background'],
@@ -101,7 +119,13 @@ describe('#833 Members App settings: the declaration', () => {
     for (const [labelKey, sourceLabel] of TICKET_MAPPING) {
       const setting = MEMBERS_APP_SETTINGS.find((s) => s.labelKey === labelKey);
       expect(setting, `no Members App setting labelled ${labelKey}`).toBeDefined();
-      expect(en[setting!.source.labelKey], `${labelKey} has no label for its source`).toBe(sourceLabel);
+      if (sourceLabel === null) {
+        expect(setting!.source, `${labelKey} inherits from something`).toBeNull();
+        expect(setting!.default, `${labelKey} inherits from nothing and declares no default`).toBeDefined();
+      } else {
+        expect(setting!.source, `${labelKey} inherits from nothing`).not.toBeNull();
+        expect(en[setting!.source!.labelKey], `${labelKey} has no label for its source`).toBe(sourceLabel);
+      }
     }
   });
 
@@ -114,6 +138,7 @@ describe('#833 Members App settings: the declaration', () => {
 
   it('points every setting at an Admin setting that exists', () => {
     for (const { key, source } of MEMBERS_APP_SETTINGS) {
+      if (source === null) continue;
       if (source.kind === 'color') {
         expect(
           (DEFAULT_TOKENS.colors as Record<string, unknown>)[source.key as string],
@@ -126,7 +151,7 @@ describe('#833 Members App settings: the declaration', () => {
           `${key} inherits from ${source.key}, which the Admin editor does not expose`,
         ).toBe(true);
       } else {
-        expect(DEFAULT_TOKENS.typography[source.level].color).toBeDefined();
+        expect(DEFAULT_TOKENS.typography[source.level][source.field]).toBeDefined();
       }
     }
   });
@@ -178,7 +203,7 @@ describe('#833 Members App settings: inheritance', () => {
     expect((clean as ThemeTokens).membersApp).toBeUndefined();
     for (const setting of MEMBERS_APP_SETTINGS) {
       expect(isMembersAppOverridden(clean, setting.key)).toBe(false);
-      expect(effectiveMembersAppValue(clean, setting)).toBe(adminSourceValue(clean, setting.source));
+      expect(effectiveMembersAppValue(clean, setting)).toBe(inheritedMembersAppValue(clean, setting));
     }
   });
 
@@ -324,9 +349,14 @@ describe('#833 Members App settings: the editor', () => {
       'members_restore_inherited',
       'adv_header_text_font',
       'adv_card_border_width',
+      'members_default_value',
+      'members_badge_default',
+      'members_restore_default',
+      ...MEMBERS_APP_VERTICAL_ALIGNMENTS.map((a) => `members_align_${a}`),
+      ...MEMBERS_APP_HORIZONTAL_ALIGNMENTS.map((a) => `members_align_${a}`),
       ...MEMBERS_APP_SECTIONS,
       ...MEMBERS_APP_SETTINGS.map((s) => s.labelKey),
-      ...MEMBERS_APP_SETTINGS.map((s) => s.source.labelKey),
+      ...MEMBERS_APP_SETTINGS.flatMap((s) => (s.source ? [s.source.labelKey] : [])),
     ];
     for (const code of LOCALE_CODES) {
       for (const ns of NAMESPACES) {
@@ -347,19 +377,151 @@ describe('#833 Members App settings: the editor', () => {
   });
 });
 
+describe('#1152 Members App typography and Section Card text', () => {
+  const clean = DEFAULT_TOKENS;
+  const by = (key: string) => MEMBERS_APP_SETTINGS.find((s) => s.key === key)!;
+
+  it('renames the Text section to Typography, in every locale, and keeps its id (§1)', () => {
+    // A section id is what its settings are stored and rendered under; a
+    // label is renamed by its six values (#1026/#970's rule, #1151's for a slot).
+    expect(MEMBERS_APP_SECTIONS).toContain('group_members_text');
+    for (const ns of NAMESPACES) {
+      expect(locales.en[ns].group_members_text).toBe('Typography (Members App)');
+      expect(locales.es[ns].group_members_text).toBe('Tipografía (App de Miembros)');
+      expect(locales.ca[ns].group_members_text).toBe('Tipografia (App de Membres)');
+      expect(String(locales.en[ns].group_members_text)).not.toMatch(/^Text /);
+    }
+  });
+
+  it('gives each Title a Font Family beside its Color, both halves of one typography level (§2, §5)', () => {
+    for (const level of ['h1', 'h2', 'h3'] as const) {
+      const n = level.slice(1);
+      const color = by(`title${n}Color`);
+      const font = by(`title${n}Font`);
+      expect(color.source).toEqual({ kind: 'typography', level, field: 'color', labelKey: `source_typography_${level}` });
+      expect(font.source).toEqual({ kind: 'typography', level, field: 'fontFamily', labelKey: `source_typography_${level}_font` });
+      expect(font.type).toBe('font');
+      expect(font.section).toBe('group_members_text');
+      // The override writes into the level's own font variable, as the colour
+      // writes into its colour variable: one variable per concept.
+      expect(font.cssVar).toBe(`--gd-font-${level}`);
+      expect(color.cssVar).toBe(`--gd-color-${level}`);
+      // The two halves of the level render in the editor in that order.
+      const keys = membersAppSettingsFor('group_members_text').map((s) => s.key);
+      expect(keys.indexOf(`title${n}Font`)).toBe(keys.indexOf(`title${n}Color`) + 1);
+    }
+    // No second font catalogue: the font options are FONT_STACKS, which the
+    // editor already renders for every `font` setting.
+    expect(componentSrc).toContain('FONT_STACKS.map(');
+    expect(componentSrc).not.toMatch(/MEMBERS_APP_FONTS|membersAppFonts/);
+  });
+
+  it('inherits a Title font from the Admin typography level and overrides it per Title', () => {
+    const edited = {
+      ...clean,
+      typography: { ...clean.typography, h2: { ...clean.typography.h2, fontFamily: FONT_STACK_VALUES[1] } },
+    } as ThemeTokens;
+    expect(effectiveMembersAppValue(edited, by('title2Font'))).toBe(FONT_STACK_VALUES[1]);
+    expect(effectiveMembersAppValue(edited, by('title1Font'))).toBe(clean.typography.h1.fontFamily);
+    const over = withMembersAppOverride(edited, 'title2Font', FONT_STACK_VALUES[2]);
+    expect(membersAppCssVars(over)['--gd-font-h2']).toBe(FONT_STACK_VALUES[2]);
+    expect(membersAppCssVars(over)['--gd-color-h2']).toBe(clean.typography.h2.color);
+  });
+
+  it('declares the five Section Cards text settings, in the Section Cards section (§3)', () => {
+    const keys = membersAppSettingsFor('group_members_section_cards').map((s) => s.key);
+    expect(keys).toEqual([
+      'sectionCardsBorderColor',
+      'sectionCardsBorderWidth',
+      'sectionCardsTextColor',
+      'sectionCardsTextSize',
+      'sectionCardsTextFont',
+      'sectionCardsTextVertical',
+      'sectionCardsTextHorizontal',
+    ]);
+    expect(by('sectionCardsTextColor').source).toEqual({ kind: 'color', key: 'textColor', labelKey: 'label_text_color' });
+    expect(by('sectionCardsTextFont').source).toEqual({ kind: 'typography', level: 'body', field: 'fontFamily', labelKey: 'source_typography_body_font' });
+    expect(by('sectionCardsTextSize')).toMatchObject({ type: 'font-size', source: null, default: 13 });
+    expect(by('sectionCardsTextVertical')).toMatchObject({ type: 'align-v', source: null, default: 'center' });
+    expect(by('sectionCardsTextHorizontal')).toMatchObject({ type: 'align-h', source: null, default: 'center' });
+  });
+
+  it('resolves a sourceless setting to its default, stores only an override, and restores by removing it', () => {
+    const size = by('sectionCardsTextSize');
+    expect(isMembersAppOverridden(clean, size.key)).toBe(false);
+    expect(inheritedMembersAppValue(clean, size)).toBe(13);
+    expect(effectiveMembersAppValue(clean, size)).toBe(13);
+    expect(membersAppCssVars(clean)['--gd-members-card-text-size']).toBe('13px');
+    const over = withMembersAppOverride(clean, size.key, 18);
+    expect(over.membersApp).toEqual({ sectionCardsTextSize: 18 });
+    expect(membersAppCssVars(over)['--gd-members-card-text-size']).toBe('18px');
+    expect(withMembersAppInherited(over, size.key).membersApp).toBeUndefined();
+  });
+
+  it('maps a stored position to the CSS the card paints with, and falls back to the default otherwise', () => {
+    expect(alignmentCssValue('align-v', 'top')).toBe('flex-start');
+    expect(alignmentCssValue('align-v', 'center')).toBe('center');
+    expect(alignmentCssValue('align-v', 'bottom')).toBe('flex-end');
+    expect(alignmentCssValue('align-v', 'left')).toBeNull();
+    expect(alignmentCssValue('align-h', 'left')).toBe('left');
+    expect(alignmentCssValue('align-h', 'right')).toBe('right');
+    expect(alignmentCssValue('align-h', 'top')).toBeNull();
+    const vars = membersAppCssVars({
+      ...clean,
+      membersApp: { sectionCardsTextVertical: 'bottom', sectionCardsTextHorizontal: 'left' },
+    } as ThemeTokens);
+    expect(vars['--gd-members-card-text-vertical']).toBe('flex-end');
+    expect(vars['--gd-members-card-text-horizontal']).toBe('left');
+    const broken = membersAppCssVars({
+      ...clean,
+      membersApp: { sectionCardsTextVertical: 'left', sectionCardsTextHorizontal: 'up', sectionCardsTextSize: 400 },
+    } as unknown as ThemeTokens);
+    expect(broken['--gd-members-card-text-vertical']).toBe('center');
+    expect(broken['--gd-members-card-text-horizontal']).toBe('center');
+    expect(broken['--gd-members-card-text-size']).toBe('13px');
+  });
+
+  it('bounds the text size as the API does', () => {
+    expect(MEMBERS_APP_FONT_SIZE).toEqual({ min: 8, max: 48 });
+    const apiSrc = readFileSync(API_MIRROR, 'utf-8');
+    expect(apiSrc).toContain('MEMBERS_APP_FONT_SIZE = { min: 8, max: 48 }');
+    expect(apiSrc).toContain("MEMBERS_APP_VERTICAL_ALIGNMENTS = ['top', 'center', 'bottom']");
+    expect(apiSrc).toContain("MEMBERS_APP_HORIZONTAL_ALIGNMENTS = ['left', 'center', 'right']");
+  });
+
+  it('offers the two positions as the declared sets and the size inside its bounds, in the one editor', () => {
+    expect(componentSrc).toContain("setting.type === 'align-v' ? MEMBERS_APP_VERTICAL_ALIGNMENTS : MEMBERS_APP_HORIZONTAL_ALIGNMENTS");
+    expect(componentSrc).toContain('t(`members_align_${o}`)');
+    expect(componentSrc).toContain('min={MEMBERS_APP_FONT_SIZE.min}');
+    expect(componentSrc).toContain('max={MEMBERS_APP_FONT_SIZE.max}');
+    // A sourceless setting says it holds its default rather than naming a
+    // source it does not have, and restores to that default.
+    expect(componentSrc).toContain("t('members_default_value')");
+    expect(componentSrc).toContain("t('members_badge_default')");
+    expect(componentSrc).toContain("setting.source ? t('members_restore_inherited') : t('members_restore_default')");
+  });
+});
+
 describe('#833 Members App settings: the mirrors', () => {
   const memberSrc = readFileSync(MEMBER_MIRROR, 'utf-8');
   const apiSrc = readFileSync(API_MIRROR, 'utf-8');
 
   it('declares every setting in the Members App copy, with the same source and variable', () => {
-    for (const { key, cssVar, type, source } of MEMBERS_APP_SETTINGS) {
+    for (const setting of MEMBERS_APP_SETTINGS) {
+      const { key, cssVar, type, source } = setting;
       expect(memberSrc, `the Members App mirror has no ${key}`).toContain(`key: '${key}'`);
       expect(memberSrc, `the Members App mirror does not write ${cssVar}`).toContain(`cssVar: '${cssVar}'`);
       expect(memberSrc, `the Members App mirror has no ${type} setting`).toContain(`type: '${type}'`);
-      if (source.kind !== 'typography') {
+      if (source === null) {
+        // A sourceless setting's default is what the Members App paints while
+        // nothing overrides it, so the two copies must agree on it.
+        const dflt = typeof setting.default === 'string' ? `'${setting.default}'` : String(setting.default);
+        expect(memberSrc, `the Members App mirror has another default for ${key}`)
+          .toMatch(new RegExp(`key: '${key}',[\\s\\S]*?source: null,\\s*default: ${dflt},`));
+      } else if (source.kind !== 'typography') {
         expect(memberSrc).toContain(`key: '${source.key}', labelKey: '${source.labelKey}'`);
       } else {
-        expect(memberSrc).toContain(`level: '${source.level}', labelKey: '${source.labelKey}'`);
+        expect(memberSrc).toContain(`level: '${source.level}', field: '${source.field}', labelKey: '${source.labelKey}'`);
       }
     }
   });

@@ -3,7 +3,10 @@
 import { useState } from 'react';
 import { FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
 import {
+  MEMBERS_APP_FONT_SIZE,
+  MEMBERS_APP_HORIZONTAL_ALIGNMENTS,
   MEMBERS_APP_SECTIONS,
+  MEMBERS_APP_VERTICAL_ALIGNMENTS,
   effectiveMembersAppValue,
   isMembersAppOverridden,
   membersAppSettingsFor,
@@ -68,6 +71,10 @@ const SECONDARY: React.CSSProperties = {
   fontSize: 11, color: 'var(--gd-text-muted, #999)', marginTop: 2,
 };
 
+const SELECT: React.CSSProperties = {
+  padding: '4px 8px', borderRadius: 4, border: '1px solid #ddd', fontSize: 13, background: '#fff', maxWidth: 160,
+};
+
 export function ThemeMembersAppEditor({ tokens, onChange, t, readOnly, images }: Props) {
   // Which sections are expanded. Local to this component and independent per
   // section (a Set, not an accordion), and it never touches `tokens` — the same
@@ -89,14 +96,33 @@ export function ThemeMembersAppEditor({ tokens, onChange, t, readOnly, images }:
 
     if (setting.type === 'font') {
       return (
-        <select
-          value={String(value)}
-          disabled={readOnly}
-          onChange={(e) => set(e.target.value)}
-          style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ddd', fontSize: 13, background: '#fff', maxWidth: 160 }}
-        >
+        <select value={String(value)} disabled={readOnly} onChange={(e) => set(e.target.value)} style={SELECT}>
           {FONT_STACKS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
         </select>
+      );
+    }
+    // #1152 §3 — the two positions are closed sets, offered as the three words
+    // the ticket names; the stored value is the word and the Members App maps
+    // it to CSS, so the dropdown offers nothing the validator refuses.
+    if (setting.type === 'align-v' || setting.type === 'align-h') {
+      const options = setting.type === 'align-v' ? MEMBERS_APP_VERTICAL_ALIGNMENTS : MEMBERS_APP_HORIZONTAL_ALIGNMENTS;
+      return (
+        <select value={String(value)} disabled={readOnly} onChange={(e) => set(e.target.value)} style={SELECT}>
+          {options.map((o) => <option key={o} value={o}>{t(`members_align_${o}`)}</option>)}
+        </select>
+      );
+    }
+    if (setting.type === 'font-size') {
+      return (
+        <input
+          type="number"
+          min={MEMBERS_APP_FONT_SIZE.min}
+          max={MEMBERS_APP_FONT_SIZE.max}
+          disabled={readOnly}
+          value={Number(value)}
+          onChange={(e) => set(Number(e.target.value))}
+          style={{ width: 80, padding: '4px 8px', border: '1px solid #ddd', borderRadius: 4, fontSize: 13 }}
+        />
       );
     }
     if (setting.type === 'pixels') {
@@ -186,16 +212,20 @@ export function ThemeMembersAppEditor({ tokens, onChange, t, readOnly, images }:
                     <div style={{ fontSize: 13, fontWeight: 500 }}>{t(setting.labelKey)}</div>
                     {/* §9 / §10 — a secondary line under the control saying
                         either which Admin setting the value comes from, or
-                        that it no longer comes from one. */}
+                        that it no longer comes from one. A setting that
+                        inherits from nothing (#1152) says it holds its
+                        default instead, since there is no source to name. */}
                     <div style={SECONDARY}>
                       {overridden
                         ? t('members_custom_value')
-                        : `${t('members_inherited_from')} ${t(setting.source.labelKey)}`}
+                        : setting.source
+                          ? `${t('members_inherited_from')} ${t(setting.source.labelKey)}`
+                          : t('members_default_value')}
                     </div>
                   </div>
 
                   <span style={{ ...BADGE, background: overridden ? '#e8f0fe' : '#f0f0f0', color: overridden ? '#1a56db' : '#666' }}>
-                    {overridden ? t('adv_badge_custom') : t('adv_badge_inherited')}
+                    {overridden ? t('adv_badge_custom') : setting.source ? t('adv_badge_inherited') : t('members_badge_default')}
                   </span>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -209,7 +239,7 @@ export function ThemeMembersAppEditor({ tokens, onChange, t, readOnly, images }:
                         onClick={() => onChange(withMembersAppInherited(tokens, setting.key))}
                         style={{ background: 'none', border: '1px solid #ddd', cursor: 'pointer', color: '#666', fontSize: 11, padding: '4px 8px', borderRadius: 4, whiteSpace: 'nowrap' }}
                       >
-                        {t('members_restore_inherited')}
+                        {setting.source ? t('members_restore_inherited') : t('members_restore_default')}
                       </button>
                     )}
                   </div>

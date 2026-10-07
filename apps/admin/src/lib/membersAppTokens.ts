@@ -18,6 +18,15 @@
 //  * **Inheritance is per setting** (§12, §18). Every entry resolves on its
 //    own, so overriding Header Color cannot implicitly override Header Text.
 //
+// #1152 amended the first rule for the settings the Admin theme has nothing
+// honest for a Section Card's text to inherit from — its size and its two
+// positions, which no Admin surface has: such a setting declares `source:
+// null` and a `default`, is stored when overridden and absent otherwise
+// exactly like the rest, and resolves to the default rather than to an Admin
+// value. The editor says "Default value" for it where it says "inherited from
+// …" for the others. Reuse of an Admin setting is still the first answer; a
+// sourceless setting is the second and needs the reason spelled beside it.
+//
 // Mirrored (keys, types, sources, CSS variables) in
 // apps/member/src/lib/membersAppTokens.ts, which resolves the effective values
 // when the Members App renders, and in api/src/domain/membersAppTokens.ts,
@@ -30,8 +39,24 @@ import {
   type ThemeTokens,
 } from '@/lib/themeTokens';
 
-/** What kind of value a Members App setting holds — and therefore which control edits it. */
-export type MembersAppSettingType = 'color' | 'font' | 'length' | 'pixels';
+/**
+ * What kind of value a Members App setting holds — and therefore which control
+ * edits it. `font-size` is an integer of CSS pixels inside
+ * `MEMBERS_APP_FONT_SIZE`; `align-v` / `align-h` are the two alignment enums
+ * (#1152 §3), kept as two types rather than one so a horizontal value can never
+ * be stored on the vertical axis.
+ */
+export type MembersAppSettingType = 'color' | 'font' | 'length' | 'pixels' | 'font-size' | 'align-v' | 'align-h';
+
+/** The bounds of a `font-size` setting, in CSS pixels. Mirrors the API validator. */
+export const MEMBERS_APP_FONT_SIZE = { min: 8, max: 48 } as const;
+
+export type MembersAppVerticalAlignment = 'top' | 'center' | 'bottom';
+export type MembersAppHorizontalAlignment = 'left' | 'center' | 'right';
+/** The stored values of an `align-v` setting, in the order the editor offers them. */
+export const MEMBERS_APP_VERTICAL_ALIGNMENTS: MembersAppVerticalAlignment[] = ['top', 'center', 'bottom'];
+/** The stored values of an `align-h` setting, in the order the editor offers them. */
+export const MEMBERS_APP_HORIZONTAL_ALIGNMENTS: MembersAppHorizontalAlignment[] = ['left', 'center', 'right'];
 
 /**
  * The Admin setting a Members App setting inherits from. `labelKey` is the
@@ -42,25 +67,38 @@ export type MembersAppSettingType = 'color' | 'font' | 'length' | 'pixels';
 export type MembersAppSource =
   | { kind: 'color'; key: keyof ThemeTokens['colors']; labelKey: string }
   | { kind: 'advanced'; key: string; labelKey: string }
-  | { kind: 'typography'; level: 'h1' | 'h2' | 'h3'; labelKey: string };
+  // A typography level carries a colour and a font family, and since #1152
+  // either half may be a source — `field` says which, so the same level
+  // answers both a Title's Color and its Font Family.
+  | { kind: 'typography'; level: 'h1' | 'h2' | 'h3' | 'body'; field: 'color' | 'fontFamily'; labelKey: string };
 
-export interface MembersAppSetting {
+interface MembersAppSettingBase {
   /** The key inside `tokens.membersApp` an override is stored under. */
   key: string;
   /** Which of the five Members App sections renders it. */
   section: MembersAppSection;
   labelKey: string;
   type: MembersAppSettingType;
-  source: MembersAppSource;
   /**
    * The CSS variable the Members App paints this setting with. Where the
    * concept already has a variable (the page background, the calendar
-   * surfaces, the title colours), the effective value is written into that
-   * same variable, so nothing downstream needs a second rule; the settings
-   * with no existing variable get a `--gd-members-*` one of their own.
+   * surfaces, the title colours and fonts), the effective value is written
+   * into that same variable, so nothing downstream needs a second rule; the
+   * settings with no existing variable get a `--gd-members-*` one of their own.
    */
   cssVar: string;
 }
+
+/**
+ * A setting either inherits from an Admin setting (`source`) or, since #1152,
+ * declares `source: null` with the `default` it resolves to while nothing
+ * overrides it — the one shape for a value the Admin theme genuinely has no
+ * counterpart for. The union makes a sourceless setting with no default, or a
+ * sourced one carrying a default nothing reads, a type error.
+ */
+export type MembersAppSetting =
+  | (MembersAppSettingBase & { source: MembersAppSource; default?: undefined })
+  | (MembersAppSettingBase & { source: null; default: string | number });
 
 export type MembersAppSection =
   | 'group_members_header'
@@ -162,30 +200,109 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     source: { kind: 'advanced', key: 'cardBorderWidth', labelKey: 'adv_card_border_width' },
     cssVar: '--gd-members-card-border-width',
   },
-  // ── Text (Members App) ────────────────────────────────────────────────────
+  // #1152 §3 — the text inside a Section Card. Colour and font family have an
+  // honest Admin source (the primary text colour and the body font, which is
+  // what a tile's label rendered in before the ticket); size and the two
+  // positions have none — the Admin app has no Section Cards and no setting a
+  // text's position could inherit from — so they declare the default that is
+  // today's rendering (13px, centred both ways) and inherit from nothing.
+  {
+    key: 'sectionCardsTextColor',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_text_color',
+    type: 'color',
+    source: { kind: 'color', key: 'textColor', labelKey: 'label_text_color' },
+    cssVar: '--gd-members-card-text',
+  },
+  {
+    key: 'sectionCardsTextSize',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_text_size',
+    type: 'font-size',
+    source: null,
+    default: 13,
+    cssVar: '--gd-members-card-text-size',
+  },
+  {
+    key: 'sectionCardsTextFont',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_text_font',
+    type: 'font',
+    source: { kind: 'typography', level: 'body', field: 'fontFamily', labelKey: 'source_typography_body_font' },
+    cssVar: '--gd-members-card-text-font',
+  },
+  {
+    key: 'sectionCardsTextVertical',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_text_vertical',
+    type: 'align-v',
+    source: null,
+    default: 'center',
+    cssVar: '--gd-members-card-text-vertical',
+  },
+  {
+    key: 'sectionCardsTextHorizontal',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_text_horizontal',
+    type: 'align-h',
+    source: null,
+    default: 'center',
+    cssVar: '--gd-members-card-text-horizontal',
+  },
+  // ── Typography (Members App) ──────────────────────────────────────────────
+  // #1152 §1/§2 — the section reads *Typography (Members App)* and each Title
+  // carries its Font Family beside its Color, both halves of the same
+  // typography level. The font overrides write into the level's own
+  // `--gd-font-h*` variable exactly as the colours write into `--gd-color-h*`,
+  // so a heading reading it gets the Members App value where the Theme
+  // overrides it and the Admin value where it does not.
   {
     key: 'title1Color',
     section: 'group_members_text',
     labelKey: 'label_members_title1_color',
     type: 'color',
-    source: { kind: 'typography', level: 'h1', labelKey: 'source_typography_h1' },
+    source: { kind: 'typography', level: 'h1', field: 'color', labelKey: 'source_typography_h1' },
     cssVar: '--gd-color-h1',
+  },
+  {
+    key: 'title1Font',
+    section: 'group_members_text',
+    labelKey: 'label_members_title1_font',
+    type: 'font',
+    source: { kind: 'typography', level: 'h1', field: 'fontFamily', labelKey: 'source_typography_h1_font' },
+    cssVar: '--gd-font-h1',
   },
   {
     key: 'title2Color',
     section: 'group_members_text',
     labelKey: 'label_members_title2_color',
     type: 'color',
-    source: { kind: 'typography', level: 'h2', labelKey: 'source_typography_h2' },
+    source: { kind: 'typography', level: 'h2', field: 'color', labelKey: 'source_typography_h2' },
     cssVar: '--gd-color-h2',
+  },
+  {
+    key: 'title2Font',
+    section: 'group_members_text',
+    labelKey: 'label_members_title2_font',
+    type: 'font',
+    source: { kind: 'typography', level: 'h2', field: 'fontFamily', labelKey: 'source_typography_h2_font' },
+    cssVar: '--gd-font-h2',
   },
   {
     key: 'title3Color',
     section: 'group_members_text',
     labelKey: 'label_members_title3_color',
     type: 'color',
-    source: { kind: 'typography', level: 'h3', labelKey: 'source_typography_h3' },
+    source: { kind: 'typography', level: 'h3', field: 'color', labelKey: 'source_typography_h3' },
     cssVar: '--gd-color-h3',
+  },
+  {
+    key: 'title3Font',
+    section: 'group_members_text',
+    labelKey: 'label_members_title3_font',
+    type: 'font',
+    source: { kind: 'typography', level: 'h3', field: 'fontFamily', labelKey: 'source_typography_h3_font' },
+    cssVar: '--gd-font-h3',
   },
   // ── Calendar (Members App) ────────────────────────────────────────────────
   {
@@ -282,18 +399,27 @@ export function adminSourceValue(tokens: ThemeTokens, source: MembersAppSource):
     const raw = (tokens.advanced ?? {})[source.key];
     return (raw !== null && raw !== undefined ? raw : DEFAULT_ADVANCED[source.key]) as string | number;
   }
-  return tokens.typography?.[source.level]?.color ?? DEFAULT_TOKENS.typography[source.level].color;
+  return tokens.typography?.[source.level]?.[source.field] ?? DEFAULT_TOKENS.typography[source.level][source.field];
+}
+
+/**
+ * What a setting resolves to while nothing overrides it: the current value of
+ * its Admin source, or — for a setting that inherits from nothing (#1152) —
+ * its declared default.
+ */
+export function inheritedMembersAppValue(tokens: ThemeTokens, setting: MembersAppSetting): string | number {
+  return setting.source ? adminSourceValue(tokens, setting.source) : setting.default;
 }
 
 /**
  * §18 — the value the Members App actually renders with: the Theme's own
- * override when there is one, the current Admin value otherwise. Evaluated
+ * override when there is one, the inherited value otherwise. Evaluated
  * independently per setting, so nothing here reads another setting's state.
  */
 export function effectiveMembersAppValue(tokens: ThemeTokens, setting: MembersAppSetting): string | number {
   const override = membersAppOverrides(tokens)[setting.key];
   if (override !== null && override !== undefined) return override;
-  return adminSourceValue(tokens, setting.source);
+  return inheritedMembersAppValue(tokens, setting);
 }
 
 /** §10 — editing a setting overrides that setting and nothing else. */
@@ -324,17 +450,41 @@ export function withMembersAppInherited(tokens: ThemeTokens, key: string): Theme
 const FONT_STACK_VALUES = FONT_STACKS.map((f) => f.value);
 
 /**
+ * The CSS a stored alignment becomes (#1152 §4). The Members App's Section
+ * Card is a column flex box, so a vertical position is its `justify-content`
+ * and a horizontal one its `text-align` — the variable carries the property
+ * value rather than the stored word, so `memberChrome.ts` reads it with no
+ * mapping of its own. An unknown value answers `null`, and the caller falls
+ * back to the default for `membersAppVarValue()`'s reason.
+ */
+export function alignmentCssValue(type: 'align-v' | 'align-h', value: unknown): string | null {
+  if (type === 'align-v') {
+    if (value === 'top') return 'flex-start';
+    if (value === 'center') return 'center';
+    if (value === 'bottom') return 'flex-end';
+    return null;
+  }
+  return typeof value === 'string' && (MEMBERS_APP_HORIZONTAL_ALIGNMENTS as string[]).includes(value) ? value : null;
+}
+
+/** Whether a stored value is a `font-size` the Members App may paint. */
+export function isMembersAppFontSize(value: unknown): boolean {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= MEMBERS_APP_FONT_SIZE.min && n <= MEMBERS_APP_FONT_SIZE.max;
+}
+
+/**
  * The value to write for one Members App CSS variable. A stored value that is
  * unusable (a colour that is not a hex triplet, a font outside the allowed
- * stacks, a blank length) falls back to the inherited Admin value rather than
- * reaching the variable: a custom property holding `""` or `"blue-ish"` makes
- * the declaration that reads it invalid at computed-value time, so the
- * stylesheet's own `var()` literal is *not* what takes over — same reasoning
- * as `calendarVarValue()`.
+ * stacks, a blank length, a size or an alignment outside its set) falls back
+ * to the inherited value rather than reaching the variable: a custom property
+ * holding `""` or `"blue-ish"` makes the declaration that reads it invalid at
+ * computed-value time, so the stylesheet's own `var()` literal is *not* what
+ * takes over — same reasoning as `calendarVarValue()`.
  */
 export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetting): string {
   const value = effectiveMembersAppValue(tokens, setting);
-  const inherited = adminSourceValue(tokens, setting.source);
+  const inherited = inheritedMembersAppValue(tokens, setting);
   switch (setting.type) {
     case 'color':
       return isHexColor(value) ? value : String(inherited);
@@ -344,6 +494,11 @@ export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetti
       const n = Number(value);
       return Number.isInteger(n) && n >= 0 && n <= 20 ? `${n}px` : `${Number(inherited) || 0}px`;
     }
+    case 'font-size':
+      return isMembersAppFontSize(value) ? `${Number(value)}px` : `${Number(inherited)}px`;
+    case 'align-v':
+    case 'align-h':
+      return alignmentCssValue(setting.type, value) ?? alignmentCssValue(setting.type, inherited) ?? 'center';
     case 'length':
     default:
       return typeof value === 'string' && value.trim() !== '' ? value.trim() : String(inherited);

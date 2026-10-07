@@ -332,7 +332,7 @@ export default function HomePage() {
         {featureEnabled('member_web.my_membership') && (
           <MembersSectionCard slot="membership" style={styles.productsTile} onClick={() => router.push(`/${locale}/membership`)} role="button" tabIndex={0}>
             {!hasProductsImage && <span style={styles.tileIcon}>🛍️</span>}
-            <p style={styles.planName}>{t('home.products_services')}</p>
+            <p style={styles.productsTitle}>{t('home.products_services')}</p>
             <p style={styles.bookingSub}>
               {loading
                 ? t('home.loading')
@@ -356,6 +356,12 @@ function alertTypeLabel(t: ReturnType<typeof useTranslations>, type: string): st
   try { return t(`notifications.type_${type}` as any); } catch { return type; }
 }
 
+/**
+ * A navigation tile. It spells none of the five Section Cards text properties
+ * (#1152): the label's colour, size and font and the content's two positions
+ * are `MembersSectionCard`'s, read from the Theme, so `styles.tile` carries
+ * only the box and `styles.tileLabel` only the weight.
+ */
 function NavTile({ slot, icon, label, onClick }: { slot: MemberBackgroundSlot; icon: string; label: string; onClick: () => void }) {
   // #982: the uploaded artwork is the tile's whole visual. When the theme
   // configures this slot the default emoji is not rendered at all — not over
@@ -387,12 +393,12 @@ function StatusPill({ status, label }: { status: string; label: string }) {
 const styles: Record<string, React.CSSProperties> = {
   center:          { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground, padding: 24 },
   landingCard:     { ...sectionCardStyle, borderRadius: 16, padding: '48px 40px', maxWidth: 400, width: '100%', textAlign: 'center', boxShadow: '0 2px 16px rgba(0,0,0,0.08)' },
-  landingTitle:    { margin: '0 0 8px', fontSize: 32, fontWeight: 700, color: memberTheme.title1 },
+  landingTitle:    { margin: '0 0 8px', fontSize: 32, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   landingSubtitle: { margin: '0 0 32px', color: memberTheme.textMuted, fontSize: 16 },
   container:       { padding: 16, maxWidth: 720, margin: '0 auto' },
-  greeting:        { margin: '8px 0 20px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  greeting:        { margin: '8px 0 20px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   section:         { marginBottom: 20 },
-  h2:              { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, textTransform: 'uppercase', letterSpacing: '0.05em' },
+  h2:              { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:            { ...sectionCardStyle, padding: '16px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'default' },
   bookingRow:      { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
   bookingName:     { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
@@ -411,10 +417,11 @@ const styles: Record<string, React.CSSProperties> = {
   mealName:        { margin: 0, fontSize: 14, fontWeight: 700, color: memberTheme.text },
   goalsRow:        { padding: '10px 0 0' },
   tileGrid:        { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 },
-  tile:            { ...sectionCardStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, borderRadius: 14, padding: '24px 8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer' },
+  tile:            { ...sectionCardStyle, gap: 8, borderRadius: 14, padding: '24px 8px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer' },
   productsTile:    { ...sectionCardStyle, display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 14, padding: '18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)', cursor: 'pointer', textAlign: 'left' },
+  productsTitle:   { margin: 0, fontSize: 17, fontWeight: 700 },
   productsStatusRow: { marginTop: 'auto', paddingTop: 10, display: 'flex', justifyContent: 'flex-end' },
   tileIcon:        { fontSize: 32 },
   tileWithImage:   { minHeight: 110 },
-  tileLabel:       { fontSize: 13, fontWeight: 600, color: memberTheme.text, textAlign: 'center' },
+  tileLabel:       { fontWeight: 600 },
 };

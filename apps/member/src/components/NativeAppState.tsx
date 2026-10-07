@@ -67,7 +67,7 @@ export function NativeAppState() {
     >
       {loadError ? (
         <>
-          <h1 style={{ margin: 0, fontSize: 20, color: memberTheme.title1 }}>{t('offline_title')}</h1>
+          <h1 style={{ margin: 0, fontSize: 20, color: memberTheme.title1, fontFamily: memberTheme.title1Font }}>{t('offline_title')}</h1>
           <p style={{ margin: 0, fontSize: 15, color: memberTheme.textMuted, maxWidth: 320 }}>{t('offline_body')}</p>
           <button
             type="button"

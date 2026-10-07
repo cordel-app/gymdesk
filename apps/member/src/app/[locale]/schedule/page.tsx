@@ -272,10 +272,10 @@ export default function MemberSchedulePage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   message: { ...noticeStyle('success'), marginBottom: 16 },
-  sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: memberTheme.title2 },
-  dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: memberTheme.title3, textTransform: 'uppercase', letterSpacing: '0.05em' },
+  sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
+  dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: memberTheme.title3, fontFamily: memberTheme.title3Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card: { ...sectionCardStyle, borderRadius: 10, padding: 14, marginBottom: 10, cursor: 'pointer' },
   details: { marginTop: 8, paddingTop: 8, borderTop: `1px solid ${memberTheme.separator}` },
   time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: memberTheme.text },

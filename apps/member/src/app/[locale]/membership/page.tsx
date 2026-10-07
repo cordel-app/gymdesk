@@ -1198,7 +1198,7 @@ function StatusPill({ status, label }: { status: string; label: string }) {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   card: { ...sectionCardStyle, padding: 20, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
   cardHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 },
   planName: { margin: 0, fontSize: 20, fontWeight: 700, color: memberTheme.text },
@@ -1210,8 +1210,8 @@ const styles: Record<string, React.CSSProperties> = {
   discount: { fontSize: 12, color: memberTheme.statusWarning, fontWeight: 400 },
   promoLine: { fontSize: 12, color: memberTheme.statusInfo, fontWeight: 400, marginTop: 2 },
   section: { marginTop: 24 },
-  h2: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: memberTheme.title2 },
-  h3: { margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: memberTheme.title3 },
+  h2: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
+  h3: { margin: '0 0 6px', fontSize: 13, fontWeight: 600, color: memberTheme.title3, fontFamily: memberTheme.title3Font },
   benefitGroup: { marginBottom: 12 },
   benefitList: { listStyle: 'none', padding: 0, margin: 0 },
   benefitItem: { ...sectionCardStyle, borderRadius: 8, padding: '10px 14px', marginBottom: 6, display: 'flex', gap: 8, alignItems: 'center' },
@@ -1245,7 +1245,7 @@ const styles: Record<string, React.CSSProperties> = {
   // Consent modal
   overlay: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 16 },
   modal: { ...sectionCardStyle, borderRadius: 16, padding: 24, maxWidth: 480, width: '100%', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' },
-  modalTitle: { margin: '0 0 12px', fontSize: 18, fontWeight: 700, color: memberTheme.title2 },
+  modalTitle: { margin: '0 0 12px', fontSize: 18, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   modalBody: { margin: '0 0 16px', fontSize: 14, color: memberTheme.textSecondary, lineHeight: 1.6 },
   checkLabel: { display: 'flex', alignItems: 'flex-start', fontSize: 13, color: memberTheme.text, cursor: 'pointer', marginBottom: 16 },
   submitError: { margin: '0 0 12px', fontSize: 13, color: memberTheme.statusError },

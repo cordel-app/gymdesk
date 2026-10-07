@@ -73,7 +73,7 @@ const styles: Record<string, CSSProperties> = {
     padding: '20px 18px',
     boxShadow: '0 8px 30px rgba(0,0,0,0.18)',
   },
-  title: { margin: '0 0 14px', fontSize: 17, fontWeight: 700, color: memberTheme.title2 },
+  title: { margin: '0 0 14px', fontSize: 17, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   body: { display: 'flex', flexDirection: 'column', gap: 12 },
   actions: {
     display: 'flex', gap: 10, marginTop: 18,

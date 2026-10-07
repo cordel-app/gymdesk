@@ -26,7 +26,7 @@ const styles: Record<string, React.CSSProperties> = {
   container: { padding: 24, maxWidth: 480, margin: '40px auto', textAlign: 'center' },
   card: { ...sectionCardStyle, borderRadius: 16, padding: '40px 24px', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' },
   icon: { fontSize: 40, color: memberTheme.statusError, marginBottom: 12 },
-  title: { margin: '0 0 24px', fontSize: 20, fontWeight: 700, color: memberTheme.title1 },
+  title: { margin: '0 0 24px', fontSize: 20, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   retryBtn: {
     ...primaryButtonStyle,
     padding: '10px 24px', fontSize: 14, fontWeight: 600,

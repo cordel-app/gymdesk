@@ -167,9 +167,9 @@ export default function NutritionPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container:  { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title:      { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  title:      { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   section:    { marginBottom: 20 },
-  h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, textTransform: 'uppercase', letterSpacing: '0.05em' },
+  h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:       { ...sectionCardStyle, padding: '4px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
   mealRow:    { padding: '12px 0', borderBottom: `1px solid ${memberTheme.separator}` },
   mealName:   { margin: 0, fontSize: 15, fontWeight: 700, color: memberTheme.text },

@@ -97,7 +97,7 @@ export function MemberPlanCatalogue({ title, emptyLabel, items, onClose, closeLa
 const styles: Record<string, CSSProperties> = {
   section: { marginTop: 16 },
   headRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginBottom: 12 },
-  heading: { margin: 0, fontSize: 16, fontWeight: 600, color: memberTheme.title2 },
+  heading: { margin: 0, fontSize: 16, fontWeight: 600, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   closeBtn: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: memberTheme.textMuted },
   list: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
   card: { ...sectionCardStyle, borderRadius: 10, padding: '12px 14px' },

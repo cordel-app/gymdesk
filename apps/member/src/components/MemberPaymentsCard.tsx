@@ -163,7 +163,7 @@ const styles: Record<string, CSSProperties> = {
     width: '100%', padding: '11px 12px', background: 'none', border: 'none',
     cursor: 'pointer', textAlign: 'left', font: 'inherit',
   },
-  subcardTitle: { fontSize: 13.5, fontWeight: 600, color: memberTheme.title3 },
+  subcardTitle: { fontSize: 13.5, fontWeight: 600, color: memberTheme.title3, fontFamily: memberTheme.title3Font },
   subcardBody: {
     ...rowDividerStyle,
     display: 'flex', flexDirection: 'column', gap: 10, padding: '12px',
@@ -174,14 +174,14 @@ const styles: Record<string, CSSProperties> = {
     gap: 8, flexWrap: 'wrap',
   },
   eventDate: { fontSize: 13.5, fontWeight: 600, color: memberTheme.text },
-  eventDateLarge: { fontSize: 17, fontWeight: 700, color: memberTheme.title2 },
+  eventDateLarge: { fontSize: 17, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   eventTotalRow: {
     display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
     gap: 8, flexWrap: 'wrap', marginTop: 4,
   },
   totalLabel: { fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.4, color: memberTheme.textMuted },
   eventTotal: { fontSize: 14.5, fontWeight: 700, color: memberTheme.text },
-  eventTotalLarge: { fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  eventTotalLarge: { fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   lineList: { ...rowDividerStyle, listStyle: 'none', margin: '10px 0 0', padding: '10px 0 0' },
   lineItem: {
     display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between',

@@ -288,7 +288,7 @@ function Field({ label, value, note }: { label: string; value: string; note?: st
 
 const styles: Record<string, React.CSSProperties> = {
   container:   { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title:       { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1 },
+  title:       { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   card:        { ...sectionCardStyle, padding: '0 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
   fieldRow:    { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: `1px solid ${memberTheme.separator}` },
   label:       { margin: 0, fontSize: 12, color: memberTheme.textMuted, fontWeight: 500, textTransform: 'uppercase' as const, letterSpacing: '0.04em' },

@@ -2,7 +2,7 @@
 
 import { createElement, type CSSProperties, type ReactNode } from 'react';
 import { useApp } from '@/context/AppContext';
-import { sectionCardBorder } from '@/lib/memberChrome';
+import { sectionCardBorder, sectionCardText } from '@/lib/memberChrome';
 import {
   backgroundUrlForSlot,
   cardBackgroundStyleValue,
@@ -73,6 +73,14 @@ interface MembersSectionCardProps {
  * one place the Members App spells a visual value, so the content cards of the
  * sections this component does not wrap carry the same border rather than a
  * second copy of the rule.
+ *
+ * The text inside it is the theme's too (#1152 §3/§4): `sectionCardText`
+ * carries the Section Cards text colour, size and font and the two positions,
+ * spread **under** the caller's style so a tile that spells none of them takes
+ * all five, while a card whose body is a structure of its own keeps what it
+ * spells. The artwork, the dimensions, the behaviour and the navigation are
+ * the caller's and untouched, and the positioning works over the fallback
+ * colour because the box is the same with or without an image.
  */
 export function MembersSectionCard({ slot, as = 'div', style, children, ...rest }: MembersSectionCardProps) {
   const background = useSectionBackground(slot);
@@ -81,7 +89,7 @@ export function MembersSectionCard({ slot, as = 'div', style, children, ...rest 
     {
       ...(as === 'button' ? { type: 'button' as const } : {}),
       ...rest,
-      style: { ...style, ...(background ? { background } : {}), ...sectionCardBorder },
+      style: { ...sectionCardText, ...style, ...(background ? { background } : {}), ...sectionCardBorder },
     },
     children,
   );

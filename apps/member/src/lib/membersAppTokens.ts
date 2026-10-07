@@ -11,23 +11,36 @@
 // Inheritance is therefore dynamic — an Admin setting edited later moves every
 // Members App setting still inherited from it, because nothing was copied into
 // the Theme when it was created (§13).
+//
+// #1152 added three value types (a font size in pixels and the two alignment
+// enums) and the one shape for a setting the Admin theme has no counterpart
+// for: `source: null` plus the `default` it resolves to while nothing
+// overrides it. The alignment variables carry the CSS property value rather
+// than the stored word, so `memberChrome.ts` reads them with no mapping.
 import { DEFAULT_TOKENS, isHexColor, type ThemeTokens } from './themeTokens';
 
-export type MembersAppSettingType = 'color' | 'font' | 'length' | 'pixels';
+export type MembersAppSettingType = 'color' | 'font' | 'length' | 'pixels' | 'font-size' | 'align-v' | 'align-h';
+
+export const MEMBERS_APP_FONT_SIZE = { min: 8, max: 48 } as const;
+export const MEMBERS_APP_VERTICAL_ALIGNMENTS = ['top', 'center', 'bottom'];
+export const MEMBERS_APP_HORIZONTAL_ALIGNMENTS = ['left', 'center', 'right'];
 
 export type MembersAppSource =
   | { kind: 'color'; key: string; labelKey: string }
   | { kind: 'advanced'; key: string; labelKey: string }
-  | { kind: 'typography'; level: 'h1' | 'h2' | 'h3'; labelKey: string };
+  | { kind: 'typography'; level: 'h1' | 'h2' | 'h3' | 'body'; field: 'color' | 'fontFamily'; labelKey: string };
 
-export interface MembersAppSetting {
+interface MembersAppSettingBase {
   key: string;
   section: string;
   labelKey: string;
   type: MembersAppSettingType;
-  source: MembersAppSource;
   cssVar: string;
 }
+
+export type MembersAppSetting =
+  | (MembersAppSettingBase & { source: MembersAppSource; default?: undefined })
+  | (MembersAppSettingBase & { source: null; default: string | number });
 
 // The `advanced` defaults the three Admin sources above need, mirroring
 // apps/admin/src/lib/themeTokens.ts's DEFAULT_ADVANCED. Member Web has no copy
@@ -113,28 +126,95 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     cssVar: '--gd-members-card-border-width',
   },
   {
+    key: 'sectionCardsTextColor',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_text_color',
+    type: 'color',
+    source: { kind: 'color', key: 'textColor', labelKey: 'label_text_color' },
+    cssVar: '--gd-members-card-text',
+  },
+  {
+    key: 'sectionCardsTextSize',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_text_size',
+    type: 'font-size',
+    source: null,
+    default: 13,
+    cssVar: '--gd-members-card-text-size',
+  },
+  {
+    key: 'sectionCardsTextFont',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_text_font',
+    type: 'font',
+    source: { kind: 'typography', level: 'body', field: 'fontFamily', labelKey: 'source_typography_body_font' },
+    cssVar: '--gd-members-card-text-font',
+  },
+  {
+    key: 'sectionCardsTextVertical',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_text_vertical',
+    type: 'align-v',
+    source: null,
+    default: 'center',
+    cssVar: '--gd-members-card-text-vertical',
+  },
+  {
+    key: 'sectionCardsTextHorizontal',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_text_horizontal',
+    type: 'align-h',
+    source: null,
+    default: 'center',
+    cssVar: '--gd-members-card-text-horizontal',
+  },
+  {
     key: 'title1Color',
     section: 'group_members_text',
     labelKey: 'label_members_title1_color',
     type: 'color',
-    source: { kind: 'typography', level: 'h1', labelKey: 'source_typography_h1' },
+    source: { kind: 'typography', level: 'h1', field: 'color', labelKey: 'source_typography_h1' },
     cssVar: '--gd-color-h1',
+  },
+  {
+    key: 'title1Font',
+    section: 'group_members_text',
+    labelKey: 'label_members_title1_font',
+    type: 'font',
+    source: { kind: 'typography', level: 'h1', field: 'fontFamily', labelKey: 'source_typography_h1_font' },
+    cssVar: '--gd-font-h1',
   },
   {
     key: 'title2Color',
     section: 'group_members_text',
     labelKey: 'label_members_title2_color',
     type: 'color',
-    source: { kind: 'typography', level: 'h2', labelKey: 'source_typography_h2' },
+    source: { kind: 'typography', level: 'h2', field: 'color', labelKey: 'source_typography_h2' },
     cssVar: '--gd-color-h2',
+  },
+  {
+    key: 'title2Font',
+    section: 'group_members_text',
+    labelKey: 'label_members_title2_font',
+    type: 'font',
+    source: { kind: 'typography', level: 'h2', field: 'fontFamily', labelKey: 'source_typography_h2_font' },
+    cssVar: '--gd-font-h2',
   },
   {
     key: 'title3Color',
     section: 'group_members_text',
     labelKey: 'label_members_title3_color',
     type: 'color',
-    source: { kind: 'typography', level: 'h3', labelKey: 'source_typography_h3' },
+    source: { kind: 'typography', level: 'h3', field: 'color', labelKey: 'source_typography_h3' },
     cssVar: '--gd-color-h3',
+  },
+  {
+    key: 'title3Font',
+    section: 'group_members_text',
+    labelKey: 'label_members_title3_font',
+    type: 'font',
+    source: { kind: 'typography', level: 'h3', field: 'fontFamily', labelKey: 'source_typography_h3_font' },
+    cssVar: '--gd-font-h3',
   },
   {
     key: 'calendarBackgroundColor',
@@ -203,13 +283,38 @@ export function adminSourceValue(tokens: ThemeTokens, source: MembersAppSource):
     const raw = (tokens.advanced ?? {})[source.key];
     return (raw !== null && raw !== undefined ? raw : DEFAULT_MEMBERS_APP_SOURCE_ADVANCED[source.key]) as string | number;
   }
-  return tokens.typography?.[source.level]?.color ?? DEFAULT_TOKENS.typography[source.level].color;
+  return tokens.typography?.[source.level]?.[source.field] ?? DEFAULT_TOKENS.typography[source.level][source.field];
+}
+
+/** The Admin source's current value, or the declared default for a setting that inherits from nothing (#1152). */
+export function inheritedMembersAppValue(tokens: ThemeTokens, setting: MembersAppSetting): string | number {
+  return setting.source ? adminSourceValue(tokens, setting.source) : setting.default;
 }
 
 export function effectiveMembersAppValue(tokens: ThemeTokens, setting: MembersAppSetting): string | number {
   const override = (tokens.membersApp ?? {})[setting.key];
   if (override !== null && override !== undefined) return override;
-  return adminSourceValue(tokens, setting.source);
+  return inheritedMembersAppValue(tokens, setting);
+}
+
+/**
+ * The CSS a stored alignment becomes (#1152 §4): a Section Card is a column
+ * flex box, so a vertical position is its `justify-content` and a horizontal
+ * one its `text-align`. An unknown value answers `null`.
+ */
+export function alignmentCssValue(type: 'align-v' | 'align-h', value: unknown): string | null {
+  if (type === 'align-v') {
+    if (value === 'top') return 'flex-start';
+    if (value === 'center') return 'center';
+    if (value === 'bottom') return 'flex-end';
+    return null;
+  }
+  return typeof value === 'string' && MEMBERS_APP_HORIZONTAL_ALIGNMENTS.includes(value) ? value : null;
+}
+
+export function isMembersAppFontSize(value: unknown): boolean {
+  const n = Number(value);
+  return Number.isInteger(n) && n >= MEMBERS_APP_FONT_SIZE.min && n <= MEMBERS_APP_FONT_SIZE.max;
 }
 
 /**
@@ -222,7 +327,7 @@ export function effectiveMembersAppValue(tokens: ThemeTokens, setting: MembersAp
  */
 export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetting): string {
   const value = effectiveMembersAppValue(tokens, setting);
-  const inherited = adminSourceValue(tokens, setting.source);
+  const inherited = inheritedMembersAppValue(tokens, setting);
   switch (setting.type) {
     case 'color':
       return isHexColor(value) ? value : String(inherited);
@@ -232,6 +337,11 @@ export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetti
       const n = Number(value);
       return Number.isInteger(n) && n >= 0 && n <= 20 ? `${n}px` : `${Number(inherited) || 0}px`;
     }
+    case 'font-size':
+      return isMembersAppFontSize(value) ? `${Number(value)}px` : `${Number(inherited)}px`;
+    case 'align-v':
+    case 'align-h':
+      return alignmentCssValue(setting.type, value) ?? alignmentCssValue(setting.type, inherited) ?? 'center';
     case 'length':
     default:
       return typeof value === 'string' && value.trim() !== '' ? value.trim() : String(inherited);
@@ -248,8 +358,8 @@ export function membersAppCssVars(tokens: ThemeTokens): Record<string, string> {
  * Writes every Members App variable to <html>, after `applyTokens()` has
  * written the Theme's own. The order matters where a setting shares a variable
  * with the Admin concept it inherits from (the page background, the calendar
- * surfaces, the title colours): the Members App value is the one that must
- * stand, so it is written last.
+ * surfaces, the title colours and fonts): the Members App value is the one
+ * that must stand, so it is written last.
  *
  * Only the Members App does this. The Admin app renders no Members App
  * preview (§16), so its `applyTokens()` never writes these.

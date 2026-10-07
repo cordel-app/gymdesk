@@ -486,7 +486,7 @@ export default function MemberCalendarPage() {
             }}
           >
             <div style={{ width: 36, height: 4, background: memberTheme.inputBorder, borderRadius: 2, margin: '0 auto 16px' }} />
-            <h3 style={{ margin: '0 0 4px', fontSize: 16, color: memberTheme.title3 }}>{selected.class_type_name}</h3>
+            <h3 style={{ margin: '0 0 4px', fontSize: 16, color: memberTheme.title3, fontFamily: memberTheme.title3Font }}>{selected.class_type_name}</h3>
             <p style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
               {new Date(selected.starts_at).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
               {selected.trainer_name ? ` · ${selected.trainer_name}` : ''}

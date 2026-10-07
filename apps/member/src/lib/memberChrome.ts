@@ -48,12 +48,28 @@ export const memberTheme = {
   textMuted: 'var(--gd-text-muted, #6b7280)',
   separator: 'var(--gd-border, #e5e7eb)',
   // Titles (§4) — the three heading levels, from the three Title settings.
+  // Since #1152 each level has a Font Family beside its Color, written into
+  // the level's own `--gd-font-h*` variable, and a heading reads the pair.
   title1: 'var(--gd-color-h1, #111827)',
+  title1Font: 'var(--gd-font-h1, inherit)',
   title2: 'var(--gd-color-h2, #111827)',
+  title2Font: 'var(--gd-font-h2, inherit)',
   title3: 'var(--gd-color-h3, #374151)',
+  title3Font: 'var(--gd-font-h3, inherit)',
   // Section cards (§3).
   cardBorderColor: 'var(--gd-members-card-border, var(--gd-card-border, #e5e7eb))',
   cardBorderWidth: 'var(--gd-members-card-border-width, 1px)',
+  // The text inside a Section Card (#1152 §3/§4) — its colour, size and font,
+  // and where it sits. The two alignment variables already carry CSS property
+  // values (`flex-start`/`center`/`flex-end` for `justify-content`,
+  // `left`/`center`/`right` for `text-align`), mapped by `membersAppTokens.ts`
+  // from the stored Top/Center/Bottom and Left/Center/Right, so nothing here
+  // translates a word. The fallbacks are today's tile: 13px, centred both ways.
+  cardText: 'var(--gd-members-card-text, var(--gd-text, #111827))',
+  cardTextSize: 'var(--gd-members-card-text-size, 13px)',
+  cardTextFont: 'var(--gd-members-card-text-font, var(--gd-font-body, inherit))',
+  cardTextVertical: 'var(--gd-members-card-text-vertical, center)',
+  cardTextHorizontal: 'var(--gd-members-card-text-horizontal, center)',
   // Inputs.
   inputBackground: 'var(--gd-input-bg, #ffffff)',
   inputBorder: 'var(--gd-input-border, #d1d5db)',
@@ -96,6 +112,30 @@ export const sectionCardBorder: CSSProperties = {
   borderStyle: 'solid',
   borderColor: memberTheme.cardBorderColor,
   borderWidth: memberTheme.cardBorderWidth,
+};
+
+/**
+ * A Section Card's text — the five Section Cards text settings (#1152 §3).
+ *
+ * `MembersSectionCard` spreads it **under** the caller's own style, so the
+ * colour, size and font are inherited by every piece of text inside the card
+ * that spells none of its own (a navigation tile's label), and the card's
+ * content is placed by the two positions: a Section Card is a column flex box,
+ * so the vertical position is its `justify-content` and the horizontal one its
+ * `text-align`, which positions the text whether or not the card carries
+ * artwork (§4 — it is the same box either way). A card whose body is a
+ * structure of its own (the dashboard's My Products & Services card, #1116)
+ * keeps the property it spells over this, which is the one way a card departs
+ * from the settings and why a tile must spell none of these five.
+ */
+export const sectionCardText: CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: memberTheme.cardTextVertical,
+  textAlign: memberTheme.cardTextHorizontal as CSSProperties['textAlign'],
+  color: memberTheme.cardText,
+  fontSize: memberTheme.cardTextSize,
+  fontFamily: memberTheme.cardTextFont,
 };
 
 /** The surface a section's contents sit in: the card background plus that border. */

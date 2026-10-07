@@ -4,9 +4,10 @@ import { join } from 'path';
 import {
   DEFAULT_MEMBERS_APP_SOURCE_ADVANCED,
   MEMBERS_APP_SETTINGS,
-  adminSourceValue,
+  alignmentCssValue,
   applyMembersAppTokens,
   effectiveMembersAppValue,
+  inheritedMembersAppValue,
   membersAppCssVars,
 } from '../lib/membersAppTokens';
 import { DEFAULT_TOKENS, applyTokens, type ThemeTokens } from '../lib/themeTokens';
@@ -36,14 +37,19 @@ describe('Members App theme settings: mirror of the Admin declaration (#833)', (
   const adminThemeTokens = readFileSync(join(ADMIN_LIB, 'themeTokens.ts'), 'utf-8');
 
   it('declares the same settings, sources and CSS variables Admin does', () => {
-    for (const { key, cssVar, type, source } of MEMBERS_APP_SETTINGS) {
+    for (const setting of MEMBERS_APP_SETTINGS) {
+      const { key, cssVar, type, source } = setting;
       expect(adminSrc, `Admin has no ${key}`).toContain(`key: '${key}'`);
       expect(adminSrc, `Admin does not map ${key} to ${cssVar}`).toContain(`cssVar: '${cssVar}'`);
       expect(adminSrc, `Admin has no ${type} setting`).toContain(`type: '${type}'`);
-      if (source.kind !== 'typography') {
+      if (source === null) {
+        const dflt = typeof setting.default === 'string' ? `'${setting.default}'` : String(setting.default);
+        expect(adminSrc, `Admin declares another default for ${key}`)
+          .toMatch(new RegExp(`key: '${key}',[\\s\\S]*?source: null,\\s*default: ${dflt},`));
+      } else if (source.kind !== 'typography') {
         expect(adminSrc).toContain(`key: '${source.key}', labelKey: '${source.labelKey}'`);
       } else {
-        expect(adminSrc).toContain(`level: '${source.level}', labelKey: '${source.labelKey}'`);
+        expect(adminSrc).toContain(`level: '${source.level}', field: '${source.field}', labelKey: '${source.labelKey}'`);
       }
     }
     // And nothing Admin declares is missing here: the count has to match, or a
@@ -68,8 +74,11 @@ describe('Members App theme settings: resolution (#833)', () => {
   it('inherits every setting from its Admin source on a Theme that overrides nothing', () => {
     applyMembersAppTokens(DEFAULT_TOKENS);
     for (const setting of MEMBERS_APP_SETTINGS) {
-      const inherited = adminSourceValue(DEFAULT_TOKENS, setting.source);
-      const expected = setting.type === 'pixels' ? `${inherited}px` : String(inherited);
+      const inherited = inheritedMembersAppValue(DEFAULT_TOKENS, setting);
+      const expected =
+        setting.type === 'pixels' || setting.type === 'font-size' ? `${inherited}px`
+        : setting.type === 'align-v' || setting.type === 'align-h' ? alignmentCssValue(setting.type, inherited)
+        : String(inherited);
       expect(written[setting.cssVar], `${setting.key} does not follow its Admin source`).toBe(expected);
     }
   });
@@ -154,6 +163,42 @@ describe('Members App theme settings: resolution (#833)', () => {
     const header = MEMBERS_APP_SETTINGS.find((s) => s.key === 'headerColor')!;
     expect(effectiveMembersAppValue(nulled, header)).toBe(DEFAULT_TOKENS.colors.headerBackground);
   });
+
+  it('paints a Title font over the Theme variable it shares a name with (#1152 §2)', () => {
+    const themed = {
+      ...DEFAULT_TOKENS,
+      membersApp: { title1Font: 'Georgia, "Times New Roman", serif' },
+    } as ThemeTokens;
+    applyTokens(themed);
+    applyMembersAppTokens(themed);
+    expect(written['--gd-font-h1']).toBe('Georgia, "Times New Roman", serif');
+    expect(written['--gd-font-h2']).toBe(DEFAULT_TOKENS.typography.h2.fontFamily);
+  });
+
+  it('paints the Section Card text from its five settings, defaults included (#1152 §3)', () => {
+    applyMembersAppTokens(DEFAULT_TOKENS);
+    expect(written['--gd-members-card-text']).toBe(DEFAULT_TOKENS.colors.textColor);
+    expect(written['--gd-members-card-text-size']).toBe('13px');
+    expect(written['--gd-members-card-text-font']).toBe(DEFAULT_TOKENS.typography.body.fontFamily);
+    expect(written['--gd-members-card-text-vertical']).toBe('center');
+    expect(written['--gd-members-card-text-horizontal']).toBe('center');
+    const themed = {
+      ...DEFAULT_TOKENS,
+      membersApp: {
+        sectionCardsTextColor: '#ffffff',
+        sectionCardsTextSize: 20,
+        sectionCardsTextFont: 'Arial, Helvetica, sans-serif',
+        sectionCardsTextVertical: 'top',
+        sectionCardsTextHorizontal: 'right',
+      },
+    } as ThemeTokens;
+    applyMembersAppTokens(themed);
+    expect(written['--gd-members-card-text']).toBe('#ffffff');
+    expect(written['--gd-members-card-text-size']).toBe('20px');
+    expect(written['--gd-members-card-text-font']).toBe('Arial, Helvetica, sans-serif');
+    expect(written['--gd-members-card-text-vertical']).toBe('flex-start');
+    expect(written['--gd-members-card-text-horizontal']).toBe('right');
+  });
 });
 
 describe('Members App theme settings: where they are painted (#833, #983)', () => {
@@ -232,6 +277,27 @@ describe('Members App theme settings: where they are painted (#833, #983)', () =
     ]) {
       expect(read(...page), `${page.join('/')} does not use a Title setting`).toContain('memberTheme.title1');
     }
+  });
+
+  it('paints a heading in its Title font and a Section Card’s text in its five settings (#1152)', () => {
+    for (const n of [1, 2, 3]) {
+      expect(chrome).toContain(`var(--gd-font-h${n},`);
+      expect(chrome).toContain(`title${n}Font:`);
+    }
+    for (const v of ['text', 'text-size', 'text-font', 'text-vertical', 'text-horizontal']) {
+      expect(chrome).toContain(`var(--gd-members-card-${v},`);
+    }
+    expect(chrome).toContain('export const sectionCardText');
+    const card = read('components', 'MembersSectionCard.tsx');
+    // Under the caller's style, so a card that spells one of the five keeps it.
+    expect(card).toContain('style: { ...sectionCardText, ...style, ');
+    // …and the navigation tile spells none of them.
+    const home = read('app', '[locale]', 'page.tsx');
+    const tile = home.match(/tile:\s*\{[^}]*\}/)![0];
+    const label = home.match(/tileLabel:\s*\{[^}]*\}/)![0];
+    expect(tile + label).not.toMatch(/\bcolor:|fontSize|fontFamily|textAlign|justifyContent|alignItems/);
+    // Every heading reads the pair.
+    expect(home).toContain('color: memberTheme.title1, fontFamily: memberTheme.title1Font');
   });
 
   it('leaves no setting unpainted', () => {

@@ -2,8 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
+  MEMBERS_APP_FONT_SIZE,
+  MEMBERS_APP_HORIZONTAL_ALIGNMENTS,
   MEMBERS_APP_SETTING_KEYS,
   MEMBERS_APP_SETTING_TYPES,
+  MEMBERS_APP_VERTICAL_ALIGNMENTS,
   validateMembersApp,
 } from '../domain/membersAppTokens';
 import { FONT_STACKS, defaultTokens, validateTokens } from '../domain/themeTokens';
@@ -28,7 +31,50 @@ describe('membersApp overrides: validation (#833)', () => {
       headerTextFont: FONT_STACKS[1],
       headerSeparatorWidth: 4,
       sectionCardsBorderWidth: '2px',
+      sectionCardsTextSize: 16,
+      sectionCardsTextVertical: 'bottom',
+      sectionCardsTextHorizontal: 'left',
+      title1Font: FONT_STACKS[2],
     })).toBeNull();
+  });
+
+  it('bounds a Section Card text size and refuses anything outside it (#1152 §3)', () => {
+    expect(MEMBERS_APP_FONT_SIZE).toEqual({ min: 8, max: 48 });
+    for (const bad of [7, 49, 12.5, '16px', 'large']) {
+      expect(validateMembersApp({ sectionCardsTextSize: bad }), String(bad))
+        .toBe('membersApp.sectionCardsTextSize must be an integer 8–48');
+    }
+    for (const ok of [8, 13, 48]) {
+      expect(validateMembersApp({ sectionCardsTextSize: ok }), String(ok)).toBeNull();
+    }
+  });
+
+  it('accepts only the three positions on each axis, and never one axis’s word on the other (#1152 §3)', () => {
+    expect([...MEMBERS_APP_VERTICAL_ALIGNMENTS]).toEqual(['top', 'center', 'bottom']);
+    expect([...MEMBERS_APP_HORIZONTAL_ALIGNMENTS]).toEqual(['left', 'center', 'right']);
+    for (const ok of MEMBERS_APP_VERTICAL_ALIGNMENTS) {
+      expect(validateMembersApp({ sectionCardsTextVertical: ok }), ok).toBeNull();
+    }
+    for (const ok of MEMBERS_APP_HORIZONTAL_ALIGNMENTS) {
+      expect(validateMembersApp({ sectionCardsTextHorizontal: ok }), ok).toBeNull();
+    }
+    for (const bad of ['left', 'middle', 'flex-start', 1, '']) {
+      expect(validateMembersApp({ sectionCardsTextVertical: bad }), String(bad))
+        .toBe('membersApp.sectionCardsTextVertical must be one of top, center, bottom');
+    }
+    for (const bad of ['top', 'start', 'centre', 0]) {
+      expect(validateMembersApp({ sectionCardsTextHorizontal: bad }), String(bad))
+        .toBe('membersApp.sectionCardsTextHorizontal must be one of left, center, right');
+    }
+  });
+
+  it('holds a Title font to the one font catalogue (#1152 §2, §5)', () => {
+    for (const key of ['title1Font', 'title2Font', 'title3Font', 'sectionCardsTextFont']) {
+      expect(MEMBERS_APP_SETTING_TYPES[key]).toBe('font');
+      expect(validateMembersApp({ [key]: FONT_STACKS[3] }), key).toBeNull();
+      expect(validateMembersApp({ [key]: 'Comic Sans MS' }), key)
+        .toBe(`membersApp.${key} must be one of the allowed font stacks`);
+    }
   });
 
   it('accepts a null as "inherited" rather than rejecting it', () => {
@@ -106,7 +152,7 @@ describe('membersApp overrides: validation (#833)', () => {
     expect(adminKeys.length).toBeGreaterThan(0);
     expect(adminKeys.sort()).toEqual([...MEMBERS_APP_SETTING_KEYS].sort());
     for (const key of adminKeys) {
-      const declared = adminSrc.match(new RegExp(`key: '${key}',[\\s\\S]*?type: '(\\w+)',`))?.[1];
+      const declared = adminSrc.match(new RegExp(`key: '${key}',[\\s\\S]*?type: '([\\w-]+)',`))?.[1];
       expect(declared, `${key} declares no type`).toBe(MEMBERS_APP_SETTING_TYPES[key]);
     }
   });
