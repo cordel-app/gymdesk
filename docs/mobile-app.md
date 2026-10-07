@@ -310,6 +310,16 @@ package).
   `POST /me/link` matches by **email + `gym_id`**. Options to decide after the spike: (1) link by
   the invitation ticket instead of the email; (2) let a signed-in member attach Apple/Google to an
   existing account; (3) let the gym link manually.
+- **Decided (Q1 ticket), stage 1 built — the API half.** The invitation, not the address, names the
+  member: `POST /members/:id/invite` and `/reinvite` stamp the Clerk invitation with
+  `publicMetadata.member_invite = { gym_id, member_id }` (server-set, copied by Clerk onto the user
+  who signs up through the ticket, like #599's `gym_signup`), and `POST /me/link` matches that
+  member first (`api/src/domain/memberInviteTarget.ts`), cleared afterwards. The email match stays
+  the fallback, so invitations issued before this carry no metadata and behave as before; the
+  staff-collision guard applies to the ticket path too. A relay-address sign-in now links.
+- **Stage 2 — still to do, and only the owner can close it:** the Apple spike (Services ID, Team ID,
+  Key ID, private key, the capability, a physical iPhone), the Clerk Apple connection and the
+  `apple` provider in `nativePlugins.ts` behind WP2's "absent when it cannot work" rule.
 
 ### WP4 — Universal links / app links (#1076) — **done (code), unverified on a device**
 

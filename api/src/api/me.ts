@@ -1,3 +1,4 @@
+import { memberInviteTarget } from '../domain/memberInviteTarget';
 import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
@@ -423,11 +424,24 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
     if (!email) return res.status(400).json({ error: 'No email on Clerk account' });
 
     // Find an unlinked member row matching this email in the gym
-    const { rows: memberRows } = await db.query(
-      `SELECT * FROM members
-       WHERE email = ? AND gym_id = ? AND clerk_user_id IS NULL AND deleted_at IS NULL`,
-      [email, gymId],
-    );
+    // #1075: the invitation's own member id outranks the address (a Hide My Email
+    // sign-in reports a relay address that matches nothing); the email is the fallback.
+    const invitedMemberId = memberInviteTarget(clerkUser.publicMetadata, gymId);
+    let memberRows: any[] = [];
+    if (invitedMemberId) {
+      ({ rows: memberRows } = await db.query(
+        `SELECT * FROM members
+         WHERE id = ? AND gym_id = ? AND clerk_user_id IS NULL AND deleted_at IS NULL`,
+        [invitedMemberId, gymId],
+      ));
+    }
+    if (!memberRows[0]) {
+      ({ rows: memberRows } = await db.query(
+        `SELECT * FROM members
+         WHERE email = ? AND gym_id = ? AND clerk_user_id IS NULL AND deleted_at IS NULL`,
+        [email, gymId],
+      ));
+    }
     // #599: no row yet is expected for a website self-registration — the
     // invitation carried `gym_signup`, which Clerk copied onto this user. It is
     // server-set metadata, so it proves our backend invited this email to this gym.
@@ -469,6 +483,9 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
       return res.status(201).json(created);
     }
     const member = memberRows[0];
+    if (invitedMemberId && member.id === invitedMemberId && await isStaffLoginEmail(gymId, member.email)) {
+      return res.status(409).json({ error: STAFF_EMAIL_CONFLICT });
+    }
 
     // Link the Clerk user and create membership in a transaction
     await db.transaction(async (tx) => {
@@ -483,6 +500,10 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
       );
     });
 
+    if (invitedMemberId) {
+      clerkClient.users.updateUserMetadata(userId, { publicMetadata: { member_invite: null } })
+        .catch((err: any) => req.log.warn({ userId, message: err.message }, 'Failed to clear member_invite metadata'));
+    }
     res.json({ ...member, clerk_user_id: userId });
   } catch (err) {
     next(err);
