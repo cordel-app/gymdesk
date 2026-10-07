@@ -1,6 +1,5 @@
 import { Tx } from '../infra/db';
 import { registerBookingAccessHook } from './bookings';
-import { tryClaimPackageCredit } from './package-credits';
 import { MemberProfessionalService, resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import {
   PROFESSIONAL_SERVICE_REQUIRED_CODE,
@@ -60,7 +59,7 @@ const OCCURRENCE_REQUIRED_SQL = `
  * activity — "a service the gym has switched off must not make a slot
  * eligible" holds in that direction too.
  */
-async function loadRequiredServices(
+export async function loadRequiredServices(
   q: Tx,
   gymId: string,
   activityTypeId: number,
@@ -109,7 +108,7 @@ export async function resolveActivityTypeEligibility(
   // through: it is not this gate's job to 404, and the booking path fails on
   // the missing row further down.
   if (atRows.length === 0 || atRows[0].public_event) {
-    return { eligible: true, required: [], matched: [], packageBacked: false };
+    return { eligible: true, required: [], matched: [] };
   }
   const required = await loadRequiredServices(q, gymId, activityTypeId, opts.calendarEventId);
   if (required.length === 0) return decideServiceEligibility(required, []);
@@ -139,15 +138,9 @@ registerBookingAccessHook(async (tx, gymId, memberId, activityTypeId, _centerId,
   if (opts?.overrideAccess) return;
   const decision = await resolveActivityTypeEligibility(tx, gymId, memberId, activityTypeId, { calendarEventId: opts?.calendarEventId });
 
-  if (decision.eligible) {
-    // A balance a Plan or a Promotion grants charges nothing. One that exists
-    // only because of a purchased package still pays for the booking out of
-    // that package — today's behaviour, kept until #973 stage 3 moves
-    // consumption onto attendance (`Q2`). A claim that fails here is a race
-    // with another booking spending the last credit, and is refused as such.
-    if (!decision.packageBacked) return;
-    if (await tryClaimPackageCredit(tx, gymId, memberId)) return;
-  }
+  // Booking spends nothing (#973 `Q2`): a session is spent on attendance, a
+  // late cancellation or a no-show, by the consumption ledger (#1189 stage 3).
+  if (decision.eligible) return;
 
   throw Object.assign(
     new Error('This member has no sessions available for the Professional Services this activity requires.'),

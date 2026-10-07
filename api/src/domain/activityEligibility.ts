@@ -22,15 +22,8 @@ import type { MemberProfessionalService } from './memberProfessionalServices';
  * (which asks the same question per Activity Type) are provably the same
  * rule; the SQL that feeds it lives in `api/activity-eligibility.ts`.
  *
- * `packageBacked` is the one answer that is about *stage 3* rather than this
- * stage: when every matching balance comes from a purchased class package,
- * the booking is paid out of one exactly as it was before this ticket
- * (`tryClaimPackageCredit()`), because consumption — `Q2`: a session is spent
- * on attendance, on a late cancellation or on a no-show, never on booking —
- * is stage 3's ledger, and until it exists a package that nothing ever debits
- * would be an unlimited one. A balance a Plan or a Promotion grants charges
- * nothing, which is the pre-ticket rule for a plan that already covers the
- * activity.
+ * Booking spends nothing (`Q2`): a session is spent on attendance, a late
+ * cancellation or a no-show, by the consumption ledger (#1189 stage 3).
  */
 
 export interface RequiredProfessionalService {
@@ -45,8 +38,6 @@ export interface ServiceEligibility {
   required: RequiredProfessionalService[];
   /** The member's services (balance > 0) that are among the required ones. */
   matched: MemberProfessionalService[];
-  /** `true` when the member is eligible only through purchased class packages. */
-  packageBacked: boolean;
 }
 
 /** The booking refusal's machine-readable code. */
@@ -57,14 +48,11 @@ export function decideServiceEligibility(
   memberServices: MemberProfessionalService[],
 ): ServiceEligibility {
   if (required.length === 0) {
-    return { eligible: true, required, matched: [], packageBacked: false };
+    return { eligible: true, required, matched: [] };
   }
   const requiredIds = new Set(required.map((s) => s.id));
   const matched = memberServices.filter(
     (s) => requiredIds.has(s.professional_service_id) && s.sessions > 0,
   );
-  const packageBacked =
-    matched.length > 0
-    && matched.every((s) => s.sources.every((src) => src.kind === 'class_package'));
-  return { eligible: matched.length > 0, required, matched, packageBacked };
+  return { eligible: matched.length > 0, required, matched };
 }

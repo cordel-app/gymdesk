@@ -1,4 +1,5 @@
 import { db } from '../infra/db';
+import { applyConsumption, ConsumedTotal } from './serviceConsumption';
 
 /**
  * #647 stage 1: "which Professional Services does this Member have sessions
@@ -37,8 +38,8 @@ import { db } from '../infra/db';
  *      catalogue (#635 §13–§17), and counted only while the assignment is
  *      `active` — a Draft, a Pending Payment row, a paused or a cancelled one
  *      grants nothing. A renewal Frequency (#918) is not multiplied in: there
- *      is no allowance ledger yet (stage 3), so `quantity` is the sessions the
- *      plan includes.
+ *      is no renewal allowance, so `quantity` is the sessions the plan
+ *      includes, less what the consumption ledger (#1189 stage 3) has spent.
  *
  * **Overlapping counts are intentional.** A session package is linked to
  * Professional Services many-to-many (a mixed PT + Physiotherapy package is
@@ -264,7 +265,18 @@ export async function loadMemberProfessionalServiceGrants(
     [gymId, memberId, memberId],
   );
 
-  return [...packageRows, ...promotionRows, ...serviceRows, ...planRows];
+  // #1189 stage 3: the sessions already spent from the grants that carry no
+  // counter of their own. A returned row (`returned_at`) no longer counts.
+  const { rows: consumed } = await db.query<ConsumedTotal>(
+    `SELECT source_kind, source_reference_id, COUNT(*) AS consumed
+       FROM professional_service_consumptions
+      WHERE gym_id = ? AND member_id = ? AND returned_at IS NULL
+        AND source_kind <> 'class_package'
+      GROUP BY source_kind, source_reference_id`,
+    [gymId, memberId],
+  );
+
+  return applyConsumption([...packageRows, ...promotionRows, ...serviceRows, ...planRows], consumed);
 }
 
 /** The Member's Professional Services with their session counts, ready to serve. */
