@@ -1377,6 +1377,17 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 
 ### Store submission
 
+- [ ] *(after the Apple account exists)* **TestFlight link on the Mobile builds page.** For an iOS
+      build the page should offer *Open in TestFlight* instead of a download (a signed app cannot
+      be installed from a downloaded file). Needs the app in App Store Connect and its public
+      link; keep it as a per-environment GitHub variable written by CI into the build's sidecar
+      as an optional field, and have the page show the button when it is present. The simulator
+      builds can stop being published to the page then (they cannot be installed on a phone).
+- [ ] *(when a gym asks for betas)* Decide how a gym gets its beta: the store testing channels in
+      its own developer account (TestFlight, Play internal/closed testing), or a gym-scoped page
+      in the Admin app. See `docs/mobile-app.md`, "What a gym that wants its own app needs to
+      know".
+
 - [ ] Privacy policy URL, store listing text, screenshots, age rating, data-safety / privacy
       nutrition labels.
 - [ ] A **demo account** for App Review (sign-in is by invitation, so a reviewer cannot

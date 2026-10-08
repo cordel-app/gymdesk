@@ -87,6 +87,45 @@ with Apple; universal links; push.
 - **Apple guideline 4.2.6** (apps generated from a template): Apple may require each gym's app to
   be submitted from the **gym's own Apple Developer account**, not from ours. That would mean one
   account and one D-U-N-S per gym. Read the current text of the guideline before offering this.
+### What a gym that wants its own app needs to know (stage 2, as understood on 2026-10-08)
+
+A gym with its own logo and its own store listing is a **separate app published from the gym's
+own developer account**. The gym owns the app and the account; we build it and upload it from CI
+(a new profile file, its own Firebase/Google clients and an App Store Connect access we are
+invited to, with a limited role or an API key). The two published alternatives are the generic
+*Cordel Fitness* app (one binary, one account, ours) and publishing every gym's app from our
+account, which guideline 4.2.6 is likely to reject.
+
+- **Cost, paid by the gym:** Apple Developer Program 99 USD per year (an organization also needs a
+  D-U-N-S number, the slowest step), Google Play 25 USD once. None of it is ours, and it is not
+  refundable if a store rejects the app.
+- **Approval is not guaranteed, even from the gym's own account.** A reviewer looks at the app
+  itself, and apps that look like the same template with a different skin can be rejected under
+  4.2 (minimum functionality: a web view with little else) or 4.3 (repetitive apps). What helps is
+  what the app already does natively (push, native sign-in, links that open it), content that is
+  specific to the gym (its name, theme, schedule, bookings and members), a demo account and
+  review notes saying it is the members' app for that one gym. None of this is a promise: tell
+  the gym so in writing before it pays.
+- **Start with one gym** as the pilot and learn what the review says before offering it to more.
+- **Beta versions for the gyms (the intent, not built).** A gym should be able to download a beta
+  of its own app when it asks for one. The Cordel → *Mobile builds* page (#1077) is **not** that:
+  it is superadmin-only and lists *our* internal **dev** builds, which are debug-signed and talk
+  to the dev backend, so they are the wrong thing to hand a gym. A gym's beta is a **release**
+  build of **its own app id**, pointing at production, and the standard way to give it out is the
+  store's own testing channel in the gym's own developer account: **TestFlight** on iOS (an
+  internal tester group, or a public link for external testers) and Google Play's **internal or
+  closed testing track** on Android. The gym then shares that invitation or link with whoever
+  should try it, and the stores handle installing and expiry. What would have to be built if a
+  gym should instead find its betas *in our Admin app* (a gym-scoped page, so a gym admin sees
+  only its own app's builds): a mapping from a gym to its app id (none exists today), a
+  gym-facing route behind `tenantContext` and a module permission and feature flag (the Cordel
+  page is `requireSuperadmin` on the platform router and must not be reused as is), release
+  signing in CI (the upload keys and, for iOS, the account), and an *Open in TestFlight* link per
+  iOS build next to Android's Download. Decide this when the first gym asks; the TestFlight / Play
+  links alone may be enough.
+- Read the current text of 4.2, 4.2.6 and 4.3 and of Google Play's policy at that time; this
+  section is not a substitute.
+
 - **Sign in with Apple across Bundle IDs:** check whether Clerk accepts a native Apple token whose
   audience is a different Bundle ID per gym app.
 - **Pre-login branding** (rule 5) is only a sketch.
