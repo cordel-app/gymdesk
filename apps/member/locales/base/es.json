@@ -67,6 +67,7 @@
     "add_set": "+ Añadir serie",
     "save_log": "Guardar registro",
     "mark_done": "Marcar hecho",
+    "block_rounds": "{count, plural, one {# ronda} other {# rondas}}",
     "block_type_standard": "Estándar",
     "block_type_superset": "Superserie",
     "block_type_triset": "Triserie",
