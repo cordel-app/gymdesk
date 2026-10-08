@@ -156,4 +156,22 @@ describe('membersApp overrides: validation (#833)', () => {
       expect(declared, `${key} declares no type`).toBe(MEMBERS_APP_SETTING_TYPES[key]);
     }
   });
+  it('#1283: both button text colours inherit the global Buttons tokens and write the variables memberTheme reads', () => {
+    for (const [key, source, cssVar] of [
+      ['primaryButtonTextColor', 'primaryButtonText', '--gd-primary-btn-text'],
+      ['secondaryButtonTextColor', 'secondaryButtonText', '--gd-secondary-btn-text'],
+    ]) {
+      expect(MEMBERS_APP_SETTING_TYPES[key]).toBe('color');
+      for (const app of ['admin', 'member']) {
+        const src = readFileSync(
+          join(__dirname, '..', '..', '..', 'apps', app, 'src', 'lib', 'membersAppTokens.ts'),
+          'utf-8',
+        );
+        const block = src.match(new RegExp(`key: '${key}',[\\s\\S]*?cssVar: '([^']+)'`));
+        expect(block?.[0], `${app} declares ${key}`).toContain(`key: '${source}'`);
+        expect(block?.[1]).toBe(cssVar);
+      }
+    }
+    expect(validateMembersApp({ secondaryButtonTextColor: '#123456' })).toBeNull();
+  });
 });
