@@ -197,6 +197,44 @@ project from §2.
 | 12 | The same link with the app **not** installed | Opens in the browser and still completes |
 | 13 | The same link from a mail client's own in-app browser | May open in that browser rather than the app. Known caveat, not a defect — the flow never depends on the app receiving the link |
 
+## 5b. Getting a test build from CI (#1077)
+
+`.github/workflows/mobile-build.yml` builds the shell without anyone's laptop. Run it from
+*Actions → Mobile build → Run workflow* (pick `dev` or `pro`), or push a `mobile-v*` tag; it
+also runs on a PR that touches `apps/mobile/`. Two jobs:
+
+- **Android debug APK** — download the artifact (it is a zip holding the APK), unzip, and open
+  the APK on the phone (allow installs from that app). It loads the environment's Members App
+  (`CORDEL_FITNESS_MEMBERS_URL`) and is signed with the shared debug keystore, whose SHA-1
+  (`90:4A:F4:…:87:47`) is the one registered in the Google Android OAuth client; the job summary
+  prints the SHA-1 it actually used. Without the `ANDROID_DEBUG_KEYSTORE_B64` secret Gradle
+  makes a new key and Google sign-in is refused on that build.
+- **iOS simulator build (unsigned)** — a build check, and an app for a Mac's simulator
+  (`xcrun simctl install booted App.app`). It **cannot** be installed on an iPhone; that needs a
+  signed build and the Apple Developer account.
+
+**One app per environment.** `dev` builds the `cordel-fitness-dev` profile
+(`com.cordel.fitness.dev`, "Cordel Fitness Dev", the dev Clerk host already in its
+`allowNavigation`) and `pro` builds `cordel-fitness` (`com.cordel.fitness`, "Cordel Fitness"), so
+the two have different app ids and install side by side instead of one over the other. That is
+four apps in all — Android and iOS, dev and pro — but only two ids, and a third environment is a
+third profile file. Each app id needs its **own** Google clients (an Android client per package +
+SHA-1, an iOS client per bundle ID), Firebase app, `FCM_SERVICE_ACCOUNTS` /
+`MOBILE_APP_ASSOCIATIONS` entry and Apple App ID. The dev app id has its Google clients in project
+`cordel-fitness-pro` (an Android client for `com.cordel.fitness.dev` with the shared debug SHA-1
+and an iOS client for that bundle ID, which is what the `dev` environment's
+`NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` points at). Known gaps (#1077): push registration does not
+name its app id, so the API files every token under the default one; and the dev web build's
+`MOBILE_APP_SCHEME` still reads `com.cordel.fitness`, which is the *pro* scheme, until the dev
+app replaces the one already handed out.
+
+Per-environment inputs: `CORDEL_FITNESS_MEMBERS_URL` (variable, already used by the web deploy),
+`MOBILE_ALLOW_NAVIGATION` (variable — **must include the Clerk Frontend API host**, see §2),
+`NEXT_PUBLIC_GOOGLE_*_CLIENT_ID` (secrets, reused as the shell's Google clients) and
+`ANDROID_DEBUG_KEYSTORE_B64` (secret; `base64 < ~/.android/debug.keystore`). Artifacts are kept 30
+days (Android) / 14 days (iOS). The debug keystore is a throwaway with the well-known password
+`android`; a release build needs a real upload key and is not this workflow's job.
+
 ## 6. Switching profile (the stage-2 rehearsal)
 
 The acceptance criterion *"changing the app profile needs configuration only, no
