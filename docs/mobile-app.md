@@ -87,6 +87,29 @@ with Apple; universal links; push.
 - **Apple guideline 4.2.6** (apps generated from a template): Apple may require each gym's app to
   be submitted from the **gym's own Apple Developer account**, not from ours. That would mean one
   account and one D-U-N-S per gym. Read the current text of the guideline before offering this.
+### What a gym that wants its own app needs to know (stage 2, as understood on 2026-10-08)
+
+A gym with its own logo and its own store listing is a **separate app published from the gym's
+own developer account**. The gym owns the app and the account; we build it and upload it from CI
+(a new profile file, its own Firebase/Google clients and an App Store Connect access we are
+invited to, with a limited role or an API key). The two published alternatives are the generic
+*Cordel Fitness* app (one binary, one account, ours) and publishing every gym's app from our
+account, which guideline 4.2.6 is likely to reject.
+
+- **Cost, paid by the gym:** Apple Developer Program 99 USD per year (an organization also needs a
+  D-U-N-S number, the slowest step), Google Play 25 USD once. None of it is ours, and it is not
+  refundable if a store rejects the app.
+- **Approval is not guaranteed, even from the gym's own account.** A reviewer looks at the app
+  itself, and apps that look like the same template with a different skin can be rejected under
+  4.2 (minimum functionality: a web view with little else) or 4.3 (repetitive apps). What helps is
+  what the app already does natively (push, native sign-in, links that open it), content that is
+  specific to the gym (its name, theme, schedule, bookings and members), a demo account and
+  review notes saying it is the members' app for that one gym. None of this is a promise: tell
+  the gym so in writing before it pays.
+- **Start with one gym** as the pilot and learn what the review says before offering it to more.
+- Read the current text of 4.2, 4.2.6 and 4.3 and of Google Play's policy at that time; this
+  section is not a substitute.
+
 - **Sign in with Apple across Bundle IDs:** check whether Clerk accepts a native Apple token whose
   audience is a different Bundle ID per gym app.
 - **Pre-login branding** (rule 5) is only a sketch.
