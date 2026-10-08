@@ -15,6 +15,8 @@
     "no_membership": "Sin cuota activa.",
     "products_services": "Mis Productos",
     "active_products": "{count, plural, one {# producto activo} other {# productos activos}}",
+    "no_plan": "Sin plan",
+    "additional_products": "{count, plural, one {# producto adicional} other {# productos adicionales}}",
     "expires_on": "Vence el {date}",
     "class_credits": "Créditos de clases",
     "credits_remaining": "sesiones disponibles",
@@ -22,7 +24,6 @@
     "greeting_afternoon": "Buenas tardes, {name}",
     "greeting_evening": "Buenas noches, {name}",
     "view_booking": "Ver reserva",
-    "browse_calendar": "Ver calendario",
     "alerts_view_all": "Ver alertas",
     "nutrition_today": "Nutrición de hoy",
     "goals": "Objetivos",
@@ -102,7 +103,15 @@
     "payment_status_ok": "Al día",
     "payment_status_pending": "Pago pendiente",
     "payment_status_failed": "Pago fallido",
-    "no_center": "Sin centro asignado"
+    "no_center": "Sin centro asignado",
+    "label_clerk_status": "Estado de Clerk",
+    "label_clerk_invitation": "Invitación de Clerk",
+    "clerk_status_enrolled_on": "Registrado · {date}",
+    "clerk_status_enrolled": "Registrado",
+    "clerk_status_not_enrolled": "No registrado",
+    "clerk_invitation_invited_on": "Invitado · {date}",
+    "clerk_invitation_invited": "Invitado",
+    "clerk_invitation_none": "Ninguna"
   },
   "packages": {
     "title": "Mis bonos",

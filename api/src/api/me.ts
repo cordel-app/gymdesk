@@ -396,7 +396,7 @@ async function createSelfRegisteredMember(
   try {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO members (name, email, gym_id, clerk_user_id) VALUES (?, ?, ?, ?)',
+        'INSERT INTO members (name, email, gym_id, clerk_user_id, enrolled_at) VALUES (?, ?, ?, ?, UTC_TIMESTAMP())',
         [name, email, gymId, userId],
       );
       await tx.query(
@@ -491,7 +491,7 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
     // Link the Clerk user and create membership in a transaction
     await db.transaction(async (tx) => {
       await tx.query(
-        'UPDATE members SET clerk_user_id = ?, invitation_id = NULL WHERE id = ?',
+        'UPDATE members SET clerk_user_id = ?, invitation_id = NULL, enrolled_at = COALESCE(enrolled_at, UTC_TIMESTAMP()) WHERE id = ?',
         [userId, member.id],
       );
       // INSERT IGNORE = the old ON CONFLICT DO NOTHING (row may exist from a retry)

@@ -293,5 +293,22 @@ describe('the runbook', () => {
     const enabled = profile().appleSignIn === true;
     expect(entitlements.includes('com.apple.developer.applesignin')).toBe(enabled);
   });
+
+  // #1077: one app per environment. Every profile is its own identity, so a dev build
+  // and a pro build never share an app id and cannot install over each other.
+  it('gives every profile its own app id, name and server', () => {
+    const ids = readdirSync(PROFILES)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => ({ file: f, ...(JSON.parse(readFileSync(join(PROFILES, f), 'utf8')) as Record<string, string>) }));
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    for (const p of ids) {
+      expect(p.id, p.file).toBe(p.file.replace(/\.json$/, ''));
+      expect(p.appId, p.file).toMatch(/^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$/);
+      expect(p.appName && p.serverUrl, p.file).toBeTruthy();
+    }
+    expect(new Set(ids.map((p) => p.appId)).size).toBe(ids.length);
+    expect(new Set(ids.map((p) => p.appName)).size).toBe(ids.length);
+  });
 });
+
 

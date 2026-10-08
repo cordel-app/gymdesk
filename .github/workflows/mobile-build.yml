@@ -1,0 +1,226 @@
+name: Mobile build
+
+# #1077 (mobile app WP5): builds the Capacitor shell (`apps/mobile`) in CI, so a
+# test build is made from a commit and not on somebody's laptop.
+#
+#  - Android: a **debug APK** a tester can install by hand (download the artifact,
+#    open it on the phone). Signed with the shared debug keystore (see the secret
+#    below) so the Google sign-in client registered for its SHA-1 keeps working.
+#  - iOS: an **unsigned simulator build** — a build check, and an app that runs in
+#    a Mac's simulator. It cannot be installed on an iPhone: that needs a signed
+#    build and the Apple Developer account (`docs/go-to-production.md` §6).
+#
+# It is a manual workflow, plus tags and changes to the shell itself. macOS runners
+# cost several times a Linux minute, which is why this does not run on every push.
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub environment whose settings the build uses
+        type: choice
+        options: [dev, pro]
+        default: dev
+  push:
+    tags: ['mobile-v*']
+  pull_request:
+    paths:
+      - 'apps/mobile/**'
+      - '.github/workflows/mobile-build.yml'
+
+concurrency:
+  group: mobile-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    name: Android debug APK
+    runs-on: ubuntu-24.04
+    environment: ${{ inputs.environment || 'dev' }}
+    timeout-minutes: 30
+    env:
+      # Where the shell loads the Members App from, and the Google clients it is
+      # built with: the same values the web build gets (`deploy-member.yml`), so
+      # the app and the web it loads cannot disagree.
+      # One app per environment (#1077): dev is its own app id, so it installs beside
+      # the pro app instead of over it. A third environment adds a profile file.
+      MOBILE_APP_PROFILE: ${{ (inputs.environment || 'dev') == 'pro' && 'cordel-fitness' || 'cordel-fitness-dev' }}
+      MOBILE_SERVER_URL: ${{ vars.CORDEL_FITNESS_MEMBERS_URL }}
+      MOBILE_GOOGLE_IOS_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
+      MOBILE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+      MOBILE_ALLOW_NAVIGATION_VAR: ${{ vars.MOBILE_ALLOW_NAVIGATION }}
+      ANDROID_DEBUG_KEYSTORE_B64: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          # The Capacitor CLI refuses to run below Node 22, unlike the web apps' 20.
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - run: npm ci
+
+      - name: Build settings
+        run: |
+          # `MOBILE_ALLOW_NAVIGATION` is exported only when set: an empty value is
+          # read as "an empty list" and would blank the profile's own, which is
+          # the hosts the sign-in is allowed to move through (the Clerk host).
+          if [ -n "$MOBILE_ALLOW_NAVIGATION_VAR" ]; then
+            echo "MOBILE_ALLOW_NAVIGATION=$MOBILE_ALLOW_NAVIGATION_VAR" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No MOBILE_ALLOW_NAVIGATION variable in this environment; the shell will allow only its own host, so a Clerk sign-in that redirects through Clerk's host will open Safari/Chrome instead."
+          fi
+
+      - name: Debug keystore
+        run: |
+          mkdir -p "$HOME/.android"
+          if [ -n "$ANDROID_DEBUG_KEYSTORE_B64" ]; then
+            echo "$ANDROID_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+            # AGP reads the debug key from the Android user home, which an env
+            # variable can move; write the same file there too.
+            for dir in "${ANDROID_USER_HOME:-}" "${ANDROID_SDK_HOME:-}"; do
+              if [ -n "$dir" ]; then mkdir -p "$dir" && cp "$HOME/.android/debug.keystore" "$dir/debug.keystore"; fi
+            done
+            EXPECTED=$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -alias androiddebugkey -storepass android -keypass android 2>/dev/null | grep 'SHA1:' | head -1 | sed 's/.*SHA1: //' | tr -d ':' | tr 'A-F' 'a-f')
+            echo "EXPECTED_SIGNER_SHA1=$EXPECTED" >> "$GITHUB_ENV"
+            echo "Restored debug keystore, SHA-1 ${EXPECTED:-unreadable}; ANDROID_USER_HOME=${ANDROID_USER_HOME:-unset} ANDROID_SDK_HOME=${ANDROID_SDK_HOME:-unset}"
+          else
+            echo "::warning::No ANDROID_DEBUG_KEYSTORE_B64 secret: Gradle will create a new debug key, whose SHA-1 is not the one registered for Google sign-in."
+          fi
+
+      - name: Android SDK
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Apply the app profile and sync
+        working-directory: apps/mobile
+        run: |
+          npm run profile:apply
+          npx cap sync android
+
+      - name: Build the debug APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Name and describe the APK
+        id: apk
+        run: |
+          SRC=apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          ENV_NAME="${{ inputs.environment || 'dev' }}"
+          NAME="cordel-fitness-${ENV_NAME}-${GITHUB_SHA::8}.apk"
+          cp "$SRC" "$NAME"
+          # Gradle's debug signing picked its own key in CI even with the shared
+          # keystore in place, so the APK is signed explicitly with it instead.
+          if [ -n "${EXPECTED_SIGNER_SHA1:-}" ]; then
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+              --ks "$HOME/.android/debug.keystore" --ks-key-alias androiddebugkey \
+              --ks-pass pass:android --key-pass pass:android "$NAME"
+          fi
+          SIGNER=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$NAME" | grep 'SHA-1' | head -1 | sed 's/.*: //')
+          SIZE=$(du -h "$NAME" | cut -f1)
+          # The keystore secret exists to keep the signer stable. If it was restored
+          # and the APK is signed with something else, fail here rather than hand
+          # out a build whose Google sign-in is refused.
+          if [ -n "${EXPECTED_SIGNER_SHA1:-}" ] && [ "$(echo "$SIGNER" | tr -d ':' | tr 'A-F' 'a-f')" != "$EXPECTED_SIGNER_SHA1" ]; then
+            echo "::error::The APK is signed with $SIGNER, not the restored debug keystore ($EXPECTED_SIGNER_SHA1)."
+            exit 1
+          fi
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Android debug APK"
+            echo "- File: \`$NAME\` ($SIZE)"
+            echo "- App: \`$(node -p "require('./apps/mobile/profiles/$MOBILE_APP_PROFILE.json').appId")\` (profile \`$MOBILE_APP_PROFILE\`)"
+            echo "- Environment: \`$ENV_NAME\` (loads \`$MOBILE_SERVER_URL\`)"
+            echo "- Signer SHA-1: \`$SIGNER\` — must be the one registered in the Google Android OAuth client"
+            echo "- Install: download the artifact below, unzip, open the APK on the phone (allow installs from that app)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.apk.outputs.name }}
+          path: ${{ steps.apk.outputs.name }}
+          if-no-files-found: error
+          retention-days: 30
+
+  ios-simulator:
+    name: iOS simulator build (unsigned)
+    runs-on: macos-latest
+    environment: ${{ inputs.environment || 'dev' }}
+    timeout-minutes: 45
+    env:
+      # One app per environment (#1077): dev is its own app id, so it installs beside
+      # the pro app instead of over it. A third environment adds a profile file.
+      MOBILE_APP_PROFILE: ${{ (inputs.environment || 'dev') == 'pro' && 'cordel-fitness' || 'cordel-fitness-dev' }}
+      MOBILE_SERVER_URL: ${{ vars.CORDEL_FITNESS_MEMBERS_URL }}
+      MOBILE_GOOGLE_IOS_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID }}
+      MOBILE_GOOGLE_WEB_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID }}
+      MOBILE_ALLOW_NAVIGATION_VAR: ${{ vars.MOBILE_ALLOW_NAVIGATION }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          # The Capacitor CLI refuses to run below Node 22, unlike the web apps' 20.
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build settings
+        run: |
+          if [ -n "$MOBILE_ALLOW_NAVIGATION_VAR" ]; then
+            echo "MOBILE_ALLOW_NAVIGATION=$MOBILE_ALLOW_NAVIGATION_VAR" >> "$GITHUB_ENV"
+          else
+            echo "::warning::No MOBILE_ALLOW_NAVIGATION variable in this environment; the shell will allow only its own host."
+          fi
+
+      - name: Apply the app profile and sync
+        working-directory: apps/mobile
+        run: |
+          npm run profile:apply
+          npx cap sync ios
+
+      - name: Build for the simulator
+        working-directory: apps/mobile
+        run: |
+          xcodebuild \
+            -project ios/App/App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package the .app
+        id: app
+        run: |
+          NAME="cordel-fitness-${{ inputs.environment || 'dev' }}-${GITHUB_SHA::8}-ios-simulator.zip"
+          ditto -c -k --keepParent apps/mobile/build/Build/Products/Debug-iphonesimulator/App.app "$NAME"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          {
+            echo "### iOS simulator build (unsigned)"
+            echo "- File: \`$NAME\` ($(du -h "$NAME" | cut -f1))"
+            echo "- Runs in a Mac's iOS Simulator only. It cannot be installed on an iPhone (needs a signed build and an Apple Developer account)."
+            APP_ID=$(node -p "require('./apps/mobile/profiles/$MOBILE_APP_PROFILE.json').appId")
+            echo "- App: \`$APP_ID\` (profile \`$MOBILE_APP_PROFILE\`)"
+            echo "- Try it: \`unzip\`, then \`xcrun simctl install booted App.app && xcrun simctl launch booted $APP_ID\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.app.outputs.name }}
+          path: ${{ steps.app.outputs.name }}
+          if-no-files-found: error
+          retention-days: 14

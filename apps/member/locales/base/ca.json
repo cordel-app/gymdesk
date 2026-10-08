@@ -15,6 +15,8 @@
     "no_membership": "Sense quota activa.",
     "products_services": "Els Meus Productes",
     "active_products": "{count, plural, one {# producte actiu} other {# productes actius}}",
+    "no_plan": "Sense pla",
+    "additional_products": "{count, plural, one {# producte addicional} other {# productes addicionals}}",
     "expires_on": "Venç el {date}",
     "class_credits": "Crèdits de classes",
     "credits_remaining": "sessions disponibles",
@@ -22,7 +24,6 @@
     "greeting_afternoon": "Bona tarda, {name}",
     "greeting_evening": "Bona nit, {name}",
     "view_booking": "Veure reserva",
-    "browse_calendar": "Veure calendari",
     "alerts_view_all": "Veure alertes",
     "nutrition_today": "Nutrició d'avui",
     "goals": "Objectius",
@@ -102,7 +103,15 @@
     "payment_status_ok": "Al dia",
     "payment_status_pending": "Pagament pendent",
     "payment_status_failed": "Pagament fallit",
-    "no_center": "Sense centre assignat"
+    "no_center": "Sense centre assignat",
+    "label_clerk_status": "Estat de Clerk",
+    "label_clerk_invitation": "Invitació de Clerk",
+    "clerk_status_enrolled_on": "Registrat · {date}",
+    "clerk_status_enrolled": "Registrat",
+    "clerk_status_not_enrolled": "No registrat",
+    "clerk_invitation_invited_on": "Convidat · {date}",
+    "clerk_invitation_invited": "Convidat",
+    "clerk_invitation_none": "Cap"
   },
   "packages": {
     "title": "Els meus bons",

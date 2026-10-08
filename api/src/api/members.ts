@@ -200,23 +200,25 @@ membersRouter.get('/:id/products', async (req, res, next) => {
 membersRouter.get('/:id/clerk-status', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query<any>(
-    'SELECT clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    'SELECT clerk_user_id, invitation_id, invited_at, enrolled_at FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [req.params.id, gymId],
   );
   if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
 
-  const { clerk_user_id, invitation_id } = rows[0];
+  const { clerk_user_id, invitation_id, invited_at, enrolled_at } = rows[0];
+  // #1234: the dates are history, reported as stored and independent of the status.
+  const dates = { invited_at: invited_at ?? null, enrolled_at: enrolled_at ?? null, has_pending_invitation: !!invitation_id };
 
   if (!clerk_user_id) {
-    return res.json({ status: invitation_id ? 'invited' : 'not_enrolled', userId: null });
+    return res.json({ status: invitation_id ? 'invited' : 'not_enrolled', userId: null, ...dates });
   }
 
   try {
     const user = await clerkClient.users.getUser(clerk_user_id);
     const status = user.banned || user.locked ? 'suspended' : 'active';
-    return res.json({ status, userId: clerk_user_id });
+    return res.json({ status, userId: clerk_user_id, ...dates });
   } catch (err: any) {
-    if (err.status === 404) return res.json({ status: 'error', userId: clerk_user_id });
+    if (err.status === 404) return res.json({ status: 'error', userId: clerk_user_id, ...dates });
     next(err);
   }
 });
@@ -323,7 +325,7 @@ membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res
       redirectUrl: `${memberAppUrl}/en/link?gym_id=${gymId}`,
       publicMetadata: memberInviteMetadata(gymId, String(req.params.id)),
     });
-    await db.query('UPDATE members SET invitation_id = ? WHERE id = ?', [invitation.id, req.params.id]);
+    await db.query('UPDATE members SET invitation_id = ?, invited_at = UTC_TIMESTAMP() WHERE id = ?', [invitation.id, req.params.id]);
     recordAudit(req, { action: 'invite', entityType: 'member', entityId: req.params.id, next: { email: rows[0].email } });
     res.json({ ok: true });
   } catch (err: any) {
@@ -351,7 +353,7 @@ membersRouter.post('/:id/reinvite', requireModuleWrite('MEMBERS'), async (req, r
       redirectUrl: `${memberAppUrl}/en/link?gym_id=${gymId}`,
       publicMetadata: memberInviteMetadata(gymId, String(req.params.id)),
     });
-    await db.query('UPDATE members SET invitation_id = ? WHERE id = ?', [invitation.id, req.params.id]);
+    await db.query('UPDATE members SET invitation_id = ?, invited_at = UTC_TIMESTAMP() WHERE id = ?', [invitation.id, req.params.id]);
     recordAudit(req, { action: 'reinvite', entityType: 'member', entityId: req.params.id, next: { email: rows[0].email } });
     res.json({ ok: true });
   } catch (err: any) {

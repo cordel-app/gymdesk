@@ -15,6 +15,8 @@
     "no_membership": "No active membership.",
     "products_services": "My Products",
     "active_products": "{count, plural, one {# active product} other {# active products}}",
+    "no_plan": "No plan",
+    "additional_products": "{count, plural, one {# additional product} other {# additional products}}",
     "expires_on": "Expires {date}",
     "class_credits": "Class credits",
     "credits_remaining": "sessions remaining",
@@ -22,7 +24,6 @@
     "greeting_afternoon": "Good afternoon, {name}",
     "greeting_evening": "Good evening, {name}",
     "view_booking": "View booking",
-    "browse_calendar": "Browse calendar",
     "alerts_view_all": "View alerts",
     "nutrition_today": "Today's Nutrition Plan",
     "goals": "Goals",
@@ -102,7 +103,15 @@
     "payment_status_ok": "Up to date",
     "payment_status_pending": "Payment pending",
     "payment_status_failed": "Payment failed",
-    "no_center": "No center set"
+    "no_center": "No center set",
+    "label_clerk_status": "Clerk Status",
+    "label_clerk_invitation": "Clerk Invitation",
+    "clerk_status_enrolled_on": "Enrolled · {date}",
+    "clerk_status_enrolled": "Enrolled",
+    "clerk_status_not_enrolled": "Not enrolled",
+    "clerk_invitation_invited_on": "Invited · {date}",
+    "clerk_invitation_invited": "Invited",
+    "clerk_invitation_none": "None"
   },
   "packages": {
     "title": "My packages",
