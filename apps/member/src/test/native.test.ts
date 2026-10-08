@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import {
   appleIdToken,
@@ -288,34 +288,35 @@ describe('safe areas', () => {
 
 describe('which sign-in button renders', () => {
   const page = read('app', '[locale]', 'sign-in', '[[...sign-in]]', 'page.tsx');
-  const button = read('components', 'NativeGoogleButton.tsx');
+  const hook = read('lib', 'useNativeGoogleSignIn.ts');
 
-  it('hides Clerk’s Google button only in the app', () => {
-    // `appearance` is `undefined` on the web, so the sign-in screen is byte-for-
-    // byte what it was — the ticket's first acceptance criterion.
-    expect(page).toContain('socialButtonsBlockButton__google');
-    expect(page).toContain('socialButtonsIconButton__google');
+  it('keeps Clerk’s Google button, so the app and the web look the same (#1077)', () => {
+    // Clerk's button stays — logo, label and place — and a tap on it is swapped for
+    // the native sheet. It is hidden only where the sheet cannot work.
+    expect(page).toContain('onClickCapture={swapGoogleForNative}');
+    expect(page).toContain('.cl-socialButtonsBlockButton__google');
+    expect(page).toContain('...(google.available ? {} : NO_NATIVE_GOOGLE_ELEMENTS)');
     expect(page).toContain('appearance={native ? { elements: nativeElements } : undefined}');
+    expect(existsSync(join(SRC, 'components', 'NativeGoogleButton.tsx'))).toBe(false);
   });
 
-  it('renders the native button only in the app, and only when it can work', () => {
-    expect(page).toContain('<NativeGoogleButton />');
-    expect(button).toContain('const native = useIsNative();');
-    expect(button).toContain('if (!native || !config) return null;');
+  it('swaps the action only in the app, and only when the sheet can work', () => {
+    expect(hook).toContain('const available = native && config !== null;');
+    expect(page).toContain('if (!google.available) return;');
   });
 
   it('resolves “native” after mount rather than during render', () => {
     // Asking during render would make the server emit the web markup and the
     // client the native markup — a hydration mismatch React resolves by throwing
     // the client tree away.
-    const hook = readFileSync(join(SRC, 'lib', 'useIsNative.ts'), 'utf-8');
-    expect(hook).toContain('useEffect');
-    expect(hook).toContain('useState(false)');
+    const useIsNativeSrc = readFileSync(join(SRC, 'lib', 'useIsNative.ts'), 'utf-8');
+    expect(useIsNativeSrc).toContain('useEffect');
+    expect(useIsNativeSrc).toContain('useState(false)');
   });
 
   it('hands Clerk the native token rather than a redirect', () => {
-    expect(button).toContain('authenticateWithGoogleOneTap');
-    expect(button).not.toContain('window.location');
+    expect(hook).toContain('authenticateWithGoogleOneTap');
+    expect(hook).not.toContain('window.location');
   });
 });
 
@@ -414,7 +415,7 @@ describe('plugin loaders never resolve a bare plugin (#1077)', () => {
   it('reads .plugin at every call site', () => {
     expect(read('components', 'NativeShell.tsx')).toContain('loadedApp?.plugin');
     expect(read('components', 'NativeShell.tsx')).toContain('loadedPush?.plugin');
-    expect(read('components', 'NativeGoogleButton.tsx')).toContain('(await loadSocialLogin())?.plugin');
+    expect(read('lib', 'useNativeGoogleSignIn.ts')).toContain('(await loadSocialLogin())?.plugin');
     expect(read('components', 'NativeAppleButton.tsx')).toContain('(await loadSocialLogin())?.plugin');
   });
 });

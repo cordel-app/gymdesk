@@ -14,7 +14,7 @@ import { memberTheme, noticeStyle, secondaryButtonStyle } from '@/lib/memberChro
  *
  * App Store guideline 4.8 asks for an equivalent privacy-preserving login when
  * the app offers a third-party one (Google), and this is that option. It is
- * `NativeGoogleButton`'s twin and obeys the same rules.
+ * the app's own button and obeys WP2's rules (the Google action is `useNativeGoogleSignIn`).
  *
  * **It does not exist on the web, on Android, or in a build that cannot use it.**
  * `appleNativeConfig()` answers `null` unless the platform is iOS and the
