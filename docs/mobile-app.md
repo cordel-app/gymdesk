@@ -53,7 +53,17 @@ Facts learned that the code must respect:
 - The Bundle ID lives in the Xcode project (`PRODUCT_BUNDLE_IDENTIFIER`), not in
   `capacitor.config`. A Google iOS client is bound to it.
 - Simulator builds need an ad-hoc signature plus a `keychain-access-groups` entitlement, or Google
-  Sign-In fails with `keychain error`.
+  Sign-In fails with `keychain error` (a build made with `CODE_SIGNING_ALLOWED=NO` embeds no
+  entitlements at all — use `CODE_SIGN_IDENTITY=-`).
+- Handing Clerk the token is **three calls, not one** (#1285, learned on the first real device and
+  the Android emulator): `authenticateWithGoogleOneTap()` only *returns* a sign-in resource, so
+  `handleGoogleOneTapCallback()` is what activates the session and navigates (without it the app
+  sat on the login with no error); the Google library keeps its own session, so it is cleared with
+  `logout({ provider: 'google' })` before every `login()` (after a Clerk sign-out it silently
+  replayed the previous token, which Clerk refuses as `authorization_invalid`); and the token is
+  requested **with a random `nonce`**, because Clerk refused an Android token (`azp` = the Android
+  client) without one while iOS passed — Clerk's own Android SDK always sets one. Clerk's
+  *Native applications* registration is **not** needed for this.
 - The first WebView load on a clean install is very slow (close to a minute in the simulator):
   show a splash/loading screen.
 - The header currently renders under the status bar: `TopBar` needs `safe-area-inset-top`.
@@ -213,14 +223,17 @@ because WP3 builds the shell against these choices.
   new surface has to remember a runtime branch. The top inset is `TopBar`'s **own padding**, so
   the strip under the status bar carries the header's themed background rather than the page
   behind it; the bottom inset is the layout's, once, for every route's last control. The two
-  superadmin bars (`AdminBar`, `ImpersonationBanner`) are deliberately untouched — they are
-  support chrome, outside the Theme and outside this.
+  superadmin bars (`AdminBar`, `ImpersonationBanner`) carry the top inset too since #1294 — on an
+  iPhone the *Impersonate* button sat under the status bar — and `TopBar` skips its own for a
+  superadmin, who has one of them above it.
 - **The native Google button does not exist unless it can work.** No bridge, or no Google client
   ids in the build, renders nothing at all and leaves the ordinary email-and-password form —
   rather than a control that fails when tapped. The ids are build args
   (`NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID`, wired through
   `apps/member/Dockerfile` and `deploy-member.yml`), per design rule 1. A dismissed sheet returns
-  no token and is not an error; only the plugin throwing or Clerk refusing the token says so.
+  no token and is not an error; only the plugin throwing or Clerk refusing the token says so — and
+  since #1285 the refusal is shown under the notice (`signInErrorDetail()`), because the three
+  failures of §3's "three calls" all looked identical until it was.
 - **Clerk's own Google button is hidden through `appearance`**, both button shapes and the
   divider with them, *only* when native — on the web `appearance` is `undefined` and the sign-in
   screen is unchanged. WP3b adds the Apple button below the card beside the Google one and
