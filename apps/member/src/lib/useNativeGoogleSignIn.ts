@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useClerk } from '@clerk/nextjs';
-import { googleIdToken, googleNativeConfig, nativePlatform } from '@/lib/native';
+import { googleIdToken, googleNativeConfig, nativePlatform, signInErrorDetail } from '@/lib/native';
 import { loadSocialLogin } from '@/lib/nativePlugins';
 import { useIsNative } from '@/lib/useIsNative';
 
@@ -45,6 +45,7 @@ export function useNativeGoogleSignIn() {
   const clerk = useClerk();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [detail, setDetail] = useState<string | null>(null);
 
   const config = googleNativeConfig(
     {
@@ -58,6 +59,7 @@ export function useNativeGoogleSignIn() {
   async function signIn() {
     if (!config || busy) return;
     setFailed(false);
+    setDetail(null);
     setBusy(true);
     try {
       const socialLogin = (await loadSocialLogin())?.plugin ?? null;
@@ -71,12 +73,16 @@ export function useNativeGoogleSignIn() {
       // No token means the member dismissed the sheet — nothing happened.
       if (!token) return;
       await (clerk as any).authenticateWithGoogleOneTap({ token });
-    } catch {
+    } catch (err) {
+      // #1285: the notice is the same for every cause, so the cause is logged
+      // and kept for the page to show in development builds.
+      console.error('Native Google sign-in failed', err);
+      setDetail(signInErrorDetail(err));
       setFailed(true);
     } finally {
       setBusy(false);
     }
   }
 
-  return { native, available, busy, failed, signIn };
+  return { native, available, busy, failed, detail, signIn };
 }

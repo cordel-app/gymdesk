@@ -332,3 +332,22 @@ export function appIdFromInfo(info: unknown): string | null {
   const id = (info as { id?: unknown } | null | undefined)?.id;
   return typeof id === 'string' && id.trim() ? id.trim() : null;
 }
+
+/**
+ * #1285 — what went wrong in a native sign-in, as one short line for a developer.
+ *
+ * The hook used to swallow the error, so a failed Google sign-in showed the same
+ * notice whether the sheet, the token or Clerk had refused. A Clerk error carries
+ * `errors[0].code` / `longMessage`; anything else its own `message`. Pure: the
+ * hook decides whether to show it (development builds only).
+ */
+export function signInErrorDetail(err: unknown): string {
+  const e = err as { errors?: Array<{ code?: string; longMessage?: string; message?: string }>; message?: unknown } | null;
+  const clerk = e?.errors?.[0];
+  if (clerk) {
+    const parts = [clerk.code, clerk.longMessage ?? clerk.message].filter((v) => typeof v === 'string' && v.trim());
+    if (parts.length) return parts.join(': ').slice(0, 300);
+  }
+  if (typeof e?.message === 'string' && e.message.trim()) return e.message.trim().slice(0, 300);
+  return typeof err === 'string' && err.trim() ? err.trim().slice(0, 300) : 'unknown error';
+}
