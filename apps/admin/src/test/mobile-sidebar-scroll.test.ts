@@ -129,6 +129,10 @@ describe('mobile sidebar: bounded drawer (#883)', () => {
     expect(cssRule(desktop, '.sidebar-wrapper')).toContain('position: relative');
     // No height or overflow rule is imposed on the desktop wrapper.
     expect(cssRule(desktop, '.sidebar-wrapper')).not.toMatch(/height|overflow/);
+    // #1242: the viewport bound lives on the panel, so the nav scrolls on wheel.
+    const panel = cssRule(desktop, '.sidebar-panel');
+    expect(panel).toContain('position: sticky');
+    expect(panel).toMatch(/height: calc\(100dvh/);
   });
 
   it('freezes the page behind the open drawer, on mobile only', () => {

@@ -124,6 +124,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             position: relative;
             left: 0 !important;
           }
+          /* #1242: on desktop the page scrolls, so the sidebar is pinned under
+             the top bar and bounded to the viewport; the nav inside it is then
+             the scroll container the mouse wheel acts on. The bound is on the
+             panel, never the wrapper, which stays a plain relative column. */
+          .sidebar-panel {
+            position: sticky;
+            top: var(--gd-top-bar-h, 52px);
+            flex: none !important;
+            height: calc(100vh - var(--gd-top-bar-h, 52px));
+            height: calc(100dvh - var(--gd-top-bar-h, 52px));
+          }
         }
       `}</style>
     </>
