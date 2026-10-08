@@ -67,6 +67,7 @@
     "add_set": "+ Add set",
     "save_log": "Save log",
     "mark_done": "Mark done",
+    "block_rounds": "{count, plural, one {# round} other {# rounds}}",
     "block_type_standard": "Standard",
     "block_type_superset": "Superset",
     "block_type_triset": "Triset",

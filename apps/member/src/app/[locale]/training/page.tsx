@@ -186,7 +186,10 @@ export default function TrainingPage() {
                   <div style={{ flex: 1 }}>
                     <div style={styles.blockName}>
                       {block.name ?? t(`training.block_type_${block.type.toLowerCase()}`)}
-                      <span style={styles.blockTypeBadge}>{t(`training.block_type_${block.type.toLowerCase()}`)}</span>
+                      <span style={styles.blockTypeBadge}>
+                        {t(`training.block_type_${block.type.toLowerCase()}`)}
+                        {block.rounds ? ` · ${t('training.block_rounds', { count: block.rounds })}` : ''}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -278,8 +281,8 @@ const styles: Record<string, React.CSSProperties> = {
   blockName: { fontSize: 14, fontWeight: 700, color: memberTheme.text, display: 'flex', alignItems: 'center', gap: 8 },
   blockTypeBadge: {
     fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px',
-    color: memberTheme.primaryButton,
-    background: `color-mix(in srgb, ${memberTheme.primaryButton} 12%, ${memberTheme.surface})`,
+    color: memberTheme.title2,
+    background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})`,
   },
   exerciseCard: { marginTop: 8, marginLeft: 8 },
   exerciseHead: { display: 'flex', gap: 8, alignItems: 'center' },
