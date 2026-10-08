@@ -220,10 +220,13 @@ the two have different app ids and install side by side instead of one over the 
 four apps in all — Android and iOS, dev and pro — but only two ids, and a third environment is a
 third profile file. Each app id needs its **own** Google clients (an Android client per package +
 SHA-1, an iOS client per bundle ID), Firebase app, `FCM_SERVICE_ACCOUNTS` /
-`MOBILE_APP_ASSOCIATIONS` entry and Apple App ID. Known gaps for the dev app id (#1077): the
-Google clients exist only for `com.cordel.fitness`; push registration does not name its app id,
-so the API files every token under the default one; and the dev web build's
-`MOBILE_APP_SCHEME` still reads `com.cordel.fitness`, which is the *pro* scheme.
+`MOBILE_APP_ASSOCIATIONS` entry and Apple App ID. The dev app id has its Google clients in project
+`cordel-fitness-pro` (an Android client for `com.cordel.fitness.dev` with the shared debug SHA-1
+and an iOS client for that bundle ID, which is what the `dev` environment's
+`NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` points at). Known gaps (#1077): push registration does not
+name its app id, so the API files every token under the default one; and the dev web build's
+`MOBILE_APP_SCHEME` still reads `com.cordel.fitness`, which is the *pro* scheme, until the dev
+app replaces the one already handed out.
 
 Per-environment inputs: `CORDEL_FITNESS_MEMBERS_URL` (variable, already used by the web deploy),
 `MOBILE_ALLOW_NAVIGATION` (variable — **must include the Clerk Frontend API host**, see §2),
