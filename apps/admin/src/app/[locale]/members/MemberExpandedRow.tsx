@@ -36,6 +36,7 @@ import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGo
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
   formatProfileDate,
+  memberGenderLabelKey,
   newMemberAnnounceKey,
   newMemberValueKey,
   type MemberProfile,
@@ -335,7 +336,11 @@ export function MemberExpandedRow({
                   fieldLabel={(f) => t(`members.${f.labelKey}`)}
                   renderField={(f) => (
                     <p style={profileValueStyle}>
-                      {(f.kind === 'date' ? formatProfileDate(member[f.key]) : member[f.key]?.trim()) || EMPTY_VALUE}
+                      {(f.kind === 'date'
+                        ? formatProfileDate(member[f.key])
+                        : f.kind === 'gender' && memberGenderLabelKey(member[f.key])
+                          ? t(`members.${memberGenderLabelKey(member[f.key])}`)
+                          : member[f.key]?.trim()) || EMPTY_VALUE}
                     </p>
                   )}
                   /* #927: calculated by the server from the Member's Membership
