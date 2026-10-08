@@ -118,19 +118,15 @@ describe('nothing else about the card changes (#1116 §4)', () => {
     expect(grid).toContain("featureEnabled('member_web.my_membership')");
     expect(grid).toContain('`/${locale}/membership`');
     expect(grid).toContain('membership.plan_name');
-    expect(grid).toContain("t('home.expires_on'");
-    expect(grid).toContain("t('membership.ongoing')");
-    expect(grid).toContain("t('home.no_membership')");
-  });
-
-  it('keeps the Active badge, in the shared status tone (#983)', () => {
-    expect(grid).toContain('<StatusPill status={membership.status}');
-    expect(homeSrc).toContain('statusPillStyle(statusTone(status))');
+    // #1218: "{plan} ({status})" or "No plan", then the additional-products count.
+    expect(grid).toContain("t(`membership.status.${membership.status}`)");
+    expect(grid).toContain("t('home.no_plan')");
+    expect(grid).toContain("t('home.additional_products'");
   });
 
   it('spells no colour of its own — the surface and the border are the theme\'s', () => {
     const style = homeSrc.match(/productsTile:\s*{[^}]*}/)![0]
-      + homeSrc.match(/productsStatusRow:\s*{[^}]*}/)![0];
+      + homeSrc.match(/productsInfo:\s*{[^}]*}/)![0];
     // `sectionCardStyle` carries the background and the Section Cards border
     // (#983/#833); the only literal here is the tiles' own neutral shadow.
     expect(style).not.toMatch(/#[0-9a-fA-F]{3,8}/);
