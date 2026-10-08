@@ -1353,7 +1353,9 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 - [ ] Check an invitation link opens the app from **Notes** and from **Mail**, on iOS and
       Android, and that the same link still works in a browser with the app not installed. Known
       caveat, not a defect: some in-app browsers (a mail client's own WebView, Gmail on Android)
-      do not trigger a universal link at all.
+      do not trigger a universal link at all. A Clerk invitation email always links to Clerk's own
+      domain, so its tap opens the browser; `/link` then offers *Open in the app* (set GitHub variable
+      `MOBILE_APP_SCHEME` to the profile's custom URL scheme, `com.cordel.fitness`).
 - [ ] Push: set `FCM_SERVICE_ACCOUNTS` in the production API environment (#1072 — a JSON object
       keyed by app id; set it **base64-encoded** in GitHub, since `deploy.yml` writes the API's
       environment as one `KEY=value` line each into an env file, #1192) and `MOBILE_DEFAULT_APP_ID` if the

@@ -170,7 +170,7 @@ project from §2.
 | 8 | Sign in as a different member on the **same** handset, then notify the first member | No banner on that handset: `UNIQUE (platform, token)` is global and the `POST` re-points the row to whoever signed in last (#1072) |
 | 9 | Release the Members App web build while the app is open and reopen it | The new web release is live with no store review (§2 of the plan) |
 | 10 | `curl -i https://<members host>/.well-known/apple-app-site-association` and `…/assetlinks.json` | `200`, `Content-Type: application/json`, **no redirect**, and the `appID` / `package_name` of this build. A `404` means `MOBILE_APP_ASSOCIATIONS` is unset (#1076) |
-| 11 | Tap an invitation link in **Notes** and in **Mail**, on each phone | The app opens and `/{locale}/link` completes the invitation. On Android check `adb shell pm get-app-links <package>` reads `verified` first — an unverified domain opens the browser |
+| 11 | Tap an invitation link in **Notes** and in **Mail**, on each phone | A link on our own domain opens the app. A real **Clerk** invitation email links to Clerk's domain, so it opens the browser on `/{locale}/link`, which offers **Open in the app**: tapping it opens the app and completes the invitation (needs `NEXT_PUBLIC_MOBILE_APP_SCHEME` in the Members App build, GitHub variable `MOBILE_APP_SCHEME`). On Android check `adb shell pm get-app-links <package>` reads `verified` first — an unverified domain opens the browser |
 | 12 | The same link with the app **not** installed | Opens in the browser and still completes |
 | 13 | The same link from a mail client's own in-app browser | May open in that browser rather than the app. Known caveat, not a defect — the flow never depends on the app receiving the link |
 
