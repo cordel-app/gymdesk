@@ -37,7 +37,8 @@ export function NutritionFoodCard({ item, eager = false }: {
 
   return (
     <article style={styles.card}>
-      <div style={styles.imageBox}>
+      <style>{FOOD_IMAGE_MOBILE_CSS}</style>
+      <div className="gd-food-image" style={styles.imageBox}>
         {imageSrc ? (
           <img
             src={imageSrc}
@@ -69,6 +70,15 @@ export function NutritionFoodCard({ item, eager = false }: {
     </article>
   );
 }
+
+/**
+ * #1241 — on a phone the 1:1 image is a third of the screen; shrink it (still
+ * square, still centred) so more of the meal is visible. Inline styles cannot
+ * carry a media query, hence a rule in a sheet (`!important` beats the inline
+ * width). Desktop and tablet keep the full-width image.
+ */
+export const FOOD_IMAGE_MOBILE_CSS =
+  '@media (max-width: 768px) { .gd-food-image { width: 50% !important; margin: 0 auto; } }';
 
 const styles: Record<string, React.CSSProperties> = {
   card:        { ...sectionCardStyle, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' },
