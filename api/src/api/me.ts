@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createClerkClient } from '@clerk/backend';
+import { parseBlockLogResult } from '../domain/blockResultUnits';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
@@ -1426,7 +1427,7 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows: blockRows } = await db.query(
-      `SELECT 1 FROM workout_blocks wb
+      `SELECT wb.result_unit FROM workout_blocks wb
        JOIN workouts w ON w.id = wb.workout_id
        JOIN training_plans tp ON tp.id = w.training_plan_id
        WHERE wb.id = ? AND wb.gym_id = ? AND tp.member_id = ? AND wb.deleted_at IS NULL`,
@@ -1434,11 +1435,16 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
     );
     if (blockRows.length === 0) return res.status(403).json({ error: 'You can only log against your own training plan.' });
 
+    // #1232: the result is judged against the block's configured unit, and
+    // that unit is snapshotted onto the log beside the value.
+    const result = parseBlockLogResult(blockRows[0].result_unit ?? null, result_value);
+    if (typeof result === 'string') return res.status(400).json({ error: result });
+
     const row = await insertAndFetch(
-      `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date, started_at, finished_at, result_value, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date, started_at, finished_at, result_value, result_unit, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, memberId, workout_block_id, logged_date, started_at ?? null, finished_at ?? null,
-       result_value ?? null, notes ?? null],
+       result.value, result.value === null ? null : (blockRows[0].result_unit ?? null), notes ?? null],
       'SELECT * FROM workout_block_logs WHERE id = ?',
       (id) => [id],
     );
@@ -1456,15 +1462,33 @@ meRouter.put('/workout-block-logs/:id', requireRole('member'), requireFeatureEna
   const { started_at, finished_at, result_value, notes } = req.body;
   try {
     const memberId = await resolveMemberId(gymId, ctx);
+    // #1232: a supplied result is judged against the block's *current* unit
+    // and re-snapshots it; an omitted one leaves value and unit as recorded.
+    let resultValue: string | null = null;
+    let resultUnit: string | null = null;
+    if ('result_value' in req.body) {
+      const { rows: unitRows } = await db.query(
+        `SELECT wb.result_unit FROM workout_block_logs wbl
+         JOIN workout_blocks wb ON wb.id = wbl.workout_block_id
+         WHERE wbl.id = ? AND wbl.gym_id = ? AND wbl.member_id = ?`,
+        [req.params.id, gymId, memberId],
+      );
+      if (unitRows.length === 0) return res.status(404).json({ error: 'Log not found' });
+      const result = parseBlockLogResult(unitRows[0].result_unit ?? null, result_value);
+      if (typeof result === 'string') return res.status(400).json({ error: result });
+      resultValue = result.value;
+      resultUnit = result.value === null ? null : (unitRows[0].result_unit ?? null);
+    }
     const { rowCount } = await db.query(
       `UPDATE workout_block_logs SET
         started_at = IF(?, ?, started_at), finished_at = IF(?, ?, finished_at),
-        result_value = IF(?, ?, result_value), notes = IF(?, ?, notes),
+        result_value = IF(?, ?, result_value), result_unit = IF(?, ?, result_unit), notes = IF(?, ?, notes),
         modified_at = UTC_TIMESTAMP(), modified_by_member_id = ?
        WHERE id = ? AND gym_id = ? AND member_id = ?`,
       ['started_at' in req.body ? 1 : 0, started_at ?? null,
        'finished_at' in req.body ? 1 : 0, finished_at ?? null,
-       'result_value' in req.body ? 1 : 0, result_value ?? null,
+       'result_value' in req.body ? 1 : 0, resultValue,
+       'result_value' in req.body ? 1 : 0, resultUnit,
        'notes' in req.body ? 1 : 0, notes ?? null,
        memberId, req.params.id, gymId, memberId],
     );

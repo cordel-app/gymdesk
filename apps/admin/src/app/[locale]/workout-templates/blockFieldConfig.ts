@@ -101,3 +101,24 @@ export const BLOCK_TYPE_MAX_EXERCISES: Record<string, number | null> = {
   AMRAP: null,
   Tabata: null,
 };
+
+/**
+ * #1232: mirror of `api/src/domain/blockResultUnits.ts` — which block types
+ * record a global result and in which units. The API validates; this only
+ * decides what the Result Unit select offers.
+ */
+export const BLOCK_TYPE_RESULT_UNITS: Record<string, readonly string[]> = {
+  Circuit: ['rounds', 'reps', 'seconds', 'minutes', 'meters', 'calories'],
+  EMOM: ['rounds', 'reps', 'calories', 'meters'],
+  AMRAP: ['rounds', 'reps', 'calories', 'meters'],
+  Tabata: ['rounds', 'reps', 'calories'],
+};
+
+export function resultUnitsFor(type: string): readonly string[] {
+  return BLOCK_TYPE_RESULT_UNITS[type] ?? [];
+}
+
+/** The unit a block keeps when its type changes: the same one if still allowed, else none. */
+export function resultUnitAfterTypeChange(unit: string | null | undefined, newType: string): string | null {
+  return unit && resultUnitsFor(newType).includes(unit) ? unit : null;
+}

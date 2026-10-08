@@ -7,19 +7,19 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
 import {
-  BLOCK_TYPES, blockConfigInput, blockConfigPatch, getBlockConfig,
+  BLOCK_TYPES, blockConfigInput, blockConfigPatch, getBlockConfig, resultUnitAfterTypeChange,
 } from '../workout-templates/blockFieldConfig';
 import { PlanBlockExercisesModal } from './PlanBlockExercisesModal';
 
 interface Block {
   id: number; position: number; name: string | null; type: string;
   rounds: number | null; duration_seconds: number | null; work_seconds: number | null; rest_seconds: number | null;
-  is_optional: boolean; notes: string | null;
+  is_optional: boolean; notes: string | null; result_unit?: string | null;
 }
 
 const emptyForm = {
   name: '', description: '', type: 'Standard',
-  rounds: '', duration_seconds: '', work_seconds: '', rest_seconds: '', is_optional: false, notes: '',
+  rounds: '', duration_seconds: '', work_seconds: '', rest_seconds: '', is_optional: false, notes: '', result_unit: null as string | null,
 };
 
 export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutName, onClose }: {
@@ -58,7 +58,7 @@ export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutNam
       name: b.name ?? '', description: '', type: b.type,
       rounds: b.rounds != null ? String(b.rounds) : '', duration_seconds: b.duration_seconds != null ? String(b.duration_seconds) : '',
       work_seconds: b.work_seconds != null ? String(b.work_seconds) : '', rest_seconds: b.rest_seconds != null ? String(b.rest_seconds) : '',
-      is_optional: b.is_optional, notes: b.notes ?? '',
+      is_optional: b.is_optional, notes: b.notes ?? '', result_unit: b.result_unit ?? null,
     });
     setError(null);
   }
@@ -73,6 +73,7 @@ export function PlanWorkoutBlocksModal({ memberId, planId, workoutId, workoutNam
       work_seconds: form.work_seconds ? parseInt(form.work_seconds, 10) : null,
       rest_seconds: form.rest_seconds ? parseInt(form.rest_seconds, 10) : null,
       is_optional: form.is_optional, notes: form.notes.trim() || null,
+      result_unit: resultUnitAfterTypeChange(form.result_unit, form.type),
     };
     try {
       if (editingId) await apiFetch(`${base}/${editingId}`, { method: 'PUT', body: JSON.stringify(body) });

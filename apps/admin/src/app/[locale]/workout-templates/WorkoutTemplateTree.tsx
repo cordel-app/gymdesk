@@ -23,7 +23,7 @@ import { HierBlock, HierExercise } from './summaries';
 import { exerciseMatchesQuery, exerciseName } from '@/lib/exerciseNames';
 import {
   BLOCK_TYPES, BLOCK_TYPE_MAX_EXERCISES,
-  blockConfigInput, blockConfigPatch, getBlockConfig,
+  blockConfigInput, blockConfigPatch, getBlockConfig, resultUnitAfterTypeChange, resultUnitsFor,
 } from './blockFieldConfig';
 
 /* Shape returned by GET /workout-templates/:id */
@@ -303,6 +303,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
           rounds: block.rounds, duration_seconds: block.duration_seconds,
           work_seconds: block.work_seconds, rest_seconds: block.rest_seconds,
           is_optional: block.is_optional, notes: block.notes,
+          result_unit: block.result_unit ?? null,
           ...patch,
         }),
       });
@@ -320,6 +321,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
   };
 
   const config = getBlockConfig(type);
+  const resultUnits = resultUnitsFor(type);
   const savedConfig = getBlockConfig(block.type);
 
   return (
@@ -352,7 +354,7 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
               onChange={(e) => {
                 const newType = e.target.value;
                 setType(newType);
-                patchBlock({ type: newType });
+                patchBlock({ type: newType, result_unit: resultUnitAfterTypeChange(block.result_unit, newType) });
               }}
               style={treeHeaderSelectStyle}
             >
@@ -376,6 +378,23 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
                 <span style={treeControlLabelStyle}>{t(config.labelKey)}</span>
               </>
             )}
+            {resultUnits.length > 0 && (
+              <>
+                <span style={treeSeparatorTextStyle}>•</span>
+                <span style={treeControlLabelStyle}>{t('workout_template_blocks.result_unit_label')}</span>
+                <select
+                  aria-label={t('workout_template_blocks.result_unit_label')}
+                  value={block.result_unit && resultUnits.includes(block.result_unit) ? block.result_unit : ''}
+                  onChange={(e) => patchBlock({ result_unit: e.target.value || null })}
+                  style={treeHeaderSelectStyle}
+                >
+                  <option value="">{t('workout_template_blocks.result_unit_none')}</option>
+                  {resultUnits.map((u) => (
+                    <option key={u} value={u}>{t(`workout_template_blocks.result_unit_${u}`)}</option>
+                  ))}
+                </select>
+              </>
+            )}
           </>
         ) : (
           <span style={{ fontWeight: 600, fontSize: 14 }}>
@@ -383,6 +402,11 @@ function BlockRow({ templateId, block, canWrite, exercises, onDuplicate, onDelet
             {savedConfig && blockConfigInput(block) !== '' && (
               <span style={treeSummaryTextStyle}>
                 {t(`workout_template_blocks.type_${block.type.toLowerCase()}`)} • {t(savedConfig.summaryKey, { n: blockConfigInput(block) })}
+              </span>
+            )}
+            {block.result_unit && resultUnitsFor(block.type).includes(block.result_unit) && (
+              <span style={treeSummaryTextStyle}>
+                {t('workout_template_blocks.result_unit_label')}: {t(`workout_template_blocks.result_unit_${block.result_unit}`)}
               </span>
             )}
           </span>

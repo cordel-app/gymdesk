@@ -77,7 +77,13 @@
     "block_type_emom": "EMOM",
     "block_type_amrap": "AMRAP",
     "block_type_tabata": "Tabata",
-    "block_result": "Resultado"
+    "block_result": "Resultado",
+    "result_unit_rounds": "Rondas",
+    "result_unit_reps": "Repeticiones",
+    "result_unit_seconds": "Segundos",
+    "result_unit_minutes": "Minutos",
+    "result_unit_meters": "Metros",
+    "result_unit_calories": "Calorías"
   },
   "profile": {
     "title": "Mi perfil",

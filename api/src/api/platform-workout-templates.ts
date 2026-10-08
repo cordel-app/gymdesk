@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
+import { parseBlockResultUnit } from '../domain/blockResultUnits';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
@@ -34,11 +35,13 @@ async function blockExists(blockId: string, templateId: string): Promise<boolean
 function parseBlockBody(body: Record<string, unknown>):
   | { name: string | null; description: string | null; type: string;
       rounds: number | null; duration_seconds: number | null; work_seconds: number | null; rest_seconds: number | null;
-      is_optional: boolean; notes: string | null }
+      is_optional: boolean; notes: string | null; result_unit: string | null }
   | string
 {
   const type = body.type as string | undefined;
   if (!type || !BLOCK_TYPES.includes(type)) return `type must be one of: ${BLOCK_TYPES.join(', ')}`;
+  const unitResult = parseBlockResultUnit(type, body.result_unit);
+  if (typeof unitResult === 'string') return unitResult;
   const toIntOrNull = (v: unknown) => (v == null || v === '' ? null : Number(v));
   const name = body.name as string | null | undefined;
   const description = body.description as string | null | undefined;
@@ -53,6 +56,7 @@ function parseBlockBody(body: Record<string, unknown>):
     rest_seconds: toIntOrNull(body.rest_seconds),
     is_optional: Boolean(body.is_optional),
     notes: notes ?? null,
+    result_unit: unitResult.unit,
   };
 }
 
@@ -133,7 +137,7 @@ platformWorkoutTemplatesRouter.get('/:id', requireSuperadmin, async (req, res, n
               'id', b.id, 'position', b.position, 'name', b.name, 'description', b.description,
               'type', b.type, 'rounds', b.rounds,
               'duration_seconds', b.duration_seconds, 'work_seconds', b.work_seconds, 'rest_seconds', b.rest_seconds,
-              'is_optional', b.is_optional, 'notes', b.notes,
+              'is_optional', b.is_optional, 'notes', b.notes, 'result_unit', b.result_unit,
               'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                 SELECT JSON_OBJECT(
                     'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,
@@ -251,10 +255,10 @@ platformWorkoutTemplatesRouter.post('/:id/blocks', requireSuperadmin, async (req
     const row = await insertAndFetch(
       `INSERT INTO workout_template_blocks
         (gym_id, workout_template_id, position, name, description, type,
-         rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes)
-       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit)
+       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, posRows[0].next_position, parsed.name, parsed.description, parsed.type,
-       parsed.rounds, parsed.duration_seconds, parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes],
+       parsed.rounds, parsed.duration_seconds, parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes, parsed.result_unit ?? null],
       'SELECT * FROM workout_template_blocks WHERE id = ?',
       (blockId) => [blockId],
     );
@@ -300,11 +304,11 @@ platformWorkoutTemplatesRouter.put('/:id/blocks/:blockId', requireSuperadmin, as
     const { rowCount } = await db.query(
       `UPDATE workout_template_blocks SET
         name = ?, description = ?, type = ?, rounds = ?, duration_seconds = ?,
-        work_seconds = ?, rest_seconds = ?, is_optional = ?, notes = ?,
+        work_seconds = ?, rest_seconds = ?, is_optional = ?, notes = ?, result_unit = ?,
         modified_at = UTC_TIMESTAMP()
        WHERE id = ? AND workout_template_id = ? AND gym_id IS NULL AND deleted_at IS NULL`,
       [parsed.name, parsed.description, parsed.type, parsed.rounds, parsed.duration_seconds,
-       parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes,
+       parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes, parsed.result_unit,
        blockId, id],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Block not found' });
