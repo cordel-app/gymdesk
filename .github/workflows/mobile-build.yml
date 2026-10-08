@@ -6,9 +6,11 @@ name: Mobile build
 #  - Android: a **debug APK** a tester can install by hand (download the artifact,
 #    open it on the phone). Signed with the shared debug keystore (see the secret
 #    below) so the Google sign-in client registered for its SHA-1 keeps working.
-#  - iOS: an **unsigned simulator build** — a build check, and an app that runs in
-#    a Mac's simulator. It cannot be installed on an iPhone: that needs a signed
-#    build and the Apple Developer account (`docs/go-to-production.md` §6).
+#  - iOS: an **unsigned simulator build** — a build check (kept as a workflow artifact,
+#    never published to Cordel → Mobile builds), and an app for a Mac's simulator. It
+#    cannot be installed on an iPhone: that needs a signed build and the Apple
+#    Developer account, and an iPhone gets its builds from TestFlight
+#    (`docs/go-to-production.md` §6).
 #
 # It is a manual workflow, plus tags and changes to the shell itself. macOS runners
 # cost several times a Linux minute, which is why this does not run on every push.
@@ -266,21 +268,3 @@ jobs:
           path: ${{ steps.app.outputs.name }}
           if-no-files-found: error
           retention-days: 14
-
-      - name: Publish to Cordel → Mobile builds
-        if: github.event_name != 'pull_request'
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.CLOUDFLARE_R2_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
-          R2_ENDPOINT: ${{ vars.CLOUDFLARE_R2_ENDPOINT }}
-          R2_BUCKET: ${{ vars.CLOUDFLARE_R2_BUCKET }}
-          BUILD_FILE: ${{ steps.app.outputs.name }}
-          BUILD_PLATFORM: ios_simulator
-          ENV_NAME: ${{ inputs.environment || 'dev' }}
-          VERSION: ${{ env.BUILD_VERSION }}
-          GIT_SHA: ${{ github.sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          export APP_ID="$(node -p "require('./apps/mobile/profiles/$MOBILE_APP_PROFILE.json').appId")"
-          export APP_NAME="$(node -p "require('./apps/mobile/profiles/$MOBILE_APP_PROFILE.json').appName")"
-          bash .github/scripts/publish-mobile-build.sh

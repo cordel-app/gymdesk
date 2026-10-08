@@ -218,12 +218,16 @@ also runs on a PR that touches `apps/mobile/`. Two jobs:
 `version`, and the build number is the workflow's run number (it only goes up: Android's
 `versionCode`, iOS's `CURRENT_PROJECT_VERSION`), so a build reads `1.0.0 (57)` and its file is
 `cordel-fitness-dev-1.0.0-b57-<sha>.apk`. Every run **except a pull request's** also uploads the
-build to the environment's bucket, and **Cordel → Mobile builds** lists them newest first with a
-Download button (superadmin only, read-only; `api/src/domain/mobileBuilds.ts`). The workflow is
+**Android** build to the environment's bucket (the iOS simulator build is only a workflow
+artifact: it cannot be installed on a phone, so it is never published), and **Cordel → Mobile
+builds** lists them newest first with a Download button (superadmin only, read-only; `api/src/domain/mobileBuilds.ts`). The workflow is
 the only writer (`.github/scripts/publish-mobile-build.sh`) and keeps the newest 20 per app and
 platform. The `dev` page shows the dev bucket's builds and the `pro` page the pro bucket's. The
 upload needs the environment's existing `CLOUDFLARE_R2_*` settings and skips with a warning
-without them.
+without them. The page also carries an **iPhone (TestFlight)** card with an *Open in TestFlight*
+button, disabled until the API has `MOBILE_TESTFLIGHT_URL` (a GitHub variable per environment,
+forwarded by `deploy.yml`, which must be a `https://testflight.apple.com/…` link): an iPhone
+cannot install a downloaded file, so it gets a link and never a download.
 
 - **Android debug APK** — download the artifact (it is a zip holding the APK), unzip, and open
   the APK on the phone (allow installs from that app). It loads the environment's Members App
@@ -231,7 +235,8 @@ without them.
   (`90:4A:F4:…:87:47`) is the one registered in the Google Android OAuth client; the job summary
   prints the SHA-1 it actually used. Without the `ANDROID_DEBUG_KEYSTORE_B64` secret Gradle
   makes a new key and Google sign-in is refused on that build.
-- **iOS simulator build (unsigned)** — a build check, and an app for a Mac's simulator
+- **iOS simulator build (unsigned)** — a build check, kept as a workflow artifact and **not
+  published** to the Mobile builds page, and an app for a Mac's simulator
   (`xcrun simctl install booted App.app`). It **cannot** be installed on an iPhone; that needs a
   signed build and the Apple Developer account.
 

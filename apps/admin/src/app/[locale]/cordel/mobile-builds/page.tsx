@@ -12,7 +12,7 @@ import {
 } from '@/components/listChrome';
 import {
   type MobileBuild, type MobileBuildsResponse, downloadPath, environmentLabelKey, formatBuildVersion,
-  formatBytes, platformLabelKey, platformNoteKey, saveBlob, shortSha, showsAndroidInstallHelp,
+  formatBytes, platformLabelKey, saveBlob, shortSha, showsAndroidInstallHelp, testflightHref,
 } from '@/lib/mobileBuilds';
 
 /**
@@ -32,19 +32,20 @@ interface ListColumn extends ListGridColumn {
   grow?: number;
 }
 
-// The identity (app, version, build) is the row's name on a phone; the platform note
-// rides under it so "Mac simulator only" is never hidden with the secondary columns.
+// The identity (app, version, build) is the row's name on a phone. The widths are the
+// smallest that still read, so that with the sidebar open the Download button is not
+// pushed off the right edge of a narrow pane (the list scrolls below that, #1011).
 const LIST_COLUMNS: ListColumn[] = [
-  { key: 'build', labelKey: 'col_build', width: 220, grow: 3, mobile: 'name' },
-  { key: 'platform', labelKey: 'col_platform', width: 120, grow: 1, mobile: 'secondary' },
-  { key: 'built', labelKey: 'col_built', width: 150, grow: 1, mobile: 'secondary' },
-  { key: 'size', labelKey: 'col_size', width: 80, mobile: 'secondary' },
-  { key: 'actions', width: 120, mobile: 'actions' },
+  { key: 'build', labelKey: 'col_build', width: 140, grow: 3, mobile: 'name' },
+  { key: 'platform', labelKey: 'col_platform', width: 72, grow: 1, mobile: 'secondary' },
+  { key: 'built', labelKey: 'col_built', width: 104, grow: 1, mobile: 'secondary' },
+  { key: 'size', labelKey: 'col_size', width: 64, mobile: 'secondary' },
+  { key: 'actions', width: 96, mobile: 'actions' },
 ];
 
 const CELL_CLASS = listCellClasses(LIST_COLUMNS);
-const COLUMN_GAP = 10;
-const ROW_PADDING_X = 16;
+const COLUMN_GAP = 8;
+const ROW_PADDING_X = 12;
 const GRID_COLUMNS = LIST_COLUMNS
   .map((c) => (c.grow ? `minmax(${c.width}px, ${c.grow}fr)` : `${c.width}px`))
   .join(' ');
@@ -93,11 +94,36 @@ export default function CordelMobileBuildsPage() {
   if (gymLoading || !isSuperadmin) return null;
 
   const builds = data?.builds ?? [];
+  const testflight = testflightHref(data?.testflight_url);
 
   return (
     <div>
       <h1 style={{ margin: '0 0 6px' }}>{t('title')}</h1>
       <p style={{ margin: '0 0 16px', color: '#666', maxWidth: 720 }}>{t('intro')}</p>
+
+      {/* An iPhone cannot install a downloaded file: it gets its builds from TestFlight,
+          so this is a link and never a download. Disabled until the app has one. */}
+      <div style={{ ...cardSurfaceStyle, padding: 16, marginBottom: 16, maxWidth: 720 }}>
+        <div style={{ fontWeight: 600, marginBottom: 6 }}>{t('testflight_title')}</div>
+        <p style={{ margin: '0 0 10px', color: '#444' }}>{t('testflight_text')}</p>
+        {testflight ? (
+          <a
+            href={testflight}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ ...primaryBtnSmall(), display: 'inline-block', textDecoration: 'none' }}
+          >
+            {t('testflight_open')}
+          </a>
+        ) : (
+          <>
+            <button type="button" disabled style={{ ...primaryBtnSmall(), opacity: 0.5, cursor: 'not-allowed' }}>
+              {t('testflight_open')}
+            </button>
+            <p style={{ margin: '8px 0 0', color: '#888', fontSize: 12.5 }}>{t('testflight_unavailable')}</p>
+          </>
+        )}
+      </div>
 
       {showsAndroidInstallHelp(builds) && (
         <div style={{ ...cardSurfaceStyle, padding: 16, marginBottom: 16, maxWidth: 720 }}>
@@ -138,7 +164,6 @@ export default function CordelMobileBuildsPage() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {builds.map((build) => {
                 const envKey = environmentLabelKey(build.environment);
-                const noteKey = platformNoteKey(build.platform);
                 return (
                   <div key={build.id} style={{ ...cardSurfaceStyle }}>
                     <div className={LIST_GRID_ROW_CLASS} style={rowStyle}>
@@ -161,9 +186,6 @@ export default function CordelMobileBuildsPage() {
                             </>
                           )}
                         </div>
-                        {noteKey && (
-                          <div style={{ fontSize: 12.5, color: '#9a6700', marginTop: 2 }}>{t(noteKey)}</div>
-                        )}
                       </div>
                       <div className={CELL_CLASS.platform}>{t(platformLabelKey(build.platform))}</div>
                       <div className={CELL_CLASS.built}>{new Date(build.built_at).toLocaleString(locale)}</div>

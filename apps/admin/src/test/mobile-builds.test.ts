@@ -3,8 +3,8 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 import { navigationGroups } from '../config/navigationGroups';
 import {
-  downloadPath, environmentLabelKey, formatBuildVersion, formatBytes, platformLabelKey, platformNoteKey,
-  shortSha, showsAndroidInstallHelp, type MobileBuild,
+  downloadPath, environmentLabelKey, formatBuildVersion, formatBytes, platformLabelKey,
+  shortSha, showsAndroidInstallHelp, testflightHref, type MobileBuild,
 } from '../lib/mobileBuilds';
 import en from '../../locales/base/en.json';
 import es from '../../locales/base/es.json';
@@ -38,12 +38,19 @@ describe('how a build is worded', () => {
     expect(formatBytes(NaN)).toBe('0 B');
   });
 
-  it('keys every platform, and only the simulator needs its note', () => {
+  it('keys the one published platform', () => {
     expect(platformLabelKey('android')).toBe('platform_android');
-    expect(platformLabelKey('ios_simulator')).toBe('platform_ios_simulator');
-    expect(platformNoteKey('ios_simulator')).toBe('note_ios_simulator');
-    expect(platformNoteKey('android')).toBeNull();
-    expect(platformNoteKey('ios')).toBeNull();
+  });
+
+  it('puts a TestFlight link behind the iPhone button and nothing else', () => {
+    expect(testflightHref('https://testflight.apple.com/join/AbCd1234')).toBe('https://testflight.apple.com/join/AbCd1234');
+    expect(testflightHref(null)).toBeNull();
+    expect(testflightHref(undefined)).toBeNull();
+    expect(testflightHref('')).toBeNull();
+    expect(testflightHref('https://evil.example/join/x')).toBeNull();
+    expect(testflightHref('https://testflight.apple.com.evil.example/join/x')).toBeNull();
+    expect(testflightHref('http://testflight.apple.com/join/x')).toBeNull();
+    expect(testflightHref('javascript:alert(1)')).toBeNull();
   });
 
   it('has a word for dev and pro and none for anything else', () => {
@@ -54,7 +61,6 @@ describe('how a build is worded', () => {
 
   it('shows the Android steps only when there is an Android build', () => {
     expect(showsAndroidInstallHelp([build()])).toBe(true);
-    expect(showsAndroidInstallHelp([build({ platform: 'ios_simulator' })])).toBe(false);
     expect(showsAndroidInstallHelp([])).toBe(false);
   });
 
@@ -74,10 +80,7 @@ describe('the Cordel nav', () => {
 
 describe('labels', () => {
   const keysUsed = [...PAGE.matchAll(/\bt\('([a-z0-9_]+)'/g)].map((m) => m[1]);
-  const dynamic = [
-    ...['android', 'ios_simulator', 'ios'].map((p) => `platform_${p}`),
-    'note_ios_simulator', 'env_dev', 'env_pro',
-  ];
+  const dynamic = ['platform_android', 'env_dev', 'env_pro'];
 
   it.each(Object.keys(LOCALES))('%s has every key the page resolves, and the nav label', (locale) => {
     const ns = LOCALES[locale].mobile_builds;
@@ -99,6 +102,13 @@ describe('the page', () => {
     expect(PAGE).toContain("apiFetch('/platform/mobile-builds')");
     expect(PAGE).toContain('pdfFetch(downloadPath(build))');
     expect(PAGE).not.toMatch(/method:\s*'(POST|PUT|PATCH|DELETE)'/);
+  });
+
+  it('offers TestFlight as a link, disabled until there is one, and never a download for iOS', () => {
+    expect(PAGE).toContain('const testflight = testflightHref(data?.testflight_url);');
+    expect(PAGE).toContain('href={testflight}');
+    expect(PAGE).toContain('disabled style={{ ...primaryBtnSmall(), opacity: 0.5');
+    expect(PAGE).not.toMatch(/ios_simulator|platformNoteKey/);
   });
 
   it('is for superadmins only', () => {
