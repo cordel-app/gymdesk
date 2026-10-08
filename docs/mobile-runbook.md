@@ -113,6 +113,15 @@ These are configuration, not code, and each one is a `docs/go-to-production.md`
   profile's own host, but the capability is what makes a provisioning profile
   carry it — without it a signed build fails to install or silently ignores
   universal links.
+- **Clerk's Frontend API host in `allowNavigation`.** The shell opens any host not on
+  `server.allowNavigation` in **Safari**, and a Clerk **development** instance sends the
+  WebView through its own host (`<instance>.clerk.accounts.dev`) on first load. Found by
+  running the shell in the simulator (2026-10-08, #1077): with only the Members App's host
+  listed, launch hands the session to Safari instead of showing the app. For a dev build set
+  `MOBILE_ALLOW_NAVIGATION="members.vdicube.com <instance>.clerk.accounts.dev"` (a space- or
+  comma-separated list, overriding the profile). A **production** instance has its own
+  Frontend API host, which belongs in the production profile's `allowNavigation` — check
+  which host it uses and test the first launch with the app freshly installed.
 - **The Firebase iOS SDK**, which is the one step that needs Xcode:
   *File → Add Package Dependencies…* → `https://github.com/firebase/firebase-ios-sdk`,
   product **FirebaseMessaging**, added to the `App` target. The Swift that uses

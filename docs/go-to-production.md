@@ -1311,6 +1311,11 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 ### Sign-in
 
 - [ ] Clerk Production exists (§2) and the Members App is built with its `pk_live_…` key.
+- [ ] **Put the Production Clerk Frontend API host in the shell's `allowNavigation`**
+      (`apps/mobile/profiles/cordel-fitness.json` or `MOBILE_ALLOW_NAVIGATION`). Anything not on
+      that list opens in Safari, so a missing host sends the sign-in out of the app. Seen on the
+      development instance (`<instance>.clerk.accounts.dev`, simulator run 2026-10-08); confirm
+      which host production uses and test a fresh install.
 - [ ] Set `NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID` as GitHub
       secrets (#1073 — they are build args of `apps/member/Dockerfile`, baked into the bundle, so
       a change needs a rebuild). Until both are set the native Google button is not rendered at

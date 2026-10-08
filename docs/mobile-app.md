@@ -414,6 +414,11 @@ Play Console's own fingerprint is the one an installed release verifies against)
 Developer portal, which the entitlement alone does not grant. `docs/mobile-runbook.md` §2 and
 `docs/go-to-production.md` §6 carry both.
 
+**Simulator result (2026-10-08, #1077):** the shell compiles (`xcodebuild`, iPhone 17 simulator,
+Xcode 27) and loads the Members App; the custom-scheme link reaches the app after iOS's own
+*Open in…?* prompt. The first launch went to **Safari** until the Clerk development host was added
+to `allowNavigation` (`docs/mobile-runbook.md` §2). Not yet run on a device or on Android.
+
 **Known caveat, by design:** some in-app browsers do not trigger a universal link at all — a mail
 client that opens links in its own WebView, and Gmail on Android for a link in its own viewer.
 The link then opens in that browser and the invitation completes there, which is why the flow must
