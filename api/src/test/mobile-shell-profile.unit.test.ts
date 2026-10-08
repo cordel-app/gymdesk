@@ -236,6 +236,17 @@ describe('the native side of what WP1 and WP2 decided', () => {
     expect(appDelegate).toContain('#if canImport(FirebaseMessaging)');
   });
 
+  it('keeps the Android shell alive when there is no google-services.json (#1077)', () => {
+    // `@capacitor/push-notifications`' register() calls FirebaseMessaging.getInstance(),
+    // which throws on a plugin thread when no default Firebase app exists — an
+    // uncatchable native crash. MainActivity must make sure an app exists first.
+    const activity = read('android/app/src/main/java/com/cordel/fitness/MainActivity.java');
+    expect(activity).toContain('FirebaseApp.getApps(this).isEmpty()');
+    expect(activity).toContain('FirebaseApp.initializeApp(');
+    expect(activity.indexOf('ensureFirebaseApp();')).toBeLessThan(activity.indexOf('super.onCreate('));
+    expect(read('android/app/build.gradle')).toContain('com.google.firebase:firebase-messaging');
+  });
+
   it('declares the entitlements the spike proved are needed, from build settings', () => {
     const entitlements = read('ios/App/App/App.entitlements');
     expect(entitlements).toContain('keychain-access-groups');
