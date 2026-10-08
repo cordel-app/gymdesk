@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 import { memberTheme, withSafeArea } from '@/lib/memberChrome';
+import { memberAvatarColors, memberInitials } from '@/lib/memberAvatar';
 
 /**
  * #361: replaces the old bottom tab bar. Home is reached via its own
@@ -20,7 +21,7 @@ export function TopBar() {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations();
-  const { isLinked, unreadNotifications, theme, gymName } = useApp();
+  const { isLinked, unreadNotifications, theme, gymName, member } = useApp();
 
   if (pathname.includes('/sign-in') || pathname.includes('/sign-up')) return null;
   if (!isLinked) return null;
@@ -112,17 +113,27 @@ export function TopBar() {
         {!isProfile && (
           <button
             onClick={() => router.push(`${homePath}/profile`)}
-            aria-label={t('nav.profile')}
+            aria-label={member?.name ? `${t('nav.profile')}: ${member.name}` : t('nav.profile')}
+            title={member?.name || undefined}
             style={{
-              background: 'none',
+              ...memberAvatarColors(member?.id ?? member?.name),
+              width: 32,
+              height: 32,
+              flexShrink: 0,
+              borderRadius: '50%',
               border: 'none',
               cursor: 'pointer',
-              fontSize: 20,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: 13,
+              fontWeight: 700,
               lineHeight: 1,
-              padding: 4,
+              padding: 0,
+              fontFamily: 'inherit',
             }}
           >
-            ◉
+            {memberInitials(member?.name) || '◉'}
           </button>
         )}
       </div>
