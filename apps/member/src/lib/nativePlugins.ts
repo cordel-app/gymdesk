@@ -57,6 +57,22 @@ export async function loadAppPlugin() {
   }
 }
 
+/**
+ * What Capacitor's `App.getInfo()` answers for this installation (`id`, `name`,
+ * `version`, `build`), or `null` when it cannot be read.
+ *
+ * Returns the **plain** info object, never the plugin: awaiting a bare plugin
+ * rejects (see `LoadedPlugin`), and the id is all a caller needs.
+ */
+export async function loadAppInfo(): Promise<unknown> {
+  try {
+    const loaded = await loadAppPlugin();
+    return loaded ? await loaded.plugin.getInfo() : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Capacitor's `PushNotifications` plugin — permissions, the FCM token, taps. */
 export async function loadPushNotifications() {
   try {

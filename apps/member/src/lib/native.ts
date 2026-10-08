@@ -316,3 +316,19 @@ export function appleIdToken(result: unknown): string | null {
   const candidate = source?.result?.idToken ?? source?.idToken ?? null;
   return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : null;
 }
+
+/**
+ * The app's own id — the Bundle ID (iOS) or package name (Android) — out of what
+ * Capacitor's `App.getInfo()` answers, or `null`.
+ *
+ * #1077: a push registration used to name no `app_id`, so the API filed every
+ * token under its default (`com.cordel.fitness`) whichever app sent it, and a dev
+ * app (`com.cordel.fitness.dev`) would have been delivered to with the pro app's
+ * credentials, or not at all. The app already knows what it is installed as; this
+ * reads it defensively (`getInfo()` answers an object, and anything else is "do
+ * not say" rather than an invented id, which the API then resolves to its default).
+ */
+export function appIdFromInfo(info: unknown): string | null {
+  const id = (info as { id?: unknown } | null | undefined)?.id;
+  return typeof id === 'string' && id.trim() ? id.trim() : null;
+}

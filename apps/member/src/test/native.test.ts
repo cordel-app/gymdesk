@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import {
+  appIdFromInfo,
   appleIdToken,
   appleNativeConfig,
   NATIVE_PLATFORMS,
@@ -432,5 +433,26 @@ describe('one viewport tag, with viewport-fit=cover (#1077)', () => {
 
   it('keeps no hand-written viewport meta beside it', () => {
     expect(layout).not.toContain('<meta name="viewport"');
+  });
+});
+
+describe('push registration names the app (#1077)', () => {
+  it('reads the app id out of App.getInfo() and nothing invented', () => {
+    expect(appIdFromInfo({ id: ' com.cordel.fitness.dev ', name: 'x' })).toBe('com.cordel.fitness.dev');
+    expect(appIdFromInfo({ id: '' })).toBeNull();
+    expect(appIdFromInfo({ id: 42 })).toBeNull();
+    expect(appIdFromInfo(null)).toBeNull();
+    expect(appIdFromInfo(undefined)).toBeNull();
+  });
+
+  it('hands that id to the registration, so a dev app files its tokens under its own id', () => {
+    const shell = read('components', 'NativeShell.tsx');
+    expect(shell).toContain('appIdFromInfo(await loadAppInfo())');
+    expect(shell).toContain('registerPushToken(latest.current.apiFetch, token.value, appId)');
+  });
+
+  it('answers the plain info object, never a bare plugin', () => {
+    const plugins = read('lib', 'nativePlugins.ts');
+    expect(plugins).toContain('await loaded.plugin.getInfo()');
   });
 });
