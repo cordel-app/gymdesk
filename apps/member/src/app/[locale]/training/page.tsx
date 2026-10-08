@@ -8,6 +8,7 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
+import { resultUnitKey, resultValueForPayload } from '@/lib/blockResult';
 import {
   inputStyle,
   memberTheme,
@@ -39,6 +40,8 @@ interface Block {
   id: number; position: number; name: string | null; type: string;
   rounds: number | null; duration_seconds: number | null; work_seconds: number | null; rest_seconds: number | null;
   is_optional: boolean; notes: string | null;
+  /** #1232: what the block's global result is counted in; null = the block records none. */
+  result_unit?: string | null;
   exercises: BlockExercise[] | null;
 }
 
@@ -132,7 +135,7 @@ export default function TrainingPage() {
         body: JSON.stringify({
           workout_block_id: block.id,
           logged_date: todayDate(),
-          result_value: resultInputs[block.id]?.trim() || null,
+          result_value: resultUnitKey(block.result_unit) ? resultValueForPayload(resultInputs[block.id]) : null,
         }),
       });
       setMessage(t('training.block_logged'));
@@ -247,12 +250,25 @@ export default function TrainingPage() {
                 ))}
 
                 <div style={styles.blockDoneRow}>
-                  <input
-                    placeholder={t('training.block_result')}
-                    value={resultInputs[block.id] ?? ''}
-                    onChange={(e) => setResultInputs({ ...resultInputs, [block.id]: e.target.value })}
-                    style={styles.miniInput}
-                  />
+                  {(() => {
+                    const unitKey = resultUnitKey(block.result_unit);
+                    if (!unitKey) return null;
+                    return (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span>{t('training.block_result')}:</span>
+                        <input
+                          type="number"
+                          min="0"
+                          inputMode="decimal"
+                          aria-label={t('training.block_result')}
+                          value={resultInputs[block.id] ?? ''}
+                          onChange={(e) => setResultInputs({ ...resultInputs, [block.id]: e.target.value })}
+                          style={styles.miniInput}
+                        />
+                        <span>{t(unitKey)}</span>
+                      </label>
+                    );
+                  })()}
                   <button onClick={() => markBlockDone(block)} disabled={pending} style={styles.blockDoneBtn}>
                     {t('training.mark_done')}
                   </button>
