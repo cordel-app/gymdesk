@@ -1,11 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
 import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
 import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
 import { btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
+import {
+  BENEFIT_ENDPOINTS, benefitKey, declinedPayload, toAssignableBenefits,
+  type AssignableBenefit,
+} from '@/lib/declinedBenefits';
 import { MemberSearchInput, MemberResult } from '../calendar/MemberSearchInput';
 
 interface Plan {
@@ -42,6 +46,28 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conflict, setConflict] = useState<ActivePlanConflict | null>(null);
+  // #1184 stage 3b: the Plan's benefits; unticking an optional one declines it for everyone assigned.
+  const [benefits, setBenefits] = useState<AssignableBenefit[]>([]);
+  const [declinedKeys, setDeclinedKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(BENEFIT_ENDPOINTS.map(([section, path]) =>
+      apiFetch<any[]>(`/membership-plans/${plan.id}/${path}`)
+        .then((rows) => toAssignableBenefits(section, rows))
+        .catch(() => [] as AssignableBenefit[]),
+    )).then((groups) => { if (!cancelled) setBenefits(groups.flat()); });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plan.id]);
+
+  function toggleBenefit(b: AssignableBenefit) {
+    setDeclinedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(benefitKey(b))) next.delete(benefitKey(b)); else next.add(benefitKey(b));
+      return next;
+    });
+  }
 
   const limitCount = plan.member_limit === 'family' ? null : parseInt(plan.member_limit, 10);
   const overCapacity = limitCount != null && members.length > limitCount;
@@ -78,6 +104,7 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
           member_ids: members.map((m) => m.id),
           owner_member_id: ownerId,
           starts_at: startsAt,
+          declined_benefits: declinedPayload(benefits, declinedKeys),
           ...(confirmReplacement ? { confirm: true } : {}),
         }),
       });
@@ -152,6 +179,32 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
           disabled={saving}
           style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, margin: '6px 0 12px' }}
         />
+
+        {benefits.length > 0 && (
+          <>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{t('members.assign_new_plan_section_benefits')}</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, margin: '6px 0 12px' }}>
+              {benefits.map((b) => (
+                <label
+                  key={benefitKey(b)}
+                  title={b.mandatory ? t('members.assign_new_plan_benefit_mandatory_hint') : undefined}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={b.mandatory || !declinedKeys.has(benefitKey(b))}
+                    disabled={saving || b.mandatory}
+                    onChange={() => toggleBenefit(b)}
+                  />
+                  <span style={{ flex: 1 }}>{b.product_name}</span>
+                  <span style={{ fontSize: 11, color: '#888' }}>
+                    {b.mandatory ? t('members.assign_new_plan_benefit_mandatory') : t('members.assign_new_plan_benefit_optional')}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
 
         {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 12px' }}>{error}</p>}
 
