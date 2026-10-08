@@ -21,7 +21,8 @@ import {
 } from '../infra/storage';
 import {
   MobileBuild, MOBILE_BUILD_RETENTION, SIDECAR_SUFFIX, compareBuilds, downloadContentType,
-  downloadFilename, keyFromBuildId, mobileBuildsPrefix, parseBuildSidecar,
+  downloadFilename, isListedBuildKey, keyFromBuildId, mobileBuildsPrefix, parseBuildSidecar,
+  parseTestFlightUrl,
 } from '../domain/mobileBuilds';
 
 export const platformMobileBuildsRouter = Router();
@@ -32,6 +33,11 @@ function isMissingObject(err: StorageOperationError): boolean {
   return name === 'NoSuchKey' || code === 'NoSuchKey' || httpStatusCode === 404;
 }
 
+/** The iPhone's TestFlight link: configuration, read per request, `null` until it exists. */
+function testflightUrl(): string | null {
+  return parseTestFlightUrl(process.env.MOBILE_TESTFLIGHT_URL);
+}
+
 /** More than the retention can ever hold (20 x apps x platforms), and still a bound. */
 const MAX_LISTED_KEYS = 1000;
 
@@ -39,7 +45,9 @@ const MAX_LISTED_KEYS = 1000;
 async function loadBuilds(): Promise<MobileBuild[]> {
   const objects = await listStorageObjects(mobileBuildsPrefix(), MAX_LISTED_KEYS);
   const sizeOf = new Map(objects.map((o) => [o.key, o.size]));
-  const sidecars = objects.filter((o) => o.key.endsWith(SIDECAR_SUFFIX));
+  // Only the platforms the page lists: an older sidecar for another one (a simulator
+  // build) is skipped without a read and without a log line.
+  const sidecars = objects.filter((o) => isListedBuildKey(o.key));
 
   const builds = await Promise.all(sidecars.map(async (sidecar): Promise<MobileBuild | null> => {
     const fileKey = sidecar.key.slice(0, -SIDECAR_SUFFIX.length);
@@ -65,10 +73,12 @@ platformMobileBuildsRouter.get(
   async (_req: Request, res: Response, next: NextFunction) => {
     try {
       if (!isStorageConfigured()) {
-        return res.status(503).json({ error: 'storage_not_configured', builds: [], keep: MOBILE_BUILD_RETENTION });
+        return res.status(503).json({
+          error: 'storage_not_configured', builds: [], keep: MOBILE_BUILD_RETENTION, testflight_url: testflightUrl(),
+        });
       }
       res.set('Cache-Control', 'no-store');
-      res.json({ builds: await loadBuilds(), keep: MOBILE_BUILD_RETENTION });
+      res.json({ builds: await loadBuilds(), keep: MOBILE_BUILD_RETENTION, testflight_url: testflightUrl() });
     } catch (err) { next(err); }
   },
 );

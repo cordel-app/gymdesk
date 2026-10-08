@@ -9,7 +9,8 @@
  * missing key is a test failure and not a literal on screen.
  */
 
-export type MobileBuildPlatform = 'android' | 'ios_simulator' | 'ios';
+/** Android is the only platform published (an iPhone gets TestFlight, see `testflightHref()`). */
+export type MobileBuildPlatform = 'android';
 
 export interface MobileBuild {
   id: string;
@@ -31,6 +32,8 @@ export interface MobileBuild {
 export interface MobileBuildsResponse {
   builds: MobileBuild[];
   keep: number;
+  /** The iPhone's TestFlight link, or `null` until the app has one. */
+  testflight_url: string | null;
 }
 
 /** `1.0.0 (57)` — the version and the CI build number, which together name a build. */
@@ -58,11 +61,21 @@ export function platformLabelKey(platform: MobileBuildPlatform): string {
 }
 
 /**
- * The key of the sentence a platform needs beside it, or `null`. A simulator build is
- * the one a tester must be told cannot go on a phone.
+ * The TestFlight link to put behind the button, or `null` when there is none to offer.
+ * The API already refuses anything but a `https://testflight.apple.com/…` URL; this
+ * checks it again because the page renders the value as an `href`, and a link to
+ * anywhere else must never be possible from a stored string.
  */
-export function platformNoteKey(platform: MobileBuildPlatform): string | null {
-  return platform === 'ios_simulator' ? 'note_ios_simulator' : null;
+export function testflightHref(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'https:' && parsed.hostname === 'testflight.apple.com' && parsed.pathname.length > 1
+      ? parsed.toString()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The key of an environment's short name, or `null` for one the page has no word for. */

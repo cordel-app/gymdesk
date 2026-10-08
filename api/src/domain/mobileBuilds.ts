@@ -47,7 +47,15 @@ export const MOBILE_BUILDS_FOLDER = 'mobile-builds';
 /** How many builds per app and platform the workflow keeps. */
 export const MOBILE_BUILD_RETENTION = 20;
 
-export const MOBILE_BUILD_PLATFORMS = ['android', 'ios_simulator', 'ios'] as const;
+/**
+ * The platforms a build is **published** for, and so listed and downloadable: Android
+ * only. A signed iOS app cannot be installed from a downloaded file, so an iPhone gets
+ * its builds from TestFlight (`parseTestFlightUrl()`, a link and nothing hosted here),
+ * and the unsigned simulator build is a CI check that is never published. A sidecar for
+ * any other platform — the two simulator builds published before this was decided —
+ * is skipped without being read (`isListedBuildKey()`).
+ */
+export const MOBILE_BUILD_PLATFORMS = ['android'] as const;
 export type MobileBuildPlatform = (typeof MOBILE_BUILD_PLATFORMS)[number];
 
 /** The sidecar extension: `<file>` is described by `<file>.json`. */
@@ -129,6 +137,31 @@ export function keyFromBuildId(id: string): string | null {
   // can never name one object.
   const key = `${mobileBuildsPrefix()}${relative}`;
   return buildIdFromKey(key) === id ? key : null;
+}
+
+/** Whether a sidecar key belongs to a platform this page lists (`<app>/<platform>/<file>.json`). */
+export function isListedBuildKey(sidecarKey: string): boolean {
+  const prefix = mobileBuildsPrefix();
+  if (!sidecarKey.startsWith(prefix) || !sidecarKey.endsWith(SIDECAR_SUFFIX)) return false;
+  const parts = sidecarKey.slice(prefix.length).split('/');
+  return parts.length === 3 && (MOBILE_BUILD_PLATFORMS as readonly string[]).includes(parts[1]);
+}
+
+/**
+ * The TestFlight link the page offers for the iPhone, or `null` when there is none (the
+ * variable is unset, or is not a `https://testflight.apple.com/…` URL). A bad value
+ * must cost the button and never become a link to somewhere else.
+ */
+export function parseTestFlightUrl(raw: string | null | undefined): string | null {
+  const value = (raw ?? '').trim();
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    const ok = url.protocol === 'https:' && url.hostname === 'testflight.apple.com' && url.pathname.length > 1;
+    return ok ? url.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The file's name, for `Content-Disposition`. */

@@ -107,8 +107,9 @@ describe('GET /platform/mobile-builds', () => {
     const res = await request.get('/platform/mobile-builds').set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(200);
     expect(res.body.keep).toBe(20);
-    expect(res.body.builds.map((b: any) => b.platform)).toEqual(['ios_simulator', 'android']);
-    expect(res.body.builds[1]).toMatchObject({
+    // The simulator build in the bucket is not listed: only Android is published.
+    expect(res.body.builds.map((b: any) => b.platform)).toEqual(['android']);
+    expect(res.body.builds[0]).toMatchObject({
       app_id: 'com.cordel.fitness.dev', version: '1.0.0', build_number: 57, file: APK, size_bytes: 9,
     });
     expect(res.headers['cache-control']).toBe('no-store');
@@ -124,7 +125,27 @@ describe('GET /platform/mobile-builds', () => {
     storage.objects.set(`${PREFIX}com.cordel.fitness.dev/android/notjson.apk`, { body: 'x' });
     const res = await request.get('/platform/mobile-builds').set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(200);
-    expect(res.body.builds).toHaveLength(2);
+    expect(res.body.builds).toHaveLength(1);
+  });
+
+  it('offers the TestFlight link only when it is configured and valid', async () => {
+    const original = process.env.MOBILE_TESTFLIGHT_URL;
+    try {
+      delete process.env.MOBILE_TESTFLIGHT_URL;
+      let res = await request.get('/platform/mobile-builds').set('Authorization', TEST_AUTH_HEADER);
+      expect(res.body.testflight_url).toBeNull();
+
+      process.env.MOBILE_TESTFLIGHT_URL = 'https://testflight.apple.com/join/AbCd1234';
+      res = await request.get('/platform/mobile-builds').set('Authorization', TEST_AUTH_HEADER);
+      expect(res.body.testflight_url).toBe('https://testflight.apple.com/join/AbCd1234');
+
+      process.env.MOBILE_TESTFLIGHT_URL = 'https://evil.example/join/x';
+      res = await request.get('/platform/mobile-builds').set('Authorization', TEST_AUTH_HEADER);
+      expect(res.body.testflight_url).toBeNull();
+    } finally {
+      if (original === undefined) delete process.env.MOBILE_TESTFLIGHT_URL;
+      else process.env.MOBILE_TESTFLIGHT_URL = original;
+    }
   });
 
   it('answers an empty list when nothing was published', async () => {

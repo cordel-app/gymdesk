@@ -5,6 +5,8 @@ import {
   MOBILE_BUILD_PLATFORMS,
   MOBILE_BUILD_RETENTION,
   MOBILE_BUILDS_FOLDER,
+  isListedBuildKey,
+  parseTestFlightUrl,
   SIDECAR_OPTIONAL_FIELDS,
   SIDECAR_REQUIRED_FIELDS,
   buildIdFromKey,
@@ -83,6 +85,41 @@ describe('build ids', () => {
     const id = buildIdFromKey(FILE_KEY) as string;
     // The same bytes with padding appended must not name the same object.
     expect(keyFromBuildId(`${id}==`)).toBeNull();
+  });
+});
+
+describe('which platforms are listed', () => {
+  it('lists Android only: an iPhone gets TestFlight and the simulator build is a CI check', () => {
+    expect([...MOBILE_BUILD_PLATFORMS]).toEqual(['android']);
+    expect(isListedBuildKey(SIDECAR_KEY)).toBe(true);
+    expect(isListedBuildKey(`${PREFIX}com.cordel.fitness.dev/ios_simulator/a.zip.json`)).toBe(false);
+    expect(isListedBuildKey(`${PREFIX}com.cordel.fitness.dev/ios/a.ipa.json`)).toBe(false);
+  });
+
+  it('only counts sidecars of the right shape under the prefix', () => {
+    expect(isListedBuildKey(FILE_KEY)).toBe(false);
+    expect(isListedBuildKey('gyms/g1/android/a.apk.json')).toBe(false);
+    expect(isListedBuildKey(`${PREFIX}app/android/sub/a.apk.json`)).toBe(false);
+  });
+});
+
+describe('parseTestFlightUrl()', () => {
+  it('accepts a TestFlight link and nothing else', () => {
+    expect(parseTestFlightUrl('https://testflight.apple.com/join/AbCd1234')).toBe('https://testflight.apple.com/join/AbCd1234');
+    expect(parseTestFlightUrl('  https://testflight.apple.com/join/AbCd1234  ')).toBe('https://testflight.apple.com/join/AbCd1234');
+  });
+
+  it.each([
+    ['unset', undefined],
+    ['empty', ''],
+    ['another host', 'https://evil.example/join/x'],
+    ['a lookalike host', 'https://testflight.apple.com.evil.example/join/x'],
+    ['http', 'http://testflight.apple.com/join/x'],
+    ['a javascript: URL', 'javascript:alert(1)'],
+    ['no path', 'https://testflight.apple.com/'],
+    ['not a URL', 'testflight'],
+  ])('answers null for %s', (_label, value) => {
+    expect(parseTestFlightUrl(value as string | undefined)).toBeNull();
   });
 });
 
@@ -188,13 +225,20 @@ describe('the publishing workflow writes what the API reads', () => {
 
   it('publishes only platforms the API knows, and never from a pull request', () => {
     const platforms = [...workflow.matchAll(/BUILD_PLATFORM:\s*(\S+)/g)].map((m) => m[1]);
-    expect(platforms.sort()).toEqual(['android', 'ios_simulator']);
+    expect(platforms.sort()).toEqual(['android']);
     for (const p of platforms) expect(MOBILE_BUILD_PLATFORMS as readonly string[]).toContain(p);
     const steps = workflow.split('Publish to Cordel');
-    expect(steps.length - 1).toBe(2);
+    expect(steps.length - 1).toBe(1);
     for (const step of steps.slice(1)) {
       expect(step.slice(0, 200)).toContain("if: github.event_name != 'pull_request'");
     }
+  });
+
+  it('forwards the TestFlight link to the deployed API', () => {
+    const deploy = readFileSync(join(ROOT, 'workflows', 'deploy.yml'), 'utf8');
+    expect(deploy).toContain('MOBILE_TESTFLIGHT_URL: ${{ vars.MOBILE_TESTFLIGHT_URL }}');
+    expect(deploy).toContain('MOBILE_TESTFLIGHT_URL=${MOBILE_TESTFLIGHT_URL:-}');
+    expect(deploy).toMatch(/envs:[^\n]*\bMOBILE_TESTFLIGHT_URL\b/);
   });
 
   it('numbers builds from the run and names them by version, build and commit', () => {
