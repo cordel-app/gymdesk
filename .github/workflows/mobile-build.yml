@@ -116,6 +116,13 @@ jobs:
           ENV_NAME="${{ inputs.environment || 'dev' }}"
           NAME="cordel-fitness-${ENV_NAME}-${GITHUB_SHA::8}.apk"
           cp "$SRC" "$NAME"
+          # Gradle's debug signing picked its own key in CI even with the shared
+          # keystore in place, so the APK is signed explicitly with it instead.
+          if [ -n "${EXPECTED_SIGNER_SHA1:-}" ]; then
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" sign \
+              --ks "$HOME/.android/debug.keystore" --ks-key-alias androiddebugkey \
+              --ks-pass pass:android --key-pass pass:android "$NAME"
+          fi
           SIGNER=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$NAME" | grep 'SHA-1' | head -1 | sed 's/.*: //')
           SIZE=$(du -h "$NAME" | cut -f1)
           # The keystore secret exists to keep the signer stable. If it was restored
