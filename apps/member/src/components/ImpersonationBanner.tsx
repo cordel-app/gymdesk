@@ -3,6 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
+import { withSafeArea } from '@/lib/memberChrome';
 
 /**
  * #983 — deliberately outside the Theme, for `AdminBar`'s reason: this is the
@@ -43,7 +44,11 @@ export function ImpersonationBanner() {
     <div style={{
       background: '#b45309',
       color: '#fff',
-      padding: '10px 16px',
+      // #1294: same inset as `AdminBar`, which this replaces while impersonating.
+      paddingTop: withSafeArea(10, 'top'),
+      paddingBottom: 10,
+      paddingLeft: withSafeArea(16, 'left'),
+      paddingRight: withSafeArea(16, 'right'),
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
