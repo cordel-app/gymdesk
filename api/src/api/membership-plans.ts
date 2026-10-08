@@ -7,7 +7,7 @@ import { ASSIGNMENT_CREATION_STATUS, effectivePrice, snapshotFeeForAssignment, L
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
 import { materialiseAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
-import { resolveDeclinedBenefits } from './declined-plan-benefits';
+import { resolveDeclinedBenefits, recordDeclinedBenefitsAudit } from './declined-plan-benefits';
 import { computePriceFields, validateTaxRateId } from './products';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { activePlanConflictBody, supersedeStartsAtError } from '../domain/oneActivePlan';
@@ -845,6 +845,7 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
     recordAudit(req, {
       action: 'assign_plan', entityType: 'user_membership', entityId: insertId, next: rows[0],
     });
+    recordDeclinedBenefitsAudit(req, insertId, declinedResult.declined);
     res.status(201).json({ ...rows[0], members: coveredMembers });
   } catch (err: any) {
     // #956 (migration 213): a Member holds at most one live Membership Plan.

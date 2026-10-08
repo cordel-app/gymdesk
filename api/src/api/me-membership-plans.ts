@@ -11,7 +11,7 @@ import {
 } from './user-memberships';
 import { recordStatusChange } from './billing-events';
 import { snapshotAssignedPlan } from './assigned-plan-snapshot';
-import { resolveDeclinedBenefits, loadNamedPlanBenefitLines } from './declined-plan-benefits';
+import { resolveDeclinedBenefits, recordDeclinedBenefitsAudit, loadNamedPlanBenefitLines } from './declined-plan-benefits';
 import { applyPromotionToMembership, validatePromotionSelection } from './membership-promotions';
 import { currentMembershipFee } from './membership-fee-pricing';
 import { commitAssignment, submitForPayment } from './assignment-commit';
@@ -281,6 +281,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       action: 'create', entityType: 'user_membership', entityId: umId,
       next: { ...rows[0], promotion_ids: promotionIds, membership_fee: fee },
     });
+    recordDeclinedBenefitsAudit(req, umId, declinedResult.declined);
     res.status(201).json({ ...rows[0], membership_fee: fee, promotion_ids: promotionIds });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
