@@ -1325,9 +1325,12 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 - [ ] **Sign in with Apple** (App Store guideline 4.8, equivalent privacy-preserving option
       next to Google): Apple connection in Clerk with Services ID, Team ID, Key ID and private key;
       *Sign in with Apple* capability on the app. Needs its own spike first
-      (`docs/mobile-app.md` WP3b).
-- [ ] Decide how a member who hides their email on Apple (private relay address) is linked:
-      `POST /me/link` matches by email + `gym_id`, which a relay address never equals.
+      (`docs/mobile-app.md` WP3b). The button and entitlement are built behind flags (#1075):
+      set GitHub variable `APPLE_SIGN_IN=true` for the Members App build and
+      `MOBILE_APPLE_SIGN_IN=true` for the shell, then `profile:apply`; confirm
+      `lib/nativeSignIn.ts`'s Clerk exchange on a device and record the result.
+- [x] Decide how a member who hides their email on Apple (private relay address) is linked:
+      by the invitation's member id (`POST /me/link`, #1075 stage 1); email is the fallback.
 - [ ] Verify a **first-time** Google sign-in by an *invited* member under Clerk's restricted
       mode (the spike only used a user that already existed).
 - [ ] Note for testing: Clerk's *Block email subaddresses* is on for Google, so `name+tag@…`

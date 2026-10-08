@@ -317,7 +317,15 @@ package).
   member first (`api/src/domain/memberInviteTarget.ts`), cleared afterwards. The email match stays
   the fallback, so invitations issued before this carry no metadata and behave as before; the
   staff-collision guard applies to the ticket path too. A relay-address sign-in now links.
-- **Stage 2 — still to do, and only the owner can close it:** the Apple spike (Services ID, Team ID,
+- **Stage 2a — built, behind a flag, unverified.** The code half needs no Apple account:
+  `appleNativeConfig()` / `appleIdToken()` (`lib/native.ts`), `NativeAppleButton` beside Google's
+  on the sign-in page, Clerk's own Apple button hidden only when the native one is on, and the
+  `com.apple.developer.applesignin` entitlement written by `profile:apply` only when the profile
+  (or `MOBILE_APPLE_SIGN_IN`) enables it. `NEXT_PUBLIC_APPLE_SIGN_IN` is the Members App's switch
+  and is off by default (a build without the capability must show no button). The Clerk exchange
+  is one function, `signInWithAppleToken()` (`lib/nativeSignIn.ts`), written as a **hypothesis**
+  (`oauth_token_apple`), not a result. **No spike result is recorded here.**
+- **Stage 2b — still to do, and only the owner can close it:** the Apple spike (Services ID, Team ID,
   Key ID, private key, the capability, a physical iPhone), the Clerk Apple connection and the
   `apple` provider in `nativePlugins.ts` behind WP2's "absent when it cannot work" rule.
 

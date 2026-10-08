@@ -1,7 +1,9 @@
 'use client';
 
 import { SignIn } from '@clerk/nextjs';
+import { NativeAppleButton } from '@/components/NativeAppleButton';
 import { NativeGoogleButton } from '@/components/NativeGoogleButton';
+import { appleNativeConfig, nativePlatform } from '@/lib/native';
 import { useIsNative } from '@/lib/useIsNative';
 import { memberTheme, safeArea } from '@/lib/memberChrome';
 
@@ -9,14 +11,23 @@ import { memberTheme, safeArea } from '@/lib/memberChrome';
  * What `appearance` hides in the app. Both button shapes, because Clerk renders
  * the block form or the icon form depending on how many connections the instance
  * has, and the divider with them: with Google gone there is nothing left inside
- * the card for an "or" to separate, and every native option sits below it. WP3b
- * (Sign in with Apple) adds a second button down there and revisits this one set.
+ * the card for an "or" to separate, and every native option sits below it. Sign in
+ * with Apple (#1075) adds a second button down there and, only when it is on,
+ * hides Clerk's own Apple one for the same redirect reason (`NATIVE_APPLE_ELEMENTS`).
  */
 const NATIVE_SIGN_IN_ELEMENTS = {
   socialButtonsBlockButton__google: { display: 'none' },
   socialButtonsIconButton__google: { display: 'none' },
   dividerRow: { display: 'none' },
 } as const;
+
+/** Clerk's own Apple button, hidden only where the native one takes its place. */
+const NATIVE_APPLE_ELEMENTS = {
+  socialButtonsBlockButton__apple: { display: 'none' },
+  socialButtonsIconButton__apple: { display: 'none' },
+} as const;
+
+const APPLE_NATIVE_ENABLED = process.env.NEXT_PUBLIC_APPLE_SIGN_IN;
 
 /**
  * #1073 (mobile app WP2): inside the native shell, Clerk's own "Continue with
@@ -32,6 +43,9 @@ const NATIVE_SIGN_IN_ELEMENTS = {
  */
 export default function SignInPage() {
   const native = useIsNative();
+  const nativeElements = appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: APPLE_NATIVE_ENABLED }, native ? nativePlatform() : null)
+    ? { ...NATIVE_SIGN_IN_ELEMENTS, ...NATIVE_APPLE_ELEMENTS }
+    : NATIVE_SIGN_IN_ELEMENTS;
 
   return (
     <main
@@ -49,10 +63,11 @@ export default function SignInPage() {
       }}
     >
       <SignIn
-        appearance={native ? { elements: NATIVE_SIGN_IN_ELEMENTS } : undefined}
+        appearance={native ? { elements: nativeElements } : undefined}
       />
-      <div style={{ width: '100%', maxWidth: 400 }}>
+      <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 12 }}>
         <NativeGoogleButton />
+        <NativeAppleButton />
       </div>
     </main>
   );

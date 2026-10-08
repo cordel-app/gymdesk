@@ -275,3 +275,44 @@ export function googleIdToken(result: unknown): string | null {
   const candidate = source?.result?.idToken ?? source?.idToken ?? null;
   return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : null;
 }
+
+/**
+ * What `@capgo/capacitor-social-login` is initialised with for Apple (#1075,
+ * mobile app WP3b).
+ *
+ * Apple has no client id on the native side — the sheet is the OS's, bound to
+ * the app's Bundle ID and its *Sign in with Apple* capability — so the one
+ * "is this configured" signal is `NEXT_PUBLIC_APPLE_SIGN_IN`. It is a build-time
+ * switch for the reason the Google ids are (design rule 1), and it is **off by
+ * default**: a build that turns it on without the capability on the App ID would
+ * show a button that fails when tapped, which WP2's rule forbids.
+ *
+ * Only iOS answers: guideline 4.8 is an App Store rule, Android is unaffected,
+ * and the web keeps Clerk's own Apple button.
+ */
+export interface AppleNativeConfig {
+  /** Reserved for the plugin's `apple` options; none are needed today. */
+  readonly enabled: true;
+}
+
+export function appleNativeConfig(
+  env: Record<string, string | undefined>,
+  platform: NativePlatform | null | undefined,
+): AppleNativeConfig | null {
+  if (platform !== 'ios') return null;
+  const flag = (env.NEXT_PUBLIC_APPLE_SIGN_IN ?? '').trim().toLowerCase();
+  return flag === 'true' || flag === '1' ? { enabled: true } : null;
+}
+
+/**
+ * The identity token out of the plugin's `login()` result for Apple, or `null`.
+ *
+ * Same defensive reading as `googleIdToken()`, kept as its own function so the
+ * two providers can diverge (the spike has not yet shown what Clerk accepts for
+ * Apple): a cancelled sheet is `null`, never a token of `undefined`.
+ */
+export function appleIdToken(result: unknown): string | null {
+  const source = (result ?? {}) as Record<string, any>;
+  const candidate = source?.result?.idToken ?? source?.idToken ?? null;
+  return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : null;
+}

@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
+  appleIdToken,
+  appleNativeConfig,
   NATIVE_PLATFORMS,
   appUrlOpenPath,
   bridgeNativePlatform,
@@ -293,7 +295,7 @@ describe('which sign-in button renders', () => {
     // byte what it was — the ticket's first acceptance criterion.
     expect(page).toContain('socialButtonsBlockButton__google');
     expect(page).toContain('socialButtonsIconButton__google');
-    expect(page).toContain('appearance={native ? { elements: NATIVE_SIGN_IN_ELEMENTS } : undefined}');
+    expect(page).toContain('appearance={native ? { elements: nativeElements } : undefined}');
   });
 
   it('renders the native button only in the app, and only when it can work', () => {
@@ -348,5 +350,50 @@ describe('the native wiring lives in one place', () => {
     const signOut = link.indexOf('await signOut(');
     expect(unregister).toBeGreaterThan(-1);
     expect(signOut).toBeGreaterThan(unregister);
+  });
+});
+
+describe('appleNativeConfig() (#1075)', () => {
+  it('is on only for iOS with the flag set', () => {
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: 'true' }, 'ios')).toEqual({ enabled: true });
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: '1' }, 'ios')).toEqual({ enabled: true });
+  });
+
+  it('is null without the flag, so no button is rendered', () => {
+    expect(appleNativeConfig({}, 'ios')).toBeNull();
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: '' }, 'ios')).toBeNull();
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: 'false' }, 'ios')).toBeNull();
+  });
+
+  it('is null on Android and the web, whatever is configured', () => {
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: 'true' }, 'android')).toBeNull();
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: 'true' }, null)).toBeNull();
+  });
+});
+
+describe('appleIdToken() (#1075)', () => {
+  it('reads nested and flat results', () => {
+    expect(appleIdToken({ provider: 'apple', result: { idToken: ' tok ' } })).toBe('tok');
+    expect(appleIdToken({ idToken: 'tok' })).toBe('tok');
+  });
+
+  it('is null for a cancelled sheet', () => {
+    expect(appleIdToken(null)).toBeNull();
+    expect(appleIdToken({ result: {} })).toBeNull();
+    expect(appleIdToken({ result: { idToken: '  ' } })).toBeNull();
+  });
+});
+
+describe('Sign in with Apple wiring (#1075)', () => {
+  it('mounts the button beside Google and hides Clerk’s own Apple one only when native is on', () => {
+    const page = read('app', '[locale]', 'sign-in', '[[...sign-in]]', 'page.tsx');
+    expect(page).toContain('<NativeAppleButton />');
+    expect(page).toContain('socialButtonsBlockButton__apple');
+    expect(page).toContain('appleNativeConfig(');
+  });
+
+  it('keeps the Clerk exchange in the one function the spike may change', () => {
+    expect(read('components', 'NativeAppleButton.tsx')).toContain('signInWithAppleToken(clerk, token)');
+    expect(read('lib', 'nativeSignIn.ts')).toContain('oauth_token_apple');
   });
 });

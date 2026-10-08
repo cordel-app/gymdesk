@@ -62,6 +62,8 @@ export interface AppProfileInput {
   googleWebClientId?: string | null;
   /** The custom URL scheme the app registers, for links before WP4's universal links. */
   customUrlScheme?: string;
+  /** Whether this build carries the *Sign in with Apple* entitlement (#1075). */
+  appleSignIn?: boolean | null;
 }
 
 /** A resolved profile: every field the native projects and the config need. */
@@ -74,6 +76,8 @@ export interface AppProfile {
   googleIosClientId: string | null;
   googleWebClientId: string | null;
   customUrlScheme: string;
+  /** Off unless the profile or `MOBILE_APPLE_SIGN_IN` turns it on (#1075). */
+  appleSignIn: boolean;
 }
 
 /** The environment variables a build may override a profile with. */
@@ -86,12 +90,23 @@ export const PROFILE_ENV_KEYS = {
   googleIosClientId: 'MOBILE_GOOGLE_IOS_CLIENT_ID',
   googleWebClientId: 'MOBILE_GOOGLE_WEB_CLIENT_ID',
   customUrlScheme: 'MOBILE_CUSTOM_URL_SCHEME',
+  appleSignIn: 'MOBILE_APPLE_SIGN_IN',
 } as const;
 
 /** The profile a build uses when the environment does not name one. */
 export const DEFAULT_PROFILE_ID = 'cordel-fitness';
 
 export class AppProfileError extends Error {}
+
+/** `true`/`1` and `false`/`0` (any case); anything else is "not said". */
+function flag(value: unknown): boolean | null {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return null;
+  const v = value.trim().toLowerCase();
+  if (v === 'true' || v === '1') return true;
+  if (v === 'false' || v === '0') return false;
+  return null;
+}
 
 function text(value: unknown): string | null {
   return typeof value === 'string' && value.trim() ? value.trim() : null;
@@ -162,6 +177,9 @@ export function resolveAppProfile(
       text(env[PROFILE_ENV_KEYS.customUrlScheme]) ??
       text(profile.customUrlScheme) ??
       (appId as string),
+    // Off unless somebody turned it on: the entitlement needs the capability on
+    // the App ID, and a signed build that declares one it lacks fails (#1075).
+    appleSignIn: flag(env[PROFILE_ENV_KEYS.appleSignIn]) ?? flag(profile.appleSignIn) ?? false,
   };
 }
 

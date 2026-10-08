@@ -106,6 +106,29 @@ export function withAssociatedDomains(entitlements: string, domains: readonly st
 }
 
 /**
+ * The *Sign in with Apple* entitlement (#1075, WP3b).
+ *
+ * Present only for a profile that turns it on: a signed build that declares
+ * `com.apple.developer.applesignin` without the capability on its App ID fails
+ * to sign, so the default is the entitlement being absent. The array form is
+ * Apple's (`Default`). The transform is idempotent, and removes the key when
+ * disabled so switching profile cannot leave the previous one's capability.
+ */
+export function withAppleSignIn(entitlements: string, enabled: boolean): string {
+  const key = 'com.apple.developer.applesignin';
+  const block = new RegExp(`\\s*<key>${escapeRegExp(key)}</key>\\s*<array>[\\s\\S]*?</array>`);
+  const present = block.test(entitlements);
+  if (!enabled) return present ? entitlements.replace(block, '') : entitlements;
+  if (present) return entitlements;
+  const anchor = /<\/dict>\s*<\/plist>/;
+  requireMatches(anchor.test(entitlements) ? 1 : 0, 'the closing </dict></plist>', 'App.entitlements');
+  return entitlements.replace(
+    anchor,
+    `\t<key>${key}</key>\n\t<array>\n\t\t<string>Default</string>\n\t</array>\n</dict>\n</plist>`,
+  );
+}
+
+/**
  * The `namespace` the Android project is generated with — the package its
  * checked-in `MainActivity` and generated `R`/`BuildConfig` live under.
  *

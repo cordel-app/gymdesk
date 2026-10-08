@@ -29,6 +29,7 @@ import {
   NativeProjectFileError,
   gradleNamespace,
   withAndroidStrings,
+  withAppleSignIn,
   withAssociatedDomains,
   withBundleIdentifier,
   withGradleApplicationId,
@@ -67,6 +68,7 @@ function main(): void {
   console.log(`  app name  : ${profile.appName}`);
   console.log(`  server url: ${profile.serverUrl}`);
   console.log(`  schemes   : ${ios.urlSchemes.join(', ')}`);
+  console.log(`  apple sign-in: ${profile.appleSignIn ? 'on' : 'off'}`);
   console.log(`  app links : ${ios.associatedDomains.join(', ')} / ${android.appLinkHost}`);
 
   const edits: (Edit | null)[] = [
@@ -80,7 +82,7 @@ function main(): void {
     // reason the Bundle ID is — Xcode seeds the file once and a capability
     // ticked in its UI would keep the previous profile's host.
     planFileEdit(join(WORKSPACE, 'ios/App/App/App.entitlements'), (text) =>
-      withAssociatedDomains(text, ios.associatedDomains),
+      withAppleSignIn(withAssociatedDomains(text, ios.associatedDomains), profile.appleSignIn),
     ),
     planFileEdit(gradlePath, (text) =>
       withGradleApplicationId(text, android.applicationId),
