@@ -36,6 +36,8 @@ import {
   type MemberPendingPlan,
   type MemberPlanOffer,
   assignErrorKey,
+  declinedBenefitsPayload,
+  planBenefitKey,
   choosingOwesNothing,
   planFinalPriceText,
   planFrequencyKey,
@@ -244,6 +246,8 @@ export default function MembershipPage() {
   const [assignSubmitting, setAssignSubmitting] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignNeedsConfirm, setAssignNeedsConfirm] = useState(false);
+  // #1184 stage 3b: optional Plan benefits the member unticked, per plan.
+  const [declinedPlanBenefits, setDeclinedPlanBenefits] = useState<Record<number, string[]>>({});
   const [reloadKey, setReloadKey] = useState(0);
 
   const [consentOpen, setConsentOpen] = useState(false);
@@ -665,6 +669,14 @@ export default function MembershipPage() {
     setAppliedPlanPromotions((prev) => ({ ...prev, [planId]: promotionId }));
   }
 
+  function togglePlanBenefit(planId: number, key: string) {
+    setDeclinedPlanBenefits((prev) => {
+      const current = new Set(prev[planId] ?? []);
+      if (current.has(key)) current.delete(key); else current.add(key);
+      return { ...prev, [planId]: Array.from(current) };
+    });
+  }
+
   function openChoosePlan(plan: MemberPlanOffer) {
     setChoosingPlan(plan);
     setAssignError(null);
@@ -693,6 +705,7 @@ export default function MembershipPage() {
         method: 'POST',
         body: JSON.stringify({
           promotion_ids: applied ? [applied] : [],
+          declined_benefits: declinedBenefitsPayload(choosingPlan.benefits, new Set(declinedPlanBenefits[choosingPlan.id] ?? [])),
           ...(confirmReplacement ? { confirm: true } : {}),
         }),
       });
@@ -760,6 +773,15 @@ export default function MembershipPage() {
           : (plan.billing_interval != null && plan.billing_unit ? formatInterval(plan.billing_interval, plan.billing_unit, t) : null),
         finalPriceLabel: t('membership.plan_final_price'),
         finalPrice: applied ? planFinalPriceText(plan, applied, locale) : null,
+        benefitsHeading: t('membership.plan_benefits_heading'),
+        benefits: (plan.benefits ?? []).map((b) => ({
+          key: planBenefitKey(b),
+          name: b.product_name,
+          tag: b.mandatory ? t('membership.plan_benefit_mandatory') : t('membership.plan_benefit_optional'),
+          mandatory: b.mandatory,
+          checked: !(declinedPlanBenefits[plan.id] ?? []).includes(planBenefitKey(b)),
+          onToggle: () => togglePlanBenefit(plan.id, planBenefitKey(b)),
+        })),
         promotions: plan.promotions.map((promotion) => {
           const benefit = planPromotionBenefitNote(promotion, locale);
           const duration = planPromotionDurationNote(promotion);

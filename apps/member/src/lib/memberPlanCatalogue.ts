@@ -22,6 +22,30 @@ export interface MemberPlanOfferPromotion {
   final_price_incl_tax: number | null;
 }
 
+/** One Plan benefit line, as `GET /me/membership-plans` reports it. */
+export interface MemberPlanOfferBenefit {
+  section: 'session' | 'oneoff' | 'periodical';
+  product_id: number;
+  product_name: string;
+  mandatory: boolean;
+}
+
+export function planBenefitKey(b: Pick<MemberPlanOfferBenefit, 'section' | 'product_id'>): string {
+  return `${b.section}:${b.product_id}`;
+}
+
+/**
+ * The request's `declined_benefits`: only unticked *optional* lines. The API's
+ * `declinedBenefitsError()` is the enforcement; this never names a mandatory one.
+ */
+export function declinedBenefitsPayload(
+  benefits: MemberPlanOfferBenefit[] | undefined, declinedKeys: ReadonlySet<string>,
+): Array<{ section: string; product_id: number }> {
+  return (benefits ?? [])
+    .filter((b) => !b.mandatory && declinedKeys.has(planBenefitKey(b)))
+    .map((b) => ({ section: b.section, product_id: b.product_id }));
+}
+
 /** One plan a member may choose, as `GET /me/membership-plans` reports it. */
 export interface MemberPlanOffer {
   id: number;
@@ -32,6 +56,8 @@ export interface MemberPlanOffer {
   billing_interval: number | null;
   billing_unit: string | null;
   promotions: MemberPlanOfferPromotion[];
+  /** The Plan's benefit lines (#1184 stage 3b); absent from an older API. */
+  benefits?: MemberPlanOfferBenefit[];
 }
 
 /** The member's plan awaiting its first payment, as `GET /me/membership` reports it. */

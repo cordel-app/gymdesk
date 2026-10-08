@@ -11,7 +11,7 @@ import {
 } from './user-memberships';
 import { recordStatusChange } from './billing-events';
 import { snapshotAssignedPlan } from './assigned-plan-snapshot';
-import { resolveDeclinedBenefits } from './declined-plan-benefits';
+import { resolveDeclinedBenefits, loadNamedPlanBenefitLines } from './declined-plan-benefits';
 import { applyPromotionToMembership, validatePromotionSelection } from './membership-promotions';
 import { currentMembershipFee } from './membership-fee-pricing';
 import { commitAssignment, submitForPayment } from './assignment-commit';
@@ -119,6 +119,7 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
     const isNewMember = await isNewMemberStatus(db, gymId, memberId);
     const promotions = await loadCompatiblePromotions(gymId, plans.map((p) => Number(p.id)), isNewMember);
 
+    const benefitsByPlan = await loadNamedPlanBenefitLines(gymId, plans.map((p) => Number(p.id)));
     const items = [];
     for (const plan of plans) {
       const eff = await effectivePrice(Number(plan.id), gymId, today);
@@ -139,6 +140,7 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
         tax_included: priceFields.amount_incl_tax != null,
         billing_interval: plan.billing_interval != null ? Number(plan.billing_interval) : null,
         billing_unit: plan.billing_unit,
+        benefits: benefitsByPlan.get(Number(plan.id)) ?? [],
         promotions: (promotions.get(Number(plan.id)) ?? []).map((p) => ({
           id: Number(p.id),
           name: p.name,

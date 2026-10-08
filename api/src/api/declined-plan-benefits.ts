@@ -37,3 +37,38 @@ export async function resolveDeclinedBenefits(
   const error = declinedBenefitsError(await loadPlanBenefitLines(gymId, planId), parsed.declined);
   return error ? { error } : { declined: parsed.declined };
 }
+
+export interface NamedPlanBenefitLine extends PlanBenefitLine { product_name: string }
+
+/**
+ * #1184 stage 3b — the benefit lines of several Plans with the Product's name,
+ * for the Members App's picker. Same tables, same `mandatory` reading as
+ * `loadPlanBenefitLines()`, so what the member sees to untick is what
+ * `declinedBenefitsError()` will accept.
+ */
+export async function loadNamedPlanBenefitLines(
+  gymId: string | number, planIds: number[],
+): Promise<Map<number, NamedPlanBenefitLine[]>> {
+  const byPlan = new Map<number, NamedPlanBenefitLine[]>();
+  if (planIds.length === 0) return byPlan;
+  const marks = planIds.map(() => '?').join(',');
+  for (const [section, table] of PLAN_TABLES) {
+    const { rows } = await db.query(
+      `SELECT b.membership_plan_id, b.product_id, b.mandatory, p.name AS product_name
+         FROM ${table} b
+         JOIN products p ON p.id = b.product_id AND p.gym_id = b.gym_id
+        WHERE b.gym_id = ? AND b.membership_plan_id IN (${marks})
+        ORDER BY p.name ASC`,
+      [gymId, ...planIds],
+    );
+    for (const r of rows) {
+      const list = byPlan.get(Number(r.membership_plan_id)) ?? [];
+      list.push({
+        section, product_id: Number(r.product_id), product_name: String(r.product_name),
+        mandatory: toPlanBenefitMandatory(r.mandatory),
+      });
+      byPlan.set(Number(r.membership_plan_id), list);
+    }
+  }
+  return byPlan;
+}
