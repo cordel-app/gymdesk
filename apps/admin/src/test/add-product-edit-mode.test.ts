@@ -40,7 +40,6 @@ const read = (path: string) => stripComments(readFileSync(path, 'utf-8'));
 
 const editorSrc = read(join(ASSIGNED_PLANS_DIR, 'AdditionalPeriodicServices.tsx'));
 const assignedPlanRowSrc = read(join(ASSIGNED_PLANS_DIR, 'AssignedPlanExpandedRow.tsx'));
-const memberSectionSrc = read(join(MEMBERS_DIR, 'MemberAdditionalServices.tsx'));
 const memberRowSrc = read(join(MEMBERS_DIR, 'MemberExpandedRow.tsx'));
 
 const messages = Object.fromEntries(
@@ -50,7 +49,6 @@ const messages = Object.fromEntries(
 /** Every string the two surfaces of this section show, by namespace. */
 const SECTION_STRINGS: Array<[string, string]> = [
   ['members', 'section_additional_services'],
-  ['members', 'additional_services_needs_plan'],
   ['assigned_plans_page', 'section_additional_services'],
   ['assigned_plans_page', 'services_none'],
   ['assigned_plans_page', 'services_add'],
@@ -77,12 +75,9 @@ describe('Add Product is only available in Edit mode (#957 §2)', () => {
     expect(assignedPlanRowSrc).not.toContain('canAdd=');
   });
 
-  it('is absent in the Member read-only view rather than disabled', () => {
-    // The Member card's Edit-mode flag reaches the editor unchanged, and the
-    // gate is on rendering the <button>, not on its `disabled` attribute.
-    expect(memberRowSrc).toContain('editing={editing}');
-    expect(memberSectionSrc).toContain('canAdd={editing}');
-    expect(memberSectionSrc).toContain('editing: boolean');
+  it('is gated on rendering the button, not on its `disabled` attribute', () => {
+    // #1290: the Member card no longer hosts this editor at all.
+    expect(memberRowSrc).not.toContain('AdditionalPeriodicServices');
     expect(editorSrc).not.toMatch(/disabled=\{!canAdd/);
   });
 
@@ -90,9 +85,7 @@ describe('Add Product is only available in Edit mode (#957 §2)', () => {
     // §"Preserve": only the add action is Edit mode's. The table, the removal
     // action and the needs-a-plan line are untouched, and nothing about the
     // section is gated on `editing` beyond the one prop.
-    expect(memberSectionSrc).toContain("t('additional_services_needs_plan')");
     expect(editorSrc).toContain("t('services_remove')");
-    expect((memberSectionSrc.match(/editing/g) ?? []).length).toBeLessThanOrEqual(3);
   });
 });
 

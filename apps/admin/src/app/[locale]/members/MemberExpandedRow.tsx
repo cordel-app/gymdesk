@@ -32,7 +32,6 @@ import {
 } from './MemberPurchasedProducts';
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
-import { MemberAdditionalServices } from './MemberAdditionalServices';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
@@ -457,18 +456,10 @@ export function MemberExpandedRow({
               reads in both modes; the services editor's `+ Add Product` button
               is Edit mode's alone. */}
           <Section label={t('members.section_additional_services')}>
-            <div style={{ marginBottom: 14 }}>
+            <div>
               <div style={subLabelStyle}>{t('members.purchased_products_label')}</div>
               <MemberPurchasedProducts items={purchasedProducts} />
             </div>
-            <div style={subLabelStyle}>{t('members.periodic_services_label')}</div>
-            <MemberAdditionalServices
-              plans={configuration.plans}
-              services={configuration.services}
-              canWrite={isAdmin}
-              editing={editing}
-              onChanged={reloadConfiguration}
-            />
           </Section>
 
           {/* Billing Simulation (#629) — a section of its own, never nested inside
