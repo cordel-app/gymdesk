@@ -301,13 +301,25 @@ export function GoalLibrarySection({
               <label style={formFieldLabelStyle}>{label('label_target_value')}</label>
               <input
                 type="number"
-                min={0}
+                min={form.target_type === 'relative' ? undefined : 0}
                 step="0.01"
                 value={form.target_value}
                 onChange={(e) => setForm({ ...form, target_value: e.target.value })}
                 style={formControlStyle}
               />
               <span style={formHelpTextStyle}>{label('help_target_value')}</span>
+            </div>
+            <div>
+              <label style={formFieldLabelStyle}>{label('label_target_type')}</label>
+              <select
+                value={form.target_type}
+                onChange={(e) => setForm({ ...form, target_type: e.target.value === 'relative' ? 'relative' : 'absolute' })}
+                style={formControlStyle}
+              >
+                <option value="absolute">{label('target_type_absolute')}</option>
+                <option value="relative">{label('target_type_relative')}</option>
+              </select>
+              <span style={formHelpTextStyle}>{label('help_target_type')}</span>
             </div>
             <div>
               <label style={formFieldLabelStyle}>{label('label_target_unit')}</label>

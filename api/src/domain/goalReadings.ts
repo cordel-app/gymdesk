@@ -27,7 +27,7 @@
  *   `100%` and a member who moved the wrong way reads `0%`.
  */
 
-import type { Normalized } from './goalTarget';
+import { effectiveTarget, type Normalized, type TargetType } from './goalTarget';
 
 /** `value` is DECIMAL(10,2) (migration 224), the same shape as a target. */
 export const READING_VALUE_MAX = 99999999.99;
@@ -270,6 +270,8 @@ export interface GoalReadingSummary {
   /** §10 — the most recent reading. */
   latest_reading: number | null;
   latest_reading_at: string | null;
+  /** #1229 — what progress is measured against: the absolute target, or baseline + relative change. */
+  effective_target: number | null;
   /** §11 — 0..100, or `null` when it cannot be computed. */
   progress_percent: number | null;
   /** How many readings the assignment holds, so a card can say "no readings yet". */
@@ -281,6 +283,7 @@ export const EMPTY_READING_SUMMARY: GoalReadingSummary = {
   initial_reading_at: null,
   latest_reading: null,
   latest_reading_at: null,
+  effective_target: null,
   progress_percent: null,
   reading_count: 0,
 };
@@ -293,8 +296,15 @@ export const EMPTY_READING_SUMMARY: GoalReadingSummary = {
  */
 export function summarizeReadings(
   readings: GoalReading[],
-  target: number | null,
+  configuredTarget: number | null,
+  targetType: TargetType = 'absolute',
 ): GoalReadingSummary {
+  const baseline = sortReadings(readings)[0] ?? null;
+  const target = effectiveTarget({
+    targetType,
+    targetValue: configuredTarget,
+    baseline: baseline ? baseline.value : null,
+  });
   const initial = activeInitialReadingOf(readings);
   const latest = latestReadingOf(readings);
   return {
@@ -302,6 +312,7 @@ export function summarizeReadings(
     initial_reading_at: initial ? new Date(initial.recordedAt).toISOString() : null,
     latest_reading: latest ? latest.value : null,
     latest_reading_at: latest ? new Date(latest.recordedAt).toISOString() : null,
+    effective_target: target,
     progress_percent: progressPercent({
       initial: initial ? initial.value : null,
       latest: latest ? latest.value : null,

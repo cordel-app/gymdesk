@@ -12,6 +12,7 @@ import {
   normalizeGoalDate,
   normalizeNotes,
   normalizeTargetUnit,
+  normalizeTargetType,
   normalizeTargetValue,
   toDateOnly,
   utcToday,
@@ -81,7 +82,7 @@ mePersonalGoalsRouter.use(
  */
 const COLUMNS = `
   mpg.id, mpg.personal_goal_id,
-  mpg.target_value, mpg.target_unit,
+  mpg.target_value, mpg.target_unit, mpg.target_type,
   mpg.start_date, mpg.target_date, mpg.end_date,
   mpg.status, mpg.notes, mpg.created_at, mpg.deleted_at,
   COALESCE(mpg.goal_name, pg.name) AS goal_name,
@@ -174,7 +175,7 @@ mePersonalGoalsRouter.get('/available', async (req, res, next) => {
     // The catalogue's own gym-facing rule: a System row (`gym_id IS NULL`) is
     // assignable by every gym, this gym's own are, another gym's are invisible.
     const { rows } = await db.query(
-      `SELECT pg.id, pg.slug, pg.name, pg.description, pg.target_value, pg.target_unit
+      `SELECT pg.id, pg.slug, pg.name, pg.description, pg.target_value, pg.target_unit, pg.target_type
        FROM personal_goals pg
        WHERE (pg.gym_id IS NULL OR pg.gym_id = ?)
          AND pg.status != 'deleted'
@@ -208,7 +209,9 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
     return res.status(400).json({ error: 'personal_goal_id is required' });
   }
 
-  const targetValue = normalizeTargetValue(req.body?.target_value);
+  const targetType = normalizeTargetType(req.body?.target_type);
+  if ('error' in targetType) return res.status(400).json({ error: targetType.error });
+  const targetValue = normalizeTargetValue(req.body?.target_value, { allowNegative: true });
   if ('error' in targetValue) return res.status(400).json({ error: targetValue.error });
   const targetUnit = normalizeTargetUnit(req.body?.target_unit);
   if ('error' in targetUnit) return res.status(400).json({ error: targetUnit.error });
@@ -235,7 +238,7 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
     const memberId = await resolveMemberId(gymId, ctx);
 
     const { rows: goalRows } = await db.query(
-      `SELECT pg.id, pg.name, pg.target_value, pg.target_unit, ${gymGoalStatusSql('pg')} AS gym_status
+      `SELECT pg.id, pg.name, pg.target_value, pg.target_unit, pg.target_type, ${gymGoalStatusSql('pg')} AS gym_status
        FROM personal_goals pg
        WHERE pg.id = ? AND (pg.gym_id IS NULL OR pg.gym_id = ?) AND pg.status != 'deleted'`,
       [gymId, goalId, gymId],
@@ -256,6 +259,7 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
     const effectiveValue = targetValue.value === undefined
       ? (catalogue.target_value === null || catalogue.target_value === undefined ? null : Number(catalogue.target_value))
       : targetValue.value;
+    const effectiveType = targetType.value ?? (catalogue.target_type === 'relative' ? 'relative' : 'absolute');
     const effectiveUnit = targetUnit.value === undefined
       ? (effectiveValue === null ? null : (catalogue.target_unit ?? null))
       : targetUnit.value;
@@ -263,6 +267,7 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
     const fieldError = goalAssignmentFieldError({
       targetValue: effectiveValue,
       targetUnit: effectiveUnit,
+      targetType: effectiveType,
       startDate: startDate.value ?? null,
       targetDate: targetDate.value ?? null,
     });
@@ -276,12 +281,12 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
     const insertId = await db.transaction(async (tx) => {
       const { insertId: assignmentId } = await tx.query(
         `INSERT INTO member_personal_goals
-           (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit,
+           (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit, target_type,
             start_date, target_date, notes, created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId, memberId, goalId, catalogue.name,
-          effectiveValue, effectiveUnit,
+          effectiveValue, effectiveUnit, effectiveType,
           startDate.value ?? null, targetDate.value ?? null,
           notes.value ?? null, actor.name, actor.type,
         ],
@@ -329,7 +334,9 @@ mePersonalGoalsRouter.put('/:id', async (req, res, next) => {
   const { gymId, actorName, isSuperadmin } = ctx;
   const { id } = req.params;
 
-  const targetValue = normalizeTargetValue(req.body?.target_value);
+  const targetType = normalizeTargetType(req.body?.target_type);
+  if ('error' in targetType) return res.status(400).json({ error: targetType.error });
+  const targetValue = normalizeTargetValue(req.body?.target_value, { allowNegative: true });
   if ('error' in targetValue) return res.status(400).json({ error: targetValue.error });
   const targetUnit = normalizeTargetUnit(req.body?.target_unit);
   if ('error' in targetUnit) return res.status(400).json({ error: targetUnit.error });
@@ -356,6 +363,7 @@ mePersonalGoalsRouter.put('/:id', async (req, res, next) => {
     const fieldError = goalAssignmentFieldError({
       targetValue: targetValue.value === undefined ? previous.target_value : targetValue.value,
       targetUnit: targetUnit.value === undefined ? previous.target_unit : targetUnit.value,
+      targetType: targetType.value === undefined ? previous.target_type : targetType.value,
       startDate: startDate.value === undefined ? previous.start_date : startDate.value,
       targetDate: targetDate.value === undefined ? previous.target_date : targetDate.value,
     });
@@ -365,6 +373,7 @@ mePersonalGoalsRouter.put('/:id', async (req, res, next) => {
     const params: unknown[] = [actor.name, actor.type];
     if (targetValue.value !== undefined) { updates.push('target_value = ?'); params.push(targetValue.value); }
     if (targetUnit.value !== undefined) { updates.push('target_unit = ?'); params.push(targetUnit.value); }
+    if (targetType.value !== undefined) { updates.push('target_type = ?'); params.push(targetType.value); }
     if (startDate.value !== undefined) { updates.push('start_date = ?'); params.push(startDate.value); }
     if (targetDate.value !== undefined) { updates.push('target_date = ?'); params.push(targetDate.value); }
     if (notes.value !== undefined) { updates.push('notes = ?'); params.push(notes.value); }
@@ -407,7 +416,7 @@ mePersonalGoalsRouter.get('/:id/readings', async (req, res, next) => {
     const memberId = await resolveMemberId(gymId, ctx);
     const assignment = await requireOwn(req.params.id, gymId, memberId, res);
     if (!assignment) return;
-    res.json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false }));
+    res.json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false, targetType: assignment.target_type }));
   } catch (err) { next(err); }
 });
 
@@ -434,7 +443,7 @@ mePersonalGoalsRouter.post('/:id/readings', async (req, res, next) => {
       actorName: actor.name,
       actorType: actor.type,
     });
-    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false }));
+    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false, targetType: assignment.target_type }));
   } catch (err) { next(err); }
 });
 
@@ -462,7 +471,7 @@ mePersonalGoalsRouter.post('/:id/initial-reading', async (req, res, next) => {
       actorName: actor.name,
       actorType: actor.type,
     });
-    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false }));
+    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false, targetType: assignment.target_type }));
   } catch (err) { next(err); }
 });
 

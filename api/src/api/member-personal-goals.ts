@@ -18,6 +18,7 @@ import {
   normalizeNotes,
   normalizeStatus,
   normalizeTargetUnit,
+  normalizeTargetType,
   normalizeTargetValue,
   toDateOnly,
   utcToday,
@@ -87,7 +88,7 @@ const requireWrite = requireFeatureWrite(GOAL_LIBRARY_FEATURE_KEYS.personal, 'NU
  */
 const COLUMNS = `
   mpg.id, mpg.gym_id, mpg.member_id, mpg.personal_goal_id,
-  mpg.target_value, mpg.target_unit, mpg.start_date, mpg.target_date,
+  mpg.target_value, mpg.target_unit, mpg.target_type, mpg.start_date, mpg.target_date,
   mpg.end_date,
   mpg.status, mpg.notes,
   mpg.created_at, mpg.modified_at, mpg.deleted_at,
@@ -238,7 +239,9 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     return res.status(400).json({ error: 'personal_goal_id is required' });
   }
 
-  const targetValue = normalizeTargetValue(req.body?.target_value);
+  const targetType = normalizeTargetType(req.body?.target_type);
+  if ('error' in targetType) return res.status(400).json({ error: targetType.error });
+  const targetValue = normalizeTargetValue(req.body?.target_value, { allowNegative: true });
   if ('error' in targetValue) return res.status(400).json({ error: targetValue.error });
   const targetUnit = normalizeTargetUnit(req.body?.target_unit);
   if ('error' in targetUnit) return res.status(400).json({ error: targetUnit.error });
@@ -283,7 +286,7 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     // a retired one is not — assigning a goal the gym has deleted is how a list
     // comes to name something the catalogue no longer offers.
     const { rows: goalRows } = await db.query(
-      `SELECT pg.id, pg.name, pg.target_value, pg.target_unit, ${gymGoalStatusSql('pg')} AS gym_status
+      `SELECT pg.id, pg.name, pg.target_value, pg.target_unit, pg.target_type, ${gymGoalStatusSql('pg')} AS gym_status
        FROM personal_goals pg
        WHERE pg.id = ? AND (pg.gym_id IS NULL OR pg.gym_id = ?) AND pg.status != 'deleted'`,
       [gymId, goalId, gymId],
@@ -310,6 +313,7 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     const effectiveValue = targetValue.value === undefined
       ? toNumberOrNull(catalogue.target_value)
       : targetValue.value;
+    const effectiveType = targetType.value ?? (catalogue.target_type === 'relative' ? 'relative' : 'absolute');
     const effectiveUnit = targetUnit.value === undefined
       ? (effectiveValue === null ? null : (catalogue.target_unit ?? null))
       : targetUnit.value;
@@ -317,6 +321,7 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     const pairError = goalAssignmentFieldError({
       targetValue: effectiveValue,
       targetUnit: effectiveUnit,
+      targetType: effectiveType,
       startDate: startDate.value ?? null,
       targetDate: targetDate.value ?? null,
     });
@@ -328,12 +333,12 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
     const insertId = await db.transaction(async (tx) => {
       const { insertId: assignmentId } = await tx.query(
         `INSERT INTO member_personal_goals
-           (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit,
+           (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit, target_type,
             start_date, target_date, status, notes, created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?, ?)`,
         [
           gymId, memberId, goalId, catalogue.name,
-          effectiveValue, effectiveUnit,
+          effectiveValue, effectiveUnit, effectiveType,
           startDate.value ?? null, targetDate.value ?? null,
           status.value ?? null, notes.value ?? null,
           actor.name, actor.type,
@@ -377,7 +382,9 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
   const { gymId, actorName, isSuperadmin } = getTenantContext(req);
   const { id } = req.params;
 
-  const targetValue = normalizeTargetValue(req.body?.target_value);
+  const targetType = normalizeTargetType(req.body?.target_type);
+  if ('error' in targetType) return res.status(400).json({ error: targetType.error });
+  const targetValue = normalizeTargetValue(req.body?.target_value, { allowNegative: true });
   if ('error' in targetValue) return res.status(400).json({ error: targetValue.error });
   const targetUnit = normalizeTargetUnit(req.body?.target_unit);
   if ('error' in targetUnit) return res.status(400).json({ error: targetUnit.error });
@@ -407,6 +414,7 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
     const next = {
       targetValue: targetValue.value === undefined ? previous.target_value : targetValue.value,
       targetUnit: targetUnit.value === undefined ? previous.target_unit : targetUnit.value,
+      targetType: targetType.value === undefined ? previous.target_type : targetType.value,
       startDate: startDate.value === undefined ? toDateOnly(previous.start_date) : startDate.value,
       targetDate: targetDate.value === undefined ? toDateOnly(previous.target_date) : targetDate.value,
     };
@@ -434,6 +442,7 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
     // `undefined` is "the body did not mention it"; `null` is an explicit clear.
     if (targetValue.value !== undefined) { updates.push('target_value = ?'); params.push(targetValue.value); }
     if (targetUnit.value !== undefined) { updates.push('target_unit = ?'); params.push(targetUnit.value); }
+    if (targetType.value !== undefined) { updates.push('target_type = ?'); params.push(targetType.value); }
     if (startDate.value !== undefined) { updates.push('start_date = ?'); params.push(startDate.value); }
     if (targetDate.value !== undefined) { updates.push('target_date = ?'); params.push(targetDate.value); }
     if (notes.value !== undefined) { updates.push('notes = ?'); params.push(notes.value); }
@@ -484,7 +493,7 @@ memberPersonalGoalsRouter.get('/:id/readings', async (req, res, next) => {
   try {
     const assignment = await requireAssignment(req.params.id, gymId, res);
     if (!assignment) return;
-    res.json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true }));
+    res.json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true, targetType: assignment.target_type }));
   } catch (err) { next(err); }
 });
 
@@ -519,7 +528,7 @@ memberPersonalGoalsRouter.post('/:id/readings', requireWrite, async (req, res, n
       action: 'add_reading', entityType: 'member_personal_goal', entityId: assignment.id,
       next: { reading_id: readingId, value: value.value, recorded_at: recordedAt.value ?? null },
     });
-    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true }));
+    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true, targetType: assignment.target_type }));
   } catch (err) { next(err); }
 });
 
@@ -557,7 +566,7 @@ memberPersonalGoalsRouter.post('/:id/initial-reading', requireWrite, async (req,
       previous: { initial_reading: assignment.initial_reading },
       next: { reading_id: readingId, value: value.value, recorded_at: recordedAt.value ?? null },
     });
-    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true }));
+    res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: true, targetType: assignment.target_type }));
   } catch (err) { next(err); }
 });
 

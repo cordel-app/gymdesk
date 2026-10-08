@@ -131,12 +131,22 @@ export function AssignGoalToMemberModal({ goal, goalName, label, onClose, onAssi
           <Field label={label('label_target_value')} help={label('help_assign_target')}>
             <input
               type="number"
-              min={0}
+              min={form.target_type === 'relative' ? undefined : 0}
               step="0.01"
               value={form.target_value}
               onChange={(e) => setForm({ ...form, target_value: e.target.value })}
               style={formControlStyle}
             />
+          </Field>
+          <Field label={label('label_target_type')}>
+            <select
+              value={form.target_type}
+              onChange={(e) => setForm({ ...form, target_type: e.target.value === 'relative' ? 'relative' : 'absolute' })}
+              style={formControlStyle}
+            >
+              <option value="absolute">{label('target_type_absolute')}</option>
+              <option value="relative">{label('target_type_relative')}</option>
+            </select>
           </Field>
           <Field label={label('label_target_unit')}>
             <input
@@ -167,6 +177,7 @@ function seedForm(goal: GoalRow): AssignedPersonalGoalFormValues {
     target_value: goal.target_value === null || goal.target_value === undefined
       ? '' : String(goal.target_value),
     target_unit: goal.target_unit ?? '',
+    target_type: goal.target_type === 'relative' ? 'relative' : 'absolute',
   };
 }
 

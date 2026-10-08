@@ -24,6 +24,7 @@ export interface GoalOption {
    */
   target_value?: number | null;
   target_unit?: string | null;
+  target_type?: 'absolute' | 'relative';
 }
 
 export interface MemberOption { id: number; name: string }
@@ -117,12 +118,22 @@ export function AssignedPersonalGoalForm({
         <Field label={label('label_target_value')} help={label('help_target_value')}>
           <input
             type="number"
-            min={0}
+            min={form.target_type === 'relative' ? undefined : 0}
             step="0.01"
             value={form.target_value}
             onChange={(e) => set({ target_value: e.target.value })}
             style={formControlStyle}
           />
+        </Field>
+        <Field label={label('label_target_type')} help={label('help_target_type')}>
+          <select
+            value={form.target_type}
+            onChange={(e) => set({ target_type: e.target.value === 'relative' ? 'relative' : 'absolute' })}
+            style={formControlStyle}
+          >
+            <option value="absolute">{label('target_type_absolute')}</option>
+            <option value="relative">{label('target_type_relative')}</option>
+          </select>
         </Field>
         <Field label={label('label_target_unit')}>
           <input
@@ -204,6 +215,7 @@ function selectGoal(id: string, goals: GoalOption[]): Partial<AssignedPersonalGo
     target_value: goal?.target_value === null || goal?.target_value === undefined
       ? '' : String(goal.target_value),
     target_unit: goal?.target_unit ?? '',
+    target_type: goal?.target_type === 'relative' ? 'relative' : 'absolute',
   };
 }
 

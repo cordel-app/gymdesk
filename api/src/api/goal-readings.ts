@@ -1,12 +1,12 @@
 import { db } from '../infra/db';
 import type { Tx } from '../infra/db';
 import {
-  EMPTY_READING_SUMMARY,
   type GoalReadingSummary,
   assignReadingPeriods,
   summarizeReadings,
   toGoalReading,
 } from '../domain/goalReadings';
+import { isTargetType, type TargetType } from '../domain/goalTarget';
 
 /**
  * #1037 — the one place an Assigned Personal Goal's **readings** are read and
@@ -124,10 +124,18 @@ function shapeReading(
   };
 }
 
-function summarize(rows: StoredReading[] | undefined, target: number | null): GoalReadingSummary {
-  if (!rows || rows.length === 0) return { ...EMPTY_READING_SUMMARY };
-  const readings = rows.map(toGoalReading).filter((r): r is NonNullable<typeof r> => r !== null);
-  return summarizeReadings(readings, target);
+/** A stored `target_type` narrowed to the declared set; anything else reads as absolute. */
+function toTargetType(value: unknown): TargetType {
+  return isTargetType(value) ? value : 'absolute';
+}
+
+function summarize(
+  rows: StoredReading[] | undefined,
+  target: number | null,
+  targetType: TargetType,
+): GoalReadingSummary {
+  const readings = (rows ?? []).map(toGoalReading).filter((r): r is NonNullable<typeof r> => r !== null);
+  return summarizeReadings(readings, target, targetType);
 }
 
 /**
@@ -136,7 +144,7 @@ function summarize(rows: StoredReading[] | undefined, target: number | null): Go
  * header says why there is no stored copy), so a reading added a second ago is
  * already in them.
  */
-export async function withReadingSummaries<T extends { id: unknown; target_value: number | null }>(
+export async function withReadingSummaries<T extends { id: unknown; target_value: number | null; target_type?: unknown }>(
   rows: T[],
   gymId: string,
 ): Promise<(T & GoalReadingSummary)[]> {
@@ -145,12 +153,12 @@ export async function withReadingSummaries<T extends { id: unknown; target_value
   const byAssignment = await loadReadings(ids, gymId);
   return rows.map((row) => ({
     ...row,
-    ...summarize(byAssignment.get(Number(row.id)), row.target_value),
+    ...summarize(byAssignment.get(Number(row.id)), row.target_value, toTargetType(row.target_type)),
   }));
 }
 
 /** The single-row form of the above. */
-export async function withReadingSummary<T extends { id: unknown; target_value: number | null }>(
+export async function withReadingSummary<T extends { id: unknown; target_value: number | null; target_type?: unknown }>(
   row: T,
   gymId: string,
 ): Promise<T & GoalReadingSummary> {
@@ -170,14 +178,14 @@ export async function loadGoalReadings(
   assignmentId: number,
   gymId: string,
   target: number | null,
-  { includeActor }: { includeActor: boolean },
+  { includeActor, targetType }: { includeActor: boolean; targetType?: unknown },
 ) {
   const rows = (await loadReadings([assignmentId], gymId)).get(assignmentId) ?? [];
   const readings = rows.map(toGoalReading).filter((r): r is NonNullable<typeof r> => r !== null);
   const periods = assignReadingPeriods(readings);
   return {
     readings: rows.map((row) => shapeReading(row, periods.get(Number(row.id)), includeActor)),
-    ...summarize(rows, target),
+    ...summarize(rows, target, toTargetType(targetType)),
   };
 }
 

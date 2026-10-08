@@ -38,7 +38,7 @@ import {
 import { logger } from '../lib/logger';
 // What a goal **target** is lives in one module, shared with the gym-facing
 // router and the assignment side (#1034 §1).
-import { normalizeTargetUnit, normalizeTargetValue, targetPairError } from '../domain/goalTarget';
+import { normalizeTargetType, normalizeTargetUnit, normalizeTargetValue, targetPairError } from '../domain/goalTarget';
 import {
   actorSnapshot, clampLimit, clampOffset, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
@@ -66,7 +66,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
   // Goal's `/:id/image` is a 404 rather than a write to a missing column.
   const hasImage = goalKindHasImage(kind);
 
-  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit,' : ''}${hasImage ? ' g.image_url,' : ''}
+  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasImage ? ' g.image_url,' : ''}
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g')}`;
 
@@ -82,13 +82,15 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
   }
 
   /** The submitted target pair, or the 400 that describes it (measurable kinds only). */
-  function readTarget(body: any): { value: { value: number | null | undefined; unit: string | null | undefined } } | { error: string } {
-    if (!measurable) return { value: { value: undefined, unit: undefined } };
-    const value = normalizeTargetValue(body?.target_value);
+  function readTarget(body: any): { value: { value: number | null | undefined; unit: string | null | undefined; type: 'absolute' | 'relative' | undefined } } | { error: string } {
+    if (!measurable) return { value: { value: undefined, unit: undefined, type: undefined } };
+    const value = normalizeTargetValue(body?.target_value, { allowNegative: true });
     if ('error' in value) return { error: value.error };
+    const type = normalizeTargetType(body?.target_type);
+    if ('error' in type) return { error: type.error };
     const unit = normalizeTargetUnit(body?.target_unit);
     if ('error' in unit) return { error: unit.error };
-    return { value: { value: value.value, unit: unit.value } };
+    return { value: { value: value.value, unit: unit.value, type: type.value } };
   }
 
   /**
@@ -146,6 +148,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
     const createPairError = targetPairError({
       targetValue: target.value.value ?? null,
       targetUnit: target.value.unit ?? null,
+      targetType: target.value.type ?? 'absolute',
     });
     if (createPairError) return res.status(400).json({ error: createPairError });
 
@@ -162,12 +165,12 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // Inventing a slug for it would promise a translation key nothing holds.
       const actor = platformActor(req);
       const { insertId } = await db.query(
-        `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit,' : ''}
+        `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
            status, created_by_name, created_by_type)
          VALUES (NULL, ?, ?,${measurable ? ' ?, ?,' : ''} 'active', ?, ?)`,
         [
           name.value, description.value ?? null,
-          ...(measurable ? [target.value.value ?? null, target.value.unit ?? null] : []),
+          ...(measurable ? [target.value.value ?? null, target.value.unit ?? null, target.value.type ?? 'absolute'] : []),
           actor.name, actor.type,
         ],
       );
@@ -190,7 +193,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
     try {
       const { rows: existing } = await db.query(
-        `SELECT id, name, description, status, slug${measurable ? ', target_value, target_unit' : ''}
+        `SELECT id, name, description, status, slug${measurable ? ', target_value, target_unit, target_type' : ''}
          FROM ${table} WHERE id = ? AND gym_id IS NULL`,
         [id],
       );
@@ -221,10 +224,12 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
             ? toNumberOrNull(existing[0].target_value) : target.value.value,
           targetUnit: target.value.unit === undefined
             ? (existing[0].target_unit ?? null) : target.value.unit,
+          targetType: target.value.type ?? (existing[0].target_type === 'relative' ? 'relative' : 'absolute'),
         });
         if (pairError) return res.status(400).json({ error: pairError });
         if (target.value.value !== undefined) { updates.push('target_value = ?'); params.push(target.value.value); }
         if (target.value.unit !== undefined) { updates.push('target_unit = ?'); params.push(target.value.unit); }
+        if (target.value.type !== undefined) { updates.push('target_type = ?'); params.push(target.value.type); }
       }
       params.push(id);
       await db.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`, params);

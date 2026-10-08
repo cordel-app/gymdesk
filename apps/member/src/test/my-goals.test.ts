@@ -88,6 +88,7 @@ function goal(overrides: Partial<MemberGoal> = {}): MemberGoal {
     initial_reading_at: null,
     latest_reading: null,
     latest_reading_at: null,
+    effective_target: null,
     progress_percent: null,
     reading_count: 0,
     ...overrides,

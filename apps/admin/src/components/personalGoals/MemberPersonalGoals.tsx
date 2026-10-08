@@ -157,6 +157,7 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
         // #1034: the catalogue's own target, so the picker pre-fills it.
         target_value: g.target_value ?? null,
         target_unit: g.target_unit ?? null,
+        target_type: g.target_type ?? 'absolute',
       }))
       .sort((a, b) => a.name.localeCompare(b.name, locale)),
     [goals, tGoals, locale],
@@ -253,7 +254,7 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
                 <GoalReadingChart
                   readings={readings[row.id]?.readings ?? []}
                   unit={row.target_unit}
-                  target={row.target_value}
+                  target={row.effective_target}
                   locale={locale}
                   labels={{
                     title: t('section_progress_chart'),
