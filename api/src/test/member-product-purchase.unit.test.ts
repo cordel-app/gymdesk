@@ -312,11 +312,12 @@ describe('a purchase is not a membership cycle (the money paths)', () => {
     expect(billing).toContain('purchases_cancelled: purchasesCancelled');
   });
 
-  // #788's defect, one source over: the latest `payment_requests` row decides
-  // the Members list's `payment_status`, which is about the membership fee.
-  it('a purchase is not read as the member’s fee status', () => {
+  // #1235 reversed the Members list's `payment_status` from "the membership
+  // fee" to the worst status across every billable concept, so a purchase is
+  // counted there; the Pay-now prompt below is still about the fee alone.
+  it('a purchase counts in the member’s aggregated payment status', () => {
     expect(read(REPO, 'api', 'src', 'api', 'members.ts'))
-      .toContain("pr.source NOT IN ('card_update', 'product_purchase')");
+      .toContain('memberPaymentStatusSql');
     // The page asks the shared rule rather than spelling the source: the
     // member's history keeps listing a purchase (it is money), and what the
     // Pay-now prompt is about is the *fee*.
