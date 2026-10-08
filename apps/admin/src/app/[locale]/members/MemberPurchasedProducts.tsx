@@ -24,8 +24,10 @@
 //    same way here as on the Promotion card (#924 stage 2's rule, one table
 //    over).
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { DataTable, type Column } from '@/components/DataTable';
+import { StatusBadge } from '@/components/StatusBadge';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import {
   cardMutedTextStyle,
@@ -71,15 +73,54 @@ export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }
   // this namespace does not carry — the labels live where they were written.
   const tp = useTranslations('promotions');
 
-  if (items.length === 0) {
-    return <p style={dim}>{t('purchased_products_none')}</p>;
+  // #1228: the same collapsible rows as the Membership Plans list (the shared
+  // `DataTable`, its chevron and its phone behaviour), collapsed by default and
+  // expanded independently. A purchase stores no end date, so no column is
+  // invented for one.
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+
+  function toggleExpand(item: PurchasedProduct) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
+      return next;
+    });
   }
 
+  const columns: Column<PurchasedProduct>[] = [
+    {
+      header: t('purchase_col_product'),
+      mobile: 'name',
+      title: (item) => item.product_name,
+      render: (item) => <div style={{ fontWeight: 500 }}>{item.product_name}</div>,
+    },
+    {
+      header: t('purchase_date'),
+      mobile: 'secondary',
+      render: (item) => (
+        <span style={{ whiteSpace: 'nowrap' }}>{date(item.purchased_at ?? item.created_at)}</span>
+      ),
+    },
+    {
+      header: t('purchase_status'),
+      mobile: 'keep',
+      render: (item) => (
+        <StatusBadge status={item.status} label={t(`purchase_status_${item.status}` as any)} />
+      ),
+    },
+  ];
+
   return (
-    <div>
-      {items.map((item) => (
-        <div key={item.id} style={card}>
-          <div style={{ fontWeight: 500, fontSize: 14 }}>{item.product_name}</div>
+    <DataTable
+      columns={columns}
+      rows={items}
+      rowKey={(item) => item.id}
+      loadingText=""
+      emptyText={t('purchased_products_none')}
+      expandedRowKeys={expandedIds}
+      onToggleExpand={toggleExpand}
+      renderExpanded={(item) => (
+        <div style={card}>
           <Field label={t('purchase_price')}>{money(item.regular_amount, item.currency)}</Field>
           {/* Only where the two differ: a purchase made at the Product's own
               price has one figure, and printing it twice says nothing. */}
@@ -112,8 +153,8 @@ export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }
             </div>
           )}
         </div>
-      ))}
-    </div>
+      )}
+    />
   );
 }
 
