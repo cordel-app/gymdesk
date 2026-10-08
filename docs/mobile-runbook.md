@@ -160,6 +160,17 @@ is listed as a capability.
 
 A push cannot be tested on the simulator with FCM; §5 is where that happens.
 
+**A simulator device shares its web session between apps.** Found 2026-10-08 (#1077): on one
+simulator a *freshly installed* dev app (`com.cordel.fitness.dev`) opened already signed in as
+the member another app on that simulator had signed in, because that device keeps one cookie jar
+(`~/Library/Developer/CoreSimulator/Devices/<udid>/data/Library/Cookies/Cookies.binarycookies`)
+holding the Clerk session cookies, outside both apps' containers. The same install on a second,
+fresh simulator started signed out, and so did Android. It is a simulator artefact, not an app
+bug; a real iPhone keeps each app's web data separate, but that is **not yet verified on a
+device**. To test a signed-out start, sign out first, run `xcrun simctl erase <udid>`, or use a
+second simulator. A clean first load can take 30–60 seconds (blank page) before the landing page
+appears.
+
 ## 4. Android — emulator
 
 ```bash
