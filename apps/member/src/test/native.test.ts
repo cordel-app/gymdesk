@@ -418,3 +418,18 @@ describe('plugin loaders never resolve a bare plugin (#1077)', () => {
     expect(read('components', 'NativeAppleButton.tsx')).toContain('(await loadSocialLogin())?.plugin');
   });
 });
+
+describe('one viewport tag, with viewport-fit=cover (#1077)', () => {
+  // Next emits a default viewport meta first; a hand-written second one in <head>
+  // was ignored by WebKit, so iOS reported env(safe-area-inset-top) as 0 and the
+  // header slid under the status bar.
+  const layout = read('app', '[locale]', 'layout.tsx');
+
+  it('declares it through the viewport export', () => {
+    expect(layout).toMatch(/export const viewport: Viewport = \{[^}]*viewportFit: 'cover'/s);
+  });
+
+  it('keeps no hand-written viewport meta beside it', () => {
+    expect(layout).not.toContain('<meta name="viewport"');
+  });
+});
