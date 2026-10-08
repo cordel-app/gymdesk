@@ -584,7 +584,9 @@
     "offline_body": "Check your connection and try again.",
     "retry": "Try again",
     "continue_with_google": "Continue with Google",
+    "continue_with_apple": "Continue with Apple",
     "signing_in": "Signing in…",
-    "google_failed": "Google sign-in didn't work. Please try again."
+    "google_failed": "Google sign-in didn't work. Please try again.",
+    "apple_failed": "Apple sign-in didn't work. Please try again."
   }
 }

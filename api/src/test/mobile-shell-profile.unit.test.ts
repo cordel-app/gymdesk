@@ -274,4 +274,13 @@ describe('the runbook', () => {
       expect(runbook, `docs/mobile-runbook.md does not mention ${topic}`).toContain(topic);
     }
   });
+
+  // #1075: the Apple capability is opt-in, so the committed entitlements match the
+  // stage-1 profile — absent while the profile does not turn it on.
+  it('declares the Sign in with Apple entitlement only when the profile enables it', () => {
+    const entitlements = read('ios/App/App/App.entitlements');
+    const enabled = profile().appleSignIn === true;
+    expect(entitlements.includes('com.apple.developer.applesignin')).toBe(enabled);
+  });
 });
+

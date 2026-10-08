@@ -584,7 +584,9 @@
     "offline_body": "Comprova la connexió i torna-ho a provar.",
     "retry": "Torna-ho a provar",
     "continue_with_google": "Continua amb Google",
+    "continue_with_apple": "Continua amb Apple",
     "signing_in": "Iniciant sessió…",
-    "google_failed": "No s'ha pogut iniciar la sessió amb Google. Torna-ho a provar."
+    "google_failed": "No s'ha pogut iniciar la sessió amb Google. Torna-ho a provar.",
+    "apple_failed": "No s'ha pogut iniciar la sessió amb Apple. Torna-ho a provar."
   }
 }

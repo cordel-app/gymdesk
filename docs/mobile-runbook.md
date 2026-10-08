@@ -85,6 +85,15 @@ These are configuration, not code, and each one is a `docs/go-to-production.md`
   the same pair as `NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` /
   `NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID` in **its** build, or it renders no native
   Google button (WP2).
+- **Sign in with Apple (#1075, iOS only).** Off by default. To turn it on: the
+  *Sign in with Apple* capability on the App ID, Clerk's Apple connection (Services
+  ID, Team ID, Key ID, private key), then `MOBILE_APPLE_SIGN_IN=true` (or
+  `"appleSignIn": true` in the profile) and `profile:apply`, which writes the
+  `com.apple.developer.applesignin` entitlement — a signed build that declares it
+  without the capability fails to sign, which is why it is opt-in. The Members App
+  needs `NEXT_PUBLIC_APPLE_SIGN_IN=true` (GitHub variable `APPLE_SIGN_IN`) in
+  **its** build, or it renders no Apple button. **The Clerk token exchange in
+  `lib/nativeSignIn.ts` is unverified** until the spike runs.
 - **An Android OAuth client with the signing SHA-1** (`keytool -list -v -keystore …`),
   for the Google sheet on Android.
 - **`FCM_SERVICE_ACCOUNTS`** on the API, keyed by this app's id

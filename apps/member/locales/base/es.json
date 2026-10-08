@@ -584,7 +584,9 @@
     "offline_body": "Comprueba tu conexión e inténtalo de nuevo.",
     "retry": "Reintentar",
     "continue_with_google": "Continuar con Google",
+    "continue_with_apple": "Continuar con Apple",
     "signing_in": "Iniciando sesión…",
-    "google_failed": "No se ha podido iniciar sesión con Google. Inténtalo de nuevo."
+    "google_failed": "No se ha podido iniciar sesión con Google. Inténtalo de nuevo.",
+    "apple_failed": "No se ha podido iniciar sesión con Apple. Inténtalo de nuevo."
   }
 }
