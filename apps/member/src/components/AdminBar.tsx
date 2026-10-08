@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
+import { withSafeArea } from '@/lib/memberChrome';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { MemberImpersonationDialog } from './MemberImpersonationDialog';
 
@@ -33,7 +34,14 @@ export function AdminBar() {
       <div style={{
         background: '#1e293b',
         color: '#fff',
-        padding: '8px 16px',
+        // #1294: in the native shell this is the top of the screen, under the status
+        // bar (clock, Wi-Fi). The inset is the bar's own padding so its colour fills
+        // that strip; `env()` is 0px on the web. `TopBar` skips its own top inset
+        // for a superadmin, because this bar is above it.
+        paddingTop: withSafeArea(8, 'top'),
+        paddingBottom: 8,
+        paddingLeft: withSafeArea(16, 'left'),
+        paddingRight: withSafeArea(16, 'right'),
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'flex-end',

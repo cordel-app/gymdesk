@@ -21,7 +21,7 @@ export function TopBar() {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations();
-  const { isLinked, unreadNotifications, theme, gymName } = useApp();
+  const { isLinked, unreadNotifications, theme, gymName, isSuperadmin } = useApp();
 
   if (pathname.includes('/sign-in') || pathname.includes('/sign-up')) return null;
   if (!isLinked) return null;
@@ -49,7 +49,10 @@ export function TopBar() {
       // is filled with the header's own themed background; `env()` resolves to
       // 0px on the web, so nothing moves there. The horizontal insets are the
       // same answer for a landscape notch.
-      paddingTop: withSafeArea(10, 'top'),
+      //
+      // #1294: not for a superadmin — `AdminBar` renders above this bar for them and
+      // owns the inset, so adding it here too left a dead strip between the two.
+      paddingTop: isSuperadmin ? 10 : withSafeArea(10, 'top'),
       paddingBottom: 10,
       paddingLeft: withSafeArea(16, 'left'),
       paddingRight: withSafeArea(16, 'right'),
