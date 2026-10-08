@@ -397,3 +397,24 @@ describe('Sign in with Apple wiring (#1075)', () => {
     expect(read('lib', 'nativeSignIn.ts')).toContain('oauth_token_apple');
   });
 });
+
+describe('plugin loaders never resolve a bare plugin (#1077)', () => {
+  // Capacitor's plugin Proxy answers `then` with "<Plugin>.then() is not
+  // implemented on <platform>", so resolving a promise with one rejects it — which
+  // is how `appUrlOpen` ended up with no listener on Android.
+  const plugins = read('lib', 'nativePlugins.ts');
+
+  it('boxes every plugin it returns', () => {
+    expect(plugins).not.toMatch(/return (App|PushNotifications|SocialLogin) \?\? null/);
+    expect(plugins).toContain('{ plugin: App }');
+    expect(plugins).toContain('{ plugin: PushNotifications }');
+    expect(plugins).toContain('{ plugin: SocialLogin }');
+  });
+
+  it('reads .plugin at every call site', () => {
+    expect(read('components', 'NativeShell.tsx')).toContain('loadedApp?.plugin');
+    expect(read('components', 'NativeShell.tsx')).toContain('loadedPush?.plugin');
+    expect(read('components', 'NativeGoogleButton.tsx')).toContain('(await loadSocialLogin())?.plugin');
+    expect(read('components', 'NativeAppleButton.tsx')).toContain('(await loadSocialLogin())?.plugin');
+  });
+});

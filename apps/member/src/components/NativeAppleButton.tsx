@@ -47,7 +47,7 @@ export function NativeAppleButton() {
     setFailed(false);
     setBusy(true);
     try {
-      const socialLogin = await loadSocialLogin();
+      const socialLogin = (await loadSocialLogin())?.plugin ?? null;
       if (!socialLogin) {
         setFailed(true);
         return;

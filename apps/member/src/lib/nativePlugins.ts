@@ -30,11 +30,28 @@
  * sign-in each degrade to "not available" on their own.
  */
 
+/**
+ * A loaded plugin, **boxed**.
+ *
+ * Capacitor hands a plugin out as a `Proxy` whose every property is a native
+ * method, so the one property JavaScript probes on anything it resolves — `then` —
+ * answers `"App.then() is not implemented on android"` (and on iOS). An `async`
+ * function that *returns* a plugin, or an `await` of one, resolves a promise with
+ * the proxy, so the probe fires and the call **rejects**. Found on 2026-10-08 in
+ * the Android emulator (#1077): `appUrlOpen` had no listener and a tapped
+ * invitation link never reached the app. Boxing the plugin in a plain object —
+ * which has no `then` — is the whole fix, and it is why callers read `.plugin`.
+ * Never return, resolve or `await` a bare plugin anywhere in this app.
+ */
+export interface LoadedPlugin<T> {
+  plugin: T;
+}
+
 /** Capacitor's `App` plugin — `appUrlOpen`, which is how a link reaches the app. */
 export async function loadAppPlugin() {
   try {
     const { App } = await import('@capacitor/app');
-    return App ?? null;
+    return App ? { plugin: App } : null;
   } catch {
     return null;
   }
@@ -44,7 +61,7 @@ export async function loadAppPlugin() {
 export async function loadPushNotifications() {
   try {
     const { PushNotifications } = await import('@capacitor/push-notifications');
-    return PushNotifications ?? null;
+    return PushNotifications ? { plugin: PushNotifications } : null;
   } catch {
     return null;
   }
@@ -54,7 +71,7 @@ export async function loadPushNotifications() {
 export async function loadSocialLogin() {
   try {
     const { SocialLogin } = await import('@capgo/capacitor-social-login');
-    return SocialLogin ?? null;
+    return SocialLogin ? { plugin: SocialLogin } : null;
   } catch {
     return null;
   }
