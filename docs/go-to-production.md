@@ -744,6 +744,9 @@ hardening:
       to `https://admin.vdicube.com/api/health/runs` on 2026-10-06, after the relay was live on
       dev and 10/10 queries from Grafana Cloud succeeded, so closing the API host no longer
       fires them. A production stack points its rules at the production admin host the same way.
+      The Synthetic Monitoring check `gymdesk-run-freshness-dev` was missed by that repoint
+      and was repointed the same way on 2026-10-09; a production stack's check needs the
+      production admin host too.
 - [x] **Decide the `/billing/` GitHub Actions IP allowlist** (#783): removed, not
       automated — replaced by a per-route limiter on the internal run routes. The
       allowlist never ran (no nginx on corback), so nothing needs undoing on a server; what is
