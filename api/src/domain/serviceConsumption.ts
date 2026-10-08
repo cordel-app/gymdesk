@@ -31,6 +31,7 @@ export const SPEND_ORDER: readonly ProfessionalServiceGrantKind[] = [
   'promotion_session',
   'membership_service',
   'class_package',
+  'manual_adjustment',
 ];
 
 /** Is a cancellation `secondsUntilStart` before the event inside the notice window? */

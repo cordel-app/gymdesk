@@ -44,6 +44,7 @@ import {
 } from './memberProfile';
 import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './MemberProfileLayout';
 import type { MemberTabId } from './memberTabs';
+import { MemberProfessionalServices } from './MemberProfessionalServices';
 
 interface Plan {
   id: number;
@@ -612,6 +613,16 @@ export function MemberExpandedRow({
                 })}
               </div>
             )}
+          </Section>
+        </>
+      )}
+
+      {tab === 'professional_services' && (
+        <>
+          {/* Professional Services (#1227) — the Member's balance per service,
+              read from the same derived balance the booking gate uses. */}
+          <Section label={t('members.section_professional_services')} divider={false}>
+            <MemberProfessionalServices memberId={memberId} />
           </Section>
         </>
       )}

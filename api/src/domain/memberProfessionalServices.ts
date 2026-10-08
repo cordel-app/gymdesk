@@ -1,5 +1,6 @@
 import { db } from '../infra/db';
-import { applyConsumption, ConsumedTotal } from './serviceConsumption';
+import { applyConsumption, ConsumedTotal, SPEND_ORDER } from './serviceConsumption';
+import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND } from './professionalServiceAdjustments';
 
 /**
  * #647 stage 1: "which Professional Services does this Member have sessions
@@ -55,7 +56,8 @@ export type ProfessionalServiceGrantKind =
   | 'class_package'
   | 'promotion_session'
   | 'membership_service'
-  | 'plan_session';
+  | 'plan_session'
+  | 'manual_adjustment';
 
 /** One row as the three loader queries return it, before aggregation. */
 export interface ProfessionalServiceGrantRow {
@@ -276,7 +278,29 @@ export async function loadMemberProfessionalServiceGrants(
     [gymId, memberId],
   );
 
-  return applyConsumption([...packageRows, ...promotionRows, ...serviceRows, ...planRows], consumed);
+  // #1227 stage 1: staff corrections are one more source of the same balance.
+  // Consumption is applied to the derived grants first, then the net
+  // adjustment per service is folded in, then the sessions spent from the
+  // manual-adjustment grant itself are taken off it.
+  const { rows: adjustments } = await db.query(
+    `SELECT psa.professional_service_id, psa.delta, ps.name
+       FROM professional_service_adjustments psa
+       JOIN professional_services ps ON ps.id = psa.professional_service_id AND ps.deleted_at IS NULL
+       JOIN gym_professional_services gps
+         ON gps.professional_service_id = ps.id AND gps.gym_id = psa.gym_id AND gps.status = 'active'
+      WHERE psa.gym_id = ? AND psa.member_id = ?`,
+    [gymId, memberId],
+  );
+  const derived = applyConsumption(
+    [...packageRows, ...promotionRows, ...serviceRows, ...planRows],
+    consumed.filter((c) => c.source_kind !== MANUAL_ADJUSTMENT_KIND),
+  );
+  if (adjustments.length === 0) return derived;
+  const names = new Map<number, string>(adjustments.map((a: { professional_service_id: number; name: string }) => [a.professional_service_id, a.name]));
+  return applyConsumption(
+    applyAdjustmentsToGrants(derived, netAdjustments(adjustments), names, SPEND_ORDER),
+    consumed.filter((c) => c.source_kind === MANUAL_ADJUSTMENT_KIND),
+  );
 }
 
 /** The Member's Professional Services with their session counts, ready to serve. */

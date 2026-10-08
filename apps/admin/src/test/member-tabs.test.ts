@@ -64,9 +64,9 @@ function renderedSections(): string[] {
 }
 
 describe('Member card tabs: the declaration (#961)', () => {
-  it('is the five tabs the ticket names, in its order', () => {
+  it('is the tabs the tickets name, in its order', () => {
     expect(MEMBER_TABS.map((tab) => tab.id)).toEqual([
-      'profile', 'products_services', 'nutrition', 'personal_goals', 'training_plan',
+      'profile', 'products_services', 'professional_services', 'nutrition', 'personal_goals', 'training_plan',
     ]);
     expect(MEMBER_TAB_IDS).toEqual(MEMBER_TABS.map((tab) => tab.id));
     // Profile is what a Member opens on (§"Navigation behaviour").
@@ -90,6 +90,8 @@ describe('Member card tabs: the declaration (#961)', () => {
       'section_session_packages',
       'section_billing_events',
     ]);
+    // #1227: the Member's Professional Service balance is a tab of its own.
+    expect(sectionsForTab('professional_services')).toEqual(['section_professional_services']);
     expect(sectionsForTab('nutrition')).toEqual(['section_nutrition_plans']);
     expect(sectionsForTab('personal_goals')).toEqual(['section_personal_goals']);
     expect(sectionsForTab('training_plan')).toEqual(['section_training_plans']);
