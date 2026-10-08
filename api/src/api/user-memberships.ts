@@ -32,7 +32,7 @@ import {
   syncMandatoryProductQuantities,
   writeAssignedPlanBenefitSection,
 } from './assigned-plan-snapshot';
-import { resolveDeclinedBenefits } from './declined-plan-benefits';
+import { resolveDeclinedBenefits, recordDeclinedBenefitsAudit } from './declined-plan-benefits';
 import {
   ProductBenefitCategory,
   classifyProduct,
@@ -731,6 +731,7 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
     recordAudit(req, {
       action: 'create', entityType: 'user_membership', entityId: outcome.insertId, next: created,
     });
+    recordDeclinedBenefitsAudit(req, outcome.insertId, declinedResult.declined);
     res.status(201).json(created);
   } catch (err: any) {
     handleDupEntry(err, res, next, DUPLICATE_ASSIGNMENT_ERROR);
@@ -1266,6 +1267,7 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       // where the cancellation happens (#1108 stage 1).
       previous: { supersedes_user_membership_id: Number(req.params.id) },
     });
+    recordDeclinedBenefitsAudit(req, newId, declinedResult.declined);
     res.status(201).json({ ...created, applied_promotion_ids: promotionIds });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });

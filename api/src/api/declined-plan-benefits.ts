@@ -1,6 +1,8 @@
 // #1184 stage 3 — the SQL half of `domain/declinedPlanBenefits.ts`: reads the
 // Plan's benefit lines and applies the one rule to a request's selection.
+import type { Request } from 'express';
 import { db } from '../infra/db';
+import { recordAudit } from '../infra/audit';
 import {
   parseDeclinedBenefits, declinedBenefitsError,
   type DeclinedBenefit, type PlanBenefitLine,
@@ -71,4 +73,20 @@ export async function loadNamedPlanBenefitLines(
     }
   }
   return byPlan;
+}
+
+/**
+ * #1184 §22 — an optional benefit declined at assignment is a decision about
+ * *that assignment*, so it is audited against the `user_membership` as its own
+ * `decline_benefits` event and never against the source Membership Plan, whose
+ * configuration did not change. Writes nothing when nothing was declined.
+ */
+export function recordDeclinedBenefitsAudit(
+  req: Request, userMembershipId: unknown, declined: DeclinedBenefit[],
+): void {
+  if (declined.length === 0) return;
+  recordAudit(req, {
+    action: 'decline_benefits', entityType: 'user_membership', entityId: userMembershipId,
+    next: { declined_benefits: declined },
+  });
 }
