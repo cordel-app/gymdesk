@@ -62,7 +62,12 @@ Both are gitignored on both sides — they belong to a Firebase project, not to
 this repository. Without them the app still builds and runs; it just receives no
 push (Gradle applies the google-services plugin only when the JSON is there, and
 the iOS `AppDelegate` calls `FirebaseApp.configure()` only when the plist is in
-the bundle).
+the bundle). On Android that is true because `MainActivity` creates a placeholder
+Firebase app when the JSON is absent; before that (#1077) the first sign-in
+called the push plugin's `register()`, which threw an uncatchable native
+exception and **crashed the app** — the member came back signed out. Registration
+now reports `registrationError` instead, and the log line `No google-services.json:
+push is unconfigured` is how to recognise such a build.
 
 **Check after an apply:** `git diff apps/mobile/ios apps/mobile/android` names
 the Bundle ID / `applicationId`, the display name, the URL schemes and the
