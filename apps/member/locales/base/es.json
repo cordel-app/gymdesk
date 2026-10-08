@@ -37,7 +37,12 @@
     "membership": "Mis Productos",
     "profile": "Perfil",
     "alerts": "Alertas",
-    "goals": "Mis Objetivos"
+    "goals": "Mis Objetivos",
+    "user_menu": "Menú de la cuenta",
+    "logout": "Cerrar sesión",
+    "logout_confirm_title": "¿Cerrar sesión?",
+    "logout_confirm_body": "Se cerrará la sesión de esta cuenta en este dispositivo.",
+    "logout_cancel": "Cancelar"
   },
   "common": {
     "error": "Algo ha ido mal.",
