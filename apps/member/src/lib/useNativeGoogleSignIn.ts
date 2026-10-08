@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useClerk } from '@clerk/nextjs';
 import { useLocale } from 'next-intl';
-import { googleIdToken, googleNativeConfig, nativePlatform, signInErrorDetail } from '@/lib/native';
+import { googleIdToken, googleNativeConfig, googleSignInNonce, nativePlatform, signInErrorDetail } from '@/lib/native';
 import { loadSocialLogin } from '@/lib/nativePlugins';
 import { useIsNative } from '@/lib/useIsNative';
 
@@ -80,7 +80,9 @@ export function useNativeGoogleSignIn() {
       } catch {
         // nothing to clear
       }
-      const result = await socialLogin.login({ provider: 'google', options: {} });
+      // #1285: a fresh nonce per attempt, as Clerk's own Android SDK does — see
+      // `googleSignInNonce()`. The plugin passes it through on both platforms.
+      const result = await socialLogin.login({ provider: 'google', options: { nonce: googleSignInNonce() } });
       const token = googleIdToken(result);
       // No token means the member dismissed the sheet — nothing happened.
       if (!token) return;
