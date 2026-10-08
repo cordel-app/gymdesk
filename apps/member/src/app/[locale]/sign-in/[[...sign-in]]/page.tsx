@@ -83,8 +83,8 @@ export default function SignInPage() {
         {google.failed && (
           <p style={{ ...noticeStyle('error'), margin: 0 }}>
             {t('google_failed')}
-            {/* #1285: the cause, in development builds only (a production member is told nothing technical). */}
-            {google.detail && process.env.NEXT_PUBLIC_APP_ENV_LABEL && (
+            {/* #1285: the cause. Clerk's own messages are written for the person reading them, and dev has no APP_ENV_LABEL to gate on. */}
+            {google.detail && (
               <small style={{ display: 'block', marginTop: 6, opacity: 0.8, wordBreak: 'break-word' }}>{google.detail}</small>
             )}
           </p>
