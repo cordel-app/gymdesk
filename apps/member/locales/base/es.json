@@ -30,7 +30,7 @@
   },
   "nav": {
     "calendar": "Calendario",
-    "training": "Mi Plan de Entrenamiento",
+    "training": "Mi Entrenamiento",
     "bookings": "Mis Reservas",
     "nutrition": "Mi Nutrición",
     "membership": "Mis Productos",
@@ -45,7 +45,7 @@
     "no_gym_available": "No hay ningún gimnasio disponible"
   },
   "training": {
-    "title": "Mi Plan de Entrenamiento",
+    "title": "Mi Entrenamiento",
     "loading": "Cargando…",
     "empty": "Aún no tienes un plan asignado.",
     "no_plan_today": "No hay plan para este día.",

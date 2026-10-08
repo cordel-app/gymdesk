@@ -30,7 +30,7 @@
   },
   "nav": {
     "calendar": "Calendari",
-    "training": "El Meu Pla d'Entrenament",
+    "training": "El Meu Entrenament",
     "bookings": "Les Meves Reserves",
     "nutrition": "La Meva Nutrició",
     "membership": "Els Meus Productes",
@@ -45,7 +45,7 @@
     "no_gym_available": "No hi ha cap gimnàs disponible"
   },
   "training": {
-    "title": "El Meu Pla d'Entrenament",
+    "title": "El Meu Entrenament",
     "loading": "Carregant…",
     "empty": "Encara no tens un pla assignat.",
     "no_plan_today": "No hi ha pla per aquest dia.",

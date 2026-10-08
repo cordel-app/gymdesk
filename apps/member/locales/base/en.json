@@ -30,7 +30,7 @@
   },
   "nav": {
     "calendar": "Calendar",
-    "training": "My Training Plan",
+    "training": "My Training",
     "bookings": "My Bookings",
     "nutrition": "My Nutrition",
     "membership": "My Products",
@@ -45,7 +45,7 @@
     "no_gym_available": "No gym available"
   },
   "training": {
-    "title": "My Training Plan",
+    "title": "My Training",
     "loading": "Loading…",
     "empty": "No training plan assigned yet.",
     "no_plan_today": "No plan for this day.",
