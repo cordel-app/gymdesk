@@ -70,6 +70,16 @@ export function useNativeGoogleSignIn() {
         return;
       }
       await socialLogin.initialize({ google: config });
+      // #1285: the Google library keeps its own session in the keychain, and after
+      // a Clerk logout `login()` silently returned the previous ID token with no
+      // sheet. Clerk refuses a token it already exchanged (`authorization_invalid`),
+      // so every attempt starts from a cleared Google session: a fresh sheet, a
+      // fresh token. Best effort: there may be nothing to clear.
+      try {
+        await socialLogin.logout({ provider: 'google' });
+      } catch {
+        // nothing to clear
+      }
       const result = await socialLogin.login({ provider: 'google', options: {} });
       const token = googleIdToken(result);
       // No token means the member dismissed the sheet — nothing happened.
