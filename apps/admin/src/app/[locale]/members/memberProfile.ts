@@ -45,7 +45,7 @@ export interface MemberProfileFieldSpec {
    */
   editLabelKey: string;
   /** How the value reads: a date-only column, or free text that may wrap. */
-  kind?: 'date' | 'multiline';
+  kind?: 'date' | 'multiline' | 'gender';
   /** Edit-form only: the input's placeholder. */
   placeholderKey?: string;
   /**
@@ -65,7 +65,7 @@ export const MEMBER_PROFILE_FIELDS: readonly MemberProfileFieldSpec[] = [
   { key: 'name', labelKey: 'col_name', editLabelKey: 'label_name' },
   { key: 'phone', labelKey: 'label_phone', editLabelKey: 'label_phone', placeholderKey: 'placeholder_phone' },
   { key: 'date_of_birth', labelKey: 'label_date_of_birth', editLabelKey: 'label_date_of_birth', kind: 'date' },
-  { key: 'gender', labelKey: 'label_gender', editLabelKey: 'label_gender' },
+  { key: 'gender', labelKey: 'label_gender', editLabelKey: 'label_gender', kind: 'gender' },
   { key: 'address', labelKey: 'label_address', editLabelKey: 'label_address', placeholderKey: 'placeholder_address' },
   {
     key: 'emergency_contact',
@@ -188,4 +188,19 @@ export function newMemberValueKey(isNewMember: boolean): 'yes' | 'no' {
 
 export function newMemberAnnounceKey(isNewMember: boolean): 'new_member_yes' | 'new_member_no' {
   return isNewMember ? 'new_member_yes' : 'new_member_no';
+}
+
+/**
+ * #1236 — Gender is optional and picked from three options. The stored value is
+ * the option's English word; a value written before the dropdown (free text) is
+ * kept and shown as it is, so editing a Member never rewrites it.
+ */
+export const MEMBER_GENDER_OPTIONS = ['Man', 'Woman', 'Other'] as const;
+
+export function memberGenderLabelKey(value: string | null | undefined): string | null {
+  const v = value?.trim();
+  if (v === 'Man') return 'gender_man';
+  if (v === 'Woman') return 'gender_woman';
+  if (v === 'Other') return 'gender_other';
+  return null;
 }
