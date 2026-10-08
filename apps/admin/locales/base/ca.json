@@ -62,7 +62,8 @@
     "operating_hours": "Horari i Festius",
     "failed_payments_badge": "{count, plural, one {# pagament fallit pendent d'acció} other {# pagaments fallits pendents d'acció}}",
     "collapse_sidebar": "Replegar menú lateral",
-    "expand_sidebar": "Desplegar menú lateral"
+    "expand_sidebar": "Desplegar menú lateral",
+    "localization": "Hora i localització"
   },
   "dashboard": {
     "title": "Tauler",
@@ -4239,5 +4240,29 @@
     "en": "Anglès",
     "es": "Espanyol",
     "ca": "Català"
+  },
+  "localization": {
+    "title": "Hora i localització",
+    "time_zone": "Zona horària",
+    "first_day_of_week": "Primer dia de la setmana",
+    "date_format": "Format de data",
+    "time_format": "Format d'hora",
+    "time_format_24h": "24 hores",
+    "time_format_12h": "12 hores (AM/PM)",
+    "number_format": "Format de números",
+    "number_format_comma_decimal": "1.234,56 (coma decimal)",
+    "number_format_dot_decimal": "1,234.56 (punt decimal)",
+    "currency": "Moneda",
+    "preview": "Vista prèvia",
+    "save": "Desa els canvis",
+    "cancel": "Cancel·la",
+    "edit": "Edita",
+    "weekday_0": "Diumenge",
+    "weekday_1": "Dilluns",
+    "weekday_2": "Dimarts",
+    "weekday_3": "Dimecres",
+    "weekday_4": "Dijous",
+    "weekday_5": "Divendres",
+    "weekday_6": "Dissabte"
   }
 }

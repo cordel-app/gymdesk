@@ -285,6 +285,10 @@ export const navigationGroups: NavGroup[] = [
         featureKey: 'system.themes',
       },
       {
+        href: '/{{locale}}/localization',
+        labelKey: 'nav.localization',
+      },
+      {
         href: '/{{locale}}/recycle-bin',
         labelKey: 'nav.recycle_bin',
         featureKey: 'system.recycle_bin',

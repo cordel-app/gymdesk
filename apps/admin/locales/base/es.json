@@ -61,7 +61,8 @@
     "operating_hours": "Horario y Festivos",
     "failed_payments_badge": "{count, plural, one {# pago fallido pendiente de acción} other {# pagos fallidos pendientes de acción}}",
     "collapse_sidebar": "Contraer menú lateral",
-    "expand_sidebar": "Expandir menú lateral"
+    "expand_sidebar": "Expandir menú lateral",
+    "localization": "Hora y localización"
   },
   "dashboard": {
     "title": "Panel",
@@ -4212,5 +4213,29 @@
     "en": "Inglés",
     "es": "Español",
     "ca": "Catalán"
+  },
+  "localization": {
+    "title": "Hora y localización",
+    "time_zone": "Zona horaria",
+    "first_day_of_week": "Primer día de la semana",
+    "date_format": "Formato de fecha",
+    "time_format": "Formato de hora",
+    "time_format_24h": "24 horas",
+    "time_format_12h": "12 horas (AM/PM)",
+    "number_format": "Formato de números",
+    "number_format_comma_decimal": "1.234,56 (coma decimal)",
+    "number_format_dot_decimal": "1,234.56 (punto decimal)",
+    "currency": "Moneda",
+    "preview": "Vista previa",
+    "save": "Guardar cambios",
+    "cancel": "Cancelar",
+    "edit": "Editar",
+    "weekday_0": "Domingo",
+    "weekday_1": "Lunes",
+    "weekday_2": "Martes",
+    "weekday_3": "Miércoles",
+    "weekday_4": "Jueves",
+    "weekday_5": "Viernes",
+    "weekday_6": "Sábado"
   }
 }
