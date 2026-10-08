@@ -1939,7 +1939,7 @@
     "save_changes": "Save Changes",
     "loading": "Loading…",
     "empty": "No assigned training plans yet.",
-    "confirm_delete": "Delete this training plan? Its workouts and blocks are preserved but the plan will no longer appear in listings.",
+    "confirm_delete": "Are you sure you want to delete this assigned training plan?",
     "conflict_message": "This member already has {count} active training plan(s). Keep them active or expire them before activating the new plan?",
     "conflict_keep": "Keep existing plans active",
     "conflict_keep_hint": "The member will have multiple active training plans.",
