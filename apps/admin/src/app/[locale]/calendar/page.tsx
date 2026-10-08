@@ -22,6 +22,8 @@ import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { calendarEventPaint } from '@/lib/calendarEventPaint';
 import { calendarEventMeta, calendarEventMetaLines, joinMetaParts } from '@/lib/calendarEventMeta';
 import { CalendarCenterFilter } from './CalendarCenterFilter';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymTime, type GymFormatSettings } from '@/lib/gymFormat';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -41,8 +43,11 @@ interface ProfessionalService { id: number; name: string; status: 'active' | 'in
 
 type FilterMode = 'all' | 'space' | 'activity_type' | 'trainer';
 
-function formatHM(d: Date): string {
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+// The grid itself is placed in the browser's zone (FullCalendar's named-zone
+// support needs a plugin this app does not ship), so the text beside it is
+// rendered in that same zone and only takes the gym's 12h/24h choice.
+function formatHM(d: Date, s: GymFormatSettings): string {
+  return formatGymTime(d, { ...s, time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone });
 }
 
 // Statuses with a `calendar.status_*` translation (#559 stage 3). next-intl
@@ -75,6 +80,7 @@ export default function CalendarPage() {
   const router = useRouter();
   const locale = useLocale();
   const { apiFetch } = useApiClient();
+  const gymFormat = useGymFormatSettings();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   // #930 — the Center filter lives in this page's filter bar now, over the same
   // center context the header dropdown used to drive. Reading it here is what
@@ -469,6 +475,9 @@ export default function CalendarPage() {
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView="timeGridDay"
+            firstDay={gymFormat.first_day_of_week}
+            slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: gymFormat.time_format === '12h' }}
+            eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: gymFormat.time_format === '12h' }}
             headerToolbar={{
               left:   'prev,next today',
               center: 'title',
@@ -554,7 +563,7 @@ export default function CalendarPage() {
               // member's name is never shown here.
               const timeRange = viewType === 'timeGridWeek'
                 ? (!e.all_day && arg.event.start && arg.event.end
-                    ? `${formatHM(arg.event.start)} – ${formatHM(arg.event.end)}`
+                    ? `${formatHM(arg.event.start, gymFormat)} – ${formatHM(arg.event.end, gymFormat)}`
                     : null)
                 : (arg.timeText || null);
               const countsLine = joinMetaParts([bookingCount, waitlistLine]);

@@ -1,5 +1,7 @@
 'use client';
 
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateTime, type GymFormatSettings } from '@/lib/gymFormat';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { FormLabel, FormInput } from '@/components/CrudModal';
@@ -61,9 +63,9 @@ function MetaRow({ label, value }: { label: string; value: string | null }) {
   );
 }
 
-function formatDateTime(iso: string | null): string | null {
+function formatDateTime(iso: string | null, s: GymFormatSettings): string | null {
   if (!iso) return null;
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  return formatGymDateTime(iso, s);
 }
 
 export function EventDetailsPanel({
@@ -71,6 +73,7 @@ export function EventDetailsPanel({
   onSave, onDelete, onClose, canWrite,
 }: Props) {
   const t = useTranslations('calendar');
+  const gymFormat = useGymFormatSettings();
   const [form, setForm] = useState<CalendarEventForm>(initialForm);
   const [saving, setSaving] = useState(false);
   const [deleteState, setDeleteState] = useState<DeleteState>('idle');
@@ -272,11 +275,11 @@ export function EventDetailsPanel({
               {t('metadata_section')}
             </div>
             <MetaRow label={t('metadata_created_by')} value={meta.created_by_name} />
-            <MetaRow label={t('metadata_created_at')} value={formatDateTime(meta.created_at)} />
+            <MetaRow label={t('metadata_created_at')} value={formatDateTime(meta.created_at, gymFormat)} />
             <MetaRow label={t('metadata_updated_by')} value={meta.modified_by_name} />
-            <MetaRow label={t('metadata_updated_at')} value={formatDateTime(meta.updated_at)} />
+            <MetaRow label={t('metadata_updated_at')} value={formatDateTime(meta.updated_at, gymFormat)} />
             <MetaRow label={t('metadata_deleted_by')} value={meta.deleted_by_name} />
-            <MetaRow label={t('metadata_deleted_at')} value={formatDateTime(meta.deleted_at)} />
+            <MetaRow label={t('metadata_deleted_at')} value={formatDateTime(meta.deleted_at, gymFormat)} />
           </div>
         )}
       </div>
