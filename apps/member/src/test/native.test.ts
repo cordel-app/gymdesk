@@ -337,7 +337,7 @@ describe('the native wiring lives in one place', () => {
   it('registers the device for the signed-in member and nobody else', () => {
     const shell = read('components', 'NativeShell.tsx');
     expect(shell).toContain('if (!isNative() || !member || !gymId) return;');
-    expect(shell).toContain('registerPushToken(latest.current.apiFetch, token.value)');
+    expect(shell).toContain('registerPushToken(latest.current.apiFetch, token.value, appId)');
     expect(shell).toContain('notificationTapPath(latest.current.locale)');
     expect(shell).toContain('appUrlOpenPath(url, latest.current.locale)');
     // The effects key on *who is signed in* and read everything else through a
