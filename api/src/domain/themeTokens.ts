@@ -69,6 +69,7 @@ export function defaultTokens() {
       calendarTimeAxisBackground:     '#ffffff',
       calendarTimeAxisText:           '#6b7280',
       calendarWeekendBackground:      '#ffffff',
+      calendarActiveAreaBackground:   '#ffffff',
       calendarDisabledSlotBackground: '#f7f7f7',
       calendarEventBackground:        '#6c63ff',
       calendarEventBorder:            '#6c63ff',
@@ -88,7 +89,7 @@ export const CALENDAR_COLOR_FIELDS = [
   'calendarTodayBackground', 'calendarSelectionBackground',
   'calendarGridBorder',
   'calendarTimeAxisBackground', 'calendarTimeAxisText',
-  'calendarWeekendBackground', 'calendarDisabledSlotBackground',
+  'calendarWeekendBackground', 'calendarActiveAreaBackground', 'calendarDisabledSlotBackground',
   'calendarEventBackground', 'calendarEventBorder', 'calendarEventText',
   'calendarNavButtonBackground', 'calendarNavButtonText',
 ];

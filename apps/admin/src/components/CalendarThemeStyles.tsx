@@ -203,6 +203,14 @@ export const CALENDAR_THEME_CSS = `
   height: var(--gd-calendar-slot-height, 1.5em);
 }
 
+/* Active area (#1214): the business-hours lanes of the time grid. The
+   non-business overlay (--fc-non-business-color) is a column background
+   event, painted above these lanes, so closed hours and holidays still read
+   as the inactive area. */
+.gd-calendar .fc .fc-timegrid-slot-lane {
+  background-color: var(--gd-calendar-active-area-bg, #ffffff);
+}
+
 /* Weekend columns. Scoped to day cells (not the header row, which keeps the
    header background) and skipping today, whose own rule would otherwise be
    overridden by this more specific selector. */

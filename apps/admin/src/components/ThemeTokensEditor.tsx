@@ -123,6 +123,7 @@ export const COLOR_GROUPS: { groupKey: string; fields: { key: keyof ThemeTokens[
       { key: 'calendarTimeAxisBackground', labelKey: 'label_calendar_time_axis_bg' },
       { key: 'calendarTimeAxisText', labelKey: 'label_calendar_time_axis_text' },
       { key: 'calendarWeekendBackground', labelKey: 'label_calendar_weekend_bg' },
+      { key: 'calendarActiveAreaBackground', labelKey: 'label_calendar_active_area_bg' },
       { key: 'calendarDisabledSlotBackground', labelKey: 'label_calendar_disabled_slot_bg' },
       { key: 'calendarEventBackground', labelKey: 'label_calendar_event_bg' },
       { key: 'calendarEventBorder', labelKey: 'label_calendar_event_border' },
