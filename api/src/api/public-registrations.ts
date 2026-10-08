@@ -204,7 +204,7 @@ publicRegistrationsRouter.post('/', ipLimiter as any, requireWebsiteApiKey, regi
         ...(Object.keys(publicMetadata).length ? { publicMetadata } : {}),
       });
       if (member) {
-        await db.query('UPDATE members SET invitation_id = ? WHERE id = ? AND gym_id = ?', [invitation.id, member.id, gymId]);
+        await db.query('UPDATE members SET invitation_id = ?, invited_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?', [invitation.id, member.id, gymId]);
       }
       req.log.info({ gymId, invitationId: invitation.id }, 'Website registration: invitation sent');
     } catch (err: any) {

@@ -102,7 +102,15 @@
     "payment_status_ok": "Al dia",
     "payment_status_pending": "Pagament pendent",
     "payment_status_failed": "Pagament fallit",
-    "no_center": "Sense centre assignat"
+    "no_center": "Sense centre assignat",
+    "label_clerk_status": "Estat de Clerk",
+    "label_clerk_invitation": "Invitació de Clerk",
+    "clerk_status_enrolled_on": "Registrat · {date}",
+    "clerk_status_enrolled": "Registrat",
+    "clerk_status_not_enrolled": "No registrat",
+    "clerk_invitation_invited_on": "Convidat · {date}",
+    "clerk_invitation_invited": "Convidat",
+    "clerk_invitation_none": "Cap"
   },
   "packages": {
     "title": "Els meus bons",

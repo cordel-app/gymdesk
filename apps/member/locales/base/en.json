@@ -102,7 +102,15 @@
     "payment_status_ok": "Up to date",
     "payment_status_pending": "Payment pending",
     "payment_status_failed": "Payment failed",
-    "no_center": "No center set"
+    "no_center": "No center set",
+    "label_clerk_status": "Clerk Status",
+    "label_clerk_invitation": "Clerk Invitation",
+    "clerk_status_enrolled_on": "Enrolled · {date}",
+    "clerk_status_enrolled": "Enrolled",
+    "clerk_status_not_enrolled": "Not enrolled",
+    "clerk_invitation_invited_on": "Invited · {date}",
+    "clerk_invitation_invited": "Invited",
+    "clerk_invitation_none": "None"
   },
   "packages": {
     "title": "My packages",

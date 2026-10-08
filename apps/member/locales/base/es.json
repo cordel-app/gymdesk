@@ -102,7 +102,15 @@
     "payment_status_ok": "Al día",
     "payment_status_pending": "Pago pendiente",
     "payment_status_failed": "Pago fallido",
-    "no_center": "Sin centro asignado"
+    "no_center": "Sin centro asignado",
+    "label_clerk_status": "Estado de Clerk",
+    "label_clerk_invitation": "Invitación de Clerk",
+    "clerk_status_enrolled_on": "Registrado · {date}",
+    "clerk_status_enrolled": "Registrado",
+    "clerk_status_not_enrolled": "No registrado",
+    "clerk_invitation_invited_on": "Invitado · {date}",
+    "clerk_invitation_invited": "Invitado",
+    "clerk_invitation_none": "Ninguna"
   },
   "packages": {
     "title": "Mis bonos",
