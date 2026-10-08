@@ -213,6 +213,18 @@ also runs on a PR that touches `apps/mobile/`. Two jobs:
   (`xcrun simctl install booted App.app`). It **cannot** be installed on an iPhone; that needs a
   signed build and the Apple Developer account.
 
+**One app per environment.** `dev` builds the `cordel-fitness-dev` profile
+(`com.cordel.fitness.dev`, "Cordel Fitness Dev", the dev Clerk host already in its
+`allowNavigation`) and `pro` builds `cordel-fitness` (`com.cordel.fitness`, "Cordel Fitness"), so
+the two have different app ids and install side by side instead of one over the other. That is
+four apps in all — Android and iOS, dev and pro — but only two ids, and a third environment is a
+third profile file. Each app id needs its **own** Google clients (an Android client per package +
+SHA-1, an iOS client per bundle ID), Firebase app, `FCM_SERVICE_ACCOUNTS` /
+`MOBILE_APP_ASSOCIATIONS` entry and Apple App ID. Known gaps for the dev app id (#1077): the
+Google clients exist only for `com.cordel.fitness`; push registration does not name its app id,
+so the API files every token under the default one; and the dev web build's
+`MOBILE_APP_SCHEME` still reads `com.cordel.fitness`, which is the *pro* scheme.
+
 Per-environment inputs: `CORDEL_FITNESS_MEMBERS_URL` (variable, already used by the web deploy),
 `MOBILE_ALLOW_NAVIGATION` (variable — **must include the Clerk Frontend API host**, see §2),
 `NEXT_PUBLIC_GOOGLE_*_CLIENT_ID` (secrets, reused as the shell's Google clients) and
