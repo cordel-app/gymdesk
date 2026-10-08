@@ -25,4 +25,13 @@ describe('#1285 native Google sign-in finishes what Clerk starts', () => {
     expect(hook).toContain('signInFallbackRedirectUrl: `/${locale}`');
     expect(hook).toContain('signUpFallbackRedirectUrl: `/${locale}`');
   });
+
+  it('clears the Google session before asking for a new token', () => {
+    const init = hook.indexOf('socialLogin.initialize(');
+    const clear = hook.indexOf("socialLogin.logout({ provider: 'google' })");
+    const login = hook.indexOf('socialLogin.login(');
+    expect(init).toBeGreaterThan(-1);
+    expect(clear).toBeGreaterThan(init);
+    expect(login).toBeGreaterThan(clear);
+  });
 });
