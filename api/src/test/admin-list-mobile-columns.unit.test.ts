@@ -94,9 +94,10 @@ describe('#1011 — Admin list columns declare their mobile behaviour', () => {
     expect(declarations.length).toBeGreaterThanOrEqual(31);
     // Exact, because #1011's adoption is complete: every card list of the Admin
     // app lays its rows out from one declaration now, so a page that quietly
-    // went back to hand-sized cells would drop this count.
+    // went back to hand-sized cells would drop this count. A new list that adopts
+    // the declaration raises it: the twentieth is Cordel → Mobile builds (#1077).
     expect(declarations.flatMap((d) => d.arrays).filter((a) => a.shape === 'grid'))
-      .toHaveLength(19);
+      .toHaveLength(20);
   });
 
   it('gives every column a mobile behaviour', () => {

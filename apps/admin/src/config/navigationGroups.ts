@@ -337,6 +337,12 @@ export const navigationGroups: NavGroup[] = [
         separatorAbove: true,
       },
       {
+        // #1077: the published test builds of the mobile apps — platform-wide, so it
+        // belongs here and not in any one gym's card.
+        href: '/{{locale}}/cordel/mobile-builds',
+        labelKey: 'nav.mobile_builds',
+      },
+      {
         href: '/{{locale}}/cordel/nutrition-library',
         labelKey: 'nav.base_nutrition_library',
         separatorAbove: true,

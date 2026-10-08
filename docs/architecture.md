@@ -784,6 +784,21 @@ The admin frontend renders it as its own `BILLING SIMULATION` section of the Mem
 
 ---
 
+### Mobile builds (#1077 — no migration)
+
+Cordel → Mobile builds lists the test builds of the mobile apps and serves them for download. It is **read-only and has no table**: `.github/workflows/mobile-build.yml` is the only writer, through `.github/scripts/publish-mobile-build.sh`, which uploads each build to the environment's bucket as
+
+```
+cordel/mobile-builds/<app id>/<platform>/<file>         (platform: android | ios_simulator | ios)
+cordel/mobile-builds/<app id>/<platform>/<file>.json    (the sidecar)
+```
+
+and prunes to the newest 20 per app and platform (`MOBILE_BUILD_RETENTION`). The sidecar carries app id and name, environment, platform, version, build number, git sha, build time and file name (required) and sha256, signer SHA-1 and the run URL (optional). It is published for every run **except a pull request's**.
+
+`GET /platform/mobile-builds` (`api/src/api/platform-mobile-builds.ts`, `requireSuperadmin`) lists the prefix with `listStorageObjects()` (new in `infra/storage.ts`), reads each sidecar and answers the builds newest first; a sidecar that does not describe a build (missing field, platform disagreeing with its folder, a file that is gone) is left out and logged, never repaired. `GET …/:id/download` streams one file through the API as an attachment — the bucket's public origin is never linked, because a debug build is for the people who may open the page. `api/src/domain/mobileBuilds.ts` is the one place that decides all of it: the key layout, the required sidecar fields, and which **build id** a download may name (the id is the base64url of `<app>/<platform>/<file>`; anything that decodes elsewhere, holds a dot-segment, names an unknown platform or is a sidecar is a 404). `api/src/test/mobile-builds.unit.test.ts` also fails the build if the publish script stops writing a field the parser requires or keeps another retention.
+
+Admin: `/{locale}/cordel/mobile-builds` (`app/[locale]/cordel/mobile-builds/page.tsx`, decisions in `lib/mobileBuilds.ts`), an item in the superadmin-only Cordel nav group; it downloads through `pdfFetch()` (a generic authenticated blob GET). Each environment lists its own bucket's builds. Versions come from `apps/mobile/package.json` and the workflow run number (`versionCode` / `CURRENT_PROJECT_VERSION`), and `dev` builds the separate `cordel-fitness-dev` profile (`com.cordel.fitness.dev`). See `docs/mobile-runbook.md` §5b.
+
 ## Backend Route Registration (`index.ts`)
 
 ```ts

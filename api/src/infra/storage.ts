@@ -1,5 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import {
+  CopyObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client,
+} from '@aws-sdk/client-s3';
 
 /**
  * #417 stage 1: platform-wide Cloudflare R2 integration (S3-compatible).
@@ -588,6 +590,49 @@ export async function getStorageObject(key: string): Promise<{ body: Buffer; con
       err,
     );
   }
+}
+
+/** One object a prefix listing returned. */
+export interface StorageObjectSummary {
+  key: string;
+  size: number;
+  lastModified: Date | null;
+}
+
+/**
+ * Lists the objects under a prefix (#1077, the Mobile builds page).
+ *
+ * R2 has no directories, so this is a prefix scan: every key that starts with
+ * `prefix`, in the order S3 returns them (lexicographic), paged until the listing
+ * says it is complete. `maxKeys` bounds the total so a runaway prefix cannot turn a
+ * page load into an unbounded scan; the caller says how many it can use.
+ */
+export async function listStorageObjects(prefix: string, maxKeys = 1000): Promise<StorageObjectSummary[]> {
+  const { bucket } = getConfig();
+  const client = getClient();
+  const out: StorageObjectSummary[] = [];
+  let token: string | undefined;
+  try {
+    do {
+      const page = await client.send(new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: token,
+        MaxKeys: Math.min(1000, maxKeys - out.length),
+      }));
+      for (const item of page.Contents ?? []) {
+        if (!item.Key) continue;
+        out.push({ key: item.Key, size: item.Size ?? 0, lastModified: item.LastModified ?? null });
+      }
+      token = page.IsTruncated && out.length < maxKeys ? page.NextContinuationToken : undefined;
+    } while (token);
+  } catch (err) {
+    throw new StorageOperationError(
+      describeStorageError(err, { operation: 'listStorageObjects', key: prefix, bucket }),
+      err,
+    );
+  }
+  return out;
 }
 
 /**
