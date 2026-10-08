@@ -82,6 +82,14 @@ jobs:
           mkdir -p "$HOME/.android"
           if [ -n "$ANDROID_DEBUG_KEYSTORE_B64" ]; then
             echo "$ANDROID_DEBUG_KEYSTORE_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+            # AGP reads the debug key from the Android user home, which an env
+            # variable can move; write the same file there too.
+            for dir in "${ANDROID_USER_HOME:-}" "${ANDROID_SDK_HOME:-}"; do
+              if [ -n "$dir" ]; then mkdir -p "$dir" && cp "$HOME/.android/debug.keystore" "$dir/debug.keystore"; fi
+            done
+            EXPECTED=$(keytool -list -v -keystore "$HOME/.android/debug.keystore" -alias androiddebugkey -storepass android -keypass android 2>/dev/null | grep 'SHA1:' | head -1 | sed 's/.*SHA1: //' | tr -d ':' | tr 'A-F' 'a-f')
+            echo "EXPECTED_SIGNER_SHA1=$EXPECTED" >> "$GITHUB_ENV"
+            echo "Restored debug keystore, SHA-1 ${EXPECTED:-unreadable}; ANDROID_USER_HOME=${ANDROID_USER_HOME:-unset} ANDROID_SDK_HOME=${ANDROID_SDK_HOME:-unset}"
           else
             echo "::warning::No ANDROID_DEBUG_KEYSTORE_B64 secret: Gradle will create a new debug key, whose SHA-1 is not the one registered for Google sign-in."
           fi
@@ -110,6 +118,13 @@ jobs:
           cp "$SRC" "$NAME"
           SIGNER=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$NAME" | grep 'SHA-1' | head -1 | sed 's/.*: //')
           SIZE=$(du -h "$NAME" | cut -f1)
+          # The keystore secret exists to keep the signer stable. If it was restored
+          # and the APK is signed with something else, fail here rather than hand
+          # out a build whose Google sign-in is refused.
+          if [ -n "${EXPECTED_SIGNER_SHA1:-}" ] && [ "$(echo "$SIGNER" | tr -d ':' | tr 'A-F' 'a-f')" != "$EXPECTED_SIGNER_SHA1" ]; then
+            echo "::error::The APK is signed with $SIGNER, not the restored debug keystore ($EXPECTED_SIGNER_SHA1)."
+            exit 1
+          fi
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           {
             echo "### Android debug APK"
