@@ -34,4 +34,8 @@ describe('#1285 native Google sign-in finishes what Clerk starts', () => {
     expect(clear).toBeGreaterThan(init);
     expect(login).toBeGreaterThan(clear);
   });
+
+  it('asks Google for the token with a fresh nonce, as Clerk\'s Android SDK does', () => {
+    expect(hook).toMatch(/socialLogin\.login\(\{ provider: 'google', options: \{ nonce: googleSignInNonce\(\) \} \}\)/);
+  });
 });
