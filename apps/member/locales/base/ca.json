@@ -390,6 +390,10 @@
     "retry": "Tornar-ho a intentar"
   },
   "link": {
+    "open_in_app_title": "Obre a l'app",
+    "open_in_app_hint": "Si tens l'app instal·lada, obre-hi la teva invitació.",
+    "open_in_app_button": "Obre l'app",
+    "continue_in_browser": "Continua al navegador",
     "linking": "Configurant el teu compte…",
     "error_no_invitation": "No s'ha trobat cap invitació pendent per a aquest compte.",
     "error_generic": "Alguna cosa ha anat malament.",

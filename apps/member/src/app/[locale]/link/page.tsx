@@ -6,11 +6,13 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useAuth, useSignUp } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
 import { unregisterPushToken } from '@/lib/nativePush';
-import { memberTheme } from '@/lib/memberChrome';
+import { memberTheme, primaryButtonStyle, secondaryButtonStyle } from '@/lib/memberChrome';
+import { isNative } from '@/lib/native';
+import { openInAppScheme, openInAppUrl } from '@/lib/openInApp';
 
 const ACTIVE_GYM_KEY = 'activeGymId';
 
-type Phase = 'linking' | 'needs_password' | 'error';
+type Phase = 'linking' | 'open_in_app' | 'needs_password' | 'error';
 
 export default function LinkPage() {
   const t = useTranslations('link');
@@ -21,6 +23,9 @@ export default function LinkPage() {
   const { signUp } = useSignUp();
   const { apiFetch } = useApiClient();
   const [phase, setPhase] = useState<Phase>('linking');
+  // #1076: the invitation is redeemed in the browser only once the member has
+  // declined the offer to open the app (see lib/openInApp.ts).
+  const [offerDeclined, setOfferDeclined] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -70,9 +75,26 @@ export default function LinkPage() {
   useEffect(() => {
     if (!isLoaded) return;
     if (ranRef.current) return;
-    ranRef.current = true;
 
     const ticket = searchParams.get('__clerk_ticket');
+
+    // The offer comes first because a ticket is single-use: redeeming it here
+    // would hand the app a spent invitation. `isNative()` is asked inside the
+    // effect — it acts, it does not render.
+    if (
+      !offerDeclined &&
+      openInAppScheme({
+        native: isNative(),
+        userAgent: navigator.userAgent,
+        scheme: process.env.NEXT_PUBLIC_MOBILE_APP_SCHEME,
+        hasTicket: !!ticket,
+      })
+    ) {
+      setPhase('open_in_app');
+      return;
+    }
+    ranRef.current = true;
+    setPhase('linking');
 
     async function start() {
       if (!gymId) {
@@ -140,7 +162,7 @@ export default function LinkPage() {
 
     start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoaded, isSignedIn]);
+  }, [isLoaded, isSignedIn, offerDeclined]);
 
   async function handlePasswordSubmit(e: FormEvent) {
     e.preventDefault();
@@ -180,6 +202,34 @@ export default function LinkPage() {
       setPasswordError(t('error_generic'));
       setSubmitting(false);
     }
+  }
+
+  if (phase === 'open_in_app') {
+    const scheme = openInAppScheme({
+      native: false,
+      userAgent: navigator.userAgent,
+      scheme: process.env.NEXT_PUBLIC_MOBILE_APP_SCHEME,
+      hasTicket: true,
+    });
+    return (
+      <div style={{ maxWidth: 360, margin: '60px auto', padding: '0 20px', textAlign: 'center' }}>
+        <h1 style={{ fontSize: 20, marginBottom: 8 }}>{t('open_in_app_title')}</h1>
+        <p style={{ color: memberTheme.textMuted, marginBottom: 24 }}>{t('open_in_app_hint')}</p>
+        <a
+          href={scheme ? openInAppUrl(scheme, locale, window.location.search) : '#'}
+          style={{ ...primaryButtonStyle, display: 'block', padding: 12, marginBottom: 12, textDecoration: 'none' }}
+        >
+          {t('open_in_app_button')}
+        </a>
+        <button
+          type="button"
+          onClick={() => setOfferDeclined(true)}
+          style={{ ...secondaryButtonStyle, width: '100%', padding: 12 }}
+        >
+          {t('continue_in_browser')}
+        </button>
+      </div>
+    );
   }
 
   if (phase === 'needs_password') {

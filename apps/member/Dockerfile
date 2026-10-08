@@ -25,6 +25,10 @@ ARG NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID=
 ARG NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID=
 ENV NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID \
     NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID=$NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID
+# #1076: the app's custom URL scheme, for the invitation page's "Open in the app".
+# Empty by default: no scheme, no offer, the page behaves as before.
+ARG NEXT_PUBLIC_MOBILE_APP_SCHEME=
+ENV NEXT_PUBLIC_MOBILE_APP_SCHEME=$NEXT_PUBLIC_MOBILE_APP_SCHEME
 # #1075: turns the native Sign in with Apple button on (iOS only). Off by
 # default: a build without the capability on its App ID must not show it.
 ARG NEXT_PUBLIC_APPLE_SIGN_IN=

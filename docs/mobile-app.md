@@ -419,6 +419,17 @@ client that opens links in its own WebView, and Gmail on Android for a link in i
 The link then opens in that browser and the invitation completes there, which is why the flow must
 never depend on the app receiving it.
 
+**Found by testing (dev, 2026-10-08): the invitation email never contains a link on our domain.**
+Clerk sends the invitation, and its button is
+`https://<clerk frontend api>/v1/tickets/accept?ticket=…`, which redirects to `/{locale}/link`
+afterwards. A universal link / App Link only fires for a URL *tapped* on the app's domain, and a
+server redirect does not count, so for a Clerk invitation the association files cannot open the app.
+They still serve any link we write ourselves. The answer built for it: `/link` (`lib/openInApp.ts`)
+shows **Open in the app** / **Continue in the browser** to a phone's browser holding a ticket,
+*before* redeeming it (a ticket is single-use), and the first opens the app's custom scheme
+(`NEXT_PUBLIC_MOBILE_APP_SCHEME`, no offer when unset). Own-domain email links (sending the
+invitation ourselves with `notify: false`) are the alternative if one tap fewer is wanted.
+
 ### WP5 — Production and publication (#1077)
 See `docs/go-to-production.md` §6.
 
