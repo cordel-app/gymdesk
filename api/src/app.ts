@@ -113,6 +113,7 @@ import { gymLocalizationRouter } from './api/gym-localization';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
 import { internalRunRateLimitConfig, spendsInternalRunBudget } from './domain/internalRunRateLimit';
+import { API_RATE_LIMIT_WINDOW_MS, apiRateLimitMax } from './domain/apiRateLimit';
 import { internalRunClientKey, trustProxyHops } from './domain/forwardedClient';
 import { httpErrorStatus, publicErrorMessage } from './domain/httpErrorResponse';
 
@@ -128,8 +129,8 @@ app.set('trust proxy', trustProxyHops());
 app.use(requestLogger);
 
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 500,
+  windowMs: API_RATE_LIMIT_WINDOW_MS,
+  limit: apiRateLimitMax(),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
 });
