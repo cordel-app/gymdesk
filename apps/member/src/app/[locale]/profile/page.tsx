@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
+import { clerkStatusLine, clerkInvitationLine } from '@/lib/clerkAccountLines';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -24,6 +25,11 @@ interface Profile {
   phone: string | null;
   /** #1039: the member's stored default language, or `null` for no preference. */
   preferred_locale: string | null;
+  /** #1234: Clerk account history, stored dates. */
+  clerk_user_id?: string | null;
+  invitation_id?: string | null;
+  invited_at?: string | null;
+  enrolled_at?: string | null;
 }
 
 interface Membership {
@@ -262,6 +268,19 @@ export default function ProfilePage() {
             </p>
           </div>
         </div>
+
+        {/* #1234: Clerk Status and Clerk Invitation, from stored dates. */}
+        {(() => {
+          const fields = { clerk_user_id: profile.clerk_user_id, has_pending_invitation: !!profile.invitation_id, invited_at: profile.invited_at, enrolled_at: profile.enrolled_at };
+          const status = clerkStatusLine(fields, locale);
+          const invitation = clerkInvitationLine(fields, locale);
+          return (
+            <>
+              <Field label={t('profile.label_clerk_status')} value={t(`profile.${status.key}`, { date: status.date ?? '' })} />
+              <Field label={t('profile.label_clerk_invitation')} value={t(`profile.${invitation.key}`, { date: invitation.date ?? '' })} />
+            </>
+          );
+        })()}
 
         <div style={{ padding: '12px 0' }}>
           <p style={styles.label}>{t('profile.payment_status')}</p>

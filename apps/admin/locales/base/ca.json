@@ -328,7 +328,15 @@
     "billing_simulation_benefit_personal": "Benefici personal",
     "membership_created_by": "Creat per",
     "membership_created_at": "Creat el",
-    "membership_plan_snapshot": "Detalls del Pla de Subscripció Assignat"
+    "membership_plan_snapshot": "Detalls del Pla de Subscripció Assignat",
+    "label_clerk_status": "Estat de Clerk",
+    "label_clerk_invitation": "Invitació de Clerk",
+    "clerk_status_enrolled_on": "Registrat · {date}",
+    "clerk_status_enrolled": "Registrat",
+    "clerk_status_not_enrolled": "No registrat",
+    "clerk_invitation_invited_on": "Convidat · {date}",
+    "clerk_invitation_invited": "Convidat",
+    "clerk_invitation_none": "Cap"
   },
   "member_payments": {
     "title": "Pagaments del membre",
@@ -2548,7 +2556,6 @@
     "section_colors": "Colors",
     "section_assignments": "Assignacions",
     "tab_general": "General",
-    "tab_assignments": "Assignacions",
     "tab_global_style": "Estil global",
     "tab_members_app_style": "Estil de l'App de Membres",
     "label_description": "Descripció",

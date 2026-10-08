@@ -327,7 +327,15 @@
     "billing_simulation_benefit_personal": "Beneficio personal",
     "membership_created_by": "Creado por",
     "membership_created_at": "Creado el",
-    "membership_plan_snapshot": "Detalles del Plan de Suscripción Asignado"
+    "membership_plan_snapshot": "Detalles del Plan de Suscripción Asignado",
+    "label_clerk_status": "Estado de Clerk",
+    "label_clerk_invitation": "Invitación de Clerk",
+    "clerk_status_enrolled_on": "Registrado · {date}",
+    "clerk_status_enrolled": "Registrado",
+    "clerk_status_not_enrolled": "No registrado",
+    "clerk_invitation_invited_on": "Invitado · {date}",
+    "clerk_invitation_invited": "Invitado",
+    "clerk_invitation_none": "Ninguna"
   },
   "member_payments": {
     "title": "Pagos del miembro",
@@ -2521,7 +2529,6 @@
     "section_colors": "Colores",
     "section_assignments": "Asignaciones",
     "tab_general": "General",
-    "tab_assignments": "Asignaciones",
     "tab_global_style": "Estilo global",
     "tab_members_app_style": "Estilo de la App de Miembros",
     "label_description": "Descripción",
