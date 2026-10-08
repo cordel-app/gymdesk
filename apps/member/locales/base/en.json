@@ -390,6 +390,10 @@
     "retry": "Try again"
   },
   "link": {
+    "open_in_app_title": "Open in the app",
+    "open_in_app_hint": "If you have the app installed, open your invitation there.",
+    "open_in_app_button": "Open the app",
+    "continue_in_browser": "Continue in the browser",
     "linking": "Setting up your account…",
     "error_no_invitation": "No pending invitation found for this account.",
     "error_generic": "Something went wrong.",
