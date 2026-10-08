@@ -55,7 +55,8 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # The Capacitor CLI refuses to run below Node 22, unlike the web apps' 20.
+          node-version: 22
           cache: npm
 
       - uses: actions/setup-java@v4
@@ -140,7 +141,8 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # The Capacitor CLI refuses to run below Node 22, unlike the web apps' 20.
+          node-version: 22
           cache: npm
 
       - run: npm ci
