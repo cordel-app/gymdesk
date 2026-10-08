@@ -47,6 +47,7 @@ import {
   PromotionRefused,
 } from './me-products';
 import { purchaseBlockResponse } from '../domain/memberProductPurchase';
+import { parseProfessionalServiceFilter } from '../domain/memberProductCatalogue';
 import {
   MEMBER_PLAN_HISTORY_LIMIT,
   splitMemberPlanHistory,
@@ -964,7 +965,15 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
     res.status(201).json(result);
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'You already have a booking for this session.' });
-    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+    if (err.status) {
+      return res.status(err.status).json({
+        error: err.message,
+        code: err.code,
+        // #1189 stage 4: the refusal names the services that would unlock the
+        // booking, so the Members App can route to buying one.
+        ...(err.professional_services ? { professional_services: err.professional_services } : {}),
+      });
+    }
     next(err);
   }
 });
@@ -2278,7 +2287,9 @@ meRouter.get(
     const { gymId } = ctx;
     try {
       const memberId = await resolveMemberId(gymId, ctx);
-      res.json({ items: await memberProductCatalogue(gymId, memberId) });
+      const filter = parseProfessionalServiceFilter(req.query.professional_service_ids);
+      if (!filter.ok) return res.status(400).json({ error: filter.error });
+      res.json({ items: await memberProductCatalogue(gymId, memberId, filter.ids) });
     } catch (err) {
       next(err);
     }

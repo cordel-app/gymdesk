@@ -66,6 +66,19 @@ export type MemberCatalogueProduct = MemberProduct & ProductPurchaseFields & {
   applied_promotion: AppliedPromotion | null;
 };
 
+/**
+ * #1189 stage 4 — narrow the catalogue to Products that grant sessions of the
+ * named Professional Services (the ones a refused booking said would unlock it).
+ * It only ever *narrows* the one catalogue predicate; it never widens it, so a
+ * member still cannot be shown what they cannot buy.
+ */
+function professionalServiceFilterSql(ids: number[]): string {
+  if (ids.length === 0) return '';
+  const marks = ids.map(() => '?').join(', ');
+  return `AND EXISTS (SELECT 1 FROM product_professional_services pps
+                       WHERE pps.product_id = p.id AND pps.professional_service_id IN (${marks}))`;
+}
+
 /** The columns both reads project — the catalogue's own, plus its tax rate. */
 const PRODUCT_COLUMNS = `
   p.id, p.name, p.description, p.type, p.units,
@@ -92,6 +105,7 @@ const PRODUCT_COLUMNS = `
 export async function memberProductCatalogue(
   gymId: string,
   memberId: number,
+  professionalServiceIds: number[] = [],
 ): Promise<MemberCatalogueProduct[]> {
   const [{ rows }, purchases] = await Promise.all([
     db.query<any>(
@@ -99,8 +113,9 @@ export async function memberProductCatalogue(
        FROM products p
        LEFT JOIN tax_rates tr ON tr.id = p.tax_rate_id
        WHERE p.gym_id = ? AND ${memberProductCatalogueSql('p')}
+       ${professionalServiceFilterSql(professionalServiceIds)}
        ORDER BY p.name ASC`,
-      [gymId, ...memberProductCatalogueParams()],
+      [gymId, ...memberProductCatalogueParams(), ...professionalServiceIds],
     ),
     loadLivePurchases(gymId, memberId),
   ]);

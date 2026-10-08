@@ -35,7 +35,14 @@ export function useApiClient() {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}));
-      throw new Error(body.error ?? `Request failed: ${res.status}`);
+      // `code` and the rest of the body travel with the message (#1189 stage 4):
+      // a refusal such as `professional_service_required` names what would
+      // unlock the action, and a caller that wants it reads it off the error.
+      throw Object.assign(new Error(body.error ?? `Request failed: ${res.status}`), {
+        status: res.status,
+        code: typeof body.code === 'string' ? body.code : undefined,
+        body,
+      });
     }
 
     if (res.status === 204) return undefined as T;

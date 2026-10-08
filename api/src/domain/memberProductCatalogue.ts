@@ -115,3 +115,24 @@ export function shapeMemberProduct(row: MemberProductRow, priceInclTax: number |
     tax_included: row.tax_rate_percent != null,
   };
 }
+
+/**
+ * Judges `?professional_service_ids=1,2`: absent is no filter, anything that is
+ * not a comma list of positive integers is a 400 rather than a quiet no-filter.
+ */
+export function parseProfessionalServiceFilter(
+  raw: unknown,
+): { ok: true; ids: number[] } | { ok: false; error: string } {
+  if (raw === undefined || raw === '') return { ok: true, ids: [] };
+  if (typeof raw !== 'string') return { ok: false, error: 'professional_service_ids must be a comma-separated list of ids' };
+  const parts = raw.split(',');
+  const ids: number[] = [];
+  for (const part of parts) {
+    if (!/^[1-9]\d{0,9}$/.test(part.trim())) {
+      return { ok: false, error: 'professional_service_ids must be a comma-separated list of ids' };
+    }
+    const id = Number(part.trim());
+    if (!ids.includes(id)) ids.push(id);
+  }
+  return { ok: true, ids: ids.slice(0, 20) };
+}

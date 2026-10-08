@@ -9,6 +9,7 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
 import {
@@ -116,6 +117,8 @@ export default function MemberCalendarPage() {
   const [selected, setSelected] = useState<ScheduleSession | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  // #1189 stage 4 — the services a refused booking said would unlock it.
+  const [unlockServiceIds, setUnlockServiceIds] = useState<number[]>([]);
   const [weeklyHours, setWeeklyHours] = useState<WeeklyShiftDTO[]>([]);
   const [holidays, setHolidays] = useState<HolidayDTO[]>([]);
 
@@ -234,6 +237,7 @@ export default function MemberCalendarPage() {
 
   function handleEventClick(info: any) {
     setActionMsg(null);
+    setUnlockServiceIds([]);
     setSelected(info.event.extendedProps as ScheduleSession);
   }
 
@@ -249,6 +253,7 @@ export default function MemberCalendarPage() {
       refetch();
       setSelected(null);
     } catch (e: any) {
+      setUnlockServiceIds(requiredServiceIds(e));
       setActionMsg(e.message ?? t('error_generic'));
     } finally { setActionLoading(false); }
   }
@@ -525,6 +530,14 @@ export default function MemberCalendarPage() {
 
             {actionMsg && (
               <p style={{ color: memberTheme.statusError, fontSize: 13, marginBottom: 12 }}>{actionMsg}</p>
+            )}
+            {unlockServiceIds.length > 0 && (
+              <button
+                onClick={() => router.push(`/${locale}${productsPathForServices(unlockServiceIds)}`)}
+                style={{ ...actionBtn(memberTheme.primaryButton), marginBottom: 12 }}
+              >
+                {t('buy_sessions_cta')}
+              </button>
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
