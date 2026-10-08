@@ -9,6 +9,7 @@ import { handleDupEntry } from '../infra/db-helpers';
 import { validateDocumentId, maskDocumentId } from '../domain/documentId';
 import { isStaffLoginEmail, STAFF_EMAIL_CONFLICT } from '../infra/staff-access';
 import { classifyAccount, loadAccountLinksFor } from '../infra/clerk-account-links';
+import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
 import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
 import { isNewMemberStatus, newMemberStatusByMember } from './new-member-eligibility';
 import { loadMemberPurchases } from './member-product-promotions';
@@ -110,19 +111,10 @@ membersRouter.get('/', async (req, res) => {
             -- #788: a card replacement is a payment_requests row with no money
             -- in it, so the latest one must not become the member's payment
             -- status — a pending verification would read as an unpaid fee.
-            -- #1121 stage 2 excludes a product purchase for the same reason,
-            -- the other way round: it *is* money, but it is not the membership
-            -- fee this column is about, so a member halfway through buying a
-            -- locker would read as owing their fee.
-            (SELECT pr.status
-             FROM payment_requests pr
-             WHERE pr.gym_id = m.gym_id
-               AND pr.source NOT IN ('card_update', 'product_purchase')
-               AND (pr.member_id = m.id
-                    OR pr.user_membership_id IN (
-                         SELECT umm.user_membership_id FROM user_membership_members umm
-                         WHERE umm.member_id = m.id AND umm.gym_id = m.gym_id))
-             ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS payment_status
+            -- #1235: the aggregate of every billable concept (each Assigned Plan
+            -- and each Product bought on its own), worst status wins — one
+            -- implementation, domain/memberPaymentStatus.ts.
+            ${memberPaymentStatusSql('m')} AS payment_status
      FROM members m
      LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
      ${joins.join(' ')}
