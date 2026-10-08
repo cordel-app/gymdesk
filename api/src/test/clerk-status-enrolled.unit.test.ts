@@ -16,9 +16,9 @@ describe('#1295 clerk-status reports enrolled', () => {
   it('puts `enrolled` in the object every branch spreads', () => {
     const dates = handler.slice(handler.indexOf('const dates = {'), handler.indexOf('};', handler.indexOf('const dates = {')));
     expect(dates).toContain('enrolled: !!clerk_user_id');
-    // every response carries it: all four `res.json` calls spread `dates`
-    expect((handler.match(/res\.json\(\{/g) ?? []).length).toBe(4);
-    expect((handler.match(/\.\.\.dates/g) ?? []).length).toBe(4);
+    // every response carries it: all three `res.json` answers spread `dates`
+    expect((handler.match(/res\.json\(\{/g) ?? []).length).toBe(3);
+    expect((handler.match(/\.\.\.dates/g) ?? []).length).toBe(3);
   });
 
   it('the card reads a linked member as enrolled, with and without a date', () => {
