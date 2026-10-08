@@ -214,6 +214,17 @@ project from §2.
 *Actions → Mobile build → Run workflow* (pick `dev` or `pro`), or push a `mobile-v*` tag; it
 also runs on a PR that touches `apps/mobile/`. Two jobs:
 
+**Builds are versioned and published.** The version people read is `apps/mobile/package.json`'s
+`version`, and the build number is the workflow's run number (it only goes up: Android's
+`versionCode`, iOS's `CURRENT_PROJECT_VERSION`), so a build reads `1.0.0 (57)` and its file is
+`cordel-fitness-dev-1.0.0-b57-<sha>.apk`. Every run **except a pull request's** also uploads the
+build to the environment's bucket, and **Cordel → Mobile builds** lists them newest first with a
+Download button (superadmin only, read-only; `api/src/domain/mobileBuilds.ts`). The workflow is
+the only writer (`.github/scripts/publish-mobile-build.sh`) and keeps the newest 20 per app and
+platform. The `dev` page shows the dev bucket's builds and the `pro` page the pro bucket's. The
+upload needs the environment's existing `CLOUDFLARE_R2_*` settings and skips with a warning
+without them.
+
 - **Android debug APK** — download the artifact (it is a zip holding the APK), unzip, and open
   the APK on the phone (allow installs from that app). It loads the environment's Members App
   (`CORDEL_FITNESS_MEMBERS_URL`) and is signed with the shared debug keystore, whose SHA-1
