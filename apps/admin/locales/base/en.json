@@ -61,7 +61,8 @@
     "operating_hours": "Operating Hours",
     "failed_payments_badge": "{count, plural, one {# failed payment awaiting action} other {# failed payments awaiting action}}",
     "collapse_sidebar": "Collapse sidebar",
-    "expand_sidebar": "Expand sidebar"
+    "expand_sidebar": "Expand sidebar",
+    "localization": "Time & Localization"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -4226,5 +4227,29 @@
     "en": "English",
     "es": "Spanish",
     "ca": "Catalan"
+  },
+  "localization": {
+    "title": "Time & Localization",
+    "time_zone": "Time zone",
+    "first_day_of_week": "First day of week",
+    "date_format": "Date format",
+    "time_format": "Time format",
+    "time_format_24h": "24-hour",
+    "time_format_12h": "12-hour (AM/PM)",
+    "number_format": "Number format",
+    "number_format_comma_decimal": "1.234,56 (comma decimal)",
+    "number_format_dot_decimal": "1,234.56 (dot decimal)",
+    "currency": "Currency",
+    "preview": "Preview",
+    "save": "Save changes",
+    "cancel": "Cancel",
+    "edit": "Edit",
+    "weekday_0": "Sunday",
+    "weekday_1": "Monday",
+    "weekday_2": "Tuesday",
+    "weekday_3": "Wednesday",
+    "weekday_4": "Thursday",
+    "weekday_5": "Friday",
+    "weekday_6": "Saturday"
   }
 }
