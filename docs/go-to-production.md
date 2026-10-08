@@ -1386,6 +1386,9 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 - [ ] TestFlight and Google Play internal testing track, then a physical-device pass on each
       platform (the simulator is not enough for push or for Sign in with Apple).
 - [ ] CI that builds the iOS app on a macOS runner (the build needs the current Xcode, which may
-      require a newer macOS than a developer's Mac).
+      require a newer macOS than a developer's Mac). *Partly done (#1077):* `mobile-build.yml`
+      builds an **unsigned simulator** app and an Android debug APK; the **signed** iOS build and
+      TestFlight upload still need the Apple Developer account, and an Android **release** build
+      still needs the upload key and Play App Signing.
 - [ ] Web releases reach the app without a store review, native changes do not: agree who
       releases what, and keep an error screen with retry for when the web is down.
