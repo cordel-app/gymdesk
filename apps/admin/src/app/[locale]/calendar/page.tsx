@@ -547,57 +547,29 @@ export default function CalendarPage() {
                 );
               }
 
-              if (viewType === 'timeGridWeek') {
-                const timeRange = !e.all_day && arg.event.start && arg.event.end
-                  ? `${formatHM(arg.event.start)} – ${formatHM(arg.event.end)}`
-                  : null;
-                return (
-                  <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
-                    {timeRange && (
-                      <div style={{ opacity: 0.9, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {timeRange}
-                      </div>
-                    )}
-                    <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {arg.event.title}
-                    </div>
-                    {/* #981 §7 — a week column is a few characters wide, so
-                        the trainer and the space share one truncated line. */}
-                    {calendarEventMetaLines(meta, 'compact').map((line, i) => (
-                      <div key={i} style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {line}
-                      </div>
-                    ))}
-                    {(bookingCount || waitlistLine || statusLabel) && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
-                        {bookingCount && (
-                          <span style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap' }}>{bookingCount}</span>
-                        )}
-                        {waitlistLine && (
-                          <span style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{waitlistLine}</span>
-                        )}
-                        {statusLabel && (
-                          <CalendarStatusBadge status={badgeStatus} label={statusLabel} compact />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-
-              // Day view — #981 §4 gives the trainer and the space a line each
-              // (a day column is full-width), with the occupancy counts
-              // keeping a line of their own after them.
-              const metaLines = calendarEventMetaLines(meta, 'full');
+              // #1245 — Day and Week share one two-line layout. Line 1 is
+              // Time · Activity · Status · Occupancy (the waiting count rides
+              // with the occupancy); line 2 is Trainer · Space, with a missing
+              // value producing no separator (`calendarEventMetaLines`). The
+              // member's name is never shown here.
+              const timeRange = viewType === 'timeGridWeek'
+                ? (!e.all_day && arg.event.start && arg.event.end
+                    ? `${formatHM(arg.event.start)} – ${formatHM(arg.event.end)}`
+                    : null)
+                : (arg.timeText || null);
               const countsLine = joinMetaParts([bookingCount, waitlistLine]);
+              const metaLines = calendarEventMetaLines(meta, 'compact');
               return (
                 <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                    <span style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {arg.timeText ? `${arg.timeText} ` : ''}{arg.event.title}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                      {joinMetaParts([timeRange, arg.event.title])}
                     </span>
                     {statusLabel && (
-                      <CalendarStatusBadge status={badgeStatus} label={statusLabel} />
+                      <CalendarStatusBadge status={badgeStatus} label={statusLabel} compact={viewType === 'timeGridWeek'} />
+                    )}
+                    {countsLine && (
+                      <span style={{ opacity: 0.85, flexShrink: 0 }}>{`· ${countsLine}`}</span>
                     )}
                   </div>
                   {metaLines.map((line, i) => (
@@ -605,11 +577,6 @@ export default function CalendarPage() {
                       {line}
                     </div>
                   ))}
-                  {countsLine && (
-                    <div style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {countsLine}
-                    </div>
-                  )}
                 </div>
               );
             }}
