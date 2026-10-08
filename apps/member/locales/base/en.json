@@ -37,7 +37,12 @@
     "membership": "My Products",
     "profile": "Profile",
     "alerts": "Alerts",
-    "goals": "My Goals"
+    "goals": "My Goals",
+    "user_menu": "Account menu",
+    "logout": "Log out",
+    "logout_confirm_title": "Log out?",
+    "logout_confirm_body": "You will be signed out of this account on this device.",
+    "logout_cancel": "Cancel"
   },
   "common": {
     "error": "Something went wrong.",
