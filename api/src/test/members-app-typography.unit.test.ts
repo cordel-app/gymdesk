@@ -107,8 +107,8 @@ describe('#1152 — every new setting reaches a surface', () => {
     expect(home).toContain('<span style={styles.tileLabel}>{label}</span>');
     // The dashboard's products card title takes the card's colour and font
     // too; its size and weight are its own, its body being #1116's structure.
-    expect(home).toContain("productsTitle:   { margin: 0, fontSize: 17, fontWeight: 700 }");
-    expect(home).toContain("<p style={styles.productsTitle}>{t('home.products_services')}</p>");
+    expect(home).not.toContain('productsTitle');
+    expect(home).toContain("<span style={styles.tileLabel}>{t('home.products_services')}</span>");
   });
 
   it('renders every heading in its Title font beside its Title colour', () => {
