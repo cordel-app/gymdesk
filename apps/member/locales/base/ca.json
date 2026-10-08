@@ -37,7 +37,12 @@
     "membership": "Els Meus Productes",
     "profile": "Perfil",
     "alerts": "Alertes",
-    "goals": "Els Meus Objectius"
+    "goals": "Els Meus Objectius",
+    "user_menu": "Menú del compte",
+    "logout": "Tanca la sessió",
+    "logout_confirm_title": "Vols tancar la sessió?",
+    "logout_confirm_body": "Es tancarà la sessió d'aquest compte en aquest dispositiu.",
+    "logout_cancel": "Cancel·la"
   },
   "common": {
     "error": "Alguna cosa ha anat malament.",
