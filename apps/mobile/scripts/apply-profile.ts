@@ -117,7 +117,10 @@ function main(): void {
  * reported as missing when it does not — a build without it still launches
  * (the AppDelegate only calls `FirebaseApp.configure()` when the plist is in
  * the bundle, and Gradle only applies the google-services plugin when the JSON
- * is there), it just cannot receive a push.
+ * is there), it just cannot receive a push. On Android that holds only because
+ * `MainActivity` creates a placeholder Firebase app when there is no JSON
+ * (#1077): without it the push plugin's `register()` crashed the whole app
+ * the first time a member signed in.
  */
 function copyFirebaseConfig(profileId: string): number {
   const sources: [string, string][] = [
