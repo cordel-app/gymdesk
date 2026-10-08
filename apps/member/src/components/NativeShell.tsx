@@ -62,7 +62,8 @@ export function NativeShell() {
 
     (async () => {
       const platform = nativePlatform();
-      const push = await loadPushNotifications();
+      const loadedPush = await loadPushNotifications();
+      const push = loadedPush?.plugin ?? null;
       if (!platform || !push || cancelled) return;
 
       try {
@@ -110,7 +111,8 @@ export function NativeShell() {
     let handle: { remove: () => Promise<void> | void } | null = null;
 
     (async () => {
-      const app = await loadAppPlugin();
+      const loadedApp = await loadAppPlugin();
+      const app = loadedApp?.plugin ?? null;
       if (!app || cancelled) return;
       try {
         handle = await app.addListener('appUrlOpen', ({ url }) => {

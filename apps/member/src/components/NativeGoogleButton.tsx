@@ -69,7 +69,7 @@ export function NativeGoogleButton() {
     setFailed(false);
     setBusy(true);
     try {
-      const socialLogin = await loadSocialLogin();
+      const socialLogin = (await loadSocialLogin())?.plugin ?? null;
       if (!socialLogin) {
         setFailed(true);
         return;
