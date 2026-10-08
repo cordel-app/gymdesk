@@ -207,7 +207,16 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
 
   const { clerk_user_id, invitation_id, invited_at, enrolled_at } = rows[0];
   // #1234: the dates are history, reported as stored and independent of the status.
-  const dates = { invited_at: invited_at ?? null, enrolled_at: enrolled_at ?? null, has_pending_invitation: !!invitation_id };
+  // #1295: `enrolled` is the stored link itself (what #1234 defines it as), reported in
+  // every branch below because the card passes this whole response to
+  // `clerkStatusLine()`, which reads `enrolled` — it was missing, so every member read
+  // "Not enrolled" beside an Active badge.
+  const dates = {
+    invited_at: invited_at ?? null,
+    enrolled_at: enrolled_at ?? null,
+    has_pending_invitation: !!invitation_id,
+    enrolled: !!clerk_user_id,
+  };
 
   if (!clerk_user_id) {
     return res.json({ status: invitation_id ? 'invited' : 'not_enrolled', userId: null, ...dates });
