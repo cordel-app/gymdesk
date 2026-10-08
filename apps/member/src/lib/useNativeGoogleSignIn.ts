@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useClerk } from '@clerk/nextjs';
+import { useLocale } from 'next-intl';
 import { googleIdToken, googleNativeConfig, nativePlatform, signInErrorDetail } from '@/lib/native';
 import { loadSocialLogin } from '@/lib/nativePlugins';
 import { useIsNative } from '@/lib/useIsNative';
@@ -33,9 +34,9 @@ import { useIsNative } from '@/lib/useIsNative';
  * result carrying no token, which is what dismissing the sheet produces, and
  * nothing is reported. Only a real failure sets `failed`.
  *
- * **Clerk is handed the token and nothing else.** No redirect URL, no
- * `window.location`: the session is established in place and the sign-in page's
- * existing Clerk redirect takes the member on, as after a password sign-in.
+ * **Clerk is handed the token, then asked to finish.** `authenticateWithGoogleOneTap()`
+ * returns a resource and does nothing else, so `handleGoogleOneTapCallback()` is what
+ * activates the session and takes the member to the locale's home (#1285).
  *
  * **The ids are build-time configuration** (`docs/mobile-app.md` design rule 1),
  * never literals here.
@@ -43,6 +44,7 @@ import { useIsNative } from '@/lib/useIsNative';
 export function useNativeGoogleSignIn() {
   const native = useIsNative();
   const clerk = useClerk();
+  const locale = useLocale();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
@@ -72,7 +74,16 @@ export function useNativeGoogleSignIn() {
       const token = googleIdToken(result);
       // No token means the member dismissed the sheet — nothing happened.
       if (!token) return;
-      await (clerk as any).authenticateWithGoogleOneTap({ token });
+      // #1285: `authenticateWithGoogleOneTap()` only *returns* the sign-in (or
+      // sign-up) resource; it neither activates the session nor navigates. Without
+      // `handleGoogleOneTapCallback()` the page stayed on the login with no error.
+      // The callback sets the session, completes a transfer to sign-up the way
+      // Clerk's own Google button does, and lands on the Members App's home.
+      const resource = await (clerk as any).authenticateWithGoogleOneTap({ token });
+      await (clerk as any).handleGoogleOneTapCallback(resource, {
+        signInFallbackRedirectUrl: `/${locale}`,
+        signUpFallbackRedirectUrl: `/${locale}`,
+      });
     } catch (err) {
       // #1285: the notice is the same for every cause, so the cause is logged
       // and kept for the page to show in development builds.
