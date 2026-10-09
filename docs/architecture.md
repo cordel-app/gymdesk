@@ -20,6 +20,8 @@
 
 **Architectural decisions**: see `docs/decisions.md` for the settled choices (MySQL, Clerk, no ORM, etc.) — don't re-litigate them.
 
+**What the product does**: `docs/rules.md` states every business rule in plain language — one entry per rule, with the ticket that decided it and the module that enforces it. Start there to learn how billing, bookings, Products, Promotions or the Members App behave; the detailed constraint behind each entry is in `CLAUDE.md`.
+
 ---
 
 ## Overview

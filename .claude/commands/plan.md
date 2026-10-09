@@ -35,6 +35,7 @@ Read the GitHub issue body (use `gh issue view <N>`) and the relevant sections o
 - [ ] `docs/architecture.md` — new tables/routers? (yes/no)
 - [ ] `docs/feature-patterns.md` — new pattern? (yes/no)
 - [ ] `CLAUDE.md` — new hard constraint? (yes/no)
+- [ ] `docs/rules.md` — if yes, and the constraint is product behaviour: its plain entry
 
 ### Open questions (if any)
 - …
