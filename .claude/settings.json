@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash -c 'echo \"$CLAUDE_TOOL_INPUT\" | grep -q \"gh pr create\" && echo \"⛔ STOP — Finishing-task checklist (CLAUDE.md):\\n  1. docs/changelog.md — add the ticket entry; docs/roadmap.md only if an Open work item closed or advanced\\n  2. docs/architecture.md — new tables / routers / middleware / patterns?\\n  3. docs/feature-patterns.md — new pattern or template emerged?\\n  4. CLAUDE.md — new hard constraint or convention?\\nOnly run gh pr create after completing the applicable steps above.\" || true'"
+            "command": "bash -c 'echo \"$CLAUDE_TOOL_INPUT\" | grep -q \"gh pr create\" && echo \"⛔ STOP — Finishing-task checklist (CLAUDE.md):\\n  1. docs/changelog.md — add the ticket entry; docs/roadmap.md only if an Open work item closed or advanced\\n  2. docs/architecture.md — new tables / routers / middleware / patterns?\\n  3. docs/feature-patterns.md — new pattern or template emerged?\\n  4. CLAUDE.md — new hard constraint or convention? (+ its plain entry in docs/rules.md)\\nOnly run gh pr create after completing the applicable steps above.\" || true'"
           }
         ]
       }

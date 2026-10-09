@@ -14,6 +14,7 @@ Read these files first — they contain the full context needed to implement cor
 - `docs/feature-patterns.md` — step-by-step checklist and code templates for new features
 - `docs/roadmap.md` — what each area of the product does today, the open issues and what is left on each, the settled decisions and the shipped phases. Short, by design: it is rewritten, never appended to
 - `docs/changelog.md` — one entry per shipped ticket, by month; the record of how the product got here. The only doc a ticket appends to
+- `docs/rules.md` — the business rules below stated for a person: one plain entry per rule with its ticket and the module that enforces it. A view of the Hard constraints, kept in step by the Finishing-a-task checklist; read it to learn what the product does, read the constraint below it to implement against it
 - `docs/decisions.md` — settled architectural choices (MySQL, Clerk, no ORM, etc.) — don't re-litigate these
 - `docs/payments.md` — **required reading for anything that touches money**: the first-payment (CIT) and recurring-charge (MIT) processes end to end, the data model with its CHECK sets, the provider boundary, and the manual test runbook. The constraints below are the rules; that document is how the two processes actually run.
 - `docs/mobile-app.md` — **required reading for anything that touches the iOS/Android app** (Capacitor shell, native sign-in, push tokens, universal links): the plan, what the 2026-10-04 spike proved, and the design rules that keep per-gym apps (stage 2) a configuration of the generic app (stage 1) rather than a fork. Planned, not built yet.
@@ -272,6 +273,7 @@ Before opening the PR, run these checks in order:
    - `docs/feature-patterns.md` — update if a new pattern or template emerged that future tickets should follow.
    - `docs/go-to-production.md` — add a checklist item whenever the ticket defers something "until production" (there is no production environment yet); tick items the ticket completes.
    - `CLAUDE.md` — update if a new hard constraint, convention, or cleanup rule was established.
+   - `docs/rules.md` — whenever a Hard constraints bullet is added or changes what the product does, add or change its plain-language entry (the rule in one sentence, the ticket, the enforcing module). A code-structure-only constraint needs no entry.
 
    Only update a file if the ticket genuinely changes what it documents. Navigation-only or i18n-only changes rarely need doc updates; new API surface, DB schema, or architectural patterns almost always do.
 
