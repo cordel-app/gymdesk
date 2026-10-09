@@ -36,7 +36,7 @@ const TICKET_TABLE = [
 describe('#1149 default gym Products — the declaration', () => {
   it('declares exactly the seven Products the ticket lists, with its configuration', () => {
     expect(DEFAULT_GYM_PRODUCTS).toHaveLength(TICKET_TABLE.length);
-    for (const [name, type, units, amount, frequency, status, enrollment] of TICKET_TABLE) {
+    for (const [name, type, units, amount, frequency, status, enrollment, mandatory] of TICKET_TABLE) {
       const declared = DEFAULT_GYM_PRODUCTS.find((p) => p.name === name);
       expect(declared, `no default declared for ${name}`).toBeDefined();
       expect(declared).toMatchObject({
