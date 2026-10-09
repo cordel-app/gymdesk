@@ -55,6 +55,8 @@ interface Member extends MemberProfile {
   account_status: 'active' | 'invited' | 'not_enrolled';
   enrollment_status: string | null;
   payment_status: string | null;
+  access_rights?: 'granted' | 'to_be_reviewed' | 'revoked';
+  access_rights_stored?: 'granted' | 'revoked';
 }
 
 const emptyForm = {
@@ -183,6 +185,7 @@ export default function MembersPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [editingId]);
 
+  const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'MEMBERS'));
   const canManageTraining = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
   const canManagePackages = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
   // #948 §4: the PERSONAL GOALS section writes through `/member-personal-goals`,
@@ -423,7 +426,7 @@ export default function MembersPage() {
 
   // #709: ConfirmDialog, not window.confirm() — like the rest of the admin
   // (confirm() is also auto-cancelled by embedded browsers).
-  const [confirming, setConfirming] = useState<{ kind: 'delete' | 'revoke'; id: number } | null>(null);
+  const [confirming, setConfirming] = useState<{ kind: 'delete' | 'revoke' | 'access_revoke'; id: number } | null>(null);
   const [confirmBusy, setConfirmBusy] = useState(false);
 
   function handleDelete(id: number) {
@@ -437,6 +440,9 @@ export default function MembersPage() {
     try {
       if (kind === 'delete') {
         await apiFetch(`/members/${id}`, { method: 'DELETE' });
+      } else if (kind === 'access_revoke') {
+        await apiFetch(`/members/${id}/access/revoke`, { method: 'POST' });
+        toast(t('members.toast_access_revoked'), 'success');
       } else {
         await apiFetch(`/members/${id}/revoke-invite`, { method: 'POST' });
         toast(t('members.toast_revoked'), 'success');
@@ -464,6 +470,17 @@ export default function MembersPage() {
     try {
       await apiFetch(`/members/${id}/reinvite`, { method: 'POST' });
       toast(t('members.toast_reinvited'), 'success');
+      load();
+    } catch (err: any) {
+      toast(err.message ?? t('members.error_generic'), 'error');
+    }
+  }
+
+  // #1238: informational only — persists the state, gates nothing.
+  async function handleGrantAccess(id: number) {
+    try {
+      await apiFetch(`/members/${id}/access/grant`, { method: 'POST' });
+      toast(t('members.toast_access_granted'), 'success');
       load();
     } catch (err: any) {
       toast(err.message ?? t('members.error_generic'), 'error');
@@ -512,6 +529,13 @@ export default function MembersPage() {
     }
     items.push({ label: t('members.edit'), onClick: () => guardUnsaved(() => startEdit(m)) });
     items.push({ label: t('members.action_details'), onClick: () => guardUnsaved(() => setDetailFor(m)) });
+    if (canWrite) {
+      if (m.access_rights_stored === 'revoked') {
+        items.push({ label: t('members.action_grant_access'), onClick: () => guardUnsaved(() => handleGrantAccess(m.id)) });
+      } else {
+        items.push({ label: t('members.action_revoke_access'), onClick: () => guardUnsaved(() => setConfirming({ kind: 'access_revoke', id: m.id })), danger: true });
+      }
+    }
     items.push({ label: t('members.delete'), onClick: () => guardUnsaved(() => handleDelete(m.id)), danger: true });
 
     return items;
@@ -584,6 +608,20 @@ export default function MembersPage() {
 
         {isExpanded && (
           <div style={listExpandedStyle}>
+            {/* #1238 — three independent statuses: Membership Plan, Payment,
+                Access Rights. Clerk status stays in the Account section. */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', marginBottom: 12 }}>
+              {[
+                ['header_plan_status', m.enrollment_status, m.enrollment_status ? t(`members.enrollment_status_${m.enrollment_status}`) : t('members.enrollment_status_none')],
+                ['header_payment_status', m.payment_status, m.payment_status ? t(`members.payment_status_${m.payment_status}`) : t('members.payment_status_none')],
+                ['header_access_rights', m.access_rights ?? 'granted', t(`members.access_rights_${m.access_rights ?? 'granted'}`)],
+              ].map(([key, status, label]) => (
+                <span key={key as string} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                  <span style={{ fontSize: 13, opacity: 0.7 }}>{t(`members.${key}`)}:</span>
+                  {status ? <StatusBadge status={status as string} label={label as string} /> : <span style={noStatusStyle}>{label}</span>}
+                </span>
+              ))}
+            </div>
             {/* #961 — the Member's five work areas. The strip is the app's one
                 tab component (`components/Tabs.tsx`, promoted out of the
                 Nutrition Library's own in this ticket), the tabs themselves are
@@ -803,8 +841,8 @@ export default function MembersPage() {
 
       <ConfirmDialog
         open={confirming !== null}
-        message={t(confirming?.kind === 'revoke' ? 'members.confirm_revoke' : 'members.confirm_delete')}
-        confirmLabel={t(confirming?.kind === 'revoke' ? 'members.action_revoke' : 'members.delete')}
+        message={t(confirming?.kind === 'access_revoke' ? 'members.confirm_revoke_access' : confirming?.kind === 'revoke' ? 'members.confirm_revoke' : 'members.confirm_delete')}
+        confirmLabel={t(confirming?.kind === 'access_revoke' ? 'members.action_revoke_access' : confirming?.kind === 'revoke' ? 'members.action_revoke' : 'members.delete')}
         cancelLabel={t('members.cancel')}
         onConfirm={runConfirmed}
         onCancel={() => setConfirming(null)}
