@@ -30,13 +30,13 @@ const TICKET_TABLE = [
   ['Parking Fee', 'fee', null, 30, 'month', 'inactive', 'public', false],
   ['Personal Training Class Package (10 Sessions)', 'sessions', 10, 500, 'once', 'active', 'public', false],
   ['Premium Fitness App', 'fee', null, null, 'once', 'inactive', 'staff_only', false],
-  ['Registration Fee', 'fee', null, 100, 'once', 'active', 'staff_only', false],
+  ['Registration Fee', 'fee', null, 100, 'once', 'active', 'staff_only', true],
 ] as const;
 
 describe('#1149 default gym Products — the declaration', () => {
   it('declares exactly the seven Products the ticket lists, with its configuration', () => {
     expect(DEFAULT_GYM_PRODUCTS).toHaveLength(TICKET_TABLE.length);
-    for (const [name, type, units, amount, frequency, status, enrollment] of TICKET_TABLE) {
+    for (const [name, type, units, amount, frequency, status, enrollment, mandatory] of TICKET_TABLE) {
       const declared = DEFAULT_GYM_PRODUCTS.find((p) => p.name === name);
       expect(declared, `no default declared for ${name}`).toBeDefined();
       expect(declared).toMatchObject({
@@ -46,6 +46,7 @@ describe('#1149 default gym Products — the declaration', () => {
         billingFrequency: frequency,
         status,
         enrollmentStatus: enrollment,
+        mandatory,
       });
     }
   });
