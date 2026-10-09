@@ -38,9 +38,9 @@ import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND } from
  *      **Assigned Plan snapshot**, never the live `membership_plan_session`
  *      catalogue (#635 §13–§17), and counted only while the assignment is
  *      `active` — a Draft, a Pending Payment row, a paused or a cancelled one
- *      grants nothing. A renewal Frequency (#918) is not multiplied in: there
- *      is no renewal allowance, so `quantity` is the sessions the plan
- *      includes, less what the consumption ledger (#1189 stage 3) has spent.
+ *      grants nothing. A renewing Frequency (#918) adds its quantity again on each
+ *      renewal (#1227 stage 2: the `plan_allowance_renewals` rows the nightly
+ *      run writes), so the grant is `quantity` plus those, less what the consumption ledger (#1189 stage 3) has spent.
  *
  * **Overlapping counts are intentional.** A session package is linked to
  * Professional Services many-to-many (a mixed PT + Physiotherapy package is
@@ -247,7 +247,8 @@ export async function loadMemberProfessionalServiceGrants(
             umss.id           AS reference_id,
             gc.id             AS product_id,
             gc.name           AS product_name,
-            umss.quantity     AS sessions
+            umss.quantity + COALESCE((SELECT SUM(par.quantity) FROM plan_allowance_renewals par
+                                      WHERE par.user_membership_session_id = umss.id), 0) AS sessions
      FROM user_memberships um
      JOIN user_membership_session umss
        ON umss.user_membership_id = um.id AND umss.gym_id = um.gym_id

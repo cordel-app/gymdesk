@@ -146,3 +146,29 @@ export function renewalsInPeriod(
   }
   return count;
 }
+
+/**
+ * #1227 stage 2: the renewal dates of `frequency` on the schedule anchored at
+ * `anchor`, strictly after `after` and no later than `through` (all
+ * `YYYY-MM-DD`). The anchor itself is not a renewal — the line's own quantity
+ * already covers the start date — which is the same schedule `renewalsInPeriod`
+ * counts, so the nightly renewal and the Billing Event Simulation agree.
+ */
+export function renewalDatesThrough(
+  anchor: string,
+  after: string,
+  through: string,
+  frequency: SessionBenefitFrequency | null,
+): string[] {
+  if (!isRenewingSessionFrequency(frequency)) return [];
+  const { interval, unit } = RENEWAL_STEP[frequency];
+  const dates: string[] = [];
+  let cursor = advanceBillingDate(anchor, interval, unit);
+  for (let steps = 0; steps < MAX_RENEWAL_SCAN && cursor <= through; steps++) {
+    if (cursor > after) dates.push(cursor);
+    const next = advanceBillingDate(cursor, interval, unit);
+    if (next <= cursor) break;
+    cursor = next;
+  }
+  return dates;
+}
