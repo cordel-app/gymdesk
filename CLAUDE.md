@@ -12,7 +12,8 @@ Read these files first — they contain the full context needed to implement cor
 
 - `docs/architecture.md` — starts with a TL;DR; full codebase structure, auth, roles, DB conventions below it
 - `docs/feature-patterns.md` — step-by-step checklist and code templates for new features
-- `docs/roadmap.md` — ticket order, current status, and phase decisions
+- `docs/roadmap.md` — what each area of the product does today, the open issues and what is left on each, the settled decisions and the shipped phases. Short, by design: it is rewritten, never appended to
+- `docs/changelog.md` — one entry per shipped ticket, by month; the record of how the product got here. The only doc a ticket appends to
 - `docs/decisions.md` — settled architectural choices (MySQL, Clerk, no ORM, etc.) — don't re-litigate these
 - `docs/payments.md` — **required reading for anything that touches money**: the first-payment (CIT) and recurring-charge (MIT) processes end to end, the data model with its CHECK sets, the provider boundary, and the manual test runbook. The constraints below are the rules; that document is how the two processes actually run.
 - `docs/mobile-app.md` — **required reading for anything that touches the iOS/Android app** (Capacitor shell, native sign-in, push tokens, universal links): the plan, what the 2026-10-04 spike proved, and the design rules that keep per-gym apps (stage 2) a configuration of the generic app (stage 1) rather than a fork. Planned, not built yet.
@@ -44,21 +45,24 @@ git merge origin/main   # always merge, never rebase
 If conflicts occur:
 - Resolve them carefully — preserve valid changes from **both** sides.
 - Never blindly choose "ours" or "theirs".
-- Pay particular attention to `docs/roadmap.md` (see below).
+- Pay particular attention to `docs/changelog.md` and `docs/roadmap.md` (see below).
 - Run tests after resolving conflicts.
 - Confirm the working tree is clean before marking the feature done.
 
 Use `/finish-feature` to run through the full sync + test + status checklist automatically.
 
-### Special handling of docs/roadmap.md
+### Special handling of docs/changelog.md and docs/roadmap.md
 
-`roadmap.md` is a shared file modified by multiple parallel agents.
+Both are shared files modified by multiple parallel agents, and they answer two different questions (split on 2026-10-09, after the application-status review found the roadmap's Status section a month stale).
 
-- Keep changes minimal and focused on the current task.
-- Do not reformat or reorder unrelated sections.
-- Do not remove another agent's entries.
-- When resolving merge conflicts in `roadmap.md`, keep changes from both sides — merge the sections manually rather than picking one side.
-- Always sync with `origin/main` before the final commit if `roadmap.md` was modified.
+`docs/changelog.md` is the **record**: one `- **Done**: #N (…)` entry per shipped ticket (one per stage for a staged ticket), under the month heading of the day it merges, newest month first. A ticket appends its entry once and never edits it afterwards; an entry is never written as *In progress* — the PR that merges the work is the one that adds it, so by the time it exists the work is done.
+
+- Add your entry at the **top** of the current month's section; create the month heading if it is the first entry of the month.
+- Do not reformat, reorder or remove another agent's entries.
+- When resolving merge conflicts, keep both sides' entries — merge the section manually rather than picking one side.
+- Always sync with `origin/main` before the final commit if it was modified.
+
+`docs/roadmap.md` is the **state**: a Status table with one row per area and an *Open work* list naming every open issue with what has merged and what is left. It is rewritten in place, never appended to, and a ticket touches it only when it changes the state of an area: closing an open issue removes that issue's bullet and updates the row (and the open-issue count in the header); opening a new stage of an open issue updates the bullet; a ticket that closes nothing open leaves the file alone. Do not add a per-ticket paragraph to it — that is the changelog's — and do not leave an item reading *in progress* after its issue closes.
 
 ## Hard constraints
 
@@ -262,7 +266,8 @@ Before opening the PR, run these checks in order:
 2. **Test files** — for every new router, run the `test-writer` agent to generate `api/src/test/<router>.test.ts` (integration test). For any new pure functions or middleware, also write a unit test file (no DB helpers, use `vi.mock`/`vi.spyOn`). Run `npm test` inside `api/` to confirm all pass.
 
 3. **Doc updates** — check whether the changes warrant updating any `.md` files:
-   - `docs/roadmap.md` — mark the ticket done and update the Status section if the feature is complete.
+   - `docs/changelog.md` — add the ticket's one `- **Done**: #N (…)` entry at the top of the current month (always).
+   - `docs/roadmap.md` — only if the ticket closes or advances an issue listed under *Open work*: update that bullet and the area's Status row, and the open-issue count in the Status header. Never append a ticket paragraph here.
    - `docs/architecture.md` — update if new tables, routers, middleware, or patterns were introduced.
    - `docs/feature-patterns.md` — update if a new pattern or template emerged that future tickets should follow.
    - `docs/go-to-production.md` — add a checklist item whenever the ticket defers something "until production" (there is no production environment yet); tick items the ticket completes.
