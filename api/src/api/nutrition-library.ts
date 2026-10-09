@@ -69,7 +69,10 @@ nutritionLibraryRouter.get('/nutritional-qualities', async (_req, res, next) => 
 nutritionLibraryRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const locale = getRequestLocale(req);
-  const base = ['(gym_id IS NULL OR gym_id = ?)', "status != 'deleted'"];
+  // `?status=deleted` (Show deleted, #1301) lists this gym's own soft-deleted items
+  // only — a System row's deletion is Cordel's, never shown to a gym.
+  const showDeleted = req.query.status === 'deleted';
+  const base = showDeleted ? ['gym_id = ?', "status = 'deleted'"] : ['(gym_id IS NULL OR gym_id = ?)', "status != 'deleted'"];
   const baseParams: any[] = [gymId];
 
   const built = buildListWhere(req, base, baseParams, locale);
@@ -399,5 +402,35 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
     };
     recordAudit(req, { action: 'update', entityType: 'nutrition_library_item', entityId: id, previous: existing[0], next: item });
     res.json(item);
+  } catch (err) { next(err); }
+});
+
+/* ── Soft delete (gym-owned items only, #1301) ───────────────────────────── */
+// Mirrors the platform route: `status = 'deleted'` is the flag every query
+// filters on; `deleted_at` and the actor pair record when and by whom.
+
+nutritionLibraryRouter.delete('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
+  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const { id } = req.params;
+  try {
+    const { rows: existing } = await db.query(
+      'SELECT id, gym_id, status FROM nutrition_library_items WHERE id = ?',
+      [id],
+    );
+    if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
+    if (existing[0].gym_id === null) return res.status(403).json({ error: 'System library items are read-only' });
+    if (existing[0].gym_id !== gymId) return res.status(404).json({ error: 'Item not found' });
+    if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is already deleted' });
+
+    const actor = actorSnapshot({ name: actorName, isSuperadmin });
+    await db.query(
+      `UPDATE nutrition_library_items
+       SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_name = ?, deleted_by_type = ?,
+           modified_at = UTC_TIMESTAMP()
+       WHERE id = ? AND gym_id = ?`,
+      [actor.name, actor.type, id, gymId],
+    );
+    recordAudit(req, { action: 'delete', entityType: 'nutrition_library_item', entityId: id });
+    res.status(204).send();
   } catch (err) { next(err); }
 });
