@@ -28,6 +28,8 @@ export interface MemberPlanRow {
    */
   lifecycle_status: string;
   membership_fee: number | null;
+  /** #1191 — `linked` for a Membership owned by another covered Member. */
+  assignment_relationship?: 'primary' | 'linked';
   /**
    * #958 — who created the assignment and when, shown on every Assigned
    * Membership Plan card. Both are columns of `user_memberships` (migration

@@ -5,6 +5,7 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
+import { listNameBadgeStyle, listNameBadgeAccentStyle } from '@/components/listChrome';
 import { StatusBadge } from '@/components/StatusBadge';
 import { clerkStatusLine, clerkInvitationLine, type ClerkAccountFields, type ClerkAccountLine } from '@/lib/clerkAccountLines';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -43,6 +44,7 @@ import {
 } from './memberProfile';
 import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './MemberProfileLayout';
 import type { MemberTabId } from './memberTabs';
+import { MemberProfessionalServices } from './MemberProfessionalServices';
 
 interface Plan {
   id: number;
@@ -99,6 +101,7 @@ export function MemberExpandedRow({
   member,
   tab,
   profileVersion,
+  accountVersion = 0,
   editing,
   canManageTraining,
   canManagePackages,
@@ -122,6 +125,7 @@ export function MemberExpandedRow({
   tab: MemberTabId;
   /** Bumped by the page when an edit was saved, so the centers below are re-read. */
   profileVersion: number;
+  accountVersion?: number;
   /**
    * #882: the inline Edit form is open above this row. It renders the Profile
    * itself, in this same layout, so the read-only PROFILE section below stands
@@ -185,6 +189,14 @@ export function MemberExpandedRow({
     if (profileVersion === 0) return;
     loadCenters();
   }, [profileVersion]);
+
+  // #1326: invite / re-invite / revoke happen outside this row; re-read only the Clerk status.
+  useEffect(() => {
+    if (accountVersion === 0) return;
+    apiFetch<{ status: string } & ClerkAccountFields>(`/members/${memberId}/clerk-status`)
+      .then(setClerkStatus)
+      .catch(() => {});
+  }, [accountVersion]);
 
   async function loadAll() {
     setLoading(true);
@@ -382,16 +394,22 @@ export function MemberExpandedRow({
                   : t('members.clerk_error')
                 }
               />
-              {/* #1234: stored dates, independent of membership and payment. */}
+              {/* #1234: stored dates, independent of membership and payment.
+                  #1326: the value is a chip; the date stays beside it as text. */}
               {[
-                ['label_clerk_status', clerkStatusLine(clerkStatus, locale)],
-                ['label_clerk_invitation', clerkInvitationLine(clerkStatus, locale)],
-              ].map(([label, line]) => (
-                <p key={label as string} style={profileValueStyle}>
-                  <strong>{t(`members.${label as string}`)}:</strong>{' '}
-                  {t(`members.${(line as ClerkAccountLine).key}`, { date: (line as ClerkAccountLine).date ?? '' })}
-                </p>
-              ))}
+                ['label_clerk_status', clerkStatusLine(clerkStatus, locale), clerkStatus.enrolled ?? !!clerkStatus.clerk_user_id],
+                ['label_clerk_invitation', clerkInvitationLine(clerkStatus, locale), !!clerkStatus.has_pending_invitation],
+              ].map(([label, line, positive]) => {
+                const l = line as ClerkAccountLine;
+                const chipKey = l.key.replace(/_on$/, '');
+                return (
+                  <p key={label as string} style={profileValueStyle}>
+                    <strong>{t(`members.${label as string}`)}:</strong>{' '}
+                    <span style={positive ? listNameBadgeAccentStyle : listNameBadgeStyle}>{t(`members.${chipKey}`)}</span>
+                    {l.date ? <span> {l.date}</span> : null}
+                  </p>
+                );
+              })}
             </Section>
           )}
 
@@ -603,6 +621,16 @@ export function MemberExpandedRow({
                 })}
               </div>
             )}
+          </Section>
+        </>
+      )}
+
+      {tab === 'professional_services' && (
+        <>
+          {/* Professional Services (#1227) — the Member's balance per service,
+              read from the same derived balance the booking gate uses. */}
+          <Section label={t('members.section_professional_services')} divider={false}>
+            <MemberProfessionalServices memberId={memberId} />
           </Section>
         </>
       )}

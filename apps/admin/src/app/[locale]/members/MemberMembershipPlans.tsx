@@ -196,7 +196,9 @@ export function MemberMembershipPlans({
    * agreed with is the whole point of keeping it.
    */
   function rowActions(plan: MemberPlanRow): ContextMenuItem[] {
-    const lifecycleItems: ContextMenuItem[] = canWrite && plan.is_live
+    // #1191: a Linked plan is the owner's contract seen from another Member —
+    // it offers no Assign New Plan or Cancel Plan, only Details.
+    const lifecycleItems: ContextMenuItem[] = canWrite && plan.is_live && plan.assignment_relationship !== 'linked'
       ? [
         {
           label: t('action_assign_new_plan'),
@@ -225,6 +227,7 @@ export function MemberMembershipPlans({
         onChanged={onChanged}
         scope="member"
         embedded
+        viewAsMemberId={memberId}
         rowActions={rowActions}
       />
 
@@ -320,6 +323,7 @@ export function MemberMembershipPlans({
               onChanged={onChanged}
               scope="member"
               embedded
+              viewAsMemberId={memberId}
               rowActions={rowActions}
             />
           )}
@@ -330,7 +334,7 @@ export function MemberMembershipPlans({
           re-drawn: what it shows is this assignment's own record, including the
           actor and the audit link. */}
       {detailsPlanId != null && (
-        <AssignedPlanDetailsDialog assignedPlanId={detailsPlanId} onClose={() => setDetailsPlanId(null)} />
+        <AssignedPlanDetailsDialog assignedPlanId={detailsPlanId} viewAsMemberId={memberId} onClose={() => setDetailsPlanId(null)} />
       )}
     </div>
   );

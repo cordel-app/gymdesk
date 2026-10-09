@@ -5,6 +5,7 @@ import { loadServicesForAssignments } from './user-membership-services';
 import { newMemberCutoff, qualifiesAsNewMember } from '../domain/newMemberEligibility';
 import { currentMembershipFees } from './membership-fee-pricing';
 import { LIFECYCLE_STATUS_SQL } from './user-memberships';
+import { MEMBER_MEMBERSHIP_SQL, assignmentRelationship } from '../domain/assignmentRelationship';
 
 /**
  * #634 (stage 3) — the Member's Membership configuration, read in one call.
@@ -83,15 +84,15 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     `SELECT um.id, um.membership_plan_id, um.status,
             um.starts_at, um.ends_at, um.next_billing_date,
             um.closed_at, um.created_at,
-            um.created_by_name, um.created_by_type,
+            um.created_by_name, um.created_by_type, um.member_id AS owner_member_id,
             p.name AS plan_name,
             ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
             um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live
      FROM user_memberships um
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
-     WHERE um.gym_id = ? AND um.member_id = ?
+     WHERE um.gym_id = ? AND ${MEMBER_MEMBERSHIP_SQL}
      ORDER BY um.starts_at DESC, um.id DESC`,
-    [...LIVE_STATUSES, gymId, memberId],
+    [...LIVE_STATUSES, gymId, memberId, memberId],
   );
 
   const livePlans = plans.filter((p: any) => Number(p.is_live) === 1);
@@ -140,6 +141,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       starts_at: toDateOnly(p.starts_at),
       ends_at: toDateOnly(p.ends_at),
       next_billing_date: toDateOnly(p.next_billing_date),
+      // #1191 — derived: a covered Member of someone else's Membership sees
+      // the same contract as `linked`; the owner sees `primary`.
+      assignment_relationship: assignmentRelationship(memberId, p.owner_member_id),
       is_live: Number(p.is_live) === 1,
       new_member_eligible: qualifiesAsNewMember(plans as any, cutoff, Number(p.id)),
     })),

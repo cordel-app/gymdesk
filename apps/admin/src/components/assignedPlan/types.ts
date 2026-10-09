@@ -253,8 +253,13 @@ export const ASSIGNED_PLAN_TIMELINE_CYCLE_NOTE_KEYS = {
   once: 'timeline_cycle_once',
 } as const;
 
+/** #1191 — how an Assigned Plan relates to the Member whose context shows it. */
+export type AssignmentRelationship = 'primary' | 'linked';
+
 export interface AssignedPlanDetail {
   id: number;
+  /** Set only when the read named a viewing Member (`as_member_id`). */
+  assignment_relationship?: AssignmentRelationship | null;
   status: string;
   lifecycle_status: string;
   member_id: number;

@@ -67,6 +67,8 @@ export interface AssignedPlanTableRow {
    * assignment cannot read `Pending` on one screen and `Active` on another.
    */
   lifecycle_status: string;
+  /** #1191 — present on a member-scoped list. */
+  assignment_relationship?: 'primary' | 'linked';
   member_name?: string | null;
   member_nif_nie_passport?: string | null;
 }
@@ -83,6 +85,8 @@ interface Props<T extends AssignedPlanTableRow> {
   /** Re-read the list after the expanded body changed the assignment. */
   onChanged: () => void;
   scope?: AssignedPlansScope;
+  /** #1191: the Member whose context the list is — the server withholds Billing Events from a Linked one. */
+  viewAsMemberId?: number;
   /** #958: a body expanded somewhere other than the plan's own card reads only. */
   embedded?: boolean;
   /** The `⋮` this screen puts on a row, if any. */
@@ -91,7 +95,7 @@ interface Props<T extends AssignedPlanTableRow> {
 
 export function AssignedPlansTable<T extends AssignedPlanTableRow>({
   rows, loading, loadingText, emptyText, onChanged,
-  scope = 'gym', embedded = false, rowActions,
+  scope = 'gym', embedded = false, rowActions, viewAsMemberId,
 }: Props<T>) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
@@ -113,6 +117,9 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
     <span style={{ whiteSpace: 'nowrap' }}>
       {row.ends_at ? fmtDate(row.ends_at) : t('open_ended')}
     </span>
+  );
+  const relationshipCell = (row: T) => (
+    <span>{row.assignment_relationship ? t(`relationship_${row.assignment_relationship}`) : '—'}</span>
   );
   const statusCell = (row: T) => (
     <StatusBadge status={row.lifecycle_status} label={tStatus(row.lifecycle_status as never)} />
@@ -156,6 +163,7 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
       title: (row) => row.plan_name ?? undefined,
       render: (row) => <div style={{ fontWeight: 500 }}>{row.plan_name ?? '—'}</div>,
     },
+    { header: t('col_relationship'), mobile: 'secondary', render: relationshipCell },
     { header: t('col_starts_at'), mobile: 'secondary', render: startsCell },
     { header: t('col_ends_at'), mobile: 'secondary', render: endsCell },
     { header: t('col_status'), mobile: 'keep', render: statusCell },
@@ -173,7 +181,7 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
       expandedRowKeys={expandedIds}
       onToggleExpand={toggleExpand}
       renderExpanded={(row) => (
-        <AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} />
+        <AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} />
       )}
     />
   );

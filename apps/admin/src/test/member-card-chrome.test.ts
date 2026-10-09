@@ -37,6 +37,7 @@ const CARD_FILES = [
   'MemberMembershipPlans.tsx',
   // #1118 §12: the Products the Member bought, inside the same section.
   'MemberPurchasedProducts.tsx',
+  'MemberProfessionalServices.tsx',
   'MemberBillingSimulation.tsx',
   'MemberPersonalTrainingSlots.tsx',
   'AssignPlanInlineEditor.tsx',
