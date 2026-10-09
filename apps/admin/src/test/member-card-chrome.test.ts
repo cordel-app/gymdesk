@@ -35,7 +35,6 @@ const CARD_FILES = [
   'MemberEditForm.tsx',
   'MemberProfileLayout.tsx',
   'MemberMembershipPlans.tsx',
-  'MemberAdditionalServices.tsx',
   // #1118 §12: the Products the Member bought, inside the same section.
   'MemberPurchasedProducts.tsx',
   'MemberBillingSimulation.tsx',

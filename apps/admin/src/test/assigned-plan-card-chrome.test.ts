@@ -287,15 +287,8 @@ describe('#924 stage 5: expanding reads, ⋮ → Edit writes (#797/#897)', () =>
     expect(servicesSrc).toMatch(/if \(!editing\) \{\s*setAdding\(false\)/);
   });
 
-  it('leaves the Member page\'s own services section editable in place', () => {
-    // `AdditionalPeriodicServices` is shared with the Member card, whose
-    // ADDITIONAL SERVICES section is not behind an Edit mode — so the flag
-    // defaults to true and that page passes nothing.
+  it('keeps the editor defaulting to editable for a host with no Edit mode', () => {
     expect(servicesSrc).toContain('editing = true');
-    const memberSection = stripComments(
-      readFileSync(join(SRC, 'app', '[locale]', 'members', 'MemberAdditionalServices.tsx'), 'utf-8'),
-    );
-    expect(memberSection).not.toContain('editing=');
   });
 });
 
