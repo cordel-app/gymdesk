@@ -55,7 +55,13 @@ interface TrainingPlan {
   workouts: Workout[] | null;
 }
 
-type SetRow = { set_number: number; weight: string; reps: string; rpe: string };
+interface ExerciseLog {
+  id: number; logged_date: string;
+  sets: { id: number; set_number: number; weight: number | null; reps: number | null; rpe: number | null }[] | null;
+}
+
+/** #1297: how many existing logs the inline table shows under the entry row. */
+const INLINE_LOG_LIMIT = 5;
 
 const todayWeekday = () => (new Date().getDay() + 6) % 7; // JS Sun=0 → Mon=0
 const todayDate = () => new Date().toISOString().slice(0, 10);
@@ -73,7 +79,10 @@ export default function TrainingPage() {
   const [loading, setLoading] = useState(true);
   const [selectedWeekday, setSelectedWeekday] = useState<number>(todayWeekday());
   const [expandedExercise, setExpandedExercise] = useState<number | null>(null);
-  const [setRows, setSetRows] = useState<SetRow[]>([{ set_number: 1, weight: '', reps: '', rpe: '' }]);
+  const [logs, setLogs] = useState<Record<number, ExerciseLog[]>>({});
+  const [draft, setDraft] = useState<{ weight: string; reps: string }>({ weight: '', reps: '' });
+  const [savingLog, setSavingLog] = useState(false);
+  const [doneBlocks, setDoneBlocks] = useState<Set<number>>(new Set());
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [resultInputs, setResultInputs] = useState<Record<number, string>>({});
@@ -82,6 +91,9 @@ export default function TrainingPage() {
     setLoading(true);
     try {
       setPlans(await apiFetch<TrainingPlan[]>('/me/training-plans'));
+      const blockLogs = await apiFetch<{ workout_block_id: number; logged_date: string }[]>('/me/workout-block-logs');
+      const today = todayDate();
+      setDoneBlocks(new Set(blockLogs.filter((l) => String(l.logged_date).slice(0, 10) === today).map((l) => l.workout_block_id)));
     } catch (err: any) { setMessage(err.message ?? t('common.error')); }
     finally { setLoading(false); }
   }
@@ -93,38 +105,42 @@ export default function TrainingPage() {
     loadPlans();
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
+  async function loadLogs(we: BlockExercise) {
+    try {
+      const rows = await apiFetch<ExerciseLog[]>(`/me/exercise-logs?exercise=${we.exercise_id}&limit=${INLINE_LOG_LIMIT}`);
+      setLogs((prev) => ({ ...prev, [we.id]: rows }));
+    } catch (err: any) { setMessage(err.message ?? t('common.error')); }
+  }
+
   function openExercise(we: BlockExercise) {
     if (expandedExercise === we.id) { setExpandedExercise(null); return; }
     setExpandedExercise(we.id);
-    setSetRows([{ set_number: 1, weight: '', reps: '', rpe: '' }]);
+    setDraft({ weight: '', reps: '' });
+    loadLogs(we);
   }
 
-  function addSetRow() {
-    setSetRows((rows) => [...rows, { set_number: rows.length + 1, weight: '', reps: '', rpe: '' }]);
-  }
-
-  async function saveExerciseLog(we: BlockExercise) {
-    setPending(true);
+  // #1297: no Save button — the entry row is persisted as soon as focus leaves
+  // it with the required input (reps) filled in.
+  async function commitDraft(we: BlockExercise) {
+    if (savingLog || !draft.reps) return;
+    setSavingLog(true);
     try {
       await apiFetch('/me/exercise-logs', {
         method: 'POST',
         body: JSON.stringify({
           workout_exercise_id: we.id,
           logged_date: todayDate(),
-          sets: setRows
-            .filter((r) => r.reps || r.weight)
-            .map((r) => ({
-              set_number: r.set_number,
-              weight: r.weight ? parseFloat(r.weight) : null,
-              reps: r.reps ? parseInt(r.reps, 10) : null,
-              rpe: r.rpe ? parseFloat(r.rpe) : null,
-            })),
+          sets: [{
+            set_number: 1,
+            weight: draft.weight ? parseFloat(draft.weight) : null,
+            reps: parseInt(draft.reps, 10),
+          }],
         }),
       });
-      setMessage(t('training.logged'));
-      setExpandedExercise(null);
+      setDraft({ weight: '', reps: '' });
+      await loadLogs(we);
     } catch (err: any) { setMessage(err.message ?? t('common.error')); }
-    finally { setPending(false); }
+    finally { setSavingLog(false); }
   }
 
   async function markBlockDone(block: Block) {
@@ -138,6 +154,7 @@ export default function TrainingPage() {
           result_value: resultUnitKey(block.result_unit) ? resultValueForPayload(resultInputs[block.id]) : null,
         }),
       });
+      setDoneBlocks((prev) => new Set(prev).add(block.id));
       setMessage(t('training.block_logged'));
     } catch (err: any) { setMessage(err.message ?? t('common.error')); }
     finally { setPending(false); }
@@ -193,6 +210,7 @@ export default function TrainingPage() {
                         {t(`training.block_type_${block.type.toLowerCase()}`)}
                         {block.rounds ? ` · ${t('training.block_rounds', { count: block.rounds })}` : ''}
                       </span>
+                      {doneBlocks.has(block.id) && <span style={styles.doneChip}>✓ {t('training.done')}</span>}
                     </div>
                   </div>
                 </div>
@@ -200,12 +218,12 @@ export default function TrainingPage() {
                 {(block.exercises ?? []).map((we) => (
                   <div key={we.id} style={styles.exerciseCard}>
                     <div style={styles.exerciseHead}>
-                      <div style={{ flex: 1 }}>
-                        <div style={styles.exerciseName}>{we.exercise_name}</div>
-                        <div style={styles.exerciseMeta}>
-                          {we.min_reps ?? '—'}{we.max_reps && we.max_reps !== we.min_reps ? `-${we.max_reps}` : ''} reps
+                      <div style={styles.exerciseTitleLine}>
+                        <span style={styles.exerciseName}>{we.exercise_name}</span>
+                        <span style={styles.exerciseMeta}>
+                          — {we.min_reps ?? '—'}{we.max_reps && we.max_reps !== we.min_reps ? `-${we.max_reps}` : ''} reps
                           {we.sets ? ` × ${we.sets} sets` : ''} · {we.rest_seconds ?? '—'}s
-                        </div>
+                        </span>
                       </div>
                       <ExerciseMedia exercise={we} />
                       <button onClick={() => openExercise(we)} style={styles.expandBtn}>
@@ -215,35 +233,49 @@ export default function TrainingPage() {
 
                     {expandedExercise === we.id && (
                       <div style={styles.expandBody}>
-                        {setRows.map((row, i) => (
-                          <div key={i} style={styles.logForm}>
-                            <span style={styles.setLabel}>#{row.set_number}</span>
-                            <label style={styles.miniLabel}>
-                              {t('training.weight')}
-                              <input type="number" min="0" step="0.5" value={row.weight}
-                                     onChange={(e) => setSetRows(setRows.map((r, j) => j === i ? { ...r, weight: e.target.value } : r))}
-                                     style={styles.miniInput} />
-                            </label>
-                            <label style={styles.miniLabel}>
-                              {t('training.reps')}
-                              <input type="number" min="0" value={row.reps}
-                                     onChange={(e) => setSetRows(setRows.map((r, j) => j === i ? { ...r, reps: e.target.value } : r))}
-                                     style={styles.miniInput} />
-                            </label>
-                            <label style={styles.miniLabel}>
-                              {t('training.rpe')}
-                              <input type="number" min="1" max="10" step="0.5" value={row.rpe}
-                                     onChange={(e) => setSetRows(setRows.map((r, j) => j === i ? { ...r, rpe: e.target.value } : r))}
-                                     style={styles.miniInput} />
-                            </label>
-                          </div>
-                        ))}
-                        <div style={styles.logActions}>
-                          <button onClick={addSetRow} style={styles.addSetBtn}>{t('training.add_set')}</button>
-                          <button onClick={() => saveExerciseLog(we)} disabled={pending} style={styles.logBtn}>
-                            {pending ? '…' : t('training.save_log')}
-                          </button>
-                        </div>
+                        <table style={styles.logTable}>
+                          <thead>
+                            <tr>
+                              <th style={styles.logTh}>{t('training.log_date')}</th>
+                              <th style={styles.logTh}>{t('training.weight')}</th>
+                              <th style={styles.logTh}>{t('training.reps')}</th>
+                              <th style={styles.logTh} />
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) commitDraft(we); }}>
+                              <td style={styles.logTd}>{t('training.new_entry')}</td>
+                              <td style={styles.logTd}>
+                                <input type="number" min="0" step="0.5" aria-label={t('training.weight')} value={draft.weight}
+                                       onChange={(e) => setDraft({ ...draft, weight: e.target.value })} style={styles.miniInput} />
+                              </td>
+                              <td style={styles.logTd}>
+                                <input type="number" min="0" aria-label={t('training.reps')} value={draft.reps}
+                                       onChange={(e) => setDraft({ ...draft, reps: e.target.value })}
+                                       onKeyDown={(e) => { if (e.key === 'Enter') commitDraft(we); }} style={styles.miniInput} />
+                              </td>
+                              <td style={styles.logTd}>
+                                <button type="button" aria-label={t('training.add_log')} onClick={() => commitDraft(we)}
+                                        disabled={savingLog || !draft.reps} style={styles.addSetBtn}>+</button>
+                              </td>
+                            </tr>
+                            {(logs[we.id] ?? []).map((log) => {
+                              const sets = log.sets ?? [];
+                              const isToday = String(log.logged_date).slice(0, 10) === todayDate();
+                              return (
+                                <tr key={log.id}>
+                                  <td style={styles.logTd}>
+                                    {String(log.logged_date).slice(0, 10)}
+                                    {isToday && <span style={styles.newChip}>{t('training.new_chip')}</span>}
+                                  </td>
+                                  <td style={styles.logTd}>{sets.map((s) => s.weight ?? '—').join(' / ') || '—'}</td>
+                                  <td style={styles.logTd}>{sets.map((s) => s.reps ?? '—').join(' / ') || '—'}</td>
+                                  <td style={styles.logTd} />
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>
@@ -269,9 +301,11 @@ export default function TrainingPage() {
                       </label>
                     );
                   })()}
-                  <button onClick={() => markBlockDone(block)} disabled={pending} style={styles.blockDoneBtn}>
-                    {t('training.mark_done')}
-                  </button>
+                  {!doneBlocks.has(block.id) && (
+                    <button onClick={() => markBlockDone(block)} disabled={pending} style={styles.blockDoneBtn}>
+                      {t('training.mark_done')}
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -302,18 +336,19 @@ const styles: Record<string, React.CSSProperties> = {
   },
   exerciseCard: { marginTop: 8, marginLeft: 8 },
   exerciseHead: { display: 'flex', gap: 8, alignItems: 'center' },
+  exerciseTitleLine: { flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 6 },
   exerciseName: { fontSize: 15, fontWeight: 600, color: memberTheme.text },
+  doneChip: { fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px', color: memberTheme.statusSuccess, background: `color-mix(in srgb, ${memberTheme.statusSuccess} 12%, ${memberTheme.surface})` },
+  newChip: { marginLeft: 6, fontSize: 10, fontWeight: 600, borderRadius: 999, padding: '1px 6px', color: memberTheme.title2, background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})` },
+  logTable: { width: '100%', borderCollapse: 'collapse', fontSize: 13, color: memberTheme.text },
+  logTh: { textAlign: 'left', fontSize: 11, fontWeight: 600, color: memberTheme.textMuted, padding: '2px 4px' },
+  logTd: { padding: '4px', borderTop: `1px solid ${memberTheme.separator}` },
   exerciseMeta: { fontSize: 12, color: memberTheme.textMuted },
   expandBtn: { width: 30, height: 30, borderRadius: '50%', border: `1px solid ${memberTheme.inputBorder}`, background: memberTheme.surface, color: memberTheme.text, cursor: 'pointer', fontSize: 16 },
   expandBody: { marginTop: 10, padding: 10, background: memberTheme.pageBackground, borderRadius: 8 },
-  logForm: { display: 'flex', gap: 6, alignItems: 'flex-end', flexWrap: 'wrap', marginBottom: 6 },
-  setLabel: { fontSize: 12, color: memberTheme.textMuted, width: 24 },
-  miniLabel: { fontSize: 11, color: memberTheme.textMuted, display: 'flex', flexDirection: 'column', gap: 2 },
   miniInput: { ...inputStyle, width: 70, padding: '6px 8px', borderRadius: 4, fontSize: 14 },
-  logActions: { display: 'flex', gap: 8, marginTop: 4 },
   addSetBtn: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
-  logBtn: { ...primaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   blockDoneRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 },
-  blockDoneBtn: { ...primaryButtonStyle, padding: '8px 14px', background: memberTheme.statusSuccess, borderRadius: 6, fontSize: 13, fontWeight: 600 },
+  blockDoneBtn: { ...primaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
 };
