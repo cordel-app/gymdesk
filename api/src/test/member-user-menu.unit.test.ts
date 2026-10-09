@@ -17,15 +17,26 @@ function source(...parts: string[]): string {
 
 const menu = source('src', 'components', 'MemberUserMenu.tsx');
 const logout = source('src', 'lib', 'memberLogout.ts');
+const dialog = source('src', 'components', 'LogoutConfirmDialog.tsx');
+const adminBar = source('src', 'components', 'AdminBar.tsx');
 const topBar = source('src', 'components', 'TopBar.tsx');
 
 describe('#1282 what the menu offers', () => {
   it('offers exactly Profile and Log out', () => {
-    expect(userMenuItems(false)).toEqual(['profile', 'logout']);
+    expect(userMenuItems()).toEqual(['profile', 'logout']);
   });
 
-  it('does not offer Log out to a superadmin impersonating a member', () => {
-    expect(userMenuItems(true)).toEqual(['profile']);
+  it('offers a superadmin impersonating a member the same menu, Log out included', () => {
+    // The impersonated member is a header, not a session: Log out ends the
+    // superadmin's own, and the dialog ends and audits the impersonation first.
+    expect(userMenuItems()).toEqual(['profile', 'logout']);
+    expect(dialog).toContain('reportImpersonationStopped(apiFetch, session)');
+    expect(dialog).toContain('stopImpersonation()');
+  });
+
+  it('puts Log out in the Support bar, which has no avatar', () => {
+    expect(adminBar).toContain('<LogoutConfirmDialog');
+    expect(adminBar).toContain("tNav('logout')");
   });
 
   it('lands on the sign-in page of the member\'s locale', () => {
@@ -50,16 +61,19 @@ describe('#1282 the top bar and the menu', () => {
   });
 
   it('asks for confirmation in the app\'s dialog before signing out', () => {
-    expect(menu).toContain('<MemberDialog');
+    expect(menu).toContain('<LogoutConfirmDialog');
+    expect(menu).not.toContain('logoutMember(');
+    expect(dialog).toContain('<MemberDialog');
     // The only caller of the logout is the confirm button's handler.
-    expect(menu.match(/logoutMember\(/g)).toHaveLength(1);
-    expect(menu).toMatch(/async function confirmLogout\(\)[\s\S]*logoutMember\(/);
-    expect(menu).toContain('onClick={confirmLogout}');
+    expect(dialog.match(/logoutMember\(/g)).toHaveLength(1);
+    expect(dialog).toMatch(/async function confirmLogout\(\)[\s\S]*logoutMember\(/);
+    expect(dialog).toContain('onClick={confirmLogout}');
   });
 
   it('spells no colour of its own', () => {
     expect(menu).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
     expect(menu.replace(/rgba\(0,0,0,0\.18\)/, '')).not.toMatch(/rgba?\(/);
+    expect(dialog).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
   });
 });
 

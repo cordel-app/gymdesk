@@ -3,17 +3,11 @@
 import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
-import { useAuth } from '@clerk/nextjs';
 import { useApp } from '@/context/AppContext';
-import { useImpersonation } from '@/context/ImpersonationContext';
-import { useApiClient } from '@/lib/apiClient';
 import { memberAvatarColors, memberInitials } from '@/lib/memberAvatar';
-import { logoutMember } from '@/lib/memberLogout';
 import { userMenuItems } from '@/lib/memberUserMenu';
-import {
-  destructiveButtonStyle, memberTheme, rowDividerStyle, secondaryButtonStyle,
-} from '@/lib/memberChrome';
-import { MemberDialog } from '@/components/MemberDialog';
+import { memberTheme, rowDividerStyle } from '@/lib/memberChrome';
+import { LogoutConfirmDialog } from '@/components/LogoutConfirmDialog';
 
 /**
  * #1282 — the avatar in the top bar, as a menu: the member's email, **Profile**
@@ -21,7 +15,7 @@ import { MemberDialog } from '@/components/MemberDialog';
  *
  * Presentation and the one sequence it triggers: which entries exist and where a
  * logout lands are `lib/memberUserMenu.ts`'s, the logout itself is
- * `lib/memberLogout.ts`'s (push token first, then the session), and every colour
+ * `components/LogoutConfirmDialog.tsx` + `lib/memberLogout.ts`'s (push token first, then the session), and every colour
  * is `lib/memberChrome.ts`'s (#983).
  */
 export function MemberUserMenu() {
@@ -29,12 +23,8 @@ export function MemberUserMenu() {
   const router = useRouter();
   const locale = useLocale();
   const { member } = useApp();
-  const { isImpersonating } = useImpersonation();
-  const { signOut } = useAuth();
-  const { apiFetch } = useApiClient();
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
@@ -54,18 +44,7 @@ export function MemberUserMenu() {
     };
   }, [open]);
 
-  const items = userMenuItems(isImpersonating);
-
-  async function confirmLogout() {
-    setBusy(true);
-    try {
-      await logoutMember(apiFetch, signOut, locale);
-    } finally {
-      // On success the page is replaced; this only matters when signing out failed.
-      setBusy(false);
-      setConfirming(false);
-    }
-  }
+  const items = userMenuItems();
 
   return (
     <div ref={wrapperRef} style={styles.wrapper}>
@@ -108,35 +87,7 @@ export function MemberUserMenu() {
         </div>
       )}
 
-      {confirming && (
-        <MemberDialog
-          labelledBy="logout-confirm-title"
-          title={t('nav.logout_confirm_title')}
-          onClose={busy ? () => {} : () => setConfirming(false)}
-          actions={(
-            <>
-              <button
-                type="button"
-                style={{ ...styles.dialogButton, ...secondaryButtonStyle }}
-                onClick={() => setConfirming(false)}
-                disabled={busy}
-              >
-                {t('nav.logout_cancel')}
-              </button>
-              <button
-                type="button"
-                style={{ ...styles.dialogButton, ...destructiveButtonStyle, ...(busy ? { opacity: 0.6 } : null) }}
-                onClick={confirmLogout}
-                disabled={busy}
-              >
-                {t('nav.logout')}
-              </button>
-            </>
-          )}
-        >
-          <p style={styles.confirmText}>{t('nav.logout_confirm_body')}</p>
-        </MemberDialog>
-      )}
+      {confirming && <LogoutConfirmDialog onClose={() => setConfirming(false)} />}
     </div>
   );
 }
@@ -163,6 +114,4 @@ const styles: Record<string, CSSProperties> = {
     display: 'block', width: '100%', textAlign: 'left', background: 'none', border: 'none',
     cursor: 'pointer', padding: '12px 14px', fontSize: 14, fontFamily: 'inherit', color: memberTheme.text,
   },
-  dialogButton: { flex: 1, padding: '10px 14px', fontSize: 14, fontWeight: 600, fontFamily: 'inherit' },
-  confirmText: { margin: 0, fontSize: 14, color: memberTheme.text },
 };

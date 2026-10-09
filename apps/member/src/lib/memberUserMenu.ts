@@ -9,13 +9,13 @@
 export type UserMenuItem = 'profile' | 'logout';
 
 /**
- * The entries, in order. A superadmin impersonating a member is signed in as
- * *themselves* (the impersonated member is a header, not a session), so a Log
- * out there would end the superadmin's own session rather than leave the
- * member; the impersonation banner already has the way out.
+ * The entries, in order. A superadmin impersonating a member sees the same menu
+ * a member does: Log out there ends the superadmin's own session (the member is
+ * a header, not a session) and is what they expect to find under the avatar.
+ * The dialog behind it ends and audits the impersonation first.
  */
-export function userMenuItems(impersonating: boolean): UserMenuItem[] {
-  return impersonating ? ['profile'] : ['profile', 'logout'];
+export function userMenuItems(): UserMenuItem[] {
+  return ['profile', 'logout'];
 }
 
 /** Where a logged-out member lands: the sign-in page of the locale they were using. */
