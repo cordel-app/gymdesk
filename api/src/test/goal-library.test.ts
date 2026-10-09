@@ -538,7 +538,8 @@ for (const kind of KINDS) {
       const res = await listGoals(path, '?limit=200');
       const bySlug = new Map(res.body.items.map((g: any) => [g.slug, g]));
       // §2: "do not apply the same generic target to every goal".
-      expect(bySlug.get('weight_loss')).toMatchObject({ target_value: 3, target_unit: 'kg' });
+      // Losing weight is a *relative* target (#1229, migration 242): -3 kg.
+      expect(bySlug.get('weight_loss')).toMatchObject({ target_value: -3, target_unit: 'kg', target_type: 'relative' });
       expect(bySlug.get('weight_gain')).toMatchObject({ target_value: 3, target_unit: 'kg' });
       expect(bySlug.get('muscle_gain')).toMatchObject({ target_value: 2, target_unit: 'kg' });
       // Maintenance *is* measurable: the target is a change of zero.
@@ -631,7 +632,7 @@ for (const kind of KINDS) {
       const { rows } = await db.query<{ target_value: string | null }>(
         `SELECT target_value FROM ${table} WHERE id = ?`, [id],
       );
-      expect(Number(rows[0].target_value)).toBe(3);
+      expect(Number(rows[0].target_value)).toBe(-3);
     });
   });
 

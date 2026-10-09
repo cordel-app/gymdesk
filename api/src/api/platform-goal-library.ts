@@ -167,7 +167,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       const { insertId } = await db.query(
         `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
            status, created_by_name, created_by_type)
-         VALUES (NULL, ?, ?,${measurable ? ' ?, ?,' : ''} 'active', ?, ?)`,
+         VALUES (NULL, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?, ?)`,
         [
           name.value, description.value ?? null,
           ...(measurable ? [target.value.value ?? null, target.value.unit ?? null, target.value.type ?? 'absolute'] : []),

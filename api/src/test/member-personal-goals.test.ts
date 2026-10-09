@@ -533,8 +533,9 @@ describe('assigned personal goals — the Gym Goal snapshot (#1034)', () => {
     const member = await createMember(gymId, `MPG Snap G Member ${RUN}`);
     const res = await post({ member_id: member, personal_goal_id: systemGoalId });
     expect(res.status).toBe(201);
-    // Migration 218 seeds Weight Loss at 3 kg (§2).
-    expect(res.body).toMatchObject({ target_value: 3, target_unit: 'kg', goal_name: 'Weight Loss' });
+    // Migration 218 seeds Weight Loss at 3 kg (§2); migration 242 (#1229) makes it
+    // the relative target -3 kg.
+    expect(res.body).toMatchObject({ target_value: -3, target_unit: 'kg', goal_name: 'Weight Loss' });
   });
 
   it('still refuses a unit the inherited pair cannot support', async () => {
