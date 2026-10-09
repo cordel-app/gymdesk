@@ -371,11 +371,15 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           (assignedPlanProfile.ts) — the Membership Plan card's own order with
           the three things only an assignment has. */}
       <CardSection label={t('section_members')} first>
-        {detail.members.map((m) => (
-          <div key={m.member_id} style={{ fontSize: 14, marginBottom: 2 }}>
-            {m.name} {m.is_owner ? <span style={{ color: '#888', fontSize: 12 }}>({t('label_owner')})</span> : null}
-          </div>
-        ))}
+        {/* #1240 PR 2 — side by side like the compact summaries around it,
+            wrapping on a phone, instead of one name per line. */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 24px', fontSize: 14 }}>
+          {detail.members.map((m) => (
+            <span key={m.member_id}>
+              {m.name} {m.is_owner ? <span style={{ color: '#888', fontSize: 12 }}>({t('label_owner')})</span> : null}
+            </span>
+          ))}
+        </div>
       </CardSection>
 
       <CardSection label={t('section_pricing')}>
