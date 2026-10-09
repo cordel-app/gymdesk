@@ -9,6 +9,10 @@ import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { DEFAULT_GYM_FORMAT, type GymFormatSettings } from '@/lib/gymFormat';
 
+// One read per gym per page load: every screen that formats a date asks for the
+// settings, so each hook instance would otherwise issue its own request.
+const inflight = new Map<string, Promise<GymFormatSettings | null>>();
+
 export function useGymFormatSettings(): GymFormatSettings {
   const { apiFetch } = useApiClient();
   const { activeGymId } = useGym();
@@ -19,7 +23,15 @@ export function useGymFormatSettings(): GymFormatSettings {
     let cancelled = false;
     (async () => {
       try {
-        const s = (await apiFetch('/system/localization')) as GymFormatSettings;
+        let pending = inflight.get(activeGymId);
+        if (!pending) {
+          pending = (apiFetch('/system/localization') as Promise<GymFormatSettings | null>).catch((e) => {
+            inflight.delete(activeGymId);
+            throw e;
+          });
+          inflight.set(activeGymId, pending);
+        }
+        const s = await pending;
         if (!cancelled && s) setSettings({ ...DEFAULT_GYM_FORMAT, ...s });
       } catch {
         if (!cancelled) setSettings(DEFAULT_GYM_FORMAT);

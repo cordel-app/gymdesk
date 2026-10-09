@@ -9,6 +9,8 @@ import {
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { useApiClient } from '@/lib/apiClient';
+import { formatGymDateTime } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
@@ -134,6 +136,7 @@ const LIST_MIN_WIDTH =
 
 export default function WorkoutTemplatesPage() {
   const t = useTranslations('workout_templates');
+  const gymFmt = useGymFormatSettings();
   const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
@@ -772,7 +775,7 @@ export default function WorkoutTemplatesPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_at')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{new Date(details.created_at).toLocaleString()}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{formatGymDateTime(details.created_at, gymFmt)}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_by')}</span>
@@ -780,7 +783,7 @@ export default function WorkoutTemplatesPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_at')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_at ? new Date(details.modified_at).toLocaleString() : '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_at ? formatGymDateTime(details.modified_at, gymFmt) : '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_by')}</span>
@@ -788,7 +791,7 @@ export default function WorkoutTemplatesPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_deleted_at')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_at ? new Date(details.deleted_at).toLocaleString() : '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_at ? formatGymDateTime(details.deleted_at, gymFmt) : '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_deleted_by')}</span>
