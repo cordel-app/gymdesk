@@ -406,15 +406,15 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
               label: t('label_end_date'),
               value: detail.ends_at ? fmtDate(detail.ends_at) : t('open_ended'),
             },
-            detail.closed_at && {
+            !!detail.closed_at && {
               key: 'closed_at', label: t('label_closure_date'), value: fmtDate(detail.closed_at),
             },
-            detail.next_billing_date && {
+            !!detail.next_billing_date && {
               key: 'next_billing_date',
               label: t('label_next_billing_date'),
               value: fmtDate(detail.next_billing_date),
             },
-            detail.discount_reason && {
+            !!detail.discount_reason && {
               key: 'discount_reason', label: t('label_discount_reason'), value: detail.discount_reason,
             },
           ])}
