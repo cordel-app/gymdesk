@@ -43,7 +43,7 @@ export const TARGET_VALUE_MAX = 99999999.99;
  * #1229 — a target is either an **absolute** final value ("80 kg") or a
  * **relative** change from the baseline measurement ("+2 kg", "-5 kg"). The
  * type is part of the target, on the catalogue (`personal_goals`) and on the
- * assignment snapshot (`member_personal_goals`, migration 242). `absolute` is
+ * assignment snapshot (`member_personal_goals`, migration 245). `absolute` is
  * the default, which is what every target written before the ticket means.
  * Mirrored by `chk_pgoal_target_type` / `chk_mpgoal_target_type` and for the
  * browser in the admin's `goalProfile.ts`.

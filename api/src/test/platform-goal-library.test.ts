@@ -454,7 +454,7 @@ for (const kind of KINDS) {
         return;
       }
 
-      // The seeded defaults migration 218 writes (§2), which migration 242
+      // The seeded defaults migration 218 writes (§2), which migration 245
       // (#1229) turns into a *relative* target for the goals whose meaning is a
       // change: losing 3 kg is -3, not "reach 3 kg".
       const listed = await listGoals(path, '?limit=200');
