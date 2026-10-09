@@ -34,6 +34,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { CardSection } from '@/components/CardSection';
+import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import { SectionEditButton } from '@/components/SectionEditButton';
 import { primaryBtnSmall } from '@/components/ui';
 import {
@@ -429,25 +430,34 @@ export function AssignedPlanConfiguration({
           <SaveCancel saving={saving} onSave={saveDuration} onCancel={cancelEdit} t={t} />
         </div>
       ) : (
-        <div>
-          {DURATION_FIELDS.map((field) => (
-            <CardDetailRow
-              key={field}
-              label={t(`label_${field}` as any)}
-              value={durationText(snapshot[field] as number | null)}
-            />
-          ))}
-          <CardDetailRow
-            label={t('label_billing_frequency')}
-            value={snapshot.recurring_billing_interval != null && snapshot.recurring_billing_unit
-              ? cadenceFrequencyLabel(
-                snapshot.recurring_billing_interval,
-                snapshot.recurring_billing_unit,
-                tFreq,
-              )
-              : t('not_configured')}
+        <div style={{ marginBottom: 10 }}>
+          {/* #1243 — the Membership Plan card's own compact summary, so the
+              frozen agreement reads horizontally instead of one row per value. */}
+          <BillingDurationSummary
+            items={billingDurationItems([
+              ...DURATION_FIELDS.map((field) => ({
+                key: field,
+                label: t(`label_${field}` as any),
+                value: durationText(snapshot[field] as number | null),
+              })),
+              {
+                key: 'billing_frequency',
+                label: t('label_billing_frequency'),
+                value: snapshot.recurring_billing_interval != null && snapshot.recurring_billing_unit
+                  ? cadenceFrequencyLabel(
+                    snapshot.recurring_billing_interval,
+                    snapshot.recurring_billing_unit,
+                    tFreq,
+                  )
+                  : t('not_configured'),
+              },
+              {
+                key: 'membership_fee',
+                label: t('label_membership_fee'),
+                value: fmtMoney(snapshot.membership_fee_price),
+              },
+            ])}
           />
-          <CardDetailRow label={t('label_membership_fee')} value={fmtMoney(snapshot.membership_fee_price)} />
         </div>
       )}
       </CardSection>
