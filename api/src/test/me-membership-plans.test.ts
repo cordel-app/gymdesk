@@ -10,6 +10,17 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
+
+// The provider is stubbed so no HTTP reaches Monei (#1288: Save & Pay now
+// creates the hosted-page payment request itself).
+vi.mock('../payments', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../payments')>()),
+  getPaymentProvider: () => ({
+    createPaymentRequest: async (params: { orderId: string }) => ({
+      providerOrderId: `monei-${params.orderId}`, checkoutUrl: 'https://pay.test/x',
+    }),
+  }),
+}));
 import {
   cleanupTestGyms,
   createTestGym,
@@ -194,7 +205,7 @@ describe('POST /me/membership-plans/:id/assign', () => {
     expect((await assign(member.userId, planId, { promotion_ids: 'x' })).status).toBe(400);
   });
 
-  it('asks the one-plan rule — 409 unless confirmed — and discards the Draft it refused', async () => {
+  it('refuses a member who already holds a plan — the change is the gym\'s — and creates nothing', async () => {
     const member = await createMember();
     const livePlan = await createPlan({ price: null });
     const { insertId: liveId } = await db.query(
@@ -204,16 +215,35 @@ describe('POST /me/membership-plans/:id/assign', () => {
     const planId = await createPlan({ price: 40 });
     const refused = await assign(member.userId, planId);
     expect(refused.status).toBe(409);
-    expect(refused.body.error).toBe('active_plan_exists');
-    const { rows: drafts } = await db.query<any>(
-      "SELECT status FROM user_memberships WHERE gym_id = ? AND member_id = ? AND membership_plan_id = ?", [gymId, member.id, planId],
+    expect(refused.body.error).toBe('plan_change_via_gym');
+    // `confirm` no longer opens a replacement.
+    expect((await assign(member.userId, planId, { confirm: true })).status).toBe(409);
+    const { rows: created } = await db.query<any>(
+      'SELECT id FROM user_memberships WHERE gym_id = ? AND member_id = ? AND membership_plan_id = ?', [gymId, member.id, planId],
     );
-    expect(drafts.map((d: any) => d.status)).toEqual(['cancelled']);
-
-    const confirmed = await assign(member.userId, planId, { confirm: true });
-    expect(confirmed.status).toBe(201);
-    expect(confirmed.body.status).toBe('pending_payment');
-    // The live plan is untouched until the payment arrives.
+    expect(created).toHaveLength(0);
     expect(await status(liveId)).toBe('active');
+  });
+
+  it('Save & Pay writes the initial pending Billing Event and its payment request, and a second plan is refused', async () => {
+    const member = await createMember();
+    const planId = await createPlan({ price: 40 });
+    const res = await assign(member.userId, planId);
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('pending_payment');
+    expect(res.body.checkout_url).toContain('/checkout?token=');
+    const { rows } = await db.query<any>(
+      `SELECT be.event_type, be.amount, pr.status AS pr_status, pr.billing_event_id
+         FROM billing_events be JOIN payment_requests pr ON pr.billing_event_id = be.id
+        WHERE be.id = ?`, [res.body.billing_event_id],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].event_type).toBe('payment_recorded');
+    expect(rows[0].pr_status).toBe('pending');
+    expect(Number(rows[0].amount)).toBe(40);
+
+    const again = await assign(member.userId, await createPlan({ price: 40 }));
+    expect(again.status).toBe(409);
+    expect(again.body.error).toBe('plan_pending_payment');
   });
 });
