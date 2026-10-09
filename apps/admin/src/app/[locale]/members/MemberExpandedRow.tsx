@@ -106,8 +106,11 @@ export function MemberExpandedRow({
   canManagePersonalGoals,
   isAdmin,
   plans,
+  statuses,
 }: {
   memberId: number;
+  /** #1327: the three header statuses, shown as chips in the Account section. */
+  statuses?: { key: string; status: string | null; label: string }[];
   /**
    * #797: the Member's persisted Profile, as the Members list read it. The
    * PROFILE section renders it read-only; it is deliberately the same row the
@@ -371,20 +374,33 @@ export function MemberExpandedRow({
           )}
 
           {/* Account (Clerk status) */}
-          {clerkStatus && (
+          {(clerkStatus || (statuses && statuses.length > 0)) && (
             <Section label={t('members.section_account')} divider={!editing}>
-              <StatusBadge
-                status={clerkStatus.status}
-                label={
-                  clerkStatus.status === 'not_enrolled' ? t('members.clerk_not_enrolled')
-                  : clerkStatus.status === 'invited' ? t('members.clerk_invited')
-                  : clerkStatus.status === 'active' ? t('members.clerk_active')
-                  : clerkStatus.status === 'suspended' ? t('members.clerk_suspended')
-                  : t('members.clerk_error')
-                }
-              />
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(statuses ?? []).map((st) => (
+                  <div key={st.key} style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                    <strong style={profileValueStyle}>{t(`members.${st.key}`)}:</strong>
+                    {st.status ? <StatusBadge status={st.status} label={st.label} /> : <span style={profileValueStyle}>{st.label}</span>}
+                  </div>
+                ))}
+                {clerkStatus && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                    <strong style={profileValueStyle}>{t('members.label_clerk_status')}:</strong>
+                    <StatusBadge
+                      status={clerkStatus.status}
+                      label={
+                        clerkStatus.status === 'not_enrolled' ? t('members.clerk_not_enrolled')
+                        : clerkStatus.status === 'invited' ? t('members.clerk_invited')
+                        : clerkStatus.status === 'active' ? t('members.clerk_active')
+                        : clerkStatus.status === 'suspended' ? t('members.clerk_suspended')
+                        : t('members.clerk_error')
+                      }
+                    />
+                  </div>
+                )}
+              </div>
               {/* #1234: stored dates, independent of membership and payment. */}
-              {[
+              {clerkStatus && [
                 ['label_clerk_status', clerkStatusLine(clerkStatus, locale)],
                 ['label_clerk_invitation', clerkInvitationLine(clerkStatus, locale)],
               ].map(([label, line]) => (

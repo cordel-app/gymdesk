@@ -608,20 +608,6 @@ export default function MembersPage() {
 
         {isExpanded && (
           <div style={listExpandedStyle}>
-            {/* #1238 — three independent statuses: Membership Plan, Payment,
-                Access Rights. Clerk status stays in the Account section. */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center', marginBottom: 12 }}>
-              {[
-                ['header_plan_status', m.enrollment_status, m.enrollment_status ? t(`members.enrollment_status_${m.enrollment_status}`) : t('members.enrollment_status_none')],
-                ['header_payment_status', m.payment_status, m.payment_status ? t(`members.payment_status_${m.payment_status}`) : t('members.payment_status_none')],
-                ['header_access_rights', m.access_rights ?? 'granted', t(`members.access_rights_${m.access_rights ?? 'granted'}`)],
-              ].map(([key, status, label]) => (
-                <span key={key as string} style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                  <span style={{ fontSize: 13, opacity: 0.7 }}>{t(`members.${key}`)}:</span>
-                  {status ? <StatusBadge status={status as string} label={label as string} /> : <span style={noStatusStyle}>{label}</span>}
-                </span>
-              ))}
-            </div>
             {/* #961 — the Member's five work areas. The strip is the app's one
                 tab component (`components/Tabs.tsx`, promoted out of the
                 Nutrition Library's own in this ticket), the tabs themselves are
@@ -669,6 +655,11 @@ export default function MembersPage() {
               canManagePersonalGoals={canManagePersonalGoals}
               isAdmin={isAdmin}
               plans={plans}
+              statuses={[
+                { key: 'header_plan_status', status: m.enrollment_status, label: m.enrollment_status ? t(`members.enrollment_status_${m.enrollment_status}`) : t('members.enrollment_status_none') },
+                { key: 'header_payment_status', status: m.payment_status, label: m.payment_status ? t(`members.payment_status_${m.payment_status}`) : t('members.payment_status_none') },
+                { key: 'header_access_rights', status: m.access_rights ?? 'granted', label: t(`members.access_rights_${m.access_rights ?? 'granted'}`) },
+              ]}
             />
           </div>
         )}
