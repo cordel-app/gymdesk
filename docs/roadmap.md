@@ -48,7 +48,7 @@ Every open issue, with what has merged and what is left. An issue appears once, 
 **Platform**
 - [#1182](https://github.com/cordel-app/gymdesk/issues/1182) Standard audit metadata on every business entity. Stage 1 merged (#1203, the plain-text actor snapshot and its helpers). Stage 2 is about 18 tables across three actor shapes, proposed as one PR per shape (2a: the seven tables on #799's pair; 2b/2c: the rest); none started.
 - [#1246](https://github.com/cordel-app/gymdesk/issues/1246) Gym Time & Localization settings. Stages 1 (#1271) and 2 (#1276, the Calendar) merged; stage 3's first pass (#1312, audit timestamps on three screens) merged. Left: date-only values, locale month names and the Members App.
-- [#1323](https://github.com/cordel-app/gymdesk/issues/1323) `docs/rules.md`: the business rules that today live only in `CLAUDE.md`, one plain entry per rule with its ticket and the module that enforces it. Opened 2026-10-09 as the second half of the status review's item 13 (#1322 was the first); the file is written (188 entries, 16 sections) and in review.
+- [#1323](https://github.com/cordel-app/gymdesk/issues/1323) `docs/rules.md`: the business rules that today live only in `CLAUDE.md`, one plain entry per rule with its ticket and the module that enforces it. Opened 2026-10-09 as the second half of the status review's item 13 (#1322 was the first); the file is written (188 entries, 16 sections); PR #1324 open.
 - [#1081](https://github.com/cordel-app/gymdesk/issues/1081) Payment return pages follow the member's locale. Repository half merged (#1139) with a test gate; the acceptance check needs the deployed `PAYMENT_OK_URL`/`PAYMENT_KO_URL` to be set locale-less.
 
 **Mobile app** — see the work-package table below.
