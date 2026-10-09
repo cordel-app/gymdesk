@@ -7,7 +7,7 @@ import {
   loadCategoriesMap, replaceCategories, validateCategoryIds,
   loadQualitiesMap, replaceQualities, validateQualityIds,
   loadTranslationsMap, replaceTranslations, validateTranslations, localizedNameSql,
-  buildListWhere, clampLimit, clampOffset,
+  buildListWhere, pagingClause,
   actorSnapshot, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
 import {
@@ -92,8 +92,7 @@ platformNutritionLibraryRouter.get('/', requireSuperadmin, async (req, res, next
   if ('error' in built) return res.status(400).json(built);
   const { where, params } = built;
 
-  const limit = clampLimit(req.query.limit);
-  const offset = clampOffset(req.query.offset);
+  const { clause: pagingSql, limit, offset } = pagingClause(req.query.limit, req.query.offset);
 
   try {
     const { rows: countRows } = await db.query<{ total: number }>(
@@ -104,7 +103,7 @@ platformNutritionLibraryRouter.get('/', requireSuperadmin, async (req, res, next
 
     // LIMIT/OFFSET must be literals, not `?` parameters: MySQL 8's prepared-statement
     // protocol rejects a parameterised LIMIT (ER_WRONG_ARGUMENTS). limit/offset are
-    // already validated integers (clampLimit/clampOffset), so direct interpolation is safe.
+    // already validated integers (pagingClause), so direct interpolation is safe; `?limit=all` (#1302) omits the clause.
     // `name` is the base (English) value the edit form submits back; `display_name`
     // is the caller's locale and `translations` the full per-locale set, which
     // this page is where superadmins author (#643).
@@ -113,7 +112,7 @@ platformNutritionLibraryRouter.get('/', requireSuperadmin, async (req, res, next
        FROM nutrition_library_items nli
        WHERE ${where}
        ORDER BY display_name ASC
-       LIMIT ${limit} OFFSET ${offset}`,
+       ${pagingSql}`,
       params,
     );
 

@@ -9,6 +9,7 @@ import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, Column } from '@/components/DataTable';
+import { listNameBadgeStyle } from '@/components/listChrome';
 import { ImageUploadField } from '@/components/ImageUploadField';
 import { NutritionItemReadOnlyView } from '@/components/nutritionLibrary/NutritionItemReadOnlyView';
 import { NutritionItemDetailsModal } from '@/components/nutritionLibrary/NutritionItemDetailsModal';
@@ -53,7 +54,6 @@ type EditForm = NutritionItemFormValues;
 
 const emptyEditForm = emptyNutritionItemForm;
 
-const LIMIT = 20;
 
 export default function NutritionLibraryPage() {
   const t = useTranslations();
@@ -70,7 +70,6 @@ export default function NutritionLibraryPage() {
 
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
   const [loading, setLoading] = useState(true);
@@ -116,7 +115,6 @@ export default function NutritionLibraryPage() {
     return () => clearTimeout(id);
   }, [searchInput]);
 
-  useEffect(() => { setOffset(0); }, [search, categoryFilter, qualityFilter]);
 
   const load = useCallback(async () => {
     if (!activeGymId) { setLoading(false); return; }
@@ -126,8 +124,7 @@ export default function NutritionLibraryPage() {
       if (search) params.set('search', search);
       for (const c of categoryFilter) params.append('category_id', c);
       for (const q of qualityFilter) params.append('quality_id', q);
-      params.set('limit', String(LIMIT));
-      params.set('offset', String(offset));
+      params.set('limit', 'all');
       const [data, categoriesData, qualitiesData] = await Promise.all([
         apiFetch<ListResponse>(`/nutrition-library?${params.toString()}`),
         allCategories.length ? Promise.resolve(allCategories) : apiFetch<Category[]>('/nutrition-library/categories'),
@@ -140,7 +137,7 @@ export default function NutritionLibraryPage() {
     } catch (err: any) {
       toast(err.message ?? t('nutrition_library.error_generic'));
     } finally { setLoading(false); }
-  }, [apiFetch, activeGymId, search, categoryFilter, qualityFilter, offset]);
+  }, [apiFetch, activeGymId, search, categoryFilter, qualityFilter]);
 
   useEffect(() => { if (!gymLoading) load(); }, [gymLoading, load]);
 
@@ -238,8 +235,6 @@ export default function NutritionLibraryPage() {
     } finally { setEditSaving(false); }
   }
 
-  const pageStart = total === 0 ? 0 : offset + 1;
-  const pageEnd = Math.min(offset + LIMIT, total);
   const activeFilterCount = categoryFilter.length + qualityFilter.length + (search ? 1 : 0);
 
   function renderCategoryCheckboxes(selected: number[], onChange: (ids: number[]) => void) {
@@ -356,7 +351,12 @@ export default function NutritionLibraryPage() {
   }
 
   const columns: Column<LibraryItem>[] = [
-    { header: t('nutrition_library.label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => <strong>{item.display_name ?? item.name}</strong> },
+    { header: t('nutrition_library.label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <strong>{item.display_name ?? item.name}</strong>
+          {item.gym_id === null && <span style={listNameBadgeStyle}>{t('nutrition_library.system_badge')}</span>}
+        </span>
+      ) },
     {
       header: t('nutrition_library.label_categories'),
       mobile: 'secondary',
@@ -374,12 +374,6 @@ export default function NutritionLibraryPage() {
           {item.qualities.map((q) => <span key={q.id} style={qualityChipStyle}>{qualityLabel(q.slug)}</span>)}
         </div>
       ) : <span style={{ color: 'var(--text-muted, #9ca3af)', fontSize: 13 }}>—</span>,
-    },
-    {
-      header: '', width: 120, mobile: 'secondary',
-      render: (item) => item.gym_id === null
-        ? <span style={{ fontSize: 12, color: '#888' }}>{t('nutrition_library.read_only')}</span>
-        : null,
     },
     {
       header: '', width: 40, mobile: 'actions',
@@ -492,14 +486,6 @@ export default function NutritionLibraryPage() {
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(item) => toggleExpand(item.id)}
       />
-
-      {total > 0 && (
-        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: '#666' }}>{pageStart}–{pageEnd} / {total}</span>
-          <button onClick={() => setOffset(Math.max(0, offset - LIMIT))} disabled={offset === 0} style={btnStyle('#888')}>‹</button>
-          <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={btnStyle('#888')}>›</button>
-        </div>
-      )}
 
       {detailItem && (
         <NutritionItemDetailsModal item={detailItem} onClose={() => setDetailItem(null)} />

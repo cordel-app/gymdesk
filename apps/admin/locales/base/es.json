@@ -3263,7 +3263,7 @@
     "modified_at": "Modificado el",
     "details": "Detalles",
     "edit": "Editar",
-    "read_only": "Solo lectura (elemento del sistema)",
+    "system_badge": "Sistema",
     "ownership": "Propiedad",
     "ownership_base": "Biblioteca Nutricional Base",
     "ownership_gym": "Propiedad del gimnasio",
