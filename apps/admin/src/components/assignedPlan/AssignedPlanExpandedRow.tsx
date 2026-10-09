@@ -9,7 +9,7 @@ import { useModuleAccess } from '@/lib/useModuleAccess';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { CardDetailRow } from '@/components/CardDetailRow';
+import { BillingDurationSummary, billingDurationItems } from '@/components/BillingDurationSummary';
 import { CardSection } from '@/components/CardSection';
 import {
   cardMutedTextStyle,
@@ -379,26 +379,46 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       </CardSection>
 
       <CardSection label={t('section_pricing')}>
-        <CardDetailRow label={t('detail_effective_price')} value={fmtMoney(detail.membership_fee)} />
-        {detail.billing_policy && (
-          <CardDetailRow
-            label={t('label_billing_frequency')}
-            value={cadenceFrequencyLabel(
-              detail.billing_policy.recurring_billing_interval,
-              detail.billing_policy.recurring_billing_unit,
-              tFreq,
-            )}
-          />
-        )}
-        <CardDetailRow label={t('label_start_date')} value={fmtDate(detail.starts_at)} />
-        <CardDetailRow label={t('label_end_date')} value={detail.ends_at ? fmtDate(detail.ends_at) : t('open_ended')} />
-        {detail.closed_at && <CardDetailRow label={t('label_closure_date')} value={fmtDate(detail.closed_at)} />}
-        {detail.next_billing_date && (
-          <CardDetailRow label={t('label_next_billing_date')} value={fmtDate(detail.next_billing_date)} />
-        )}
-        {detail.discount_reason && (
-          <CardDetailRow label={t('label_discount_reason')} value={detail.discount_reason} />
-        )}
+        {/* #1243 §2/§3 — the Plan card's compact `Label: Value` summary, and an
+            Effective Price that is the contract's regular fee (the frozen
+            agreed price, as the Plan card's Current Price is its regular one)
+            rather than what the current cycle happens to charge: a free or
+            promotional first cycle must not read as the price. */}
+        <BillingDurationSummary
+          items={billingDurationItems([
+            {
+              key: 'effective_price',
+              label: t('detail_effective_price'),
+              value: fmtMoney(detail.snapshot?.membership_fee_price ?? detail.membership_fee),
+            },
+            detail.billing_policy && {
+              key: 'billing_frequency',
+              label: t('label_billing_frequency'),
+              value: cadenceFrequencyLabel(
+                detail.billing_policy.recurring_billing_interval,
+                detail.billing_policy.recurring_billing_unit,
+                tFreq,
+              ),
+            },
+            { key: 'starts_at', label: t('label_start_date'), value: fmtDate(detail.starts_at) },
+            {
+              key: 'ends_at',
+              label: t('label_end_date'),
+              value: detail.ends_at ? fmtDate(detail.ends_at) : t('open_ended'),
+            },
+            detail.closed_at && {
+              key: 'closed_at', label: t('label_closure_date'), value: fmtDate(detail.closed_at),
+            },
+            detail.next_billing_date && {
+              key: 'next_billing_date',
+              label: t('label_next_billing_date'),
+              value: fmtDate(detail.next_billing_date),
+            },
+            detail.discount_reason && {
+              key: 'discount_reason', label: t('label_discount_reason'), value: detail.discount_reason,
+            },
+          ])}
+        />
       </CardSection>
 
       {/* #635 stage 6: the five sections the assignment's own snapshot owns —
