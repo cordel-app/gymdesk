@@ -30,7 +30,7 @@ const TICKET_TABLE = [
   ['Parking Fee', 'fee', null, 30, 'month', 'inactive', 'public', false],
   ['Personal Training Class Package (10 Sessions)', 'sessions', 10, 500, 'once', 'active', 'public', false],
   ['Premium Fitness App', 'fee', null, null, 'once', 'inactive', 'staff_only', false],
-  ['Registration Fee', 'fee', null, 100, 'once', 'active', 'staff_only', false],
+  ['Registration Fee', 'fee', null, 100, 'once', 'active', 'staff_only', true],
 ] as const;
 
 describe('#1149 default gym Products — the declaration', () => {
@@ -46,6 +46,7 @@ describe('#1149 default gym Products — the declaration', () => {
         billingFrequency: frequency,
         status,
         enrollmentStatus: enrollment,
+        mandatory,
       });
     }
   });
