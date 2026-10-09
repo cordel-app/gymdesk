@@ -68,7 +68,6 @@ const emptyEditForm = emptyNutritionItemForm;
  * every language.
  */
 
-const LIMIT = 20;
 
 export default function CordelNutritionLibraryPage() {
   // The goal tab's labels live in their own namespace, shared with the gym-facing
@@ -94,7 +93,6 @@ export default function CordelNutritionLibraryPage() {
 
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
   // Served by the API so the locale list isn't hardcoded a second time here.
@@ -140,7 +138,6 @@ export default function CordelNutritionLibraryPage() {
     return () => clearTimeout(id);
   }, [searchInput]);
 
-  useEffect(() => { setOffset(0); }, [search, categoryFilter, qualityFilter, showDeleted]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -150,8 +147,7 @@ export default function CordelNutritionLibraryPage() {
       for (const c of categoryFilter) params.append('category_id', c);
       for (const q of qualityFilter) params.append('quality_id', q);
       params.set('status', showDeleted ? 'deleted' : 'active');
-      params.set('limit', String(LIMIT));
-      params.set('offset', String(offset));
+      params.set('limit', 'all');
       const [data, categoriesData, qualitiesData, localesData] = await Promise.all([
         apiFetch<ListResponse>(`/platform/nutrition-library?${params.toString()}`),
         allCategories.length ? Promise.resolve(allCategories) : apiFetch<Category[]>('/platform/nutrition-library/categories'),
@@ -166,7 +162,7 @@ export default function CordelNutritionLibraryPage() {
       setAllQualities(qualitiesData);
       setTranslatableLocales(localesData.translatable);
     } catch { /* ignore */ } finally { setLoading(false); }
-  }, [apiFetch, search, categoryFilter, qualityFilter, showDeleted, offset]);
+  }, [apiFetch, search, categoryFilter, qualityFilter, showDeleted]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -339,8 +335,6 @@ export default function CordelNutritionLibraryPage() {
     }
   }
 
-  const pageStart = total === 0 ? 0 : offset + 1;
-  const pageEnd = Math.min(offset + LIMIT, total);
   const activeFilterCount = categoryFilter.length + qualityFilter.length + (search ? 1 : 0);
 
   function renderCheckboxes(all: { id: number; slug: string }[], selected: number[], onChange: (ids: number[]) => void, labelFn: (slug: string) => string) {
@@ -611,14 +605,6 @@ export default function CordelNutritionLibraryPage() {
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(item) => toggleExpand(item.id)}
       />
-
-      {total > 0 && (
-        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: '#666' }}>{pageStart}–{pageEnd} of {total}</span>
-          <button onClick={() => setOffset(Math.max(0, offset - LIMIT))} disabled={offset === 0} style={btnStyle('#888')}>‹</button>
-          <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={btnStyle('#888')}>›</button>
-        </div>
-      )}
 
       {/* One picker for the page: `openImagePicker()` points it at a food. */}
       <input

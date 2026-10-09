@@ -200,6 +200,18 @@ export function clampLimit(value: unknown): number {
   return Math.min(n, 200);
 }
 
+/**
+ * `?limit=all` asks a food list for its complete applicable dataset (#1302).
+ * Returns the SQL paging clause — empty for `all`, otherwise the validated
+ * literal `LIMIT n OFFSET m` (never a bound parameter).
+ */
+export function pagingClause(limitParam: unknown, offsetParam: unknown): { clause: string; limit: number | null; offset: number } {
+  const offset = clampOffset(offsetParam);
+  if (String(limitParam ?? '').toLowerCase() === 'all') return { clause: '', limit: null, offset: 0 };
+  const limit = clampLimit(limitParam);
+  return { clause: `LIMIT ${limit} OFFSET ${offset}`, limit, offset };
+}
+
 export function clampOffset(value: unknown): number {
   const n = parseInt(String(value ?? '0'), 10);
   return Number.isFinite(n) && n >= 0 ? n : 0;

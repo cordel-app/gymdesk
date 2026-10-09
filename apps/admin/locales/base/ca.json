@@ -3290,7 +3290,7 @@
     "modified_at": "Modificat el",
     "details": "Detalls",
     "edit": "Editar",
-    "read_only": "Només lectura (element del sistema)",
+    "system_badge": "Sistema",
     "ownership": "Propietat",
     "ownership_base": "Biblioteca Nutricional Base",
     "ownership_gym": "Propietat del gimnàs",

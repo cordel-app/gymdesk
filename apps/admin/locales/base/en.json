@@ -3277,7 +3277,7 @@
     "modified_at": "Modified At",
     "details": "Details",
     "edit": "Edit",
-    "read_only": "Read-only (system item)",
+    "system_badge": "System",
     "ownership": "Ownership",
     "ownership_base": "Base Nutrition Library",
     "ownership_gym": "Gym-owned",

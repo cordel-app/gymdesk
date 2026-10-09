@@ -6,7 +6,7 @@ import {
   loadCategoriesMap, replaceCategories, validateCategoryIds,
   loadQualitiesMap, replaceQualities, validateQualityIds,
   loadTranslationsMap, localizedNameSql,
-  buildListWhere, clampLimit, clampOffset,
+  buildListWhere, pagingClause,
   actorSnapshot, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
 import {
@@ -76,8 +76,7 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
   if ('error' in built) return res.status(400).json(built);
   const { where, params } = built;
 
-  const limit = clampLimit(req.query.limit);
-  const offset = clampOffset(req.query.offset);
+  const { clause: pagingSql, limit, offset } = pagingClause(req.query.limit, req.query.offset);
 
   try {
     const { rows: countRows } = await db.query<{ total: number }>(
@@ -88,7 +87,7 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
 
     // LIMIT/OFFSET must be literals, not `?` parameters: MySQL 8's prepared-statement
     // protocol rejects a parameterised LIMIT (ER_WRONG_ARGUMENTS). limit/offset are
-    // already validated integers (clampLimit/clampOffset), so direct interpolation is safe.
+    // already validated integers (pagingClause), so direct interpolation is safe; `?limit=all` (#1302) omits the clause.
     // `name` stays the base (English) value — it is what edit forms submit back
     // and what uniqueness is enforced on. `display_name` is the same item in the
     // caller's locale, and is what every UI renders (#643).
@@ -97,7 +96,7 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
        FROM nutrition_library_items nli
        WHERE ${where}
        ORDER BY display_name ASC
-       LIMIT ${limit} OFFSET ${offset}`,
+       ${pagingSql}`,
       params,
     );
 
