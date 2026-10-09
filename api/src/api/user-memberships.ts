@@ -859,6 +859,41 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
   }
 });
 
+/**
+ * #1240 — **Cancel on a Draft is a hard delete.** A Draft is not the member's
+ * plan (#1108): it has billed nothing, booked nothing and has no Billing Events,
+ * so discarding it removes the row and its snapshot children (every FK to
+ * `user_memberships` cascades) instead of leaving a `cancelled` row in the
+ * member's history. Any other status answers 409 — those go through
+ * `/close` or `DELETE /:id`, which keep the record of what was billed.
+ */
+userMembershipsRouter.delete('/:id/draft', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const outcome = await db.transaction(async (tx) => {
+      const { rows } = await tx.query(
+        'SELECT id, status, member_id, membership_plan_id FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
+        [req.params.id, gymId],
+      );
+      if (rows.length === 0) return { kind: 'not_found' } as const;
+      if (rows[0].status !== ASSIGNMENT_CREATION_STATUS) return { kind: 'not_draft', status: rows[0].status as string } as const;
+      await tx.query('DELETE FROM user_memberships WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
+      return { kind: 'deleted', previous: rows[0] } as const;
+    });
+    if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
+    if (outcome.kind === 'not_draft') {
+      return res.status(409).json({
+        error: 'not_draft',
+        message: `Only a Draft membership can be discarded; this one is '${outcome.status}'.`,
+      });
+    }
+    recordAudit(req, { action: 'delete', entityType: 'user_membership', entityId: req.params.id, previous: outcome.previous });
+    res.status(204).end();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Cancel = admin-only status flip (soft; the row stays for history).
 userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   const { gymId, userId, role } = getTenantContext(req);

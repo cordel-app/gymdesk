@@ -634,3 +634,61 @@ describe('description and audit snapshot (#799)', () => {
     expect(own.body.created_by_name).toBe('Test User');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Soft delete (#1301)
+// ---------------------------------------------------------------------------
+
+describe('DELETE /nutrition-library/:id', () => {
+  async function createOwn(name: string): Promise<number> {
+    const res = await request
+      .post('/nutrition-library')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ name, category_ids: [sideId] });
+    expect(res.status).toBe(201);
+    return res.body.id;
+  }
+
+  it('requires authentication', async () => {
+    const res = await request.delete(`/nutrition-library/${libraryItemId}`).set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('soft-deletes a gym item, hides it from the list and shows it under status=deleted', async () => {
+    const name = `Soft del ${Date.now()}`;
+    const id = await createOwn(name);
+
+    const del = await request.delete(`/nutrition-library/${id}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(del.status).toBe(204);
+
+    const { rows } = await db.query<{ status: string; deleted_at: string | null }>(
+      'SELECT status, deleted_at FROM nutrition_library_items WHERE id = ?', [id],
+    );
+    expect(rows[0].status).toBe('deleted');
+    expect(rows[0].deleted_at).not.toBeNull();
+
+    const active = await request.get(`/nutrition-library?search=${encodeURIComponent(name)}&limit=all`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(active.body.items.find((i: any) => i.id === id)).toBeUndefined();
+
+    const deleted = await request.get(`/nutrition-library?status=deleted&search=${encodeURIComponent(name)}&limit=all`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(deleted.body.items.find((i: any) => i.id === id)?.status).toBe('deleted');
+
+    const again = await request.delete(`/nutrition-library/${id}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(again.status).toBe(409);
+  });
+
+  it('refuses a System item (403) and another gym\'s item (404)', async () => {
+    const sys = await request.delete(`/nutrition-library/${libraryItemId}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    expect(sys.status).toBe(403);
+
+    const id = await createOwn(`Isolation ${Date.now()}`);
+    const other = await request.delete(`/nutrition-library/${id}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', otherGymId);
+    expect(other.status).toBe(404);
+  });
+
+  it('is forbidden for a read-only role', async () => {
+    const res = await request.delete(`/nutrition-library/${libraryItemId}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', accountantGymId);
+    expect(res.status).toBe(403);
+  });
+});

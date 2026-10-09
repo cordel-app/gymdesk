@@ -1,3 +1,4 @@
+import { findOpenInitialEvent } from './plan-checkout';
 import { memberInviteTarget } from '../domain/memberInviteTarget';
 import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
@@ -1396,6 +1397,15 @@ meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('tra
                WHERE el.gym_id = ? AND el.member_id = ?`;
     if (exerciseId) { sql += ' AND el.exercise_id = ?'; params.push(exerciseId); }
     sql += ' ORDER BY el.logged_date DESC, el.id DESC';
+    // #1297: an optional page size. Validated as an integer and written into the
+    // statement — a bound LIMIT is refused by the prepared-statement protocol.
+    if (req.query.limit !== undefined) {
+      const limit = Number(req.query.limit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        return res.status(400).json({ error: 'limit must be an integer between 1 and 100' });
+      }
+      sql += ` LIMIT ${limit}`;
+    }
     const { rows } = await db.query(sql, params);
     res.json(rows);
   } catch (err: any) {
@@ -1953,7 +1963,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       }
     }
     const params: any[] = [gymId, memberId];
-    let sql = `SELECT um.id, m.email AS member_email
+    let sql = `SELECT um.id, um.status, m.email AS member_email
        FROM user_memberships um
        JOIN members m ON m.id = um.member_id
        WHERE um.gym_id = ? AND um.member_id = ? AND um.status IN ('pending_payment', 'active')`;
@@ -1961,7 +1971,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     // #1108 stage 2: a row awaiting its first payment is the one Pay now is
     // for, ahead of a plan already active.
     sql += " ORDER BY FIELD(um.status, 'pending_payment', 'active'), um.starts_at DESC, um.id DESC";
-    const { rows: umRows } = await db.query<{ id: number; member_email: string }>(sql, params);
+    const { rows: umRows } = await db.query<{ id: number; status: string; member_email: string }>(sql, params);
     if (!umRows[0]) return res.status(404).json({ error: 'No active membership found' });
     const um = umRows[0];
 
@@ -1999,13 +2009,17 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
 
     req.log.info({ orderId, providerOrderId: result.providerOrderId }, 'Provider API call succeeded');
 
+    // #1288: a row awaiting its first payment already has its Billing Event
+    // (written at Save & Pay); a retry links to it so the webhook settles that
+    // one event instead of adding a second for the same charge.
+    const openEventId = um.status === 'pending_payment' ? await findOpenInitialEvent(gymId, um.id) : null;
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
           consent_given_at, source)
-       VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
-      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, orderId, result.providerOrderId, pageToken, pageTokenExpires],
+       VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
+      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires],
     );
 
     const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;

@@ -1119,6 +1119,13 @@ absence into something an alert outside GitHub can see:
   resolves once the column is put back (done 2026-10-06). Changing
   `RUN_FRESHNESS_THRESHOLD_HOURS` in the GitHub environment does nothing: `deploy.yml` does
   not forward it, so the API always runs on the 26 h default.
+- A **Synthetic Monitoring** check, `gymdesk-run-freshness-dev` (HTTP, every 15 min, 2 probe
+  locations, folder *Grafana Synthetic Monitoring*), also polls `/health/runs`: it feeds the
+  stack's built-in *Failed Checks [30m]* rule and the check's uptime page. It was left on
+  `https://api.vdicube.com/health/runs` when the Alerting rules were repointed, so it sat
+  firing with 0% uptime once the API host stopped answering; repointed to
+  `https://admin.vdicube.com/api/health/runs` on 2026-10-09 (#1166). Any new Grafana check
+  against this endpoint uses the admin host, never `api.vdicube.com`.
 
 > **Decisions (2026-09-27, #782)** — change them here if they turn out wrong:
 > - Option (b): a DB-backed freshness endpoint read from Grafana Cloud — not a Loki query on the `billing/run: complete` log line and not a GitHub-scheduled

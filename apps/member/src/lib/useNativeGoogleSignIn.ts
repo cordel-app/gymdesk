@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useClerk } from '@clerk/nextjs';
-import { googleIdToken, googleNativeConfig, nativePlatform } from '@/lib/native';
+import { useLocale } from 'next-intl';
+import { googleIdToken, googleNativeConfig, googleSignInNonce, nativePlatform, signInErrorDetail } from '@/lib/native';
 import { loadSocialLogin } from '@/lib/nativePlugins';
 import { useIsNative } from '@/lib/useIsNative';
 
@@ -33,9 +34,9 @@ import { useIsNative } from '@/lib/useIsNative';
  * result carrying no token, which is what dismissing the sheet produces, and
  * nothing is reported. Only a real failure sets `failed`.
  *
- * **Clerk is handed the token and nothing else.** No redirect URL, no
- * `window.location`: the session is established in place and the sign-in page's
- * existing Clerk redirect takes the member on, as after a password sign-in.
+ * **Clerk is handed the token, then asked to finish.** `authenticateWithGoogleOneTap()`
+ * returns a resource and does nothing else, so `handleGoogleOneTapCallback()` is what
+ * activates the session and takes the member to the locale's home (#1285).
  *
  * **The ids are build-time configuration** (`docs/mobile-app.md` design rule 1),
  * never literals here.
@@ -43,8 +44,10 @@ import { useIsNative } from '@/lib/useIsNative';
 export function useNativeGoogleSignIn() {
   const native = useIsNative();
   const clerk = useClerk();
+  const locale = useLocale();
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [detail, setDetail] = useState<string | null>(null);
 
   const config = googleNativeConfig(
     {
@@ -58,6 +61,7 @@ export function useNativeGoogleSignIn() {
   async function signIn() {
     if (!config || busy) return;
     setFailed(false);
+    setDetail(null);
     setBusy(true);
     try {
       const socialLogin = (await loadSocialLogin())?.plugin ?? null;
@@ -66,17 +70,42 @@ export function useNativeGoogleSignIn() {
         return;
       }
       await socialLogin.initialize({ google: config });
-      const result = await socialLogin.login({ provider: 'google', options: {} });
+      // #1285: the Google library keeps its own session in the keychain, and after
+      // a Clerk logout `login()` silently returned the previous ID token with no
+      // sheet. Clerk refuses a token it already exchanged (`authorization_invalid`),
+      // so every attempt starts from a cleared Google session: a fresh sheet, a
+      // fresh token. Best effort: there may be nothing to clear.
+      try {
+        await socialLogin.logout({ provider: 'google' });
+      } catch {
+        // nothing to clear
+      }
+      // #1285: a fresh nonce per attempt, as Clerk's own Android SDK does — see
+      // `googleSignInNonce()`. The plugin passes it through on both platforms.
+      const result = await socialLogin.login({ provider: 'google', options: { nonce: googleSignInNonce() } });
       const token = googleIdToken(result);
       // No token means the member dismissed the sheet — nothing happened.
       if (!token) return;
-      await (clerk as any).authenticateWithGoogleOneTap({ token });
-    } catch {
+      // #1285: `authenticateWithGoogleOneTap()` only *returns* the sign-in (or
+      // sign-up) resource; it neither activates the session nor navigates. Without
+      // `handleGoogleOneTapCallback()` the page stayed on the login with no error.
+      // The callback sets the session, completes a transfer to sign-up the way
+      // Clerk's own Google button does, and lands on the Members App's home.
+      const resource = await (clerk as any).authenticateWithGoogleOneTap({ token });
+      await (clerk as any).handleGoogleOneTapCallback(resource, {
+        signInFallbackRedirectUrl: `/${locale}`,
+        signUpFallbackRedirectUrl: `/${locale}`,
+      });
+    } catch (err) {
+      // #1285: the notice is the same for every cause, so the cause is logged
+      // and kept for the page to show in development builds.
+      console.error('Native Google sign-in failed', err);
+      setDetail(signInErrorDetail(err));
       setFailed(true);
     } finally {
       setBusy(false);
     }
   }
 
-  return { native, available, busy, failed, signIn };
+  return { native, available, busy, failed, detail, signIn };
 }

@@ -336,6 +336,22 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     source: { kind: 'color', key: 'secondaryButton', labelKey: 'label_secondary_btn' },
     cssVar: '--gd-secondary-btn',
   },
+  {
+    key: 'primaryButtonTextColor',
+    section: 'group_members_buttons',
+    labelKey: 'label_members_primary_button_text_color',
+    type: 'color',
+    source: { kind: 'color', key: 'primaryButtonText', labelKey: 'label_primary_btn_text' },
+    cssVar: '--gd-primary-btn-text',
+  },
+  {
+    key: 'secondaryButtonTextColor',
+    section: 'group_members_buttons',
+    labelKey: 'label_members_secondary_button_text_color',
+    type: 'color',
+    source: { kind: 'color', key: 'secondaryButtonText', labelKey: 'label_secondary_btn_text' },
+    cssVar: '--gd-secondary-btn-text',
+  },
   // ── Calendar (Members App) ────────────────────────────────────────────────
   {
     key: 'text1Color',

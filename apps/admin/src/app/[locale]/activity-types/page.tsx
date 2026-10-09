@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl';
 import { useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
+import { formatGymDateTime } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
@@ -179,6 +181,7 @@ const LIST_MIN_WIDTH =
 
 export default function ActivityTypesPage() {
   const t = useTranslations('activity_types');
+  const gymFmt = useGymFormatSettings();
   const ts = useTranslations('activity_types.schedule');
   const tStatus = useTranslations('status');
   const tWeekday = useTranslations('weekday');
@@ -644,7 +647,7 @@ export default function ActivityTypesPage() {
 
   function fmtDateTime(iso: string | null) {
     if (!iso) return '—';
-    return new Date(iso).toLocaleString();
+    return formatGymDateTime(iso, gymFmt);
   }
 
   function to24h(val: string): string {

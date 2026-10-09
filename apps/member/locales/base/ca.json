@@ -37,7 +37,14 @@
     "membership": "Els Meus Productes",
     "profile": "Perfil",
     "alerts": "Alertes",
-    "goals": "Els Meus Objectius"
+    "goals": "Els Meus Objectius",
+    "user_menu": "Menú del compte",
+    "logout": "Tanca la sessió",
+    "logout_confirm_title": "Vols tancar la sessió?",
+    "logout_confirm_body": "Es tancarà la sessió d'aquest compte en aquest dispositiu.",
+    "logout_cancel": "Cancel·la",
+    "logout_impersonating_title": "Deixar de suplantar?",
+    "logout_impersonating_body": "Sortiràs del compte d'aquest membre i tornaràs al Mode de suport."
   },
   "common": {
     "error": "Alguna cosa ha anat malament.",
@@ -83,7 +90,12 @@
     "result_unit_seconds": "Segons",
     "result_unit_minutes": "Minuts",
     "result_unit_meters": "Metres",
-    "result_unit_calories": "Calories"
+    "result_unit_calories": "Calories",
+    "done": "Fet!",
+    "log_date": "Data",
+    "new_entry": "Nova entrada",
+    "add_log": "Afegeix registre",
+    "new_chip": "Nou"
   },
   "profile": {
     "title": "El meu perfil",

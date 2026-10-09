@@ -3,6 +3,8 @@
 import { useTranslations } from 'next-intl';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
+import { reportImpersonationStopped } from '@/lib/endImpersonation';
+import { withSafeArea } from '@/lib/memberChrome';
 
 /**
  * #983 — deliberately outside the Theme, for `AdminBar`'s reason: this is the
@@ -22,20 +24,7 @@ export function ImpersonationBanner() {
 
   async function handleStop() {
     if (!session) return;
-    const durationSeconds = Math.round((Date.now() - session.startedAt) / 1000);
-    try {
-      await apiFetch('/platform/impersonation/stop', {
-        method: 'POST',
-        body: JSON.stringify({
-          impersonated_user_id: session.effectiveUserId,
-          impersonated_user_name: session.effectiveName,
-          impersonated_role: session.effectiveRole,
-          duration_seconds: durationSeconds,
-        }),
-      });
-    } catch {
-      // Audit failure must not block stopping the session
-    }
+    await reportImpersonationStopped(apiFetch, session);
     stopImpersonation();
   }
 
@@ -43,7 +32,11 @@ export function ImpersonationBanner() {
     <div style={{
       background: '#b45309',
       color: '#fff',
-      padding: '10px 16px',
+      // #1294: same inset as `AdminBar`, which this replaces while impersonating.
+      paddingTop: withSafeArea(10, 'top'),
+      paddingBottom: 10,
+      paddingLeft: withSafeArea(16, 'left'),
+      paddingRight: withSafeArea(16, 'right'),
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',

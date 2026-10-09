@@ -332,3 +332,38 @@ export function appIdFromInfo(info: unknown): string | null {
   const id = (info as { id?: unknown } | null | undefined)?.id;
   return typeof id === 'string' && id.trim() ? id.trim() : null;
 }
+
+/**
+ * #1285 — what went wrong in a native sign-in, as one short line for a developer.
+ *
+ * The hook used to swallow the error, so a failed Google sign-in showed the same
+ * notice whether the sheet, the token or Clerk had refused. A Clerk error carries
+ * `errors[0].code` / `longMessage`; anything else its own `message`. Pure: the
+ * hook decides whether to show it (development builds only).
+ */
+export function signInErrorDetail(err: unknown): string {
+  const e = err as { errors?: Array<{ code?: string; longMessage?: string; message?: string }>; message?: unknown } | null;
+  const clerk = e?.errors?.[0];
+  if (clerk) {
+    const parts = [clerk.code, clerk.longMessage ?? clerk.message].filter((v) => typeof v === 'string' && v.trim());
+    if (parts.length) return parts.join(': ').slice(0, 300);
+  }
+  if (typeof e?.message === 'string' && e.message.trim()) return e.message.trim().slice(0, 300);
+  return typeof err === 'string' && err.trim() ? err.trim().slice(0, 300) : 'unknown error';
+}
+
+/**
+ * #1285 — the nonce a native Google sign-in asks the token to carry.
+ *
+ * Clerk's own Android SDK always requests the ID token with a fresh random nonce
+ * (`GetGoogleIdOption.setNonce(UUID)`), and a token requested without one from an
+ * Android app was refused by Clerk with `authorization_invalid` while the same
+ * account signed in from iOS. A nonce is also what stops a captured token from
+ * being replayed, so every attempt gets a new one; `randomUUID` is what the
+ * WebView provides, with a time-based fallback for a runtime without it.
+ */
+export function googleSignInNonce(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}

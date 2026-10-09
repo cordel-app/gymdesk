@@ -30,10 +30,12 @@ Read the GitHub issue body (use `gh issue view <N>`) and the relevant sections o
 - Cases: 401, 403 (tenant isolation), happy-path GET, [list any invariants]
 
 ### Docs to update
-- [ ] `docs/roadmap.md` — mark ticket done
+- [ ] `docs/changelog.md` — add the ticket's entry under the current month
+- [ ] `docs/roadmap.md` — does the ticket close or advance an *Open work* item? (yes/no)
 - [ ] `docs/architecture.md` — new tables/routers? (yes/no)
 - [ ] `docs/feature-patterns.md` — new pattern? (yes/no)
 - [ ] `CLAUDE.md` — new hard constraint? (yes/no)
+- [ ] `docs/rules.md` — if yes, and the constraint is product behaviour: its plain entry
 
 ### Open questions (if any)
 - …

@@ -744,6 +744,9 @@ hardening:
       to `https://admin.vdicube.com/api/health/runs` on 2026-10-06, after the relay was live on
       dev and 10/10 queries from Grafana Cloud succeeded, so closing the API host no longer
       fires them. A production stack points its rules at the production admin host the same way.
+      The Synthetic Monitoring check `gymdesk-run-freshness-dev` was missed by that repoint
+      and was repointed the same way on 2026-10-09; a production stack's check needs the
+      production admin host too.
 - [x] **Decide the `/billing/` GitHub Actions IP allowlist** (#783): removed, not
       automated — replaced by a per-route limiter on the internal run routes. The
       allowlist never ran (no nginx on corback), so nothing needs undoing on a server; what is
@@ -1376,6 +1379,17 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
       store plumbing and no code change — rehearse it with `docs/mobile-runbook.md` §6.
 
 ### Store submission
+
+- [ ] *(after the Apple account exists)* **TestFlight link on the Mobile builds page.** For an iOS
+      build the page should offer *Open in TestFlight* instead of a download (a signed app cannot
+      be installed from a downloaded file). Needs the app in App Store Connect and its public
+      link; keep it as a per-environment GitHub variable written by CI into the build's sidecar
+      as an optional field, and have the page show the button when it is present. The simulator
+      builds can stop being published to the page then (they cannot be installed on a phone).
+- [ ] *(when a gym asks for betas)* Decide how a gym gets its beta: the store testing channels in
+      its own developer account (TestFlight, Play internal/closed testing), or a gym-scoped page
+      in the Admin app. See `docs/mobile-app.md`, "What a gym that wants its own app needs to
+      know".
 
 - [ ] Privacy policy URL, store listing text, screenshots, age rating, data-safety / privacy
       nutrition labels.
