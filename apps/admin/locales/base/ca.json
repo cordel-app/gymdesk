@@ -4029,7 +4029,10 @@
     "simulation_price_fixed_price": "Preu fix {amount}",
     "simulation_prepaid_periods": "{count, plural, one {# període prepagat} other {# períodes prepagats}}",
     "simulation_disclaimer": "Projecció de la configuració pròpia d’aquest pla assignat, incloses les seves promocions aplicades. Els esdeveniments de facturació futurs són una projecció i encara no s’han facturat.",
-    "simulation_truncated": "La projecció s’ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors."
+    "simulation_truncated": "La projecció s’ha aturat al seu límit de seguretat: no es mostren els esdeveniments de facturació posteriors.",
+    "col_relationship": "Relació",
+    "relationship_primary": "Principal",
+    "relationship_linked": "Vinculat"
   },
   "taxes": {
     "title": "Impostos",

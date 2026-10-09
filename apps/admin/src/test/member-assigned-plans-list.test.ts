@@ -154,7 +154,7 @@ describe('#958: the expansion is the shared Assigned Plan card body (Q3 share)',
       "import { AssignedPlanExpandedRow } from '@/components/assignedPlan/AssignedPlanExpandedRow'",
     );
     expect(tableSrc).toContain(
-      '<AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} />',
+      '<AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} />',
     );
     // The Member card asks for the read-only body; the Assigned Plans page,
     // where a plan's own card lives, does not.
@@ -202,7 +202,7 @@ describe('#958: Details reuses the existing modal', () => {
   it('loads the assignment and hands it to the shared modal', () => {
     expect(detailsDialogSrc).toContain("import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal'");
     expect(detailsDialogSrc).toContain('<AssignedPlanDetailsModal detail={detail} onClose={onClose} />');
-    expect(detailsDialogSrc).toContain('`/user-memberships/${assignedPlanId}`');
+    expect(detailsDialogSrc).toContain('`/user-memberships/${assignedPlanId}${viewAsMemberId != null');
   });
 
   it('declares no field layout of its own', () => {

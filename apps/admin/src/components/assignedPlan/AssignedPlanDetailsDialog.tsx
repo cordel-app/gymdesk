@@ -20,8 +20,9 @@ import { cardMutedTextStyle, cardTextLinkStyle, formErrorStyle } from '@/compone
 import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal';
 import type { AssignedPlanDetail } from './types';
 
-export function AssignedPlanDetailsDialog({ assignedPlanId, onClose }: {
+export function AssignedPlanDetailsDialog({ assignedPlanId, viewAsMemberId, onClose }: {
   assignedPlanId: number;
+  viewAsMemberId?: number;
   onClose: () => void;
 }) {
   const t = useTranslations('assigned_plans_page');
@@ -34,7 +35,9 @@ export function AssignedPlanDetailsDialog({ assignedPlanId, onClose }: {
   async function load() {
     setError(null);
     try {
-      setDetail(await apiFetch<AssignedPlanDetail>(`/user-memberships/${assignedPlanId}`));
+      setDetail(await apiFetch<AssignedPlanDetail>(
+        `/user-memberships/${assignedPlanId}${viewAsMemberId != null ? `?as_member_id=${viewAsMemberId}` : ''}`,
+      ));
     } catch {
       setError(t('expanded_error'));
     }
