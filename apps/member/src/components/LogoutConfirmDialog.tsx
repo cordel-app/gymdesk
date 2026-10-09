@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type CSSProperties } from 'react';
+import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -15,18 +16,20 @@ import { MemberDialog } from '@/components/MemberDialog';
  * and by the superadmin's Support bar (which has no avatar: a superadmin who is
  * not impersonating is not linked to a member, so `TopBar` renders nothing).
  *
- * Nothing is signed out before the confirm. A superadmin logging out while
- * impersonating is signed in as themselves, so the impersonation is ended and
- * audited first, and its stored session cleared so it cannot resurface the next
- * time that tab signs in.
+ * Nothing is signed out before the confirm. **While impersonating, Log out
+ * leaves the impersonated member and lands on Support mode** — the superadmin's
+ * own session stays signed in, exactly as the banner's *Stop Impersonating*: the
+ * impersonation is audited and its stored session cleared, and nothing else.
  */
 export function LogoutConfirmDialog({ onClose }: { onClose: () => void }) {
   const t = useTranslations();
   const locale = useLocale();
+  const router = useRouter();
   const { signOut } = useAuth();
   const { apiFetch } = useApiClient();
   const { session, stopImpersonation } = useImpersonation();
   const [busy, setBusy] = useState(false);
+  const impersonating = session !== null;
 
   async function confirmLogout() {
     setBusy(true);
@@ -34,6 +37,8 @@ export function LogoutConfirmDialog({ onClose }: { onClose: () => void }) {
       if (session) {
         await reportImpersonationStopped(apiFetch, session);
         stopImpersonation();
+        router.replace(`/${locale}`);
+        return;
       }
       await logoutMember(apiFetch, signOut, locale);
     } finally {
@@ -46,7 +51,7 @@ export function LogoutConfirmDialog({ onClose }: { onClose: () => void }) {
   return (
     <MemberDialog
       labelledBy="logout-confirm-title"
-      title={t('nav.logout_confirm_title')}
+      title={t(impersonating ? 'nav.logout_impersonating_title' : 'nav.logout_confirm_title')}
       onClose={busy ? () => {} : onClose}
       actions={(
         <>
@@ -69,7 +74,9 @@ export function LogoutConfirmDialog({ onClose }: { onClose: () => void }) {
         </>
       )}
     >
-      <p style={styles.confirmText}>{t('nav.logout_confirm_body')}</p>
+      <p style={styles.confirmText}>
+        {t(impersonating ? 'nav.logout_impersonating_body' : 'nav.logout_confirm_body')}
+      </p>
     </MemberDialog>
   );
 }

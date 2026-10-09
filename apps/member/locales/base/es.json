@@ -42,7 +42,9 @@
     "logout": "Cerrar sesión",
     "logout_confirm_title": "¿Cerrar sesión?",
     "logout_confirm_body": "Se cerrará la sesión de esta cuenta en este dispositivo.",
-    "logout_cancel": "Cancelar"
+    "logout_cancel": "Cancelar",
+    "logout_impersonating_title": "¿Dejar de suplantar?",
+    "logout_impersonating_body": "Saldrás de la cuenta de este miembro y volverás al Modo soporte."
   },
   "common": {
     "error": "Algo ha ido mal.",

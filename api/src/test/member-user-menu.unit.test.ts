@@ -27,11 +27,18 @@ describe('#1282 what the menu offers', () => {
   });
 
   it('offers a superadmin impersonating a member the same menu, Log out included', () => {
-    // The impersonated member is a header, not a session: Log out ends the
-    // superadmin's own, and the dialog ends and audits the impersonation first.
     expect(userMenuItems()).toEqual(['profile', 'logout']);
+  });
+
+  it('while impersonating, Log out returns to Support mode and keeps the superadmin signed in', () => {
     expect(dialog).toContain('reportImpersonationStopped(apiFetch, session)');
     expect(dialog).toContain('stopImpersonation()');
+    // The impersonation branch returns before the sign-out.
+    const branch = dialog.indexOf('stopImpersonation()');
+    const ret = dialog.indexOf('return;', branch);
+    const signOut = dialog.indexOf('logoutMember(apiFetch');
+    expect(ret).toBeGreaterThan(branch);
+    expect(signOut).toBeGreaterThan(ret);
   });
 
   it('puts Log out in the Support bar, which has no avatar', () => {
@@ -91,7 +98,7 @@ describe('#1282 the labels exist in every locale', () => {
   for (const locale of ['en', 'es', 'ca']) {
     it(`${locale} has the menu keys`, () => {
       const nav = JSON.parse(readFileSync(join(MEMBER, 'locales', 'base', `${locale}.json`), 'utf-8')).nav;
-      for (const key of ['user_menu', 'logout', 'logout_confirm_title', 'logout_confirm_body', 'logout_cancel']) {
+      for (const key of ['user_menu', 'logout', 'logout_confirm_title', 'logout_confirm_body', 'logout_cancel', 'logout_impersonating_title', 'logout_impersonating_body']) {
         expect(typeof nav[key]).toBe('string');
         expect(nav[key].length).toBeGreaterThan(0);
       }
