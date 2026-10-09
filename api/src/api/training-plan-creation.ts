@@ -69,10 +69,10 @@ export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs)
         const { insertId: blockId } = await tx.query(
           `INSERT INTO workout_blocks
             (gym_id, workout_id, position, name, description, type,
-             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit, modified_by_membership_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [gymId, workoutId, block.position, block.name, block.description, block.type,
-           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes,
+           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes, block.result_unit ?? null,
            gymMembershipId],
         );
         const { rows: exRows } = await tx.query(

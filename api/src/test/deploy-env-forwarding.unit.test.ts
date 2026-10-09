@@ -76,6 +76,10 @@ describe('the settings the API reads are the settings deploy.yml writes', () => 
     for (const name of HOP_SETTINGS) expectForwarded(name, 'vars');
   });
 
+  it('forwards the global request budget from a GitHub variable', () => {
+    expectForwarded('API_RATE_LIMIT_MAX', 'vars');
+  });
+
   it('forwards every internal-run secret from a GitHub secret', () => {
     for (const name of INTERNAL_SECRETS) expectForwarded(name, 'secrets');
   });

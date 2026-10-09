@@ -15,6 +15,8 @@
     "no_membership": "Sin cuota activa.",
     "products_services": "Mis Productos",
     "active_products": "{count, plural, one {# producto activo} other {# productos activos}}",
+    "no_plan": "Sin plan",
+    "additional_products": "{count, plural, one {# producto adicional} other {# productos adicionales}}",
     "expires_on": "Vence el {date}",
     "class_credits": "Créditos de clases",
     "credits_remaining": "sesiones disponibles",
@@ -22,7 +24,6 @@
     "greeting_afternoon": "Buenas tardes, {name}",
     "greeting_evening": "Buenas noches, {name}",
     "view_booking": "Ver reserva",
-    "browse_calendar": "Ver calendario",
     "alerts_view_all": "Ver alertas",
     "nutrition_today": "Nutrición de hoy",
     "goals": "Objetivos",
@@ -30,13 +31,20 @@
   },
   "nav": {
     "calendar": "Calendario",
-    "training": "Mi Plan de Entrenamiento",
+    "training": "Mi Entrenamiento",
     "bookings": "Mis Reservas",
     "nutrition": "Mi Nutrición",
     "membership": "Mis Productos",
     "profile": "Perfil",
     "alerts": "Alertas",
-    "goals": "Mis Objetivos"
+    "goals": "Mis Objetivos",
+    "user_menu": "Menú de la cuenta",
+    "logout": "Cerrar sesión",
+    "logout_confirm_title": "¿Cerrar sesión?",
+    "logout_confirm_body": "Se cerrará la sesión de esta cuenta en este dispositivo.",
+    "logout_cancel": "Cancelar",
+    "logout_impersonating_title": "¿Dejar de suplantar?",
+    "logout_impersonating_body": "Saldrás de la cuenta de este miembro y volverás al Modo soporte."
   },
   "common": {
     "error": "Algo ha ido mal.",
@@ -45,7 +53,7 @@
     "no_gym_available": "No hay ningún gimnasio disponible"
   },
   "training": {
-    "title": "Mi Plan de Entrenamiento",
+    "title": "Mi Entrenamiento",
     "loading": "Cargando…",
     "empty": "Aún no tienes un plan asignado.",
     "no_plan_today": "No hay plan para este día.",
@@ -67,6 +75,7 @@
     "add_set": "+ Añadir serie",
     "save_log": "Guardar registro",
     "mark_done": "Marcar hecho",
+    "block_rounds": "{count, plural, one {# ronda} other {# rondas}}",
     "block_type_standard": "Estándar",
     "block_type_superset": "Superserie",
     "block_type_triset": "Triserie",
@@ -75,7 +84,18 @@
     "block_type_emom": "EMOM",
     "block_type_amrap": "AMRAP",
     "block_type_tabata": "Tabata",
-    "block_result": "Resultado"
+    "block_result": "Resultado",
+    "result_unit_rounds": "Rondas",
+    "result_unit_reps": "Repeticiones",
+    "result_unit_seconds": "Segundos",
+    "result_unit_minutes": "Minutos",
+    "result_unit_meters": "Metros",
+    "result_unit_calories": "Calorías",
+    "done": "¡Hecho!",
+    "log_date": "Fecha",
+    "new_entry": "Nueva entrada",
+    "add_log": "Añadir registro",
+    "new_chip": "Nuevo"
   },
   "profile": {
     "title": "Mi perfil",
@@ -101,7 +121,15 @@
     "payment_status_ok": "Al día",
     "payment_status_pending": "Pago pendiente",
     "payment_status_failed": "Pago fallido",
-    "no_center": "Sin centro asignado"
+    "no_center": "Sin centro asignado",
+    "label_clerk_status": "Estado de Clerk",
+    "label_clerk_invitation": "Invitación de Clerk",
+    "clerk_status_enrolled_on": "Registrado · {date}",
+    "clerk_status_enrolled": "Registrado",
+    "clerk_status_not_enrolled": "No registrado",
+    "clerk_invitation_invited_on": "Invitado · {date}",
+    "clerk_invitation_invited": "Invitado",
+    "clerk_invitation_none": "Ninguna"
   },
   "packages": {
     "title": "Mis bonos",
@@ -167,6 +195,7 @@
     "state_waitlist_available": "Unirse a la lista de espera",
     "state_full": "Completo",
     "action_book": "Reservar",
+    "buy_sessions_cta": "Compra sesiones para reservar esta clase",
     "action_join_waitlist": "Unirse a lista de espera",
     "action_cancel_booking": "Cancelar reserva",
     "action_leave_waitlist": "Salir de lista de espera",
@@ -242,6 +271,8 @@
     "benefits_heading": "Beneficios incluidos",
     "products_heading": "Productos y Servicios Adicionales",
     "products_empty": "Tu gimnasio todavía no ofrece productos ni servicios adicionales.",
+    "products_filtered_notice": "Mostrando los productos que desbloquean la clase que intentaste reservar.",
+    "products_show_all": "Ver todos los productos",
     "past_plans_heading": "Planes de Membresía Anteriores",
     "add_plan": "+ Añadir plan",
     "add_plan_title": "Elige un plan de membresía",
@@ -249,6 +280,9 @@
     "add_plan_loading": "Cargando planes…",
     "add_plan_close": "Cerrar",
     "plan_final_price": "Precio final (IVA incluido)",
+    "plan_benefits_heading": "Beneficios incluidos",
+    "plan_benefit_mandatory": "Obligatorio",
+    "plan_benefit_optional": "Opcional",
     "choose_plan": "Elegir este plan",
     "choose_plan_title": "Confirma tu plan",
     "choose_plan_body": "Estás eligiendo {name}. Tu primer pago será de {price}. Introducirás tu tarjeta en la página de pago segura de tu gimnasio.",
@@ -383,6 +417,10 @@
     "retry": "Intentar de nuevo"
   },
   "link": {
+    "open_in_app_title": "Abrir en la app",
+    "open_in_app_hint": "Si tienes la app instalada, abre tu invitación allí.",
+    "open_in_app_button": "Abrir la app",
+    "continue_in_browser": "Continuar en el navegador",
     "linking": "Configurando tu cuenta…",
     "error_no_invitation": "No se encontró ninguna invitación pendiente para esta cuenta.",
     "error_generic": "Algo ha salido mal.",
@@ -577,7 +615,9 @@
     "offline_body": "Comprueba tu conexión e inténtalo de nuevo.",
     "retry": "Reintentar",
     "continue_with_google": "Continuar con Google",
+    "continue_with_apple": "Continuar con Apple",
     "signing_in": "Iniciando sesión…",
-    "google_failed": "No se ha podido iniciar sesión con Google. Inténtalo de nuevo."
+    "google_failed": "No se ha podido iniciar sesión con Google. Inténtalo de nuevo.",
+    "apple_failed": "No se ha podido iniciar sesión con Apple. Inténtalo de nuevo."
   }
 }

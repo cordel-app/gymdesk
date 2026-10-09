@@ -5,8 +5,8 @@ import { useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
-import { appUrlOpenPath, isNative, nativePlatform, notificationTapPath } from '@/lib/native';
-import { loadAppPlugin, loadPushNotifications } from '@/lib/nativePlugins';
+import { appIdFromInfo, appUrlOpenPath, isNative, nativePlatform, notificationTapPath } from '@/lib/native';
+import { loadAppInfo, loadAppPlugin, loadPushNotifications } from '@/lib/nativePlugins';
 import { registerPushToken } from '@/lib/nativePush';
 
 /**
@@ -62,19 +62,24 @@ export function NativeShell() {
 
     (async () => {
       const platform = nativePlatform();
-      const push = await loadPushNotifications();
+      const loadedPush = await loadPushNotifications();
+      const push = loadedPush?.plugin ?? null;
       if (!platform || !push || cancelled) return;
 
       try {
         const permission = await push.requestPermissions();
         if (permission.receive !== 'granted' || cancelled) return;
 
+        // The id this installation is registered under (#1077); `null` lets the
+        // API default it, as before.
+        const appId = appIdFromInfo(await loadAppInfo());
+
         handles.push(await push.addListener('registration', (token) => {
           if (cancelled) return;
           // Fire-and-forget on purpose: a member whose device cannot be
           // registered still has every alert inside the app (CLAUDE.md — a push
           // is a courtesy copy of a `member_notifications` row).
-          void registerPushToken(latest.current.apiFetch, token.value);
+          void registerPushToken(latest.current.apiFetch, token.value, appId);
         }));
 
         handles.push(await push.addListener('pushNotificationActionPerformed', () => {
@@ -110,7 +115,8 @@ export function NativeShell() {
     let handle: { remove: () => Promise<void> | void } | null = null;
 
     (async () => {
-      const app = await loadAppPlugin();
+      const loadedApp = await loadAppPlugin();
+      const app = loadedApp?.plugin ?? null;
       if (!app || cancelled) return;
       try {
         handle = await app.addListener('appUrlOpen', ({ url }) => {

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
+import { clerkStatusLine, clerkInvitationLine, type ClerkAccountFields, type ClerkAccountLine } from '@/lib/clerkAccountLines';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { primaryBtnSmall } from '@/components/ui';
 import {
@@ -31,11 +32,11 @@ import {
 } from './MemberPurchasedProducts';
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
-import { MemberAdditionalServices } from './MemberAdditionalServices';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
   formatProfileDate,
+  memberGenderLabelKey,
   newMemberAnnounceKey,
   newMemberValueKey,
   type MemberProfile,
@@ -158,7 +159,7 @@ export function MemberExpandedRow({
   const [simulationKey, setSimulationKey] = useState(0);
 
   const [centers, setCenters] = useState<MemberCenter[]>([]);
-  const [clerkStatus, setClerkStatus] = useState<{ status: string } | null>(null);
+  const [clerkStatus, setClerkStatus] = useState<({ status: string } & ClerkAccountFields) | null>(null);
   const [trainingPlans, setTrainingPlans] = useState<TrainingPlanAssignment[]>([]);
   const [nutritionPlans, setNutritionPlans] = useState<NutritionPlan[]>([]);
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
@@ -199,7 +200,7 @@ export function MemberExpandedRow({
           : Promise.resolve([]),
         apiFetch<NutritionPlan[]>(`/member-nutrition-plans?member_id=${memberId}`).catch(() => []),
         apiFetch<{ items: BillingEvent[] }>(`/billing-events/member/${memberId}?limit=50`).catch(() => ({ items: [] })),
-        apiFetch<{ status: string }>(`/members/${memberId}/clerk-status`).catch(() => null),
+        apiFetch<{ status: string } & ClerkAccountFields>(`/members/${memberId}/clerk-status`).catch(() => null),
         apiFetch<SessionPackage[]>(`/members/${memberId}/class-packages`).catch(() => []),
         apiFetch<MemberCenter[]>(`/members/${memberId}/centers`).catch(() => []),
         apiFetch<{ items: PurchasedProduct[] }>(`/members/${memberId}/products`)
@@ -335,7 +336,11 @@ export function MemberExpandedRow({
                   fieldLabel={(f) => t(`members.${f.labelKey}`)}
                   renderField={(f) => (
                     <p style={profileValueStyle}>
-                      {(f.kind === 'date' ? formatProfileDate(member[f.key]) : member[f.key]?.trim()) || EMPTY_VALUE}
+                      {(f.kind === 'date'
+                        ? formatProfileDate(member[f.key])
+                        : f.kind === 'gender' && memberGenderLabelKey(member[f.key])
+                          ? t(`members.${memberGenderLabelKey(member[f.key])}`)
+                          : member[f.key]?.trim()) || EMPTY_VALUE}
                     </p>
                   )}
                   /* #927: calculated by the server from the Member's Membership
@@ -377,6 +382,16 @@ export function MemberExpandedRow({
                   : t('members.clerk_error')
                 }
               />
+              {/* #1234: stored dates, independent of membership and payment. */}
+              {[
+                ['label_clerk_status', clerkStatusLine(clerkStatus, locale)],
+                ['label_clerk_invitation', clerkInvitationLine(clerkStatus, locale)],
+              ].map(([label, line]) => (
+                <p key={label as string} style={profileValueStyle}>
+                  <strong>{t(`members.${label as string}`)}:</strong>{' '}
+                  {t(`members.${(line as ClerkAccountLine).key}`, { date: (line as ClerkAccountLine).date ?? '' })}
+                </p>
+              ))}
             </Section>
           )}
 
@@ -441,18 +456,10 @@ export function MemberExpandedRow({
               reads in both modes; the services editor's `+ Add Product` button
               is Edit mode's alone. */}
           <Section label={t('members.section_additional_services')}>
-            <div style={{ marginBottom: 14 }}>
+            <div>
               <div style={subLabelStyle}>{t('members.purchased_products_label')}</div>
               <MemberPurchasedProducts items={purchasedProducts} />
             </div>
-            <div style={subLabelStyle}>{t('members.periodic_services_label')}</div>
-            <MemberAdditionalServices
-              plans={configuration.plans}
-              services={configuration.services}
-              canWrite={isAdmin}
-              editing={editing}
-              onChanged={reloadConfiguration}
-            />
           </Section>
 
           {/* Billing Simulation (#629) — a section of its own, never nested inside

@@ -1,8 +1,10 @@
+import { findOpenInitialEvent } from './plan-checkout';
 import { memberInviteTarget } from '../domain/memberInviteTarget';
 import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createClerkClient } from '@clerk/backend';
+import { parseBlockLogResult } from '../domain/blockResultUnits';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
@@ -47,6 +49,7 @@ import {
   PromotionRefused,
 } from './me-products';
 import { purchaseBlockResponse } from '../domain/memberProductPurchase';
+import { parseProfessionalServiceFilter } from '../domain/memberProductCatalogue';
 import {
   MEMBER_PLAN_HISTORY_LIMIT,
   splitMemberPlanHistory,
@@ -395,7 +398,7 @@ async function createSelfRegisteredMember(
   try {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO members (name, email, gym_id, clerk_user_id) VALUES (?, ?, ?, ?)',
+        'INSERT INTO members (name, email, gym_id, clerk_user_id, enrolled_at) VALUES (?, ?, ?, ?, UTC_TIMESTAMP())',
         [name, email, gymId, userId],
       );
       await tx.query(
@@ -490,7 +493,7 @@ meLinkRouter.post('/', async (req: Request, res: Response, next: NextFunction) =
     // Link the Clerk user and create membership in a transaction
     await db.transaction(async (tx) => {
       await tx.query(
-        'UPDATE members SET clerk_user_id = ?, invitation_id = NULL WHERE id = ?',
+        'UPDATE members SET clerk_user_id = ?, invitation_id = NULL, enrolled_at = COALESCE(enrolled_at, UTC_TIMESTAMP()) WHERE id = ?',
         [userId, member.id],
       );
       // INSERT IGNORE = the old ON CONFLICT DO NOTHING (row may exist from a retry)
@@ -964,7 +967,15 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
     res.status(201).json(result);
   } catch (err: any) {
     if (err.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: 'You already have a booking for this session.' });
-    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
+    if (err.status) {
+      return res.status(err.status).json({
+        error: err.message,
+        code: err.code,
+        // #1189 stage 4: the refusal names the services that would unlock the
+        // booking, so the Members App can route to buying one.
+        ...(err.professional_services ? { professional_services: err.professional_services } : {}),
+      });
+    }
     next(err);
   }
 });
@@ -1031,7 +1042,9 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
         grace_hours: CANCELLATION_GRACE_HOURS,
       });
     }
-    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId);
+    // #1189 stage 3: a member's cancellation that reaches here was allowed
+    // free of charge (outside the notice window, or inside the grace period).
+    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { spendLateCancel: false });
     if (cancelResult.promotedMemberId) {
       sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
         rows[0].class_session_id, { title: rows[0].title, starts_at: rows[0].starts_at });
@@ -1384,6 +1397,15 @@ meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('tra
                WHERE el.gym_id = ? AND el.member_id = ?`;
     if (exerciseId) { sql += ' AND el.exercise_id = ?'; params.push(exerciseId); }
     sql += ' ORDER BY el.logged_date DESC, el.id DESC';
+    // #1297: an optional page size. Validated as an integer and written into the
+    // statement — a bound LIMIT is refused by the prepared-statement protocol.
+    if (req.query.limit !== undefined) {
+      const limit = Number(req.query.limit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        return res.status(400).json({ error: 'limit must be an integer between 1 and 100' });
+      }
+      sql += ` LIMIT ${limit}`;
+    }
     const { rows } = await db.query(sql, params);
     res.json(rows);
   } catch (err: any) {
@@ -1415,7 +1437,7 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows: blockRows } = await db.query(
-      `SELECT 1 FROM workout_blocks wb
+      `SELECT wb.result_unit FROM workout_blocks wb
        JOIN workouts w ON w.id = wb.workout_id
        JOIN training_plans tp ON tp.id = w.training_plan_id
        WHERE wb.id = ? AND wb.gym_id = ? AND tp.member_id = ? AND wb.deleted_at IS NULL`,
@@ -1423,11 +1445,16 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
     );
     if (blockRows.length === 0) return res.status(403).json({ error: 'You can only log against your own training plan.' });
 
+    // #1232: the result is judged against the block's configured unit, and
+    // that unit is snapshotted onto the log beside the value.
+    const result = parseBlockLogResult(blockRows[0].result_unit ?? null, result_value);
+    if (typeof result === 'string') return res.status(400).json({ error: result });
+
     const row = await insertAndFetch(
-      `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date, started_at, finished_at, result_value, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO workout_block_logs (gym_id, member_id, workout_block_id, logged_date, started_at, finished_at, result_value, result_unit, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, memberId, workout_block_id, logged_date, started_at ?? null, finished_at ?? null,
-       result_value ?? null, notes ?? null],
+       result.value, result.value === null ? null : (blockRows[0].result_unit ?? null), notes ?? null],
       'SELECT * FROM workout_block_logs WHERE id = ?',
       (id) => [id],
     );
@@ -1445,15 +1472,33 @@ meRouter.put('/workout-block-logs/:id', requireRole('member'), requireFeatureEna
   const { started_at, finished_at, result_value, notes } = req.body;
   try {
     const memberId = await resolveMemberId(gymId, ctx);
+    // #1232: a supplied result is judged against the block's *current* unit
+    // and re-snapshots it; an omitted one leaves value and unit as recorded.
+    let resultValue: string | null = null;
+    let resultUnit: string | null = null;
+    if ('result_value' in req.body) {
+      const { rows: unitRows } = await db.query(
+        `SELECT wb.result_unit FROM workout_block_logs wbl
+         JOIN workout_blocks wb ON wb.id = wbl.workout_block_id
+         WHERE wbl.id = ? AND wbl.gym_id = ? AND wbl.member_id = ?`,
+        [req.params.id, gymId, memberId],
+      );
+      if (unitRows.length === 0) return res.status(404).json({ error: 'Log not found' });
+      const result = parseBlockLogResult(unitRows[0].result_unit ?? null, result_value);
+      if (typeof result === 'string') return res.status(400).json({ error: result });
+      resultValue = result.value;
+      resultUnit = result.value === null ? null : (unitRows[0].result_unit ?? null);
+    }
     const { rowCount } = await db.query(
       `UPDATE workout_block_logs SET
         started_at = IF(?, ?, started_at), finished_at = IF(?, ?, finished_at),
-        result_value = IF(?, ?, result_value), notes = IF(?, ?, notes),
+        result_value = IF(?, ?, result_value), result_unit = IF(?, ?, result_unit), notes = IF(?, ?, notes),
         modified_at = UTC_TIMESTAMP(), modified_by_member_id = ?
        WHERE id = ? AND gym_id = ? AND member_id = ?`,
       ['started_at' in req.body ? 1 : 0, started_at ?? null,
        'finished_at' in req.body ? 1 : 0, finished_at ?? null,
-       'result_value' in req.body ? 1 : 0, result_value ?? null,
+       'result_value' in req.body ? 1 : 0, resultValue,
+       'result_value' in req.body ? 1 : 0, resultUnit,
        'notes' in req.body ? 1 : 0, notes ?? null,
        memberId, req.params.id, gymId, memberId],
     );
@@ -1918,7 +1963,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       }
     }
     const params: any[] = [gymId, memberId];
-    let sql = `SELECT um.id, m.email AS member_email
+    let sql = `SELECT um.id, um.status, m.email AS member_email
        FROM user_memberships um
        JOIN members m ON m.id = um.member_id
        WHERE um.gym_id = ? AND um.member_id = ? AND um.status IN ('pending_payment', 'active')`;
@@ -1926,7 +1971,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     // #1108 stage 2: a row awaiting its first payment is the one Pay now is
     // for, ahead of a plan already active.
     sql += " ORDER BY FIELD(um.status, 'pending_payment', 'active'), um.starts_at DESC, um.id DESC";
-    const { rows: umRows } = await db.query<{ id: number; member_email: string }>(sql, params);
+    const { rows: umRows } = await db.query<{ id: number; status: string; member_email: string }>(sql, params);
     if (!umRows[0]) return res.status(404).json({ error: 'No active membership found' });
     const um = umRows[0];
 
@@ -1964,13 +2009,17 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
 
     req.log.info({ orderId, providerOrderId: result.providerOrderId }, 'Provider API call succeeded');
 
+    // #1288: a row awaiting its first payment already has its Billing Event
+    // (written at Save & Pay); a retry links to it so the webhook settles that
+    // one event instead of adding a second for the same charge.
+    const openEventId = um.status === 'pending_payment' ? await findOpenInitialEvent(gymId, um.id) : null;
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
-         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
           consent_given_at, source)
-       VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
-      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, orderId, result.providerOrderId, pageToken, pageTokenExpires],
+       VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
+      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires],
     );
 
     const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;
@@ -2276,7 +2325,9 @@ meRouter.get(
     const { gymId } = ctx;
     try {
       const memberId = await resolveMemberId(gymId, ctx);
-      res.json({ items: await memberProductCatalogue(gymId, memberId) });
+      const filter = parseProfessionalServiceFilter(req.query.professional_service_ids);
+      if (!filter.ok) return res.status(400).json({ error: filter.error });
+      res.json({ items: await memberProductCatalogue(gymId, memberId, filter.ids) });
     } catch (err) {
       next(err);
     }

@@ -53,7 +53,17 @@ Facts learned that the code must respect:
 - The Bundle ID lives in the Xcode project (`PRODUCT_BUNDLE_IDENTIFIER`), not in
   `capacitor.config`. A Google iOS client is bound to it.
 - Simulator builds need an ad-hoc signature plus a `keychain-access-groups` entitlement, or Google
-  Sign-In fails with `keychain error`.
+  Sign-In fails with `keychain error` (a build made with `CODE_SIGNING_ALLOWED=NO` embeds no
+  entitlements at all — use `CODE_SIGN_IDENTITY=-`).
+- Handing Clerk the token is **three calls, not one** (#1285, learned on the first real device and
+  the Android emulator): `authenticateWithGoogleOneTap()` only *returns* a sign-in resource, so
+  `handleGoogleOneTapCallback()` is what activates the session and navigates (without it the app
+  sat on the login with no error); the Google library keeps its own session, so it is cleared with
+  `logout({ provider: 'google' })` before every `login()` (after a Clerk sign-out it silently
+  replayed the previous token, which Clerk refuses as `authorization_invalid`); and the token is
+  requested **with a random `nonce`**, because Clerk refused an Android token (`azp` = the Android
+  client) without one while iOS passed — Clerk's own Android SDK always sets one. Clerk's
+  *Native applications* registration is **not** needed for this.
 - The first WebView load on a clean install is very slow (close to a minute in the simulator):
   show a splash/loading screen.
 - The header currently renders under the status bar: `TopBar` needs `safe-area-inset-top`.
@@ -87,6 +97,45 @@ with Apple; universal links; push.
 - **Apple guideline 4.2.6** (apps generated from a template): Apple may require each gym's app to
   be submitted from the **gym's own Apple Developer account**, not from ours. That would mean one
   account and one D-U-N-S per gym. Read the current text of the guideline before offering this.
+### What a gym that wants its own app needs to know (stage 2, as understood on 2026-10-08)
+
+A gym with its own logo and its own store listing is a **separate app published from the gym's
+own developer account**. The gym owns the app and the account; we build it and upload it from CI
+(a new profile file, its own Firebase/Google clients and an App Store Connect access we are
+invited to, with a limited role or an API key). The two published alternatives are the generic
+*Cordel Fitness* app (one binary, one account, ours) and publishing every gym's app from our
+account, which guideline 4.2.6 is likely to reject.
+
+- **Cost, paid by the gym:** Apple Developer Program 99 USD per year (an organization also needs a
+  D-U-N-S number, the slowest step), Google Play 25 USD once. None of it is ours, and it is not
+  refundable if a store rejects the app.
+- **Approval is not guaranteed, even from the gym's own account.** A reviewer looks at the app
+  itself, and apps that look like the same template with a different skin can be rejected under
+  4.2 (minimum functionality: a web view with little else) or 4.3 (repetitive apps). What helps is
+  what the app already does natively (push, native sign-in, links that open it), content that is
+  specific to the gym (its name, theme, schedule, bookings and members), a demo account and
+  review notes saying it is the members' app for that one gym. None of this is a promise: tell
+  the gym so in writing before it pays.
+- **Start with one gym** as the pilot and learn what the review says before offering it to more.
+- **Beta versions for the gyms (the intent, not built).** A gym should be able to download a beta
+  of its own app when it asks for one. The Cordel → *Mobile builds* page (#1077) is **not** that:
+  it is superadmin-only and lists *our* internal **dev** builds, which are debug-signed and talk
+  to the dev backend, so they are the wrong thing to hand a gym. A gym's beta is a **release**
+  build of **its own app id**, pointing at production, and the standard way to give it out is the
+  store's own testing channel in the gym's own developer account: **TestFlight** on iOS (an
+  internal tester group, or a public link for external testers) and Google Play's **internal or
+  closed testing track** on Android. The gym then shares that invitation or link with whoever
+  should try it, and the stores handle installing and expiry. What would have to be built if a
+  gym should instead find its betas *in our Admin app* (a gym-scoped page, so a gym admin sees
+  only its own app's builds): a mapping from a gym to its app id (none exists today), a
+  gym-facing route behind `tenantContext` and a module permission and feature flag (the Cordel
+  page is `requireSuperadmin` on the platform router and must not be reused as is), release
+  signing in CI (the upload keys and, for iOS, the account), and an *Open in TestFlight* link per
+  iOS build next to Android's Download. Decide this when the first gym asks; the TestFlight / Play
+  links alone may be enough.
+- Read the current text of 4.2, 4.2.6 and 4.3 and of Google Play's policy at that time; this
+  section is not a substitute.
+
 - **Sign in with Apple across Bundle IDs:** check whether Clerk accepts a native Apple token whose
   audience is a different Bundle ID per gym app.
 - **Pre-login branding** (rule 5) is only a sketch.
@@ -174,14 +223,17 @@ because WP3 builds the shell against these choices.
   new surface has to remember a runtime branch. The top inset is `TopBar`'s **own padding**, so
   the strip under the status bar carries the header's themed background rather than the page
   behind it; the bottom inset is the layout's, once, for every route's last control. The two
-  superadmin bars (`AdminBar`, `ImpersonationBanner`) are deliberately untouched — they are
-  support chrome, outside the Theme and outside this.
+  superadmin bars (`AdminBar`, `ImpersonationBanner`) carry the top inset too since #1294 — on an
+  iPhone the *Impersonate* button sat under the status bar — and `TopBar` skips its own for a
+  superadmin, who has one of them above it.
 - **The native Google button does not exist unless it can work.** No bridge, or no Google client
   ids in the build, renders nothing at all and leaves the ordinary email-and-password form —
   rather than a control that fails when tapped. The ids are build args
   (`NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID`, wired through
   `apps/member/Dockerfile` and `deploy-member.yml`), per design rule 1. A dismissed sheet returns
-  no token and is not an error; only the plugin throwing or Clerk refusing the token says so.
+  no token and is not an error; only the plugin throwing or Clerk refusing the token says so — and
+  since #1285 the refusal is shown under the notice (`signInErrorDetail()`), because the three
+  failures of §3's "three calls" all looked identical until it was.
 - **Clerk's own Google button is hidden through `appearance`**, both button shapes and the
   divider with them, *only* when native — on the web `appearance` is `undefined` and the sign-in
   screen is unchanged. WP3b adds the Apple button below the card beside the Google one and
@@ -317,7 +369,15 @@ package).
   member first (`api/src/domain/memberInviteTarget.ts`), cleared afterwards. The email match stays
   the fallback, so invitations issued before this carry no metadata and behave as before; the
   staff-collision guard applies to the ticket path too. A relay-address sign-in now links.
-- **Stage 2 — still to do, and only the owner can close it:** the Apple spike (Services ID, Team ID,
+- **Stage 2a — built, behind a flag, unverified.** The code half needs no Apple account:
+  `appleNativeConfig()` / `appleIdToken()` (`lib/native.ts`), `NativeAppleButton` beside Google's
+  on the sign-in page, Clerk's own Apple button hidden only when the native one is on, and the
+  `com.apple.developer.applesignin` entitlement written by `profile:apply` only when the profile
+  (or `MOBILE_APPLE_SIGN_IN`) enables it. `NEXT_PUBLIC_APPLE_SIGN_IN` is the Members App's switch
+  and is off by default (a build without the capability must show no button). The Clerk exchange
+  is one function, `signInWithAppleToken()` (`lib/nativeSignIn.ts`), written as a **hypothesis**
+  (`oauth_token_apple`), not a result. **No spike result is recorded here.**
+- **Stage 2b — still to do, and only the owner can close it:** the Apple spike (Services ID, Team ID,
   Key ID, private key, the capability, a physical iPhone), the Clerk Apple connection and the
   `apple` provider in `nativePlugins.ts` behind WP2's "absent when it cannot work" rule.
 
@@ -406,10 +466,26 @@ Play Console's own fingerprint is the one an installed release verifies against)
 Developer portal, which the entitlement alone does not grant. `docs/mobile-runbook.md` §2 and
 `docs/go-to-production.md` §6 carry both.
 
+**Simulator result (2026-10-08, #1077):** the shell compiles (`xcodebuild`, iPhone 17 simulator,
+Xcode 27) and loads the Members App; the custom-scheme link reaches the app after iOS's own
+*Open in…?* prompt. The first launch went to **Safari** until the Clerk development host was added
+to `allowNavigation` (`docs/mobile-runbook.md` §2). Not yet run on a device or on Android.
+
 **Known caveat, by design:** some in-app browsers do not trigger a universal link at all — a mail
 client that opens links in its own WebView, and Gmail on Android for a link in its own viewer.
 The link then opens in that browser and the invitation completes there, which is why the flow must
 never depend on the app receiving it.
+
+**Found by testing (dev, 2026-10-08): the invitation email never contains a link on our domain.**
+Clerk sends the invitation, and its button is
+`https://<clerk frontend api>/v1/tickets/accept?ticket=…`, which redirects to `/{locale}/link`
+afterwards. A universal link / App Link only fires for a URL *tapped* on the app's domain, and a
+server redirect does not count, so for a Clerk invitation the association files cannot open the app.
+They still serve any link we write ourselves. The answer built for it: `/link` (`lib/openInApp.ts`)
+shows **Open in the app** / **Continue in the browser** to a phone's browser holding a ticket,
+*before* redeeming it (a ticket is single-use), and the first opens the app's custom scheme
+(`NEXT_PUBLIC_MOBILE_APP_SCHEME`, no offer when unset). Own-domain email links (sending the
+invitation ourselves with `notify: false`) are the alternative if one tap fewer is wanted.
 
 ### WP5 — Production and publication (#1077)
 See `docs/go-to-production.md` §6.

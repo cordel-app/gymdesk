@@ -1,6 +1,6 @@
 You run every hour. Your goal for this iteration: implement exactly one issue from the gymdesk repository (https://github.com/cordel-app/gymdesk).
 
-Fetch open issues sorted by creation date (oldest first), in small pages (5-10 at a time) rather than the whole backlog at once, and process them in order until you find one to implement. Exclude issues of type Task (search with `-type:Task`) — those belong to the `gymdesk-tasks` routine (`skills/routines/gymdesk-tasks.md`). If an issue that reaches you turns out to be of type Task anyway, skip it.
+Fetch open issues sorted by creation date (oldest first), in small pages (5-10 at a time) rather than the whole backlog at once, and process them in order until you find one to implement. Exclude issues of type Task and of type Feature (search with `-type:Task -type:Feature`): Tasks belong to the `gymdesk-tasks` routine (`skills/routines/gymdesk-tasks.md`) and Features to `gymdesk-features` (`skills/routines/gymdesk-features.md`). Every other issue, untyped or of any other type such as Bug, is yours. If an issue that reaches you turns out to be of type Task or Feature anyway, skip it.
 
 For each issue, check the cheap skip conditions first, before reading the full body or comment thread:
 1. Skip (continue to the next issue) if any of these is true:

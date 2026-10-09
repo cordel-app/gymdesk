@@ -1,37 +1,65 @@
 'use client';
 
 import { SignIn } from '@clerk/nextjs';
-import { NativeGoogleButton } from '@/components/NativeGoogleButton';
-import { useIsNative } from '@/lib/useIsNative';
-import { memberTheme, safeArea } from '@/lib/memberChrome';
+import { NativeAppleButton } from '@/components/NativeAppleButton';
+import { appleNativeConfig, nativePlatform } from '@/lib/native';
+import { useNativeGoogleSignIn } from '@/lib/useNativeGoogleSignIn';
+import { memberTheme, noticeStyle, safeArea } from '@/lib/memberChrome';
+import { useTranslations } from 'next-intl';
 
 /**
- * What `appearance` hides in the app. Both button shapes, because Clerk renders
- * the block form or the icon form depending on how many connections the instance
- * has, and the divider with them: with Google gone there is nothing left inside
- * the card for an "or" to separate, and every native option sits below it. WP3b
- * (Sign in with Apple) adds a second button down there and revisits this one set.
+ * What `appearance` hides in the app **when the native Google sheet is not
+ * available** (a build with no Google client ids): Clerk's Google button in both
+ * shapes — a redirect cannot work there, so a button that tries it is worse than
+ * none — and the divider with it, since nothing is left inside the card for an
+ * "or" to separate. When the native sheet *is* available Clerk's button stays, and
+ * `onClickCapture` below swaps its action (#1077), so the app and the web show the
+ * same screen.
  */
-const NATIVE_SIGN_IN_ELEMENTS = {
+const NO_NATIVE_GOOGLE_ELEMENTS = {
   socialButtonsBlockButton__google: { display: 'none' },
   socialButtonsIconButton__google: { display: 'none' },
   dividerRow: { display: 'none' },
 } as const;
 
+/** Clerk's own Apple button, hidden only where the native one takes its place. */
+const NATIVE_APPLE_ELEMENTS = {
+  socialButtonsBlockButton__apple: { display: 'none' },
+  socialButtonsIconButton__apple: { display: 'none' },
+} as const;
+
+const APPLE_NATIVE_ENABLED = process.env.NEXT_PUBLIC_APPLE_SIGN_IN;
+
 /**
- * #1073 (mobile app WP2): inside the native shell, Clerk's own "Continue with
- * Google" is **hidden** and `NativeGoogleButton` takes its place.
- *
- * Not a preference — a redirect-based Google sign-in leaves the app (the
- * 2026-10-04 spike: iOS opens the system browser and the session lands in Safari,
- * not in the WebView), so the button that works is the native sheet. Hiding is
- * through Clerk's `appearance`, which is the one place that component's own
- * controls can be addressed; the rest of `<SignIn />` — email, password, the
- * invitation flow — is untouched, and on the web `appearance` is `undefined` and
- * nothing about this screen changes at all.
+ * #1073 (mobile app WP2), #1077: inside the native shell a tap on Clerk's own
+ * "Continue with Google" runs the **native sheet** instead of Clerk's redirect
+ * (`useNativeGoogleSignIn`), which would leave the app for Safari. The button itself
+ * is Clerk's, so the web and the app look identical. The swap is a capture-phase
+ * click handler on the wrapper that stops the click before Clerk's own handler sees
+ * it; on the web `native` is false and the handler does nothing.
  */
 export default function SignInPage() {
-  const native = useIsNative();
+  const t = useTranslations('native');
+  const google = useNativeGoogleSignIn();
+  const native = google.native;
+  const appleOn = appleNativeConfig(
+    { NEXT_PUBLIC_APPLE_SIGN_IN: APPLE_NATIVE_ENABLED },
+    native ? nativePlatform() : null,
+  );
+  const nativeElements = {
+    ...(google.available ? {} : NO_NATIVE_GOOGLE_ELEMENTS),
+    ...(appleOn ? NATIVE_APPLE_ELEMENTS : {}),
+  };
+
+  function swapGoogleForNative(e: React.MouseEvent<HTMLDivElement>) {
+    if (!google.available) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest?.('.cl-socialButtonsBlockButton__google, .cl-socialButtonsIconButton__google')) {
+      e.preventDefault();
+      e.stopPropagation();
+      void google.signIn();
+    }
+  }
 
   return (
     <main
@@ -48,11 +76,20 @@ export default function SignInPage() {
         background: memberTheme.pageBackground,
       }}
     >
-      <SignIn
-        appearance={native ? { elements: NATIVE_SIGN_IN_ELEMENTS } : undefined}
-      />
-      <div style={{ width: '100%', maxWidth: 400 }}>
-        <NativeGoogleButton />
+      <div style={{ display: 'contents' }} onClickCapture={swapGoogleForNative}>
+        <SignIn appearance={native ? { elements: nativeElements } : undefined} />
+      </div>
+      <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {google.failed && (
+          <p style={{ ...noticeStyle('error'), margin: 0 }}>
+            {t('google_failed')}
+            {/* #1285: the cause. Clerk's own messages are written for the person reading them, and dev has no APP_ENV_LABEL to gate on. */}
+            {google.detail && (
+              <small style={{ display: 'block', marginTop: 6, opacity: 0.8, wordBreak: 'break-word' }}>{google.detail}</small>
+            )}
+          </p>
+        )}
+        <NativeAppleButton />
       </div>
     </main>
   );

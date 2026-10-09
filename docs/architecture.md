@@ -20,6 +20,8 @@
 
 **Architectural decisions**: see `docs/decisions.md` for the settled choices (MySQL, Clerk, no ORM, etc.) — don't re-litigate them.
 
+**What the product does**: `docs/rules.md` states every business rule in plain language — one entry per rule, with the ticket that decided it and the module that enforces it. Start there to learn how billing, bookings, Products, Promotions or the Members App behave; the detailed constraint behind each entry is in `CLAUDE.md`.
+
 ---
 
 ## Overview
@@ -269,7 +271,7 @@ Superadmins can impersonate any active gym user for support and debugging withou
 
 **Frontend — Member app** (`apps/member/src/`):
 - `ImpersonationContext.tsx` — same session shape as admin app, plus a `ready` flag that flips true after the initial `sessionStorage` read so `AppContext` does not fetch `/me/profile` as a bare superadmin on refresh (#415).
-- `AdminBar.tsx` — superadmin-only top strip rendered above the `TopBar` in the layout; shows "Impersonate" button (via `MemberImpersonationDialog`) when not impersonating, or `ImpersonationBanner` when impersonating.
+- `AdminBar.tsx` — superadmin-only top strip rendered above the `TopBar` in the layout; shows "Impersonate" and "Log out" buttons (via `MemberImpersonationDialog` / `LogoutConfirmDialog`) when not impersonating, or `ImpersonationBanner` when impersonating.
 - `MemberImpersonationDialog.tsx` — uses raw `fetch` (not `apiFetch`) since `gymId` may not yet be resolved in `AppContext` when impersonation starts; calls `GET /targets` and `POST /:targetId` with `{ targetType }` body. The member app filters results to `type === 'member'` — impersonating staff would leave `tenantCtx.role` as the staff role and `/me/profile` (`requireRole('member')`) would 403 (#415).
 - `ImpersonationBanner.tsx` — amber top bar with stop button; calls `POST /platform/impersonation/stop`.
 - `AppContext.tsx` — exposes `isSuperadmin` (via `useUser()` + Clerk `publicMetadata`); consumes `useImpersonation()` reactively (`ImpersonationProvider` wraps `AppProvider` in `layout.tsx`, not the other way around) so its data-loading effect re-runs — and resets `loading`/`isLinked` — whenever impersonation starts, stops, or switches target. Adds `x-impersonate-as` to every `/me/*` call it makes (`/me/gyms`, `/me/profile`, `/me/centers`, `/me/notifications/count`), not just the initial gyms call (#362 fix — previously only `/me/gyms` carried the header and the effect never re-ran on impersonation change, leaving Home's Next Booking/Membership stuck on `Loading...` under impersonation). **Gotcha — a bare superadmin has no member identity (#415).** `GET /me/profile` is `requireRole('member')`; without `x-impersonate-as`, `tenantContext` assigns the superadmin `role: 'admin'` and the handler returns 403. `AppContext` therefore skips `/me/profile` until an impersonation session is active, prefers `session.gymId` when picking the gym, and Home renders a Support-mode prompt instead of infinite "Loading…" widgets. After impersonation starts, `/me/profile` runs with the header and `isLinked` becomes true — member tiles then behave like a genuine member session.
@@ -783,6 +785,21 @@ Rules the engine implements:
 The admin frontend renders it as its own `BILLING SIMULATION` section of the Member expanded row (`[locale]/members/MemberBillingSimulation.tsx`) — never inside a Membership Plan card (#634 §13) — and remounts it whenever the Member's plans change.
 
 ---
+
+### Mobile builds (#1077 — no migration)
+
+Cordel → Mobile builds lists the test builds of the mobile apps and serves them for download. It is **read-only and has no table**: `.github/workflows/mobile-build.yml` is the only writer, through `.github/scripts/publish-mobile-build.sh`, which uploads each build to the environment's bucket as
+
+```
+cordel/mobile-builds/<app id>/<platform>/<file>         (platform: android — the only one published)
+cordel/mobile-builds/<app id>/<platform>/<file>.json    (the sidecar)
+```
+
+and prunes to the newest 20 per app and platform (`MOBILE_BUILD_RETENTION`). The sidecar carries app id and name, environment, platform, version, build number, git sha, build time and file name (required) and sha256, signer SHA-1 and the run URL (optional). It is published for every run **except a pull request's**. Only **Android** is published: a signed iOS app cannot be installed from a downloaded file, so the page carries an *Open in TestFlight* button instead (the response's `testflight_url`, from `MOBILE_TESTFLIGHT_URL`, validated to be a `https://testflight.apple.com/…` link and `null` — a disabled button — until it is set), and the unsigned iOS simulator build is a CI check that stays a workflow artifact; a sidecar for any other platform is skipped without being read.
+
+`GET /platform/mobile-builds` (`api/src/api/platform-mobile-builds.ts`, `requireSuperadmin`) lists the prefix with `listStorageObjects()` (new in `infra/storage.ts`), reads each sidecar and answers the builds newest first; a sidecar that does not describe a build (missing field, platform disagreeing with its folder, a file that is gone) is left out and logged, never repaired. `GET …/:id/download` streams one file through the API as an attachment — the bucket's public origin is never linked, because a debug build is for the people who may open the page. `api/src/domain/mobileBuilds.ts` is the one place that decides all of it: the key layout, the required sidecar fields, and which **build id** a download may name (the id is the base64url of `<app>/<platform>/<file>`; anything that decodes elsewhere, holds a dot-segment, names an unknown platform or is a sidecar is a 404). `api/src/test/mobile-builds.unit.test.ts` also fails the build if the publish script stops writing a field the parser requires or keeps another retention.
+
+Admin: `/{locale}/cordel/mobile-builds` (`app/[locale]/cordel/mobile-builds/page.tsx`, decisions in `lib/mobileBuilds.ts`), an item in the superadmin-only Cordel nav group; it downloads through `pdfFetch()` (a generic authenticated blob GET). Each environment lists its own bucket's builds. Versions come from `apps/mobile/package.json` and the workflow run number (`versionCode` / `CURRENT_PROJECT_VERSION`), and `dev` builds the separate `cordel-fitness-dev` profile (`com.cordel.fitness.dev`). See `docs/mobile-runbook.md` §5b.
 
 ## Backend Route Registration (`index.ts`)
 

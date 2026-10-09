@@ -61,7 +61,7 @@ async function createMember(gid: string, name: string, clerkUserId: string | nul
 }
 
 /** An active plan with one workout and one block; returns the block's id. */
-async function createBlock(gid: string, mid: number): Promise<number> {
+async function createBlock(gid: string, mid: number, resultUnit: string | null = null): Promise<number> {
   const { insertId: planId } = await db.query(
     `INSERT INTO training_plans (gym_id, member_id, name, status, start_date)
      VALUES (?, ?, 'Block Log Plan', 'active', CURRENT_DATE)`,
@@ -76,8 +76,8 @@ async function createBlock(gid: string, mid: number): Promise<number> {
     [gid, planId],
   );
   const { insertId } = await db.query(
-    `INSERT INTO workout_blocks (gym_id, workout_id, position, type) VALUES (?, ?, 1, 'Circuit')`,
-    [gid, workoutId],
+    `INSERT INTO workout_blocks (gym_id, workout_id, position, type, result_unit) VALUES (?, ?, 1, 'Circuit', ?)`,
+    [gid, workoutId, resultUnit],
   );
   return insertId;
 }
@@ -90,7 +90,7 @@ beforeAll(async () => {
   await createTestMembership(gymId, 'member');
 
   memberId = await createMember(gymId, 'Block Log Member', TEST_USER_ID);
-  blockId = await createBlock(gymId, memberId);
+  blockId = await createBlock(gymId, memberId, 'minutes');
 
   const foreignMemberId = await createMember(gymId, 'Other Member', null);
   foreignMemberBlockId = await createBlock(gymId, foreignMemberId);
@@ -109,14 +109,14 @@ describe('POST /me/workout-block-logs (#1009)', () => {
     const res = await asMember(request.post('/me/workout-block-logs')).send({
       workout_block_id: blockId,
       logged_date: '2026-10-02',
-      result_value: '21:04',
+      result_value: '21.5',
       notes: 'Felt strong',
     }).expect(201);
 
     expect(res.body.workout_block_id).toBe(blockId);
     expect(res.body.member_id).toBe(memberId);
     expect(res.body.gym_id).toBe(gymId);
-    expect(res.body.result_value).toBe('21:04');
+    expect(res.body.result_value).toBe('21.5');
     expect(res.body.notes).toBe('Felt strong');
   });
 
@@ -124,13 +124,13 @@ describe('POST /me/workout-block-logs (#1009)', () => {
     const res = await asMember(request.post('/me/workout-block-logs')).send({
       workout_block_id: blockId,
       logged_date: '2026-10-03',
-      result_value: '7 rounds + 3',
+      result_value: '7',
     }).expect(201);
 
     // The snapshot migration 209 dropped. A block has no single result type to
     // snapshot, so the row must not grow one back under any name.
     expect(res.body).not.toHaveProperty('result_type');
-    expect(res.body.result_value).toBe('7 rounds + 3');
+    expect(res.body.result_value).toBe('7');
 
     const { rows } = await db.query<Record<string, unknown>>(
       'SELECT * FROM workout_block_logs WHERE id = ?', [res.body.id],
@@ -150,11 +150,11 @@ describe('POST /me/workout-block-logs (#1009)', () => {
     expect(res.body.notes).toBeNull();
   });
 
-  it('stores a result value whose meaning no legacy vocabulary could express', async () => {
+  it('stores numeric result values of any magnitude for a unit block', async () => {
     // `rpe`, `rest_time`, `pace` and `speed` have no member of migration 042's
     // CHECK vocabulary, which is part of why that column is gone rather than
     // re-vocabularied — none of these may be refused.
-    for (const [index, value] of ['RPE 8.5', '90s rest', '4:30 /km', '14.2 km/h'].entries()) {
+    for (const [index, value] of ['8.5', '90', '4.5', '14.2'].entries()) {
       const res = await asMember(request.post('/me/workout-block-logs')).send({
         workout_block_id: blockId,
         logged_date: `2026-11-0${index + 1}`,
@@ -211,19 +211,31 @@ describe('POST /me/workout-block-logs (#1009)', () => {
   });
 });
 
+describe('result value vs block unit (#1232)', () => {
+  it('refuses a result value on a block with no result unit', async () => {
+    const noUnitBlockId = await createBlock(gymId, memberId);
+    await asMember(request.post('/me/workout-block-logs')).send({
+      workout_block_id: noUnitBlockId, logged_date: '2026-10-02', result_value: '5',
+    }).expect(400);
+    await asMember(request.post('/me/workout-block-logs')).send({
+      workout_block_id: noUnitBlockId, logged_date: '2026-10-02',
+    }).expect(201);
+  });
+});
+
 describe('PUT /me/workout-block-logs/:id (#1009)', () => {
   it('edits the caller\'s own log without reintroducing a result type', async () => {
     const created = await asMember(request.post('/me/workout-block-logs')).send({
       workout_block_id: blockId,
       logged_date: '2026-10-05',
-      result_value: '18:00',
+      result_value: '18',
     }).expect(201);
 
     const res = await asMember(request.put(`/me/workout-block-logs/${created.body.id}`))
-      .send({ result_value: '17:42', notes: 'PR' })
+      .send({ result_value: '17.7', notes: 'PR' })
       .expect(200);
 
-    expect(res.body.result_value).toBe('17:42');
+    expect(res.body.result_value).toBe('17.7');
     expect(res.body.notes).toBe('PR');
     expect(res.body).not.toHaveProperty('result_type');
     expect(res.body.modified_by_member_id).toBe(memberId);
@@ -240,7 +252,7 @@ describe('PUT /me/workout-block-logs/:id (#1009)', () => {
     );
 
     await asMember(request.put(`/me/workout-block-logs/${insertId}`))
-      .send({ result_value: 'mine now' })
+      .send({ result_value: '5' })
       .expect(404);
   });
 });

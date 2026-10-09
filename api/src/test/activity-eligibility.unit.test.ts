@@ -22,7 +22,6 @@ describe('decideServiceEligibility', () => {
   it('an activity naming no service is open to every member (Q3 open)', () => {
     const d = decideServiceEligibility([], []);
     expect(d.eligible).toBe(true);
-    expect(d.packageBacked).toBe(false);
   });
 
   it('a member with no sessions on any required service is not eligible, and the refusal names the services', () => {
@@ -43,12 +42,4 @@ describe('decideServiceEligibility', () => {
     expect(decideServiceEligibility([{ id: 1, name: 'PT' }], [service(1, 0)]).eligible).toBe(false);
   });
 
-  it('is package-backed only when every matching source is a purchased package', () => {
-    const required = [{ id: 1, name: 'PT' }];
-    expect(decideServiceEligibility(required, [service(1, 5, ['class_package'])]).packageBacked).toBe(true);
-    expect(decideServiceEligibility(required, [service(1, 5, ['promotion_session'])]).packageBacked).toBe(false);
-    expect(decideServiceEligibility(required, [service(1, 5, ['class_package', 'membership_service'])]).packageBacked).toBe(false);
-    // A package on an *unrequired* service does not make the decision package-backed.
-    expect(decideServiceEligibility(required, [service(1, 5, ['membership_service']), service(9, 5)]).packageBacked).toBe(false);
-  });
 });

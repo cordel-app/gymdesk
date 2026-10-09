@@ -46,6 +46,7 @@ describe('#1052: Website Integration leaves Configuration', () => {
     expect(system!.items.map((i) => i.href)).toEqual([
       '/{{locale}}/audit',
       '/{{locale}}/themes',
+      '/{{locale}}/localization',
       '/{{locale}}/recycle-bin',
     ]);
   });

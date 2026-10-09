@@ -20,7 +20,7 @@ export interface HierBlock {
   id: number; position: number; name: string | null; description: string | null;
   type: string; rounds: number | null; duration_seconds: number | null;
   work_seconds: number | null; rest_seconds: number | null; is_optional: number | boolean;
-  notes: string | null; exercises: HierExercise[] | null;
+  notes: string | null; result_unit?: string | null; exercises: HierExercise[] | null;
 }
 
 export type TFn = (key: string, values?: Record<string, any>) => string;

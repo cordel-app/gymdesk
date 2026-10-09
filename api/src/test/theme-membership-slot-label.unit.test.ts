@@ -106,9 +106,9 @@ describe('nothing else about the slot moved (#1151)', () => {
       // #1158's `next_bookings` is labelled after the dashboard card it paints
       // (*My Next Bookings*), which is also what the Members App calls that
       // card — a slot's label is the Members App's own name for its section.
-      en: { training: 'My Training Plan', nutrition: 'My Nutrition', calendar: 'Calendar', bookings: 'My Bookings', next_bookings: 'My Next Bookings', personal_goals: 'My Goals', background: 'General background' },
-      es: { training: 'Mi plan de entrenamiento', nutrition: 'Mi nutrición', calendar: 'Calendario', bookings: 'Mis reservas', next_bookings: 'Mis próximas reservas', personal_goals: 'Mis objetivos', background: 'Fondo general' },
-      ca: { training: "El meu pla d'entrenament", nutrition: 'La meva nutrició', calendar: 'Calendari', bookings: 'Les meves reserves', next_bookings: 'Les meves properes reserves', personal_goals: 'Els meus objectius', background: 'Fons general' },
+      en: { training: 'My Training', nutrition: 'My Nutrition', calendar: 'Calendar', bookings: 'My Bookings', next_bookings: 'My Next Bookings', personal_goals: 'My Goals', background: 'General background' },
+      es: { training: 'Mi entrenamiento', nutrition: 'Mi nutrición', calendar: 'Calendario', bookings: 'Mis reservas', next_bookings: 'Mis próximas reservas', personal_goals: 'Mis objetivos', background: 'Fondo general' },
+      ca: { training: "El meu entrenament", nutrition: 'La meva nutrició', calendar: 'Calendari', bookings: 'Les meves reserves', next_bookings: 'Les meves properes reserves', personal_goals: 'Els meus objectius', background: 'Fons general' },
     };
     for (const code of LOCALE_CODES) {
       const admin = messages('admin', code);

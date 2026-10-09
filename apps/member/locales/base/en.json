@@ -15,6 +15,8 @@
     "no_membership": "No active membership.",
     "products_services": "My Products",
     "active_products": "{count, plural, one {# active product} other {# active products}}",
+    "no_plan": "No plan",
+    "additional_products": "{count, plural, one {# additional product} other {# additional products}}",
     "expires_on": "Expires {date}",
     "class_credits": "Class credits",
     "credits_remaining": "sessions remaining",
@@ -22,7 +24,6 @@
     "greeting_afternoon": "Good afternoon, {name}",
     "greeting_evening": "Good evening, {name}",
     "view_booking": "View booking",
-    "browse_calendar": "Browse calendar",
     "alerts_view_all": "View alerts",
     "nutrition_today": "Today's Nutrition Plan",
     "goals": "Goals",
@@ -30,13 +31,20 @@
   },
   "nav": {
     "calendar": "Calendar",
-    "training": "My Training Plan",
+    "training": "My Training",
     "bookings": "My Bookings",
     "nutrition": "My Nutrition",
     "membership": "My Products",
     "profile": "Profile",
     "alerts": "Alerts",
-    "goals": "My Goals"
+    "goals": "My Goals",
+    "user_menu": "Account menu",
+    "logout": "Log out",
+    "logout_confirm_title": "Log out?",
+    "logout_confirm_body": "You will be signed out of this account on this device.",
+    "logout_cancel": "Cancel",
+    "logout_impersonating_title": "Stop impersonating?",
+    "logout_impersonating_body": "You will leave this member's account and return to Support mode."
   },
   "common": {
     "error": "Something went wrong.",
@@ -45,7 +53,7 @@
     "no_gym_available": "No gym available"
   },
   "training": {
-    "title": "My Training Plan",
+    "title": "My Training",
     "loading": "Loading…",
     "empty": "No training plan assigned yet.",
     "no_plan_today": "No plan for this day.",
@@ -67,6 +75,7 @@
     "add_set": "+ Add set",
     "save_log": "Save log",
     "mark_done": "Mark done",
+    "block_rounds": "{count, plural, one {# round} other {# rounds}}",
     "block_type_standard": "Standard",
     "block_type_superset": "Superset",
     "block_type_triset": "Triset",
@@ -75,7 +84,18 @@
     "block_type_emom": "EMOM",
     "block_type_amrap": "AMRAP",
     "block_type_tabata": "Tabata",
-    "block_result": "Result"
+    "block_result": "Result",
+    "result_unit_rounds": "Rounds",
+    "result_unit_reps": "Reps",
+    "result_unit_seconds": "Seconds",
+    "result_unit_minutes": "Minutes",
+    "result_unit_meters": "Meters",
+    "result_unit_calories": "Calories",
+    "done": "Done!",
+    "log_date": "Date",
+    "new_entry": "New entry",
+    "add_log": "Add log entry",
+    "new_chip": "New"
   },
   "profile": {
     "title": "My profile",
@@ -101,7 +121,15 @@
     "payment_status_ok": "Up to date",
     "payment_status_pending": "Payment pending",
     "payment_status_failed": "Payment failed",
-    "no_center": "No center set"
+    "no_center": "No center set",
+    "label_clerk_status": "Clerk Status",
+    "label_clerk_invitation": "Clerk Invitation",
+    "clerk_status_enrolled_on": "Enrolled · {date}",
+    "clerk_status_enrolled": "Enrolled",
+    "clerk_status_not_enrolled": "Not enrolled",
+    "clerk_invitation_invited_on": "Invited · {date}",
+    "clerk_invitation_invited": "Invited",
+    "clerk_invitation_none": "None"
   },
   "packages": {
     "title": "My packages",
@@ -167,6 +195,7 @@
     "state_waitlist_available": "Join waitlist",
     "state_full": "Full",
     "action_book": "Book",
+    "buy_sessions_cta": "Buy sessions to book this class",
     "action_join_waitlist": "Join waitlist",
     "action_cancel_booking": "Cancel booking",
     "action_leave_waitlist": "Leave waitlist",
@@ -242,6 +271,8 @@
     "benefits_heading": "Included benefits",
     "products_heading": "Additional Products and Services",
     "products_empty": "Your gym does not offer any additional products or services yet.",
+    "products_filtered_notice": "Showing the products that unlock the class you tried to book.",
+    "products_show_all": "Show all products",
     "past_plans_heading": "Past Membership Plans",
     "add_plan": "+ Add plan",
     "add_plan_title": "Choose a Membership Plan",
@@ -249,6 +280,9 @@
     "add_plan_loading": "Loading plans…",
     "add_plan_close": "Close",
     "plan_final_price": "Final price (VAT included)",
+    "plan_benefits_heading": "Included benefits",
+    "plan_benefit_mandatory": "Mandatory",
+    "plan_benefit_optional": "Optional",
     "choose_plan": "Choose this plan",
     "choose_plan_title": "Confirm your plan",
     "choose_plan_body": "You are choosing {name}. Your first payment will be {price}. You will enter your card on your gym’s secure payment page.",
@@ -383,6 +417,10 @@
     "retry": "Try again"
   },
   "link": {
+    "open_in_app_title": "Open in the app",
+    "open_in_app_hint": "If you have the app installed, open your invitation there.",
+    "open_in_app_button": "Open the app",
+    "continue_in_browser": "Continue in the browser",
     "linking": "Setting up your account…",
     "error_no_invitation": "No pending invitation found for this account.",
     "error_generic": "Something went wrong.",
@@ -577,7 +615,9 @@
     "offline_body": "Check your connection and try again.",
     "retry": "Try again",
     "continue_with_google": "Continue with Google",
+    "continue_with_apple": "Continue with Apple",
     "signing_in": "Signing in…",
-    "google_failed": "Google sign-in didn't work. Please try again."
+    "google_failed": "Google sign-in didn't work. Please try again.",
+    "apple_failed": "Apple sign-in didn't work. Please try again."
   }
 }

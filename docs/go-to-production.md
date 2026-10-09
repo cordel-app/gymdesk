@@ -744,6 +744,9 @@ hardening:
       to `https://admin.vdicube.com/api/health/runs` on 2026-10-06, after the relay was live on
       dev and 10/10 queries from Grafana Cloud succeeded, so closing the API host no longer
       fires them. A production stack points its rules at the production admin host the same way.
+      The Synthetic Monitoring check `gymdesk-run-freshness-dev` was missed by that repoint
+      and was repointed the same way on 2026-10-09; a production stack's check needs the
+      production admin host too.
 - [x] **Decide the `/billing/` GitHub Actions IP allowlist** (#783): removed, not
       automated — replaced by a per-route limiter on the internal run routes. The
       allowlist never ran (no nginx on corback), so nothing needs undoing on a server; what is
@@ -1311,6 +1314,11 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 ### Sign-in
 
 - [ ] Clerk Production exists (§2) and the Members App is built with its `pk_live_…` key.
+- [ ] **Put the Production Clerk Frontend API host in the shell's `allowNavigation`**
+      (`apps/mobile/profiles/cordel-fitness.json` or `MOBILE_ALLOW_NAVIGATION`). Anything not on
+      that list opens in Safari, so a missing host sends the sign-in out of the app. Seen on the
+      development instance (`<instance>.clerk.accounts.dev`, simulator run 2026-10-08); confirm
+      which host production uses and test a fresh install.
 - [ ] Set `NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` and `NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID` as GitHub
       secrets (#1073 — they are build args of `apps/member/Dockerfile`, baked into the bundle, so
       a change needs a rebuild). Until both are set the native Google button is not rendered at
@@ -1325,9 +1333,12 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 - [ ] **Sign in with Apple** (App Store guideline 4.8, equivalent privacy-preserving option
       next to Google): Apple connection in Clerk with Services ID, Team ID, Key ID and private key;
       *Sign in with Apple* capability on the app. Needs its own spike first
-      (`docs/mobile-app.md` WP3b).
-- [ ] Decide how a member who hides their email on Apple (private relay address) is linked:
-      `POST /me/link` matches by email + `gym_id`, which a relay address never equals.
+      (`docs/mobile-app.md` WP3b). The button and entitlement are built behind flags (#1075):
+      set GitHub variable `APPLE_SIGN_IN=true` for the Members App build and
+      `MOBILE_APPLE_SIGN_IN=true` for the shell, then `profile:apply`; confirm
+      `lib/nativeSignIn.ts`'s Clerk exchange on a device and record the result.
+- [x] Decide how a member who hides their email on Apple (private relay address) is linked:
+      by the invitation's member id (`POST /me/link`, #1075 stage 1); email is the fallback.
 - [ ] Verify a **first-time** Google sign-in by an *invited* member under Clerk's restricted
       mode (the spike only used a user that already existed).
 - [ ] Note for testing: Clerk's *Block email subaddresses* is on for Google, so `name+tag@…`
@@ -1353,7 +1364,9 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 - [ ] Check an invitation link opens the app from **Notes** and from **Mail**, on iOS and
       Android, and that the same link still works in a browser with the app not installed. Known
       caveat, not a defect: some in-app browsers (a mail client's own WebView, Gmail on Android)
-      do not trigger a universal link at all.
+      do not trigger a universal link at all. A Clerk invitation email always links to Clerk's own
+      domain, so its tap opens the browser; `/link` then offers *Open in the app* (set GitHub variable
+      `MOBILE_APP_SCHEME` to the profile's custom URL scheme, `com.cordel.fitness`).
 - [ ] Push: set `FCM_SERVICE_ACCOUNTS` in the production API environment (#1072 — a JSON object
       keyed by app id; set it **base64-encoded** in GitHub, since `deploy.yml` writes the API's
       environment as one `KEY=value` line each into an env file, #1192) and `MOBILE_DEFAULT_APP_ID` if the
@@ -1367,6 +1380,17 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 
 ### Store submission
 
+- [ ] *(after the Apple account exists)* **TestFlight link on the Mobile builds page.** For an iOS
+      build the page should offer *Open in TestFlight* instead of a download (a signed app cannot
+      be installed from a downloaded file). Needs the app in App Store Connect and its public
+      link; keep it as a per-environment GitHub variable written by CI into the build's sidecar
+      as an optional field, and have the page show the button when it is present. The simulator
+      builds can stop being published to the page then (they cannot be installed on a phone).
+- [ ] *(when a gym asks for betas)* Decide how a gym gets its beta: the store testing channels in
+      its own developer account (TestFlight, Play internal/closed testing), or a gym-scoped page
+      in the Admin app. See `docs/mobile-app.md`, "What a gym that wants its own app needs to
+      know".
+
 - [ ] Privacy policy URL, store listing text, screenshots, age rating, data-safety / privacy
       nutrition labels.
 - [ ] A **demo account** for App Review (sign-in is by invitation, so a reviewer cannot
@@ -1376,6 +1400,9 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
 - [ ] TestFlight and Google Play internal testing track, then a physical-device pass on each
       platform (the simulator is not enough for push or for Sign in with Apple).
 - [ ] CI that builds the iOS app on a macOS runner (the build needs the current Xcode, which may
-      require a newer macOS than a developer's Mac).
+      require a newer macOS than a developer's Mac). *Partly done (#1077):* `mobile-build.yml`
+      builds an **unsigned simulator** app and an Android debug APK; the **signed** iOS build and
+      TestFlight upload still need the Apple Developer account, and an Android **release** build
+      still needs the upload key and Play App Signing.
 - [ ] Web releases reach the app without a store review, native changes do not: agree who
       releases what, and keep an error screen with retry for when the web is down.

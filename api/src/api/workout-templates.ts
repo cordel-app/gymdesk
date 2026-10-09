@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
+import { parseBlockResultUnit } from '../domain/blockResultUnits';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { getReferences } from '../domain/references';
@@ -63,7 +64,7 @@ async function blockExists(blockId: string, templateId: string, gymId: string): 
 function parseBlockBody(body: Record<string, unknown>):
   | { name: string | null; description: string | null; type: string;
       rounds: number | null; duration_seconds: number | null; work_seconds: number | null; rest_seconds: number | null;
-      is_optional: boolean; notes: string | null }
+      is_optional: boolean; notes: string | null; result_unit: string | null }
   | string
 {
   const name = body.name as string | null | undefined;
@@ -71,6 +72,8 @@ function parseBlockBody(body: Record<string, unknown>):
   const type = body.type as string | undefined;
   const notes = body.notes as string | null | undefined;
   if (!type || !BLOCK_TYPES.includes(type)) return `type must be one of: ${BLOCK_TYPES.join(', ')}`;
+  const unitResult = parseBlockResultUnit(type, body.result_unit);
+  if (typeof unitResult === 'string') return unitResult;
   const toIntOrNull = (v: unknown) => (v == null || v === '' ? null : Number(v));
   return {
     name: name?.trim() || null,
@@ -82,6 +85,7 @@ function parseBlockBody(body: Record<string, unknown>):
     rest_seconds: toIntOrNull(body.rest_seconds),
     is_optional: Boolean(body.is_optional),
     notes: notes ?? null,
+    result_unit: unitResult.unit,
   };
 }
 
@@ -230,7 +234,7 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
               'id', b.id, 'position', b.position, 'name', b.name, 'description', b.description,
               'type', b.type, 'rounds', b.rounds,
               'duration_seconds', b.duration_seconds, 'work_seconds', b.work_seconds, 'rest_seconds', b.rest_seconds,
-              'is_optional', b.is_optional, 'notes', b.notes,
+              'is_optional', b.is_optional, 'notes', b.notes, 'result_unit', b.result_unit,
               'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                 SELECT JSON_OBJECT(
                     'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,
@@ -384,10 +388,10 @@ workoutTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), as
         const { insertId: newBlockId } = await tx.query(
           `INSERT INTO workout_template_blocks
             (gym_id, workout_template_id, position, name, description, type,
-             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [gymId, newId, block.position, block.name, block.description, block.type,
-           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes],
+           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes, block.result_unit ?? null],
         );
 
         const { rows: exercises } = await tx.query(
@@ -447,10 +451,10 @@ workoutTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async 
         const { insertId: newBlockId } = await tx.query(
           `INSERT INTO workout_template_blocks
             (gym_id, workout_template_id, position, name, description, type,
-             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [gymId, newId, block.position, block.name, block.description, block.type,
-           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes],
+           block.rounds, block.duration_seconds, block.work_seconds, block.rest_seconds, block.is_optional, block.notes, block.result_unit ?? null],
         );
         const { rows: exercises } = await tx.query(
           'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL ORDER BY position ASC',
@@ -506,10 +510,10 @@ workoutTemplatesRouter.post('/:id/blocks', requireModuleWrite('TRAINING'), async
     const row = await insertAndFetch(
       `INSERT INTO workout_template_blocks
         (gym_id, workout_template_id, position, name, description, type,
-         rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit, modified_by_membership_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, id, posRows[0].next_position, parsed.name, parsed.description, parsed.type,
-       parsed.rounds, parsed.duration_seconds, parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes,
+       parsed.rounds, parsed.duration_seconds, parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes, parsed.result_unit ?? null,
        gymMembershipId],
       'SELECT * FROM workout_template_blocks WHERE id = ?',
       (blockId) => [blockId],
@@ -621,11 +625,11 @@ workoutTemplatesRouter.put('/:id/blocks/:blockId', requireModuleWrite('TRAINING'
     const { rowCount } = await db.query(
       `UPDATE workout_template_blocks SET
         name = ?, description = ?, type = ?, rounds = ?, duration_seconds = ?,
-        work_seconds = ?, rest_seconds = ?, is_optional = ?, notes = ?,
+        work_seconds = ?, rest_seconds = ?, is_optional = ?, notes = ?, result_unit = ?,
         modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
        WHERE id = ? AND workout_template_id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [parsed.name, parsed.description, parsed.type, parsed.rounds, parsed.duration_seconds,
-       parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes, gymMembershipId,
+       parsed.work_seconds, parsed.rest_seconds, parsed.is_optional, parsed.notes, parsed.result_unit, gymMembershipId,
        blockId, id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Block not found' });
@@ -655,10 +659,10 @@ workoutTemplatesRouter.post('/:id/blocks/:blockId/duplicate', requireModuleWrite
       const { insertId: newBlockId } = await tx.query(
         `INSERT INTO workout_template_blocks
           (gym_id, workout_template_id, position, name, description, type,
-           rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           rounds, duration_seconds, work_seconds, rest_seconds, is_optional, notes, result_unit)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, id, posRows[0].next_pos, src.name, src.description, src.type,
-         src.rounds, src.duration_seconds, src.work_seconds, src.rest_seconds, src.is_optional, src.notes],
+         src.rounds, src.duration_seconds, src.work_seconds, src.rest_seconds, src.is_optional, src.notes, src.result_unit ?? null],
       );
       const { rows: exercises } = await tx.query(
         'SELECT * FROM workout_template_exercises WHERE workout_template_block_id = ? AND deleted_at IS NULL ORDER BY position ASC',

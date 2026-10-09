@@ -11,6 +11,7 @@ import { AppShell } from '@/components/AppShell';
 import { ToastProvider } from '@/components/Toast';
 import { ThemeProvider } from '@/components/ThemeProvider';
 import { publicAppTitle } from '@/lib/appTitle';
+import { THEME_SNAPSHOT_SCRIPT } from '@/lib/themeSnapshot';
 
 // #1114 — the browser title names the application and the environment
 // (`(Dev) Admin - Cordel.tech Fitness`), and `lib/appTitle.ts` is the one place
@@ -36,7 +37,11 @@ export default async function LocaleLayout({
 
   return (
     <ClerkProvider localization={localization}>
-      <html lang={params.locale}>
+      <html lang={params.locale} suppressHydrationWarning>
+        <head>
+          {/* #1299 — replays the last applied theme before first paint. */}
+          <script dangerouslySetInnerHTML={{ __html: THEME_SNAPSHOT_SCRIPT }} />
+        </head>
         <body style={{ margin: 0, fontFamily: 'system-ui, sans-serif', background: 'var(--gd-app-bg, #f5f5f5)', color: 'var(--gd-text, #111827)', fontSize: 16 }}>
           <NextIntlClientProvider messages={messages}>
             <ToastProvider>

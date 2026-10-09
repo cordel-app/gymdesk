@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
 import {
+  appIdFromInfo,
+  appleIdToken,
+  appleNativeConfig,
   NATIVE_PLATFORMS,
   appUrlOpenPath,
   bridgeNativePlatform,
@@ -286,34 +289,35 @@ describe('safe areas', () => {
 
 describe('which sign-in button renders', () => {
   const page = read('app', '[locale]', 'sign-in', '[[...sign-in]]', 'page.tsx');
-  const button = read('components', 'NativeGoogleButton.tsx');
+  const hook = read('lib', 'useNativeGoogleSignIn.ts');
 
-  it('hides Clerk’s Google button only in the app', () => {
-    // `appearance` is `undefined` on the web, so the sign-in screen is byte-for-
-    // byte what it was — the ticket's first acceptance criterion.
-    expect(page).toContain('socialButtonsBlockButton__google');
-    expect(page).toContain('socialButtonsIconButton__google');
-    expect(page).toContain('appearance={native ? { elements: NATIVE_SIGN_IN_ELEMENTS } : undefined}');
+  it('keeps Clerk’s Google button, so the app and the web look the same (#1077)', () => {
+    // Clerk's button stays — logo, label and place — and a tap on it is swapped for
+    // the native sheet. It is hidden only where the sheet cannot work.
+    expect(page).toContain('onClickCapture={swapGoogleForNative}');
+    expect(page).toContain('.cl-socialButtonsBlockButton__google');
+    expect(page).toContain('...(google.available ? {} : NO_NATIVE_GOOGLE_ELEMENTS)');
+    expect(page).toContain('appearance={native ? { elements: nativeElements } : undefined}');
+    expect(existsSync(join(SRC, 'components', 'NativeGoogleButton.tsx'))).toBe(false);
   });
 
-  it('renders the native button only in the app, and only when it can work', () => {
-    expect(page).toContain('<NativeGoogleButton />');
-    expect(button).toContain('const native = useIsNative();');
-    expect(button).toContain('if (!native || !config) return null;');
+  it('swaps the action only in the app, and only when the sheet can work', () => {
+    expect(hook).toContain('const available = native && config !== null;');
+    expect(page).toContain('if (!google.available) return;');
   });
 
   it('resolves “native” after mount rather than during render', () => {
     // Asking during render would make the server emit the web markup and the
     // client the native markup — a hydration mismatch React resolves by throwing
     // the client tree away.
-    const hook = readFileSync(join(SRC, 'lib', 'useIsNative.ts'), 'utf-8');
-    expect(hook).toContain('useEffect');
-    expect(hook).toContain('useState(false)');
+    const useIsNativeSrc = readFileSync(join(SRC, 'lib', 'useIsNative.ts'), 'utf-8');
+    expect(useIsNativeSrc).toContain('useEffect');
+    expect(useIsNativeSrc).toContain('useState(false)');
   });
 
   it('hands Clerk the native token rather than a redirect', () => {
-    expect(button).toContain('authenticateWithGoogleOneTap');
-    expect(button).not.toContain('window.location');
+    expect(hook).toContain('authenticateWithGoogleOneTap');
+    expect(hook).not.toContain('window.location');
   });
 });
 
@@ -333,7 +337,7 @@ describe('the native wiring lives in one place', () => {
   it('registers the device for the signed-in member and nobody else', () => {
     const shell = read('components', 'NativeShell.tsx');
     expect(shell).toContain('if (!isNative() || !member || !gymId) return;');
-    expect(shell).toContain('registerPushToken(latest.current.apiFetch, token.value)');
+    expect(shell).toContain('registerPushToken(latest.current.apiFetch, token.value, appId)');
     expect(shell).toContain('notificationTapPath(latest.current.locale)');
     expect(shell).toContain('appUrlOpenPath(url, latest.current.locale)');
     // The effects key on *who is signed in* and read everything else through a
@@ -348,5 +352,107 @@ describe('the native wiring lives in one place', () => {
     const signOut = link.indexOf('await signOut(');
     expect(unregister).toBeGreaterThan(-1);
     expect(signOut).toBeGreaterThan(unregister);
+  });
+});
+
+describe('appleNativeConfig() (#1075)', () => {
+  it('is on only for iOS with the flag set', () => {
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: 'true' }, 'ios')).toEqual({ enabled: true });
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: '1' }, 'ios')).toEqual({ enabled: true });
+  });
+
+  it('is null without the flag, so no button is rendered', () => {
+    expect(appleNativeConfig({}, 'ios')).toBeNull();
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: '' }, 'ios')).toBeNull();
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: 'false' }, 'ios')).toBeNull();
+  });
+
+  it('is null on Android and the web, whatever is configured', () => {
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: 'true' }, 'android')).toBeNull();
+    expect(appleNativeConfig({ NEXT_PUBLIC_APPLE_SIGN_IN: 'true' }, null)).toBeNull();
+  });
+});
+
+describe('appleIdToken() (#1075)', () => {
+  it('reads nested and flat results', () => {
+    expect(appleIdToken({ provider: 'apple', result: { idToken: ' tok ' } })).toBe('tok');
+    expect(appleIdToken({ idToken: 'tok' })).toBe('tok');
+  });
+
+  it('is null for a cancelled sheet', () => {
+    expect(appleIdToken(null)).toBeNull();
+    expect(appleIdToken({ result: {} })).toBeNull();
+    expect(appleIdToken({ result: { idToken: '  ' } })).toBeNull();
+  });
+});
+
+describe('Sign in with Apple wiring (#1075)', () => {
+  it('mounts the button beside Google and hides Clerk’s own Apple one only when native is on', () => {
+    const page = read('app', '[locale]', 'sign-in', '[[...sign-in]]', 'page.tsx');
+    expect(page).toContain('<NativeAppleButton />');
+    expect(page).toContain('socialButtonsBlockButton__apple');
+    expect(page).toContain('appleNativeConfig(');
+  });
+
+  it('keeps the Clerk exchange in the one function the spike may change', () => {
+    expect(read('components', 'NativeAppleButton.tsx')).toContain('signInWithAppleToken(clerk, token)');
+    expect(read('lib', 'nativeSignIn.ts')).toContain('oauth_token_apple');
+  });
+});
+
+describe('plugin loaders never resolve a bare plugin (#1077)', () => {
+  // Capacitor's plugin Proxy answers `then` with "<Plugin>.then() is not
+  // implemented on <platform>", so resolving a promise with one rejects it — which
+  // is how `appUrlOpen` ended up with no listener on Android.
+  const plugins = read('lib', 'nativePlugins.ts');
+
+  it('boxes every plugin it returns', () => {
+    expect(plugins).not.toMatch(/return (App|PushNotifications|SocialLogin) \?\? null/);
+    expect(plugins).toContain('{ plugin: App }');
+    expect(plugins).toContain('{ plugin: PushNotifications }');
+    expect(plugins).toContain('{ plugin: SocialLogin }');
+  });
+
+  it('reads .plugin at every call site', () => {
+    expect(read('components', 'NativeShell.tsx')).toContain('loadedApp?.plugin');
+    expect(read('components', 'NativeShell.tsx')).toContain('loadedPush?.plugin');
+    expect(read('lib', 'useNativeGoogleSignIn.ts')).toContain('(await loadSocialLogin())?.plugin');
+    expect(read('components', 'NativeAppleButton.tsx')).toContain('(await loadSocialLogin())?.plugin');
+  });
+});
+
+describe('one viewport tag, with viewport-fit=cover (#1077)', () => {
+  // Next emits a default viewport meta first; a hand-written second one in <head>
+  // was ignored by WebKit, so iOS reported env(safe-area-inset-top) as 0 and the
+  // header slid under the status bar.
+  const layout = read('app', '[locale]', 'layout.tsx');
+
+  it('declares it through the viewport export', () => {
+    expect(layout).toMatch(/export const viewport: Viewport = \{[^}]*viewportFit: 'cover'/s);
+  });
+
+  it('keeps no hand-written viewport meta beside it', () => {
+    expect(layout).not.toContain('<meta name="viewport"');
+  });
+});
+
+describe('push registration names the app (#1077)', () => {
+  it('reads the app id out of App.getInfo() and nothing invented', () => {
+    expect(appIdFromInfo({ id: ' com.cordel.fitness.dev ', name: 'x' })).toBe('com.cordel.fitness.dev');
+    expect(appIdFromInfo({ id: '' })).toBeNull();
+    expect(appIdFromInfo({ id: 42 })).toBeNull();
+    expect(appIdFromInfo(null)).toBeNull();
+    expect(appIdFromInfo(undefined)).toBeNull();
+  });
+
+  it('hands that id to the registration, so a dev app files its tokens under its own id', () => {
+    const shell = read('components', 'NativeShell.tsx');
+    expect(shell).toContain('appIdFromInfo(await loadAppInfo())');
+    expect(shell).toContain('registerPushToken(latest.current.apiFetch, token.value, appId)');
+  });
+
+  it('answers the plain info object, never a bare plugin', () => {
+    const plugins = read('lib', 'nativePlugins.ts');
+    expect(plugins).toContain('await loaded.plugin.getInfo()');
   });
 });

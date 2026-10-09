@@ -33,7 +33,7 @@ If the merge produces conflicts:
 - Stop and inspect every conflicting file carefully.
 - Preserve valid changes from **both** the feature branch and `origin/main`.
 - Never blindly choose "ours" or "theirs" — understand what each side changed and why.
-- Pay **special attention to `docs/roadmap.md`**: it is frequently modified by parallel agents. Do not remove another agent's entries. Keep both sets of changes, merging the sections manually. When in doubt, keep more, not less.
+- Pay **special attention to `docs/changelog.md`** (and `docs/roadmap.md` if you touched it): both are frequently modified by parallel agents. Do not remove another agent's entries. Keep both sets of changes, merging the sections manually. When in doubt, keep more, not less.
 - After resolving, stage the files and complete the merge commit.
 
 ## Step 6 — Run tests

@@ -2,71 +2,14 @@
  * P3.3: package-credit consumption/refund tied to booking lifecycle.
  * Now backed by calendar_event_bookings (stage 3 of #360).
  *
- * Behavior unchanged from the old bookings-scoped implementation:
- *  - Debit when a 'booked' insert lands (not waitlisted).
- *  - Waitlisted bookings consume only when promoted.
- *  - Cancellation >= 1 day before session auto-refunds; same-day keeps the debit.
+ * Since #1189 stage 3 a booking no longer debits a package: sessions are spent
+ * by the consumption ledger (`service-consumption.ts`) on attendance, late
+ * cancellation or no-show. What is left here is the refund of a credit that a
+ * pre-stage-3 booking was debited at booking time (`user_class_package_id`).
  *
  * class_package_transactions gains a calendar_event_booking_id column
  * (migration 134) that replaces booking_id for new rows.
  */
-
-const packageIntentByTx = new WeakMap<any, { userClassPackageId: number }>();
-
-export function getPackageIntent(tx: any) {
-  return packageIntentByTx.get(tx) ?? null;
-}
-
-/**
- * Claim the member's next-to-expire class package for this booking, so an
- * activity their Membership Plan does not grant is paid for out of prepaid
- * sessions instead of being refused. Returns whether a credit was claimed; the
- * debit itself happens post-insert in `debitPackageIfClaimed`.
- *
- * Called by `activity-eligibility.ts` — the gate that knows the member
- * qualifies for the activity only through a purchased package — rather than
- * from a booking access hook of its own. Until #635 stage 4 this module
- * registered that hook itself and decided "is this activity plan-restricted?"
- * from `plan_allowances`; with Included Services retired (migration 177) the
- * gate read `activity_type_eligible_plans`, and since #973 stage 1 it reads
- * the Professional Services the activity names (migration 231). The debit on
- * booking is deliberately unchanged by that stage: consumption on attendance
- * (#973 `Q2`) is stage 3's ledger, and until it exists this is what keeps a
- * package finite.
- */
-export async function tryClaimPackageCredit(tx: any, gymId: string, memberId: number): Promise<boolean> {
-  const { rows: pkg } = await tx.query(
-    `SELECT id, sessions_remaining, expires_at
-     FROM user_class_packages
-     WHERE gym_id = ? AND member_id = ? AND status = 'active'
-       AND sessions_remaining > 0 AND expires_at >= UTC_DATE()
-     ORDER BY expires_at ASC
-     LIMIT 1 FOR UPDATE`,
-    [gymId, memberId],
-  );
-  if (pkg.length === 0) return false;
-
-  packageIntentByTx.set(tx, { userClassPackageId: pkg[0].id });
-  return true;
-}
-
-export async function debitPackageIfClaimed(tx: any, bookingId: number, gymId: string) {
-  const intent = packageIntentByTx.get(tx);
-  if (!intent) return;
-  await tx.query(
-    "UPDATE user_class_packages SET sessions_remaining = sessions_remaining - 1, status = IF(sessions_remaining - 1 = 0, 'consumed', status) WHERE id = ?",
-    [intent.userClassPackageId],
-  );
-  await tx.query(
-    'UPDATE calendar_event_bookings SET user_class_package_id = ? WHERE id = ?',
-    [intent.userClassPackageId, bookingId],
-  );
-  await tx.query(
-    'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, calendar_event_booking_id, amount, reason) VALUES (?, ?, NULL, ?, -1, ?)',
-    [gymId, intent.userClassPackageId, bookingId, 'Booking debit'],
-  );
-  packageIntentByTx.delete(tx);
-}
 
 export async function refundPackageCredit(
   tx: any,

@@ -31,7 +31,6 @@ const assignedPlanRowSrc = read(join(ASSIGNED_PLANS_DIR, 'AssignedPlanExpandedRo
 const memberRowSrc = read(join(MEMBERS_DIR, 'MemberExpandedRow.tsx'));
 // #634 §4: the Member-level ADDITIONAL SERVICES section, which reuses this
 // editor once per live Membership Plan.
-const memberSectionSrc = read(join(MEMBERS_DIR, 'MemberAdditionalServices.tsx'));
 
 const SECTION_KEYS = [
   'section_additional_services',
@@ -106,14 +105,11 @@ describe('Additional Periodic Services (#631)', () => {
   });
 
   it('re-runs the Member Billing Simulation when a service changes (#631 §6)', () => {
-    // #634 §4 promoted this to a Member-level section: the expanded row renders
-    // MemberAdditionalServices, which reuses this editor once per live plan,
-    // and `onChanged` re-reads the configuration and remounts the simulation.
-    expect(memberRowSrc).toContain('<MemberAdditionalServices');
+    // #1290 removed the Member-level section; the Member card still
+    // re-reads the configuration and remounts the simulation on change.
+    expect(memberRowSrc).not.toContain('<MemberAdditionalServices');
     expect(memberRowSrc).toContain('onChanged={reloadConfiguration}');
     expect(memberRowSrc).toMatch(/setSimulationKey\(\(k\) => k \+ 1\)/);
-    expect(memberSectionSrc).toContain('<AdditionalPeriodicServices');
-    expect(memberSectionSrc).toContain('onChanged={onChanged}');
   });
 
   it('defines every section key in all locales', () => {

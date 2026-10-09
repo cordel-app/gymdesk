@@ -69,7 +69,7 @@ gymdesk/
     technical/        # Technical conventions
     procedures/       # Operational runbooks
     routines/         # Recurring agent routines (issue triage, PR review)
-  docs/               # architecture, decisions, feature-patterns, roadmap, go-to-production,
+  docs/               # rules (what the product does), architecture, decisions, feature-patterns, roadmap (state), changelog (record), go-to-production,
                       # wordpress-integration (read before building features; agents: start at CLAUDE.md)
   .github/
     workflows/        # ci.yml, codeql.yml; deploy.yml (api), deploy-admin.yml, deploy-member.yml,

@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { ClerkProvider } from '@clerk/nextjs';
 import { enUS, esES, caES } from '@clerk/localizations';
 import { NextIntlClientProvider } from 'next-intl';
@@ -24,6 +24,23 @@ import { publicAppTitle } from '@/lib/appTitle';
 // environment it is deployed to. The installed app's own name is not this —
 // that is `public/manifest.json` for the PWA and the mobile profile for the
 // store build (#1074).
+/**
+ * #1077: the viewport is Next's to emit, and it must say `viewport-fit=cover`.
+ *
+ * It used to be a hand-written `<meta name="viewport">` in `<head>`, and Next adds
+ * its own default one (`width=device-width, initial-scale=1`) *first* — so the page
+ * carried two, and WebKit kept the first. Without `viewport-fit=cover` iOS reports
+ * `env(safe-area-inset-top)` as `0`, so inside the native shell (which lets the page
+ * extend under the status bar) the header sat behind the clock and the dynamic
+ * island. Android has no such inset, which is why it looked right there. The
+ * `viewport` export makes Next emit the one tag with the right value.
+ */
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
+
 export const metadata: Metadata = {
   title: publicAppTitle(),
   description: 'Your gym, in your pocket.',
@@ -53,7 +70,6 @@ export default async function LocaleLayout({
     <ClerkProvider localization={localization}>
       <html lang={params.locale}>
         <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
           <meta name="apple-mobile-web-app-capable" content="yes" />
           <link rel="manifest" href="/manifest.json" />
           <link rel="apple-touch-icon" href="/apple-touch-icon.png" />

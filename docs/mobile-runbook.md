@@ -62,7 +62,12 @@ Both are gitignored on both sides — they belong to a Firebase project, not to
 this repository. Without them the app still builds and runs; it just receives no
 push (Gradle applies the google-services plugin only when the JSON is there, and
 the iOS `AppDelegate` calls `FirebaseApp.configure()` only when the plist is in
-the bundle).
+the bundle). On Android that is true because `MainActivity` creates a placeholder
+Firebase app when the JSON is absent; before that (#1077) the first sign-in
+called the push plugin's `register()`, which threw an uncatchable native
+exception and **crashed the app** — the member came back signed out. Registration
+now reports `registrationError` instead, and the log line `No google-services.json:
+push is unconfigured` is how to recognise such a build.
 
 **Check after an apply:** `git diff apps/mobile/ios apps/mobile/android` names
 the Bundle ID / `applicationId`, the display name, the URL schemes and the
@@ -85,6 +90,15 @@ These are configuration, not code, and each one is a `docs/go-to-production.md`
   the same pair as `NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` /
   `NEXT_PUBLIC_GOOGLE_WEB_CLIENT_ID` in **its** build, or it renders no native
   Google button (WP2).
+- **Sign in with Apple (#1075, iOS only).** Off by default. To turn it on: the
+  *Sign in with Apple* capability on the App ID, Clerk's Apple connection (Services
+  ID, Team ID, Key ID, private key), then `MOBILE_APPLE_SIGN_IN=true` (or
+  `"appleSignIn": true` in the profile) and `profile:apply`, which writes the
+  `com.apple.developer.applesignin` entitlement — a signed build that declares it
+  without the capability fails to sign, which is why it is opt-in. The Members App
+  needs `NEXT_PUBLIC_APPLE_SIGN_IN=true` (GitHub variable `APPLE_SIGN_IN`) in
+  **its** build, or it renders no Apple button. **The Clerk token exchange in
+  `lib/nativeSignIn.ts` is unverified** until the spike runs.
 - **An Android OAuth client with the signing SHA-1** (`keytool -list -v -keystore …`),
   for the Google sheet on Android.
 - **`FCM_SERVICE_ACCOUNTS`** on the API, keyed by this app's id
@@ -104,6 +118,15 @@ These are configuration, not code, and each one is a `docs/go-to-production.md`
   profile's own host, but the capability is what makes a provisioning profile
   carry it — without it a signed build fails to install or silently ignores
   universal links.
+- **Clerk's Frontend API host in `allowNavigation`.** The shell opens any host not on
+  `server.allowNavigation` in **Safari**, and a Clerk **development** instance sends the
+  WebView through its own host (`<instance>.clerk.accounts.dev`) on first load. Found by
+  running the shell in the simulator (2026-10-08, #1077): with only the Members App's host
+  listed, launch hands the session to Safari instead of showing the app. For a dev build set
+  `MOBILE_ALLOW_NAVIGATION="members.vdicube.com <instance>.clerk.accounts.dev"` (a space- or
+  comma-separated list, overriding the profile). A **production** instance has its own
+  Frontend API host, which belongs in the production profile's `allowNavigation` — check
+  which host it uses and test the first launch with the app freshly installed.
 - **The Firebase iOS SDK**, which is the one step that needs Xcode:
   *File → Add Package Dependencies…* → `https://github.com/firebase/firebase-ios-sdk`,
   product **FirebaseMessaging**, added to the `App` target. The Swift that uses
@@ -131,11 +154,22 @@ is listed as a capability.
 | 2 | The header | Sits below the status bar — `TopBar` carries `safe-area-inset-top` (WP2) |
 | 3 | Sign in with email and password | Session active; the gym's theme is applied after sign-in |
 | 4 | Kill and reopen the app | Still signed in |
-| 5 | *Continue with Google* (needs §2's clients) | The **native** sheet opens — it must not leave the app for Safari. A `keychain error` here means the `keychain-access-groups` entitlement is not being applied: check `App.entitlements` is still referenced by `CODE_SIGN_ENTITLEMENTS` |
+| 5 | *Continue with Google* (needs §2's clients) | The **native** sheet opens — it must not leave the app for Safari — and the app lands on the member's home. A `keychain error` here means the `keychain-access-groups` entitlement is not being applied: check `App.entitlements` is still referenced by `CODE_SIGN_ENTITLEMENTS` (a `CODE_SIGNING_ALLOWED=NO` build has none). `authorization_invalid` under the notice is Clerk refusing the token: a replayed one (the Google session was not cleared before `login()`) or one requested without a `nonce` — both are `useNativeGoogleSignIn`'s job, #1285 |
 | 6 | Turn off the API, pull to retry | The Members App's error screen with a retry, never "you have no gym" (WP2's `NativeAppState`) |
 | 7 | `xcrun simctl openurl booted "com.cordel.fitness://en/link?gym_id=1&__clerk_ticket=x"` | The app comes to the foreground on `/en/link` with the query intact |
 
 A push cannot be tested on the simulator with FCM; §5 is where that happens.
+
+**A simulator device shares its web session between apps.** Found 2026-10-08 (#1077): on one
+simulator a *freshly installed* dev app (`com.cordel.fitness.dev`) opened already signed in as
+the member another app on that simulator had signed in, because that device keeps one cookie jar
+(`~/Library/Developer/CoreSimulator/Devices/<udid>/data/Library/Cookies/Cookies.binarycookies`)
+holding the Clerk session cookies, outside both apps' containers. The same install on a second,
+fresh simulator started signed out, and so did Android. It is a simulator artefact, not an app
+bug; a real iPhone keeps each app's web data separate, but that is **not yet verified on a
+device**. To test a signed-out start, sign out first, run `xcrun simctl erase <udid>`, or use a
+second simulator. A clean first load can take 30–60 seconds (blank page) before the landing page
+appears.
 
 ## 4. Android — emulator
 
@@ -161,7 +195,7 @@ project from §2.
 | # | Check | Expected |
 |---|---|---|
 | 1 | Install on a physical iPhone and on a physical Android phone | Both launch and load the Members App |
-| 2 | Google sign-in on each | Session active **inside** the app, persisted across a restart |
+| 2 | Google sign-in on each, then *Log out* (the avatar menu, #1282) and Google again | Session active **inside** the app, persisted across a restart; the second sign-in shows the account sheet again rather than failing with `authorization_invalid` (#1285). Verified on the iOS simulator and the Android emulator on 2026-10-09 |
 | 3 | A **first-time** Google sign-in by an invited member, under Clerk's restricted mode | Still open from WP2 — the spike used a user that already existed. If it fails, the fix belongs in `POST /me/link` (match by email + `gym_id`), never in the frontend |
 | 4 | `SELECT platform, app_id, LEFT(token, 12) FROM member_device_tokens WHERE member_id = ?` after signing in | One row per device, `app_id` = this app's Bundle ID / package. **On iOS the token must be the FCM token** (~160 characters, mixed case with `:` and `-`), not a 64-character hex APNs token — a hex token means §2's Firebase package step was skipped |
 | 5 | Trigger any member notification (a booking confirmation is the cheapest) | The banner arrives on both phones; the API's own log says `push` and not `skipped` |
@@ -170,9 +204,68 @@ project from §2.
 | 8 | Sign in as a different member on the **same** handset, then notify the first member | No banner on that handset: `UNIQUE (platform, token)` is global and the `POST` re-points the row to whoever signed in last (#1072) |
 | 9 | Release the Members App web build while the app is open and reopen it | The new web release is live with no store review (§2 of the plan) |
 | 10 | `curl -i https://<members host>/.well-known/apple-app-site-association` and `…/assetlinks.json` | `200`, `Content-Type: application/json`, **no redirect**, and the `appID` / `package_name` of this build. A `404` means `MOBILE_APP_ASSOCIATIONS` is unset (#1076) |
-| 11 | Tap an invitation link in **Notes** and in **Mail**, on each phone | The app opens and `/{locale}/link` completes the invitation. On Android check `adb shell pm get-app-links <package>` reads `verified` first — an unverified domain opens the browser |
+| 11 | Tap an invitation link in **Notes** and in **Mail**, on each phone | A link on our own domain opens the app. A real **Clerk** invitation email links to Clerk's domain, so it opens the browser on `/{locale}/link`, which offers **Open in the app**: tapping it opens the app and completes the invitation (needs `NEXT_PUBLIC_MOBILE_APP_SCHEME` in the Members App build, GitHub variable `MOBILE_APP_SCHEME`). On Android check `adb shell pm get-app-links <package>` reads `verified` first — an unverified domain opens the browser |
 | 12 | The same link with the app **not** installed | Opens in the browser and still completes |
 | 13 | The same link from a mail client's own in-app browser | May open in that browser rather than the app. Known caveat, not a defect — the flow never depends on the app receiving the link |
+
+## 5b. Getting a test build from CI (#1077)
+
+`.github/workflows/mobile-build.yml` builds the shell without anyone's laptop. Run it from
+*Actions → Mobile build → Run workflow* (pick `dev` or `pro`), or push a `mobile-v*` tag; it
+also runs on a PR that touches `apps/mobile/`. Two jobs:
+
+**Builds are versioned and published.** The version people read is `apps/mobile/package.json`'s
+`version`, and the build number is the workflow's run number (it only goes up: Android's
+`versionCode`, iOS's `CURRENT_PROJECT_VERSION`), so a build reads `1.0.0 (57)` and its file is
+`cordel-fitness-dev-1.0.0-b57-<sha>.apk`. Every run **except a pull request's** also uploads the
+**Android** build to the environment's bucket (the iOS simulator build is only a workflow
+artifact: it cannot be installed on a phone, so it is never published), and **Cordel → Mobile
+builds** lists them newest first with a Download button (superadmin only, read-only; `api/src/domain/mobileBuilds.ts`). The workflow is
+the only writer (`.github/scripts/publish-mobile-build.sh`) and keeps the newest 20 per app and
+platform. The `dev` page shows the dev bucket's builds and the `pro` page the pro bucket's. The
+upload needs the environment's existing `CLOUDFLARE_R2_*` settings and skips with a warning
+without them. The page also carries an **iPhone (TestFlight)** card with an *Open in TestFlight*
+button, disabled until the API has `MOBILE_TESTFLIGHT_URL` (a GitHub variable per environment,
+forwarded by `deploy.yml`, which must be a `https://testflight.apple.com/…` link): an iPhone
+cannot install a downloaded file, so it gets a link and never a download.
+
+- **Android debug APK** — download the artifact (it is a zip holding the APK), unzip, and open
+  the APK on the phone (allow installs from that app). It loads the environment's Members App
+  (`CORDEL_FITNESS_MEMBERS_URL`) and is signed with the shared debug keystore, whose SHA-1
+  (`90:4A:F4:…:87:47`) is the one registered in the Google Android OAuth client; the job summary
+  prints the SHA-1 it actually used. Without the `ANDROID_DEBUG_KEYSTORE_B64` secret Gradle
+  makes a new key and Google sign-in is refused on that build.
+- **iOS simulator build (unsigned)** — a build check, kept as a workflow artifact and **not
+  published** to the Mobile builds page, and an app for a Mac's simulator
+  (`xcrun simctl install booted App.app`). It **cannot** be installed on an iPhone; that needs a
+  signed build and the Apple Developer account.
+
+**One app per environment.** `dev` builds the `cordel-fitness-dev` profile
+(`com.cordel.fitness.dev`, "Cordel Fitness Dev", the dev Clerk host already in its
+`allowNavigation`) and `pro` builds `cordel-fitness` (`com.cordel.fitness`, "Cordel Fitness"), so
+the two have different app ids and install side by side instead of one over the other. That is
+four apps in all — Android and iOS, dev and pro — but only two ids, and a third environment is a
+third profile file. Each app id needs its **own** Google clients (an Android client per package +
+SHA-1, an iOS client per bundle ID), Firebase app, `FCM_SERVICE_ACCOUNTS` /
+`MOBILE_APP_ASSOCIATIONS` entry and Apple App ID. The dev app id has its Google clients in project
+`cordel-fitness-pro` (an Android client for `com.cordel.fitness.dev` with the shared debug SHA-1
+and an iOS client for that bundle ID, which is what the `dev` environment's
+`NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` points at). Push registration names the app's own id
+(`App.getInfo().id`, #1077), so a dev device's token is filed under `com.cordel.fitness.dev`; and
+the dev web build's `MOBILE_APP_SCHEME` is `com.cordel.fitness.dev`, so *Open in the app* on the
+dev site opens the dev app. Checked on the Android emulator and the iOS simulator (2026-10-08)
+with the CI-built dev apps: sign-in screen, the `com.cordel.fitness.dev://en/link` link reaching
+`/link` in the dev app, the header below the status bar, no crash when push registration runs
+without a Firebase config. **Not** checked: a Google sign-in (no Google account on either
+device), an actual push, or a device. Pro needs the same set of clients, secrets and
+`MOBILE_APP_SCHEME` before its first build.
+
+Per-environment inputs: `CORDEL_FITNESS_MEMBERS_URL` (variable, already used by the web deploy),
+`MOBILE_ALLOW_NAVIGATION` (variable — **must include the Clerk Frontend API host**, see §2),
+`NEXT_PUBLIC_GOOGLE_*_CLIENT_ID` (secrets, reused as the shell's Google clients) and
+`ANDROID_DEBUG_KEYSTORE_B64` (secret; `base64 < ~/.android/debug.keystore`). Artifacts are kept 30
+days (Android) / 14 days (iOS). The debug keystore is a throwaway with the well-known password
+`android`; a release build needs a real upload key and is not this workflow's job.
 
 ## 6. Switching profile (the stage-2 rehearsal)
 

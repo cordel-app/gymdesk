@@ -29,12 +29,15 @@ import {
   type MemberProductCardItem,
   type MemberProductCardPromotion,
 } from '@/components/MemberProductsSection';
+import { SERVICE_FILTER_PARAM, serviceFilterFromParam } from '@/lib/serviceRequired';
 import { MemberDialog } from '@/components/MemberDialog';
 import { MemberPlanCatalogue, type MemberPlanCardItem } from '@/components/MemberPlanCatalogue';
 import {
   type MemberPendingPlan,
   type MemberPlanOffer,
   assignErrorKey,
+  declinedBenefitsPayload,
+  planBenefitKey,
   choosingOwesNothing,
   planFinalPriceText,
   planFrequencyKey,
@@ -204,6 +207,9 @@ export default function MembershipPage() {
   // `available`, and #1073's "a control that cannot work is absent, never
   // broken". An empty array is a gym that really has nothing public yet.
   const [products, setProducts] = useState<MemberProduct[] | null>(null);
+  // #1189 stage 4 — set when a refused booking sent the member here: only the
+  // Products that grant sessions of those Professional Services are listed.
+  const [serviceFilter, setServiceFilter] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -240,6 +246,8 @@ export default function MembershipPage() {
   const [assignSubmitting, setAssignSubmitting] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
   const [assignNeedsConfirm, setAssignNeedsConfirm] = useState(false);
+  // #1184 stage 3b: optional Plan benefits the member unticked, per plan.
+  const [declinedPlanBenefits, setDeclinedPlanBenefits] = useState<Record<number, string[]>>({});
   const [reloadKey, setReloadKey] = useState(0);
 
   const [consentOpen, setConsentOpen] = useState(false);
@@ -252,6 +260,10 @@ export default function MembershipPage() {
     if (!isLinked) { router.replace(`/${locale}`); return; }
     if (!(isSuperadmin && !isImpersonating) && !isFeatureEnabled(featureFlags, 'member_web.my_membership')) { router.replace(`/${locale}`); return; }
     let cancelled = false;
+    // Read off the address bar rather than `useSearchParams()`, which would
+    // need a Suspense boundary around this whole page.
+    const filter = serviceFilterFromParam(new URLSearchParams(window.location.search).get(SERVICE_FILTER_PARAM));
+    setServiceFilter(filter);
     (async () => {
       try {
         const [mship, ledger, pkgs, promos, prs, projection, catalogue] = await Promise.all([
@@ -261,7 +273,7 @@ export default function MembershipPage() {
           apiFetch<Promotion[]>('/me/promotions').catch(() => []),
           apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
           apiFetch<BillingEventForecast>('/me/billing-event-forecast').catch(() => EMPTY_FORECAST),
-          apiFetch<{ items: MemberProduct[] }>('/me/products').catch(() => null),
+          apiFetch<{ items: MemberProduct[] }>('/me/products' + (filter.length ? `?${SERVICE_FILTER_PARAM}=${filter.join(',')}` : '')).catch(() => null),
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
@@ -410,11 +422,24 @@ export default function MembershipPage() {
   function renderProducts() {
     if (products === null) return null;
     return (
+      <>
+      {serviceFilter.length > 0 && (
+        <p style={{ fontSize: 13, margin: '0 0 8px' }}>
+          {t('membership.products_filtered_notice')}{' '}
+          <a
+            href={`/${locale}/membership`}
+            style={{ color: 'inherit', textDecoration: 'underline' }}
+          >
+            {t('membership.products_show_all')}
+          </a>
+        </p>
+      )}
       <MemberProductsSection
         title={t('membership.products_heading')}
         emptyLabel={t('membership.products_empty')}
         items={productCardItems(products)}
       />
+      </>
     );
   }
 
@@ -644,6 +669,14 @@ export default function MembershipPage() {
     setAppliedPlanPromotions((prev) => ({ ...prev, [planId]: promotionId }));
   }
 
+  function togglePlanBenefit(planId: number, key: string) {
+    setDeclinedPlanBenefits((prev) => {
+      const current = new Set(prev[planId] ?? []);
+      if (current.has(key)) current.delete(key); else current.add(key);
+      return { ...prev, [planId]: Array.from(current) };
+    });
+  }
+
   function openChoosePlan(plan: MemberPlanOffer) {
     setChoosingPlan(plan);
     setAssignError(null);
@@ -672,6 +705,7 @@ export default function MembershipPage() {
         method: 'POST',
         body: JSON.stringify({
           promotion_ids: applied ? [applied] : [],
+          declined_benefits: declinedBenefitsPayload(choosingPlan.benefits, new Set(declinedPlanBenefits[choosingPlan.id] ?? [])),
           ...(confirmReplacement ? { confirm: true } : {}),
         }),
       });
@@ -739,6 +773,15 @@ export default function MembershipPage() {
           : (plan.billing_interval != null && plan.billing_unit ? formatInterval(plan.billing_interval, plan.billing_unit, t) : null),
         finalPriceLabel: t('membership.plan_final_price'),
         finalPrice: applied ? planFinalPriceText(plan, applied, locale) : null,
+        benefitsHeading: t('membership.plan_benefits_heading'),
+        benefits: (plan.benefits ?? []).map((b) => ({
+          key: planBenefitKey(b),
+          name: b.product_name,
+          tag: b.mandatory ? t('membership.plan_benefit_mandatory') : t('membership.plan_benefit_optional'),
+          mandatory: b.mandatory,
+          checked: !(declinedPlanBenefits[plan.id] ?? []).includes(planBenefitKey(b)),
+          onToggle: () => togglePlanBenefit(plan.id, planBenefitKey(b)),
+        })),
         promotions: plan.promotions.map((promotion) => {
           const benefit = planPromotionBenefitNote(promotion, locale);
           const duration = planPromotionDurationNote(promotion);

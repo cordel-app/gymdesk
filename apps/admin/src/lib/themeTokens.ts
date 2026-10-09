@@ -69,6 +69,7 @@ export interface ThemeTokens {
     calendarTimeAxisBackground: string;
     calendarTimeAxisText: string;
     calendarWeekendBackground: string;
+    calendarActiveAreaBackground: string;
     calendarDisabledSlotBackground: string;
     // Event colors (#559 stage 3). One background for every event: the booking
     // status is carried by the pill badge inside the event instead (#541 /
@@ -293,6 +294,7 @@ export const CALENDAR_COLOR_VARS: Record<string, string> = {
   calendarTimeAxisBackground:     '--gd-calendar-time-axis-bg',
   calendarTimeAxisText:           '--gd-calendar-time-axis-text',
   calendarWeekendBackground:      '--gd-calendar-weekend-bg',
+  calendarActiveAreaBackground:   '--gd-calendar-active-area-bg',
   calendarDisabledSlotBackground: '--gd-calendar-disabled-slot-bg',
   calendarEventBackground:        '--gd-calendar-event-bg',
   calendarEventBorder:            '--gd-calendar-event-border',
@@ -437,6 +439,7 @@ export const DEFAULT_TOKENS: ThemeTokens = {
     calendarTimeAxisBackground:   '#ffffff',
     calendarTimeAxisText:         '#6b7280',
     calendarWeekendBackground:    '#ffffff',
+    calendarActiveAreaBackground:   '#ffffff',
     calendarDisabledSlotBackground: '#f7f7f7',
     // #559 stage 3 — the purple every `scheduled` event was painted with
     // before this stage, so the calendar an admin sees on day one is the one

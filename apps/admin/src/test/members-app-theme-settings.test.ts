@@ -88,23 +88,30 @@ const TICKET_MAPPING: [string, string | null][] = [
   ['label_members_text1_color', 'Primary Text Color'],
   ['label_members_text2_color', 'Secondary Text Color'],
   ['label_members_text3_color', 'Muted Text Color'],
+  ['label_members_primary_button_color', 'Primary Button'],
+  ['label_members_secondary_button_color', 'Secondary Button'],
   ['label_members_calendar_bg', 'Calendar background'],
   ['label_members_calendar_header_color', 'Calendar header background'],
+  ['label_members_calendar_active_area_bg', 'Calendar Active Area Background'],
+  ['label_members_calendar_inactive_area_bg', 'Calendar Inactive Area Background'],
   ['label_members_calendar_buttons_color', 'Navigation button background'],
   ['label_members_calendar_time_col_bg', 'Time column background'],
   ['label_members_calendar_time_col_text', 'Time column text'],
   ['label_members_calendar_modal_bg', 'Modal Background'],
   ['label_members_calendar_modal_input_bg', 'Input Background Color'],
+  ['label_members_input_bg', 'Input Background Color'],
 ];
 
 describe('#833 Members App settings: the declaration', () => {
-  it('declares the five sections the ticket names, in order', () => {
+  it('declares the sections the tickets name, in order', () => {
     expect(MEMBERS_APP_SECTIONS).toEqual([
       'group_members_header',
       'group_members_background',
       'group_members_section_cards',
       'group_members_text',
+      'group_members_buttons',
       'group_members_calendar',
+      'group_members_inputs',
     ]);
     // Every section has at least one setting, and every setting belongs to one
     // of them — so a setting can never be declared into a section that is

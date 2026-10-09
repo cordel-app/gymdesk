@@ -93,6 +93,7 @@ import { calendarEventsRouter } from './api/calendar-events';
 import { sharedTrainingRequestsRouter } from './api/shared-training-requests';
 import { recycleBinRouter } from './api/recycle-bin';
 import { platformFeatureFlagsRouter, featureFlagsPublicRouter } from './api/platform-feature-flags';
+import { platformMobileBuildsRouter } from './api/platform-mobile-builds';
 import { paymentProvidersRouter } from './api/payment-providers';
 import { requireFeatureEnabled } from './infra/featureFlags';
 import { clerkWebhookRouter, paymentWebhookRouter } from './api/webhooks';
@@ -108,9 +109,11 @@ import { tenantContext, requireFeatureAccess, requireModuleAccess } from './infr
 import { centerContext } from './infra/centerContext';
 import { publicRegistrationsRouter } from './api/public-registrations';
 import { websiteIntegrationRouter } from './api/website-integration';
+import { gymLocalizationRouter } from './api/gym-localization';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
 import { internalRunRateLimitConfig, spendsInternalRunBudget } from './domain/internalRunRateLimit';
+import { API_RATE_LIMIT_WINDOW_MS, apiRateLimitMax } from './domain/apiRateLimit';
 import { internalRunClientKey, trustProxyHops } from './domain/forwardedClient';
 import { httpErrorStatus, publicErrorMessage } from './domain/httpErrorResponse';
 
@@ -126,8 +129,8 @@ app.set('trust proxy', trustProxyHops());
 app.use(requestLogger);
 
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 500,
+  windowMs: API_RATE_LIMIT_WINDOW_MS,
+  limit: apiRateLimitMax(),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
 });
@@ -275,6 +278,8 @@ app.use('/platform/superadmins', requireAuth(), superadminsRouter);
 app.use('/platform/orphaned-accounts', requireAuth(), orphanedAccountsRouter);
 app.use('/platform/impersonation', requireAuth(), impersonationRouter);
 app.use('/platform/feature-flags', requireAuth(), platformFeatureFlagsRouter);
+// #1077: the published mobile builds (list + download), superadmin-only per route.
+app.use('/platform/mobile-builds', requireAuth(), platformMobileBuildsRouter);
 // #636: Payment Providers are Cordel-level configuration — no tenantContext,
 // guarded per-route by requireSuperadmin, like the other platform catalogues.
 app.use('/platform/payment-providers', requireAuth(), paymentProvidersRouter);
@@ -413,6 +418,7 @@ app.use('/payment-methods',   requireAuth(), tenantContext, requireModuleAccess(
 app.use('/audit-logs',       requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.audit'), auditLogsRouter);
 app.use('/system/themes',    requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.themes'), gymThemesRouter);
 app.use('/system/website-integration', requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.website_integration'), websiteIntegrationRouter);
+app.use('/system/localization', requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), gymLocalizationRouter);
 app.use('/recycle-bin',      requireAuth(), tenantContext, requireModuleAccess('SYSTEM'), requireFeatureEnabled('system.recycle_bin'), recycleBinRouter);
 
 // Global error handler — must be last, after all routes.

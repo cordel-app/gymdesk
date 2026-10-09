@@ -236,6 +236,17 @@ describe('the native side of what WP1 and WP2 decided', () => {
     expect(appDelegate).toContain('#if canImport(FirebaseMessaging)');
   });
 
+  it('keeps the Android shell alive when there is no google-services.json (#1077)', () => {
+    // `@capacitor/push-notifications`' register() calls FirebaseMessaging.getInstance(),
+    // which throws on a plugin thread when no default Firebase app exists — an
+    // uncatchable native crash. MainActivity must make sure an app exists first.
+    const activity = read('android/app/src/main/java/com/cordel/fitness/MainActivity.java');
+    expect(activity).toContain('FirebaseApp.getApps(this).isEmpty()');
+    expect(activity).toContain('FirebaseApp.initializeApp(');
+    expect(activity.indexOf('ensureFirebaseApp();')).toBeLessThan(activity.indexOf('super.onCreate('));
+    expect(read('android/app/build.gradle')).toContain('com.google.firebase:firebase-messaging');
+  });
+
   it('declares the entitlements the spike proved are needed, from build settings', () => {
     const entitlements = read('ios/App/App/App.entitlements');
     expect(entitlements).toContain('keychain-access-groups');
@@ -274,4 +285,30 @@ describe('the runbook', () => {
       expect(runbook, `docs/mobile-runbook.md does not mention ${topic}`).toContain(topic);
     }
   });
+
+  // #1075: the Apple capability is opt-in, so the committed entitlements match the
+  // stage-1 profile — absent while the profile does not turn it on.
+  it('declares the Sign in with Apple entitlement only when the profile enables it', () => {
+    const entitlements = read('ios/App/App/App.entitlements');
+    const enabled = profile().appleSignIn === true;
+    expect(entitlements.includes('com.apple.developer.applesignin')).toBe(enabled);
+  });
+
+  // #1077: one app per environment. Every profile is its own identity, so a dev build
+  // and a pro build never share an app id and cannot install over each other.
+  it('gives every profile its own app id, name and server', () => {
+    const ids = readdirSync(PROFILES)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => ({ file: f, ...(JSON.parse(readFileSync(join(PROFILES, f), 'utf8')) as Record<string, string>) }));
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    for (const p of ids) {
+      expect(p.id, p.file).toBe(p.file.replace(/\.json$/, ''));
+      expect(p.appId, p.file).toMatch(/^[a-z][a-z0-9]*(\.[a-z][a-z0-9]*)+$/);
+      expect(p.appName && p.serverUrl, p.file).toBeTruthy();
+    }
+    expect(new Set(ids.map((p) => p.appId)).size).toBe(ids.length);
+    expect(new Set(ids.map((p) => p.appName)).size).toBe(ids.length);
+  });
 });
+
+

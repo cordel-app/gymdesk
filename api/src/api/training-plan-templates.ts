@@ -167,7 +167,7 @@ trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
                     'id', b.id, 'position', b.position, 'name', b.name, 'description', b.description,
                     'type', b.type, 'rounds', b.rounds,
                     'duration_seconds', b.duration_seconds, 'work_seconds', b.work_seconds, 'rest_seconds', b.rest_seconds,
-                    'is_optional', b.is_optional, 'notes', b.notes,
+                    'is_optional', b.is_optional, 'notes', b.notes, 'result_unit', b.result_unit,
                     'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                       SELECT JSON_OBJECT(
                           'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,

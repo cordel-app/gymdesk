@@ -15,6 +15,8 @@
     "no_membership": "Sense quota activa.",
     "products_services": "Els Meus Productes",
     "active_products": "{count, plural, one {# producte actiu} other {# productes actius}}",
+    "no_plan": "Sense pla",
+    "additional_products": "{count, plural, one {# producte addicional} other {# productes addicionals}}",
     "expires_on": "Venç el {date}",
     "class_credits": "Crèdits de classes",
     "credits_remaining": "sessions disponibles",
@@ -22,7 +24,6 @@
     "greeting_afternoon": "Bona tarda, {name}",
     "greeting_evening": "Bona nit, {name}",
     "view_booking": "Veure reserva",
-    "browse_calendar": "Veure calendari",
     "alerts_view_all": "Veure alertes",
     "nutrition_today": "Nutrició d'avui",
     "goals": "Objectius",
@@ -30,13 +31,20 @@
   },
   "nav": {
     "calendar": "Calendari",
-    "training": "El Meu Pla d'Entrenament",
+    "training": "El Meu Entrenament",
     "bookings": "Les Meves Reserves",
     "nutrition": "La Meva Nutrició",
     "membership": "Els Meus Productes",
     "profile": "Perfil",
     "alerts": "Alertes",
-    "goals": "Els Meus Objectius"
+    "goals": "Els Meus Objectius",
+    "user_menu": "Menú del compte",
+    "logout": "Tanca la sessió",
+    "logout_confirm_title": "Vols tancar la sessió?",
+    "logout_confirm_body": "Es tancarà la sessió d'aquest compte en aquest dispositiu.",
+    "logout_cancel": "Cancel·la",
+    "logout_impersonating_title": "Deixar de suplantar?",
+    "logout_impersonating_body": "Sortiràs del compte d'aquest membre i tornaràs al Mode de suport."
   },
   "common": {
     "error": "Alguna cosa ha anat malament.",
@@ -45,7 +53,7 @@
     "no_gym_available": "No hi ha cap gimnàs disponible"
   },
   "training": {
-    "title": "El Meu Pla d'Entrenament",
+    "title": "El Meu Entrenament",
     "loading": "Carregant…",
     "empty": "Encara no tens un pla assignat.",
     "no_plan_today": "No hi ha pla per aquest dia.",
@@ -67,6 +75,7 @@
     "add_set": "+ Afegeix sèrie",
     "save_log": "Desa el registre",
     "mark_done": "Marca fet",
+    "block_rounds": "{count, plural, one {# ronda} other {# rondes}}",
     "block_type_standard": "Estàndard",
     "block_type_superset": "Superserie",
     "block_type_triset": "Triserie",
@@ -75,7 +84,18 @@
     "block_type_emom": "EMOM",
     "block_type_amrap": "AMRAP",
     "block_type_tabata": "Tabata",
-    "block_result": "Resultat"
+    "block_result": "Resultat",
+    "result_unit_rounds": "Rondes",
+    "result_unit_reps": "Repeticions",
+    "result_unit_seconds": "Segons",
+    "result_unit_minutes": "Minuts",
+    "result_unit_meters": "Metres",
+    "result_unit_calories": "Calories",
+    "done": "Fet!",
+    "log_date": "Data",
+    "new_entry": "Nova entrada",
+    "add_log": "Afegeix registre",
+    "new_chip": "Nou"
   },
   "profile": {
     "title": "El meu perfil",
@@ -101,7 +121,15 @@
     "payment_status_ok": "Al dia",
     "payment_status_pending": "Pagament pendent",
     "payment_status_failed": "Pagament fallit",
-    "no_center": "Sense centre assignat"
+    "no_center": "Sense centre assignat",
+    "label_clerk_status": "Estat de Clerk",
+    "label_clerk_invitation": "Invitació de Clerk",
+    "clerk_status_enrolled_on": "Registrat · {date}",
+    "clerk_status_enrolled": "Registrat",
+    "clerk_status_not_enrolled": "No registrat",
+    "clerk_invitation_invited_on": "Convidat · {date}",
+    "clerk_invitation_invited": "Convidat",
+    "clerk_invitation_none": "Cap"
   },
   "packages": {
     "title": "Els meus bons",
@@ -167,6 +195,7 @@
     "state_waitlist_available": "Afegir-se a la llista d'espera",
     "state_full": "Complet",
     "action_book": "Reservar",
+    "buy_sessions_cta": "Compra sessions per reservar aquesta classe",
     "action_join_waitlist": "Afegir-se a la llista d'espera",
     "action_cancel_booking": "Cancel·lar reserva",
     "action_leave_waitlist": "Sortir de la llista d'espera",
@@ -242,6 +271,8 @@
     "benefits_heading": "Beneficis inclosos",
     "products_heading": "Productes i Serveis Addicionals",
     "products_empty": "El teu gimnàs encara no ofereix productes ni serveis addicionals.",
+    "products_filtered_notice": "Mostrant els productes que desbloquegen la classe que vas intentar reservar.",
+    "products_show_all": "Mostra tots els productes",
     "past_plans_heading": "Plans de Membresia Anteriors",
     "add_plan": "+ Afegir pla",
     "add_plan_title": "Tria un pla de membresia",
@@ -249,6 +280,9 @@
     "add_plan_loading": "Carregant plans…",
     "add_plan_close": "Tancar",
     "plan_final_price": "Preu final (IVA inclòs)",
+    "plan_benefits_heading": "Beneficis inclosos",
+    "plan_benefit_mandatory": "Obligatori",
+    "plan_benefit_optional": "Opcional",
     "choose_plan": "Triar aquest pla",
     "choose_plan_title": "Confirma el teu pla",
     "choose_plan_body": "Estàs triant {name}. El teu primer pagament serà de {price}. Introduiràs la targeta a la pàgina de pagament segura del teu gimnàs.",
@@ -383,6 +417,10 @@
     "retry": "Tornar-ho a intentar"
   },
   "link": {
+    "open_in_app_title": "Obre a l'app",
+    "open_in_app_hint": "Si tens l'app instal·lada, obre-hi la teva invitació.",
+    "open_in_app_button": "Obre l'app",
+    "continue_in_browser": "Continua al navegador",
     "linking": "Configurant el teu compte…",
     "error_no_invitation": "No s'ha trobat cap invitació pendent per a aquest compte.",
     "error_generic": "Alguna cosa ha anat malament.",
@@ -577,7 +615,9 @@
     "offline_body": "Comprova la connexió i torna-ho a provar.",
     "retry": "Torna-ho a provar",
     "continue_with_google": "Continua amb Google",
+    "continue_with_apple": "Continua amb Apple",
     "signing_in": "Iniciant sessió…",
-    "google_failed": "No s'ha pogut iniciar la sessió amb Google. Torna-ho a provar."
+    "google_failed": "No s'ha pogut iniciar la sessió amb Google. Torna-ho a provar.",
+    "apple_failed": "No s'ha pogut iniciar la sessió amb Apple. Torna-ho a provar."
   }
 }

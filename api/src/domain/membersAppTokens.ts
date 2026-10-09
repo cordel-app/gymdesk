@@ -60,13 +60,20 @@ export const MEMBERS_APP_SETTING_TYPES: Record<string, MembersAppSettingType> = 
   text1Color:                        'color',
   text2Color:                        'color',
   text3Color:                        'color',
+  primaryButtonColor:                'color',
+  secondaryButtonColor:              'color',
+  primaryButtonTextColor:            'color',
+  secondaryButtonTextColor:          'color',
   calendarBackgroundColor:           'color',
   calendarHeaderColor:               'color',
   calendarButtonsColor:              'color',
+  calendarActiveAreaColor:           'color',
+  calendarInactiveAreaColor:         'color',
   calendarTimeColumnBackgroundColor: 'color',
   calendarTimeColumnTextColor:       'color',
   calendarModalBackgroundColor:      'color',
   calendarModalInputBackgroundColor: 'color',
+  inputBackgroundColor:              'color',
 };
 
 export const MEMBERS_APP_SETTING_KEYS = Object.keys(MEMBERS_APP_SETTING_TYPES);

@@ -9,6 +9,8 @@ import {
   formControlStyle, formErrorStyle, formFieldLabelStyle, formHelpTextStyle, inlineActionsRowStyle,
   secondaryBtnSmall,
 } from '@/components/formChrome';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, formatGymTime, formatGymDateTime, type GymFormatSettings } from '@/lib/gymFormat';
 import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { WAITLIST_MODES, waitlistModeClosesQueue, type WaitlistMode } from '@/lib/waitlistModes';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
@@ -142,24 +144,24 @@ const SLOT_CONFLICT_CODES = [
 // before `t()` is called (CLAUDE.md) and anything else shows its raw value.
 const EXECUTION_STATUS_KEYS = ['scheduled', 'not_used', 'completed', 'cancelled', 'draft'];
 
-function fmt(iso: string) {
-  const d = new Date(iso);
-  return d.toLocaleString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+function fmt(iso: string, s: GymFormatSettings) {
+  return formatGymDate(iso, s);
 }
 
-function fmtTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+function fmtTime(iso: string, s: GymFormatSettings) {
+  return formatGymTime(iso, s);
 }
 
 /** #1162 §7 — `6 Oct 2026, 16:32`: the booking's creation time, in the row, never a column of the calendar. */
-function fmtBookedOn(iso: string) {
-  return new Date(iso).toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+function fmtBookedOn(iso: string, s: GymFormatSettings) {
+  return formatGymDateTime(iso, s);
 }
 
 export function ClassSessionDetailPanel({
   sessionId, onClose, onMutated, canWrite, spaces, trainers, professionalServices,
 }: Props) {
   const t = useTranslations('calendar');
+  const gymFormat = useGymFormatSettings();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
@@ -600,8 +602,8 @@ export function ClassSessionDetailPanel({
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>{session.class_type_name}</div>
-          <div style={{ fontSize: 13, color: '#374151' }}>{fmt(session.starts_at)}</div>
-          <div style={{ fontSize: 13, color: '#6b7280' }}>{fmtTime(session.starts_at)} – {fmtTime(session.ends_at)}</div>
+          <div style={{ fontSize: 13, color: '#374151' }}>{fmt(session.starts_at, gymFormat)}</div>
+          <div style={{ fontSize: 13, color: '#6b7280' }}>{fmtTime(session.starts_at, gymFormat)} – {fmtTime(session.ends_at, gymFormat)}</div>
         </div>
         <button
           onClick={onClose}
@@ -805,7 +807,7 @@ export function ClassSessionDetailPanel({
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{b.member_name}</div>
                   <div style={{ fontSize: 11, color: '#6b7280' }}>{b.member_email}</div>
                   {b.booked_on && (
-                    <div style={{ fontSize: 11, color: '#6b7280' }}>Booked on: {fmtBookedOn(b.booked_on)}</div>
+                    <div style={{ fontSize: 11, color: '#6b7280' }}>Booked on: {fmtBookedOn(b.booked_on, gymFormat)}</div>
                   )}
                 </div>
                 {canWrite && !isCancelled && (
@@ -1181,7 +1183,7 @@ export function ClassSessionDetailPanel({
             <div style={{ fontSize: 13, color: '#374151', marginBottom: 16 }}>
               <strong>{removingBooking.member_name}</strong> will be removed from this event.<br />
               <span style={{ color: '#6b7280' }}>
-                {fmt(session.starts_at)} · {fmtTime(session.starts_at)} – {fmtTime(session.ends_at)}
+                {fmt(session.starts_at, gymFormat)} · {fmtTime(session.starts_at, gymFormat)} – {fmtTime(session.ends_at, gymFormat)}
               </span>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>

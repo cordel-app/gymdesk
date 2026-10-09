@@ -22,6 +22,8 @@ import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { calendarEventPaint } from '@/lib/calendarEventPaint';
 import { calendarEventMeta, calendarEventMetaLines, joinMetaParts } from '@/lib/calendarEventMeta';
 import { CalendarCenterFilter } from './CalendarCenterFilter';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymTime, type GymFormatSettings } from '@/lib/gymFormat';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -41,8 +43,11 @@ interface ProfessionalService { id: number; name: string; status: 'active' | 'in
 
 type FilterMode = 'all' | 'space' | 'activity_type' | 'trainer';
 
-function formatHM(d: Date): string {
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+// The grid itself is placed in the browser's zone (FullCalendar's named-zone
+// support needs a plugin this app does not ship), so the text beside it is
+// rendered in that same zone and only takes the gym's 12h/24h choice.
+function formatHM(d: Date, s: GymFormatSettings): string {
+  return formatGymTime(d, { ...s, time_zone: Intl.DateTimeFormat().resolvedOptions().timeZone });
 }
 
 // Statuses with a `calendar.status_*` translation (#559 stage 3). next-intl
@@ -75,6 +80,7 @@ export default function CalendarPage() {
   const router = useRouter();
   const locale = useLocale();
   const { apiFetch } = useApiClient();
+  const gymFormat = useGymFormatSettings();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   // #930 — the Center filter lives in this page's filter bar now, over the same
   // center context the header dropdown used to drive. Reading it here is what
@@ -469,6 +475,9 @@ export default function CalendarPage() {
             ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView="timeGridDay"
+            firstDay={gymFormat.first_day_of_week}
+            slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: gymFormat.time_format === '12h' }}
+            eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: gymFormat.time_format === '12h' }}
             headerToolbar={{
               left:   'prev,next today',
               center: 'title',
@@ -547,57 +556,29 @@ export default function CalendarPage() {
                 );
               }
 
-              if (viewType === 'timeGridWeek') {
-                const timeRange = !e.all_day && arg.event.start && arg.event.end
-                  ? `${formatHM(arg.event.start)} – ${formatHM(arg.event.end)}`
-                  : null;
-                return (
-                  <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
-                    {timeRange && (
-                      <div style={{ opacity: 0.9, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {timeRange}
-                      </div>
-                    )}
-                    <div style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {arg.event.title}
-                    </div>
-                    {/* #981 §7 — a week column is a few characters wide, so
-                        the trainer and the space share one truncated line. */}
-                    {calendarEventMetaLines(meta, 'compact').map((line, i) => (
-                      <div key={i} style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {line}
-                      </div>
-                    ))}
-                    {(bookingCount || waitlistLine || statusLabel) && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden' }}>
-                        {bookingCount && (
-                          <span style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap' }}>{bookingCount}</span>
-                        )}
-                        {waitlistLine && (
-                          <span style={{ opacity: 0.85, fontSize: 11, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{waitlistLine}</span>
-                        )}
-                        {statusLabel && (
-                          <CalendarStatusBadge status={badgeStatus} label={statusLabel} compact />
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-
-              // Day view — #981 §4 gives the trainer and the space a line each
-              // (a day column is full-width), with the occupancy counts
-              // keeping a line of their own after them.
-              const metaLines = calendarEventMetaLines(meta, 'full');
+              // #1245 — Day and Week share one two-line layout. Line 1 is
+              // Time · Activity · Status · Occupancy (the waiting count rides
+              // with the occupancy); line 2 is Trainer · Space, with a missing
+              // value producing no separator (`calendarEventMetaLines`). The
+              // member's name is never shown here.
+              const timeRange = viewType === 'timeGridWeek'
+                ? (!e.all_day && arg.event.start && arg.event.end
+                    ? `${formatHM(arg.event.start, gymFormat)} – ${formatHM(arg.event.end, gymFormat)}`
+                    : null)
+                : (arg.timeText || null);
               const countsLine = joinMetaParts([bookingCount, waitlistLine]);
+              const metaLines = calendarEventMetaLines(meta, 'compact');
               return (
                 <div style={{ padding: '2px 4px', fontSize: 12, overflow: 'hidden', cursor: 'pointer' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden' }}>
-                    <span style={{ fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {arg.timeText ? `${arg.timeText} ` : ''}{arg.event.title}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0 }}>
+                      {joinMetaParts([timeRange, arg.event.title])}
                     </span>
                     {statusLabel && (
-                      <CalendarStatusBadge status={badgeStatus} label={statusLabel} />
+                      <CalendarStatusBadge status={badgeStatus} label={statusLabel} compact={viewType === 'timeGridWeek'} />
+                    )}
+                    {countsLine && (
+                      <span style={{ opacity: 0.85, flexShrink: 0 }}>{`· ${countsLine}`}</span>
                     )}
                   </div>
                   {metaLines.map((line, i) => (
@@ -605,11 +586,6 @@ export default function CalendarPage() {
                       {line}
                     </div>
                   ))}
-                  {countsLine && (
-                    <div style={{ opacity: 0.85, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {countsLine}
-                    </div>
-                  )}
                 </div>
               );
             }}

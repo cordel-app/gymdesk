@@ -1,5 +1,12 @@
 apply plugin: 'com.android.application'
 
+// #1077: set by CI (`-PversionCode=<run number> -PversionName=<package.json version>`)
+// so every build is distinguishable; a local build keeps 1 / "1.0". Computed here,
+// not inline: `versionCode (x).toInteger()` applies `.toInteger()` to the setter's
+// return value ("Value is null") and not to its argument.
+def ciVersionCode = (project.findProperty('versionCode') ?: '1').toString().toInteger()
+def ciVersionName = (project.findProperty('versionName') ?: '1.0').toString()
+
 android {
     namespace = "com.cordel.fitness"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +14,8 @@ android {
         applicationId "com.cordel.fitness"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode ciVersionCode
+        versionName ciVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -36,6 +43,9 @@ dependencies {
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
+    // #1077: MainActivity creates a placeholder Firebase app when there is no
+    // google-services.json; the plugin's own dependency is not visible to this module.
+    implementation "com.google.firebase:firebase-messaging:25.0.1"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
     androidTestImplementation "androidx.test.espresso:espresso-core:$androidxEspressoCoreVersion"

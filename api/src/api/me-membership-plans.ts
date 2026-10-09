@@ -11,11 +11,12 @@ import {
 } from './user-memberships';
 import { recordStatusChange } from './billing-events';
 import { snapshotAssignedPlan } from './assigned-plan-snapshot';
-import { resolveDeclinedBenefits } from './declined-plan-benefits';
+import { resolveDeclinedBenefits, recordDeclinedBenefitsAudit, loadNamedPlanBenefitLines } from './declined-plan-benefits';
 import { applyPromotionToMembership, validatePromotionSelection } from './membership-promotions';
 import { currentMembershipFee } from './membership-fee-pricing';
-import { commitAssignment, submitForPayment } from './assignment-commit';
-import { activePlanConflictBody } from '../domain/oneActivePlan';
+import { commitAssignment, submitForPayment, PENDING_PAYMENT_STATUS } from './assignment-commit';
+import { activePlanConflictBody, LIVE_ASSIGNMENT_STATUSES } from '../domain/oneActivePlan';
+import { createPlanCheckout } from './plan-checkout';
 import { isNewMemberStatus } from './new-member-eligibility';
 import {
   PLAN_PROMOTION_TARGET, firstCycleFinalPrice, isOfferableFeeBenefit,
@@ -119,6 +120,7 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
     const isNewMember = await isNewMemberStatus(db, gymId, memberId);
     const promotions = await loadCompatiblePromotions(gymId, plans.map((p) => Number(p.id)), isNewMember);
 
+    const benefitsByPlan = await loadNamedPlanBenefitLines(gymId, plans.map((p) => Number(p.id)));
     const items = [];
     for (const plan of plans) {
       const eff = await effectivePrice(Number(plan.id), gymId, today);
@@ -139,6 +141,7 @@ meMembershipPlansRouter.get('/', async (req, res, next) => {
         tax_included: priceFields.amount_incl_tax != null,
         billing_interval: plan.billing_interval != null ? Number(plan.billing_interval) : null,
         billing_unit: plan.billing_unit,
+        benefits: benefitsByPlan.get(Number(plan.id)) ?? [],
         promotions: (promotions.get(Number(plan.id)) ?? []).map((p) => ({
           id: Number(p.id),
           name: p.name,
@@ -174,13 +177,31 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
   if (!Number.isInteger(planId) || planId <= 0) return res.status(400).json({ error: 'Invalid id' });
   const promotionIds = parseIds(req.body?.promotion_ids);
   if (promotionIds === null) return res.status(400).json({ error: 'promotion_ids must be an array of positive integers' });
-  const confirm = req.body?.confirm === true;
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows: memberRows } = await db.query<{ name: string }>(
       'SELECT name FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [memberId, gymId],
     );
     if (!memberRows[0]) return res.status(404).json({ error: 'Member profile not found' });
+
+    // #1288 §28: a member never replaces a plan from the Members App — the
+    // change is the gym's, through the Admin workflows. Enforced here, not by
+    // hiding the button; `confirm` is no longer read at all. A plan already
+    // awaiting payment blocks a second one for the same reason.
+    const statusMarks = [...LIVE_ASSIGNMENT_STATUSES, PENDING_PAYMENT_STATUS].map(() => '?').join(',');
+    const { rows: held } = await db.query<{ status: string }>(
+      `SELECT um.status FROM user_memberships um
+        WHERE um.gym_id = ? AND um.status IN (${statusMarks})
+          AND (um.member_id = ? OR EXISTS (SELECT 1 FROM user_membership_members umm
+                                            WHERE umm.user_membership_id = um.id AND umm.gym_id = um.gym_id AND umm.member_id = ?))
+        ORDER BY FIELD(um.status, ?) DESC LIMIT 1`,
+      [gymId, ...LIVE_ASSIGNMENT_STATUSES, PENDING_PAYMENT_STATUS, memberId, memberId, PENDING_PAYMENT_STATUS],
+    );
+    if (held[0]) {
+      return held[0].status === PENDING_PAYMENT_STATUS
+        ? res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' })
+        : res.status(409).json({ error: 'plan_change_via_gym', message: 'To change your plan, please contact your gym.' });
+    }
 
     const planError = await planAssignabilityError(gymId, planId);
     if (planError) return res.status(planError.status).json({ error: planError.error });
@@ -247,8 +268,8 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     const fee = await currentMembershipFee(gymId, umId);
     const owesNothing = !(fee != null && fee > 0);
     const outcome = await db.transaction(async (tx) => owesNothing
-      ? commitAssignment(tx, { gymId, userMembershipId: umId, fromStatuses: [ASSIGNMENT_CREATION_STATUS], confirm, source: 'customer', actorUserId: userId })
-      : submitForPayment(tx, { gymId, userMembershipId: umId, confirm, source: 'customer', actorUserId: userId }));
+      ? commitAssignment(tx, { gymId, userMembershipId: umId, fromStatuses: [ASSIGNMENT_CREATION_STATUS], confirm: false, source: 'customer', actorUserId: userId })
+      : submitForPayment(tx, { gymId, userMembershipId: umId, confirm: false, source: 'customer', actorUserId: userId }));
 
     if (outcome.kind === 'conflict' || outcome.kind === 'pending_conflict' || outcome.kind === 'bad_date') {
       // The Draft stays — nobody's plan — and is discarded so the member can
@@ -270,6 +291,19 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       return res.status(500).json({ error: 'Membership could not be saved' });
     }
 
+    // #1288: Save & Pay writes the initial Billing Event and its payment
+    // request now and hands back the hosted page, so the member pays without a
+    // second step. A first cycle that owes nothing activated above and has none.
+    let checkout: { id: number; checkoutUrl: string; billing_event_id: number } | null = null;
+    if (outcome.kind === 'submitted' && fee != null) {
+      const { rows: emailRows } = await db.query<{ email: string | null }>(
+        'SELECT email FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId],
+      );
+      checkout = await createPlanCheckout({
+        gymId, memberId, memberEmail: emailRows[0]?.email ?? '', userMembershipId: umId, fee,
+      });
+    }
+
     const { rows } = await db.query<any>(
       `SELECT um.id, um.status, um.starts_at, mp.name AS plan_name FROM user_memberships um
          LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id WHERE um.id = ?`,
@@ -279,7 +313,13 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       action: 'create', entityType: 'user_membership', entityId: umId,
       next: { ...rows[0], promotion_ids: promotionIds, membership_fee: fee },
     });
-    res.status(201).json({ ...rows[0], membership_fee: fee, promotion_ids: promotionIds });
+    recordDeclinedBenefitsAudit(req, umId, declinedResult.declined);
+    res.status(201).json({
+      ...rows[0], membership_fee: fee, promotion_ids: promotionIds,
+      checkout_url: checkout?.checkoutUrl ?? null,
+      payment_request_id: checkout?.id ?? null,
+      billing_event_id: checkout?.billing_event_id ?? null,
+    });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);

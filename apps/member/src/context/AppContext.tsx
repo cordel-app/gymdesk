@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import type { MembersImages } from '@/lib/membersBackground';
@@ -107,7 +107,7 @@ const AppContext = createContext<AppContextValue>({
 });
 
 export function AppProvider({ children }: { children: ReactNode; gymId?: string | null }) {
-  const { getToken, isSignedIn } = useAuth();
+  const { getToken, isSignedIn, isLoaded } = useAuth();
   const { user } = useUser();
   const { session: impersonationSession, ready: impersonationReady } = useImpersonation();
   const impersonateAs = impersonationSession?.effectiveUserId ?? null;
@@ -125,6 +125,10 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   const [centers, setCenters] = useState<MemberCenter[]>([]);
   const [activeCenterId, setActiveCenterIdState] = useState<number | null>(null);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
+  // #1300: the identity (+ explicit reload) the current state was loaded for.
+  // A re-run of the load for the *same* one is a background refresh and must not
+  // blank the UI; only a different identity, or an explicit `reload()`, resets.
+  const loadedFor = useRef<string | null>(null);
 
   // Effective identity headers: carries the impersonated member/staff id (if any) to every /me/* call.
   const buildHeaders = useCallback((token: string, resolvedGymId: string) => {
@@ -173,21 +177,34 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     // and Home's Next Booking / Membership widgets spin forever (#415).
     if (!impersonationReady) return;
 
+    // #1300: Clerk reports `isSignedIn` undefined until it has loaded. Treating
+    // that as "signed out" flipped `loading` to false, rendered the unlinked
+    // state, and then flipped it back to true once the user arrived — a flash on
+    // every cold start. Stay in the loading state until Clerk has answered.
+    if (!isLoaded) return;
+
     if (!isSignedIn || !user) {
+      loadedFor.current = null;
       setLoading(false);
       return;
     }
 
+    const loadKey = `${user.id}|${impersonateAs ?? ''}|${reloadKey}`;
+    const background = loadedFor.current === loadKey;
+    loadedFor.current = loadKey;
+
     // Recompute the effective member context whenever impersonation starts, stops, or switches
     // target — otherwise Home stays permanently stuck on the previous identity's Loading state.
     let cancelled = false;
-    setLoading(true);
-    setLoadError(false);
-    setIsLinked(false);
-    setMember(null);
-    setCenters([]);
-    setActiveCenterIdState(null);
-    setUnreadNotifications(0);
+    if (!background) {
+      setLoading(true);
+      setLoadError(false);
+      setIsLinked(false);
+      setMember(null);
+      setCenters([]);
+      setActiveCenterIdState(null);
+      setUnreadNotifications(0);
+    }
 
     async function loadAll() {
       try {
@@ -246,7 +263,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     return () => {
       cancelled = true;
     };
-  }, [impersonationReady, isSignedIn, user?.id, impersonateAs, impersonationSession?.gymId, isSuperadmin, reloadKey]);
+  }, [impersonationReady, isLoaded, isSignedIn, user?.id, impersonateAs, impersonationSession?.gymId, isSuperadmin, reloadKey]);
 
   /** #1073: retry the load itself rather than reloading the WebView, so the
    * member keeps their session and the app does not pay the slow first load

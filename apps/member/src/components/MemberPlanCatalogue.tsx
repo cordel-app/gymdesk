@@ -25,6 +25,16 @@ export interface MemberPlanCardPromotion {
   action?: ReactNode;
 }
 
+export interface MemberPlanCardBenefit {
+  key: string;
+  name: string;
+  /** *Mandatory* / *Optional* — already translated. */
+  tag: string;
+  mandatory: boolean;
+  checked: boolean;
+  onToggle: () => void;
+}
+
 export interface MemberPlanCardItem {
   key: string;
   name: string;
@@ -35,6 +45,9 @@ export interface MemberPlanCardItem {
   /** *Final price* — the label and the figure, shown only once a Promotion is applied. */
   finalPriceLabel?: string | null;
   finalPrice?: string | null;
+  /** Benefits included in the plan; optional ones can be unticked (#1184 3b). */
+  benefitsHeading?: string;
+  benefits?: MemberPlanCardBenefit[];
   promotions?: MemberPlanCardPromotion[];
   /** The card's one action row: *Choose this plan*. */
   action?: ReactNode;
@@ -67,6 +80,23 @@ export function MemberPlanCatalogue({ title, emptyLabel, items, onClose, closeLa
                 </span>
               </div>
               {item.description && <p style={styles.description}>{item.description}</p>}
+              {(item.benefits ?? []).length > 0 && (
+                <div style={styles.promotion}>
+                  <span style={styles.promotionHeading}>{item.benefitsHeading}</span>
+                  {item.benefits!.map((b) => (
+                    <label key={b.key} style={styles.benefitRow}>
+                      <input
+                        type="checkbox"
+                        checked={b.mandatory || b.checked}
+                        disabled={b.mandatory}
+                        onChange={b.onToggle}
+                      />
+                      <span style={styles.benefitName}>{b.name}</span>
+                      <span style={styles.promotionBenefit}>{b.tag}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
               {(item.promotions ?? []).map((promotion) => (
                 <div key={promotion.key} style={styles.promotion}>
                   <span style={styles.promotionHeading}>{promotion.heading}</span>
@@ -110,6 +140,8 @@ const styles: Record<string, CSSProperties> = {
   promotion: { display: 'flex', flexDirection: 'column', gap: 2, marginTop: 10, paddingTop: 10, borderTop: `1px solid ${memberTheme.separator}` },
   promotionHeading: { fontSize: 11, fontWeight: 700, letterSpacing: 0.4, textTransform: 'uppercase', color: memberTheme.textMuted },
   promotionName: { fontSize: 13.5, fontWeight: 600, color: memberTheme.text },
+  benefitRow: { display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: memberTheme.text },
+  benefitName: { flex: 1, minWidth: 0 },
   promotionBenefit: { fontSize: 12.5, color: memberTheme.textSecondary },
   promotionAction: { display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   finalRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 10, flexWrap: 'wrap', marginTop: 10, paddingTop: 10, borderTop: `1px solid ${memberTheme.separator}` },

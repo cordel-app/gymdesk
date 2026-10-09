@@ -105,7 +105,9 @@ export type MembersAppSection =
   | 'group_members_background'
   | 'group_members_section_cards'
   | 'group_members_text'
-  | 'group_members_calendar';
+  | 'group_members_buttons'
+  | 'group_members_calendar'
+  | 'group_members_inputs';
 
 /** Section order in the editor (§1). */
 export const MEMBERS_APP_SECTIONS: MembersAppSection[] = [
@@ -113,7 +115,9 @@ export const MEMBERS_APP_SECTIONS: MembersAppSection[] = [
   'group_members_background',
   'group_members_section_cards',
   'group_members_text',
+  'group_members_buttons',
   'group_members_calendar',
+  'group_members_inputs',
 ];
 
 // §8's mapping, in the order the ticket lists it. Every source below is an
@@ -312,6 +316,42 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     source: { kind: 'typography', level: 'h3', field: 'fontFamily', labelKey: 'source_typography_h3_font' },
     cssVar: '--gd-font-h3',
   },
+  // ── Buttons (Members App) ─────────────────────────────────────────────────
+  // #1212 — both write the same variables the Members App's `memberTheme`
+  // already reads for its primary and secondary buttons, so nothing downstream
+  // needs a rule of its own.
+  {
+    key: 'primaryButtonColor',
+    section: 'group_members_buttons',
+    labelKey: 'label_members_primary_button_color',
+    type: 'color',
+    source: { kind: 'color', key: 'primaryButton', labelKey: 'label_primary_btn' },
+    cssVar: '--gd-primary-btn',
+  },
+  {
+    key: 'secondaryButtonColor',
+    section: 'group_members_buttons',
+    labelKey: 'label_members_secondary_button_color',
+    type: 'color',
+    source: { kind: 'color', key: 'secondaryButton', labelKey: 'label_secondary_btn' },
+    cssVar: '--gd-secondary-btn',
+  },
+  {
+    key: 'primaryButtonTextColor',
+    section: 'group_members_buttons',
+    labelKey: 'label_members_primary_button_text_color',
+    type: 'color',
+    source: { kind: 'color', key: 'primaryButtonText', labelKey: 'label_primary_btn_text' },
+    cssVar: '--gd-primary-btn-text',
+  },
+  {
+    key: 'secondaryButtonTextColor',
+    section: 'group_members_buttons',
+    labelKey: 'label_members_secondary_button_text_color',
+    type: 'color',
+    source: { kind: 'color', key: 'secondaryButtonText', labelKey: 'label_secondary_btn_text' },
+    cssVar: '--gd-secondary-btn-text',
+  },
   // ── Calendar (Members App) ────────────────────────────────────────────────
   {
     key: 'text1Color',
@@ -344,6 +384,22 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     type: 'color',
     source: { kind: 'color', key: 'calendarBackground', labelKey: 'label_calendar_bg' },
     cssVar: '--gd-calendar-bg',
+  },
+  {
+    key: 'calendarActiveAreaColor',
+    section: 'group_members_calendar',
+    labelKey: 'label_members_calendar_active_area_bg',
+    type: 'color',
+    source: { kind: 'color', key: 'calendarActiveAreaBackground', labelKey: 'label_calendar_active_area_bg' },
+    cssVar: '--gd-calendar-active-area-bg',
+  },
+  {
+    key: 'calendarInactiveAreaColor',
+    section: 'group_members_calendar',
+    labelKey: 'label_members_calendar_inactive_area_bg',
+    type: 'color',
+    source: { kind: 'color', key: 'calendarDisabledSlotBackground', labelKey: 'label_calendar_disabled_slot_bg' },
+    cssVar: '--gd-calendar-disabled-slot-bg',
   },
   {
     key: 'calendarHeaderColor',
@@ -397,6 +453,17 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     type: 'color',
     source: { kind: 'color', key: 'inputBackgroundColor', labelKey: 'label_input_background_color' },
     cssVar: '--gd-members-calendar-modal-input-bg',
+  },
+  {
+    // #1213 — the text-input fill. Writes `--gd-input-bg`, the very variable
+    // `memberTheme.inputBackground` (and so every `inputStyle` consumer) reads,
+    // so no input component spells a colour of its own.
+    key: 'inputBackgroundColor',
+    section: 'group_members_inputs',
+    labelKey: 'label_members_input_bg',
+    type: 'color',
+    source: { kind: 'color', key: 'inputBackgroundColor', labelKey: 'label_input_background_color' },
+    cssVar: '--gd-input-bg',
   },
 ];
 
@@ -505,6 +572,11 @@ export function isMembersAppFontSize(value: unknown): boolean {
   return Number.isInteger(n) && n >= MEMBERS_APP_FONT_SIZE.min && n <= MEMBERS_APP_FONT_SIZE.max;
 }
 
+/** A bare number (`1`, `0`, `0.5`) is pixels; a value with a unit is left as typed (#1216). */
+function cssLength(value: string): string {
+  return /^\d+(\.\d+)?$/.test(value) ? `${value}px` : value;
+}
+
 /**
  * The value to write for one Members App CSS variable. A stored value that is
  * unusable (a colour that is not a hex triplet, a font outside the allowed
@@ -533,7 +605,7 @@ export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetti
       return alignmentCssValue(setting.type, value) ?? alignmentCssValue(setting.type, inherited) ?? 'center';
     case 'length':
     default:
-      return typeof value === 'string' && value.trim() !== '' ? value.trim() : String(inherited);
+      return cssLength(typeof value === 'string' && value.trim() !== '' ? value.trim() : String(inherited));
   }
 }
 

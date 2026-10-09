@@ -147,19 +147,29 @@ describe('Package-credit consumption (#372)', () => {
     classPackageId = await createClassPackage(gymId, 10, serviceId);
   });
 
-  it('debits a credit on booking and auto-refunds it when cancelled >= 1 day before the session', async () => {
+  const book = (memberId: number, sessionId: number) =>
+    request
+      .post('/bookings')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_id: memberId, class_session_id: sessionId });
+
+  const ledger = async (bookingId: number) => {
+    const { rows } = await db.query(
+      'SELECT reason, source_kind, returned_at FROM professional_service_consumptions WHERE calendar_event_booking_id = ?',
+      [bookingId],
+    );
+    return rows;
+  };
+
+  it('booking spends nothing, and a cancellation >= 1 day ahead spends nothing either (#1189 stage 3)', async () => {
     const memberId = await createMember(gymId, centerId);
     const packageId = await assignPackage(gymId, memberId, classPackageId, 5);
     const sessionId = await createSessionStarting(gymId, activityTypeId, centerId, 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 DAY)');
 
-    const bookRes = await request
-      .post('/bookings')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ member_id: memberId, class_session_id: sessionId });
+    const bookRes = await book(memberId, sessionId);
     expect(bookRes.status).toBe(201);
-
-    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(4);
+    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(5);
 
     const cancelRes = await request
       .delete(`/bookings/${bookRes.body.id}`)
@@ -168,20 +178,61 @@ describe('Package-credit consumption (#372)', () => {
     expect(cancelRes.status).toBe(204);
 
     expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(5);
+    expect(await ledger(bookRes.body.id)).toHaveLength(0);
   });
 
-  it('keeps the credit consumed on a same-day cancellation, and lets a trainer manually refund it once', async () => {
+  it('attendance spends one session, once, and a corrected roll does not double-spend', async () => {
+    const memberId = await createMember(gymId, centerId);
+    const packageId = await assignPackage(gymId, memberId, classPackageId, 5);
+    const sessionId = await createSessionStarting(gymId, activityTypeId, centerId, 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 DAY)');
+    const bookRes = await book(memberId, sessionId);
+
+    const mark = (status: string, extra: object = {}) =>
+      request
+        .post(`/bookings/${bookRes.body.id}/attendance`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ status, ...extra });
+
+    expect((await mark('present')).status).toBe(200);
+    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(4);
+    expect((await ledger(bookRes.body.id))[0].reason).toBe('attendance');
+
+    // Corrected to absent and back: still one spend.
+    expect((await mark('absent')).status).toBe(200);
+    expect((await mark('present')).status).toBe(200);
+    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(4);
+    expect(await ledger(bookRes.body.id)).toHaveLength(1);
+  });
+
+  it('absent is a no-show that spends automatically; consume:false returns the class', async () => {
+    const memberId = await createMember(gymId, centerId);
+    const packageId = await assignPackage(gymId, memberId, classPackageId, 5);
+    const sessionId = await createSessionStarting(gymId, activityTypeId, centerId, 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 DAY)');
+    const bookRes = await book(memberId, sessionId);
+
+    const absent = (extra: object = {}) =>
+      request
+        .post(`/bookings/${bookRes.body.id}/attendance`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId)
+        .send({ status: 'absent', ...extra });
+
+    expect((await absent()).status).toBe(200);
+    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(4);
+    expect((await ledger(bookRes.body.id))[0].reason).toBe('no_show');
+
+    expect((await absent({ consume: false })).status).toBe(200);
+    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(5);
+    expect((await ledger(bookRes.body.id))[0].returned_at).not.toBeNull();
+  });
+
+  it('a staff cancellation inside the notice window spends the session as a late cancel', async () => {
     const memberId = await createMember(gymId, centerId);
     const packageId = await assignPackage(gymId, memberId, classPackageId, 5);
     const sessionId = await createSessionStarting(gymId, activityTypeId, centerId, 'DATE_ADD(UTC_TIMESTAMP(), INTERVAL 2 HOUR)');
-
-    const bookRes = await request
-      .post('/bookings')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ member_id: memberId, class_session_id: sessionId });
-    expect(bookRes.status).toBe(201);
-    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(4);
+    const bookRes = await book(memberId, sessionId);
+    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(5);
 
     const cancelRes = await request
       .delete(`/bookings/${bookRes.body.id}`)
@@ -189,23 +240,8 @@ describe('Package-credit consumption (#372)', () => {
       .set('x-gym-id', gymId);
     expect(cancelRes.status).toBe(204);
 
-    // Same-day cancellation: credit stays consumed, no auto-refund.
     expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(4);
-
-    const refundRes = await request
-      .post(`/bookings/${bookRes.body.id}/refund-credit`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(refundRes.status).toBe(200);
-    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(5);
-
-    // A second manual refund on the same booking must not double-refund.
-    const secondRefundRes = await request
-      .post(`/bookings/${bookRes.body.id}/refund-credit`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(secondRefundRes.status).toBe(400);
-    expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(5);
+    expect((await ledger(bookRes.body.id))[0].reason).toBe('late_cancel');
   });
 
   it('rejects a manual refund with the wrong role', async () => {
@@ -229,6 +265,7 @@ describe('Package-credit consumption (#372)', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(403);
+    // The 1-hour-ahead cancellation above was a late cancel and spent one.
     expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(4);
   });
 
@@ -244,10 +281,9 @@ describe('Package-credit consumption (#372)', () => {
       .send({ member_id: memberId });
     expect(res.status).toBe(201);
 
-    const { rows } = await db.query('SELECT status, attendance_status, user_class_package_id FROM calendar_event_bookings WHERE id = ?', [res.body.booking_id]);
+    const { rows } = await db.query('SELECT status, attendance_status FROM calendar_event_bookings WHERE id = ?', [res.body.booking_id]);
     expect(rows[0].status).toBe('booked');
     expect(rows[0].attendance_status).toBe('present');
-    expect(rows[0].user_class_package_id).toBe(packageId);
     expect(Number((await getPackage(packageId)).sessions_remaining)).toBe(4);
 
     // A member who already has an active booking can't be walked in again.

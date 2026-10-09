@@ -17,6 +17,8 @@ import {
 import type { CenterOption } from '@/context/CenterContext';
 import { validateDocumentId } from '@/lib/documentId';
 import {
+  MEMBER_GENDER_OPTIONS,
+  memberGenderLabelKey,
   newMemberAnnounceKey,
   newMemberValueKey,
   type MemberEditableFieldSpec,
@@ -78,6 +80,19 @@ export function MemberEditForm({
           onChange={(e) => update(e.target.value)}
           placeholder={placeholder}
         />
+      );
+    }
+
+    if (field.kind === 'gender') {
+      const legacy = value && !(MEMBER_GENDER_OPTIONS as readonly string[]).includes(value) ? value : null;
+      return (
+        <select style={formControlStyle} value={value} onChange={(e) => update(e.target.value)}>
+          <option value="">—</option>
+          {MEMBER_GENDER_OPTIONS.map((g) => (
+            <option key={g} value={g}>{t(memberGenderLabelKey(g)!)}</option>
+          ))}
+          {legacy && <option value={legacy}>{legacy}</option>}
+        </select>
       );
     }
 

@@ -23,6 +23,7 @@ import {
 import {
   NativeProjectFileError,
   withAndroidStrings,
+  withAppleSignIn,
   withAssociatedDomains,
   withBundleIdentifier,
   withGradleApplicationId,
@@ -62,6 +63,7 @@ describe('resolveAppProfile', () => {
       googleIosClientId: null,
       googleWebClientId: null,
       customUrlScheme: 'com.example.app',
+      appleSignIn: false,
     });
   });
 
@@ -335,5 +337,38 @@ describe('app links', () => {
     });
     expect(next).toContain('<string name="app_link_host">new.example.com</string>');
     expect(next).not.toContain('old.example.com');
+  });
+});
+
+describe('Sign in with Apple (#1075)', () => {
+  const entitlements = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+\t<key>aps-environment</key>
+\t<string>development</string>
+</dict>
+</plist>
+`;
+
+  it('is off by default, and the profile or MOBILE_APPLE_SIGN_IN turns it on', () => {
+    const base = { appId: 'com.x.y', appName: 'X', serverUrl: 'https://x.example' };
+    expect(resolveAppProfile(base).appleSignIn).toBe(false);
+    expect(resolveAppProfile({ ...base, appleSignIn: true }).appleSignIn).toBe(true);
+    expect(resolveAppProfile({ ...base, appleSignIn: true }, { MOBILE_APPLE_SIGN_IN: 'false' }).appleSignIn).toBe(false);
+    expect(resolveAppProfile(base, { MOBILE_APPLE_SIGN_IN: 'true' }).appleSignIn).toBe(true);
+  });
+
+  it('adds the entitlement once and removes it when disabled', () => {
+    const on = withAppleSignIn(entitlements, true);
+    expect(on).toContain('com.apple.developer.applesignin');
+    expect(on).toContain('<string>Default</string>');
+    expect(on).toContain('aps-environment');
+    expect(withAppleSignIn(on, true)).toBe(on);
+    expect(withAppleSignIn(on, false)).toBe(entitlements);
+    expect(withAppleSignIn(entitlements, false)).toBe(entitlements);
+  });
+
+  it('throws rather than reporting success when the file has no anchor', () => {
+    expect(() => withAppleSignIn('nothing here', true)).toThrow();
   });
 });

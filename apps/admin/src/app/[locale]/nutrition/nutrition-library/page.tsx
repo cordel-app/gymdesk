@@ -7,8 +7,11 @@ import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { StatusBadge } from '@/components/StatusBadge';
 import { MultiSelectFilter } from '@/components/MultiSelectFilter';
 import { DataTable, Column } from '@/components/DataTable';
+import { listNameBadgeStyle } from '@/components/listChrome';
 import { ImageUploadField } from '@/components/ImageUploadField';
 import { NutritionItemReadOnlyView } from '@/components/nutritionLibrary/NutritionItemReadOnlyView';
 import { NutritionItemDetailsModal } from '@/components/nutritionLibrary/NutritionItemDetailsModal';
@@ -53,7 +56,6 @@ type EditForm = NutritionItemFormValues;
 
 const emptyEditForm = emptyNutritionItemForm;
 
-const LIMIT = 20;
 
 export default function NutritionLibraryPage() {
   const t = useTranslations();
@@ -70,7 +72,6 @@ export default function NutritionLibraryPage() {
 
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
   const [loading, setLoading] = useState(true);
@@ -90,6 +91,8 @@ export default function NutritionLibraryPage() {
   // `⋮ → Details` — the read-only modal (#799 §9). It renders the list row it is
   // given, so nothing is fetched and nothing can disagree with the expanded card.
   const [detailItem, setDetailItem] = useState<LibraryItem | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
+  const [deleting, setDeleting] = useState<LibraryItem | null>(null);
 
   // Inline edit
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -116,7 +119,6 @@ export default function NutritionLibraryPage() {
     return () => clearTimeout(id);
   }, [searchInput]);
 
-  useEffect(() => { setOffset(0); }, [search, categoryFilter, qualityFilter]);
 
   const load = useCallback(async () => {
     if (!activeGymId) { setLoading(false); return; }
@@ -126,8 +128,8 @@ export default function NutritionLibraryPage() {
       if (search) params.set('search', search);
       for (const c of categoryFilter) params.append('category_id', c);
       for (const q of qualityFilter) params.append('quality_id', q);
-      params.set('limit', String(LIMIT));
-      params.set('offset', String(offset));
+      if (showDeleted) params.set('status', 'deleted');
+      params.set('limit', 'all');
       const [data, categoriesData, qualitiesData] = await Promise.all([
         apiFetch<ListResponse>(`/nutrition-library?${params.toString()}`),
         allCategories.length ? Promise.resolve(allCategories) : apiFetch<Category[]>('/nutrition-library/categories'),
@@ -140,7 +142,7 @@ export default function NutritionLibraryPage() {
     } catch (err: any) {
       toast(err.message ?? t('nutrition_library.error_generic'));
     } finally { setLoading(false); }
-  }, [apiFetch, activeGymId, search, categoryFilter, qualityFilter, offset]);
+  }, [apiFetch, activeGymId, search, categoryFilter, qualityFilter, showDeleted]);
 
   useEffect(() => { if (!gymLoading) load(); }, [gymLoading, load]);
 
@@ -238,8 +240,19 @@ export default function NutritionLibraryPage() {
     } finally { setEditSaving(false); }
   }
 
-  const pageStart = total === 0 ? 0 : offset + 1;
-  const pageEnd = Math.min(offset + LIMIT, total);
+  async function handleDelete() {
+    if (!deleting) return;
+    try {
+      await apiFetch(`/nutrition-library/${deleting.id}`, { method: 'DELETE' });
+      setDeleting(null);
+      toast(t('nutrition_library.item_deleted'), 'success');
+      load();
+    } catch (e: any) {
+      setDeleting(null);
+      toast(e.message ?? t('nutrition_library.error_generic'));
+    }
+  }
+
   const activeFilterCount = categoryFilter.length + qualityFilter.length + (search ? 1 : 0);
 
   function renderCategoryCheckboxes(selected: number[], onChange: (ids: number[]) => void) {
@@ -356,7 +369,12 @@ export default function NutritionLibraryPage() {
   }
 
   const columns: Column<LibraryItem>[] = [
-    { header: t('nutrition_library.label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => <strong>{item.display_name ?? item.name}</strong> },
+    { header: t('nutrition_library.label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <strong>{item.display_name ?? item.name}</strong>
+          {item.gym_id === null && <span style={listNameBadgeStyle}>{t('nutrition_library.system_badge')}</span>}
+        </span>
+      ) },
     {
       header: t('nutrition_library.label_categories'),
       mobile: 'secondary',
@@ -375,12 +393,7 @@ export default function NutritionLibraryPage() {
         </div>
       ) : <span style={{ color: 'var(--text-muted, #9ca3af)', fontSize: 13 }}>—</span>,
     },
-    {
-      header: '', width: 120, mobile: 'secondary',
-      render: (item) => item.gym_id === null
-        ? <span style={{ fontSize: 12, color: '#888' }}>{t('nutrition_library.read_only')}</span>
-        : null,
-    },
+    { header: t('nutrition_library.col_status'), width: 100, mobile: 'keep', render: (item) => <StatusBadge status={item.status} label={item.status === 'deleted' ? t('nutrition_library.status_deleted') : t('nutrition_library.status_active')} /> },
     {
       header: '', width: 40, mobile: 'actions',
       render: (item) => {
@@ -388,9 +401,14 @@ export default function NutritionLibraryPage() {
         return (
           <ContextMenu items={[
             // #799 §8: Details is the read-only modal (audit information), Edit the
-            // form. Expanding the row is a third, separate interaction.
+            // form. Expanding the row is a third, separate interaction. Order
+            // (#1301): Edit, Delete (destructive), Details. A deleted item keeps
+            // Details alone.
+            ...(isGymItem && item.status !== 'deleted' ? [
+              { label: t('nutrition_library.edit'), onClick: () => openInlineEdit(item), disabled: !canWrite, title: readOnlyTitle },
+              { label: t('nutrition_library.delete'), danger: true, onClick: () => setDeleting(item), disabled: !canWrite, title: readOnlyTitle },
+            ] : []),
             { label: t('nutrition_library.details'), onClick: () => setDetailItem(item) },
-            ...(isGymItem ? [{ label: t('nutrition_library.edit'), onClick: () => openInlineEdit(item), disabled: !canWrite, title: readOnlyTitle }] : []),
           ]} />
         );
       },
@@ -448,6 +466,10 @@ export default function NutritionLibraryPage() {
           selected={qualityFilter}
           onChange={setQualityFilter}
         />
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}>
+          <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+          {t('nutrition_library.show_deleted')}
+        </label>
         {activeFilterCount > 0 && (
           <button onClick={clearFilters} style={{ ...btnStyle('#888'), padding: '8px 14px' }}>{t('nutrition_library.clear_filters')}</button>
         )}
@@ -493,17 +515,18 @@ export default function NutritionLibraryPage() {
         onToggleExpand={(item) => toggleExpand(item.id)}
       />
 
-      {total > 0 && (
-        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: '#666' }}>{pageStart}–{pageEnd} / {total}</span>
-          <button onClick={() => setOffset(Math.max(0, offset - LIMIT))} disabled={offset === 0} style={btnStyle('#888')}>‹</button>
-          <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={btnStyle('#888')}>›</button>
-        </div>
-      )}
-
       {detailItem && (
         <NutritionItemDetailsModal item={detailItem} onClose={() => setDetailItem(null)} />
       )}
+
+      <ConfirmDialog
+        open={deleting !== null}
+        message={t('nutrition_library.delete_confirm', { name: deleting?.name ?? '' })}
+        confirmLabel={t('nutrition_library.delete')}
+        cancelLabel={t('nutrition_library.cancel')}
+        onConfirm={handleDelete}
+        onCancel={() => setDeleting(null)}
+      />
       </>
       )}
     </div>

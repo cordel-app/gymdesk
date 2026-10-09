@@ -34,7 +34,6 @@ function read(file: string): string {
 
 const expandedRowSrc = read('MemberExpandedRow.tsx');
 const plansSrc = read('MemberMembershipPlans.tsx');
-const servicesSrc = read('MemberAdditionalServices.tsx');
 const simulationSrc = read('MemberBillingSimulation.tsx');
 
 const SECTION_KEYS = [
@@ -54,10 +53,6 @@ const PLAN_KEYS = [
   'add_membership_plan_error_no_plan',
 ];
 
-const SERVICE_KEYS = [
-  'additional_services_needs_plan',
-];
-
 describe('Member Membership sections (#634)', () => {
   it('renders the sections as siblings, in the ticket\'s order', () => {
     const order = SECTION_KEYS.map((key) => expandedRowSrc.indexOf(`t('members.${key}')`));
@@ -68,7 +63,7 @@ describe('Member Membership sections (#634)', () => {
   it('feeds the two configuration sections from one Member-level read', () => {
     expect(expandedRowSrc).toContain('/user-memberships/member/${memberId}/configuration');
     expect(expandedRowSrc).toContain('<MemberMembershipPlans');
-    expect(expandedRowSrc).toContain('<MemberAdditionalServices');
+    expect(expandedRowSrc).not.toContain('MemberAdditionalServices');
     expect(expandedRowSrc).toContain('<MemberBillingSimulation');
   });
 
@@ -98,16 +93,10 @@ describe('Member Membership sections (#634)', () => {
     expect(plansSrc).toContain('live.map(');
   });
 
-  it('reuses the #631 inline editor for Additional Services, once per live plan (§4)', () => {
-    expect(servicesSrc).toContain('<AdditionalPeriodicServices');
-    expect(servicesSrc).toContain('plans.filter((p) => p.is_live');
-    expect(servicesSrc).toContain('services.filter((s) => s.user_membership_id === plan.id)');
-  });
-
   it('re-runs the Billing Simulation whenever the configuration changes (§12)', () => {
     expect(expandedRowSrc).toContain('setSimulationKey((k) => k + 1)');
     expect(expandedRowSrc).toContain('key={simulationKey}');
-    for (const src of [plansSrc, servicesSrc]) {
+    for (const src of [plansSrc]) {
       expect(src).toContain('onChanged');
     }
   });
@@ -117,7 +106,7 @@ describe('Member Membership sections (#634)', () => {
   });
 
   it('introduces no modal anywhere in the four sections (§15)', () => {
-    for (const src of [plansSrc, servicesSrc, simulationSrc]) {
+    for (const src of [plansSrc, simulationSrc]) {
       expect(src).not.toContain('CrudModal');
       expect(src).not.toMatch(/<\w*Modal[\s/>]/);
     }
@@ -125,7 +114,7 @@ describe('Member Membership sections (#634)', () => {
 
   it('never recomputes money in the frontend', () => {
     // Every amount rendered by these sections comes from the server.
-    for (const src of [plansSrc, servicesSrc]) {
+    for (const src of [plansSrc]) {
       expect(src).not.toMatch(/\*\s*quantity|regular_price\s*[-*]/);
     }
   });
@@ -133,7 +122,7 @@ describe('Member Membership sections (#634)', () => {
   it('defines every new key in all locales', () => {
     for (const code of LOCALE_CODES) {
       const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
-      for (const key of [...SECTION_KEYS, ...PLAN_KEYS, ...SERVICE_KEYS]) {
+      for (const key of [...SECTION_KEYS, ...PLAN_KEYS]) {
         expect(messages.members?.[key], `${code}.json is missing members.${key}`).toBeTruthy();
       }
     }

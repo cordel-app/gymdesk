@@ -285,6 +285,10 @@ export const navigationGroups: NavGroup[] = [
         featureKey: 'system.themes',
       },
       {
+        href: '/{{locale}}/localization',
+        labelKey: 'nav.localization',
+      },
+      {
         href: '/{{locale}}/recycle-bin',
         labelKey: 'nav.recycle_bin',
         featureKey: 'system.recycle_bin',
@@ -331,6 +335,12 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/cordel/feature-flags',
         labelKey: 'nav.feature_flags',
         separatorAbove: true,
+      },
+      {
+        // #1077: the published test builds of the mobile apps — platform-wide, so it
+        // belongs here and not in any one gym's card.
+        href: '/{{locale}}/cordel/mobile-builds',
+        labelKey: 'nav.mobile_builds',
       },
       {
         href: '/{{locale}}/cordel/nutrition-library',

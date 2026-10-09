@@ -275,3 +275,95 @@ export function googleIdToken(result: unknown): string | null {
   const candidate = source?.result?.idToken ?? source?.idToken ?? null;
   return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : null;
 }
+
+/**
+ * What `@capgo/capacitor-social-login` is initialised with for Apple (#1075,
+ * mobile app WP3b).
+ *
+ * Apple has no client id on the native side — the sheet is the OS's, bound to
+ * the app's Bundle ID and its *Sign in with Apple* capability — so the one
+ * "is this configured" signal is `NEXT_PUBLIC_APPLE_SIGN_IN`. It is a build-time
+ * switch for the reason the Google ids are (design rule 1), and it is **off by
+ * default**: a build that turns it on without the capability on the App ID would
+ * show a button that fails when tapped, which WP2's rule forbids.
+ *
+ * Only iOS answers: guideline 4.8 is an App Store rule, Android is unaffected,
+ * and the web keeps Clerk's own Apple button.
+ */
+export interface AppleNativeConfig {
+  /** Reserved for the plugin's `apple` options; none are needed today. */
+  readonly enabled: true;
+}
+
+export function appleNativeConfig(
+  env: Record<string, string | undefined>,
+  platform: NativePlatform | null | undefined,
+): AppleNativeConfig | null {
+  if (platform !== 'ios') return null;
+  const flag = (env.NEXT_PUBLIC_APPLE_SIGN_IN ?? '').trim().toLowerCase();
+  return flag === 'true' || flag === '1' ? { enabled: true } : null;
+}
+
+/**
+ * The identity token out of the plugin's `login()` result for Apple, or `null`.
+ *
+ * Same defensive reading as `googleIdToken()`, kept as its own function so the
+ * two providers can diverge (the spike has not yet shown what Clerk accepts for
+ * Apple): a cancelled sheet is `null`, never a token of `undefined`.
+ */
+export function appleIdToken(result: unknown): string | null {
+  const source = (result ?? {}) as Record<string, any>;
+  const candidate = source?.result?.idToken ?? source?.idToken ?? null;
+  return typeof candidate === 'string' && candidate.trim() ? candidate.trim() : null;
+}
+
+/**
+ * The app's own id — the Bundle ID (iOS) or package name (Android) — out of what
+ * Capacitor's `App.getInfo()` answers, or `null`.
+ *
+ * #1077: a push registration used to name no `app_id`, so the API filed every
+ * token under its default (`com.cordel.fitness`) whichever app sent it, and a dev
+ * app (`com.cordel.fitness.dev`) would have been delivered to with the pro app's
+ * credentials, or not at all. The app already knows what it is installed as; this
+ * reads it defensively (`getInfo()` answers an object, and anything else is "do
+ * not say" rather than an invented id, which the API then resolves to its default).
+ */
+export function appIdFromInfo(info: unknown): string | null {
+  const id = (info as { id?: unknown } | null | undefined)?.id;
+  return typeof id === 'string' && id.trim() ? id.trim() : null;
+}
+
+/**
+ * #1285 — what went wrong in a native sign-in, as one short line for a developer.
+ *
+ * The hook used to swallow the error, so a failed Google sign-in showed the same
+ * notice whether the sheet, the token or Clerk had refused. A Clerk error carries
+ * `errors[0].code` / `longMessage`; anything else its own `message`. Pure: the
+ * hook decides whether to show it (development builds only).
+ */
+export function signInErrorDetail(err: unknown): string {
+  const e = err as { errors?: Array<{ code?: string; longMessage?: string; message?: string }>; message?: unknown } | null;
+  const clerk = e?.errors?.[0];
+  if (clerk) {
+    const parts = [clerk.code, clerk.longMessage ?? clerk.message].filter((v) => typeof v === 'string' && v.trim());
+    if (parts.length) return parts.join(': ').slice(0, 300);
+  }
+  if (typeof e?.message === 'string' && e.message.trim()) return e.message.trim().slice(0, 300);
+  return typeof err === 'string' && err.trim() ? err.trim().slice(0, 300) : 'unknown error';
+}
+
+/**
+ * #1285 — the nonce a native Google sign-in asks the token to carry.
+ *
+ * Clerk's own Android SDK always requests the ID token with a fresh random nonce
+ * (`GetGoogleIdOption.setNonce(UUID)`), and a token requested without one from an
+ * Android app was refused by Clerk with `authorization_invalid` while the same
+ * account signed in from iOS. A nonce is also what stops a captured token from
+ * being replayed, so every attempt gets a new one; `randomUUID` is what the
+ * WebView provides, with a time-based fallback for a runtime without it.
+ */
+export function googleSignInNonce(): string {
+  const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+  if (c && typeof c.randomUUID === 'function') return c.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
