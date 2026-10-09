@@ -1396,6 +1396,15 @@ meRouter.get('/exercise-logs', requireRole('member'), requireFeatureEnabled('tra
                WHERE el.gym_id = ? AND el.member_id = ?`;
     if (exerciseId) { sql += ' AND el.exercise_id = ?'; params.push(exerciseId); }
     sql += ' ORDER BY el.logged_date DESC, el.id DESC';
+    // #1297: an optional page size. Validated as an integer and written into the
+    // statement — a bound LIMIT is refused by the prepared-statement protocol.
+    if (req.query.limit !== undefined) {
+      const limit = Number(req.query.limit);
+      if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
+        return res.status(400).json({ error: 'limit must be an integer between 1 and 100' });
+      }
+      sql += ` LIMIT ${limit}`;
+    }
     const { rows } = await db.query(sql, params);
     res.json(rows);
   } catch (err: any) {

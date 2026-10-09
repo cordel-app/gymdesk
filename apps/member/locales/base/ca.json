@@ -88,7 +88,12 @@
     "result_unit_seconds": "Segons",
     "result_unit_minutes": "Minuts",
     "result_unit_meters": "Metres",
-    "result_unit_calories": "Calories"
+    "result_unit_calories": "Calories",
+    "done": "Fet!",
+    "log_date": "Data",
+    "new_entry": "Nova entrada",
+    "add_log": "Afegeix registre",
+    "new_chip": "Nou"
   },
   "profile": {
     "title": "El meu perfil",
