@@ -31,6 +31,7 @@
 export const MEMBER_TAB_IDS = [
   'profile',
   'products_services',
+  'professional_services',
   'nutrition',
   'personal_goals',
   'training_plan',
@@ -47,6 +48,7 @@ export type MemberSectionKey =
   | 'section_billing_simulation'
   | 'section_pt_slots'
   | 'section_session_packages'
+  | 'section_professional_services'
   | 'section_billing_events'
   | 'section_nutrition_plans'
   | 'section_personal_goals'
@@ -77,6 +79,11 @@ export const MEMBER_TABS: readonly MemberTab[] = [
       'section_session_packages',
       'section_billing_events',
     ],
+  },
+  {
+    id: 'professional_services',
+    labelKey: 'tab_professional_services',
+    sections: ['section_professional_services'],
   },
   { id: 'nutrition', labelKey: 'tab_nutrition', sections: ['section_nutrition_plans'] },
   // #948 §4 shipped the assignments this tab shows, so it is never an empty
