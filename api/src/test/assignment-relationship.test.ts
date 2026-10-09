@@ -83,11 +83,30 @@ describe('GET /user-memberships/member/:id/configuration', () => {
   });
 
   it('drops the Membership from a Member once removed from coverage', async () => {
+    // The Duo is full (member_limit 2, John and Jane), so coverage is added and
+    // removed on a Membership whose plan has no member limit.
+    const familyPlan = await db.query(
+      `INSERT INTO membership_plans (gym_id, name, lifecycle_status, enrollment_status, member_limit)
+       VALUES (?, 'Family', 'active', 'public', 'family')`,
+      [gymId],
+    );
+    const familyOwner = await member(gymId, 'FamilyOwner');
+    const family = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, ?, 'active', CURDATE(), 49.99)`,
+      [gymId, familyOwner, familyPlan.insertId],
+    );
+    const familyId = family.insertId as number;
+    await db.query(
+      'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
+      [gymId, familyId, familyOwner],
+    );
+
     const extra = await member(gymId, 'Extra');
-    await request.post(`/user-memberships/${duoId}/members`).set(h(gymId)).send({ member_id: extra }).expect(201);
+    await request.post(`/user-memberships/${familyId}/members`).set(h(gymId)).send({ member_id: extra }).expect(201);
     const added = await request.get(`/user-memberships/member/${extra}/configuration`).set(h(gymId));
     expect(added.body.plans[0].assignment_relationship).toBe('linked');
-    await request.delete(`/user-memberships/${duoId}/members/${extra}`).set(h(gymId)).expect(200);
+    await request.delete(`/user-memberships/${familyId}/members/${extra}`).set(h(gymId)).expect(204);
     const removed = await request.get(`/user-memberships/member/${extra}/configuration`).set(h(gymId));
     expect(removed.body.plans).toEqual([]);
   });
