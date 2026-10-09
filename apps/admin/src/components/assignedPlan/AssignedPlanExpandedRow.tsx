@@ -15,7 +15,10 @@ import {
   cardMutedTextStyle,
   cardTextLinkStyle,
   formErrorStyle,
+  inlineActionsRowStyle,
+  secondaryBtnSmall,
 } from '@/components/formChrome';
+import { primaryBtnSmall } from '@/components/ui';
 import { AssignedPlanDetailsModal } from './AssignedPlanDetailsModal';
 import { AdditionalPeriodicServices } from './AdditionalPeriodicServices';
 import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
@@ -126,6 +129,8 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   const [replacement, setReplacement] = useState<ActivePlanConflict | null>(null);
   // #1108 stage 2: the two ways a Pending Payment row is paid from here.
   const [paymentStep, setPaymentStep] = useState<'none' | 'confirm_cash'>('none');
+  // #1240: Cancel on a Draft is a hard delete, confirmed first.
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [paymentLink, setPaymentLink] = useState<string | null>(null);
 
   // #613: impersonation-aware; actions that apply to the plan's status are shown, disabled when not permitted.
@@ -230,6 +235,29 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
     }
   }
 
+  /** #1240: Cancel on a Draft — `DELETE /:id/draft` removes it; nothing was billed. */
+  async function discardDraft() {
+    setActionBusy(true);
+    try {
+      await apiFetch(`/user-memberships/${assignedPlanId}/draft`, { method: 'DELETE' });
+      setDiscardOpen(false);
+      setIsEditing(false);
+      onChanged();
+    } catch (err: any) {
+      setDiscardOpen(false);
+      toast(err.message ?? t('error_generic'));
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  /** #1240: Save keeps the Draft a Draft — every section already persists on its own save. */
+  async function saveDraft() {
+    setIsEditing(false);
+    await loadDetail();
+    onChanged();
+  }
+
   async function confirmClose() {
     setActionBusy(true);
     try {
@@ -305,7 +333,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         label: isEditing ? t('action_done_editing') : t('action_edit'),
         onClick: () => setIsEditing(!isEditing),
         ...write,
-      }]
+      }].filter(() => !(isEditing && detail.status === 'draft'))
       : []),
     { label: t('action_details'), onClick: () => setShowDetails(true) },
     ...(canSaveAndPay
@@ -547,6 +575,30 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           </div>
         )}
       </CardSection>
+
+      {/* #1240: a Draft in Edit mode closes with Cancel | Save | Save & Pay in
+          place of Done Editing. */}
+      {editing && detail.status === 'draft' && (
+        <div style={inlineActionsRowStyle}>
+          <button type="button" style={secondaryBtnSmall} disabled={actionBusy || !canWritePayments} title={readOnlyTitle}
+            onClick={() => setDiscardOpen(true)}>{t('action_draft_cancel')}</button>
+          <button type="button" style={secondaryBtnSmall} disabled={actionBusy} onClick={() => saveDraft()}>
+            {t('action_draft_save')}
+          </button>
+          <button type="button" style={primaryBtnSmall()} disabled={actionBusy || !canWritePayments} title={readOnlyTitle}
+            onClick={() => saveAndPay()}>{t('action_save_and_pay')}</button>
+        </div>
+      )}
+
+      <ConfirmDialog
+        open={discardOpen}
+        message={t('confirm_discard_draft')}
+        confirmLabel={t('action_discard_draft_confirm')}
+        cancelLabel={t('action_discard_draft_dismiss')}
+        onConfirm={discardDraft}
+        onCancel={() => setDiscardOpen(false)}
+        busy={actionBusy}
+      />
 
       {showDetails && (
         <AssignedPlanDetailsModal detail={detail} onClose={() => setShowDetails(false)} />
