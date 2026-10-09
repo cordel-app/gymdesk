@@ -154,7 +154,7 @@ is listed as a capability.
 | 2 | The header | Sits below the status bar — `TopBar` carries `safe-area-inset-top` (WP2) |
 | 3 | Sign in with email and password | Session active; the gym's theme is applied after sign-in |
 | 4 | Kill and reopen the app | Still signed in |
-| 5 | *Continue with Google* (needs §2's clients) | The **native** sheet opens — it must not leave the app for Safari. A `keychain error` here means the `keychain-access-groups` entitlement is not being applied: check `App.entitlements` is still referenced by `CODE_SIGN_ENTITLEMENTS` |
+| 5 | *Continue with Google* (needs §2's clients) | The **native** sheet opens — it must not leave the app for Safari — and the app lands on the member's home. A `keychain error` here means the `keychain-access-groups` entitlement is not being applied: check `App.entitlements` is still referenced by `CODE_SIGN_ENTITLEMENTS` (a `CODE_SIGNING_ALLOWED=NO` build has none). `authorization_invalid` under the notice is Clerk refusing the token: a replayed one (the Google session was not cleared before `login()`) or one requested without a `nonce` — both are `useNativeGoogleSignIn`'s job, #1285 |
 | 6 | Turn off the API, pull to retry | The Members App's error screen with a retry, never "you have no gym" (WP2's `NativeAppState`) |
 | 7 | `xcrun simctl openurl booted "com.cordel.fitness://en/link?gym_id=1&__clerk_ticket=x"` | The app comes to the foreground on `/en/link` with the query intact |
 
@@ -195,7 +195,7 @@ project from §2.
 | # | Check | Expected |
 |---|---|---|
 | 1 | Install on a physical iPhone and on a physical Android phone | Both launch and load the Members App |
-| 2 | Google sign-in on each | Session active **inside** the app, persisted across a restart |
+| 2 | Google sign-in on each, then *Log out* (the avatar menu, #1282) and Google again | Session active **inside** the app, persisted across a restart; the second sign-in shows the account sheet again rather than failing with `authorization_invalid` (#1285). Verified on the iOS simulator and the Android emulator on 2026-10-09 |
 | 3 | A **first-time** Google sign-in by an invited member, under Clerk's restricted mode | Still open from WP2 — the spike used a user that already existed. If it fails, the fix belongs in `POST /me/link` (match by email + `gym_id`), never in the frontend |
 | 4 | `SELECT platform, app_id, LEFT(token, 12) FROM member_device_tokens WHERE member_id = ?` after signing in | One row per device, `app_id` = this app's Bundle ID / package. **On iOS the token must be the FCM token** (~160 characters, mixed case with `:` and `-`), not a 64-character hex APNs token — a hex token means §2's Firebase package step was skipped |
 | 5 | Trigger any member notification (a booking confirmation is the cheapest) | The banner arrives on both phones; the API's own log says `push` and not `skipped` |

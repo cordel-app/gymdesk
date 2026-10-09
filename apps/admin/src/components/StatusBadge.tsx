@@ -27,6 +27,10 @@ const COLORS: Record<string, { bg: string; fg: string }> = {
   pending_payment: { bg: '#fff4e0', fg: '#b26a00' },
   completed:    { bg: '#e6f6ec', fg: '#1e7e40' },
   failed:       { bg: '#fdeaea', fg: '#c0392b' },
+  // #1238: Access Rights
+  granted:      { bg: '#e6f6ec', fg: '#1e7e40' },
+  to_be_reviewed: { bg: '#fff4e0', fg: '#b26a00' },
+  revoked:      { bg: '#fdeaea', fg: '#c0392b' },
 };
 
 const DEFAULT = { bg: '#f0f0f0', fg: '#666666' };

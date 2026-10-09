@@ -37,7 +37,14 @@
     "membership": "My Products",
     "profile": "Profile",
     "alerts": "Alerts",
-    "goals": "My Goals"
+    "goals": "My Goals",
+    "user_menu": "Account menu",
+    "logout": "Log out",
+    "logout_confirm_title": "Log out?",
+    "logout_confirm_body": "You will be signed out of this account on this device.",
+    "logout_cancel": "Cancel",
+    "logout_impersonating_title": "Stop impersonating?",
+    "logout_impersonating_body": "You will leave this member's account and return to Support mode."
   },
   "common": {
     "error": "Something went wrong.",
@@ -83,7 +90,12 @@
     "result_unit_seconds": "Seconds",
     "result_unit_minutes": "Minutes",
     "result_unit_meters": "Meters",
-    "result_unit_calories": "Calories"
+    "result_unit_calories": "Calories",
+    "done": "Done!",
+    "log_date": "Date",
+    "new_entry": "New entry",
+    "add_log": "Add log entry",
+    "new_chip": "New"
   },
   "profile": {
     "title": "My profile",

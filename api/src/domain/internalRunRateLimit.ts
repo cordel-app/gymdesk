@@ -40,7 +40,7 @@ export interface InternalRunRateLimitConfig {
  * being honoured: a `0` limit would refuse every call (the nightly run
  * included), and a `0` window would disable the limiter altogether.
  */
-function positiveInteger(raw: string | undefined, fallback: number): number {
+export function positiveInteger(raw: string | undefined, fallback: number): number {
   if (raw === undefined || raw.trim() === '') return fallback;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 1) return fallback;

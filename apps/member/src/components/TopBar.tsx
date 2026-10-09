@@ -4,7 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 import { memberTheme, withSafeArea } from '@/lib/memberChrome';
-import { memberAvatarColors, memberInitials } from '@/lib/memberAvatar';
+import { MemberUserMenu } from '@/components/MemberUserMenu';
 
 /**
  * #361: replaces the old bottom tab bar. Home is reached via its own
@@ -21,14 +21,13 @@ export function TopBar() {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations();
-  const { isLinked, unreadNotifications, theme, gymName, member } = useApp();
+  const { isLinked, unreadNotifications, theme, gymName, isSuperadmin } = useApp();
 
   if (pathname.includes('/sign-in') || pathname.includes('/sign-up')) return null;
   if (!isLinked) return null;
 
   const homePath = `/${locale}`;
   const isHome = pathname === homePath;
-  const isProfile = pathname.startsWith(`${homePath}/profile`);
   const isNotifications = pathname.startsWith(`${homePath}/notifications`);
 
   // #713: same resolution as the Admin header — the gym's Cloudflare copy when
@@ -50,7 +49,10 @@ export function TopBar() {
       // is filled with the header's own themed background; `env()` resolves to
       // 0px on the web, so nothing moves there. The horizontal insets are the
       // same answer for a landscape notch.
-      paddingTop: withSafeArea(10, 'top'),
+      //
+      // #1294: not for a superadmin — `AdminBar` renders above this bar for them and
+      // owns the inset, so adding it here too left a dead strip between the two.
+      paddingTop: isSuperadmin ? 10 : withSafeArea(10, 'top'),
       paddingBottom: 10,
       paddingLeft: withSafeArea(16, 'left'),
       paddingRight: withSafeArea(16, 'right'),
@@ -110,32 +112,7 @@ export function TopBar() {
           </button>
         )}
 
-        {!isProfile && (
-          <button
-            onClick={() => router.push(`${homePath}/profile`)}
-            aria-label={member?.name ? `${t('nav.profile')}: ${member.name}` : t('nav.profile')}
-            title={member?.name || undefined}
-            style={{
-              ...memberAvatarColors(member?.id ?? member?.name),
-              width: 32,
-              height: 32,
-              flexShrink: 0,
-              borderRadius: '50%',
-              border: 'none',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontSize: 13,
-              fontWeight: 700,
-              lineHeight: 1,
-              padding: 0,
-              fontFamily: 'inherit',
-            }}
-          >
-            {memberInitials(member?.name) || '◉'}
-          </button>
-        )}
+        <MemberUserMenu />
       </div>
     </div>
   );

@@ -80,7 +80,15 @@ export default function SignInPage() {
         <SignIn appearance={native ? { elements: nativeElements } : undefined} />
       </div>
       <div style={{ width: '100%', maxWidth: 400, display: 'flex', flexDirection: 'column', gap: 12 }}>
-        {google.failed && <p style={{ ...noticeStyle('error'), margin: 0 }}>{t('google_failed')}</p>}
+        {google.failed && (
+          <p style={{ ...noticeStyle('error'), margin: 0 }}>
+            {t('google_failed')}
+            {/* #1285: the cause. Clerk's own messages are written for the person reading them, and dev has no APP_ENV_LABEL to gate on. */}
+            {google.detail && (
+              <small style={{ display: 'block', marginTop: 6, opacity: 0.8, wordBreak: 'break-word' }}>{google.detail}</small>
+            )}
+          </p>
+        )}
         <NativeAppleButton />
       </div>
     </main>

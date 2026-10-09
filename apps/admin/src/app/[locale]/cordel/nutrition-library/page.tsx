@@ -68,31 +68,6 @@ const emptyEditForm = emptyNutritionItemForm;
  * every language.
  */
 
-const CATEGORY_LABELS: Record<string, string> = {
-  main_dish: 'Main Dish',
-  side: 'Side',
-  sauce: 'Sauce',
-  drink: 'Drink',
-  dessert: 'Dessert',
-  other: 'Other',
-};
-
-const QUALITY_LABELS: Record<string, string> = {
-  protein: 'Protein',
-  carbohydrate: 'Carbohydrate',
-  fat: 'Fat',
-  fiber: 'Fiber',
-};
-
-function categoryLabel(slug: string) {
-  return CATEGORY_LABELS[slug] ?? slug.replace('_', ' ').replace(/^\w/, (c) => c.toUpperCase());
-}
-
-function qualityLabel(slug: string) {
-  return QUALITY_LABELS[slug] ?? slug;
-}
-
-const LIMIT = 20;
 
 export default function CordelNutritionLibraryPage() {
   // The goal tab's labels live in their own namespace, shared with the gym-facing
@@ -102,6 +77,10 @@ export default function CordelNutritionLibraryPage() {
   // library renders.
   const tGoals = useTranslations('goal_library');
   const tCommon = useTranslations();
+  const t = useTranslations('nutrition_library');
+  // next-intl prints a missing key verbatim, so the fallback is decided first.
+  const categoryLabel = (slug: string) => (t.has(`category_${slug}`) ? t(`category_${slug}` as any) : slug);
+  const qualityLabel = (slug: string) => (t.has(`quality_${slug}`) ? t(`quality_${slug}` as any) : slug);
   // #967: the language names come from `lib/localeLabels.ts`, translated, rather
   // than from a map in this file.
   const localeLabel = (loc: string) => localeLabelFor(loc, (key) => tCommon(key as any));
@@ -114,7 +93,6 @@ export default function CordelNutritionLibraryPage() {
 
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [total, setTotal] = useState(0);
-  const [offset, setOffset] = useState(0);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
   // Served by the API so the locale list isn't hardcoded a second time here.
@@ -160,7 +138,6 @@ export default function CordelNutritionLibraryPage() {
     return () => clearTimeout(id);
   }, [searchInput]);
 
-  useEffect(() => { setOffset(0); }, [search, categoryFilter, qualityFilter, showDeleted]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -170,8 +147,7 @@ export default function CordelNutritionLibraryPage() {
       for (const c of categoryFilter) params.append('category_id', c);
       for (const q of qualityFilter) params.append('quality_id', q);
       params.set('status', showDeleted ? 'deleted' : 'active');
-      params.set('limit', String(LIMIT));
-      params.set('offset', String(offset));
+      params.set('limit', 'all');
       const [data, categoriesData, qualitiesData, localesData] = await Promise.all([
         apiFetch<ListResponse>(`/platform/nutrition-library?${params.toString()}`),
         allCategories.length ? Promise.resolve(allCategories) : apiFetch<Category[]>('/platform/nutrition-library/categories'),
@@ -186,7 +162,7 @@ export default function CordelNutritionLibraryPage() {
       setAllQualities(qualitiesData);
       setTranslatableLocales(localesData.translatable);
     } catch { /* ignore */ } finally { setLoading(false); }
-  }, [apiFetch, search, categoryFilter, qualityFilter, showDeleted, offset]);
+  }, [apiFetch, search, categoryFilter, qualityFilter, showDeleted]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -220,8 +196,8 @@ export default function CordelNutritionLibraryPage() {
   }
 
   async function saveInlineNew() {
-    if (!newForm.name.trim()) { setNewError('Name is required.'); return; }
-    if (newForm.categoryIds.length === 0) { setNewError('At least one category is required.'); return; }
+    if (!newForm.name.trim()) { setNewError(t('error_required')); return; }
+    if (newForm.categoryIds.length === 0) { setNewError(t('error_category_required')); return; }
     setNewSaving(true); setNewError(null);
     try {
       await apiFetch('/platform/nutrition-library', {
@@ -235,10 +211,10 @@ export default function CordelNutritionLibraryPage() {
         }),
       });
       setCreating(false);
-      toast('Item created', 'success');
+      toast(t('item_created'), 'success');
       load();
     } catch (e: any) {
-      setNewError(e.message ?? 'Error');
+      setNewError(e.message ?? t('error_generic'));
     } finally { setNewSaving(false); }
   }
 
@@ -260,8 +236,8 @@ export default function CordelNutritionLibraryPage() {
   }
 
   async function handleInlineSave(item: LibraryItem) {
-    if (!editForm.name.trim()) { setEditError('Name is required.'); return; }
-    if (editForm.categoryIds.length === 0) { setEditError('At least one category is required.'); return; }
+    if (!editForm.name.trim()) { setEditError(t('error_required')); return; }
+    if (editForm.categoryIds.length === 0) { setEditError(t('error_category_required')); return; }
     setEditSaving(true); setEditError(null);
     try {
       await apiFetch(`/platform/nutrition-library/${item.id}`, {
@@ -275,10 +251,10 @@ export default function CordelNutritionLibraryPage() {
         }),
       });
       setEditingId(null);
-      toast('Item updated', 'success');
+      toast(t('item_updated'), 'success');
       load();
     } catch (e: any) {
-      setEditError(e.message ?? 'Error');
+      setEditError(e.message ?? t('error_generic'));
     } finally { setEditSaving(false); }
   }
 
@@ -303,12 +279,12 @@ export default function CordelNutritionLibraryPage() {
   /** `null` when the file is a 512×512 PNG, otherwise the reason it is not. */
   async function checkImageFile(file: File): Promise<string | null> {
     if (file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) {
-      return 'Image must be a PNG file.';
+      return t('image_png_required');
     }
     const dimensions = await readImageDimensions(file);
-    if (!dimensions) return 'That file could not be read as an image.';
+    if (!dimensions) return t('image_unreadable');
     if (dimensions.width !== IMAGE_SIZE || dimensions.height !== IMAGE_SIZE) {
-      return `Image must be exactly ${IMAGE_SIZE}×${IMAGE_SIZE} pixels (this one is ${dimensions.width}×${dimensions.height}).`;
+      return t('image_wrong_size', { size: IMAGE_SIZE, width: dimensions.width, height: dimensions.height });
     }
     return null;
   }
@@ -336,12 +312,12 @@ export default function CordelNutritionLibraryPage() {
       });
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json.error ?? 'Image upload failed');
+        throw new Error(json.error ?? t('image_upload_failed'));
       }
-      toast('Image updated', 'success');
+      toast(t('image_updated'), 'success');
       await load();
     } catch (err: any) {
-      setImageError({ id: item.id, message: err.message ?? 'Image upload failed' });
+      setImageError({ id: item.id, message: err.message ?? t('image_upload_failed') });
     } finally {
       setUploadingId(null);
     }
@@ -352,15 +328,13 @@ export default function CordelNutritionLibraryPage() {
     try {
       await apiFetch(`/platform/nutrition-library/${deleting.id}`, { method: 'DELETE' });
       setDeleting(null);
-      toast('Item deleted', 'success');
+      toast(t('item_deleted'), 'success');
       load();
     } catch (e: any) {
-      toast(e.message ?? 'Error');
+      toast(e.message ?? t('error_generic'));
     }
   }
 
-  const pageStart = total === 0 ? 0 : offset + 1;
-  const pageEnd = Math.min(offset + LIMIT, total);
   const activeFilterCount = categoryFilter.length + qualityFilter.length + (search ? 1 : 0);
 
   function renderCheckboxes(all: { id: number; slug: string }[], selected: number[], onChange: (ids: number[]) => void, labelFn: (slug: string) => string) {
@@ -400,31 +374,31 @@ export default function CordelNutritionLibraryPage() {
     return (
       <div style={{ padding: '16px 20px' }}>
         <div style={{ marginBottom: 12 }}>
-          <label style={inlineLabelStyle}>Name *</label>
+          <label style={inlineLabelStyle}>{t('label_name')} *</label>
           <input
             ref={autoFocusRef}
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="e.g. Chicken"
+            placeholder={t('name_placeholder')}
             style={inlineInputStyle}
             autoFocus={!autoFocusRef}
           />
         </div>
         <div style={{ marginBottom: 12 }}>
-          <label style={inlineLabelStyle}>Description</label>
+          <label style={inlineLabelStyle}>{t('label_description')}</label>
           <textarea
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
-            placeholder="Optional notes about this food"
+            placeholder={t('description_placeholder')}
             rows={3}
             style={{ ...inlineInputStyle, resize: 'vertical' }}
           />
         </div>
         {translatableLocales.length > 0 && (
           <div style={{ marginBottom: 12 }}>
-            <label style={inlineLabelStyle}>Translations</label>
+            <label style={inlineLabelStyle}>{t('label_translations')}</label>
             <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>
-              Leave a language blank to fall back to the name above.
+              {t('translations_hint')}
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {translatableLocales.map((loc) => (
@@ -433,7 +407,7 @@ export default function CordelNutritionLibraryPage() {
                   <input
                     value={form.translations[loc] ?? ''}
                     onChange={(e) => setForm({ ...form, translations: { ...form.translations, [loc]: e.target.value } })}
-                    placeholder={form.name ? `${form.name} in ${localeLabel(loc)}` : localeLabel(loc)}
+                    placeholder={form.name ? t('translation_in', { name: form.name, language: localeLabel(loc) }) : localeLabel(loc)}
                     style={inlineInputStyle}
                   />
                 </div>
@@ -442,18 +416,18 @@ export default function CordelNutritionLibraryPage() {
           </div>
         )}
         <div style={{ marginBottom: 12 }}>
-          <label style={inlineLabelStyle}>Categories *</label>
+          <label style={inlineLabelStyle}>{t('label_categories')} *</label>
           {renderCheckboxes(allCategories, form.categoryIds, (ids) => setForm({ ...form, categoryIds: ids }), categoryLabel)}
         </div>
         <div style={{ marginBottom: 12 }}>
-          <label style={inlineLabelStyle}>Nutritional Qualities</label>
+          <label style={inlineLabelStyle}>{t('nutritional_qualities_label')}</label>
           {renderCheckboxes(allQualities, form.qualityIds, (ids) => setForm({ ...form, qualityIds: ids }), qualityLabel)}
         </div>
         {/* #799 §17: the image is uploaded and replaced here — the expanded card
             shows it read-only. The upload posts against an existing row, so while
             creating a food there is only the hint. */}
         <div style={{ marginBottom: 12 }}>
-          <label style={inlineLabelStyle}>Media</label>
+          <label style={inlineLabelStyle}>{t('label_media')}</label>
           {item ? (
             <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
               <div style={imageFrameStyle}>
@@ -467,7 +441,7 @@ export default function CordelNutritionLibraryPage() {
                     style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                   />
                 ) : (
-                  <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>No image yet</span>
+                  <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>{t('no_image')}</span>
                 )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 220 }}>
@@ -477,10 +451,10 @@ export default function CordelNutritionLibraryPage() {
                   disabled={uploadingId === item.id}
                   style={btnSmall()}
                 >
-                  {uploadingId === item.id ? 'Uploading…' : 'Upload Image'}
+                  {uploadingId === item.id ? t('uploading') : t('upload_image')}
                 </button>
                 <p style={{ margin: 0, fontSize: 12, color: '#888' }}>
-                  Upload a {IMAGE_SIZE}×{IMAGE_SIZE} PNG image with a transparent background.
+                  {t('image_hint', { size: IMAGE_SIZE })}
                 </p>
                 {imageError?.id === item.id && (
                   <p style={{ margin: 0, fontSize: 12.5, color: '#c0392b' }}>{imageError.message}</p>
@@ -489,23 +463,23 @@ export default function CordelNutritionLibraryPage() {
             </div>
           ) : (
             <p style={{ margin: 0, fontSize: 12, color: '#888' }}>
-              Create the food first, then upload its {IMAGE_SIZE}×{IMAGE_SIZE} PNG image from Edit.
+              {t('image_after_create')}
             </p>
           )}
         </div>
         {error && <p style={{ color: '#c0392b', fontSize: 13, margin: '0 0 8px' }}>{error}</p>}
         <div style={inlineActionsRowStyle}>
-          <button onClick={onCancel} style={btnSmall('#888')}>Cancel</button>
-          <button onClick={onSave} disabled={saving} style={btnSmall()}>{saving ? 'Saving…' : saveLabel}</button>
+          <button onClick={onCancel} style={btnSmall('#888')}>{t('cancel')}</button>
+          <button onClick={onSave} disabled={saving} style={btnSmall()}>{saving ? t('saving') : saveLabel}</button>
         </div>
       </div>
     );
   }
 
   const columns: Column<LibraryItem>[] = [
-    { header: 'Name', mobile: 'name', title: (item) => item.name, render: (item) => <strong>{item.name}</strong> },
+    { header: t('label_name'), mobile: 'name', title: (item) => item.name, render: (item) => <strong>{item.name}</strong> },
     {
-      header: 'Categories',
+      header: t('label_categories'),
       mobile: 'secondary',
       render: (item) => (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -514,7 +488,7 @@ export default function CordelNutritionLibraryPage() {
       ),
     },
     {
-      header: 'Qualities',
+      header: t('col_qualities'),
       mobile: 'secondary',
       render: (item) => item.qualities.length > 0 ? (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
@@ -522,7 +496,7 @@ export default function CordelNutritionLibraryPage() {
         </div>
       ) : <span style={{ color: 'var(--text-muted, #9ca3af)', fontSize: 13 }}>—</span>,
     },
-    { header: 'Status', width: 100, mobile: 'keep', render: (item) => <StatusBadge status={item.status} label={item.status} /> },
+    { header: t('col_status'), width: 100, mobile: 'keep', render: (item) => <StatusBadge status={item.status} label={item.status === 'deleted' ? t('status_deleted') : t('status_active')} /> },
     {
       header: '', width: 40, mobile: 'actions',
       // #799 §8: Details is the read-only modal (audit information), Edit the form.
@@ -533,10 +507,10 @@ export default function CordelNutritionLibraryPage() {
       // read. Edit and Delete stay hidden for it, as they were.
       render: (item) => (
         <ContextMenu items={[
-          { label: 'Details', onClick: () => setDetailItem(item) },
+          { label: t('details'), onClick: () => setDetailItem(item) },
           ...(item.status !== 'deleted' ? [
-            { label: 'Edit', onClick: () => openInlineEdit(item) },
-            { label: 'Delete', danger: true, onClick: () => setDeleting(item) },
+            { label: t('edit'), onClick: () => openInlineEdit(item) },
+            { label: t('delete'), danger: true, onClick: () => setDeleting(item) },
           ] : []),
         ]} />
       ),
@@ -546,10 +520,10 @@ export default function CordelNutritionLibraryPage() {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, flexWrap: 'wrap', gap: 12 }}>
-        <h1 style={{ margin: 0 }}>Base Nutrition Library</h1>
+        <h1 style={{ margin: 0 }}>{tCommon('nav.base_nutrition_library')}</h1>
         {/* The Foods tab's own `+ Add`; the goals tab renders its own (§7). */}
         {tab === 'foods' && (
-          <button style={btnStyle()} onClick={openInlineNew} disabled={creating}>+ New Item</button>
+          <button style={btnStyle()} onClick={openInlineNew} disabled={creating}>{t('add_new')}</button>
         )}
       </div>
 
@@ -576,33 +550,33 @@ export default function CordelNutritionLibraryPage() {
         <input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search by name…"
+          placeholder={t('search_placeholder')}
           style={searchInputStyle}
         />
         <MultiSelectFilter
-          label="Category"
+          label={t('filter_category')}
           options={allCategories.map((c) => ({ value: String(c.id), label: categoryLabel(c.slug) }))}
           selected={categoryFilter}
           onChange={setCategoryFilter}
         />
         <MultiSelectFilter
-          label="Nutrition Properties"
+          label={t('filter_qualities')}
           options={allQualities.map((q) => ({ value: String(q.id), label: qualityLabel(q.slug) }))}
           selected={qualityFilter}
           onChange={setQualityFilter}
         />
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 14, cursor: 'pointer' }}>
           <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
-          Show deleted
+          {t('show_deleted')}
         </label>
         {activeFilterCount > 0 && (
-          <button onClick={clearFilters} style={{ ...btnStyle('#888'), padding: '8px 14px' }}>Clear filters</button>
+          <button onClick={clearFilters} style={{ ...btnStyle('#888'), padding: '8px 14px' }}>{t('clear_filters')}</button>
         )}
       </div>
 
       {creating && (
         <div style={cardStyle(true)}>
-          {renderInlineForm(newForm, setNewForm, newError, newSaving, () => setCreating(false), saveInlineNew, 'Create', newNameRef)}
+          {renderInlineForm(newForm, setNewForm, newError, newSaving, () => setCreating(false), saveInlineNew, t('create'), newNameRef)}
         </div>
       )}
 
@@ -611,11 +585,11 @@ export default function CordelNutritionLibraryPage() {
         rows={items}
         rowKey={(item) => item.id}
         loading={loading}
-        loadingText="Loading…"
-        emptyText="No food items match your filters."
+        loadingText={t('loading')}
+        emptyText={t('empty_filtered')}
         renderExpanded={(item) => (
           editingId === item.id ? (
-            renderInlineForm(editForm, setEditForm, editError, editSaving, cancelEdit, () => handleInlineSave(item), 'Save', undefined, item)
+            renderInlineForm(editForm, setEditForm, editError, editSaving, cancelEdit, () => handleInlineSave(item), t('save'), undefined, item)
           ) : (
             /* #799 §1–§7: expanding reads. The complete food, strictly read-only,
                with no image control and no Edit affordance — `⋮ → Edit` is the only
@@ -632,14 +606,6 @@ export default function CordelNutritionLibraryPage() {
         onToggleExpand={(item) => toggleExpand(item.id)}
       />
 
-      {total > 0 && (
-        <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
-          <span style={{ fontSize: 13, color: '#666' }}>{pageStart}–{pageEnd} of {total}</span>
-          <button onClick={() => setOffset(Math.max(0, offset - LIMIT))} disabled={offset === 0} style={btnStyle('#888')}>‹</button>
-          <button onClick={() => setOffset(offset + LIMIT)} disabled={pageEnd >= total} style={btnStyle('#888')}>›</button>
-        </div>
-      )}
-
       {/* One picker for the page: `openImagePicker()` points it at a food. */}
       <input
         ref={imageInputRef}
@@ -655,9 +621,9 @@ export default function CordelNutritionLibraryPage() {
 
       <ConfirmDialog
         open={deleting !== null}
-        message={`Delete "${deleting?.name}"? This cannot be undone.`}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
+        message={t('delete_confirm', { name: deleting?.name ?? '' })}
+        confirmLabel={t('delete')}
+        cancelLabel={t('cancel')}
         onConfirm={handleDelete}
         onCancel={() => setDeleting(null)}
       />

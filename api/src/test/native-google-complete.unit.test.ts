@@ -1,0 +1,41 @@
+import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+
+// #1285 — `authenticateWithGoogleOneTap()` only returns a sign-in/sign-up
+// resource. Without `handleGoogleOneTapCallback()` the session is never activated
+// and the member is left on the login with no error (reproduced on the iOS
+// simulator after Google's sheet had succeeded). Source-level gate, in the API
+// suite because CI runs `npm test` in `api/` only.
+const hook = readFileSync(
+  join(__dirname, '..', '..', '..', 'apps', 'member', 'src', 'lib', 'useNativeGoogleSignIn.ts'), 'utf-8',
+).replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+describe('#1285 native Google sign-in finishes what Clerk starts', () => {
+  it('hands the resource to handleGoogleOneTapCallback, after authenticating', () => {
+    const authenticate = hook.indexOf('authenticateWithGoogleOneTap(');
+    const finish = hook.indexOf('handleGoogleOneTapCallback(');
+    expect(authenticate).toBeGreaterThan(-1);
+    expect(finish).toBeGreaterThan(authenticate);
+    expect(hook).toMatch(/const resource = await .*authenticateWithGoogleOneTap/);
+    expect(hook).toMatch(/handleGoogleOneTapCallback\(resource,/);
+  });
+
+  it('lands on the locale\'s home for both a sign-in and a transfer to sign-up', () => {
+    expect(hook).toContain('signInFallbackRedirectUrl: `/${locale}`');
+    expect(hook).toContain('signUpFallbackRedirectUrl: `/${locale}`');
+  });
+
+  it('clears the Google session before asking for a new token', () => {
+    const init = hook.indexOf('socialLogin.initialize(');
+    const clear = hook.indexOf("socialLogin.logout({ provider: 'google' })");
+    const login = hook.indexOf('socialLogin.login(');
+    expect(init).toBeGreaterThan(-1);
+    expect(clear).toBeGreaterThan(init);
+    expect(login).toBeGreaterThan(clear);
+  });
+
+  it('asks Google for the token with a fresh nonce, as Clerk\'s Android SDK does', () => {
+    expect(hook).toMatch(/socialLogin\.login\(\{ provider: 'google', options: \{ nonce: googleSignInNonce\(\) \} \}\)/);
+  });
+});

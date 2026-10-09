@@ -20,6 +20,8 @@
 
 **Architectural decisions**: see `docs/decisions.md` for the settled choices (MySQL, Clerk, no ORM, etc.) — don't re-litigate them.
 
+**What the product does**: `docs/rules.md` states every business rule in plain language — one entry per rule, with the ticket that decided it and the module that enforces it. Start there to learn how billing, bookings, Products, Promotions or the Members App behave; the detailed constraint behind each entry is in `CLAUDE.md`.
+
 ---
 
 ## Overview
@@ -269,7 +271,7 @@ Superadmins can impersonate any active gym user for support and debugging withou
 
 **Frontend — Member app** (`apps/member/src/`):
 - `ImpersonationContext.tsx` — same session shape as admin app, plus a `ready` flag that flips true after the initial `sessionStorage` read so `AppContext` does not fetch `/me/profile` as a bare superadmin on refresh (#415).
-- `AdminBar.tsx` — superadmin-only top strip rendered above the `TopBar` in the layout; shows "Impersonate" button (via `MemberImpersonationDialog`) when not impersonating, or `ImpersonationBanner` when impersonating.
+- `AdminBar.tsx` — superadmin-only top strip rendered above the `TopBar` in the layout; shows "Impersonate" and "Log out" buttons (via `MemberImpersonationDialog` / `LogoutConfirmDialog`) when not impersonating, or `ImpersonationBanner` when impersonating.
 - `MemberImpersonationDialog.tsx` — uses raw `fetch` (not `apiFetch`) since `gymId` may not yet be resolved in `AppContext` when impersonation starts; calls `GET /targets` and `POST /:targetId` with `{ targetType }` body. The member app filters results to `type === 'member'` — impersonating staff would leave `tenantCtx.role` as the staff role and `/me/profile` (`requireRole('member')`) would 403 (#415).
 - `ImpersonationBanner.tsx` — amber top bar with stop button; calls `POST /platform/impersonation/stop`.
 - `AppContext.tsx` — exposes `isSuperadmin` (via `useUser()` + Clerk `publicMetadata`); consumes `useImpersonation()` reactively (`ImpersonationProvider` wraps `AppProvider` in `layout.tsx`, not the other way around) so its data-loading effect re-runs — and resets `loading`/`isLinked` — whenever impersonation starts, stops, or switches target. Adds `x-impersonate-as` to every `/me/*` call it makes (`/me/gyms`, `/me/profile`, `/me/centers`, `/me/notifications/count`), not just the initial gyms call (#362 fix — previously only `/me/gyms` carried the header and the effect never re-ran on impersonation change, leaving Home's Next Booking/Membership stuck on `Loading...` under impersonation). **Gotcha — a bare superadmin has no member identity (#415).** `GET /me/profile` is `requireRole('member')`; without `x-impersonate-as`, `tenantContext` assigns the superadmin `role: 'admin'` and the handler returns 403. `AppContext` therefore skips `/me/profile` until an impersonation session is active, prefers `session.gymId` when picking the gym, and Home renders a Support-mode prompt instead of infinite "Loading…" widgets. After impersonation starts, `/me/profile` runs with the header and `isLinked` becomes true — member tiles then behave like a genuine member session.

@@ -5,6 +5,7 @@ import { db } from '../infra/db';
 import { soleActiveCenterId } from '../infra/centerContext';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { deriveAccessRights } from '../domain/memberAccessRights';
 import { handleDupEntry } from '../infra/db-helpers';
 import { validateDocumentId, maskDocumentId } from '../domain/documentId';
 import { isStaffLoginEmail, STAFF_EMAIL_CONFLICT } from '../infra/staff-access';
@@ -131,7 +132,12 @@ membersRouter.get('/', async (req, res) => {
   // shows can never disagree with what a new-members-only Promotion enforces
   // (§5). The Member Profile reads the very same field off this row.
   const newMemberFlags = await newMemberStatusByMember(db, gymId, rows.map((r: any) => Number(r.id)));
-  res.json(rows.map((r: any) => ({ ...r, is_new_member: newMemberFlags.get(Number(r.id)) ?? true })));
+  res.json(rows.map((r: any) => ({
+    ...r,
+    is_new_member: newMemberFlags.get(Number(r.id)) ?? true,
+    access_rights_stored: r.access_rights,
+    access_rights: deriveAccessRights(r.access_rights, r.payment_status),
+  })));
 });
 
 membersRouter.get('/count', async (req, res) => {
@@ -159,8 +165,47 @@ membersRouter.get('/:id', async (req, res) => {
   // #927 §5: the same calculated status as the list, from the same rule — a
   // second reader of a Member must not be able to answer it differently.
   const isNewMember = await isNewMemberStatus(db, gymId, Number(rows[0].id));
-  res.json({ ...rows[0], is_new_member: isNewMember });
+  const { rows: ps } = await db.query(
+    `SELECT ${memberPaymentStatusSql('m')} AS payment_status FROM members m WHERE m.id = ? AND m.gym_id = ?`,
+    [rows[0].id, gymId],
+  );
+  const paymentStatus = ps[0]?.payment_status ?? null;
+  res.json({
+    ...rows[0],
+    is_new_member: isNewMember,
+    payment_status: paymentStatus,
+    access_rights_stored: rows[0].access_rights,
+    access_rights: deriveAccessRights(rows[0].access_rights, paymentStatus),
+  });
 });
+
+/**
+ * #1238 — grant / revoke access. Persists the Member's Access Rights and
+ * nothing else: no membership or payment row is touched, and nothing is gated.
+ */
+for (const [action, value] of [['grant', 'granted'], ['revoke', 'revoked']] as const) {
+  membersRouter.post(`/:id/access/${action}`, requireModuleWrite('MEMBERS'), async (req, res, next) => {
+    const { gymId } = getTenantContext(req);
+    try {
+      const { rows } = await db.query(
+        'SELECT id, access_rights FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+        [req.params.id, gymId],
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+      const previous = rows[0].access_rights;
+      if (previous !== value) {
+        await db.query('UPDATE members SET access_rights = ? WHERE id = ? AND gym_id = ?', [value, rows[0].id, gymId]);
+        recordAudit(req, {
+          action: `access_${action}`, entityType: 'member', entityId: rows[0].id,
+          previous: { access_rights: previous }, next: { access_rights: value },
+        });
+      }
+      res.json({ access_rights_stored: value });
+    } catch (err) {
+      next(err);
+    }
+  });
+}
 
 /**
  * #1118 §12 — the **Products & Services** this Member has bought, as the Admin
@@ -207,7 +252,16 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
 
   const { clerk_user_id, invitation_id, invited_at, enrolled_at } = rows[0];
   // #1234: the dates are history, reported as stored and independent of the status.
-  const dates = { invited_at: invited_at ?? null, enrolled_at: enrolled_at ?? null, has_pending_invitation: !!invitation_id };
+  // #1295: `enrolled` is the stored link itself (what #1234 defines it as), reported in
+  // every branch below because the card passes this whole response to
+  // `clerkStatusLine()`, which reads `enrolled` — it was missing, so every member read
+  // "Not enrolled" beside an Active badge.
+  const dates = {
+    invited_at: invited_at ?? null,
+    enrolled_at: enrolled_at ?? null,
+    has_pending_invitation: !!invitation_id,
+    enrolled: !!clerk_user_id,
+  };
 
   if (!clerk_user_id) {
     return res.json({ status: invitation_id ? 'invited' : 'not_enrolled', userId: null, ...dates });

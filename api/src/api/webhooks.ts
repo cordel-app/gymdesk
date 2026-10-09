@@ -170,8 +170,9 @@ paymentWebhookRouter.post(
         amount: string;
         status: string;
         source: string;
+        billing_event_id: number | null;
       }>(
-        `SELECT id, gym_id, user_membership_id, member_id, charge_type_id, amount, status, source
+        `SELECT id, gym_id, user_membership_id, member_id, charge_type_id, amount, status, source, billing_event_id
          FROM payment_requests WHERE provider_order = ?`,
         [payload.orderId],
       );
@@ -321,17 +322,24 @@ paymentWebhookRouter.post(
           // under rows — reading it off rows here always came back
           // undefined, which crashed the next UPDATE's bind params and
           // rolled back this whole transaction on every real completion.
-          const { insertId: billingEventId } = await tx.query(
-            `INSERT INTO billing_events
-               (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
-             VALUES (?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
-            [pr.gym_id, pr.user_membership_id, pr.member_id, pr.amount, pr.charge_type_id],
-          );
+          // #1288: a first payment started from the Members App's Save & Pay
+          // already has its Billing Event (written before the money moved,
+          // `createPlanCheckout()`), so the payment settles that event — its
+          // status derives from this request, which just became `completed` —
+          // instead of appending a second one for the same charge.
+          if (pr.billing_event_id == null) {
+            const { insertId: billingEventId } = await tx.query(
+              `INSERT INTO billing_events
+                 (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
+               VALUES (?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
+              [pr.gym_id, pr.user_membership_id, pr.member_id, pr.amount, pr.charge_type_id],
+            );
 
-          await tx.query(
-            `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
-            [billingEventId, pr.id],
-          );
+            await tx.query(
+              `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
+              [billingEventId, pr.id],
+            );
+          }
 
           // #785: money arrived for this cycle, so the nightly run's dunning
           // state is spent — a member who was one rejection away from being
