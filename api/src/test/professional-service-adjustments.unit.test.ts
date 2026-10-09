@@ -52,6 +52,14 @@ describe('applyAdjustmentsToGrants', () => {
 });
 
 describe('sortHistory', () => {
+  it('puts the later-recorded entry first when timestamps tie', () => {
+    const at = '2026-01-01T00:00:00.000Z';
+    const base = { kind: 'adjustment' as const, at, reason: null, balance_before: 0, balance_after: 0, actor: null };
+    const first = { ...base, quantity: 5 };
+    const second = { ...base, quantity: -2 };
+    expect(sortHistory([first, second]).map((x) => x.quantity)).toEqual([-2, 5]);
+  });
+
   it('orders newest first', () => {
     const e = (at: string) => ({ kind: 'adjustment' as const, at, quantity: 1, reason: null, balance_before: 0, balance_after: 1, actor: null });
     expect(sortHistory([e('2026-01-01T00:00:00.000Z'), e('2026-02-01T00:00:00.000Z')]).map((x) => x.at[6])).toEqual(['2', '1']);

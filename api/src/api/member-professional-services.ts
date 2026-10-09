@@ -100,13 +100,15 @@ memberProfessionalServicesRouter.get('/:serviceId/history', async (req, res, nex
     const { rows: adjustments } = await db.query(
       `SELECT delta, balance_before, balance_after, reason, created_at, created_by
          FROM professional_service_adjustments
-        WHERE gym_id = ? AND member_id = ? AND professional_service_id = ?`,
+        WHERE gym_id = ? AND member_id = ? AND professional_service_id = ?
+        ORDER BY id ASC`,
       [gymId, memberId, serviceId],
     );
     const { rows: consumptions } = await db.query(
       `SELECT reason, created_at, created_by, returned_at, returned_by
          FROM professional_service_consumptions
-        WHERE gym_id = ? AND member_id = ? AND professional_service_id = ?`,
+        WHERE gym_id = ? AND member_id = ? AND professional_service_id = ?
+        ORDER BY id ASC`,
       [gymId, memberId, serviceId],
     );
     const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());

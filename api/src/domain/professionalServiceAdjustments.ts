@@ -117,7 +117,11 @@ export interface BalanceHistoryEntry {
   actor: string | null;
 }
 
-/** Newest first; ties keep the order given. */
+/**
+ * Newest first. Timestamps have one-second precision, so two entries written in
+ * the same second tie: the caller gives them oldest-first (`ORDER BY id`), and
+ * the one given later is the later-recorded, so it comes first.
+ */
 export function sortHistory(entries: BalanceHistoryEntry[]): BalanceHistoryEntry[] {
-  return [...entries].sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+  return [...entries].reverse().sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
 }
