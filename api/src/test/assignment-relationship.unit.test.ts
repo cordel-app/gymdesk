@@ -43,9 +43,12 @@ describe('#1191 wiring', () => {
   it('adds no stored linked column', () => {
     const migrations = join(__dirname, '..', 'infra', 'migrations');
     // No migration may introduce a `linked` / `assignment_relationship` column.
+    // It looks for a column definition, not the word: migration 239 (#1234) says
+    // a Member "linked their Clerk account" in a comment and is not a violation.
+    const linkedColumn = /assignment_relationship|add\s+column\s+`?\w*linked\w*`?|\.(?:string|boolean|integer|tinyint|specificType)\(\s*['"]\w*linked\w*['"]/i;
     for (const f of readdirSync(migrations) as string[]) {
       if (!/^(23[8-9]|2[4-9]\d)_/.test(f)) continue;
-      expect(readFileSync(join(migrations, f), 'utf8')).not.toMatch(/assignment_relationship|\blinked\b/i);
+      expect(readFileSync(join(migrations, f), 'utf8')).not.toMatch(linkedColumn);
     }
   });
 });
