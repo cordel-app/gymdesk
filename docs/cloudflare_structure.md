@@ -8,8 +8,8 @@
 │   │
 │   ├── muscles/
 │   │   └── images/
-│   │       ├── {muscle_id}-{muscle_name}.png                              — 2048 × 2048 px
-│   │       └── {muscle_id}-{muscle_name}-thumbnail.png                    — 512 × 512 px
+│   │       ├── {muscle_name}.png                              — 2048 × 2048 px
+│   │       └── {muscle_name}-thumbnail.png                    — 512 × 512 px
 │   │
 │   ├── exercises/
 │   │   └── images/
