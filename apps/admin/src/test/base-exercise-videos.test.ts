@@ -143,8 +143,8 @@ describe('Gym Exercises card — Q6 follow-through', () => {
     // the shared editor takes on its mode.
     const editorSrc = stripComments(readFileSync(
       join(__dirname, '..', 'components', 'exercises', 'ExerciseEditor.tsx'), 'utf-8'));
-    expect(editorSrc).toContain("const showVideoUrl = mode === 'create';");
-    expect(editorSrc).toMatch(/\{showVideoUrl && \([\s\S]*?video_url/);
+    expect(editorSrc).not.toContain('showVideoUrl');
+    expect(editorSrc).not.toContain('video_url');
     expect(gymPageSrc).toContain('mode="edit"');
     // The edit PUT stops submitting it too, so a video uploaded while the
     // editor was open cannot be repointed by saving the form.
