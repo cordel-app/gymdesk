@@ -54,7 +54,7 @@ async function setsOf(memberId: number) {
   return rows;
 }
 async function um(id: number) {
-  const { rows } = await db.query<any>('SELECT status, next_billing_date, personal_fee_benefit_value FROM user_memberships WHERE id = ?', [id]);
+  const { rows } = await db.query<any>('SELECT status, personal_fee_benefit_value FROM user_memberships WHERE id = ?', [id]);
   return rows[0];
 }
 async function scheduled(setId: number) {
@@ -92,7 +92,6 @@ describe('a committed assignment becomes a ProductSet version (#1325 PR 5)', () 
     expect(sets).toHaveLength(1);
     expect(sets[0]).toMatchObject({ version: 1, status: 'active' });
     expect(Number(sets[0].user_membership_id)).toBe(umId);
-    expect((await um(umId)).next_billing_date).toBeNull();
     expect((await scheduled(sets[0].id)).length).toBeGreaterThan(0);
 
     // The cash payment covers the first period: it is that period's event and
@@ -146,8 +145,6 @@ describe('a committed assignment becomes a ProductSet version (#1325 PR 5)', () 
 
     const sets = await setsOf(memberId);
     expect(sets).toHaveLength(1);
-    // The token stamped a next_billing_date; the import took it off the legacy pass.
-    expect((await um(umId)).next_billing_date).toBeNull();
     const { rows: events } = await db.query<any>(
       `SELECT period_start, event_type, is_scheduled FROM billing_events WHERE product_set_id = ?`, [sets[0].id]);
     const periods = events.map((e: any) => (e.period_start instanceof Date ? e.period_start.toISOString() : String(e.period_start)).slice(0, 10));

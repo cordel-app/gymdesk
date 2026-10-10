@@ -350,12 +350,12 @@ describe('#1108 stage 1 — a Draft is editable, projected, and not billable', (
     const planId = await createPlan(gymId, `Draft Unbilled Plan ${uniq()}`);
     const draft = await assignPlan(gymId, memberId, planId);
 
-    // The run's own predicate, asserted against the stored row rather than by
-    // calling the run (which claims a per-UTC-date slot, #780).
-    await db.query('UPDATE user_memberships SET next_billing_date = CURDATE() WHERE id = ?', [draft.id]);
+    // #1325: the run executes a ProductSet's persisted events, and a Draft
+    // assignment has no version and so no event the run could select.
     const { rows } = await db.query<{ n: number }>(
-      `SELECT COUNT(*) AS n FROM user_memberships
-        WHERE id = ? AND status = 'active' AND next_billing_date <= CURDATE()`,
+      `SELECT COUNT(*) AS n FROM billing_events be
+         JOIN product_sets ps ON ps.id = be.product_set_id
+        WHERE ps.user_membership_id = ? AND be.is_scheduled = 1`,
       [draft.id],
     );
     expect(Number(rows[0].n)).toBe(0);

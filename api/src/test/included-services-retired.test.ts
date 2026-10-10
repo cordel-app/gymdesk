@@ -400,7 +400,6 @@ describe('POST /user-memberships/:id/close after Included Services (#635 stage 4
     const planId = await createPlan(gymId, 'IS Close Plan');
     const memberId = await createMember(gymId);
     const umId = await assignActivePlan(gymId, memberId, planId);
-    await db.query('UPDATE user_memberships SET next_billing_date = NULL WHERE id = ?', [umId]);
 
     const res = await request
       .post(`/user-memberships/${umId}/close`)

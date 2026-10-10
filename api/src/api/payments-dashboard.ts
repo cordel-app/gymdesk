@@ -3,7 +3,7 @@
  *
  * Read-only aggregation over the Payments domain. Nothing here writes, and no
  * Billing Event or payment-processing behaviour changes — the four cards only
- * count what `billing_events` (past rows) and `user_memberships.next_billing_date`
+ * count what `billing_events` (past rows and persisted scheduled ones)
  * (future, projected rows) already record.
  *
  * Mounted under its own `payments.dashboard` feature flag rather than a sibling
@@ -151,51 +151,14 @@ paymentsDashboardRouter.get('/summary', async (req, res, next) => {
 
     // ── Card 1: billing events scheduled for this month ──
     //
-    // A scheduled event has no ledger row yet — the nightly run creates that
-    // when it charges. It is projected from the membership's `next_billing_date`
-    // and its plan's recurring interval, the same projection the Billing Events
-    // page renders as its `scheduled` rows (`api/src/api/payments.ts`), so the
-    // card and that page agree on what is scheduled.
-    const { rows: activeRows } = await db.query<{
-      next_billing_date: Date | string;
-      recurring_billing_interval: number;
-      recurring_billing_unit: 'day' | 'week' | 'month' | 'year';
-    }>(
-      `SELECT um.next_billing_date,
-              ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
-              ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit
-         FROM user_memberships um
-         LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
-                                      AND bp.gym_id = um.gym_id
-        WHERE um.gym_id = ?
-          AND um.status = 'active'
-          AND um.next_billing_date IS NOT NULL
-          AND ${ASSIGNMENT_CADENCE.interval()} IS NOT NULL
-          AND ${ASSIGNMENT_CADENCE.unit()} IS NOT NULL`,
-      [gymId],
-    );
-
-    let scheduledThisMonth = 0;
-    for (const um of activeRows) {
-      scheduledThisMonth += countScheduledInWindow(
-        um.next_billing_date instanceof Date
-          ? um.next_billing_date.toISOString().slice(0, 10)
-          : String(um.next_billing_date).slice(0, 10),
-        um.recurring_billing_interval,
-        um.recurring_billing_unit,
-        w,
-      );
-    }
-
-    // #1325: a ProductSet's obligations are persisted, so they are counted from
-    // the rows themselves (due today or later this month, still scheduled) — the
-    // projection above only sees assignments that carry a `next_billing_date`.
+    // #1325: a ProductSet's obligations are persisted, so the card counts the
+    // rows themselves — due today or later this month, still scheduled.
     const { rows: persisted } = await db.query<{ n: number }>(
       `SELECT COUNT(*) AS n FROM billing_events
         WHERE gym_id = ? AND is_scheduled = 1 AND billing_date >= ? AND billing_date <= ?`,
       [gymId, w.today, w.currentMonthEnd],
     );
-    scheduledThisMonth += Number(persisted[0]?.n ?? 0);
+    const scheduledThisMonth = Number(persisted[0]?.n ?? 0);
 
     // ── Card 5 (#779): failed payments awaiting action — a to-do, not a
     // monthly statistic, so it is not bounded by either month window.

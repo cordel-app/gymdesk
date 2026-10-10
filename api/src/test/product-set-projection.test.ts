@@ -47,7 +47,7 @@ async function commit(owner: number, planId: number | null, fee = 30) {
 }
 async function assignments(owner: number) {
   const { rows } = await db.query<any>(
-    'SELECT id, status, membership_plan_id, membership_fee_price, next_billing_date FROM user_memberships WHERE member_id = ? ORDER BY id', [owner]);
+    'SELECT id, status, membership_plan_id, membership_fee_price FROM user_memberships WHERE member_id = ? ORDER BY id', [owner]);
   return rows;
 }
 
@@ -67,8 +67,6 @@ describe('an Active ProductSet projects its operational assignment (#1325 PR 3a)
     expect(rows.length).toBe(1);
     expect(rows[0]).toMatchObject({ status: 'active', membership_plan_id: p });
     expect(Number(rows[0].membership_fee_price)).toBe(30);
-    // The assignment pass selects `next_billing_date IS NOT NULL`: this is never charged by it.
-    expect(rows[0].next_billing_date).toBeNull();
     const { rows: link } = await db.query<any>('SELECT user_membership_id FROM product_sets WHERE id = ?', [setId]);
     expect(Number(link[0].user_membership_id)).toBe(Number(rows[0].id));
     const { rows: cover } = await db.query<any>('SELECT is_owner FROM user_membership_members WHERE user_membership_id = ?', [rows[0].id]);

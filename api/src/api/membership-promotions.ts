@@ -394,7 +394,7 @@ async function loadStandingApplicationsForPricing(
 async function currentMembershipFeeInTx(tx: Tx, gymId: string, userMembershipId: number) {
   const { rows: umRows } = await tx.query(
     `SELECT um.id, um.member_id, um.membership_plan_id, um.base_price,
-            um.membership_fee_price, um.starts_at, um.next_billing_date,
+            um.membership_fee_price, um.starts_at,
             um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
             p.free_periods AS plan_free_periods,
             p.paid_periods AS plan_paid_periods,

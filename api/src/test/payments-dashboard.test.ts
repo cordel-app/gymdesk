@@ -18,7 +18,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet } from './helpers';
+  request, ensureTestProductSet, seedScheduledEvent } from './helpers';
 
 const PATH = '/payments/dashboard/summary';
 
@@ -95,10 +95,12 @@ async function createUserMembership(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
-     VALUES (?, ?, ?, ?, '2000-01-01', '49.00', ?)`,
-    [gym, memberId, planId, status, nextBillingDate],
+       (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+     VALUES (?, ?, ?, ?, '2000-01-01', '49.00')`,
+    [gym, memberId, planId, status],
   );
+  // #1325 PR 3c: what is scheduled is the member's ProductSet's persisted event.
+  if (nextBillingDate && status === 'active') await seedScheduledEvent(gym, memberId, insertId, nextBillingDate, 49);
   return insertId;
 }
 
