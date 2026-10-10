@@ -1,6 +1,5 @@
 import { Tx } from '../infra/db';
 import { recordStatusChange } from './billing-events';
-import { rollStaleNextBillingDateForward } from '../domain/nextBillingDateStamp';
 import { LiveAssignment, supersedeStartsAtError } from '../domain/oneActivePlan';
 import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-active-plan';
 import { importAssignmentAsProductSet } from './product-set-bridge';
@@ -130,11 +129,6 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
     [row.id, input.gymId, row.status],
   );
   if (rowCount === 0) return { kind: 'not_committable', status: row.status };
-  // #790: an assignment joining the run's schedule is never put on a cycle
-  // that has already gone by. A pre-activation row carries no
-  // `next_billing_date` — the first payment stamps it — so this is a no-op
-  // today and the one place that answers it either way.
-  await rollStaleNextBillingDateForward(tx, Number(row.id), input.gymId);
   await recordStatusChange(tx, {
     gymId: input.gymId, userMembershipId: Number(row.id), memberId: Number(row.member_id),
     previousStatus: row.status, newStatus: 'active',

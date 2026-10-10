@@ -79,9 +79,6 @@ interface EventContext {
   latest_tx_status: string | null;
   has_completed_tx: number;
   membership_status: string | null;
-  next_billing_date: Date | string | null;
-  recurring_billing_interval: number | null;
-  recurring_billing_unit: 'day' | 'week' | 'month' | 'year' | null;
   last_attempt: number | null;
 }
 
@@ -102,12 +99,9 @@ async function loadEventContext(gymId: string, billingEventId: number): Promise<
               WHERE pr.billing_event_id = be.id AND pr.status = 'completed') AS has_completed_tx,
             (SELECT MAX(pr.attempt) FROM payment_requests pr
               WHERE pr.billing_event_id = be.id) AS last_attempt,
-            um.status AS membership_status, um.next_billing_date,
-            ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
-            ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit
+            um.status AS membership_status
        FROM billing_events be
        LEFT JOIN user_memberships um ON um.id = be.user_membership_id
-       LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
       WHERE be.id = ? AND be.gym_id = ?`,
     [billingEventId, gymId],
   );
@@ -176,35 +170,6 @@ async function resolveChargeTypeId(ev: EventContext): Promise<number | null> {
   return rows[0]?.id ?? null;
 }
 
-/**
- * Mirrors the successful branch of the nightly run (`billing.ts`): a charge
- * that finally settles must move the membership's schedule on, or the run
- * would charge the same period again the next night. Only advances while the
- * membership is still waiting on that very charge (`next_billing_date` today
- * or earlier) — a schedule that already moved on is left alone.
- */
-async function advanceScheduleAfterPayment(tx: Tx, ev: EventContext): Promise<void> {
-  if (!ev.user_membership_id || !ev.next_billing_date) return;
-  if (!ev.recurring_billing_interval || !ev.recurring_billing_unit) return;
-  const today = new Date().toISOString().slice(0, 10);
-  const current = ev.next_billing_date instanceof Date
-    ? ev.next_billing_date.toISOString().slice(0, 10)
-    : String(ev.next_billing_date).slice(0, 10);
-  if (current > today) return;
-
-  const next = advanceBillingDate(current, ev.recurring_billing_interval, ev.recurring_billing_unit);
-  await tx.query(
-    'UPDATE user_memberships SET last_billed_at = UTC_TIMESTAMP(), next_billing_date = ? WHERE id = ? AND gym_id = ?',
-    [next, ev.user_membership_id, ev.gym_id],
-  );
-}
-
-/** Everything a settled payment does to the assignment, in one transaction. */
-async function settleCycleAfterPayment(ev: EventContext): Promise<void> {
-  await db.transaction(async (tx) => {
-    await advanceScheduleAfterPayment(tx, ev);
-  });
-}
 
 /** Stamps §2's Modified At / Modified By on the parent Billing Event. */
 async function stampEventModified(gymId: string, billingEventId: number, actorUserId: string | null): Promise<void> {
@@ -358,7 +323,6 @@ export async function retryBillingEventPayment(
   let membershipPaused = false;
   await db.transaction((tx) => closeScheduledEvent(tx, event, succeeded ? 'paid' : 'failed'));
   if (succeeded) {
-    await settleCycleAfterPayment(event);
   } else if (event.membership_status === 'active' && event.user_membership_id) {
     // Q3: two consecutive rejections pause the assigned plan. The status flip
     // goes through the same append-only ledger row every other transition
@@ -437,7 +401,6 @@ export async function recordManualPayment(
   });
 
   await db.transaction((tx) => closeScheduledEvent(tx, event, 'paid'));
-  await settleCycleAfterPayment(event);
   await stampEventModified(gymId, event.id, actorUserId);
 
   return {

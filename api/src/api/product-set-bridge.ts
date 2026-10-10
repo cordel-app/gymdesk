@@ -211,12 +211,6 @@ export async function importAssignmentAsProductSet(tx: Tx, gymId: string, userMe
 
   await linkInitialPaymentToSet(tx, gymId, userMembershipId);
 
-  // The assignment carries no billing date of its own any more: the set's
-  // events are the schedule (`next_billing_date` is dropped in the final stage).
-  await tx.query(
-    `UPDATE user_memberships SET next_billing_date = NULL WHERE id = ? AND gym_id = ?`,
-    [userMembershipId, gymId]);
-
   if (prev) {
     await replaceFutureScheduledEvents(tx, { gymId, previousProductSetId: Number(prev.id), today: todayUtc() });
   }

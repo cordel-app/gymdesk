@@ -83,9 +83,8 @@ export async function loadDerivedBilling(gymId: string, assignmentIds: number[])
 export async function withDerivedBilling<T extends LegacyBilling>(gymId: string, rows: T[]): Promise<T[]> {
   if (rows.length === 0) return rows;
   const derived = await loadDerivedBilling(gymId, rows.map((r) => Number(r.id)));
-  if (derived.size === 0) return rows;
-  return rows.map((r) => {
-    const d = derived.get(Number(r.id));
-    return d ? { ...r, ...d } : r;
-  });
+  // #1325 PR 3c: the columns are gone, so a row no set projects (a Draft, a
+  // pending one) reports the four values as empty rather than undefined.
+  const none: DerivedBilling = { next_billing_date: null, last_billed_at: null, failed_attempts: 0, last_failed_at: null };
+  return rows.map((r) => ({ ...r, ...none, ...(derived.get(Number(r.id)) ?? {}) }));
 }
