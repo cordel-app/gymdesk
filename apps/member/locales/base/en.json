@@ -455,6 +455,7 @@
     "search_placeholder": "Search by name…",
     "searching": "Searching…",
     "search_empty": "No active members found.",
+    "error_search": "Could not load the members. Try again.",
     "type_member": "Member",
     "type_staff": "Staff",
     "cancel": "Cancel",

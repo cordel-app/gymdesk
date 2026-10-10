@@ -32,10 +32,12 @@ export function MemberImpersonationDialog({ onClose }: Props) {
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [searchFailed, setSearchFailed] = useState(false);
 
   const search = useCallback(async (q: string) => {
     if (!gymId) return;
     setLoading(true);
+    setSearchFailed(false);
     try {
       const token = await getToken();
       const res = await fetch(
@@ -48,7 +50,10 @@ export function MemberImpersonationDialog({ onClose }: Props) {
       // leaves /me/profile on requireRole('member') and 403s (#415).
       setTargets(all.filter((t) => t.type === 'member'));
     } catch {
+      // A failed request is not "no members": say so, or an expired session or an
+      // unreachable API reads as a gym with nobody in it.
       setTargets([]);
+      setSearchFailed(true);
     } finally {
       setLoading(false);
     }
@@ -135,7 +140,9 @@ export function MemberImpersonationDialog({ onClose }: Props) {
             <div style={{ padding: '14px 16px', color: memberTheme.textMuted, fontSize: 14 }}>{t('searching')}</div>
           )}
           {!loading && targets.length === 0 && (
-            <div style={{ padding: '14px 16px', color: memberTheme.textMuted, fontSize: 14 }}>{t('search_empty')}</div>
+            <div style={{ padding: '14px 16px', color: searchFailed ? memberTheme.statusError : memberTheme.textMuted, fontSize: 14 }}>
+              {searchFailed ? t('error_search') : t('search_empty')}
+            </div>
           )}
           {targets.map((c) => (
             <button
