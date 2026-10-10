@@ -1,3 +1,4 @@
+import { parseExerciseCategoryInput } from '../domain/exerciseCategories';
 import express, { Request, Router } from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
@@ -249,6 +250,8 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
   }
   const muscles = parseMuscles(req.body.muscles);
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
+  const categoryInput = parseExerciseCategoryInput(req.body);
+  if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
   const allowedResultTypeIds: number[] | undefined =
     Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
   // #967: the same `translations` contract the gym-facing router takes — one
@@ -263,11 +266,11 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description, video_url, image_url,
+          (gym_id, name, description, video_url, image_url, category,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status,
            created_by_name, created_by_type)
-         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name.trim(), description ?? null, video_url ?? null, image_url ?? null,
+         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name.trim(), description ?? null, video_url ?? null, image_url ?? null, categoryInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, notes_default ?? null, status ?? 'active',
          actor.name, actor.type],
@@ -311,6 +314,8 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
   }
   const muscles = parseMuscles(req.body.muscles);
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
+  const categoryInput = parseExerciseCategoryInput(req.body);
+  if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
   const allowedResultTypeIds: number[] | undefined =
     Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
   // #967: replace-all when the field is sent, untouched when it is not — the
@@ -349,6 +354,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           rest_default_seconds  = IF(?, ?, rest_default_seconds),
           sets_default          = IF(?, ?, sets_default),
           notes_default         = IF(?, ?, notes_default),
+          category              = IF(?, ?, category),
           status                = COALESCE(?, status),
           modified_at           = UTC_TIMESTAMP(),
           -- #965: who last changed it, snapshotted beside when (migration 208).
@@ -367,6 +373,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           'rest_default_seconds' in req.body ? 1 : 0, rest_default_seconds ?? null,
           'sets_default' in req.body ? 1 : 0, sets_default ?? null,
           'notes_default' in req.body ? 1 : 0, notes_default ?? null,
+          categoryInput.provided ? 1 : 0, categoryInput.value,
           status ?? null,
           actor.name, actor.type,
           id,
