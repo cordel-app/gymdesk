@@ -6,8 +6,8 @@ import {
 } from './product-set-configuration';
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import { DraftRefusal, LockedDraft, isRefusal, lockDraft } from './product-set-draft';
-import { loadEditLock } from './product-set-checkout';
-import { createDraft } from './product-sets';
+import { ensureInitialEvent, initialCharge, loadEditLock } from './product-set-checkout';
+import { cancelInFlight, createDraft } from './product-sets';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
 
 /**
@@ -113,19 +113,38 @@ async function copyApplications(tx: Tx, gymId: string, from: Owner, to: Owner) {
 /* ── Commit: an assignment becomes a ProductSet version ──────────────────── */
 
 /**
- * Imports a just-committed assignment as the owner's next ProductSet version,
- * `active`, with its obligations generated. Idempotent: an assignment a set
- * already projects is left alone. Called inside `commitAssignment()`'s
- * transaction, after the assignment is `active`.
+ * Imports an assignment as the owner's next ProductSet version. Two moments
+ * call it, inside the assignment transaction:
  *
- * What moves the billing off the assignment pass: `next_billing_date` is cleared
- * (the pass selects `IS NOT NULL`), and the assignment's own initial payment — if
- * Save & Pay wrote one — is linked to the first period of the plan schedule, so
- * the period it already paid is never generated and charged a second time.
+ *  - **Save & Pay** (`submitForPayment()`, `pending: true`): the version is
+ *    created `pending_payment` beside the Active one — nothing superseded, no
+ *    obligations generated — and its **initial Billing Event is written now**,
+ *    with its lines, so every payment request raised for the pending assignment
+ *    (a staff link, the member's Pay now, a cash payment) is an attempt on that
+ *    one event and the ledger never holds a money row with no ProductSet.
+ *  - **commit** (`commitAssignment()`): a version already pending is activated
+ *    (`activateWithEvents()`: the Active one superseded, its obsolete future
+ *    events replaced, the new ones generated, the assignment re-projected);
+ *    an assignment with no version yet — a free plan, a staff shortcut — gets
+ *    one created `active` with its obligations generated.
+ *
+ * Idempotent: an assignment whose version is already active is left alone.
+ * `next_billing_date` is cleared because the set's events are the schedule.
  */
-export async function importAssignmentAsProductSet(tx: Tx, gymId: string, userMembershipId: number): Promise<number | null> {
-  const { rows: linked } = await tx.query('SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, userMembershipId]);
-  if (linked.length > 0) return Number(linked[0].id);
+export async function importAssignmentAsProductSet(
+  tx: Tx, gymId: string, userMembershipId: number, opts: { pending?: boolean } = {},
+): Promise<number | null> {
+  const { rows: linked } = await tx.query<any>(
+    'SELECT id, status FROM product_sets WHERE gym_id = ? AND user_membership_id = ? FOR UPDATE', [gymId, userMembershipId]);
+  if (linked.length > 0) {
+    const set = linked[0];
+    if (!opts.pending && set.status === 'pending_payment') {
+      const out = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc() });
+      if (out.kind !== 'ok') throw Object.assign(new Error(`ProductSet ${set.id} could not be activated: ${out.kind}`), { status: 409 });
+      await tx.query('UPDATE user_memberships SET next_billing_date = NULL WHERE id = ? AND gym_id = ?', [userMembershipId, gymId]);
+    }
+    return Number(set.id);
+  }
 
   const { rows } = await tx.query<any>(
     `SELECT um.id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at,
@@ -141,21 +160,32 @@ export async function importAssignmentAsProductSet(tx: Tx, gymId: string, userMe
   if (!um || um.membership_plan_id == null) return null;
   const startsAt = dateOnly(um.starts_at);
 
-  // The chain: the owner's Active version is superseded by this one.
+  // One in-flight version per owner (the database's own rule): a pending set
+  // of this owner that is not this assignment's refuses the import.
+  const { rows: inFlight } = await tx.query<any>(
+    `SELECT id, status FROM product_sets
+      WHERE gym_id = ? AND owner_member_id = ? AND status IN ('draft','pending_payment') FOR UPDATE`, [gymId, um.member_id]);
+  if (inFlight[0]) {
+    throw Object.assign(new Error('This member already has a ProductSet version in flight'), { status: 409, code: 'in_flight', productSetId: Number(inFlight[0].id) });
+  }
+
+  // The chain: the owner's Active version is superseded by an active import; a
+  // pending one sits beside it until it is paid.
   const { rows: prevRows } = await tx.query<any>(
     `SELECT id, root_product_set_id, version FROM product_sets
       WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' FOR UPDATE`, [gymId, um.member_id]);
   const prev = prevRows[0] ?? null;
-  if (prev) {
+  if (prev && !opts.pending) {
     await tx.query(`UPDATE product_sets SET status = 'superseded', superseded_at = UTC_TIMESTAMP() WHERE id = ?`, [prev.id]);
   }
   const { insertId: setId } = await tx.query(
     `INSERT INTO product_sets
        (gym_id, owner_member_id, root_product_set_id, previous_product_set_id, version, status,
         membership_plan_id, starts_at, ends_at, user_membership_id, activated_at, created_by_name, created_by_type)
-     VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${opts.pending ? 'NULL' : 'UTC_TIMESTAMP()'}, ?, ?)`,
     [gymId, um.member_id, prev ? prev.root_product_set_id : null, prev ? prev.id : null,
-      prev ? Number(prev.version) + 1 : 1, um.membership_plan_id, startsAt, um.ends_at ? dateOnly(um.ends_at) : null,
+      prev ? Number(prev.version) + 1 : 1, opts.pending ? 'pending_payment' : 'active',
+      um.membership_plan_id, startsAt, um.ends_at ? dateOnly(um.ends_at) : null,
       userMembershipId, um.created_by_name, um.created_by_type]);
   if (!prev) await tx.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [setId]);
   const rootId = prev ? Number(prev.root_product_set_id) : Number(setId);
@@ -209,6 +239,19 @@ export async function importAssignmentAsProductSet(tx: Tx, gymId: string, userMe
     [gymId, rootId, um.member_id]);
   await allocateItemSchedules(tx, gymId, Number(setId));
 
+  if (opts.pending) {
+    // The first obligation, written before any money moves (#1288's rule, one
+    // table over): what the version owes on its start date, with its lines.
+    const charge = await initialCharge(gymId, Number(setId), startsAt, tx);
+    if (charge && charge.amount > 0) {
+      const { rows: ct } = await tx.query<{ id: number }>("SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1");
+      await ensureInitialEvent(tx, {
+        gymId, productSetId: Number(setId), memberId: Number(um.member_id), startsAt, charge, chargeTypeId: ct[0]?.id ?? null,
+      });
+    }
+    return Number(setId);
+  }
+
   await linkInitialPaymentToSet(tx, gymId, userMembershipId);
 
   // The assignment carries no billing date of its own any more: the set's
@@ -222,6 +265,67 @@ export async function importAssignmentAsProductSet(tx: Tx, gymId: string, userMe
   }
   await materialiseScheduledEvents(tx, { gymId, productSetId: Number(setId), today: todayUtc() });
   return Number(setId);
+}
+
+/**
+ * The open initial Billing Event of the pending ProductSet an assignment is
+ * linked to: what a payment request raised for a Pending Payment assignment is
+ * an attempt on. `null` for an assignment with no pending version.
+ */
+export async function openInitialEventForAssignment(
+  exec: { query: Tx['query'] }, gymId: string, userMembershipId: number,
+): Promise<{ productSetId: number; eventId: number; amount: number } | null> {
+  const { rows } = await exec.query<any>(
+    `SELECT ps.id AS product_set_id, be.id AS event_id, be.amount
+       FROM product_sets ps
+       JOIN billing_events be ON be.product_set_id = ps.id AND be.gym_id = ps.gym_id
+        AND be.event_type = 'payment_recorded'
+        AND NOT EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.status = 'completed')
+      WHERE ps.gym_id = ? AND ps.user_membership_id = ? AND ps.status = 'pending_payment'
+      ORDER BY be.id DESC LIMIT 1`,
+    [gymId, userMembershipId]);
+  if (!rows[0]) return null;
+  return { productSetId: Number(rows[0].product_set_id), eventId: Number(rows[0].event_id), amount: Number(rows[0].amount) };
+}
+
+/**
+ * A Pending Payment assignment closed or deleted before it was paid takes its
+ * pending version with it (`cancelInFlight()`: the initial event and its
+ * attempts go too, which that function allows only while no payment is in
+ * flight or settled). `false` when the version could not be cancelled — the
+ * payment is unresolved — so the caller refuses the close rather than leaving a
+ * paid-for version behind.
+ */
+export async function cancelPendingSetForAssignment(tx: Tx, gymId: string, userMembershipId: number): Promise<boolean> {
+  const { rows } = await tx.query<any>(
+    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status = 'pending_payment' FOR UPDATE`,
+    [gymId, userMembershipId]);
+  if (!rows[0]) return true;
+  const setId = Number(rows[0].id);
+  // The initial event's attempts are the set's: delete the ones nothing settled
+  // (a `cancelInFlight` sees only the request the set names).
+  const out = await cancelInFlight(tx, gymId, setId);
+  if (out.kind === 'unresolved') return false;
+  return true;
+}
+
+/** The ProductSet an assignment is linked to (pending first, then active), for a writer that needs one. */
+export async function productSetIdForAssignment(
+  exec: { query: Tx['query'] }, gymId: string, userMembershipId: number,
+): Promise<number | null> {
+  const { rows } = await exec.query<any>(
+    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status IN ('pending_payment','active')
+      ORDER BY FIELD(status, 'pending_payment', 'active'), id DESC LIMIT 1`, [gymId, userMembershipId]);
+    return rows[0] ? Number(rows[0].id) : null;
+}
+
+/** The owner's Active ProductSet, for a money row raised against a member rather than an assignment. */
+export async function activeProductSetIdForMember(
+  exec: { query: Tx['query'] }, gymId: string, memberId: number,
+): Promise<number | null> {
+  const { rows } = await exec.query<any>(
+    `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' LIMIT 1`, [gymId, memberId]);
+  return rows[0] ? Number(rows[0].id) : null;
 }
 
 
@@ -244,8 +348,9 @@ export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembers
   if (!set) return;
   const { rows: ev } = await tx.query<any>(
     `SELECT id FROM billing_events
-      WHERE gym_id = ? AND user_membership_id = ? AND event_type = 'payment_recorded' AND product_set_id IS NULL
-      ORDER BY id ASC LIMIT 1 FOR UPDATE`, [gymId, userMembershipId]);
+      WHERE gym_id = ? AND user_membership_id = ? AND event_type = 'payment_recorded'
+        AND (product_set_id IS NULL OR product_set_id = ?) AND schedule_id IS NULL
+      ORDER BY id ASC LIMIT 1 FOR UPDATE`, [gymId, userMembershipId, set.id]);
   if (!ev[0]) return;
   const startsAt = dateOnly(set.starts_at);
   const { rows: sch } = await tx.query<any>(

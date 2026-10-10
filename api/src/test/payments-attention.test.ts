@@ -14,8 +14,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, ensureTestProductSet } from './helpers';
 
 const PATH = '/payments/billing-events/attention';
 
@@ -53,9 +52,9 @@ async function insertEvent(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO billing_events
-       (gym_id, member_id, user_membership_id, event_type, charge_type_id, source, amount, created_at)
-     VALUES (?, ?, ?, ?, ?, 'system', '49.00', ?)`,
-    [gym, m.memberId, m.userMembershipId, eventType, await getChargeTypeId(), createdAt],
+       (gym_id, member_id, user_membership_id, product_set_id, event_type, charge_type_id, source, amount, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'system', '49.00', ?)`,
+    [gym, m.memberId, m.userMembershipId, await ensureTestProductSet(gym, m.memberId, m.userMembershipId), eventType, await getChargeTypeId(), createdAt],
   );
   return insertId;
 }

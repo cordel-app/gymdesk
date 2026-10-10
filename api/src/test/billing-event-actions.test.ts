@@ -11,8 +11,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, ensureTestProductSet } from './helpers';
 
 // Mutable so each test picks the provider outcome it needs.
 let executeRecurring = vi.fn();
@@ -119,9 +118,9 @@ async function createFailedEvent(
 
   const { insertId: billingEventId } = await db.query(
     `INSERT INTO billing_events
-       (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
-     VALUES (?, ?, ?, ?, '40.00', ?, 'system', NULL, 'E999: card declined')`,
-    [gym, membershipId, memberId, eventType, ct],
+       (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
+     VALUES (?, ?, ?, ?, ?, '40.00', ?, 'system', NULL, 'E999: card declined')`,
+    [gym, membershipId, await ensureTestProductSet(gym, memberId, membershipId), memberId, eventType, ct],
   );
 
   if (withTransaction) {

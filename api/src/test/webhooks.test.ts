@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, request } from './helpers';
+import { cleanupTestGyms, createTestGym, ensureTestProductSet, request } from './helpers';
 
 const MONEI_WEBHOOK_SECRET = 'test-webhook-secret';
 
@@ -67,6 +67,9 @@ async function createUserMembership(gymId: string, memberId: number, planId: num
      VALUES (?, ?, ?, 'active', CURDATE(), '5.00')`,
     [gymId, memberId, planId],
   );
+  // #1325 PR 3b: every money row belongs to a ProductSet, so an assignment
+  // seeded by hand gets the Active version it would have been imported as.
+  await ensureTestProductSet(gymId, memberId, insertId);
   return insertId;
 }
 
@@ -275,6 +278,7 @@ async function createMembershipStartingOn(
      VALUES (?, ?, ?, 'active', ?, '5.00')`,
     [gymId, memberId, planId, startsAt],
   );
+  await ensureTestProductSet(gymId, memberId, insertId);
   return insertId;
 }
 

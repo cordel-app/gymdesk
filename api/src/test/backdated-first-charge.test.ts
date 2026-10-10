@@ -15,7 +15,7 @@ import crypto from 'crypto';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
 import { advanceBillingDate } from '../domain/billingDate';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, ensureTestProductSet, request } from './helpers';
 
 const MONEI_WEBHOOK_SECRET = 'test-790-webhook-secret';
 const BILLING_SECRET = 'test-790-billing-secret';
@@ -110,6 +110,8 @@ async function assignment(opts: {
     [gymId, memberId, planId, opts.status ?? 'active', opts.startsAt, opts.nextBillingDate ?? null],
   );
   created.push(membershipId);
+  // #1325 PR 3b: every money row belongs to a ProductSet.
+  await ensureTestProductSet(gymId, memberId, membershipId);
   await db.query(
     `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id)
      VALUES (?, ?, 'monei', ?, ?)`,

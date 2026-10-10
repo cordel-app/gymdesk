@@ -9,8 +9,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, ensureTestProductSet } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -236,9 +235,9 @@ async function insertBillingEvent(
   gymId: string, umId: number, memberId: number, eventType: string, amount: number, createdAt: string,
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO billing_events (gym_id, user_membership_id, member_id, event_type, source, amount, created_at)
-     VALUES (?, ?, ?, ?, 'system', ?, ?)`,
-    [gymId, umId, memberId, eventType, amount, createdAt],
+    `INSERT INTO billing_events (gym_id, user_membership_id, product_set_id, member_id, event_type, source, amount, created_at)
+     VALUES (?, ?, ?, ?, ?, 'system', ?, ?)`,
+    [gymId, umId, await ensureTestProductSet(gymId, memberId, umId), memberId, eventType, amount, createdAt],
   );
   return insertId;
 }

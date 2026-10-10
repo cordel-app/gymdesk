@@ -5,8 +5,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, ensureTestProductSet } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -28,9 +27,9 @@ async function getChargeTypeId(code = 'membership_fee'): Promise<number> {
 
 async function insertBillingEvent(gymId: string, memberId: number, chargeTypeId: number) {
   const { insertId } = await db.query(
-    `INSERT INTO billing_events (gym_id, member_id, event_type, charge_type_id, source, actor_user_id, amount)
-     VALUES (?, ?, 'payment_recorded', ?, 'employee', 'test-user', 100)`,
-    [gymId, memberId, chargeTypeId],
+    `INSERT INTO billing_events (gym_id, member_id, product_set_id, event_type, charge_type_id, source, actor_user_id, amount)
+     VALUES (?, ?, ?, 'payment_recorded', ?, 'employee', 'test-user', 100)`,
+    [gymId, memberId, await ensureTestProductSet(gymId, memberId), chargeTypeId],
   );
   return insertId;
 }
@@ -76,9 +75,9 @@ describe('Payments', () => {
 
     it('excludes status_changed events', async () => {
       await db.query(
-        `INSERT INTO billing_events (gym_id, member_id, event_type, source, actor_user_id, previous_status, new_status)
-         VALUES (?, ?, 'status_changed', 'system', 'test-user', 'pending', 'active')`,
-        [gymId, memberId],
+        `INSERT INTO billing_events (gym_id, member_id, product_set_id, event_type, source, actor_user_id, previous_status, new_status)
+         VALUES (?, ?, ?, 'status_changed', 'system', 'test-user', 'pending', 'active')`,
+        [gymId, memberId, await ensureTestProductSet(gymId, memberId)],
       );
       const res = await request.get('/payments').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
       expect(res.status).toBe(200);

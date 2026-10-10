@@ -18,6 +18,7 @@ import {
 import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordManualPayment, retryBillingEventPayment } from '../domain/billingEventPayments';
 import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
+import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import {
   FEE_ASSIGNMENT_COLUMNS,
@@ -153,12 +154,21 @@ paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) 
     // with the ledger row, so neither can land without the other. A row in any
     // other status is the ordinary case and commits nothing.
     const row = await db.transaction(async (tx) => {
+      // #1325 PR 3b: a money row belongs to a ProductSet — the assignment's
+      // (pending first), else the member's Active one; a member with none has
+      // nothing to record it against.
+      const setId = user_membership_id
+        ? await productSetIdForAssignment(tx, gymId, Number(user_membership_id))
+        : await activeProductSetIdForMember(tx, gymId, Number(memberId));
+      if (setId == null) {
+        throw Object.assign(new Error('This member has no ProductSet to record the event against'), { status: 400 });
+      }
       const { insertId } = await tx.query(
         `INSERT INTO billing_events
-         (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (gym_id, user_membership_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          gymId, user_membership_id ?? null, memberId, event_type, charge_type_id ?? null,
+          gymId, user_membership_id ?? null, setId, memberId, event_type, charge_type_id ?? null,
           source ?? sourceForRole(role), userId, parsedAmount,
           notes && String(notes).trim() ? String(notes).trim() : null,
         ],
