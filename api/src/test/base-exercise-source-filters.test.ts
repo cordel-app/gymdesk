@@ -195,9 +195,9 @@ describe('§18 — search and filtering', () => {
     expect(names(res.body)).toEqual([`Treadmill Interval ${suffix}`]);
   });
 
-  it('q matches the slug too', async () => {
+  it('q no longer matches the slug (#1356)', async () => {
     const res = await list(`?q=dumbbell-row-${suffix}`);
-    expect(names(res.body)).toEqual([`Dumbbell Row ${suffix}`]);
+    expect(names(res.body)).toEqual([]);
   });
 
   it('filters by equipment, and accepts several values', async () => {
@@ -262,19 +262,9 @@ describe('§18 — search and filtering', () => {
  * is the toolbar's own.
  */
 describe('#969 — the filter toolbar’s own parameters', () => {
-  it('§4 — ?slug= matches partially, and an exact slug matches itself', async () => {
-    expect(names((await list(`?slug=barbell-bench-press-${suffix}`)).body))
-      .toEqual([`Barbell Bench Press ${suffix}`]);
-    expect(names((await list(`?slug=treadmill-interval-${suffix}`)).body))
-      .toEqual([`Treadmill Interval ${suffix}`]);
-    // Partial: the three seeds' slugs all end in the suffix.
-    expect(names((await list(`?slug=${suffix}`)).body).length).toBe(3);
-  });
-
-  it('§4 — the slug filter is separate from ?q=, and combines with it', async () => {
-    expect(names((await list(`?q=Treadmill&slug=barbell-bench-press-${suffix}`)).body)).toEqual([]);
-    expect(names((await list(`?q=Barbell&slug=barbell-bench-press-${suffix}`)).body))
-      .toEqual([`Barbell Bench Press ${suffix}`]);
+  it('§4 — #1356 removed the slug filter: ?slug= narrows nothing', async () => {
+    const all = names((await list('')).body).length;
+    expect(names((await list(`?slug=barbell-bench-press-${suffix}`)).body).length).toBe(all);
   });
 
   it('§6 — muscle_match=any is the default, and ORs the checked muscles', async () => {
