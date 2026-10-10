@@ -1,6 +1,6 @@
 import { withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
-import { linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
+import { cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
@@ -1201,6 +1201,9 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       if (committed.kind !== 'committed') return committed;
       if (!open) {
         const setId = await productSetIdForAssignment(tx, gymId, Number(req.params.id));
+        if (setId == null) {
+          throw Object.assign(new Error('This membership has no ProductSet to record the payment against'), { status: 400 });
+        }
         await tx.query(
           `INSERT INTO billing_events
              (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
@@ -1550,6 +1553,11 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
     if (locked.length === 0) return { kind: 'not_found' } as const;
     const prev = locked[0];
     if (!CLOSEABLE_FROM.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
+    // #1325 PR 3b: a pending assignment's version goes with it (or the close is
+    // refused while a payment on it is unresolved).
+    if (prev.status === 'pending_payment' && !(await cancelPendingSetForAssignment(tx, gymId, Number(prev.id)))) {
+      return { kind: 'unresolved' } as const;
+    }
     await tx.query(
       "UPDATE user_memberships SET status = 'cancelled', closed_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?",
       [prev.id, gymId],
@@ -1565,6 +1573,9 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
   if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
   if (result.kind === 'invalid') {
     return res.status(400).json({ error: `Cannot close a membership with status '${result.from}'` });
+  }
+  if (result.kind === 'unresolved') {
+    return res.status(409).json({ error: 'payment_unresolved', message: 'A payment on this membership is still unresolved; reconcile it before closing.' });
   }
   const closed = await loadAssignmentRow(gymId, req.params.id);
   recordAudit(req, { action: 'close', entityType: 'user_membership', entityId: req.params.id, next: closed });

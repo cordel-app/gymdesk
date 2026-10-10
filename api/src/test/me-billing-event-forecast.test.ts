@@ -21,8 +21,7 @@ import {
   createTestGym,
   createTestMembership,
   request,
-  activateAssignment,
-} from './helpers';
+  activateAssignment, ensureTestProductSet } from './helpers';
 
 const ROOT = '/me/billing-event-forecast';
 
@@ -240,15 +239,15 @@ describe('GET /me/billing-events', () => {
     // its CHECK admits `admin` · `system` · `employee` · `customer` · `provider`.
     const { insertId: paidId } = await db.query(
       `INSERT INTO billing_events
-         (gym_id, member_id, user_membership_id, event_type, source, amount)
-       VALUES (?, ?, ?, 'payment_recorded', 'admin', 70)`,
-      [gymId, memberId, umId],
+         (gym_id, member_id, user_membership_id, product_set_id, event_type, source, amount)
+       VALUES (?, ?, ?, ?, 'payment_recorded', 'admin', 70)`,
+      [gymId, memberId, umId, await ensureTestProductSet(gymId, memberId, umId)],
     );
     const { insertId: changedId } = await db.query(
       `INSERT INTO billing_events
-         (gym_id, member_id, user_membership_id, event_type, source, previous_status, new_status)
-       VALUES (?, ?, ?, 'status_changed', 'system', 'active', 'paused')`,
-      [gymId, memberId, umId],
+         (gym_id, member_id, user_membership_id, product_set_id, event_type, source, previous_status, new_status)
+       VALUES (?, ?, ?, ?, 'status_changed', 'system', 'active', 'paused')`,
+      [gymId, memberId, umId, await ensureTestProductSet(gymId, memberId, umId)],
     );
 
     vi.mocked(verifyToken).mockResolvedValueOnce({ sub: MEMBER_CLERK } as any);

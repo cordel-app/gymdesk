@@ -1,5 +1,5 @@
 import { redirectEditToProductSet } from './assignment-edit-redirect';
-import { productSetIdForAssignment } from './product-set-bridge';
+import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { applyPromotionMutator, revokePromotionMutator } from './product-set-bridge';
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
@@ -457,9 +457,10 @@ async function recordFeeAdjustment(tx: Tx, params: {
 }): Promise<void> {
   const { gymId, umId, memberId, source, userId, before, after, note } = params;
   if (before === null || Math.abs(after - before) <= 0.001) return;
-  // #1325 PR 3b: an adjustment belongs to the assignment's ProductSet. A Draft
-  // assignment has none yet and bills nothing, so there is no ledger to adjust.
-  const setId = await productSetIdForAssignment(tx, gymId, umId);
+  // #1325 PR 3b: an adjustment belongs to the assignment's ProductSet — the one
+  // linked to it, else the member's Active one. A Draft assignment of a member
+  // with no set bills nothing yet, so there is no ledger to adjust.
+  const setId = (await productSetIdForAssignment(tx, gymId, umId)) ?? (await activeProductSetIdForMember(tx, gymId, memberId));
   if (setId == null) return;
   const { rows: ctRows } = await tx.query("SELECT id FROM charge_types WHERE code = 'membership_fee'");
   const chargeTypeId = ctRows[0]?.id ?? null;

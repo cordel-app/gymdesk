@@ -88,16 +88,28 @@ taken as given (the money has arrived, and a paid-up member must not be left pla
 
 - the provider's `completed` webhook (A5) — the member's own *Pay now* (`POST /me/payment-requests`
   accepts a pending row, ahead of an active one) or a staff-raised checkout link (`POST /payment-requests`);
-- `POST /user-memberships/:id/record-payment` — a cash / manual first payment: one `payment_recorded`
-  Billing Event at the fee the cycle resolves to (or an explicit `amount`) plus the commit, one
-  transaction, no card stored and no `next_billing_date` stamped;
+- `POST /user-memberships/:id/record-payment` — a cash / manual first payment: a `cash` attempt on
+  the version's initial Billing Event (below) plus the commit, one transaction, no card stored;
 - a `payment_recorded` event appended through `POST /payments` against a pending row, so the
   Payments page's own recording activates it too.
 
+**Since #1325 PR 3b Save & Pay also creates the member's Pending Payment ProductSet version**
+(`importAssignmentAsProductSet(…, { pending: true })`, in `submitForPayment()`'s transaction):
+the assignment's configuration frozen as the version's own rows, and the version's **initial
+`payment_recorded` Billing Event written now, with its lines** — what the version owes on its
+start date, the fee and every Product dated on it. Nothing is superseded and no obligations are
+generated. Every payment raised for the pending assignment is then an **attempt on that one
+event** (`openInitialEventForAssignment()`): the staff link and the member's Pay now carry its
+`billing_event_id` for the event's own amount, the cash payment is a `payment_requests` row of
+method `cash` on it. The commit (`commitAssignment()` → `importAssignmentAsProductSet()`) finds
+the pending version and activates it through `activateWithEvents()`: the Active version
+superseded, its obsolete future events replaced, the new version's generated, the assignment
+re-projected.
+
 Nothing is superseded at Save & Pay time: a payment that never arrives leaves the member's
-current plan exactly as it was, and the pending row is discarded through `POST /:id/close`.
-The webhook's `completed` branch still stamps `next_billing_date` (card) and the nightly run
-skips a card-less assignment, as before — see
+current plan exactly as it was, and the pending row is discarded through `POST /:id/close`,
+which cancels the pending version with it (`cancelPendingSetForAssignment()`; refused with
+`409 payment_unresolved` while an attempt on its event is still unresolved). See
 [Assigned Plan status model](#assigned-plan-status-model).
 
 ### A3. A payment request is raised

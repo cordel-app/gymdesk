@@ -292,13 +292,19 @@ describe('the payment activates', () => {
     const res = await api('post', `/user-memberships/${umId}/record-payment`).send({ notes: 'cash at the desk' });
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('active');
-    const { rows } = await db.query(
-      `SELECT event_type, amount, notes FROM billing_events WHERE user_membership_id = ? AND event_type = 'payment_recorded'`,
+    // #1325 PR 3b: the cash is an attempt on the version's initial event,
+    // written at Save & Pay; the note travels on the attempt.
+    const { rows } = await db.query<any>(
+      `SELECT be.id, be.event_type, be.amount FROM billing_events be
+         JOIN product_sets ps ON ps.id = be.product_set_id
+        WHERE ps.user_membership_id = ? AND be.event_type = 'payment_recorded'`,
       [umId],
     );
     expect(rows).toHaveLength(1);
     expect(Number(rows[0].amount)).toBe(30);
-    expect(rows[0].notes).toBe('cash at the desk');
+    const { rows: attempts } = await db.query<any>(
+      "SELECT method, status, notes FROM payment_requests WHERE billing_event_id = ?", [rows[0].id]);
+    expect(attempts).toEqual([expect.objectContaining({ method: 'cash', status: 'completed', notes: 'cash at the desk' })]);
     expect((await api('post', `/user-memberships/${umId}/record-payment`).send({})).status).toBe(400);
   });
 

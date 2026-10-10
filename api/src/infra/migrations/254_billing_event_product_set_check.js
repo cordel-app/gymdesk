@@ -2,9 +2,9 @@
  * #1325 PR 3b — every money row belongs to a ProductSet.
  *
  * `billing_events.product_set_id` may be NULL only for a one-off purchase
- * (`product_purchase`, outside the version chain by decision) and for a card
+ * (`product_purchase`, outside the version chain by decision), for a card
  * verification raised by a member who holds no Active set (`card_verification`,
- * amount 0). Everything else — a scheduled obligation, a first payment, a cash
+ * amount 0) and for the retired `status_changed` (see `SET_LESS_TYPES`). Everything else — a scheduled obligation, a first payment, a cash
  * payment, an adjustment, a waiver — is a version's, which is what lets the
  * ledger be read per chain and the editing lock be decided from it.
  *
@@ -24,8 +24,13 @@
 
 const CHECK = 'chk_billing_events_product_set';
 
-/** Event types a row may carry with no ProductSet. */
-const SET_LESS_TYPES = ['product_purchase', 'card_verification'];
+/**
+ * Event types a row may carry with no ProductSet: the two by decision, plus the
+ * retired `status_changed`, which nothing writes since migration 252 moved
+ * transitions into the audit log — except migration 213's own one-time sweep,
+ * which is history that must stay runnable as written.
+ */
+const SET_LESS_TYPES = ['product_purchase', 'card_verification', 'status_changed'];
 
 const ER_CHECK_CONSTRAINT_NOT_FOUND = 3940;
 const dropCheckIfExists = (knex, sql) =>
@@ -50,7 +55,7 @@ exports.up = async (knex) => {
   const violating = Number(rows[0][0].n);
   if (violating > 0) {
     throw new Error(
-      `migration 253 refused: ${violating} billing event(s) belong to no ProductSet. `
+      `migration 254 refused: ${violating} billing event(s) belong to no ProductSet. `
       + 'Run the approved development reset (npm run billing:reset-dev) first — this migration never '
       + 'deletes or re-attributes money records itself.',
     );
