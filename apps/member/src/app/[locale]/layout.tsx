@@ -35,9 +35,17 @@ import { publicAppTitle } from '@/lib/appTitle';
  * island. Android has no such inset, which is why it looked right there. The
  * `viewport` export makes Next emit the one tag with the right value.
  */
+/**
+ * `maximumScale: 1` stops iOS from zooming into a field it considers too small
+ * (under 16px) when it is focused. The zoom is not undone when the field blurs,
+ * so after the impersonation dialog's search box (or the gym selector) the whole
+ * page stayed ~8% too wide, shifted off the left edge and with its right edge cut.
+ * It is the same remedy the native shell relies on; it does not affect text size.
+ */
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
+  maximumScale: 1,
   viewportFit: 'cover',
 };
 

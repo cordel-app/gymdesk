@@ -455,6 +455,7 @@
     "search_placeholder": "Cerca per nom…",
     "searching": "Cercant…",
     "search_empty": "No s'han trobat membres actius.",
+    "error_search": "No s'han pogut carregar els membres. Torna-ho a provar.",
     "type_member": "Membre",
     "type_staff": "Personal",
     "cancel": "Cancel·lar",
