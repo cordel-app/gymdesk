@@ -1,3 +1,4 @@
+import { activateWithEvents } from './product-set-configuration';
 import { Router, type Request, type Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { verifyWebhook } from '@clerk/backend/webhooks';
@@ -312,9 +313,9 @@ paymentWebhookRouter.post(
         await db.transaction(async (tx) => {
           await tx.query(
             `UPDATE payment_requests
-             SET status = 'completed', provider_ref = ?, completed_at = UTC_TIMESTAMP()
+             SET status = 'completed', provider_ref = ?, provider_status = ?, completed_at = UTC_TIMESTAMP()
              WHERE id = ?`,
-            [payload.providerRef, pr.id],
+            [payload.providerRef, payload.providerStatus ?? 'SUCCEEDED', pr.id],
           );
 
           // db.query()'s wrapper puts insertId at the top level for an
@@ -406,13 +407,39 @@ paymentWebhookRouter.post(
               );
             }
           }
+
+          // #1325 PR 2d: a first payment whose Billing Event belongs to a
+          // ProductSet is what activates that version — the trusted
+          // confirmation, never the return from the hosted page. The commit
+          // supersedes the previous Active version, replaces its obsolete future
+          // Scheduled events and generates the new version's, in this one
+          // transaction, and is idempotent: a duplicate delivery finds the set
+          // already `active` and only tops up.
+          if (pr.billing_event_id != null) {
+            const { rows: owner } = await tx.query<{ product_set_id: number | null }>(
+              'SELECT product_set_id FROM billing_events WHERE id = ? AND gym_id = ?',
+              [pr.billing_event_id, pr.gym_id],
+            );
+            if (owner[0]?.product_set_id != null) {
+              const activated = await activateWithEvents(tx, {
+                gymId: pr.gym_id, productSetId: Number(owner[0].product_set_id),
+                today: new Date().toISOString().slice(0, 10),
+              });
+              if (activated.kind !== 'ok') {
+                req.log.error(
+                  { orderId: payload.orderId, productSetId: owner[0].product_set_id, outcome: activated.kind },
+                  'Payment webhook: a paid ProductSet could not be activated',
+                );
+              }
+            }
+          }
         });
 
         req.log.info({ orderId: payload.orderId, paymentRequestId: pr.id }, 'Payment webhook: completed');
       } else if (payload.status === 'failed' || payload.status === 'expired') {
         await db.query(
-          `UPDATE payment_requests SET status = ?, provider_ref = ? WHERE id = ?`,
-          [payload.status, payload.providerRef, pr.id],
+          `UPDATE payment_requests SET status = ?, provider_ref = ?, provider_status = ? WHERE id = ?`,
+          [payload.status, payload.providerRef, payload.providerStatus ?? null, pr.id],
         );
         // #1121 stage 2: a purchase nobody paid for is `cancelled` rather than
         // left pending — §6's "failed/cancelled payments do not create a

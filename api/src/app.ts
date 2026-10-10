@@ -7,6 +7,7 @@ import { Request, Response, NextFunction } from 'express';
 import { membersRouter } from './api/members';
 import { bookingsRouter } from './api/bookings';
 import { userMembershipsRouter } from './api/user-memberships';
+import { productSetsRouter, meProductSetsRouter } from './api/product-sets-router';
 import { gymsRouter, platformRouter } from './api/gyms';
 import { storageRouter } from './api/storage';
 import { superadminsRouter } from './api/superadmins';
@@ -400,6 +401,9 @@ app.use('/billing-events',   requireAuth(), tenantContext, requireModuleAccess('
 // only holds if it is mounted *before* '/user-memberships', whose own
 // `payments.transactions` gate runs on every path under that prefix.
 app.use('/user-memberships', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), userMembershipsRouter);
+// #1325 PR 2d: the ProductSet-keyed commercial surface (staff) and the member's own read.
+app.use('/product-sets', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), productSetsRouter);
+app.use('/me/product-sets', requireAuth(), tenantContext, centerContext, meProductSetsRouter);
 app.use('/user-memberships/:id/promotions', requireAuth(), tenantContext, requireModuleAccess('PAYMENTS'), requireFeatureEnabled('payments.transactions'), membershipPromotionsRouter);
 // #631: Additional Periodic Services attached to one Assigned Plan. Three path
 // segments, so userMembershipsRouter's own '/:id' (one segment) never matches.
