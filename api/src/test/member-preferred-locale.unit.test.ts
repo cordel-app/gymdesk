@@ -125,6 +125,20 @@ describe('the Members App side of the preference', () => {
     expect(component).toMatch(/if \(!sessionStorage\.getItem\(RETURN_LOCALE_KEY\)\)/);
   });
 
+  it('holds the page back while a language switch is pending, with a way out', () => {
+    // The flicker: rendering the screens in the wrong language and then replacing
+    // the route. The component wraps the page and renders nothing for it while a
+    // switch is pending, and gives up after a timeout rather than leave it blank.
+    const component = memberFile('components/MemberLocalePreference.tsx')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(component).toMatch(/export function MemberLocalePreference\(\{ children \}/);
+    expect(component).toContain('SWITCH_TIMEOUT_MS');
+    expect(component).toMatch(/target && !gaveUp \? null : children/);
+    const layout = memberFile('app/[locale]/layout.tsx');
+    expect(layout).toContain('<MemberLocalePreference>{children}</MemberLocalePreference>');
+    expect(layout).not.toContain('<MemberLocalePreference />');
+  });
+
   it('labels every language in every locale file', () => {
     for (const code of ['en', 'es', 'ca']) {
       const messages = JSON.parse(readFileSync(join(MEMBER_LOCALES_DIR, `${code}.json`), 'utf-8'));
