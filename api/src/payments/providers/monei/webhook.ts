@@ -71,6 +71,7 @@ export function verifyAndParseWebhook(
       cardLast4: null,
       cardBrand: null,
       rawBody,
+      providerStatus: null,
     };
   }
 
@@ -86,5 +87,8 @@ export function verifyAndParseWebhook(
     cardLast4: charge.paymentMethod?.card?.last4 ?? null,
     cardBrand: charge.paymentMethod?.card?.brand ?? null,
     rawBody,
+    // Kept verbatim: the map above defaults an unrecognised status to `failed`,
+    // which is exactly what must not be inferred from it (#1325).
+    providerStatus: typeof charge.status === 'string' ? charge.status : null,
   };
 }

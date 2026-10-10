@@ -43,6 +43,14 @@ export interface WebhookPayload {
   cardLast4: string | null;
   cardBrand: string | null;
   rawBody: Buffer;
+  /**
+   * The provider's own status, verbatim (#1325). `status` above is the internal
+   * four-value mapping and collapses distinct outcomes — an unrecognised or
+   * `PENDING_PROCESSING` / `CANCELED` / `REFUNDED` status reads as `failed`
+   * there — so anything that must tell them apart reads this one. Optional so a
+   * provider adapter that has not been taught it stays valid.
+   */
+  providerStatus?: string | null;
 }
 
 export interface ExecuteRecurringParams {
@@ -59,6 +67,8 @@ export interface ExecuteRecurringResult {
   providerRef: string;
   errorCode: string | null;
   errorMessage: string | null;
+  /** The provider's own status, verbatim (#1325); see `WebhookPayload.providerStatus`. */
+  providerStatus?: string | null;
 }
 
 export interface PaymentMethodToken {
