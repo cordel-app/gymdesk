@@ -29,8 +29,8 @@ function parse(query: Record<string, unknown>) {
   return parsed.filter;
 }
 
-function build(query: Record<string, unknown>, opts?: { withSlug?: boolean }) {
-  return exerciseListFilterSql('e', parse(query), opts);
+function build(query: Record<string, unknown>) {
+  return exerciseListFilterSql('e', parse(query));
 }
 
 describe('listParam', () => {
@@ -52,15 +52,15 @@ describe('listParam', () => {
 describe('parseExerciseListFilter', () => {
   it('reads nothing out of an empty query, and builds no clause from it', () => {
     const filter = parse({});
-    expect(filter).toMatchObject({ q: null, slug: null, status: null, metadata: [], muscles: [] });
+    expect(filter).toMatchObject({ q: null, status: null, metadata: [], muscles: [] });
     expect(filter.muscleMatch).toBe(DEFAULT_MUSCLE_MATCH);
     expect(isExerciseListFiltered(filter)).toBe(false);
     expect(exerciseListFilterSql('e', filter)).toEqual({ sql: '', params: [] });
   });
 
   it('treats a blank string as absent rather than as a filter', () => {
-    const filter = parse({ q: '   ', slug: '', status: '' });
-    expect(filter).toMatchObject({ q: null, slug: null, status: null });
+    const filter = parse({ q: '   ', status: '' });
+    expect(filter).toMatchObject({ q: null, status: null });
     expect(isExerciseListFiltered(filter)).toBe(false);
   });
 
@@ -97,25 +97,15 @@ describe('parseExerciseListFilter', () => {
 });
 
 describe('the WHERE fragment', () => {
-  it('matches the name, its translations and the slug for one ?q=', () => {
+  it('matches the name and its translations for one ?q=, never the slug (#1356)', () => {
     const { sql, params } = build({ q: 'bench' });
     expect(sql).toContain('exercise_translations');
-    expect(sql).toContain('e.slug LIKE ?');
-    expect(params).toEqual(['%bench%', '%bench%', '%bench%']);
-  });
-
-  it('drops the slug arm where the context has no slugs', () => {
-    const { sql, params } = build({ q: 'bench' }, { withSlug: false });
-    expect(sql).not.toContain('e.slug');
+    expect(sql).not.toContain('slug');
     expect(params).toEqual(['%bench%', '%bench%']);
   });
 
-  it('searches the slug partially, which is also how an exact one matches', () => {
-    expect(build({ slug: 'barbell' })).toEqual({
-      sql: ' AND e.slug LIKE ?',
-      params: ['%barbell%'],
-    });
-    expect(build({ slug: 'barbell' }, { withSlug: false }).params).toEqual([]);
+  it('ignores a ?slug= parameter', () => {
+    expect(build({ slug: 'barbell' })).toEqual({ sql: '', params: [] });
   });
 
   it('compares a metadata column directly, never through LOWER()', () => {
@@ -151,12 +141,12 @@ describe('the WHERE fragment', () => {
   it('combines the groups with AND (§11)', () => {
     const { sql, params } = build({ q: 'bench', status: 'active', equipment: 'barbell', muscle: 'chest' });
     expect(sql.match(/ AND /g)!.length).toBeGreaterThanOrEqual(4);
-    expect(params).toEqual(['active', '%bench%', '%bench%', '%bench%', 'barbell', 'chest']);
+    expect(params).toEqual(['active', '%bench%', '%bench%', 'barbell', 'chest']);
   });
 
   it('binds one placeholder per parameter, in order', () => {
     const { sql, params } = build({
-      q: 'row', slug: 'dumbbell', status: 'inactive',
+      q: 'row', status: 'inactive',
       equipment: 'dumbbell,barbell', category: 'strength',
       muscle: 'biceps', secondary_muscle: 'forearms',
     });

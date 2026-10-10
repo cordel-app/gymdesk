@@ -24,8 +24,6 @@ export type ExerciseMuscleRole = 'any' | 'primary' | 'secondary';
 export interface ExerciseFilterState {
   /** Name or translation, in any language (§3/§18) — never only the one on screen. */
   q: string;
-  /** §4. Only a context whose exercises carry slugs renders it. */
-  slug: string;
   /** `''` = every status (§10). */
   status: string;
   muscles: string[];
@@ -42,7 +40,6 @@ export interface ExerciseFilterState {
 
 export const EMPTY_EXERCISE_FILTER: ExerciseFilterState = {
   q: '',
-  slug: '',
   status: '',
   muscles: [],
   muscleMatch: 'any',
@@ -61,7 +58,6 @@ const MUSCLE_PARAM: Record<ExerciseMuscleRole, string> = {
 /** Whether the list is narrowed at all — what gates the chips and `Clear`. */
 export function isExerciseFilterActive(state: ExerciseFilterState): boolean {
   return state.q.trim() !== ''
-    || state.slug.trim() !== ''
     || state.status !== ''
     || state.muscles.length > 0
     || state.equipment.length > 0
@@ -80,9 +76,7 @@ export function isExerciseFilterActive(state: ExerciseFilterState): boolean {
 export function exerciseFilterQuery(state: ExerciseFilterState): string {
   const params = new URLSearchParams();
   const q = state.q.trim();
-  const slug = state.slug.trim();
   if (q) params.set('q', q);
-  if (slug) params.set('slug', slug);
   if (state.status) params.set('status', state.status);
   if (state.muscles.length > 0) {
     params.set(MUSCLE_PARAM[state.muscleRole], state.muscles.join(','));
@@ -130,7 +124,6 @@ export function exerciseFilterChips(
   state: ExerciseFilterState,
   labels: {
     search: (value: string) => string;
-    slug: (value: string) => string;
     status: (value: string) => string;
     muscle: (key: string) => string;
     equipment: (value: string) => string;
@@ -140,8 +133,6 @@ export function exerciseFilterChips(
   const chips: ExerciseFilterChip[] = [];
   const q = state.q.trim();
   if (q) chips.push({ key: 'q', label: labels.search(q), next: { ...state, q: '' } });
-  const slug = state.slug.trim();
-  if (slug) chips.push({ key: 'slug', label: labels.slug(slug), next: { ...state, slug: '' } });
   if (state.status) {
     chips.push({ key: `status:${state.status}`, label: labels.status(state.status), next: { ...state, status: '' } });
   }
