@@ -1,7 +1,9 @@
 import type { CSSProperties } from 'react';
 import {
   cardEdgeFlags,
+  cardBoxShadow,
   cardEffectCssValue,
+  CARD_STYLE_DEFAULTS,
   type CardEffectType,
 } from '@/lib/membersAppTokens';
 
@@ -24,7 +26,12 @@ interface Props {
 
 export function SectionCardOptionPreview({ type, value, borderColor = '#9ca3af', borderWidth = 2, title }: Props) {
   const shape = type === 'card-shape' ? cardEffectCssValue('card-shape', value) : '12px';
-  const shadow = type === 'card-shadow' ? cardEffectCssValue('card-shadow', value) : 'none';
+  // Glow and Visual Style previews are composed the way the real card is:
+  // through cardBoxShadow(), with the style's own defaults for what it supplies.
+  const styleDefaults = type === 'card-style' ? CARD_STYLE_DEFAULTS[value] ?? {} : {};
+  const shadowWord = type === 'card-shadow' ? value : styleDefaults.sectionCardsShadow ?? 'none';
+  const glowWord = type === 'card-glow' ? value : styleDefaults.sectionCardsGlow ?? 'none';
+  const shadow = cardBoxShadow(cardEffectCssValue('card-shadow', shadowWord) ?? 'none', glowWord, borderColor);
   const flags = cardEdgeFlags(type === 'card-edges' ? value : 'all');
   const style: CSSProperties = {
     width: 56,
@@ -37,7 +44,7 @@ export function SectionCardOptionPreview({ type, value, borderColor = '#9ca3af',
     borderBottomWidth: flags.bottom * borderWidth,
     borderLeftWidth: flags.left * borderWidth,
     borderRadius: shape ?? '12px',
-    boxShadow: shadow ?? 'none',
+    boxShadow: shadow,
     flex: '0 0 auto',
   };
   return (

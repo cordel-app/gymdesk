@@ -62,7 +62,14 @@ export const memberTheme = {
   // #1321 stage 1 — the card's shape and shadow (variables carry the CSS value)
   // and the four 0/1 edge flags that scale the border width per edge.
   cardRadius: 'var(--gd-members-card-radius, 12px)',
-  cardShadow: 'var(--gd-members-card-shadow, 0 1px 3px rgba(0,0,0,0.05))',
+  // The drop shadow and the glow, composed once by `cardBoxShadow()`.
+  cardShadow: 'var(--gd-members-card-effects, var(--gd-members-card-shadow, 0 1px 3px rgba(0,0,0,0.05)))',
+  // #1321 stage 2 — the inputs `--gd-members-card-effects` is composed from
+  // (`cardBoxShadow()`), declared as roles so each variable has a reader here;
+  // the style word is the Visual Style, which only supplies defaults upstream.
+  cardGlow: 'var(--gd-members-card-glow, none)',
+  cardGlowColor: 'var(--gd-members-card-glow-color, #6c63ff)',
+  cardVisualStyle: 'var(--gd-members-card-style, clean)',
   // The text inside a Section Card (#1152 §3/§4) — its colour, size and font,
   // and where it sits. The two alignment variables already carry CSS property
   // values (`flex-start`/`center`/`flex-end` for `justify-content`,
