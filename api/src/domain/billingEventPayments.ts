@@ -9,6 +9,7 @@ import {
   BillingEventStatus,
   deriveBillingEventStatus,
   isPaymentActionable,
+  isNonObligationEvent,
 } from './billingEventStatus';
 
 /**
@@ -116,6 +117,9 @@ function guardActionable(ev: EventContext | null): ActionFailure | null {
   if (!ev) return { status: 404, error: 'Billing event not found' };
   if (Number(ev.has_completed_tx) > 0) {
     return { status: 409, error: 'This billing event has already been paid.' };
+  }
+  if (isNonObligationEvent(ev.event_type)) {
+    return { status: 400, error: 'Payment actions are not available for a one-off purchase or a card verification.' };
   }
   const status = deriveBillingEventStatus(ev.event_type, ev.latest_tx_status);
   if (!isPaymentActionable(status)) {

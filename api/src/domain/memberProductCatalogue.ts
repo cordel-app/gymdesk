@@ -24,7 +24,7 @@
 //  - **Nothing here is about a purchase.** Stage 1 is a read: the catalogue says
 //    what exists, never what the member holds, so this module has no state, no
 //    status and no "already purchased" answer. That is stage 2's
-//    (`member_products`, the thread's `Q2`), and it will add a field to the
+//    (`member_products_oneoff_snapshot`, the thread's `Q2`), and it will add a field to the
 //    shape below rather than a second predicate beside it.
 //  - **The price is the server's, grossed up once.** `shapeMemberProduct()`
 //    takes the VAT-inclusive figure its caller computed through

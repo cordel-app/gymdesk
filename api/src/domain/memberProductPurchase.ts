@@ -12,7 +12,7 @@
 // Five of its answers are the rule rather than the implementation.
 //
 //  - **A purchase is a snapshot beside a link, never instead of it.** The
-//    thread's `Q2` asks for `member_products` to "store there a snapshot of
+//    thread's `Q2` asks for `member_products_oneoff_snapshot` to "store there a snapshot of
 //    what has been purchased while maintaining a link against the original
 //    product", which is #635 §16 one table over: what the member was shown and
 //    charged is frozen on the row, and `product_id` is where "what is this
@@ -33,7 +33,7 @@
 //    one-offs.
 //  - **"Available" is the absence of a row.** §6 asks for three states and the
 //    column holds two of them, so a Product nobody has bought has no
-//    `member_products` row and reads `available`. `cancelled` is where a
+//    `member_products_oneoff_snapshot` row and reads `available`. `cancelled` is where a
 //    purchase whose payment failed or expired goes — it is not a state the
 //    catalogue reports, because a member who did not end up paying is back to
 //    being able to buy.
@@ -57,7 +57,7 @@ import { isRecurringFrequency } from './productClassification';
 /** `payment_requests.source` of a product purchase (migration 228). */
 export const PRODUCT_PURCHASE_SOURCE = 'product_purchase';
 
-/** What `member_products.status` may hold, mirrored by `chk_mprod_status`. */
+/** What `member_products_oneoff_snapshot.status` may hold, mirrored by `chk_mprod_status`. */
 export const MEMBER_PRODUCT_STATUSES = ['pending_payment', 'active', 'cancelled'] as const;
 export type MemberProductStatus = (typeof MEMBER_PRODUCT_STATUSES)[number];
 
@@ -140,7 +140,7 @@ export interface ProductPurchaseFields {
 
 /**
  * The two fields stage 2 adds to a catalogue row, from this member's own
- * `member_products` statuses for it.
+ * `member_products_oneoff_snapshot` statuses for it.
  *
  * It is composed onto `shapeMemberProduct()`'s result rather than folded into
  * it, so `domain/memberProductCatalogue.ts` stays what stage 1 made it: the one
@@ -158,7 +158,7 @@ export function describeProductPurchase(
   };
 }
 
-/** What a `member_products` row is written with, beside its ids. */
+/** What a `member_products_oneoff_snapshot` row is written with, beside its ids. */
 export interface PurchaseSnapshot {
   product_name: string;
   product_type: string;

@@ -164,7 +164,7 @@ export async function resolvePurchasePromotion(
  * Freezes the applied Promotion onto the purchase, in the purchase's own
  * transaction.
  *
- * Written beside the `member_products` row rather than after it for #1121
+ * Written beside the `member_products_oneoff_snapshot` row rather than after it for #1121
  * stage 2's reason: a purchase and what it was priced under are one record, so
  * a failure that left the purchase without its Promotion would charge a
  * discounted amount with nothing on file explaining it (§15).
@@ -178,7 +178,7 @@ export async function writePurchasePromotion(
   const snapshot = promotionApplicationSnapshot(offer);
   if (!snapshot) return;
   await tx.query(
-    `INSERT INTO member_product_promotions
+    `INSERT INTO member_products_oneoff_promotion_snapshot
        (gym_id, member_product_id, promotion_id, promotion_name,
         benefit_action, benefit_value, duration_cycles, regular_amount, final_amount)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -217,7 +217,7 @@ export async function loadAppliedPromotions(
 
   const { rows } = await db.query<any>(
     `SELECT ${APPLICATION_COLUMNS}
-       FROM member_product_promotions mpp
+       FROM member_products_oneoff_promotion_snapshot mpp
       WHERE mpp.gym_id = ? AND mpp.member_product_id IN (${ids.map(() => '?').join(',')})`,
     [gymId, ...ids],
   );
@@ -269,7 +269,7 @@ export async function loadMemberPurchases(
     `SELECT mp.id, mp.product_id, mp.status, mp.product_name, mp.product_type,
             mp.billing_frequency, mp.units, mp.amount, mp.currency,
             mp.purchased_at, mp.created_at, mp.created_by_name, mp.created_by_type
-       FROM member_products mp
+       FROM member_products_oneoff_snapshot mp
       WHERE mp.gym_id = ? AND mp.member_id = ?
       ORDER BY mp.created_at DESC, mp.id DESC`,
     [gymId, memberId],
