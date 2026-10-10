@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, billingEventsOfAssignment } from './helpers';
 
 /**
  * #635 stages 12 and 15 — one rule decides what the Membership Fee costs on a
@@ -149,10 +149,7 @@ async function applyPromotion(umId: number, opts: {
 const runBilling = () => request.post('/billing/run').set('x-internal-secret', SECRET);
 
 async function chargeFor(umId: number) {
-  const { rows } = await db.query(
-    'SELECT event_type, amount, notes FROM billing_events WHERE user_membership_id = ? ORDER BY id ASC',
-    [umId],
-  );
+  const rows = await billingEventsOfAssignment(gymId, umId, 'event_type, amount, notes');
   return rows;
 }
 

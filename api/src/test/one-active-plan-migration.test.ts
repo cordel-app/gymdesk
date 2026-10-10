@@ -23,9 +23,20 @@ const migration = require('../infra/migrations/213_one_active_membership_plan.js
 
 // The migration only ever calls `knex.raw(sql, params)` and destructures
 // `[rows]` from it, so the pool speaks that dialect with four lines.
+// #1325 PR 3d: the sweep's `status_changed` ledger row names
+// `billing_events.user_membership_id`, which migration 256 dropped. On a fresh
+// database 213 runs long before 256; this test replays 213 against today's
+// schema, so the shim writes that one INSERT without the column — which is
+// also all that 252 (moved to `audit_logs`) and 256 leave of such a row.
 const knex = {
   raw: async (sql: string, params: any[] = []) => {
-    const { rows } = await db.query(sql, params);
+    let q = sql; let p = params;
+    if (/INSERT INTO billing_events/.test(sql) && /user_membership_id/.test(sql)) {
+      q = sql.replace('(gym_id, user_membership_id, member_id, event_type,', '(gym_id, member_id, event_type,')
+        .replace("VALUES (?, ?, ?, 'status_changed'", "VALUES (?, ?, 'status_changed'");
+      p = [params[0], ...params.slice(2)];
+    }
+    const { rows } = await db.query(q, p);
     return [rows] as [any[]];
   },
 };
@@ -170,14 +181,16 @@ describe('migration 213 — the sweep', () => {
   it('appends a status_changed ledger row for every row it cancels', async () => {
     const memberId = await createMember();
     const swept = await seedAssignment(memberId, await createPlan('M213 Ledger Old'), 'paused', '2026-01-01');
-    await seedAssignment(memberId, await createPlan('M213 Ledger New'), 'active', '2026-05-01');
+    const keeper = await seedAssignment(memberId, await createPlan('M213 Ledger New'), 'active', '2026-05-01');
 
     await migration.up(knex);
 
+    // #1325 PR 3d: the row carries no `user_membership_id` any more; the
+    // swept assignment is named by the marker and the member.
     const { rows } = await db.query(
       `SELECT previous_status, new_status, source, notes FROM billing_events
-       WHERE user_membership_id = ? AND event_type = 'status_changed' ORDER BY id DESC LIMIT 1`,
-      [swept],
+       WHERE gym_id = ? AND member_id = ? AND event_type = 'status_changed' AND notes = ? ORDER BY id DESC LIMIT 1`,
+      [gymId, memberId, `Migration 213 (#956): superseded by assignment #${keeper}`],
     );
     expect(rows[0]).toMatchObject({ previous_status: 'paused', new_status: 'cancelled', source: 'system' });
     // The marker is the only thing that tells a swept row from one an admin

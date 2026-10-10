@@ -1,3 +1,4 @@
+import { eventAssignmentSql } from '../domain/billingEventOwnership';
 import { Router } from 'express';
 import { loadDerivedBilling } from './derived-billing';
 import { db } from '../infra/db';
@@ -166,10 +167,10 @@ paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) 
       }
       const { insertId } = await tx.query(
         `INSERT INTO billing_events
-         (gym_id, user_membership_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (gym_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          gymId, user_membership_id ?? null, setId, memberId, event_type, charge_type_id ?? null,
+          gymId, setId, memberId, event_type, charge_type_id ?? null,
           source ?? sourceForRole(role), userId, parsedAmount,
           notes && String(notes).trim() ? String(notes).trim() : null,
         ],
@@ -288,21 +289,20 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       from_product_set: number | boolean;
     }>(
       `SELECT be.id, be.member_id, m.name AS member_name,
-              COALESCE(be.user_membership_id, ps.user_membership_id) AS user_membership_id,
+              ps_um.id AS user_membership_id,
               COALESCE(mp.name, mpp.name) AS plan_name,
               be.created_at, be.amount, be.event_type, NULL AS currency,
               be.billing_date AS event_billing_date, be.is_scheduled,
               (be.product_set_id IS NOT NULL) AS from_product_set,
-              COALESCE(um.status, ps_um.status) AS membership_status,
+              ps_um.status AS membership_status,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
        FROM billing_events be
        LEFT JOIN members m ON m.id = be.member_id
-       LEFT JOIN user_memberships um ON um.id = be.user_membership_id
-       LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
        LEFT JOIN product_sets ps ON ps.id = be.product_set_id
-       LEFT JOIN user_memberships ps_um ON ps_um.id = ps.user_membership_id
+       LEFT JOIN user_memberships ps_um ON ps_um.id = ${eventAssignmentSql()}
+       LEFT JOIN membership_plans mp ON mp.id = ps_um.membership_plan_id
        LEFT JOIN membership_plans mpp ON mpp.id = ps.membership_plan_id
        WHERE ${whereSql}
        ORDER BY be.created_at DESC, be.id DESC
@@ -509,7 +509,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
 
   try {
     const { rows } = await db.query<any>(
-      `SELECT be.id, be.member_id, be.user_membership_id, be.event_type, be.amount,
+      `SELECT be.id, be.member_id, um.id AS user_membership_id, be.product_set_id, be.event_type, be.amount,
               be.notes, be.source, be.actor_user_id, be.created_at,
               be.previous_status, be.new_status,
               be.receipt_number, be.receipt_issued_at,
@@ -531,46 +531,46 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
          FROM billing_events be
          LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
          LEFT JOIN members m ON m.id = be.member_id
-         LEFT JOIN user_memberships um ON um.id = be.user_membership_id
+         LEFT JOIN user_memberships um ON um.id = ${eventAssignmentSql()}
          LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
         WHERE be.id = ? AND be.gym_id = ?`,
       [billingEventId, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Billing event not found' });
-    const be = rows[0];
+    const ev = rows[0];
 
-    const status = deriveBillingEventStatus(be.event_type, be.latest_tx_status);
+    const status = deriveBillingEventStatus(ev.event_type, ev.latest_tx_status);
     const actionable =
-      isPaymentActionable(status) && be.user_membership_id != null && parseFloat(be.amount ?? '0') > 0;
+      isPaymentActionable(status) && ev.product_set_id != null && parseFloat(ev.amount ?? '0') > 0;
 
     // The nightly run records a failed charge's reason on the ledger row's
     // notes; a transaction-level reason (#640) is more specific, so it wins.
-    const failureReason = be.transaction_failure_reason
-      ?? (status === 'failed' ? be.notes ?? null : null);
+    const failureReason = ev.transaction_failure_reason
+      ?? (status === 'failed' ? ev.notes ?? null : null);
 
     res.json({
-      id: be.id,
-      member_id: be.member_id,
-      member_name: be.member_name,
-      user_membership_id: be.user_membership_id,
-      plan_name: be.plan_name,
-      amount: be.amount,
+      id: ev.id,
+      member_id: ev.member_id,
+      member_name: ev.member_name,
+      user_membership_id: ev.user_membership_id,
+      plan_name: ev.plan_name,
+      amount: ev.amount,
       currency: 'EUR',
       status,
-      event_type: be.event_type,
-      charge_type_code: be.charge_type_code,
-      source: be.source,
-      notes: be.notes,
-      previous_status: be.previous_status,
-      new_status: be.new_status,
-      receipt_number: be.receipt_number,
-      receipt_issued_at: be.receipt_issued_at ? new Date(be.receipt_issued_at).toISOString() : null,
-      created_at: new Date(be.created_at).toISOString(),
-      created_by: be.created_by_name ?? (be.actor_user_id ? be.actor_user_id : null),
-      modified_at: be.modified_at ? new Date(be.modified_at).toISOString() : null,
-      modified_by: be.modified_by_name ?? (be.modified_by_user_id ? be.modified_by_user_id : null),
-      next_payment_date: be.membership_status === 'active' && be.user_membership_id != null
-        ? ((await loadDerivedBilling(gymId, [Number(be.user_membership_id)])).get(Number(be.user_membership_id))?.next_billing_date ?? null)
+      event_type: ev.event_type,
+      charge_type_code: ev.charge_type_code,
+      source: ev.source,
+      notes: ev.notes,
+      previous_status: ev.previous_status,
+      new_status: ev.new_status,
+      receipt_number: ev.receipt_number,
+      receipt_issued_at: ev.receipt_issued_at ? new Date(ev.receipt_issued_at).toISOString() : null,
+      created_at: new Date(ev.created_at).toISOString(),
+      created_by: ev.created_by_name ?? (ev.actor_user_id ? ev.actor_user_id : null),
+      modified_at: ev.modified_at ? new Date(ev.modified_at).toISOString() : null,
+      modified_by: ev.modified_by_name ?? (ev.modified_by_user_id ? ev.modified_by_user_id : null),
+      next_payment_date: ev.membership_status === 'active' && ev.user_membership_id != null
+        ? ((await loadDerivedBilling(gymId, [Number(ev.user_membership_id)])).get(Number(ev.user_membership_id))?.next_billing_date ?? null)
         : null,
       failure_reason: failureReason,
       can_retry: actionable,
@@ -580,7 +580,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       // is a write; downloading an already-issued receipt is not, so the flag
       // says "eligible" and the button reads `receipt_number` to pick which.
       can_issue_receipt:
-        isReceiptableEvent(be.event_type, be.latest_tx_status) && parseFloat(be.amount ?? '0') > 0,
+        isReceiptableEvent(ev.event_type, ev.latest_tx_status) && parseFloat(ev.amount ?? '0') > 0,
     });
   } catch (err) {
     next(err);

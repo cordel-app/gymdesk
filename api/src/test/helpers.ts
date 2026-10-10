@@ -159,6 +159,24 @@ export async function seedScheduledEvent(
 }
 
 /** Removes every scheduled event of the member's Active ProductSet. */
+/**
+ * #1325 PR 3d: `billing_events.user_membership_id` is gone, so a test reads an
+ * assignment's events the way the API does — through its ProductSet chain.
+ */
+export async function billingEventsOfAssignment<T = any>(gymId: string, umId: number, columns = '*'): Promise<T[]> {
+  const { rows } = await db.query<T>(
+    `SELECT ${columns} FROM billing_events be
+      WHERE be.gym_id = ? AND be.product_set_id IN (
+              SELECT ps.id FROM product_sets ps
+               WHERE ps.gym_id = ? AND ps.root_product_set_id IN (
+                       SELECT p2.root_product_set_id FROM product_sets p2
+                        WHERE p2.gym_id = ? AND p2.user_membership_id = ?))
+      ORDER BY be.id ASC`,
+    [gymId, gymId, gymId, umId],
+  );
+  return rows;
+}
+
 export async function clearScheduledEvents(gymId: string, memberId: number): Promise<void> {
   await db.query(
     `DELETE be FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id

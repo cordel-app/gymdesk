@@ -51,9 +51,9 @@ async function insertBillingEventForMembership(
   const chargeTypeId = await getChargeTypeId();
   const { insertId } = await db.query(
     `INSERT INTO billing_events
-       (gym_id, member_id, user_membership_id, product_set_id, event_type, charge_type_id, source, actor_user_id, amount)
-     VALUES (?, ?, ?, ?, 'payment_recorded', ?, 'employee', 'test-user', 99.00)`,
-    [gymId, memberId, userMembershipId, await ensureTestProductSet(gymId, memberId, userMembershipId), chargeTypeId],
+       (gym_id, member_id, product_set_id, event_type, charge_type_id, source, actor_user_id, amount)
+     VALUES (?, ?, ?, 'payment_recorded', ?, 'employee', 'test-user', 99.00)`,
+    [gymId, memberId, await ensureTestProductSet(gymId, memberId, userMembershipId), chargeTypeId],
   );
   return insertId;
 }

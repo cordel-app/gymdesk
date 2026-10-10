@@ -118,9 +118,9 @@ async function createFailedEvent(
 
   const { insertId: billingEventId } = await db.query(
     `INSERT INTO billing_events
-       (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes, billing_date)
-     VALUES (?, ?, ?, ?, ?, '40.00', ?, 'system', NULL, 'E999: card declined', ?)`,
-    [gym, membershipId, await ensureTestProductSet(gym, memberId, membershipId), memberId, eventType, ct, today()],
+       (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes, billing_date)
+     VALUES (?, ?, ?, ?, '40.00', ?, 'system', NULL, 'E999: card declined', ?)`,
+    [gym, await ensureTestProductSet(gym, memberId, membershipId), memberId, eventType, ct, today()],
   );
 
   if (withTransaction) {

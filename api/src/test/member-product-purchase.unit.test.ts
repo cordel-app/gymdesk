@@ -295,7 +295,9 @@ describe('a purchase is not a membership cycle (the money paths)', () => {
     expect(branch).toContain('INSERT INTO billing_events');
     expect(branch).toContain("'product_purchase'");
     expect(branch).not.toContain("'payment_recorded'");
-    expect(branch).toContain('NULL, ?');
+    // #1325 PR 3d: no `user_membership_id` column to NULL any more; no set either.
+    expect(branch).not.toMatch(/INSERT INTO billing_events[^;]*user_membership_id/);
+    expect(branch).not.toMatch(/INSERT INTO billing_events[^;]*product_set_id/);
     expect(branch).toContain('completeProductPurchase');
   });
 

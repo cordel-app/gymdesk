@@ -485,7 +485,7 @@ describe('the payment decides whether the member holds it (#1121 stage 2 §6, #1
     // The ledger both the member's Payments card and the staff pages read, with
     // no assignment and the member on it.
     const { rows: events } = await db.query<any>(
-      `SELECT be.event_type, be.member_id, be.user_membership_id, be.product_set_id, be.amount,
+      `SELECT be.event_type, be.member_id, be.product_set_id, be.amount,
               pr.id AS request_id
          FROM billing_events be
          JOIN payment_requests pr ON pr.billing_event_id = be.id
@@ -497,7 +497,6 @@ describe('the payment decides whether the member holds it (#1121 stage 2 §6, #1
     expect(events[0]).toMatchObject({ event_type: 'product_purchase', member_id: row.member_id });
     expect(events[0].product_set_id).toBeNull();
     expect(events[0].request_id).toBe(pending.payment_request_id);
-    expect(events[0].user_membership_id).toBeNull();
     expect(Number(events[0].amount)).toBe(10);
 
     // A one-off purchase authorises one charge: no card is stored from it.

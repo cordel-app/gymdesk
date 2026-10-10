@@ -292,10 +292,13 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     await revokePromotion(gymId, umId, promotionId);
     await applyPromotion(gymId, umId, promotionId);
 
+    // #1325 PR 3d: the adjustment is on the member's ProductSet (the fixture
+    // links none to the assignment), so it is read by member.
     const { rows } = await db.query<{ notes: string; amount: string }>(
       `SELECT notes, amount FROM billing_events
-       WHERE user_membership_id = ? AND event_type = 'adjustment' ORDER BY id ASC`,
-      [umId],
+        WHERE gym_id = ? AND event_type = 'adjustment'
+          AND member_id = (SELECT member_id FROM user_memberships WHERE id = ?) ORDER BY id ASC`,
+      [gymId, umId],
     );
     expect(rows.map((r) => r.notes)).toEqual(['Promotion applied', 'Promotion revoked', 'Promotion applied']);
     expect(parseFloat(rows[2].amount)).toBeCloseTo(-10, 2);

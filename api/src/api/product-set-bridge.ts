@@ -340,9 +340,8 @@ export async function linkInitialPaymentToSet(tx: Tx, gymId: string, userMembers
   if (!set) return;
   const { rows: ev } = await tx.query<any>(
     `SELECT id FROM billing_events
-      WHERE gym_id = ? AND user_membership_id = ? AND event_type = 'payment_recorded'
-        AND (product_set_id IS NULL OR product_set_id = ?) AND schedule_id IS NULL
-      ORDER BY id ASC LIMIT 1 FOR UPDATE`, [gymId, userMembershipId, set.id]);
+      WHERE gym_id = ? AND product_set_id = ? AND event_type = 'payment_recorded' AND schedule_id IS NULL
+      ORDER BY id ASC LIMIT 1 FOR UPDATE`, [gymId, set.id]);
   if (!ev[0]) return;
   const startsAt = dateOnly(set.starts_at);
   const { rows: sch } = await tx.query<any>(
