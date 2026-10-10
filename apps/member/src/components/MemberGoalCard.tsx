@@ -162,7 +162,7 @@ function CardMenu({ label, items }: { label: string; items: MemberGoalCardMenuIt
 }
 
 const styles: Record<string, CSSProperties> = {
-  card:        { ...sectionCardStyle, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
+  card:        { ...sectionCardStyle },
   headerRow:   { display: 'flex', alignItems: 'stretch', gap: 4 },
   header:      {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
