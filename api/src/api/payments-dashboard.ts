@@ -129,6 +129,8 @@ paymentsDashboardRouter.get('/summary', async (req, res, next) => {
               -- ledger rows, not membership/ProductSet obligations, and are
               -- not counted in the billing cards.
               AND be.event_type NOT IN ('product_purchase', 'card_verification')
+              -- #1325: a persisted, not-yet-executed obligation is not a ledger row yet.
+              AND be.is_scheduled = 0
          ) e
         GROUP BY e.event_type, e.latest_tx_status`,
       [gymId, w.previousMonthStart, w.currentMonthStart],
@@ -184,6 +186,16 @@ paymentsDashboardRouter.get('/summary', async (req, res, next) => {
         w,
       );
     }
+
+    // #1325: a ProductSet's obligations are persisted, so they are counted from
+    // the rows themselves (due today or later this month, still scheduled) — the
+    // projection above only sees assignments that carry a `next_billing_date`.
+    const { rows: persisted } = await db.query<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM billing_events
+        WHERE gym_id = ? AND is_scheduled = 1 AND billing_date >= ? AND billing_date <= ?`,
+      [gymId, w.today, w.currentMonthEnd],
+    );
+    scheduledThisMonth += Number(persisted[0]?.n ?? 0);
 
     // ── Card 5 (#779): failed payments awaiting action — a to-do, not a
     // monthly statistic, so it is not bounded by either month window.

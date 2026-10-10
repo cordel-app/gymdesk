@@ -216,7 +216,6 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
             muscleKeys={muscleKeys}
             muscleLabel={muscleLabel}
             facets={facets}
-            showSlug
             autoFocusSearch
             shown={rows.length}
             total={total}

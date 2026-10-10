@@ -242,12 +242,8 @@ const GYM_SCOPE_SQL = "e.gym_id = ? AND e.status != 'deleted'";
  * The search still matches the base name or any stored translation (#967 §7),
  * because that rule now lives in that builder rather than in this route.
  *
- * `withSlug: false` is the one difference the context has: a gym's own
- * exercises carry no slug — no editor writes one, and `POST /exercises/import`
- * does not copy the Base Exercise's — so §4's field is neither offered on this
- * screen nor searched here, rather than being a clause that can only ever match
- * nothing. The same reasoning is why the Equipment and Category dropdowns are
- * absent there: the facets come back empty (`GET /exercises/facets`) and §9
+ * The same reasoning as the slug (never searched, #1356) is why the Equipment
+ * and Category dropdowns are absent there: the facets come back empty (`GET /exercises/facets`) and §9
  * says a control with no values is not rendered at all.
  */
 exercisesRouter.get('/', async (req, res, next) => {
@@ -255,7 +251,7 @@ exercisesRouter.get('/', async (req, res, next) => {
   const parsed = parseExerciseListFilter(req.query as Record<string, unknown>);
   if ('error' in parsed) return res.status(400).json({ error: parsed.error });
   const locale = getRequestLocale(req);
-  const where = exerciseListFilterSql('e', parsed.filter, { withSlug: false });
+  const where = exerciseListFilterSql('e', parsed.filter);
   // Ordering follows the *displayed* name, because that is what the page shows (#643).
   const sql = `${selectFor(locale)} WHERE ${GYM_SCOPE_SQL}${where.sql}`
     + ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
@@ -365,8 +361,7 @@ const BASE_LIBRARY_SCOPE_SQL = "e.gym_id IS NULL AND e.status = 'active'";
  * clauses, so a muscle selection means the same thing here, on Base Exercises
  * and on a gym's own list (§19), and the modal gets §4–§9's filters for free.
  *
- * Two consequences worth naming. The rows are Base Exercises, so they do carry
- * a slug and `withSlug` stays at its default. And an unknown muscle key is no
+ * Two consequences worth naming. And an unknown muscle key is no
  * longer a `400`: the filter vocabulary is one vocabulary, in which only
  * `status` and `muscle_match` are closed sets — #964 §8 lets the importer store
  * a muscle key outside `MUSCLE_KEYS` rather than fail, so a filter that refused

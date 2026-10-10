@@ -53,7 +53,7 @@ describe('the filter state', () => {
 
   it('treats whitespace in a text field as nothing typed', () => {
     expect(isExerciseFilterActive(state({ q: '   ' }))).toBe(false);
-    expect(exerciseFilterQuery(state({ q: '  ', slug: ' ' }))).toBe('');
+    expect(exerciseFilterQuery(state({ q: '  ' }))).toBe('');
   });
 
   it('sends the search term trimmed, and never a language (§3/§18)', () => {
@@ -64,8 +64,8 @@ describe('the filter state', () => {
     expect(exerciseFilterQuery(state({ q: 'bench' }))).not.toContain('locale');
   });
 
-  it('sends the slug as its own parameter (§4)', () => {
-    expect(exerciseFilterQuery(state({ slug: 'barbell' }))).toBe('?slug=barbell');
+  it('has no slug filter (#1356)', () => {
+    expect(Object.keys(EMPTY_EXERCISE_FILTER)).not.toContain('slug');
   });
 
   it('puts the checked muscles in the parameter the chosen role names (§7)', () => {
@@ -93,13 +93,13 @@ describe('the filter state', () => {
 
   it('combines every group in one request (§11)', () => {
     const query = exerciseFilterQuery(state({
-      q: 'bench', slug: 'barbell', status: 'active',
+      q: 'bench', status: 'active',
       muscles: ['chest', 'triceps'], muscleMatch: 'all', muscleRole: 'primary',
       equipment: ['barbell'], category: ['strength'],
     }));
     const params = new URLSearchParams(query.slice(1));
     expect(Object.fromEntries(params)).toEqual({
-      q: 'bench', slug: 'barbell', status: 'active',
+      q: 'bench', status: 'active',
       primary_muscle: 'chest,triceps', muscle_match: 'all',
       equipment: 'barbell', category: 'strength',
     });
@@ -115,7 +115,6 @@ describe('the filter state', () => {
 describe('the active-filter chips (§12)', () => {
   const labels = {
     search: (v: string) => `Search: ${v}`,
-    slug: (v: string) => `Slug: ${v}`,
     status: (v: string) => v.toUpperCase(),
     muscle: (k: string) => `M:${k}`,
     equipment: exerciseFacetValueLabel,
@@ -144,7 +143,7 @@ describe('the active-filter chips (§12)', () => {
 
   it('keys each chip uniquely, so a React list has no duplicate key', () => {
     const chips = exerciseFilterChips(state({
-      q: 'x', slug: 'y', status: 'inactive',
+      q: 'x', status: 'inactive',
       muscles: ['chest'], equipment: ['chest'], category: ['chest'],
     }), labels);
     expect(new Set(chips.map((c) => c.key)).size).toBe(chips.length);
@@ -235,9 +234,7 @@ describe('a gym’s own Exercises list (§19)', () => {
     expect(gymPage).not.toContain("params.set('status'");
   });
 
-  it('offers no Slug field, because a gym’s exercises carry no slug (§4)', () => {
-    // The toolbar's `showSlug` is opt-in and this page does not pass it; the
-    // server drops the clause too (`withSlug: false`).
+  it('offers no Slug field (#1356)', () => {
     const bar = gymPage.slice(gymPage.indexOf('<ExerciseFilterBar'));
     expect(bar.slice(0, bar.indexOf('/>'))).not.toContain('showSlug');
     expect(bar.slice(0, bar.indexOf('/>'))).toContain('showStatus');
@@ -260,12 +257,12 @@ describe('the Import modal (§19)', () => {
     expect(importModal).toContain('exerciseFilterQuery(current)');
   });
 
-  it('offers the Slug field and no Status one', () => {
-    // A Base Exercise carries a slug (§4); the library is `status = 'active'`
+  it('offers no Slug field and no Status one', () => {
+    // The slug is internal (#1356); the library is `status = 'active'`
     // by definition, so a Status control there would filter nothing.
     const markup = importModal.slice(importModal.indexOf('<ExerciseFilterBar'));
     const props = markup.slice(0, markup.indexOf('/>'));
-    expect(props).toContain('showSlug');
+    expect(props).not.toContain('showSlug');
     expect(props).not.toContain('showStatus');
   });
 
@@ -284,7 +281,7 @@ describe('the Import modal (§19)', () => {
 
 describe('the locale keys', () => {
   const KEYS = [
-    'filter_search', 'filter_search_placeholder', 'filter_slug', 'filter_slug_placeholder',
+    'filter_search', 'filter_search_placeholder',
     'filter_muscles', 'filter_muscles_search',
     'filter_muscle_match', 'filter_muscle_match_any', 'filter_muscle_match_all',
     'filter_muscle_role', 'filter_muscle_role_any', 'filter_muscle_role_primary',
@@ -292,7 +289,7 @@ describe('the locale keys', () => {
     'filter_equipment', 'filter_equipment_search', 'filter_category', 'filter_category_search',
     'filter_status', 'filter_status_all', 'filter_clear',
     'filter_result_count', 'filter_result_total',
-    'filter_chip_search', 'filter_chip_slug', 'filter_chip_remove',
+    'filter_chip_search', 'filter_chip_remove',
   ];
 
   it('exist in en, es and ca — a missing one prints verbatim', () => {

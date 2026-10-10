@@ -428,7 +428,6 @@ export default function CordelExercisesPage() {
         muscleKeys={muscleKeys}
         muscleLabel={muscleLabel}
         facets={facets}
-        showSlug
         showStatus
         shown={rows.length}
         total={total}
