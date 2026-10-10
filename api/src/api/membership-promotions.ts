@@ -1,3 +1,5 @@
+import { redirectEditToProductSet } from './assignment-edit-redirect';
+import { applyPromotionMutator, revokePromotionMutator } from './product-set-bridge';
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -952,6 +954,12 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
   const umId = parseInt((req.params as any).id, 10);
   const { promotion_id } = req.body;
   if (!promotion_id) return res.status(400).json({ error: 'promotion_id is required' });
+  // #1325 PR 5: a plan a ProductSet projects takes the Promotion as a new version.
+  if (await redirectEditToProductSet(req, res, {
+    userMembershipId: umId, action: 'update', detail: { apply_promotion: promotion_id },
+    mutate: applyPromotionMutator(gymId, userId ?? null, Number(promotion_id)),
+    respond: async () => ({ ok: true }),
+  })) return;
 
   try {
     const applied = await db.transaction(async (tx) => {
@@ -1063,6 +1071,11 @@ membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'
   const { gymId, userId, role } = getTenantContext(req);
   const umId = parseInt((req.params as any).id, 10);
   const promotionId = parseInt(String(req.params.promotionId), 10);
+  if (await redirectEditToProductSet(req, res, {
+    userMembershipId: umId, action: 'update', detail: { revoke_promotion: promotionId },
+    mutate: revokePromotionMutator(promotionId),
+    respond: async () => ({ ok: true }),
+  })) return;
   try {
     const result = await db.transaction(async (tx) => {
       // Priced before the revoke, for the adjustment below.

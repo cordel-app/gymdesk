@@ -3,6 +3,7 @@ import { recordStatusChange } from './billing-events';
 import { rollStaleNextBillingDateForward } from '../domain/nextBillingDateStamp';
 import { LiveAssignment, supersedeStartsAtError } from '../domain/oneActivePlan';
 import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-active-plan';
+import { importAssignmentAsProductSet, productSetBillingEnabled } from './product-set-bridge';
 
 /**
  * #1108 — the one place an assignment is **committed**.
@@ -139,6 +140,12 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
     previousStatus: row.status, newStatus: 'active',
     source: input.source, actorUserId: input.actorUserId,
   });
+  // #1325 PR 5: with the bridge on, the committed assignment is handed over to a
+  // ProductSet version in this same transaction — from here its obligations are
+  // the set's persisted events and the assignment pass no longer sees it.
+  if (productSetBillingEnabled()) {
+    await importAssignmentAsProductSet(tx, input.gymId, Number(row.id));
+  }
   return { kind: 'committed', previousStatus: row.status, memberId: Number(row.member_id), superseded: conflicts.map((c) => c.id) };
 }
 
