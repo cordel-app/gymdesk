@@ -273,11 +273,16 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       currency: string | null;
       membership_status: string | null; next_billing_date: Date | string | null;
       latest_tx_status: string | null;
+      event_billing_date: Date | string | null; is_scheduled: number | boolean;
+      from_product_set: number | boolean;
     }>(
       `SELECT be.id, be.member_id, m.name AS member_name,
-              be.user_membership_id, mp.name AS plan_name,
+              COALESCE(be.user_membership_id, ps.user_membership_id) AS user_membership_id,
+              COALESCE(mp.name, mpp.name) AS plan_name,
               be.created_at, be.amount, be.event_type, NULL AS currency,
-              um.status AS membership_status, um.next_billing_date,
+              be.billing_date AS event_billing_date, be.is_scheduled,
+              (be.product_set_id IS NOT NULL) AS from_product_set,
+              COALESCE(um.status, ps_um.status) AS membership_status, um.next_billing_date,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
@@ -285,6 +290,9 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
        LEFT JOIN members m ON m.id = be.member_id
        LEFT JOIN user_memberships um ON um.id = be.user_membership_id
        LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
+       LEFT JOIN product_sets ps ON ps.id = be.product_set_id
+       LEFT JOIN user_memberships ps_um ON ps_um.id = ps.user_membership_id
+       LEFT JOIN membership_plans mpp ON mpp.id = ps.membership_plan_id
        WHERE ${whereSql}
        ORDER BY be.created_at DESC, be.id DESC
        LIMIT 10000`,
@@ -308,8 +316,12 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       payment_actions_available: boolean;
     };
 
+    // #1325: the persisted, not-yet-executed events of a ProductSet are
+    // obligations still ahead (`scheduled`), listed with the due date they carry;
+    // every other event keeps the ledger's own creation date.
     const past: BillingEventRow[] = realRows.map((r) => {
-      const status = deriveBillingEventStatus(r.event_type, r.latest_tx_status);
+      const scheduledEvent = Number(r.is_scheduled) === 1;
+      const status = scheduledEvent ? 'scheduled' : deriveBillingEventStatus(r.event_type, r.latest_tx_status);
       return {
         id: r.id,
         type: 'real' as const,
@@ -317,7 +329,9 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         member_name: r.member_name,
         user_membership_id: r.user_membership_id,
         plan_name: r.plan_name,
-        billing_date: new Date(r.created_at).toISOString().slice(0, 10),
+        billing_date: r.event_billing_date != null
+          ? toDateOnly(r.event_billing_date) as string
+          : new Date(r.created_at).toISOString().slice(0, 10),
         created_at: new Date(r.created_at).toISOString(),
         next_payment_date: r.membership_status === 'active' ? toDateOnly(r.next_billing_date) : null,
         amount: r.amount,
@@ -327,7 +341,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         // A transaction needs a membership to hang off, and a charge needs an
         // amount — an event missing either offers no payment action.
         payment_actions_available:
-          isPaymentActionable(status) && r.user_membership_id != null && parseFloat(r.amount ?? '0') > 0,
+          (isPaymentActionable(status)
+            || (scheduledEvent && (toDateOnly(r.event_billing_date) as string) <= new Date().toISOString().slice(0, 10)))
+          && (r.user_membership_id != null || Number(r.from_product_set) === 1)
+          && parseFloat(r.amount ?? '0') > 0,
       };
     });
 

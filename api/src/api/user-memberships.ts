@@ -1,3 +1,4 @@
+import { withDerivedBilling } from './derived-billing';
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
@@ -211,7 +212,8 @@ async function loadAssignmentRow(gymId: string, id: string | string[] | number, 
     ? await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [id, gymId])
     : await db.query(`${LIST_SELECT} WHERE um.id = ?`, [id]);
   if (rows.length === 0) return null;
-  return { ...rows[0], membership_fee: await currentMembershipFee(gymId, Number(rows[0].id)) };
+  const [row] = await withDerivedBilling(gymId, [rows[0]]);
+  return { ...row, membership_fee: await currentMembershipFee(gymId, Number(row.id)) };
 }
 
 // '1' | '2' -> that many covered Members; 'family' -> unlimited (#374).
@@ -260,7 +262,9 @@ userMembershipsRouter.get('/', async (req, res) => {
   }
   sql += ' ORDER BY ap.starts_at DESC';
 
-  const { rows } = await db.query(sql, params);
+  // #1325: an assignment a ProductSet bills reports the four billing values the
+  // ledger derives, not the legacy columns (which are NULL / 0 for it).
+  const rows = await withDerivedBilling(gymId, (await db.query(sql, params)).rows as any[]);
   // #635 stage 15 — `membership_fee` is what each assignment pays for the cycle
   // it is next charged for, resolved through the one rule the nightly run uses.
   // It replaces the stored `final_price` this list used to return: a number with
@@ -476,10 +480,22 @@ async function computeBillingEventsView(gymId: string, um: {
   const applications = await loadPromotionApplications(gymId, um.id);
   const windows: PromotionApplicationWindow[] = applications.map((p) => ({ appliedAt: p.appliedAt, revokedAt: p.revokedAt }));
 
+  // #1325: an assignment a ProductSet bills has its obligations on the set's
+  // chain (`product_set_id`), not on `user_membership_id`; both are this plan's.
   const { rows: beRows } = await db.query(
-    `SELECT id, event_type, charge_type_id, previous_status, new_status, source, amount, notes, created_at
-     FROM billing_events WHERE gym_id = ? AND user_membership_id = ? ORDER BY created_at ASC, id ASC`,
-    [gymId, um.id],
+    `SELECT be.id, be.event_type, be.charge_type_id, be.previous_status, be.new_status, be.source,
+            be.amount, be.notes, be.created_at
+       FROM billing_events be
+      WHERE be.gym_id = ?
+        AND (be.user_membership_id = ?
+             OR be.product_set_id IN (
+                  SELECT ps.id FROM product_sets ps
+                   WHERE ps.gym_id = ? AND ps.root_product_set_id IN (
+                           SELECT p2.root_product_set_id FROM product_sets p2
+                            WHERE p2.gym_id = ? AND p2.user_membership_id = ?)))
+        AND be.is_scheduled = 0
+      ORDER BY be.created_at ASC, be.id ASC`,
+    [gymId, um.id, gymId, gymId, um.id],
   );
   const events = beRows.map((r: any) => ({ ...r, date: toDateOnly(r.created_at) }));
   return selectPersistedBillingEventsInRange({ billingStart, endsAt, promotionWindows: windows, events });
@@ -487,9 +503,9 @@ async function computeBillingEventsView(gymId: string, um: {
 
 userMembershipsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
-  if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
-  const um = rows[0];
+  const { rows: rawRows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
+  if (rawRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
+  const um = (await withDerivedBilling(gymId, [rawRows[0]]))[0];
 
   const [audit, members, billingPolicy, promotions, additionalServices, snapshot] = await Promise.all([
     loadAuditMetadata(gymId, req.params.id),
