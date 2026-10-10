@@ -13,6 +13,7 @@ import { PLAN_SCHEDULE_KEY, cadenceForFrequency } from '../domain/scheduleAlloca
 import { loadPromotionApplicationsForSets } from './user-memberships';
 import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { activate, MoveOutcome } from './product-sets';
+import { projectActiveProductSet } from './product-set-projection';
 
 /**
  * #1325 PR 2b — a ProductSet version's configuration, the engine's input built
@@ -445,6 +446,10 @@ export async function activateWithEvents(tx: Tx, input: {
   const { created } = await materialiseScheduledEvents(tx, {
     gymId: input.gymId, productSetId: input.productSetId, today: input.today, cycles: input.cycles,
   });
+  // #1325 PR 3a: the operational assignment that access, eligibility and the
+  // screens still read is a projection of this version, written here and only
+  // here, in the same transaction as the activation.
+  await projectActiveProductSet(tx, input.gymId, input.productSetId);
   return { ...moved, eventsCreated: created, eventsReplaced: replaced };
 }
 

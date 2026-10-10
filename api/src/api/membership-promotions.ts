@@ -626,6 +626,80 @@ export async function applyPromotionToMembership(
   });
 }
 
+/**
+ * #1325 PR 3a — applies a Promotion to a **ProductSet version** (a Draft being
+ * configured). The same validations as `applyPromotionToMembership()`, owned by
+ * the version instead of an assignment: the application is the version's own
+ * (`product_set_id`, no `user_membership_id`) and carries its own snapshot of
+ * the Promotion and of what it grants (§16), so a later edit of the Promotion
+ * moves nothing. No fee adjustment is written: a version's price is resolved
+ * from its frozen configuration, and the ledger has no assignment to adjust.
+ */
+export async function applyPromotionToProductSet(
+  tx: Tx,
+  gymId: string,
+  userId: string,
+  productSetId: number,
+  promotionId: number,
+): Promise<{ application_id: number }> {
+  const { rows: setRows } = await tx.query(
+    'SELECT id, owner_member_id, membership_plan_id, status FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE',
+    [productSetId, gymId],
+  );
+  if (setRows.length === 0) throw Object.assign(new Error('ProductSet not found'), { status: 404 });
+  const set = setRows[0];
+  if (set.status !== 'draft') {
+    throw Object.assign(new Error('A Promotion can only be applied to a Draft ProductSet'), { status: 409 });
+  }
+
+  const { rows: promoRows } = await tx.query(
+    `SELECT id, stackable, lifecycle_status, starts_at, ends_at, only_applicable_for_new_members
+       FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'`,
+    [promotionId, gymId],
+  );
+  if (promoRows.length === 0) throw Object.assign(new Error('Promotion not found'), { status: 404 });
+  const promo = promoRows[0];
+  if (promo.lifecycle_status !== 'active') throw Object.assign(new Error('Promotion is inactive'), { status: 400 });
+  const now = new Date();
+  if (new Date(promo.starts_at) > now || new Date(promo.ends_at) < now) {
+    throw Object.assign(new Error('Promotion is outside its active window'), { status: 400 });
+  }
+
+  const { rows: matchRows } = await tx.query(
+    'SELECT 1 FROM promotion_membership_plans WHERE promotion_id = ? AND membership_plan_id = ? AND gym_id = ?',
+    [promotionId, set.membership_plan_id, gymId],
+  );
+  if (matchRows.length === 0) {
+    throw Object.assign(new Error("Promotion doesn't target this ProductSet's plan"), { status: 400 });
+  }
+
+  if (promo.only_applicable_for_new_members
+      && !(await isNewMemberForNewAssignment(tx, gymId, Number(set.owner_member_id)))) {
+    throw Object.assign(new Error(NEW_MEMBERS_ONLY_ERROR), { status: 400 });
+  }
+
+  const { rows: existing } = await tx.query(
+    "SELECT id, promotion_id FROM user_membership_promotions WHERE product_set_id = ? AND gym_id = ? AND status = 'applied'",
+    [productSetId, gymId],
+  );
+  if (existing.some((r: any) => Number(r.promotion_id) === promotionId)) {
+    throw Object.assign(new Error('This promotion is already applied to this ProductSet'), { status: 409 });
+  }
+  if (!promo.stackable && existing.length > 0) {
+    throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
+  }
+
+  const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
+  const { insertId } = await tx.query(
+    `INSERT INTO user_membership_promotions
+       (gym_id, user_membership_id, product_set_id, promotion_id, applied_by, status, snapshot)
+     VALUES (?, NULL, ?, ?, ?, 'applied', ?)`,
+    [gymId, productSetId, promotionId, userId, snapshot != null ? JSON.stringify(snapshot) : null],
+  );
+  await snapshotPromotionGrants(tx, gymId, insertId, promotionId);
+  return { application_id: Number(insertId) };
+}
+
 /* ── Stage 7: what an application granted, for the Assigned Plan card ────── */
 
 /**

@@ -13,14 +13,23 @@ import { db } from '../infra/db';
 
 // The provider is stubbed so no HTTP reaches Monei (#1288: Save & Pay now
 // creates the hosted-page payment request itself).
-vi.mock('../payments', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('../payments')>()),
-  getPaymentProvider: () => ({
-    createPaymentRequest: async (params: { orderId: string }) => ({
-      providerOrderId: `monei-${params.orderId}`, checkoutUrl: 'https://pay.test/x',
-    }),
-  }),
-}));
+vi.mock('../payments', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('../payments')>();
+  return {
+    ...mod,
+    // The real provider still verifies the webhook signature (#1325 PR 3a's
+    // end-to-end case); only the call that would reach Monei is stubbed.
+    getPaymentProvider: () => {
+      let real: object = {};
+      try { real = mod.getPaymentProvider(); } catch { /* no provider configured: only createPaymentRequest is needed */ }
+      return Object.assign(Object.create(real), {
+        createPaymentRequest: async (params: { orderId: string }) => ({
+          providerOrderId: `monei-${params.orderId}`, checkoutUrl: 'https://pay.test/x',
+        }),
+      });
+    },
+  };
+});
 import {
   cleanupTestGyms,
   createTestGym,
@@ -166,15 +175,25 @@ describe('POST /me/membership-plans/:id/assign', () => {
     expect(Number(res.body.membership_fee)).toBe(20);
     expect(res.body.promotion_ids).toEqual([promoId]);
 
-    const { rows: um } = await db.query<any>('SELECT member_id, created_by_type, created_by_name, membership_fee_price FROM user_memberships WHERE id = ?', [res.body.id]);
-    expect(um[0].member_id).toBe(member.id);
-    expect(um[0].created_by_type).toBe('member');
-    expect(Number(um[0].membership_fee_price)).toBe(40);
+    // #1325 PR 3a: the member's plan is a ProductSet version, with the plan frozen
+    // beside it and the Promotion applied with its own snapshot.
+    const { rows: ps } = await db.query<any>(
+      'SELECT owner_member_id, created_by_type, status, membership_plan_id FROM product_sets WHERE id = ?', [res.body.id]);
+    expect(ps[0].owner_member_id).toBe(member.id);
+    expect(ps[0].created_by_type).toBe('member');
+    expect(ps[0].status).toBe('pending_payment');
+    expect(ps[0].membership_plan_id).toBe(planId);
+    const { rows: snap } = await db.query<any>(
+      'SELECT membership_fee_price FROM product_set_plan_snapshots WHERE product_set_id = ?', [res.body.id]);
+    expect(Number(snap[0].membership_fee_price)).toBe(40);
     const { rows: apps } = await db.query<any>(
-      "SELECT promotion_id, status, snapshot FROM user_membership_promotions WHERE user_membership_id = ? AND status = 'applied'", [res.body.id],
+      "SELECT promotion_id, status, snapshot FROM user_membership_promotions WHERE product_set_id = ? AND status = 'applied'", [res.body.id],
     );
     expect(apps.map((a: any) => a.promotion_id)).toEqual([promoId]);
     expect(apps[0].snapshot).not.toBeNull();
+    // Nothing is an assignment yet: that is what activation projects.
+    const { rows: um } = await db.query<any>('SELECT id FROM user_memberships WHERE member_id = ?', [member.id]);
+    expect(um).toHaveLength(0);
 
     // The member's own read tells the page about it, and Pay now reaches it.
     asMember(member.userId);
@@ -245,5 +264,59 @@ describe('POST /me/membership-plans/:id/assign', () => {
     const again = await assign(member.userId, await createPlan({ price: 40 }));
     expect(again.status).toBe(409);
     expect(again.body.error).toBe('plan_pending_payment');
+  });
+});
+
+// ─── The paid plan reaches the member's own page (#1325 PR 3a) ───────────────
+
+import crypto from 'crypto';
+
+describe('a ProductSet plan paid through the webhook is the member\'s plan', () => {
+  const SECRET = 'mmp-productset-webhook';
+  beforeAll(() => {
+    process.env.MONEI_API_KEY = 'test-api-key';
+    process.env.MONEI_WEBHOOK_SECRET = SECRET;
+  });
+  afterAll(() => {
+    delete process.env.MONEI_API_KEY;
+    delete process.env.MONEI_WEBHOOK_SECRET;
+  });
+
+  it('Pay now reaches a pending set, and the webhook makes it the member\'s current plan', async () => {
+    const member = await createMember();
+    const planId = await createPlan({ price: 40 });
+    const res = await assign(member.userId, planId);
+    expect(res.status).toBe(201);
+    expect(res.body.status).toBe('pending_payment');
+
+    // Before payment: pending, not current.
+    asMember(member.userId);
+    const before = await request.get('/me/membership').set(h());
+    expect(before.body.membership).toBeNull();
+    expect(Number(before.body.pending_membership.membership_fee)).toBe(40);
+
+    // Pay now on a pending set is a new attempt on the same initial event.
+    asMember(member.userId);
+    const payNow = await request.post('/me/payment-requests').set(h()).send({});
+    expect(payNow.status).toBe(201);
+    const { rows: attempts } = await db.query<any>(
+      'SELECT attempt, provider_order FROM payment_requests WHERE billing_event_id = ? ORDER BY attempt', [res.body.billing_event_id]);
+    expect(attempts.map((a: any) => a.attempt)).toEqual([1, 2]);
+
+    const raw = JSON.stringify({
+      id: 'evt_1', type: 'charge.succeeded', objectId: 'ch_1', objectType: 'charge',
+      object: { id: 'ch_1', orderId: attempts[1].provider_order, status: 'SUCCEEDED' },
+    });
+    const t = String(Math.floor(Date.now() / 1000));
+    const v1 = crypto.createHmac('sha256', SECRET).update(`${t}.${raw}`).digest('hex');
+    const hook = await request.post('/webhooks/payment')
+      .set({ 'monei-signature': `t=${t},v1=${v1}`, 'Content-Type': 'application/json' }).send(raw);
+    expect(hook.status).toBe(200);
+
+    asMember(member.userId);
+    const after = await request.get('/me/membership').set(h());
+    expect(after.body.pending_membership).toBeNull();
+    expect(after.body.membership).not.toBeNull();
+    expect(Number(after.body.membership.membership_fee)).toBe(40);
   });
 });

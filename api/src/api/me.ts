@@ -1,3 +1,4 @@
+import { createProductSetCheckout, initialCharge } from './product-set-checkout';
 import { findOpenInitialEvent } from './plan-checkout';
 import { memberInviteTarget } from '../domain/memberInviteTarget';
 import crypto from 'crypto';
@@ -1652,9 +1653,31 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
         ORDER BY um.id DESC LIMIT 1`,
       [gymId, memberId],
     );
-    const pending_membership = pendingRows[0]
+    let pending_membership = pendingRows[0]
       ? { ...pendingRows[0], starts_at: toDateOnly(pendingRows[0].starts_at), membership_fee: await currentMembershipFee(gymId, Number(pendingRows[0].id)) }
       : null;
+    if (!pending_membership) {
+      // #1325 PR 3a: a Pending Payment ProductSet is the same thing to the
+      // member — a plan saved and awaiting its first payment — and its figure is
+      // the initial obligation Save & Pay already wrote.
+      const { rows: setRows } = await db.query<any>(
+        `SELECT ps.id, ps.starts_at, mp.name AS plan_name,
+                (SELECT be.amount FROM billing_events be
+                  WHERE be.product_set_id = ps.id AND be.event_type = 'payment_recorded'
+                  ORDER BY be.id DESC LIMIT 1) AS fee
+           FROM product_sets ps LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
+          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'pending_payment'
+          ORDER BY ps.id DESC LIMIT 1`,
+        [gymId, memberId],
+      );
+      if (setRows[0]) {
+        pending_membership = {
+          id: Number(setRows[0].id), starts_at: toDateOnly(setRows[0].starts_at),
+          plan_name: setRows[0].plan_name ?? null,
+          membership_fee: setRows[0].fee != null ? Number(setRows[0].fee) : null,
+        } as any;
+      }
+    }
     // #1197: the dashboard card's "N active products" — the member's own
     // active `member_products` purchases (#1121 stage 2), nothing else.
     const { rows: activeProductRows } = await db.query(
@@ -1960,6 +1983,30 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       requestedId = Number(rawRequestedId);
       if (!Number.isInteger(requestedId) || requestedId <= 0) {
         return res.status(400).json({ error: 'user_membership_id must be a positive integer' });
+      }
+    }
+    // #1325 PR 3a: a Pending Payment ProductSet is what Pay now is for, ahead of
+    // any assignment. Its checkout reuses the initial event Save & Pay wrote
+    // (a new attempt on it), and the webhook that settles it activates the set.
+    if (requestedId === null) {
+      const { rows: pendingSets } = await db.query<any>(
+        `SELECT ps.id, ps.starts_at, m.email AS member_email
+           FROM product_sets ps JOIN members m ON m.id = ps.owner_member_id
+          WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'pending_payment'
+          ORDER BY ps.id DESC LIMIT 1`,
+        [gymId, memberId],
+      );
+      if (pendingSets[0]) {
+        const startsAt = toDateOnly(pendingSets[0].starts_at);
+        const charge = await initialCharge(gymId, Number(pendingSets[0].id), startsAt);
+        if (!charge || !(charge.amount > 0)) {
+          return res.status(400).json({ error: 'This membership owes nothing for its current billing cycle' });
+        }
+        const checkout = await createProductSetCheckout({
+          gymId, productSetId: Number(pendingSets[0].id), memberId,
+          memberEmail: pendingSets[0].member_email ?? '', startsAt, charge,
+        });
+        return res.status(201).json({ id: checkout.paymentRequestId, checkoutUrl: checkout.checkoutUrl });
       }
     }
     const params: any[] = [gymId, memberId];
