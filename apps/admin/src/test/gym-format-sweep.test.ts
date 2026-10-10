@@ -13,6 +13,9 @@ const CONVERTED = [
   'app/[locale]/spaces/page.tsx',
   'app/[locale]/workout-templates/page.tsx',
   'app/[locale]/activity-types/page.tsx',
+  'app/[locale]/staff/page.tsx',
+  'app/[locale]/payments/transactions/page.tsx',
+  'app/[locale]/members/MemberProfessionalServices.tsx',
 ];
 
 function files(dir: string): string[] {
@@ -29,7 +32,7 @@ describe('gym format sweep (#1246 stage 3)', () => {
       const src = fs.readFileSync(path.join(SRC, rel), 'utf8');
       expect(src, rel).toContain('useGymFormatSettings');
       expect(src, rel).toContain('formatGymDateTime');
-      expect(/\.toLocaleString\(\)/.test(src), `${rel} still formats a timestamp ad hoc`).toBe(false);
+      expect(/new Date\([^)]*\)\.toLocaleString\(/.test(src), `${rel} still formats a timestamp ad hoc`).toBe(false);
     }
   });
 

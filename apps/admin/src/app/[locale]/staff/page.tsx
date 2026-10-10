@@ -27,6 +27,8 @@ import {
   toStaffEditFormValues,
 } from './staffProfile';
 import { inlineActionsRowStyle } from '@/components/formChrome';
+import { formatGymDateTime } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
  * #798: the columns the Edit form manages are declared once, in
@@ -244,6 +246,7 @@ const colHeaderStyle: React.CSSProperties = {
 
 export default function StaffPage() {
   const t = useTranslations('staff');
+  const gymFmt = useGymFormatSettings();
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
@@ -1079,8 +1082,8 @@ export default function StaffPage() {
           {field(t('label_company_phone'), member.company_phone)}
           {field(t('label_personal_phone'), member.personal_phone)}
           <hr style={{ border: 'none', borderTop: '1px solid #e8e8ed', margin: '20px 0' }} />
-          {field(t('label_created_at'), member.created_at ? new Date(member.created_at).toLocaleString() : null)}
-          {field(t('label_updated_at'), member.updated_at ? new Date(member.updated_at).toLocaleString() : null)}
+          {field(t('label_created_at'), member.created_at ? formatGymDateTime(member.created_at, gymFmt) : null)}
+          {field(t('label_updated_at'), member.updated_at ? formatGymDateTime(member.updated_at, gymFmt) : null)}
           <div style={{ marginTop: 24, display: 'flex', gap: 8 }}>
             <ViewAuditLogButton entityType="staff" entityId={member.id} onNavigate={() => setDetailsMember(null)} />
             <button onClick={() => setDetailsMember(null)} style={btnStyle('#888')}>{t('close')}</button>

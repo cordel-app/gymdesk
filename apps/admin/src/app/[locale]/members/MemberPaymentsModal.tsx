@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { StatusBadge } from '@/components/StatusBadge';
 import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
+import { formatGymDate } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 interface PaymentRequest {
   id: number;
@@ -71,6 +73,7 @@ export function MemberPaymentsModal({
   onClose: () => void;
 }) {
   const t = useTranslations();
+  const gymFmt = useGymFormatSettings();
   const { apiFetch, pdfFetch } = useApiClient();
 
   const [requests, setRequests] = useState<PaymentRequest[]>([]);
@@ -259,7 +262,7 @@ export function MemberPaymentsModal({
             {activeMembership.last_billed_at && (
               <span>
                 <strong>{t('member_payments.last_billed_at')}:</strong>{' '}
-                {new Date(activeMembership.last_billed_at).toLocaleDateString()}
+                {formatGymDate(activeMembership.last_billed_at, gymFmt)}
               </span>
             )}
             {activeMembership.next_billing_date && (
@@ -295,7 +298,7 @@ export function MemberPaymentsModal({
                   <td style={td}>
                     <StatusBadge status={pr.status} label={t(`member_payments.status_${pr.status}`)} />
                   </td>
-                  <td style={td}>{new Date(pr.created_at).toLocaleDateString()}</td>
+                  <td style={td}>{formatGymDate(pr.created_at, gymFmt)}</td>
                 </tr>
               ))}
             </tbody>
@@ -324,7 +327,7 @@ export function MemberPaymentsModal({
                     <tr key={ev.id} style={{ borderBottom: '1px solid #f4f4f4' }}>
                       <td style={td}>{ev.amount ? parseFloat(ev.amount).toFixed(2) : '—'} EUR</td>
                       <td style={td}>{ev.charge_type_code ?? '—'}</td>
-                      <td style={td}>{new Date(ev.created_at).toLocaleDateString()}</td>
+                      <td style={td}>{formatGymDate(ev.created_at, gymFmt)}</td>
                       <td style={td}>
                         {ev.receipt_number ? (
                           <button
