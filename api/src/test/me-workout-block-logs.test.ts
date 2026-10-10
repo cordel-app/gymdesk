@@ -153,11 +153,12 @@ describe('POST /me/workout-block-logs (#1009)', () => {
   it('stores numeric result values of any magnitude for a unit block', async () => {
     // `rpe`, `rest_time`, `pace` and `speed` have no member of migration 042's
     // CHECK vocabulary, which is part of why that column is gone rather than
-    // re-vocabularied — none of these may be refused.
+    // re-vocabularied — none of these may be refused. The dates are in the past:
+    // #1370 refuses a completion dated after the gym's today.
     for (const [index, value] of ['8.5', '90', '4.5', '14.2'].entries()) {
       const res = await asMember(request.post('/me/workout-block-logs')).send({
         workout_block_id: blockId,
-        logged_date: `2026-11-0${index + 1}`,
+        logged_date: `2026-09-0${index + 1}`,
         result_value: value,
       }).expect(201);
       expect(res.body.result_value).toBe(value);
