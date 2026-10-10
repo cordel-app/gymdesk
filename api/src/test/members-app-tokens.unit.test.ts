@@ -185,3 +185,12 @@ describe('Section Card shape, border edges and shadow (#1321 stage 1)', () => {
     expect(validateMembersApp({ sectionCardsShadow: 3 })).toMatch(/must be one of/);
   });
 });
+
+describe('Section Card glow and visual style (#1321 stage 2)', () => {
+  it('accepts a word from each closed set and a hex glow colour, and rejects anything else', () => {
+    expect(validateMembersApp({ sectionCardsGlow: 'subtle', sectionCardsVisualStyle: 'glass', sectionCardsGlowColor: '#112233' })).toBeNull();
+    expect(validateMembersApp({ sectionCardsGlow: 'blazing' })).toMatch(/must be one of/);
+    expect(validateMembersApp({ sectionCardsVisualStyle: 'neon' })).toMatch(/must be one of/);
+    expect(validateMembersApp({ sectionCardsGlowColor: 'red' })).toMatch(/hex/);
+  });
+});

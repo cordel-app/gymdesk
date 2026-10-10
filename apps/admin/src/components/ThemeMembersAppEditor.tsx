@@ -116,8 +116,8 @@ export function ThemeMembersAppEditor({ tokens, onChange, t, readOnly, images }:
     }
     // #1321 stage 1 — Shape, Border edges and Shadow are closed sets, each with
     // a live mini-card beside the select showing what the chosen option looks like.
-    if (setting.type === 'card-shape' || setting.type === 'card-edges' || setting.type === 'card-shadow') {
-      const prefix = setting.type === 'card-shape' ? 'shape' : setting.type === 'card-edges' ? 'edges' : 'shadow';
+    if (setting.type === 'card-shape' || setting.type === 'card-edges' || setting.type === 'card-shadow' || setting.type === 'card-glow' || setting.type === 'card-style') {
+      const prefix = ({ 'card-shape': 'shape', 'card-edges': 'edges', 'card-shadow': 'shadow', 'card-glow': 'glow', 'card-style': 'style' } as const)[setting.type];
       return (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
           <select value={String(value)} disabled={readOnly} onChange={(e) => set(e.target.value)} style={SELECT}>
