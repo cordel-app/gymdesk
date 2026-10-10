@@ -39,11 +39,19 @@ import {
  * row share one baseline instead of each label adding a margin of its own.
  */
 export function MemberProfileLayout({
+  image,
   fieldLabel,
   renderField,
   renderCalculated,
   centers,
 }: {
+  /**
+   * #1374 — the Member's profile image, above the fields in both modes: the
+   * read-only half hands in the picture, the Edit form the upload control, and
+   * the layout places both in the one cell so switching modes moves nothing.
+   * `null` where a surface has no image to show.
+   */
+  image: { label: string; content: React.ReactNode } | null;
   /** The label for a field in this mode (the Edit form marks required ones). */
   fieldLabel: (field: MemberProfileFieldSpec) => string;
   /** The cell under that label: an input, or the persisted value. */
@@ -68,6 +76,12 @@ export function MemberProfileLayout({
 }) {
   return (
     <>
+      {image && (
+        <div style={{ marginBottom: PROFILE_ROW_GAP }}>
+          <label style={profileFieldLabelStyle}>{image.label}</label>
+          {image.content}
+        </div>
+      )}
       <div style={profileGridStyle}>
         {MEMBER_PROFILE_FIELDS.map((field) => (
           <div key={field.key} style={field.kind === 'multiline' ? fullWidthCellStyle : undefined}>

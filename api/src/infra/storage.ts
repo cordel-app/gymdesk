@@ -94,6 +94,22 @@ export const EXERCISE_VIDEOS_STORAGE_FOLDER = `${EXERCISE_STORAGE_FOLDER}/videos
  */
 export const GOALS_FOLDER = 'goals';
 
+/**
+ * `members` — the gym-root branch that holds a **Member**'s profile image
+ * (#1374): `<gym prefix>/members/<member_id>-<member_name>.png`. Declared here
+ * for {@link GOALS_FOLDER}'s reason: it is one of the gym's first-level folders
+ * *and* the segment the key builder writes into, so the marker
+ * {@link initializeGymBucket} creates and the key an upload lands under can never
+ * disagree in case. `domain/memberImages.ts` re-exports it and is the only place
+ * a member-image key is built. Gym-root only: a Member belongs to one gym, so
+ * there is no `cordel/members/`.
+ *
+ * Not the `Members/` #826 removed: that one held nothing (a theme's Members App
+ * slots live under `themes/<theme_id>-<name>/members_app/`, #725) and is gone;
+ * this one arrives with its writer, lowercase, like every folder since #1035.
+ */
+export const MEMBERS_FOLDER = 'members';
+
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 //
@@ -143,6 +159,12 @@ const GYM_FOLDERS = [
   // It has no leaf: a goal's image is all this branch holds, so the key is
   // `goals/<goal_id>-<name>.png` directly under it.
   `${GOALS_FOLDER}/`,
+  // #1374: the gym-level `members/` root, holding a Member's profile image.
+  // Appended last for the reason above, and with its writer from the day it
+  // appears (`POST /members/:id/image`) — #826's condition for a first-level
+  // folder. No leaf: the key is `members/<member_id>-<name>.png` directly
+  // under it.
+  `${MEMBERS_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;
