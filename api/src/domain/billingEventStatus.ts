@@ -84,7 +84,22 @@ export function isAwaitingAction(
   eventType: string,
   latestTransactionStatus: string | null | undefined,
 ): boolean {
+  // #1325 PR 2: a one-off purchase and a card verification are not
+  // obligations. A failed purchase is the member's to retry from the catalogue
+  // (a new request), never the staff's queue, and a verification owes nothing.
+  if (isNonObligationEvent(eventType)) return false;
   return deriveBillingEventStatus(eventType, latestTransactionStatus) === 'failed';
+}
+
+/**
+ * Event types that record money or a check that is not a membership/ProductSet
+ * obligation: they are shown in the ledger but never counted as revenue
+ * owed, never queued for staff and never offered Retry or Manual payment.
+ */
+export const NON_OBLIGATION_EVENT_TYPES = ['product_purchase', 'card_verification'] as const;
+
+export function isNonObligationEvent(eventType: string): boolean {
+  return (NON_OBLIGATION_EVENT_TYPES as readonly string[]).includes(eventType);
 }
 
 /**
@@ -117,7 +132,7 @@ export function isAwaitingAction(
  * `status_changed`, and any of the three above whose latest transaction says
  * the payment failed, expired or is still pending.
  */
-const RECEIPTABLE_EVENT_TYPES = ['payment_recorded', 'recurring_payment', 'failed_billing'] as const;
+const RECEIPTABLE_EVENT_TYPES = ['payment_recorded', 'recurring_payment', 'failed_billing', 'product_purchase'] as const;
 
 export function isReceiptableEvent(
   eventType: string,

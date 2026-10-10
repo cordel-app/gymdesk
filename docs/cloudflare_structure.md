@@ -6,6 +6,11 @@
 │   ├── goals/
 │   │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 512 × 512 px
 │   │
+│   ├── muscles/
+│   │   └── images/
+│   │       ├── {muscle_id}-{muscle_name}.png                              — 2048 × 2048 px
+│   │       └── {muscle_id}-{muscle_name}-thumbnail.png                    — 512 × 512 px
+│   │
 │   ├── exercises/
 │   │   └── images/
 │   │       ├── {exercise_id}-{exercise_name}.png                          — 2048 × 2048 px
@@ -32,12 +37,15 @@
         │   └── {food_id}-{food_name}.png                                      — 512 × 512 px
         │        
         ├── goals
-        │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 512 × 512 px
+        │   └── {personal_goal_id}-{personnal_goal_name}.png                  — 512 × 512 px
+        │        
+        ├── members
+        │   └── {member_id}-{member_name}.png                                 — 512 × 512 px
         │       
         ├── exercises/
         │   ├── images/
-        │   │   ├── {exercise_id}-{exercise_name}.png                       — 2048 × 2048 px
-        │   │   └── {exercise_id}-{exercise_name}-thumbnail.png             — 512 × 512 px
+        │   │   ├── {exercise_id}-{exercise_name}.png                         — 2048 × 2048 px
+        │   │   └── {exercise_id}-{exercise_name}-thumbnail.png               — 512 × 512 px
         │   │
         │   └── videos/
         │       └── {exercise_id}-{exercise_name}.mp4                       — vídeo

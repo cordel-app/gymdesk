@@ -178,9 +178,9 @@ export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId:
     cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },
   }));
 
-  for (const table of ['user_membership_periodical', 'user_membership_services'] as const) {
+  for (const table of ['user_membership_periodical', 'member_products_recurrent_snapshot'] as const) {
     const { rows } = await tx.query<any>(
-      `SELECT id, item_billing_frequency${table === 'user_membership_services' ? ', starts_at' : ''}
+      `SELECT id, item_billing_frequency${table === 'member_products_recurrent_snapshot' ? ', starts_at' : ''}
          FROM ${table} WHERE gym_id = ? AND product_set_id = ? AND schedule_id IS NULL`,
       [gymId, productSetId]);
     for (const row of rows) {
@@ -211,7 +211,7 @@ export async function addProductSetService(tx: Tx, input: {
   startsAt: string; scheduleId: number | null;
 }): Promise<number> {
   const { insertId } = await tx.query(
-    `INSERT INTO user_membership_services
+    `INSERT INTO member_products_recurrent_snapshot
        (gym_id, product_set_id, product_id, quantity, starts_at,
         item_name, item_type, unit_price, item_billing_frequency, currency, schedule_id)
      SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
@@ -280,7 +280,7 @@ export async function loadProductSetSimulationAssignment(
 
   const { rows: serviceRows } = await exec.query(
     `SELECT id, product_id, quantity, starts_at, ends_at, item_name, item_billing_frequency, unit_price
-       FROM user_membership_services WHERE gym_id = ? AND product_set_id = ?
+       FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?
       ORDER BY starts_at ASC, id ASC`,
     [gymId, productSetId],
   );
@@ -356,7 +356,7 @@ export async function planScheduledEvents(
 
   const { rows: scheduled } = await exec.query(
     `SELECT s.product_id, sch.schedule_key
-       FROM user_membership_services s JOIN product_set_schedules sch ON sch.id = s.schedule_id
+       FROM member_products_recurrent_snapshot s JOIN product_set_schedules sch ON sch.id = s.schedule_id
       WHERE s.gym_id = ? AND s.product_set_id = ?
      UNION
      SELECT p.product_id, sch.schedule_key

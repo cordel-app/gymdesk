@@ -3,7 +3,7 @@
 //
 // Integration, not unit: what is under test is **which rows a member is shown**,
 // that the catalogue is their gym's alone, and that a purchase moves the rows it
-// should — the `member_products` row, its `payment_requests` row and, once the
+// should — the `member_products_oneoff_snapshot` row, its `payment_requests` row and, once the
 // provider confirms, the Billing Event. What each row *says*, and how the
 // Members App words it, is asserted in `member-products.unit.test.ts` and
 // `member-product-purchase.unit.test.ts`, where both halves are pure.
@@ -337,7 +337,7 @@ async function purchaseRows(gid: string) {
   const { rows } = await db.query<any>(
     `SELECT mp.*, pr.source, pr.status AS request_status, pr.provider_order,
             pr.user_membership_id, pr.amount AS request_amount
-       FROM member_products mp
+       FROM member_products_oneoff_snapshot mp
        LEFT JOIN payment_requests pr ON pr.id = mp.payment_request_id
       WHERE mp.gym_id = ? ORDER BY mp.id`,
     [gid],
@@ -481,16 +481,22 @@ describe('the payment decides whether the member holds it (#1121 stage 2 §6, #1
     const [row] = await purchaseRows(gid);
     expect(row).toMatchObject({ status: 'active', request_status: 'completed' });
     expect(row.purchased_at).not.toBeNull();
-    expect(row.billing_event_id).not.toBeNull();
 
     // The ledger both the member's Payments card and the staff pages read, with
     // no assignment and the member on it.
     const { rows: events } = await db.query<any>(
-      `SELECT event_type, member_id, user_membership_id, amount FROM billing_events WHERE gym_id = ?`,
+      `SELECT be.event_type, be.member_id, be.user_membership_id, be.product_set_id, be.amount,
+              pr.id AS request_id
+         FROM billing_events be
+         JOIN payment_requests pr ON pr.billing_event_id = be.id
+        WHERE be.gym_id = ?`,
       [gid],
     );
     expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ event_type: 'payment_recorded', member_id: row.member_id });
+    // #1325 PR 2: written with the request, linked to it, owned by no ProductSet.
+    expect(events[0]).toMatchObject({ event_type: 'product_purchase', member_id: row.member_id });
+    expect(events[0].product_set_id).toBeNull();
+    expect(events[0].request_id).toBe(pending.payment_request_id);
     expect(events[0].user_membership_id).toBeNull();
     expect(Number(events[0].amount)).toBe(10);
 
@@ -525,10 +531,13 @@ describe('the payment decides whether the member holds it (#1121 stage 2 §6, #1
     const [row] = await purchaseRows(gid);
     expect(row).toMatchObject({ status: 'cancelled', request_status: 'failed' });
     expect(row.purchased_at).toBeNull();
+    // The event written with the request stays as the record of the attempt;
+    // it derives `failed` from its request and is not an obligation.
     const { rows: events } = await db.query<any>(
-      'SELECT id FROM billing_events WHERE gym_id = ?', [gid],
+      'SELECT event_type FROM billing_events WHERE gym_id = ?', [gid],
     );
-    expect(events).toHaveLength(0);
+    expect(events).toHaveLength(1);
+    expect(events[0].event_type).toBe('product_purchase');
 
     // The member can try again: the pending key is free and the catalogue says
     // the Product is available.
@@ -603,7 +612,7 @@ function buyWithPromotion(gid: string, clerkId: string, productId: number, promo
 
 async function applicationRows(gid: string) {
   const { rows } = await db.query<any>(
-    `SELECT * FROM member_product_promotions WHERE gym_id = ? ORDER BY id`, [gid],
+    `SELECT * FROM member_products_oneoff_promotion_snapshot WHERE gym_id = ? ORDER BY id`, [gid],
   );
   return rows;
 }

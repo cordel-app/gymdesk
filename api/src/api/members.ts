@@ -212,7 +212,7 @@ for (const [action, value] of [['grant', 'granted'], ['revoke', 'revoked']] as c
  * side of their card reads them.
  *
  * Registered before `/:id/clerk-status` only for readability; `/:id/products`
- * cannot collide with `/:id` either way. It is a read of `member_products` and
+ * cannot collide with `/:id` either way. It is a read of `member_products_oneoff_snapshot` and
  * its application snapshot and nothing else — in particular it joins neither
  * `products` nor `promotions`, because §13 is explicit that the Admin "should
  * not dynamically resolve the current Promotion configuration to determine what

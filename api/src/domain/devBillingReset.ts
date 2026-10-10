@@ -28,8 +28,8 @@ export interface ResetStep {
 /** Children before parents, so no statement depends on a cascade. */
 export const RESET_STEPS: readonly ResetStep[] = [
   { table: 'billing_event_lines', reason: 'child of billing_events', optional: true },
-  { table: 'member_product_promotions', reason: 'child of member_products' },
-  { table: 'member_products', reason: 'purchases hang from the payments being deleted' },
+  { table: 'member_products_oneoff_promotion_snapshot', reason: 'child of member_products_oneoff_snapshot' },
+  { table: 'member_products_oneoff_snapshot', reason: 'purchases hang from the payments being deleted' },
   { table: 'payment_requests', reason: 'would survive with no billing event (all sources, card_update included)' },
   { table: 'billing_events', reason: 'the ledger being reset' },
   { table: 'user_membership_promotion_oneoff_snapshot', reason: 'child of applied promotions' },
@@ -39,7 +39,7 @@ export const RESET_STEPS: readonly ResetStep[] = [
   { table: 'user_membership_session', reason: 'assignment benefit rows' },
   { table: 'user_membership_oneoff', reason: 'assignment benefit rows' },
   { table: 'user_membership_periodical', reason: 'assignment benefit rows' },
-  { table: 'user_membership_services', reason: 'assignment service rows' },
+  { table: 'member_products_recurrent_snapshot', reason: 'assignment service rows' },
   { table: 'user_membership_members', reason: 'family coverage of the assignments' },
   { table: 'user_memberships', reason: 'the assigned Membership Plans' },
   { table: 'product_set_members', reason: 'ProductSet rows created since PR 1', optional: true },

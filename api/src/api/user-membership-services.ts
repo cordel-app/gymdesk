@@ -61,7 +61,7 @@ const SELECT = `
          gc.billing_frequency,
          gc.amount AS unit_price,
          gc.currency
-  FROM user_membership_services ums
+  FROM member_products_recurrent_snapshot ums
   JOIN products gc ON gc.id = ums.product_id
 `;
 
@@ -308,7 +308,7 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   // is what makes two simultaneous POSTs safe; this check also covers a closed
   // window that still ends on or after the requested start date.
   const { rows: overlapping } = await db.query(
-    `SELECT id FROM user_membership_services
+    `SELECT id FROM member_products_recurrent_snapshot
      WHERE gym_id = ? AND user_membership_id = ? AND product_id = ?
        AND (ends_at IS NULL OR ends_at >= ?)`,
     [gymId, plan.id, chargeId, startsAt],
@@ -325,7 +325,7 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
       // must not move what an already-attached service costs, which is what
       // the Billing Simulation reads since stage 3; the live join below still
       // drives display, so the UI can flag an item that has changed.
-      `INSERT INTO user_membership_services
+      `INSERT INTO member_products_recurrent_snapshot
        (gym_id, user_membership_id, product_id, quantity, starts_at, created_by_membership_id,
         item_name, item_type, item_billing_frequency, unit_price, currency)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -365,10 +365,10 @@ userMembershipServicesRouter.delete('/:serviceId', requireModuleWrite('PAYMENTS'
     // the one with the same Product, so the removal is addressed by that.
     mutate: async (tx, d) => {
       const { rows } = await tx.query<{ product_id: number }>(
-        'SELECT product_id FROM user_membership_services WHERE id = ? AND gym_id = ?', [Number(req.params.serviceId), d.gym_id]);
+        'SELECT product_id FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ?', [Number(req.params.serviceId), d.gym_id]);
       if (!rows[0]) return { kind: 'not_found' as const };
       const { rows: own } = await tx.query<{ id: number }>(
-        'SELECT id FROM user_membership_services WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND ends_at IS NULL LIMIT 1',
+        'SELECT id FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND ends_at IS NULL LIMIT 1',
         [d.gym_id, d.id, rows[0].product_id]);
       if (!own[0]) return { kind: 'not_found' as const };
       return psRemoveService(tx, d, Number(own[0].id));
@@ -394,10 +394,10 @@ userMembershipServicesRouter.delete('/:serviceId', requireModuleWrite('PAYMENTS'
   const today = todayISO();
   const deleted = service.starts_at > today;
   if (deleted) {
-    await db.query('DELETE FROM user_membership_services WHERE id = ? AND gym_id = ?', [serviceId, gymId]);
+    await db.query('DELETE FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ?', [serviceId, gymId]);
   } else {
     await db.query(
-      'UPDATE user_membership_services SET ends_at = ? WHERE id = ? AND gym_id = ?',
+      'UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE id = ? AND gym_id = ?',
       [today, serviceId, gymId],
     );
   }

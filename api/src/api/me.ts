@@ -1680,9 +1680,9 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       }
     }
     // #1197: the dashboard card's "N active products" — the member's own
-    // active `member_products` purchases (#1121 stage 2), nothing else.
+    // active `member_products_oneoff_snapshot` purchases (#1121 stage 2), nothing else.
     const { rows: activeProductRows } = await db.query(
-      `SELECT COUNT(*) AS n FROM member_products WHERE gym_id = ? AND member_id = ? AND status = 'active'`,
+      `SELECT COUNT(*) AS n FROM member_products_oneoff_snapshot WHERE gym_id = ? AND member_id = ? AND status = 'active'`,
       [gymId, memberId],
     );
     const active_products_count = Number(activeProductRows[0]?.n ?? 0);
@@ -2297,7 +2297,8 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows: countRows } = await db.query(
-      `SELECT COUNT(*) AS total FROM billing_events be WHERE be.gym_id = ? AND be.member_id = ?`,
+      `SELECT COUNT(*) AS total FROM billing_events be
+        WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type <> 'card_verification'`,
       [gymId, memberId],
     );
     // #1123 §4 — each past event reports its `status` ("Status: Paid"), derived
@@ -2315,7 +2316,7 @@ meRouter.get('/billing-events', requireRole('member'), requireFeatureEnabled('me
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
        FROM billing_events be
        LEFT JOIN charge_types ct ON ct.id = be.charge_type_id
-       WHERE be.gym_id = ? AND be.member_id = ?
+       WHERE be.gym_id = ? AND be.member_id = ? AND be.event_type <> 'card_verification'
        ORDER BY be.created_at DESC, be.id DESC LIMIT ${limit} OFFSET ${offset}`,
       [gymId, memberId],
     );
@@ -2359,7 +2360,7 @@ meRouter.get('/billing-event-forecast', requireRole('member'), requireFeatureEna
 // Since stage 2 each row also carries **this member's own** state for it
 // (`purchase_state`, `purchasable`, §6), which is still not a second catalogue:
 // the Products are the gym's, and what is per member is only what they have
-// bought (`member_products`, the thread's `Q2`).
+// bought (`member_products_oneoff_snapshot`, the thread's `Q2`).
 //
 // Behind **both** feature flags, for the reason My Goals is (#1036): the section
 // it appears in is `member_web.my_membership`, and the catalogue itself is

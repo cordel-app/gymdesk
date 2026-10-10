@@ -96,7 +96,7 @@ export default function PaymentSuccessPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 24, maxWidth: 480, margin: '40px auto', textAlign: 'center' },
-  card: { ...sectionCardStyle, borderRadius: 16, padding: '40px 24px', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' },
+  card: { ...sectionCardStyle, padding: '40px 24px', boxShadow: '0 1px 6px rgba(0,0,0,0.07)' },
   spinner: {
     width: 40, height: 40, borderRadius: '50%',
     border: `3px solid ${memberTheme.separator}`, borderTopColor: memberTheme.primaryButton,
