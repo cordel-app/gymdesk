@@ -69,9 +69,8 @@ export interface ExerciseNameLocales {
 export interface ExerciseEditorProps {
   /**
    * `create` for the inline creation card, `edit` for the inline editor
-   * (§10). The only field it decides is `video_url`, which the creation form
-   * owns and the editor deliberately does not (#717 Q6) — everything else is
-   * the same form in both modes.
+   * (§10). Both modes render the same form; the video is managed only through
+   * the upload control (#1380 removed the Video URL input).
    */
   mode: 'create' | 'edit';
   /** Prefix for the `id`/`htmlFor` pairs, so two open forms never collide. */
@@ -112,10 +111,6 @@ export function ExerciseEditor({
   const tCommon = useTranslations();
   const { form, setForm } = state;
   const id = (field: string) => `${idPrefix}-${field}`;
-  // #717 Q6: the creation form owns `video_url`; the editor manages the video
-  // through its upload control, which writes the reference and its poster
-  // together.
-  const showVideoUrl = mode === 'create';
   // The static catalog plus any legacy key already on the exercise being edited.
   const pickerKeys = [...muscleKeys, ...Array.from(state.muscles.keys()).filter((k) => !muscleKeys.includes(k))];
   const primaryLabel = saveLabel ?? (mode === 'create' ? t('save') : t('save_changes'));
@@ -249,12 +244,6 @@ export function ExerciseEditor({
       {/* #805 §9: MEDIA is the last section — nothing but the actions follows it. */}
       <div style={subSectionSt}>
         <p style={sectionLabelSt}>{t('section_media')}</p>
-        {showVideoUrl && (
-          <div style={{ marginBottom: 12 }}>
-            <label htmlFor={id('video_url')} style={inlineLabelSt}>{t('label_video_url')}</label>
-            <input id={id('video_url')} type="url" value={form.video_url} onChange={(e) => setForm({ ...form, video_url: e.target.value })} style={inlineInputSt} />
-          </div>
-        )}
         {media}
       </div>
 

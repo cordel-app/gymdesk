@@ -626,7 +626,8 @@ There is deliberately no HTTP bootstrap endpoint. The old unauthenticated
       carried `// lgtm[js/missing-rate-limiting]` comments that suppressed nothing (inline
       suppression is inert here — see *Code scanning* in `docs/architecture.md`), and
       removing them leaves the alerts, if any are open, visible again. They are false
-      positives: `app.ts` applies a global `apiLimiter` (500 requests / 15 min, per IP)
+      positives: `app.ts` applies a global `apiLimiter` (`API_RATE_LIMIT_MAX` requests / 15 min, per
+      signed-in person or, unauthenticated, per IP — #1395)
       with `app.use()` before every route, so no route is unthrottled — the `as any` cast
       the limiter needs is the most likely reason CodeQL does not see it. If the rule has
       open alerts, dismiss them with that reasoning rather than bolting a second limiter
