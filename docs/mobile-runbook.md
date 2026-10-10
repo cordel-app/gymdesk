@@ -235,7 +235,7 @@ cannot install a downloaded file, so it gets a link and never a download.
   (`90:4A:F4:…:87:47`) is the one registered in the Google Android OAuth client; the job summary
   prints the SHA-1 it actually used. Without the `ANDROID_DEBUG_KEYSTORE_B64` secret Gradle
   makes a new key and Google sign-in is refused on that build.
-- **iOS simulator build (unsigned)** — a build check, kept as a workflow artifact and **not
+- **iOS simulator build (ad-hoc signed)** — a build check, kept as a workflow artifact and **not
   published** to the Mobile builds page, and an app for a Mac's simulator
   (`xcrun simctl install booted App.app`). It **cannot** be installed on an iPhone; that needs a
   signed build and the Apple Developer account.
