@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { formatGymDateTime } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 interface BillingEvent {
   id: number;
@@ -26,6 +28,7 @@ interface PageResult {
 const DEFAULT_LIMIT = 50;
 
 export default function TransactionsPage() {
+  const gymFmt = useGymFormatSettings();
   const { apiFetch } = useApiClient();
   const { activeGymId, loading: gymLoading } = useGym();
 
@@ -61,7 +64,7 @@ export default function TransactionsPage() {
   };
 
   const formatDate = (iso: string) =>
-    new Date(iso).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' });
+    formatGymDateTime(iso, gymFmt);
 
   return (
     <div>
