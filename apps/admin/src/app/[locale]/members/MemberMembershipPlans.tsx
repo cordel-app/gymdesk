@@ -6,12 +6,12 @@
 // the Billing Simulation are siblings of this section, never nested inside a
 // plan (§13).
 //
-// #956 reversed §6/§14: a Member holds zero or one Membership Plan, so adding
-// one to a Member who already has a live plan *replaces* it. The server is what
-// decides that — it answers `409 active_plan_exists` and takes `confirm: true`
-// — and this section's job is to show the warning the admin confirms, through
-// the shared `ReplacePlanDialog`. Superseding a specific plan is still available
-// as the explicit "Assign New Plan" action on the plan itself.
+// #956 reversed §6/§14: a Member holds zero or one Membership Plan. Since
+// #1325 PR 3b "+ Add Membership Plan" creates a ProductSet version (`POST
+// /product-sets`) and commits it, and the server refuses a Member who is already
+// on a plan with `409 active_plan_exists` — there is no confirmation to send
+// from here. Superseding a specific plan is the explicit "Assign New Plan"
+// action on the plan itself, which stays on the assignment flow for now.
 //
 // Inline throughout (§15): "+ Add Membership Plan" opens a draft below the
 // list, saved or discarded in place. No modal, no wizard, no separate page.
@@ -47,8 +47,7 @@
 import React, { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { useTranslations } from 'next-intl';
 import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
-import { activePlanConflict, type ActivePlanConflict } from '@/lib/activePlanConflict';
-import { ReplacePlanDialog } from '@/components/ReplacePlanDialog';
+import { commitProductSetVersion } from '@/lib/productSetCommit';
 import type { ContextMenuItem } from '@/components/ContextMenu';
 import { AssignedPlansTable } from '@/components/assignedPlan/AssignedPlansTable';
 import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPlanDetailsDialog';
@@ -65,7 +64,8 @@ import {
   secondaryBtnSmall,
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
-import type { MemberPlanRow } from './membershipConfiguration';
+import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
+import { ProductSetsInFlight } from './ProductSetsInFlight';
 
 interface AssignablePlan {
   id: number;
@@ -75,6 +75,8 @@ interface AssignablePlan {
 interface Props {
   memberId: number;
   plans: MemberPlanRow[];
+  /** #1325 PR 3b: the member's in-flight ProductSet versions. */
+  productSets?: ProductSetRow[];
   canWrite: boolean;
   /** Re-reads the Member's configuration and re-runs the Billing Simulation (§12). */
   onChanged: () => void;
@@ -90,7 +92,7 @@ function todayISO() {
 }
 
 export function MemberMembershipPlans({
-  memberId, plans, canWrite, onChanged, onAssignNewPlan, onCancelPlan, renderAssignEditor, assignBusy,
+  memberId, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, renderAssignEditor, assignBusy,
 }: Props) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
@@ -103,9 +105,6 @@ export function MemberMembershipPlans({
   const [draftStartsAt, setDraftStartsAt] = useState(todayISO());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // #956 stage 2: the replacement the admin has not confirmed yet. Holding the
-  // 409 rather than a boolean is what lets the dialog name the plan it cancels.
-  const [conflict, setConflict] = useState<ActivePlanConflict | null>(null);
   // #958: the Assigned Plan whose Details are open, if any — one dialog for the
   // whole section rather than one mounted per row.
   const [detailsPlanId, setDetailsPlanId] = useState<number | null>(null);
@@ -146,43 +145,37 @@ export function MemberMembershipPlans({
     setAdding(false);
     setDraftPlanId(null);
     setError(null);
-    setConflict(null);
   }
 
   /**
-   * #956 stage 2: `confirmReplacement` is the admin's answer to the dialog and
-   * nothing else — the first attempt never sends it, so a member who already
-   * has a plan cannot have it cancelled without the warning being shown, and
-   * the resend carries the identical draft so Continue assigns exactly what was
-   * confirmed. Cancel leaves the draft open and changes nothing.
+   * #1325 PR 3b: the plan is added as a ProductSet version and committed in one
+   * go. There is no confirmation to send — the server refuses a Member who is
+   * already on a plan (#956) with `409 active_plan_exists`, and replacing a plan
+   * is the explicit `Assign New Plan` action on the plan itself.
    */
-  async function save(confirmReplacement = false) {
+  async function save() {
     if (draftPlanId == null) { setError(t('add_membership_plan_error_no_plan')); return; }
     if (!draftStartsAt) { setError(t('assign_new_plan_error_no_start')); return; }
     setSaving(true);
     setError(null);
     try {
-      await apiFetch('/user-memberships', {
+      // #1325 PR 3b: the plan is a ProductSet version. The server decides what
+      // happens next — nothing owed activates it; a payment owed makes it
+      // Pending Payment — and the editing lock, the one-in-flight rule and the
+      // one-plan rule are all the server's, so this never sends `confirm`.
+      const created = await apiFetch<{ id: number }>('/product-sets', {
         method: 'POST',
-        body: JSON.stringify({
-          member_id: memberId,
-          membership_plan_id: draftPlanId,
-          starts_at: draftStartsAt,
-          ...(confirmReplacement ? { confirm: true } : {}),
-        }),
+        body: JSON.stringify({ member_id: memberId, membership_plan_id: draftPlanId, starts_at: draftStartsAt }),
       });
-      setConflict(null);
+      await commitProductSetVersion(apiFetch, created.id);
       setAdding(false);
       setDraftPlanId(null);
       onChanged();
     } catch (err: any) {
-      const replacement = confirmReplacement ? null : activePlanConflict(err);
-      if (replacement) {
-        setConflict(replacement);
-      } else {
-        setConflict(null);
-        setError(apiErrorMessage(err) ?? t('error_generic'));
-      }
+      // A conflict (`active_plan_exists`, `edit_locked`, `in_flight`) is the
+      // server's answer and is shown as its sentence: there is nothing here to
+      // confirm — replacing a plan is a new version, never an overwrite.
+      setError(apiErrorMessage(err) ?? t('error_generic'));
     } finally {
       setSaving(false);
     }
@@ -218,6 +211,9 @@ export function MemberMembershipPlans({
 
   return (
     <div>
+      {/* #1325 PR 3b — versions still in flight (no assignment until activation). */}
+      <ProductSetsInFlight productSets={productSets} canWrite={canWrite} onChanged={onChanged} />
+
       {/* ACTIVE — the ticket's §4 split, over the Assigned Plans page's table. */}
       <div style={subLabel}>{t('membership_plans_active')}</div>
       <AssignedPlansTable
@@ -289,14 +285,6 @@ export function MemberMembershipPlans({
           </div>
         </div>
       )}
-
-      <ReplacePlanDialog
-        conflict={conflict}
-        newPlanName={selectable.find((o) => o.id === draftPlanId)?.name ?? null}
-        busy={saving}
-        onConfirm={() => save(true)}
-        onCancel={() => setConflict(null)}
-      />
 
       {/* PAST — the same table, so a terminated assignment reads exactly as a
           live one does. Absent rather than empty, as the card group was. */}

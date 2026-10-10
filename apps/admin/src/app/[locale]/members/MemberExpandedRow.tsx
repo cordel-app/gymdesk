@@ -444,6 +444,7 @@ export function MemberExpandedRow({
             <MemberMembershipPlans
               memberId={memberId}
               plans={configuration.plans}
+              productSets={configuration.product_sets}
               canWrite={isAdmin}
               onChanged={reloadConfiguration}
               onAssignNewPlan={setAssigningFor}
