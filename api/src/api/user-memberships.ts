@@ -1,3 +1,6 @@
+import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
+import { linkInitialPaymentToSet, productSetBillingEnabled } from './product-set-bridge';
+import { setBillingDuration as psSetBillingDuration, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
@@ -398,18 +401,19 @@ export async function loadPromotionApplicationsFor(
  * own copies and an earlier one is never read through it.
  */
 export async function loadPromotionApplicationsForSets(
-  gymId: string, productSetIds: number[],
+  gymId: string, productSetIds: number[], exec: { query: typeof db.query } = db,
 ): Promise<Map<number, PromotionApplication[]>> {
-  return loadApplicationsKeyedBy(gymId, 'product_set_id', productSetIds);
+  return loadApplicationsKeyedBy(gymId, 'product_set_id', productSetIds, exec);
 }
 
 async function loadApplicationsKeyedBy(
   gymId: string, column: 'user_membership_id' | 'product_set_id', keys: number[],
+  exec: { query: typeof db.query } = db,
 ): Promise<Map<number, PromotionApplication[]>> {
   const byAssignment = new Map<number, PromotionApplication[]>();
   const ids = [...new Set(keys)];
   if (ids.length === 0) return byAssignment;
-  const { rows } = await db.query(
+  const { rows } = await exec.query(
     `SELECT ump.id, ump.${column} AS owner_key, ump.promotion_id, ump.status,
             ump.applied_at, ump.revoked_at, ump.snapshot,
             p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months
@@ -428,7 +432,7 @@ async function loadApplicationsKeyedBy(
     // the pre-stage-5 snapshot shape, so history keeps pricing as it did.
     const benefits = snap
       ? membershipFeeBenefitsFromSnapshot(snap)
-      : (await fetchLiveBenefits(db, row.promotion_id)).membership_fee_benefits;
+      : (await fetchLiveBenefits(exec as any, row.promotion_id)).membership_fee_benefits;
     const membershipFeeBenefits: MembershipFeeBenefit[] = benefits.map((b): MembershipFeeBenefit => ({
       action: (b.action ?? null) as MembershipFeeBenefit['action'],
       value: b.value ?? null,
@@ -976,6 +980,7 @@ userMembershipsRouter.delete('/:id/draft', requireModuleWrite('PAYMENTS'), async
 // Cancel = admin-only status flip (soft; the row stays for history).
 userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   const { gymId, userId, role } = getTenantContext(req);
+  if (await redirectRetireToProductSet(req, res, { userMembershipId: Number(req.params.id), respond: null })) return;
   // Ledger row (P1.6): cancellation emits status_changed in the same transaction.
   const found = await db.transaction(async (tx) => {
     const { rows: current } = await tx.query(
@@ -1169,6 +1174,9 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
         [gymId, req.params.id, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), userId,
          typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null],
       );
+      // #1325 PR 5: the cash payment's event is written after the commit, so the
+      // import could not see it — link it to the first period now.
+      if (productSetBillingEnabled()) await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));
       return committed;
     });
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -1483,6 +1491,10 @@ function computeUnusedValueWarnings(
 
 userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) => {
   const { gymId, userId, role } = getTenantContext(req);
+  if (await redirectRetireToProductSet(req, res, {
+    userMembershipId: Number(req.params.id),
+    respond: () => loadAssignmentRow(gymId, req.params.id),
+  })) return;
   const confirm = req.body?.confirm === true;
 
   const { rows: currentRows } = await db.query(
@@ -1613,6 +1625,19 @@ function nonNegativeInteger(raw: unknown): number | null | false {
 
 userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  // #1325 PR 5: a plan a ProductSet projects is edited as a new version, never in place.
+  if (await redirectEditToProductSet(req, res, {
+    userMembershipId: Number(req.params.id), action: 'update', detail: { billing_duration: req.body },
+    mutate: (tx, d) => {
+      for (const f of ['recurring_billing_interval', 'recurring_billing_unit', 'membership_fee_price']) {
+        if (f in (req.body ?? {})) {
+          return Promise.resolve({ kind: 'invalid' as const, message: `${f} cannot be changed on a plan billed from a ProductSet; use the negotiated fee or a new plan` });
+        }
+      }
+      return psSetBillingDuration(tx, d, req.body);
+    },
+    respond: () => loadAssignedPlanSnapshot(gymId, Number(req.params.id)),
+  })) return;
   const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
   if (!um) return res.status(404).json({ error: 'Membership not found' });
   if (!SNAPSHOT_EDITABLE_STATUSES.includes(um.status as Status)) {
@@ -1759,6 +1784,11 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
  */
 userMembershipsRouter.put('/:id/fee-benefit', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  if (await redirectEditToProductSet(req, res, {
+    userMembershipId: Number(req.params.id), action: 'update', detail: { personal_fee_benefit: req.body },
+    mutate: (tx, d) => psSetFeeBenefit(tx, d, req.body),
+    respond: () => loadAssignedPlanSnapshot(gymId, Number(req.params.id)),
+  })) return;
   const um = await loadAssignmentForSnapshotEdit(gymId, req.params.id);
   if (!um) return res.status(404).json({ error: 'Membership not found' });
   if (!SNAPSHOT_EDITABLE_STATUSES.includes(um.status as Status)) {
@@ -1845,6 +1875,11 @@ for (const { path, category } of ASSIGNED_BENEFIT_ROUTES) {
 
   userMembershipsRouter.put(`/:id/${path}`, requireModuleWrite('PAYMENTS'), async (req, res, next) => {
     const { gymId } = getTenantContext(req);
+    if (await redirectEditToProductSet(req, res, {
+      userMembershipId: Number(req.params.id), action: 'update', detail: { [`${category}_benefits`]: req.body?.items },
+      mutate: (tx, d) => psWriteBenefitSection(tx, d, category, req.body?.items),
+      respond: () => loadAssignedPlanBenefitSection(gymId, Number(req.params.id), category),
+    })) return;
     const { items } = req.body;
     if (!Array.isArray(items)) return res.status(400).json({ error: 'items must be an array' });
 
@@ -1971,6 +2006,11 @@ userMembershipsRouter.get('/:id/members', async (req, res) => {
 
 userMembershipsRouter.post('/:id/members', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
+  if (await redirectEditToProductSet(req, res, {
+    userMembershipId: Number(req.params.id), action: 'update', detail: { add_member: req.body?.member_id },
+    mutate: (tx, d) => psAddCoveredMember(tx, d, Number(req.body?.member_id)),
+    respond: async () => (await db.query(MEMBERS_SELECT, [req.params.id, gymId])).rows,
+  })) return;
   const { member_id } = req.body;
   if (!member_id) return res.status(400).json({ error: 'member_id is required' });
 
@@ -2056,6 +2096,11 @@ async function resyncMemberCountQuantities(tx: Tx, gymId: string, id: string): P
 
 userMembershipsRouter.delete('/:id/members/:memberId', requireModuleWrite('PAYMENTS'), async (req, res) => {
   const { gymId } = getTenantContext(req);
+  if (await redirectEditToProductSet(req, res, {
+    userMembershipId: Number(req.params.id), action: 'update', detail: { remove_member: req.params.memberId },
+    mutate: (tx, d) => psRemoveCoveredMember(tx, d, Number(req.params.memberId)),
+    respond: async () => (await db.query(MEMBERS_SELECT, [req.params.id, gymId])).rows,
+  })) return;
   const { rows } = await db.query(
     'SELECT is_owner FROM user_membership_members WHERE user_membership_id = ? AND member_id = ? AND gym_id = ?',
     [req.params.id, req.params.memberId, gymId],

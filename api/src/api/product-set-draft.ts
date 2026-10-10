@@ -2,6 +2,7 @@ import { db, Tx } from '../infra/db';
 import { classifyProduct, ProductBenefitCategory } from '../domain/productClassification';
 import { isPersonalFeeBenefitAction, PERSONAL_FEE_BENEFIT_ACTIONS } from '../domain/personalFeeBenefit';
 import { touchDraft } from './product-sets';
+import { allocateItemSchedules } from './product-set-configuration';
 
 /**
  * #1325 PR 4 — editing a Draft ProductSet's configuration.
@@ -138,6 +139,7 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
         [draft.gym_id, draft.id, p.quantity, p.product_id, draft.gym_id]);
     }
   }
+  await allocateItemSchedules(tx, draft.gym_id, draft.id);
   await touch(tx, draft);
   return { ok: true };
 }
@@ -252,6 +254,7 @@ export async function addService(tx: Tx, draft: LockedDraft, body: any): Promise
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
       WHERE gc.id = ? AND gc.gym_id = ?`,
     [draft.gym_id, draft.id, quantity, startsAt, productId, draft.gym_id]);
+  await allocateItemSchedules(tx, draft.gym_id, draft.id);
   await touch(tx, draft);
   return { ok: true, id: Number(insertId) };
 }
