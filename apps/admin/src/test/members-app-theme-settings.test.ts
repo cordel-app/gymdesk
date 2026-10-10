@@ -85,6 +85,7 @@ const TICKET_MAPPING: [string, string | null][] = [
   ['label_members_card_glow', null],
   ['label_members_card_glow_color', 'Primary Button'],
   ['label_members_card_style', null],
+  ['label_members_card_touch', null],
   ['label_members_title1_color', 'Typography h1 Color'],
   ['label_members_title1_font', 'Typography h1 Font Family'],
   ['label_members_title2_color', 'Typography h2 Color'],
@@ -464,6 +465,7 @@ describe('#1152 Members App typography and Section Card text', () => {
       'sectionCardsGlow',
       'sectionCardsGlowColor',
       'sectionCardsVisualStyle',
+      'sectionCardsTouchEffect',
       'sectionCardsTextColor',
       'sectionCardsTextSize',
       'sectionCardsTextFont',
@@ -570,5 +572,18 @@ describe('#833 Members App settings: the mirrors', () => {
     for (const value of FONT_STACK_VALUES) {
       expect(memberSrc, `the Members App mirror does not allow ${value}`).toContain(value);
     }
+  });
+});
+
+describe('Section Card Touch Effect preview (#1321 stage 3)', () => {
+  it('mirrors the Members App pressed state for every effect', async () => {
+    const { CARD_TOUCH_PRESSED, MEMBERS_APP_CARD_OPTIONS } = await import('@/lib/membersAppTokens');
+    expect(Object.keys(CARD_TOUCH_PRESSED).sort()).toEqual([...MEMBERS_APP_CARD_OPTIONS['card-touch']].sort());
+    const fs = await import('node:fs');
+    const css = fs.readFileSync(new URL('../../../member/src/lib/cardTouch.ts', import.meta.url), 'utf8');
+    expect(css).toContain(CARD_TOUCH_PRESSED.press.transform!);
+    expect(css).toContain(CARD_TOUCH_PRESSED.highlight.filter!);
+    expect(css).toContain(CARD_TOUCH_PRESSED.lift.transform!);
+    expect(css).toContain(CARD_TOUCH_PRESSED.lift.filter!);
   });
 });

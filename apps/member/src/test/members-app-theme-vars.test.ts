@@ -30,6 +30,7 @@ function stubDocument(): Record<string, string> {
   (globalThis as any).document = {
     documentElement: {
       style: { setProperty: (name: string, value: string) => { written[name] = value; } },
+      setAttribute: (name: string, value: string) => { written[name] = value; },
     },
   };
   return written;
@@ -390,6 +391,32 @@ describe('Section Card glow and visual style (#1321 stage 2)', () => {
     const vars = membersAppCssVars(themed({ sectionCardsGlow: 'bogus', sectionCardsVisualStyle: 'bogus' }));
     expect(vars['--gd-members-card-glow']).toBe('none');
     expect(vars['--gd-members-card-style']).toBe('clean');
+  });
+});
+
+describe('Section Card Touch Effect (#1321 stage 3)', () => {
+  const themed = (membersApp: Record<string, string>) => ({ ...DEFAULT_TOKENS, membersApp }) as ThemeTokens;
+  it('defaults to none, accepts the five words and falls back on an unknown one', () => {
+    expect(membersAppCssVars(DEFAULT_TOKENS)['--gd-members-card-touch']).toBe('none');
+    for (const w of ['press', 'ripple', 'highlight', 'lift']) {
+      expect(membersAppCssVars(themed({ sectionCardsTouchEffect: w }))['--gd-members-card-touch']).toBe(w);
+    }
+    expect(membersAppCssVars(themed({ sectionCardsTouchEffect: 'bounce' }))['--gd-members-card-touch']).toBe('none');
+  });
+
+  it('a Visual Style never supplies a touch effect', () => {
+    expect(membersAppCssVars(themed({ sectionCardsVisualStyle: 'glass' }))['--gd-members-card-touch']).toBe('none');
+  });
+
+  it('applies only to interactive cards, with reduced-motion and focus fallbacks', async () => {
+    const { isInteractiveCard, CARD_TOUCH_CSS, ripplePoint } = await import('../lib/cardTouch');
+    expect(isInteractiveCard({ as: 'button' })).toBe(true);
+    expect(isInteractiveCard({ onClick: () => {} })).toBe(true);
+    expect(isInteractiveCard({ as: 'div' })).toBe(false);
+    expect(CARD_TOUCH_CSS).toContain('prefers-reduced-motion');
+    expect(CARD_TOUCH_CSS).toContain(':focus-visible');
+    expect(CARD_TOUCH_CSS).toContain('scale(0.97)');
+    expect(ripplePoint(60, 20, { left: 10, top: 0, width: 100, height: 40 })).toEqual({ x: '50%', y: '50%' });
   });
 });
 

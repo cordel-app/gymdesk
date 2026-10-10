@@ -31,7 +31,8 @@ export type MembersAppSettingType =
   | 'card-edges'
   | 'card-shadow'
   | 'card-glow'
-  | 'card-style';
+  | 'card-style'
+  | 'card-touch';
 
 /** The bounds of a `font-size` setting, in CSS pixels. */
 export const MEMBERS_APP_FONT_SIZE = { min: 8, max: 48 } as const;
@@ -49,6 +50,8 @@ export const MEMBERS_APP_CARD_OPTIONS = {
   // #1321 stage 2 — Glow and the Visual Style that supplies defaults for unset settings.
   'card-glow': ['none', 'subtle', 'strong'],
   'card-style': ['clean', 'outlined', 'glass'],
+  // #1321 stage 3 — the feedback an interactive Section Card gives when touched.
+  'card-touch': ['none', 'press', 'ripple', 'highlight', 'lift'],
 } as const;
 
 export const MEMBERS_APP_SETTING_TYPES: Record<string, MembersAppSettingType> = {
@@ -67,6 +70,7 @@ export const MEMBERS_APP_SETTING_TYPES: Record<string, MembersAppSettingType> = 
   sectionCardsGlow:                  'card-glow',
   sectionCardsGlowColor:             'color',
   sectionCardsVisualStyle:           'card-style',
+  sectionCardsTouchEffect:           'card-touch',
   sectionCardsTextColor:             'color',
   sectionCardsTextSize:              'font-size',
   sectionCardsTextFont:              'font',
@@ -136,7 +140,7 @@ export function validateMembersApp(membersApp: any): string | null {
       if (typeof value !== 'string' || !(MEMBERS_APP_VERTICAL_ALIGNMENTS as readonly string[]).includes(value)) {
         return `membersApp.${key} must be one of ${MEMBERS_APP_VERTICAL_ALIGNMENTS.join(', ')}`;
       }
-    } else if (type === 'card-shape' || type === 'card-edges' || type === 'card-shadow' || type === 'card-glow' || type === 'card-style') {
+    } else if (type === 'card-shape' || type === 'card-edges' || type === 'card-shadow' || type === 'card-glow' || type === 'card-style' || type === 'card-touch') {
       const options = MEMBERS_APP_CARD_OPTIONS[type] as readonly string[];
       if (typeof value !== 'string' || !options.includes(value)) {
         return `membersApp.${key} must be one of ${options.join(', ')}`;

@@ -36,7 +36,7 @@ export const MEMBERS_APP_CARD_SHAPES = ['rounded', 'square', 'none'];
 export const MEMBERS_APP_CARD_BORDER_EDGES = ['all', 'none', 'top', 'bottom', 'left', 'right'];
 export const MEMBERS_APP_CARD_SHADOWS = ['none', 'soft', 'medium', 'strong'];
 
-export type CardEffectType = 'card-shape' | 'card-edges' | 'card-shadow' | 'card-glow' | 'card-style';
+export type CardEffectType = 'card-shape' | 'card-edges' | 'card-shadow' | 'card-glow' | 'card-style' | 'card-touch';
 
 export const MEMBERS_APP_CARD_OPTIONS: Record<CardEffectType, string[]> = {
   'card-shape': MEMBERS_APP_CARD_SHAPES,
@@ -44,6 +44,7 @@ export const MEMBERS_APP_CARD_OPTIONS: Record<CardEffectType, string[]> = {
   'card-shadow': MEMBERS_APP_CARD_SHADOWS,
   'card-glow': ['none', 'subtle', 'strong'],
   'card-style': ['clean', 'outlined', 'glass'],
+  'card-touch': ['none', 'press', 'ripple', 'highlight', 'lift'],
 };
 
 const CARD_SHAPE_CSS: Record<string, string> = { rounded: '12px', square: '4px', none: '0px' };
@@ -274,6 +275,18 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     source: null,
     default: 'clean',
     cssVar: '--gd-members-card-style',
+  },
+  {
+    // #1321 stage 3 — Touch Effect. Inherits from nothing (default none) and is
+    // never supplied by a Visual Style: how a card feels when pressed is
+    // independent of how it looks. It applies to interactive cards only.
+    key: 'sectionCardsTouchEffect',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_touch',
+    type: 'card-touch',
+    source: null,
+    default: 'none',
+    cssVar: '--gd-members-card-touch',
   },
   {
     key: 'sectionCardsTextColor',
@@ -593,6 +606,7 @@ export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetti
       return cardEffectCssValue(setting.type, value) ?? cardEffectCssValue(setting.type, inherited) ?? '';
     case 'card-glow':
     case 'card-style':
+    case 'card-touch':
       return cardEffectCssValue(setting.type, value) ?? cardEffectCssValue(setting.type, inherited) ?? '';
     case 'length':
     default:
@@ -632,4 +646,7 @@ export function applyMembersAppTokens(tokens: ThemeTokens) {
   for (const [cssVar, value] of Object.entries(membersAppCssVars(tokens))) {
     el.style.setProperty(cssVar, value);
   }
+  // #1321 stage 3 — CSS cannot branch on a variable's value, so the Touch
+  // Effect's word is also an attribute the stylesheet in lib/cardTouch.ts selects.
+  el.setAttribute('data-card-touch', membersAppCssVars(tokens)['--gd-members-card-touch'] || 'none');
 }
