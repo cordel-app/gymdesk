@@ -6,7 +6,7 @@ name: Mobile build
 #  - Android: a **debug APK** a tester can install by hand (download the artifact,
 #    open it on the phone). Signed with the shared debug keystore (see the secret
 #    below) so the Google sign-in client registered for its SHA-1 keeps working.
-#  - iOS: an **unsigned simulator build** — a build check (kept as a workflow artifact,
+#  - iOS: an **ad-hoc signed simulator build** — a build check (kept as a workflow artifact,
 #    never published to Cordel → Mobile builds), and an app for a Mac's simulator. It
 #    cannot be installed on an iPhone: that needs a signed build and the Apple
 #    Developer account, and an iPhone gets its builds from TestFlight
@@ -186,7 +186,7 @@ jobs:
           bash .github/scripts/publish-mobile-build.sh
 
   ios-simulator:
-    name: iOS simulator build (unsigned)
+    name: iOS simulator build (ad-hoc signed)
     runs-on: macos-latest
     environment: ${{ inputs.environment || 'dev' }}
     timeout-minutes: 45
@@ -234,6 +234,9 @@ jobs:
       - name: Build for the simulator
         working-directory: apps/mobile
         run: |
+          # Ad-hoc signed (`CODE_SIGN_IDENTITY=-`), never `CODE_SIGNING_ALLOWED=NO`: that
+          # embeds no entitlements, so the app has no `keychain-access-groups` and Google
+          # Sign-In fails in the simulator with `keychain error` (docs/mobile-app.md §3).
           xcodebuild \
             -project ios/App/App.xcodeproj \
             -scheme App \
@@ -241,7 +244,7 @@ jobs:
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY=- \
             MARKETING_VERSION="$BUILD_VERSION" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
             build
@@ -253,7 +256,7 @@ jobs:
           ditto -c -k --keepParent apps/mobile/build/Build/Products/Debug-iphonesimulator/App.app "$NAME"
           echo "name=$NAME" >> "$GITHUB_OUTPUT"
           {
-            echo "### iOS simulator build (unsigned)"
+            echo "### iOS simulator build (ad-hoc signed)"
             echo "- File: \`$NAME\` ($(du -h "$NAME" | cut -f1))"
             echo "- Version: \`$BUILD_VERSION\` (build \`$BUILD_NUMBER\`)"
             echo "- Runs in a Mac's iOS Simulator only. It cannot be installed on an iPhone (needs a signed build and an Apple Developer account)."
