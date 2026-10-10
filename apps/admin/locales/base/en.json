@@ -3761,6 +3761,7 @@
     "frequency_legacy_notice": "This product is billed \"{frequency}\", a frequency that is no longer offered. Choosing another one replaces it; it cannot be selected again.",
     "system_badge": "System",
     "mandatory_badge": "Mandatory",
+    "one_time_badge": "One-time",
     "section_general": "General",
     "section_billing": "Billing Configuration",
     "section_package_info": "Package Information",
