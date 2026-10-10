@@ -98,7 +98,7 @@ describe('#1282 the labels exist in every locale', () => {
   for (const locale of ['en', 'es', 'ca']) {
     it(`${locale} has the menu keys`, () => {
       const nav = JSON.parse(readFileSync(join(MEMBER, 'locales', 'base', `${locale}.json`), 'utf-8')).nav;
-      for (const key of ['user_menu', 'logout', 'logout_confirm_title', 'logout_confirm_body', 'logout_cancel', 'logout_impersonating_title', 'logout_impersonating_body']) {
+      for (const key of ['user_menu', 'logout', 'logout_confirm_title', 'logout_confirm_body', 'logout_cancel']) {
         expect(typeof nav[key]).toBe('string');
         expect(nav[key].length).toBeGreaterThan(0);
       }

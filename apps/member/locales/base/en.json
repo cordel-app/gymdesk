@@ -42,9 +42,7 @@
     "logout": "Log out",
     "logout_confirm_title": "Log out?",
     "logout_confirm_body": "You will be signed out of this account on this device.",
-    "logout_cancel": "Cancel",
-    "logout_impersonating_title": "Stop impersonating?",
-    "logout_impersonating_body": "You will leave this member's account and return to Support mode."
+    "logout_cancel": "Cancel"
   },
   "common": {
     "error": "Something went wrong.",
