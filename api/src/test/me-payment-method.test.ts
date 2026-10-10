@@ -9,8 +9,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, seedScheduledEvent, clearScheduledEvents } from './helpers';
 
 // A card replacement asks the provider for a zero-amount verification. The stub
 // takes no amount at all — `createCardVerificationRequest` has no such
@@ -84,8 +83,8 @@ beforeAll(async () => {
   planId = pid;
 
   const { insertId: umId } = await db.query(
-    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
-     VALUES (?, ?, ?, 'active', CURDATE(), '0.00', DATE_ADD(CURDATE(), INTERVAL 1 MONTH))`,
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+     VALUES (?, ?, ?, 'active', CURDATE(), '0.00')`,
     [gymId, memberId, planId],
   );
   membershipId = umId;
@@ -94,10 +93,10 @@ beforeAll(async () => {
 beforeEach(async () => {
   createCardVerificationRequest.mockReset();
   createCardVerificationRequest.mockResolvedValue({ providerOrderId: 'monei-verif-1' });
-  await db.query(
-    `UPDATE user_memberships SET status = 'active', next_billing_date = DATE_ADD(CURDATE(), INTERVAL 1 MONTH) WHERE id = ?`,
-    [membershipId],
-  );
+  await db.query(`UPDATE user_memberships SET status = 'active' WHERE id = ?`, [membershipId]);
+  // #1325 PR 3c: "scheduled to be charged" is a scheduled event of the member's set.
+  await clearScheduledEvents(gymId, memberId);
+  await seedScheduledEvent(gymId, memberId, membershipId, 'DATE_ADD(CURDATE(), INTERVAL 1 MONTH)');
 });
 
 afterAll(async () => {

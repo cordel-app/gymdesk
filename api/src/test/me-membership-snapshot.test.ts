@@ -22,8 +22,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, seedScheduledEvent } from './helpers';
 
 let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -68,11 +67,13 @@ async function createAssignment(gymId: string, memberId: number, planId: number,
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
-        next_billing_date, recurring_billing_interval, recurring_billing_unit, membership_fee_price)
-     VALUES (?, ?, ?, 'active', '2026-01-10', 60, ?, ?, ?, ?)`,
-    [gymId, memberId, planId, NEXT_BILLING,
+        recurring_billing_interval, recurring_billing_unit, membership_fee_price)
+     VALUES (?, ?, ?, 'active', '2026-01-10', 60, ?, ?, ?)`,
+    [gymId, memberId, planId,
      snapshot?.interval ?? null, snapshot?.unit ?? null, snapshot?.fee ?? null],
   );
+  // #1325 PR 3c: the next charge is the ProductSet's scheduled event.
+  await seedScheduledEvent(gymId, memberId, insertId, NEXT_BILLING);
   return insertId;
 }
 
@@ -352,11 +353,12 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
     const { insertId } = await db.query(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
-          next_billing_date, recurring_billing_interval, recurring_billing_unit, membership_fee_price)
-       VALUES (?, ?, ?, 'active', '2099-01-10', 0, ?, 1, 'month', 60)`,
-      [gymId, memberId, planId, NEXT_BILLING],
+          recurring_billing_interval, recurring_billing_unit, membership_fee_price)
+       VALUES (?, ?, ?, 'active', '2099-01-10', 0, 1, 'month', 60)`,
+      [gymId, memberId, planId],
     );
     umId = insertId;
+    await seedScheduledEvent(gymId, memberId, umId, NEXT_BILLING);
 
     const { insertId: promotionId } = await db.query(
       `INSERT INTO promotions (gym_id, name, starts_at, ends_at, lifecycle_status,
@@ -400,7 +402,7 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
   it('resolves the same amounts the nightly run would charge for those dates', async () => {
     const { priceMembershipFeeOn } = await import('../api/membership-fee-pricing');
     const { rows } = await db.query(
-      `SELECT um.id, um.gym_id, um.membership_plan_id, um.starts_at, um.next_billing_date,
+      `SELECT um.id, um.gym_id, um.membership_plan_id, um.starts_at,
               um.membership_fee_price, um.base_price, um.discount_reason, um.discount_expires_at,
               um.free_periods, um.paid_periods, um.bonus_periods,
               p.free_periods AS plan_free_periods, p.paid_periods AS plan_paid_periods,
@@ -456,9 +458,9 @@ describe('GET /me/membership — past_memberships', () => {
 
     // The live one the card above is about.
     await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
-       VALUES (?, ?, ?, 'active', '2026-10-01', 60, ?)`,
-      [gymId, memberId, currentPlanId, NEXT_BILLING],
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, ?, 'active', '2026-10-01', 60)`,
+      [gymId, memberId, currentPlanId],
     );
     // Two finished ones, the older carrying no `ends_at` so its `closed_at` is
     // what the history has to fall back to.
@@ -512,9 +514,9 @@ describe('GET /me/membership — past_memberships', () => {
     await createTestMembership(otherGym, 'member');
     const otherMember = await createCallingMember(otherGym);
     await db.query(
-      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
-       VALUES (?, ?, NULL, 'active', '2026-10-01', 60, ?)`,
-      [otherGym, otherMember, NEXT_BILLING],
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, NULL, 'active', '2026-10-01', 60)`,
+      [otherGym, otherMember],
     );
     const { body } = await getMembership(otherGym);
     // The rows above belong to the first gym, so a tenant leak would show here.

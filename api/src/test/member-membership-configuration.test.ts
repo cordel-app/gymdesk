@@ -27,8 +27,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, seedScheduledEvent } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -99,11 +98,12 @@ async function createAssignment(
   } = opts;
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, ends_at,
-        base_price, next_billing_date)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gymId, memberId, planId, status, startsAt, endsAt, finalPrice, nextBillingDate],
+       (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [gymId, memberId, planId, status, startsAt, endsAt, finalPrice],
   );
+  // #1325 PR 3c: the next billing date is the ProductSet's scheduled event.
+  if (nextBillingDate) await seedScheduledEvent(gymId, memberId, insertId, nextBillingDate);
   return insertId;
 }
 

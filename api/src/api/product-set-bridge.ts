@@ -129,7 +129,6 @@ async function copyApplications(tx: Tx, gymId: string, from: Owner, to: Owner) {
  *    one created `active` with its obligations generated.
  *
  * Idempotent: an assignment whose version is already active is left alone.
- * `next_billing_date` is cleared because the set's events are the schedule.
  */
 export async function importAssignmentAsProductSet(
   tx: Tx, gymId: string, userMembershipId: number, opts: { pending?: boolean } = {},
@@ -141,7 +140,6 @@ export async function importAssignmentAsProductSet(
     if (!opts.pending && set.status === 'pending_payment') {
       const out = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc() });
       if (out.kind !== 'ok') throw Object.assign(new Error(`ProductSet ${set.id} could not be activated: ${out.kind}`), { status: 409 });
-      await tx.query('UPDATE user_memberships SET next_billing_date = NULL WHERE id = ? AND gym_id = ?', [userMembershipId, gymId]);
     }
     return Number(set.id);
   }

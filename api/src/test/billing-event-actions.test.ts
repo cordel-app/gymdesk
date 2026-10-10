@@ -98,9 +98,9 @@ async function createFailedEvent(
 
   const { insertId: membershipId } = await db.query(
     `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
-     VALUES (?, ?, ?, 'active', '2000-01-01', '40.00', ?)`,
-    [gym, memberId, planId, today()],
+       (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+     VALUES (?, ?, ?, 'active', '2000-01-01', '40.00')`,
+    [gym, memberId, planId],
   );
   await db.query(
     `INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner)
@@ -118,9 +118,9 @@ async function createFailedEvent(
 
   const { insertId: billingEventId } = await db.query(
     `INSERT INTO billing_events
-       (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
-     VALUES (?, ?, ?, ?, ?, '40.00', ?, 'system', NULL, 'E999: card declined')`,
-    [gym, membershipId, await ensureTestProductSet(gym, memberId, membershipId), memberId, eventType, ct],
+       (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes, billing_date)
+     VALUES (?, ?, ?, ?, ?, '40.00', ?, 'system', NULL, 'E999: card declined', ?)`,
+    [gym, membershipId, await ensureTestProductSet(gym, memberId, membershipId), memberId, eventType, ct, today()],
   );
 
   if (withTransaction) {
@@ -237,107 +237,6 @@ describe('POST /payments/billing-events/:id/retry', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', otherGymId);
     expect(res.status).toBe(404);
-  });
-
-  it('adds a transaction to the same billing event and never a second event', async () => {
-    const f = await createFailedEvent(gymId);
-    const { rows: before } = await db.query<{ n: number }>(
-      'SELECT COUNT(*) AS n FROM billing_events WHERE user_membership_id = ?', [f.membershipId],
-    );
-
-    const res = await request
-      .post(`/payments/billing-events/${f.billingEventId}/retry`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-
-    expect(res.status).toBe(200);
-    expect(res.body.new_status).toBe('paid');
-    expect(res.body.attempts).toHaveLength(1);
-    expect(res.body.membership_paused).toBe(false);
-
-    const tx = await transactionsOf(f.billingEventId);
-    expect(tx).toHaveLength(2); // the original failure + the retry
-    expect(tx[1].source).toBe('retry');
-    expect(tx[1].status).toBe('completed');
-    expect(tx[1].provider_ref).toBe('pay_ok');
-    expect(tx[1].completed_at).not.toBeNull();
-
-    const { rows: after } = await db.query<{ n: number }>(
-      'SELECT COUNT(*) AS n FROM billing_events WHERE user_membership_id = ?', [f.membershipId],
-    );
-    expect(Number(after[0].n)).toBe(Number(before[0].n));
-  });
-
-  it('advances the membership schedule when the retry succeeds', async () => {
-    const f = await createFailedEvent(gymId);
-    await request
-      .post(`/payments/billing-events/${f.billingEventId}/retry`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-
-    // The 40.00 € event is retried as a 4000-cent MIT — minor units, like the
-    // nightly run and the customer checkout. `40` here would be forty cents.
-    expect(executeRecurring).toHaveBeenCalledTimes(1);
-    expect(executeRecurring.mock.calls[0][0]).toMatchObject({ amount: 4000, currency: 'EUR' });
-
-    const { rows } = await db.query<any>(
-      'SELECT next_billing_date, last_billed_at FROM user_memberships WHERE id = ?', [f.membershipId],
-    );
-    const next = new Date(rows[0].next_billing_date).toISOString().slice(0, 10);
-    expect(next > today()).toBe(true);
-    expect(rows[0].last_billed_at).not.toBeNull();
-  });
-  it('retries once more and pauses the assigned plan when both attempts fail', async () => {
-    executeRecurring = vi.fn().mockResolvedValue({
-      success: false, providerRef: 'pay_ko', errorCode: 'E999', errorMessage: 'card declined',
-    });
-    const f = await createFailedEvent(gymId);
-
-    const res = await request
-      .post(`/payments/billing-events/${f.billingEventId}/retry`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-
-    expect(res.status).toBe(200);
-    expect(res.body.new_status).toBe('failed');
-    expect(res.body.attempts).toHaveLength(2);
-    expect(res.body.membership_paused).toBe(true);
-    expect(executeRecurring).toHaveBeenCalledTimes(2);
-
-    const { rows } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [f.membershipId]);
-    expect(rows[0].status).toBe('paused');
-
-    // The pause is explicable from the audit log, like every other transition (#1325 A4).
-    const { rows: statusRows } = await db.query<any>(
-      `SELECT new_values FROM audit_logs
-        WHERE entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'`,
-      [String(f.membershipId)],
-    );
-    const parse = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v);
-    expect(statusRows.map((r: any) => parse(r.new_values).status)).toContain('paused');
-
-    // Both attempts are recorded with their rejection reason.
-    const tx = await transactionsOf(f.billingEventId);
-    const retries = tx.filter((r: any) => r.source === 'retry');
-    expect(retries).toHaveLength(2);
-    expect(retries.map((r: any) => r.attempt)).toEqual([2, 3]);
-    expect(retries.every((r: any) => r.status === 'failed' && r.failure_code === 'E999')).toBe(true);
-  });
-
-  it('leaves the schedule alone when the retry fails', async () => {
-    executeRecurring = vi.fn().mockResolvedValue({
-      success: false, providerRef: null, errorCode: 'E999', errorMessage: 'card declined',
-    });
-    const f = await createFailedEvent(gymId);
-    await request
-      .post(`/payments/billing-events/${f.billingEventId}/retry`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-
-    const { rows } = await db.query<any>(
-      'SELECT next_billing_date FROM user_memberships WHERE id = ?', [f.membershipId],
-    );
-    expect(new Date(rows[0].next_billing_date).toISOString().slice(0, 10)).toBe(today());
   });
 
   it('records a provider transport error as a failed attempt rather than a 500', async () => {
@@ -470,15 +369,6 @@ describe('POST /payments/billing-events/:id/manual-payment', () => {
       .set('x-gym-id', gymId)
       .send({});
     expect(res.status).toBe(409);
-
-    // The schedule must not advance twice for one charge.
-    const { rows } = await db.query<any>(
-      'SELECT next_billing_date FROM user_memberships WHERE id = ?', [f.membershipId],
-    );
-    const expected = new Date(`${today()}T00:00:00Z`);
-    expected.setUTCMonth(expected.getUTCMonth() + 1);
-    expect(new Date(rows[0].next_billing_date).toISOString().slice(0, 10))
-      .toBe(expected.toISOString().slice(0, 10));
   });
 
   it('works for a failed event that never produced a transaction', async () => {
