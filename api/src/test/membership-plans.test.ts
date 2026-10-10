@@ -1934,9 +1934,9 @@ describe('Membership Plan Pricing (#547)', () => {
       [membershipId],
     );
     const { insertId: eventId } = await db.query(
-      `INSERT INTO billing_events (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, source)
-       VALUES (?, ?, ?, ?, 'charge_created', 50.00, 'admin')`,
-      [gymId, membershipId, await ensureTestProductSet(gymId, memberId, membershipId), memberId],
+      `INSERT INTO billing_events (gym_id, product_set_id, member_id, event_type, amount, source)
+       VALUES (?, ?, ?, 'charge_created', 50.00, 'admin')`,
+      [gymId, await ensureTestProductSet(gymId, memberId, membershipId), memberId],
     );
 
     await savePricing(planId, { price: 90, tax_rate_id: taxRate21 });

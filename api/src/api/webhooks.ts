@@ -283,8 +283,8 @@ paymentWebhookRouter.post(
           if (pr.billing_event_id == null) {
             const { insertId: billingEventId } = await tx.query(
               `INSERT INTO billing_events
-                 (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
-               VALUES (?, NULL, ?, 'product_purchase', ?, ?, 'provider', NULL)`,
+                 (gym_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
+               VALUES (?, ?, 'product_purchase', ?, ?, 'provider', NULL)`,
               [pr.gym_id, pr.member_id, pr.amount, pr.charge_type_id],
             );
             await tx.query(
@@ -393,9 +393,9 @@ paymentWebhookRouter.post(
             } else {
               const { insertId: billingEventId } = await tx.query(
                 `INSERT INTO billing_events
-                   (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
-                 VALUES (?, ?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
-                [pr.gym_id, pr.user_membership_id, ownerSetId, pr.member_id, pr.amount, pr.charge_type_id],
+                   (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
+                 VALUES (?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
+                [pr.gym_id, ownerSetId, pr.member_id, pr.amount, pr.charge_type_id],
               );
               await tx.query(
                 `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,

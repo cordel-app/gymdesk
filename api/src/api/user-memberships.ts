@@ -1,3 +1,4 @@
+import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
 import { cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
@@ -488,22 +489,16 @@ async function computeBillingEventsView(gymId: string, um: {
   const applications = await loadPromotionApplications(gymId, um.id);
   const windows: PromotionApplicationWindow[] = applications.map((p) => ({ appliedAt: p.appliedAt, revokedAt: p.revokedAt }));
 
-  // #1325: an assignment a ProductSet bills has its obligations on the set's
-  // chain (`product_set_id`), not on `user_membership_id`; both are this plan's.
+  // #1325 PR 3d: an assignment's Billing Events are its ProductSet chain's.
   const { rows: beRows } = await db.query(
     `SELECT be.id, be.event_type, be.charge_type_id, be.previous_status, be.new_status, be.source,
             be.amount, be.notes, be.created_at
        FROM billing_events be
       WHERE be.gym_id = ?
-        AND (be.user_membership_id = ?
-             OR be.product_set_id IN (
-                  SELECT ps.id FROM product_sets ps
-                   WHERE ps.gym_id = ? AND ps.root_product_set_id IN (
-                           SELECT p2.root_product_set_id FROM product_sets p2
-                            WHERE p2.gym_id = ? AND p2.user_membership_id = ?)))
+        AND ${eventsOfAssignmentSql()}
         AND be.is_scheduled = 0
       ORDER BY be.created_at ASC, be.id ASC`,
-    [gymId, um.id, gymId, gymId, um.id],
+    [gymId, ...eventsOfAssignmentParams(gymId, um.id)],
   );
   const events = beRows.map((r: any) => ({ ...r, date: toDateOnly(r.created_at) }));
   return selectPersistedBillingEventsInRange({ billingStart, endsAt, promotionWindows: windows, events });
@@ -1201,9 +1196,9 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
         }
         await tx.query(
           `INSERT INTO billing_events
-             (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
-           VALUES (?, ?, ?, ?, 'payment_recorded', ?, ?, ?, ?, ?)`,
-          [gymId, req.params.id, setId, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), userId,
+             (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
+           VALUES (?, ?, ?, 'payment_recorded', ?, ?, ?, ?, ?)`,
+          [gymId, setId, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), userId,
            typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null],
         );
         await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));

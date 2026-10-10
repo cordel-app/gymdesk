@@ -235,9 +235,9 @@ async function insertBillingEvent(
   gymId: string, umId: number, memberId: number, eventType: string, amount: number, createdAt: string,
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO billing_events (gym_id, user_membership_id, product_set_id, member_id, event_type, source, amount, created_at)
-     VALUES (?, ?, ?, ?, ?, 'system', ?, ?)`,
-    [gymId, umId, await ensureTestProductSet(gymId, memberId, umId), memberId, eventType, amount, createdAt],
+    `INSERT INTO billing_events (gym_id, product_set_id, member_id, event_type, source, amount, created_at)
+     VALUES (?, ?, ?, ?, 'system', ?, ?)`,
+    [gymId, await ensureTestProductSet(gymId, memberId, umId), memberId, eventType, amount, createdAt],
   );
   return insertId;
 }
@@ -2410,7 +2410,7 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     // billing_events row at the (real, present-day) moment it was applied —
     // clear it so this test's assertions only reflect the explicit fixture
     // events below, at their controlled dates.
-    await db.query("DELETE FROM billing_events WHERE user_membership_id = ? AND event_type = 'adjustment'", [umId]);
+    await db.query("DELETE FROM billing_events WHERE gym_id = ? AND member_id = ? AND event_type = 'adjustment'", [gymId, memberId]);
 
     await insertBillingEvent(gymId, umId, memberId, 'recurring_payment', 40, '2026-01-01 10:00:00');
     await insertBillingEvent(gymId, umId, memberId, 'recurring_payment', 30, '2026-02-01 10:00:00');
@@ -2452,7 +2452,7 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     // billing_events rows at the (real, present-day) moment they happened —
     // clear them so this test's assertions only reflect the explicit
     // fixture events below, at their controlled dates.
-    await db.query("DELETE FROM billing_events WHERE user_membership_id = ? AND event_type = 'adjustment'", [umId]);
+    await db.query("DELETE FROM billing_events WHERE gym_id = ? AND member_id = ? AND event_type = 'adjustment'", [gymId, memberId]);
 
     await insertBillingEvent(gymId, umId, memberId, 'recurring_payment', 30, '2026-01-15 10:00:00');
     // After revoked_at -> not promotion-affected, and (being the only

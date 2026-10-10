@@ -658,7 +658,7 @@ infrastructure end to end and adds no second payment mechanism:
    sentence says *Es un pago único* rather than the fee's "until you cancel your
    membership".
 6. **§A5's webhook** settles it on its own branch: the request is completed, a
-   `payment_recorded` Billing Event is written with **no** `user_membership_id` (money did
+   `product_purchase` Billing Event is written with **no** ProductSet (money did
    arrive, so it belongs in the ledger the member's Payments card and the staff pages read),
    and the purchase becomes `active` with `purchased_at`. That branch deliberately stores
    **no card** (a one-off authorises one charge; #788 is where a card comes from), stamps
@@ -711,7 +711,9 @@ verification. Not a ledger: it is the transaction table.
   **228**).
 - `user_membership_id` — **nullable** since migration 228 (#1121 stage 2): a member's
   product purchase belongs to the member, and under #956 they may hold no plan at all.
-  Every reader LEFT JOINs the assignment.
+  Every reader LEFT JOINs the assignment. `billing_events` has no such column since
+  migration 256 (#1325 PR 3d): an event's assignment is its ProductSet chain's
+  (`domain/billingEventOwnership.ts`).
 - `attempt` (default 1), `failure_code`, `failure_message`, `notes` — #640.
 - `consent_given_at` (member's MIT consent), `initiated_by` (staff Clerk user id).
 
@@ -1202,9 +1204,11 @@ Expect `{ processed: 1, succeeded: 1, failed: 0, waived: 0, paused: 0, receipts_
 then:
 
 ```sql
-SELECT event_type, amount, receipt_number FROM billing_events WHERE user_membership_id = <um> ORDER BY id DESC LIMIT 3;
+SELECT be.event_type, be.amount, be.receipt_number FROM billing_events be
+  JOIN product_sets ps ON ps.id = be.product_set_id
+ WHERE ps.root_product_set_id = (SELECT root_product_set_id FROM product_sets WHERE user_membership_id = <um> LIMIT 1)
+ ORDER BY be.id DESC LIMIT 3;
 SELECT status, source, amount FROM payment_requests WHERE user_membership_id = <um> ORDER BY id DESC LIMIT 3;
-SELECT last_billed_at, next_billing_date, failed_attempts FROM user_memberships WHERE id = <um>;
 ```
 
 Expect a `recurring_payment` event **with a receipt number**, a `completed`

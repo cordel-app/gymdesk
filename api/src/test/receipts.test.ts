@@ -72,9 +72,9 @@ async function createEvent(
   const ctId = await chargeTypeId();
   const { insertId } = await db.query(
     `INSERT INTO billing_events
-       (gym_id, member_id, user_membership_id, product_set_id, event_type, charge_type_id, source, actor_user_id, amount)
-     VALUES (?, ?, ?, ?, ?, ?, 'system', NULL, ?)`,
-    [gymId, memberId, umId, await ensureTestProductSet(gymId, memberId, umId), eventType, ctId, amount],
+       (gym_id, member_id, product_set_id, event_type, charge_type_id, source, actor_user_id, amount)
+     VALUES (?, ?, ?, ?, ?, 'system', NULL, ?)`,
+    [gymId, memberId, await ensureTestProductSet(gymId, memberId, umId), eventType, ctId, amount],
   );
   if (opts.txStatus) {
     await db.query(

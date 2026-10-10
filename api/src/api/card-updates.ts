@@ -114,11 +114,11 @@ export async function createCardUpdateRequest(
     );
     const { insertId: billingEventId } = await tx.query(
       `INSERT INTO billing_events
-         (gym_id, user_membership_id, product_set_id, member_id, event_type, amount,
+         (gym_id, product_set_id, member_id, event_type, amount,
           charge_type_id, source, actor_user_id)
-       VALUES (?, ?, ?, ?, 'card_verification', 0, NULL, 'provider', ?)`,
+       VALUES (?, ?, ?, 'card_verification', 0, NULL, 'provider', ?)`,
       [
-        input.gymId, input.userMembershipId, setRows[0]?.id ?? null, input.memberId,
+        input.gymId, setRows[0]?.id ?? null, input.memberId,
         input.initiatedBy,
       ],
     );
