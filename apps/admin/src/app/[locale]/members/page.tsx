@@ -23,6 +23,7 @@ import { MemberExpandedRow } from './MemberExpandedRow';
 import { MemberDetailModal } from './MemberDetailModal';
 import { MemberEditForm } from './MemberEditForm';
 import { MemberImageField } from '@/components/MemberImageField';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import {
   emptyMemberEditForm,
   toMemberEditFormValues,
@@ -99,6 +100,8 @@ interface ListColumn extends ListGridColumn {
 // than of the Member, so it is the one of the two badges that gives way: two
 // of them plus the name leave a phone row with nothing legible in it.
 const LIST_COLUMNS: ListColumn[] = [
+  // #1376: the profile photo, first; it has no title and stays beside the name on a phone.
+  { key: 'avatar', labelKey: 'col_name'/* header is blank */, width: 44, mobile: 'keep' },
   { key: 'name', labelKey: 'col_name', width: 180, grow: 2, mobile: 'name' },
   { key: 'email', labelKey: 'col_email', width: 200, mobile: 'secondary' },
   { key: 'document', labelKey: 'col_document', width: 150, mobile: 'secondary' },
@@ -619,6 +622,9 @@ export default function MembersPage() {
             if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); }
           }}
         >
+          <div className={CELL_CLASS.avatar} style={badgeCellStyle}>
+            <MemberAvatar name={m.name} imageUrl={m.image_url} stamp={m.modified_at} />
+          </div>
           <div className={CELL_CLASS.name} style={nameCellStyle} title={m.name}>
             {m.name}
             {/* #927 §2: the calculated New Member status, so a member can be
@@ -809,7 +815,7 @@ export default function MembersPage() {
               <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
                 {LIST_COLUMNS.map((col) => (
                   <div key={col.key} className={CELL_CLASS[col.key]} style={cellStyle}>
-                    {t(`members.${col.labelKey}`)}
+                    {col.key === 'avatar' ? null : t(`members.${col.labelKey}`)}
                   </div>
                 ))}
               </div>
