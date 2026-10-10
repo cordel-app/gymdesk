@@ -175,3 +175,13 @@ describe('membersApp overrides: validation (#833)', () => {
     expect(validateMembersApp({ secondaryButtonTextColor: '#123456' })).toBeNull();
   });
 });
+
+describe('Section Card shape, border edges and shadow (#1321 stage 1)', () => {
+  it('accepts a word from each closed set and rejects anything else', () => {
+    expect(validateMembersApp({ sectionCardsShape: 'square', sectionCardsBorderEdges: 'left', sectionCardsShadow: 'strong' })).toBeNull();
+    expect(validateMembersApp({ sectionCardsShape: 'pill' })).toMatch(/must be one of/);
+    expect(validateMembersApp({ sectionCardsBorderEdges: 'diagonal' })).toMatch(/must be one of/);
+    expect(validateMembersApp({ sectionCardsShadow: 'huge' })).toMatch(/must be one of/);
+    expect(validateMembersApp({ sectionCardsShadow: 3 })).toMatch(/must be one of/);
+  });
+});

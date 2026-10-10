@@ -79,6 +79,9 @@ const TICKET_MAPPING: [string, string | null][] = [
   ['label_members_card_text_font', 'Typography body Font Family'],
   ['label_members_card_text_vertical', null],
   ['label_members_card_text_horizontal', null],
+  ['label_members_card_shape', null],
+  ['label_members_card_border_edges', null],
+  ['label_members_card_shadow', null],
   ['label_members_title1_color', 'Typography h1 Color'],
   ['label_members_title1_font', 'Typography h1 Font Family'],
   ['label_members_title2_color', 'Typography h2 Color'],
@@ -90,6 +93,8 @@ const TICKET_MAPPING: [string, string | null][] = [
   ['label_members_text3_color', 'Muted Text Color'],
   ['label_members_primary_button_color', 'Primary Button'],
   ['label_members_secondary_button_color', 'Secondary Button'],
+  ['label_members_primary_button_text_color', 'Primary Button Text'],
+  ['label_members_secondary_button_text_color', 'Secondary Button Text'],
   ['label_members_calendar_bg', 'Calendar background'],
   ['label_members_calendar_header_color', 'Calendar header background'],
   ['label_members_calendar_active_area_bg', 'Calendar Active Area Background'],
@@ -335,8 +340,14 @@ describe('#833 Members App settings: the editor', () => {
   });
 
   it('builds no Members App preview (§16)', () => {
+    // #1321 adds a live mini-card beside each Section Card effect option; that is
+    // a preview of one option, not of the Members App, so the component that
+    // draws it (and its locale key) is the one allowed mention.
+    const withoutOptionPreview = componentSrc
+      .replace(/SectionCardOptionPreview/g, '')
+      .replace(/members_card_preview/g, '');
     for (const needle of ['iframe', 'preview', 'Preview']) {
-      expect(componentSrc, `the editor introduces a ${needle}`).not.toContain(needle);
+      expect(withoutOptionPreview, `the editor introduces a ${needle}`).not.toContain(needle);
     }
   });
 
@@ -444,6 +455,9 @@ describe('#1152 Members App typography and Section Card text', () => {
     expect(keys).toEqual([
       'sectionCardsBorderColor',
       'sectionCardsBorderWidth',
+      'sectionCardsShape',
+      'sectionCardsBorderEdges',
+      'sectionCardsShadow',
       'sectionCardsTextColor',
       'sectionCardsTextSize',
       'sectionCardsTextFont',

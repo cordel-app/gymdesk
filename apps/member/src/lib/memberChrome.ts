@@ -59,6 +59,10 @@ export const memberTheme = {
   // Section cards (§3).
   cardBorderColor: 'var(--gd-members-card-border, var(--gd-card-border, #e5e7eb))',
   cardBorderWidth: 'var(--gd-members-card-border-width, 1px)',
+  // #1321 stage 1 — the card's shape and shadow (variables carry the CSS value)
+  // and the four 0/1 edge flags that scale the border width per edge.
+  cardRadius: 'var(--gd-members-card-radius, 12px)',
+  cardShadow: 'var(--gd-members-card-shadow, 0 1px 3px rgba(0,0,0,0.05))',
   // The text inside a Section Card (#1152 §3/§4) — its colour, size and font,
   // and where it sits. The two alignment variables already carry CSS property
   // values (`flex-start`/`center`/`flex-end` for `justify-content`,
@@ -108,10 +112,22 @@ export const memberTheme = {
  * dashboard spread `sectionCardStyle` below, so the ticket's list is one rule
  * rather than one rule per page.
  */
+const edgeWidth = (edge: 'top' | 'right' | 'bottom' | 'left') =>
+  `calc(var(--gd-members-card-edges-${edge}, 1) * ${memberTheme.cardBorderWidth})`;
+
 export const sectionCardBorder: CSSProperties = {
   borderStyle: 'solid',
   borderColor: memberTheme.cardBorderColor,
-  borderWidth: memberTheme.cardBorderWidth,
+  borderTopWidth: edgeWidth('top'),
+  borderRightWidth: edgeWidth('right'),
+  borderBottomWidth: edgeWidth('bottom'),
+  borderLeftWidth: edgeWidth('left'),
+};
+
+/** A Section Card's shape and shadow (#1321 stage 1): the Shape and Shadow settings. */
+export const sectionCardShape: CSSProperties = {
+  borderRadius: memberTheme.cardRadius,
+  boxShadow: memberTheme.cardShadow,
 };
 
 /**
@@ -141,7 +157,7 @@ export const sectionCardText: CSSProperties = {
 /** The surface a section's contents sit in: the card background plus that border. */
 export const sectionCardStyle: CSSProperties = {
   background: memberTheme.surface,
-  borderRadius: 12,
+  ...sectionCardShape,
   ...sectionCardBorder,
 };
 

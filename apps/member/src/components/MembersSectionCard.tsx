@@ -2,7 +2,7 @@
 
 import { createElement, type CSSProperties, type ReactNode } from 'react';
 import { useApp } from '@/context/AppContext';
-import { sectionCardBorder, sectionCardText } from '@/lib/memberChrome';
+import { sectionCardBorder, sectionCardShape, sectionCardText } from '@/lib/memberChrome';
 import {
   backgroundUrlForSlot,
   cardBackgroundStyleValue,
@@ -89,7 +89,7 @@ export function MembersSectionCard({ slot, as = 'div', style, children, ...rest 
     {
       ...(as === 'button' ? { type: 'button' as const } : {}),
       ...rest,
-      style: { ...sectionCardText, ...style, ...(background ? { background } : {}), ...sectionCardBorder },
+      style: { ...sectionCardText, ...style, ...(background ? { background } : {}), ...sectionCardShape, ...sectionCardBorder },
     },
     children,
   );

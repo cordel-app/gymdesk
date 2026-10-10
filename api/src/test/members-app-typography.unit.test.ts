@@ -95,8 +95,8 @@ describe('#1152 — every new setting reaches a surface', () => {
 
   it('paints a Section Card’s text under the caller’s own style, in the one card component', () => {
     const card = read(MEMBER, 'components', 'MembersSectionCard.tsx');
-    expect(card).toContain("import { sectionCardBorder, sectionCardText } from '@/lib/memberChrome';");
-    expect(card).toContain('style: { ...sectionCardText, ...style, ...(background ? { background } : {}), ...sectionCardBorder }');
+    expect(card).toContain("import { sectionCardBorder, sectionCardShape, sectionCardText } from '@/lib/memberChrome';");
+    expect(card).toContain('style: { ...sectionCardText, ...style, ...(background ? { background } : {}), ...sectionCardShape, ...sectionCardBorder }');
   });
 
   it('keeps the navigation tile free of the five text properties, so the Theme decides them', () => {
