@@ -130,7 +130,7 @@ const styles: Record<string, CSSProperties> = {
   heading: { margin: 0, fontSize: 16, fontWeight: 600, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   closeBtn: { background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: memberTheme.textMuted },
   list: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
-  card: { ...sectionCardStyle, borderRadius: 10, padding: '12px 14px' },
+  card: { ...sectionCardStyle, padding: '12px 14px' },
   head: { display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   name: { fontSize: 14.5, fontWeight: 600, color: memberTheme.text, minWidth: 0 },
   priceGroup: { display: 'flex', alignItems: 'baseline', gap: 4, flexWrap: 'wrap' },
@@ -148,6 +148,6 @@ const styles: Record<string, CSSProperties> = {
   finalLabel: { fontSize: 12.5, color: memberTheme.textSecondary },
   finalPrice: { fontSize: 15, fontWeight: 700, color: memberTheme.text, fontVariantNumeric: 'tabular-nums' },
   action: { display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  emptyCard: { ...sectionCardStyle, borderRadius: 10, padding: '16px 14px' },
+  emptyCard: { ...sectionCardStyle, padding: '16px 14px' },
   empty: { margin: 0, fontSize: 13, color: memberTheme.textMuted },
 };

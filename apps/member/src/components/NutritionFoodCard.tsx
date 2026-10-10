@@ -81,7 +81,7 @@ export const FOOD_IMAGE_MOBILE_CSS =
   '@media (max-width: 768px) { .gd-food-image { width: 50% !important; margin: 0 auto; } }';
 
 const styles: Record<string, React.CSSProperties> = {
-  card:        { ...sectionCardStyle, boxShadow: '0 1px 3px rgba(0,0,0,0.05)', overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' },
+  card:        { ...sectionCardStyle, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' },
   imageBox:    { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground },
   image:       { width: '100%', height: '100%', objectFit: 'contain', display: 'block' },
   placeholder: { color: memberTheme.textMuted, fontSize: 12, textAlign: 'center', padding: '0 12px' },

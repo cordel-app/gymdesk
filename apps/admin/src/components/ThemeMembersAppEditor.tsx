@@ -2,7 +2,9 @@
 
 import { useState } from 'react';
 import { FONT_STACKS, type ThemeTokens } from '@/lib/themeTokens';
+import { SectionCardOptionPreview } from '@/components/SectionCardOptionPreview';
 import {
+  MEMBERS_APP_CARD_OPTIONS,
   MEMBERS_APP_FONT_SIZE,
   MEMBERS_APP_HORIZONTAL_ALIGNMENTS,
   MEMBERS_APP_SECTIONS,
@@ -110,6 +112,19 @@ export function ThemeMembersAppEditor({ tokens, onChange, t, readOnly, images }:
         <select value={String(value)} disabled={readOnly} onChange={(e) => set(e.target.value)} style={SELECT}>
           {options.map((o) => <option key={o} value={o}>{t(`members_align_${o}`)}</option>)}
         </select>
+      );
+    }
+    // #1321 stage 1 — Shape, Border edges and Shadow are closed sets, each with
+    // a live mini-card beside the select showing what the chosen option looks like.
+    if (setting.type === 'card-shape' || setting.type === 'card-edges' || setting.type === 'card-shadow') {
+      const prefix = setting.type === 'card-shape' ? 'shape' : setting.type === 'card-edges' ? 'edges' : 'shadow';
+      return (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <select value={String(value)} disabled={readOnly} onChange={(e) => set(e.target.value)} style={SELECT}>
+            {MEMBERS_APP_CARD_OPTIONS[setting.type].map((o) => <option key={o} value={o}>{t(`members_card_${prefix}_${o}`)}</option>)}
+          </select>
+          <SectionCardOptionPreview type={setting.type} value={String(value)} title={t('members_card_preview')} />
+        </span>
       );
     }
     if (setting.type === 'font-size') {

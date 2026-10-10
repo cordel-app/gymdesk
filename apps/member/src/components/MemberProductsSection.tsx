@@ -136,7 +136,7 @@ const styles: Record<string, CSSProperties> = {
   section: { marginTop: 24 },
   heading: { margin: '0 0 12px', fontSize: 16, fontWeight: 600, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   list: { listStyle: 'none', padding: 0, margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
-  card: { ...sectionCardStyle, borderRadius: 10, padding: '12px 14px' },
+  card: { ...sectionCardStyle, padding: '12px 14px' },
   head: {
     display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
     gap: 10, flexWrap: 'wrap',
@@ -176,6 +176,6 @@ const styles: Record<string, CSSProperties> = {
   promotionAction: {
     display: 'flex', justifyContent: 'flex-end', flexWrap: 'wrap', gap: 8, marginTop: 8,
   },
-  emptyCard: { ...sectionCardStyle, borderRadius: 10, padding: '16px 14px' },
+  emptyCard: { ...sectionCardStyle, padding: '16px 14px' },
   empty: { margin: 0, fontSize: 13, color: memberTheme.textMuted },
 };

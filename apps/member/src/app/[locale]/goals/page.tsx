@@ -706,7 +706,7 @@ const styles: Record<string, React.CSSProperties> = {
   title:      { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   section:    { marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 12 },
-  card:       { ...sectionCardStyle, padding: '14px 18px', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' },
+  card:       { ...sectionCardStyle, padding: '14px 18px' },
   pastCard:   { opacity: 0.85 },
   pastHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   goalName:   { margin: 0, fontSize: 16, fontWeight: 700, color: memberTheme.text },

@@ -1,6 +1,7 @@
 /**
  * #964 §18 — the Base Exercises list, filtered server-side over the columns
- * migration 209 added: name **or** slug, the five source metadata values, and
+ * migration 209 added: name (never the slug, since #1356), the five source
+ * metadata values, and
  * multi-select muscle filtering in all three flavours (either role, primary,
  * secondary).
  *
@@ -195,8 +196,9 @@ describe('§18 — search and filtering', () => {
     expect(names(res.body)).toEqual([`Treadmill Interval ${suffix}`]);
   });
 
-  it('q no longer matches the slug (#1356)', async () => {
+  it('q never matches the slug (#1356: an internal identifier)', async () => {
     const res = await list(`?q=dumbbell-row-${suffix}`);
+    expect(res.status).toBe(200);
     expect(names(res.body)).toEqual([]);
   });
 
@@ -253,18 +255,23 @@ describe('§18 — search and filtering', () => {
 });
 
 /**
- * #969 — what the inline filter toolbar adds on top of #964's query: a Slug
- * field of its own (§4), `Any`/`All` within the muscle filter (§6), and the
- * facets the Equipment and Category dropdowns are built from (§8, §9, §14).
+ * #969 — what the inline filter toolbar adds on top of #964's query:
+ * `Any`/`All` within the muscle filter (§6) and the facets the Equipment and
+ * Category dropdowns are built from (§8, §9, §14). The Slug field §4 added was
+ * removed by #1356: the slug is an internal identifier and `?slug=` is ignored.
  *
  * Deliberately **no pagination**: the thread's `Q3` answer is "do not paginate,
  * display all", so the list response is still the plain array and §14's count
  * is the toolbar's own.
  */
 describe('#969 — the filter toolbar’s own parameters', () => {
-  it('§4 — #1356 removed the slug filter: ?slug= narrows nothing', async () => {
-    const all = names((await list('')).body).length;
-    expect(names((await list(`?slug=barbell-bench-press-${suffix}`)).body).length).toBe(all);
+  it('§4 is gone — ?slug= is ignored rather than refused (#1356)', async () => {
+    const res = await list(`?slug=barbell-bench-press-${suffix}`);
+    expect(res.status).toBe(200);
+    expect(names(res.body).length).toBe(3);
+    // Nor does it narrow a ?q= it is combined with.
+    expect(names((await list(`?q=Barbell&slug=treadmill-interval-${suffix}`)).body))
+      .toEqual([`Barbell Bench Press ${suffix}`]);
   });
 
   it('§6 — muscle_match=any is the default, and ORs the checked muscles', async () => {
