@@ -34,6 +34,7 @@ const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
 /** The columns the list had before #928, in order (§3 keeps every one). */
 const EXPECTED_COLUMNS = [
+  'avatar', // #1376: the profile photo, first, with no title of its own
   'name',
   'email',
   'document',
@@ -44,6 +45,7 @@ const EXPECTED_COLUMNS = [
 
 /** Their titles, which were already translated — #928 adds no column. */
 const EXPECTED_COLUMN_LABELS = [
+  'col_name', // the avatar's (unrendered) key
   'col_name',
   'col_email',
   'col_document',
@@ -127,7 +129,7 @@ describe('Members list: one list with Products (#928)', () => {
   });
 
   it('renders the column titles from that list, not from a second one', () => {
-    expect(pageSrc).toMatch(/\{t\(`members\.\$\{col\.labelKey\}`\)\}/);
+    expect(pageSrc).toMatch(/t\(`members\.\$\{col\.labelKey\}`\)/);
     expect(pageSrc, 'the DataTable column list is still around').not.toMatch(/Column<Member>/);
     expect(pageSrc, 'the page still renders a DataTable').not.toMatch(/<DataTable/);
   });
