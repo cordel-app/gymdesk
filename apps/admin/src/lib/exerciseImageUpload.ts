@@ -96,7 +96,22 @@ export async function blobToBase64(blob: Blob): Promise<string> {
  * no cropping or letterboxing, and the image is neither distorted nor
  * re-centred (§5).
  */
-export async function makeThumbnail(file: Blob, size = EXERCISE_IMAGE_THUMBNAIL_SIZE): Promise<Blob | null> {
+export async function makeThumbnail(
+  file: Blob,
+  size = EXERCISE_IMAGE_THUMBNAIL_SIZE,
+  options: {
+    /**
+     * #1374: centre-crop a non-square source to its largest square before
+     * scaling, rather than squashing it — a Member's photograph comes off a
+     * phone in portrait, and a face drawn into a square at the wrong ratio is
+     * the one thing this helper must never do to one. Off by default, because
+     * the exercise flow refuses a non-square source before it gets here and a
+     * crop would silently discard part of an image the server is about to
+     * validate as a square.
+     */
+    cropToSquare?: boolean;
+  } = {},
+): Promise<Blob | null> {
   const url = URL.createObjectURL(file);
   try {
     const image = await new Promise<HTMLImageElement | null>((resolve) => {
@@ -113,7 +128,14 @@ export async function makeThumbnail(file: Blob, size = EXERCISE_IMAGE_THUMBNAIL_
     if (!ctx) return null;
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(image, 0, 0, size, size);
+    if (options.cropToSquare) {
+      const side = Math.min(image.naturalWidth, image.naturalHeight);
+      const sx = Math.floor((image.naturalWidth - side) / 2);
+      const sy = Math.floor((image.naturalHeight - side) / 2);
+      ctx.drawImage(image, sx, sy, side, side, 0, 0, size, size);
+    } else {
+      ctx.drawImage(image, 0, 0, size, size);
+    }
     return await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
   } catch {
     return null;

@@ -22,6 +22,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { MemberExpandedRow } from './MemberExpandedRow';
 import { MemberDetailModal } from './MemberDetailModal';
 import { MemberEditForm } from './MemberEditForm';
+import { MemberImageField } from '@/components/MemberImageField';
 import {
   emptyMemberEditForm,
   toMemberEditFormValues,
@@ -128,7 +129,7 @@ export default function MembersPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
-  const { apiFetch } = useApiClient();
+  const { apiFetch, uploadFetch } = useApiClient();
   const { activeGymId, activeGym, isSuperadmin, loading: gymLoading } = useGym();
   const { centers } = useCenter();
   const { toast } = useToast();
@@ -141,6 +142,13 @@ export default function MembersPage() {
   const [enrollmentStatusFilter, setEnrollmentStatusFilter] = useState<string>(searchParams.get('enrollment_status') ?? '');
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  // #1374 §2: the image picked in the Add modal is held here until the Member
+  // exists — the object key needs the id — and uploaded right after the POST.
+  const [addImage, setAddImage] = useState<Blob | null>(null);
+  // A file whose post-create upload failed: the Member was created, so the
+  // modal closes, and the row opens in Edit mode showing the error and a Retry
+  // rather than silently dropping either (§2 "do not silently discard").
+  const [imageRetry, setImageRetry] = useState<{ file: Blob; error: string } | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -280,6 +288,7 @@ export default function MembersPage() {
 
   function openAdd() {
     setForm(emptyForm);
+    setAddImage(null);
     setError(null);
     setAssignedCenterIds(centers.length === 1 ? new Set([centers[0].id]) : new Set());
     setDefaultCenterId(centers.length === 1 ? centers[0].id : null);
@@ -289,6 +298,7 @@ export default function MembersPage() {
   function closeModal() {
     setModalOpen(false);
     setForm(emptyForm);
+    setAddImage(null);
     setError(null);
     setAssignedCenterIds(new Set());
     setDefaultCenterId(null);
@@ -330,9 +340,32 @@ export default function MembersPage() {
         body.center_ids = Array.from(assignedCenterIds);
         body.default_center_id = defaultCenterId;
       }
-      await apiFetch('/members', { method: 'POST', body: JSON.stringify(body) });
+      const created = await apiFetch<{ id: number }>('/members', { method: 'POST', body: JSON.stringify(body) });
+      const stagedImage = addImage;
       closeModal();
-      load();
+      // #1374 §2: the Member exists now, so the staged image can be uploaded.
+      // A failure here is not a failed creation: the row is kept, the list
+      // reloads, and the new Member opens in Edit mode with the error and the
+      // file still at hand for a Retry.
+      let uploadFailure: { file: Blob; error: string } | null = null;
+      if (stagedImage) {
+        try {
+          await uploadFetch(`/members/${created.id}/image`, stagedImage);
+        } catch (err: any) {
+          uploadFailure = { file: stagedImage, error: err.message ?? t('members.image_error_upload_failed') };
+        }
+      }
+      await load();
+      if (uploadFailure) {
+        toast(t('members.image_created_upload_failed'));
+        try {
+          const row = await apiFetch<Member>(`/members/${created.id}`);
+          setImageRetry(uploadFailure);
+          await startEdit(row);
+        } catch {
+          // The row is in the list; the error is already on the toast.
+        }
+      }
     } catch (err: any) {
       toast(err.message ?? t('members.error_generic'));
     } finally {
@@ -373,6 +406,7 @@ export default function MembersPage() {
     setEditingId(null);
     setEditForm(emptyMemberEditForm);
     setEditError(null);
+    setImageRetry(null);
     setEditAssignedCenterIds(new Set());
     setEditDefaultCenterId(null);
   }
@@ -417,6 +451,7 @@ export default function MembersPage() {
         });
       }
       setEditingId(null);
+      setImageRetry(null);
       setProfileVersion((v) => v + 1);
       load();
     } catch (err: any) {
@@ -424,6 +459,17 @@ export default function MembersPage() {
     } finally {
       setEditSaving(false);
     }
+  }
+
+  /**
+   * #1374: the image control answers with the Member as `GET /:id` shapes it,
+   * so the list row — which is what the read-only Profile and the Edit form
+   * both read (#800) — is replaced in place rather than re-fetched.
+   */
+  function replaceMember(updated: unknown) {
+    const row = updated as Member;
+    if (!row || typeof row.id !== 'number') return;
+    setMembers((prev) => prev.map((x) => (x.id === row.id ? { ...x, ...row } : x)));
   }
 
   // #709: ConfirmDialog, not window.confirm() — like the rest of the admin
@@ -638,6 +684,14 @@ export default function MembersPage() {
                 isNewMember={m.is_new_member}
                 error={editError}
                 saving={editSaving}
+                image={{
+                  memberId: m.id,
+                  imageUrl: m.image_url ?? null,
+                  stamp: m.modified_at,
+                  onChanged: replaceMember,
+                  retry: imageRetry,
+                  onRetryConsumed: () => setImageRetry(null),
+                }}
                 showCenters={showCenters}
                 centers={centers}
                 assignedCenterIds={editAssignedCenterIds}
@@ -784,6 +838,14 @@ export default function MembersPage() {
             <label style={labelStyle}>{t('members.label_document')}</label>
             <input style={inputStyle} value={form.nif_nie_passport} onChange={(e) => setForm({ ...form, nif_nie_passport: e.target.value })} placeholder={t('members.placeholder_document')} />
             <p style={helpTextStyle}>{t('members.help_document')}</p>
+
+            {/* #1374 §2: staged, not uploaded — the Member has no id yet. */}
+            <label style={labelStyle}>{t('members.label_image')}</label>
+            <MemberImageField
+              target={{ kind: 'staged', file: addImage, onFile: setAddImage }}
+              disabled={saving}
+              label={(key) => t(`members.${key}`)}
+            />
 
             {plans.length > 0 && (
               <>

@@ -25,6 +25,7 @@ import {
   type MemberEditFormValues,
 } from './memberProfile';
 import { MemberProfileLayout, NewMemberValue } from './MemberProfileLayout';
+import { MemberImageField } from '@/components/MemberImageField';
 
 // #797: the field set itself lives in memberProfile.ts, shared with the
 // read-only PROFILE section of the expanded row so the two cannot drift apart.
@@ -40,11 +41,26 @@ export type { MemberEditFormValues };
 
 export function MemberEditForm({
   form, isNewMember, error, saving,
+  image,
   showCenters, centers, assignedCenterIds, defaultCenterId,
   onChange, onToggleCenter, onDefaultCenterChange,
   onSave, onCancel,
 }: {
   form: MemberEditFormValues;
+  /**
+   * #1374 — the Member's profile image. Not form state: the control uploads
+   * and removes through the Member's own image routes the moment staff act,
+   * and hands the page the row that came back, so Save neither carries nor can
+   * undo it (the key needs the id, which an existing Member has).
+   */
+  image: {
+    memberId: number;
+    imageUrl: string | null;
+    stamp: string | null | undefined;
+    onChanged: (member: unknown) => void;
+    retry: { file: Blob; error: string } | null;
+    onRetryConsumed: () => void;
+  };
   /**
    * #927 §4/§5 — the Member's calculated `New Member` status, shown here
    * exactly as the read-only Profile shows it. It is not form state: there is
@@ -123,6 +139,16 @@ export function MemberEditForm({
           modes swaps the controls and moves nothing else (#929 §3). */}
       <div style={innerCardStyle}>
         <MemberProfileLayout
+          image={{
+            label: t('label_image'),
+            content: (
+              <MemberImageField
+                target={{ kind: 'immediate', ...image }}
+                disabled={saving}
+                label={(key) => t(key)}
+              />
+            ),
+          }}
           fieldLabel={(field) => t(field.editLabelKey)}
           renderField={renderField}
           renderCalculated={() => (

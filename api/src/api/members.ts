@@ -1,5 +1,6 @@
 import { memberInviteMetadata } from '../domain/memberInviteTarget';
 import { Router } from 'express';
+import express from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { soleActiveCenterId } from '../infra/centerContext';
@@ -14,6 +15,31 @@ import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
 import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
 import { isNewMemberStatus, newMemberStatusByMember } from './new-member-eligibility';
 import { loadMemberPurchases } from './member-product-promotions';
+// Where a Member's profile image goes and what counts as a valid one is decided
+// in one place (#1374); this router owns the bytes, the row and the permission.
+import {
+  MEMBER_IMAGE_MAX_BYTES,
+  MEMBER_IMAGE_MIME,
+  MEMBER_IMAGE_REJECTION_MESSAGES,
+  buildMemberImageKey,
+  isGymOwnedMemberImageUrl,
+  memberImageFolderKeys,
+  validateMemberImage,
+} from '../domain/memberImages';
+import {
+  buildStorageObjectUrl,
+  copyStorageObject,
+  deleteStorageObject,
+  describeStorageError,
+  ensureStorageFolders,
+  getMissingStorageConfigKeys,
+  getStorageDiagnostics,
+  isStorageConfigured,
+  StorageOperationError,
+  storageKeyFromObjectUrl,
+  uploadStorageObject,
+} from '../infra/storage';
+import { logger } from '../lib/logger';
 
 /**
  * #513: never write the raw nif_nie_passport value into audit_logs — mask it
@@ -149,8 +175,13 @@ membersRouter.get('/count', async (req, res) => {
   res.json({ count: Number(rows[0].count) });
 });
 
-membersRouter.get('/:id', async (req, res) => {
-  const { gymId } = getTenantContext(req);
+/**
+ * One Member as `GET /:id` answers it — the row plus the three calculated
+ * fields — so the image routes below return exactly the shape the page already
+ * holds for the row (#800: `⋮ → Edit` seeds its form from the list row, and the
+ * image control hands the page the row that came back).
+ */
+async function loadMemberDetail(gymId: string, id: number | string): Promise<Record<string, any> | null> {
   const { rows } = await db.query(
     `SELECT m.*,
             cb.name AS created_by_name,
@@ -159,9 +190,9 @@ membersRouter.get('/:id', async (req, res) => {
      LEFT JOIN gym_memberships cb ON cb.id = m.created_by
      LEFT JOIN gym_memberships mb ON mb.id = m.modified_by
      WHERE m.id = ? AND m.gym_id = ? AND m.deleted_at IS NULL`,
-    [req.params.id, gymId],
+    [id, gymId],
   );
-  if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
+  if (!rows[0]) return null;
   // #927 §5: the same calculated status as the list, from the same rule — a
   // second reader of a Member must not be able to answer it differently.
   const isNewMember = await isNewMemberStatus(db, gymId, Number(rows[0].id));
@@ -170,13 +201,20 @@ membersRouter.get('/:id', async (req, res) => {
     [rows[0].id, gymId],
   );
   const paymentStatus = ps[0]?.payment_status ?? null;
-  res.json({
+  return {
     ...rows[0],
     is_new_member: isNewMember,
     payment_status: paymentStatus,
     access_rights_stored: rows[0].access_rights,
     access_rights: deriveAccessRights(rows[0].access_rights, paymentStatus),
-  });
+  };
+}
+
+membersRouter.get('/:id', async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const member = await loadMemberDetail(gymId, req.params.id);
+  if (!member) return res.status(404).json({ error: 'Member not found' });
+  res.json(member);
 });
 
 /**
@@ -354,11 +392,257 @@ membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) 
       'SELECT * FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
       [req.params.id, gymId],
     );
+    // #1374 §5: the image key carries the member's name, so a rename moves it —
+    // after the row has committed, and never by deleting first.
+    const migratedImageUrl = await migrateMemberImageOnRename(gymId, rows[0]);
+    if (migratedImageUrl) rows[0].image_url = migratedImageUrl;
     recordAudit(req, { action: 'update', entityType: 'member', entityId: req.params.id, next: forAudit(rows[0]) });
     res.json(rows[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A member with this email already exists.');
   }
+});
+
+/* ── Profile image (#1374) ──────────────────────────────────────────────────── */
+//
+// The reference implementation is the Personal Goal image (#1035 stage 2,
+// `goal-library.ts`): raw PNG bytes in, validated from the bytes, stored under a
+// key built from the row's own id and name, the row written only after the
+// object is in R2, and the previous object swept only when the key genuinely
+// moved and only when it is this gym's own. The route takes neither the folder
+// nor the key from the request: the prefix is the gym's `storage_folder_prefix`,
+// the member is looked up inside the tenant, and nothing a client sends can
+// reach another gym's folder (#719 §18).
+//
+// A soft-deleted Member keeps both the column and the object: Members have a
+// Recycle Bin restore, and every other media feature leaves objects alone on a
+// soft delete. The Member's own `/me` pair is #1375's.
+
+/** The gym's own R2 folder prefix, or null for a gym whose bucket was never initialized. */
+async function gymStorageFolderPrefix(gymId: string): Promise<string | null> {
+  const { rows } = await db.query<{ storage_folder_prefix: string | null }>(
+    'SELECT storage_folder_prefix FROM gyms WHERE id = ? AND deleted_at IS NULL',
+    [gymId],
+  );
+  return rows[0]?.storage_folder_prefix ?? null;
+}
+
+/**
+ * Best-effort removal of the object a member has stopped pointing at, always
+ * *after* the row has moved: a failure here leaves an orphan to sweep rather
+ * than a member pointing at nothing. `isGymOwnedMemberImageUrl()` keeps another
+ * gym's object, another feature's and an external URL out of this.
+ *
+ * No "is anything else still pointing at this?" check: nothing copies a
+ * member's image reference, and the key carries the row's own id, so two
+ * members cannot share an object by construction.
+ */
+async function sweepReplacedMemberImage(
+  folderPrefix: string | null,
+  memberId: number | string,
+  staleUrl: string | null,
+  keepUrl: string | null,
+): Promise<void> {
+  if (!staleUrl || staleUrl === keepUrl) return;
+  if (!isGymOwnedMemberImageUrl(staleUrl, folderPrefix)) return;
+  const staleKey = storageKeyFromObjectUrl(staleUrl);
+  if (!staleKey) return;
+  const keepKey = keepUrl ? storageKeyFromObjectUrl(keepUrl) : null;
+  if (keepKey && staleKey === keepKey) return;
+  try {
+    await deleteStorageObject(staleKey);
+  } catch (err: any) {
+    const details = err instanceof StorageOperationError
+      ? err.details
+      : describeStorageError(err, { operation: 'deleteStorageObject', key: staleKey });
+    logger.warn({ err, details, memberId }, 'Replaced member image left an orphaned object in Cloudflare R2');
+  }
+}
+
+/**
+ * #1374 §5: after a rename, moves the member's image onto the key the new name
+ * builds — copy to the new key, point the row at it, and only then delete the
+ * old object — and answers the new URL, or `null` when nothing moved.
+ *
+ * Every step is best-effort and logged: a copy that fails leaves the row on the
+ * old URL, which still renders (the object is still there), and the next upload
+ * lands on the new key and sweeps the old one. Only an object this gym owns
+ * under `members/` is moved; a URL that is not ours is left exactly as stored.
+ * Nothing here runs when the key did not change (deterministic key: the same
+ * name builds the same key).
+ */
+async function migrateMemberImageOnRename(
+  gymId: string,
+  member: { id: number; name: string; image_url: string | null },
+): Promise<string | null> {
+  if (!member.image_url || !isStorageConfigured()) return null;
+  const folderPrefix = await gymStorageFolderPrefix(gymId);
+  if (!folderPrefix || !isGymOwnedMemberImageUrl(member.image_url, folderPrefix)) return null;
+  const oldKey = storageKeyFromObjectUrl(member.image_url);
+  const newKey = buildMemberImageKey(folderPrefix, member.id, member.name);
+  if (!oldKey || oldKey === newKey) return null;
+  const newUrl = buildStorageObjectUrl(newKey) as string;
+  try {
+    await copyStorageObject(oldKey, newKey);
+  } catch (err: any) {
+    const details = err instanceof StorageOperationError
+      ? err.details
+      : describeStorageError(err, { operation: 'copyStorageObject', key: newKey });
+    logger.warn({ err, details, memberId: member.id }, 'Renamed member kept its image on the previous key: copy failed');
+    return null;
+  }
+  await db.query('UPDATE members SET image_url = ? WHERE id = ? AND gym_id = ?', [newUrl, member.id, gymId]);
+  await sweepReplacedMemberImage(folderPrefix, member.id, member.image_url, newUrl);
+  return newUrl;
+}
+
+/**
+ * The gym-owned, live member this request is about, or the response that says
+ * why there isn't one. Another gym's member is a 404, whatever the payload says.
+ */
+async function loadMemberForImage(
+  req: any,
+  res: any,
+  options: { requireStoragePrefix: boolean },
+): Promise<{ gymId: string; folderPrefix: string | null; member: { id: number; name: string; image_url: string | null } } | null> {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query<{ id: number; name: string; image_url: string | null }>(
+    'SELECT id, name, image_url FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  const row = rows[0];
+  if (!row) {
+    res.status(404).json({ error: 'Member not found' });
+    return null;
+  }
+  const folderPrefix = await gymStorageFolderPrefix(gymId);
+  if (!folderPrefix && options.requireStoragePrefix) {
+    res.status(409).json({
+      error: 'Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.',
+    });
+    return null;
+  }
+  return { gymId, folderPrefix, member: { id: row.id, name: row.name, image_url: row.image_url } };
+}
+
+membersRouter.post(
+  '/:id/image',
+  requireModuleWrite('MEMBERS'),
+  // Raw bytes rather than JSON-with-base64: one file, so there is no pair to
+  // keep atomic, and this is the shape `POST /personal-goals/:id/image` takes.
+  // `express.json()` only parses `application/json`, so no app-level parser has
+  // to move for this.
+  express.raw({
+    type: (req: any) => (req.headers['content-type'] ?? '').startsWith('image/'),
+    limit: MEMBER_IMAGE_MAX_BYTES + 64 * 1024,
+  }),
+  async (req, res, next) => {
+    try {
+      const mime = req.headers['content-type']?.split(';')[0]?.trim();
+      if (mime !== MEMBER_IMAGE_MIME) {
+        return res.status(415).json({ error: `Unsupported image type. Allowed: ${MEMBER_IMAGE_MIME}` });
+      }
+      // `req.body` is whatever a parser left there, and a request can make that
+      // a string or an array — both carry a `length` and numeric indices, so
+      // they would flow into the size and signature checks as if they were bytes.
+      const raw: unknown = req.body;
+      if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
+        return res.status(400).json({ error: 'Request body must be raw image bytes' });
+      }
+      const body: Buffer = raw;
+      if (body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
+      if (body.length > MEMBER_IMAGE_MAX_BYTES) {
+        return res.status(413).json({ error: `Image exceeds ${MEMBER_IMAGE_MAX_BYTES / (1024 * 1024)} MB limit` });
+      }
+      const rejection = validateMemberImage(body);
+      if (rejection) {
+        return res.status(400).json({ error: MEMBER_IMAGE_REJECTION_MESSAGES[rejection], reason: rejection });
+      }
+
+      if (!isStorageConfigured()) {
+        const missingConfig = getMissingStorageConfigKeys();
+        return res.status(503).json({
+          error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
+          missingConfig,
+        });
+      }
+
+      const context = await loadMemberForImage(req, res, { requireStoragePrefix: true });
+      if (!context) return;
+      const { gymId, member } = context;
+      const folderPrefix = context.folderPrefix as string;
+
+      const key = buildMemberImageKey(folderPrefix, member.id, member.name);
+      const url = buildStorageObjectUrl(key);
+
+      try {
+        await ensureStorageFolders(memberImageFolderKeys(folderPrefix));
+        await uploadStorageObject(key, MEMBER_IMAGE_MIME, body);
+      } catch (err: any) {
+        const details = err instanceof StorageOperationError
+          ? err.details
+          : describeStorageError(err, { operation: 'uploadStorageObject', key });
+        logger.error(
+          { err, details, diagnostics: getStorageDiagnostics(), gymId, memberId: member.id },
+          'Cloudflare R2 member image upload failed',
+        );
+        // The row still points at whatever it pointed at before, so the
+        // previous image stays visible — nothing was written.
+        return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
+      }
+
+      const { gymMembershipId } = getTenantContext(req);
+      await db.query(
+        `UPDATE members SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+         WHERE id = ? AND gym_id = ?`,
+        [url, gymMembershipId ?? null, member.id, gymId],
+      );
+
+      // The key is deterministic, so a replacement normally overwrites its own
+      // object and there is nothing to sweep. What this catches is a key that
+      // genuinely moved: a rename whose copy failed, or an image that predates
+      // this shape.
+      await sweepReplacedMemberImage(folderPrefix, member.id, member.image_url, url);
+
+      const updated = await loadMemberDetail(gymId, member.id);
+      recordAudit(req, {
+        action: 'update', entityType: 'member', entityId: member.id,
+        previous: { image_url: member.image_url }, next: { image_url: url },
+      });
+      res.json(updated);
+    } catch (err) { next(err); }
+  },
+);
+
+/**
+ * Clears a member's image. The reference goes and the gym's own object is
+ * deleted; an object that is not the gym's is left alone. No folder is needed
+ * to clear a reference, so a gym with no bucket can still remove one.
+ */
+membersRouter.delete('/:id/image', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  try {
+    const context = await loadMemberForImage(req, res, { requireStoragePrefix: false });
+    if (!context) return;
+    const { gymId, folderPrefix, member } = context;
+
+    const { gymMembershipId } = getTenantContext(req);
+    await db.query(
+      `UPDATE members SET image_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
+       WHERE id = ? AND gym_id = ?`,
+      [gymMembershipId ?? null, member.id, gymId],
+    );
+
+    if (isStorageConfigured()) {
+      await sweepReplacedMemberImage(folderPrefix, member.id, member.image_url, null);
+    }
+
+    const updated = await loadMemberDetail(gymId, member.id);
+    recordAudit(req, {
+      action: 'update', entityType: 'member', entityId: member.id,
+      previous: { image_url: member.image_url }, next: { image_url: null },
+    });
+    res.json(updated);
+  } catch (err) { next(err); }
 });
 
 membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res, next) => {

@@ -43,6 +43,7 @@ import {
   type MemberProfile,
 } from './memberProfile';
 import { MemberProfileLayout, NewMemberValue, profileValueStyle } from './MemberProfileLayout';
+import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import type { MemberTabId } from './memberTabs';
 import { MemberProfessionalServices } from './MemberProfessionalServices';
 
@@ -348,6 +349,17 @@ export function MemberExpandedRow({
             <Section label={t('members.section_profile')} divider={false}>
               <div style={card}>
                 <MemberProfileLayout
+                  /* #1374: the image is a value here — the same frame the Edit
+                     form draws its control in, with no upload and no remove. */
+                  image={{
+                    label: t('members.label_image'),
+                    content: (
+                      <MemberImagePreview
+                        src={memberImagePreviewSrc(member.image_url, member.modified_at)}
+                        emptyLabel={t('members.image_none')}
+                      />
+                    ),
+                  }}
                   fieldLabel={(f) => t(`members.${f.labelKey}`)}
                   renderField={(f) => (
                     <p style={profileValueStyle}>

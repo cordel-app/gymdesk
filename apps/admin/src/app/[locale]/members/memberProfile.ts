@@ -125,7 +125,14 @@ export type MemberProfile =
    * list, the Profile and the Promotion apply paths all answer with one rule.
    * There is no column and nothing to submit.
    */
-  & { is_new_member: boolean };
+  & { is_new_member: boolean }
+  /**
+   * #1374 — the Member's profile image as `GET /members` returns it (the R2
+   * URL derived from `gyms/<prefix>/members/<id>-<name>.png`), and the
+   * `modified_at` the preview is cache-busted on. Not a form value: it is
+   * written by its own routes, never by the `PUT`.
+   */
+  & { image_url?: string | null; modified_at?: string | null };
 
 /**
  * The same fields as form state: every value is a string, never null — and only
