@@ -97,9 +97,9 @@ async function createAssignment(
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
-        next_billing_date, membership_fee_price, recurring_billing_interval, recurring_billing_unit)
-     VALUES (?, ?, ?, 'active', ?, 0, ?, ?, 1, 'month')`,
-    [gym, memberId, planId, over.startsAt ?? '2000-01-01', nextBillingDate, over.fee ?? 50],
+        membership_fee_price, recurring_billing_interval, recurring_billing_unit)
+     VALUES (?, ?, ?, 'active', ?, 0, ?, 1, 'month')`,
+    [gym, memberId, planId, over.startsAt ?? '2000-01-01', over.fee ?? 50],
   );
   return insertId;
 }
@@ -232,8 +232,8 @@ describe('a fee written alone captures the snapshot and drops the Plan durations
     // Plan's Billing & Duration and its first cycle is free.
     const { insertId: umId } = await db.query(
       `INSERT INTO user_memberships
-         (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
-       VALUES (?, ?, ?, 'active', '2000-01-01', 50, '2000-01-15')`,
+         (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+       VALUES (?, ?, ?, 'active', '2000-01-01', 50)`,
       [gymId, memberId, planId],
     );
     const { loadFeeAssignment, priceMembershipFeeOn } = await import('../api/membership-fee-pricing');

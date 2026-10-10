@@ -266,9 +266,7 @@ describe('the payment activates', () => {
     const { rows: pr } = await db.query('SELECT status FROM payment_requests WHERE id = ?', [prId]);
     expect(pr[0].status).toBe('completed');
     // #1325 PR 3: the activation hands the assignment to a ProductSet, whose
-    // persisted events are the schedule — the assignment carries no date.
-    const { rows: um } = await db.query('SELECT next_billing_date FROM user_memberships WHERE id = ?', [umId]);
-    expect(um[0].next_billing_date).toBeNull();
+    // persisted events are the schedule.
     const { rows: sets } = await db.query("SELECT status FROM product_sets WHERE user_membership_id = ? AND status = 'active'", [umId]);
     expect(sets).toHaveLength(1);
     const changes = await statusChanges(umId);

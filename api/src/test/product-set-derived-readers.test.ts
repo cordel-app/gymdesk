@@ -94,9 +94,6 @@ describe('readers see a ProductSet-billed assignment (#1325)', () => {
 
   it('the assignment reports the ledger\'s next billing date and last billed, not NULL', async () => {
     const { umId } = await billedAssignment();
-    const { rows } = await db.query<any>('SELECT next_billing_date FROM user_memberships WHERE id = ?', [umId]);
-    expect(rows[0].next_billing_date).toBeNull(); // the legacy column stays empty…
-
     const detail = await auth(request.get(`/user-memberships/${umId}`));
     expect(detail.status).toBe(200);
     expect(detail.body.next_billing_date).not.toBeNull(); // …and the read is derived

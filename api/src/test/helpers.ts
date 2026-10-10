@@ -113,21 +113,56 @@ export async function ensureTestProductSet(
   gymId: string, memberId: number | null, userMembershipId: number | null = null,
 ): Promise<number | null> {
   if (memberId == null) return null;
+  // The set is the member's: a fixture that names another gym (a tenant test)
+  // must not leave a row the member's own gym cannot clean up.
+  const { rows: owner } = await db.query<{ gym_id: string }>('SELECT gym_id FROM members WHERE id = ?', [memberId]);
+  if (owner[0]) gymId = owner[0].gym_id;
+  // One Active set per owner (`product_sets_one_active`), whichever gym a
+  // fixture moved the member to since: it follows the member.
   const { rows } = await db.query<{ id: number }>(
-    "SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' LIMIT 1",
-    [gymId, memberId]);
+    "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active' LIMIT 1", [memberId]);
   if (rows[0]) {
-    if (userMembershipId != null) {
-      await db.query('UPDATE product_sets SET user_membership_id = COALESCE(user_membership_id, ?) WHERE id = ?', [userMembershipId, rows[0].id]);
-    }
+    await db.query(
+      'UPDATE product_sets SET gym_id = ?, user_membership_id = COALESCE(?, user_membership_id) WHERE id = ?',
+      [gymId, userMembershipId, rows[0].id]);
     return Number(rows[0].id);
   }
+  try {
+    const { insertId } = await db.query(
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, user_membership_id)
+       VALUES (?, ?, 'active', '2000-01-01', ?)`,
+      [gymId, memberId, userMembershipId]);
+    await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
+    return Number(insertId);
+  } catch (err: any) {
+    // Two fixtures of one member racing on `product_sets_one_active`: the set exists now.
+    if (err?.errno !== 1062) throw err;
+    return ensureTestProductSet(gymId, memberId, userMembershipId);
+  }
+}
+
+/**
+ * #1325 PR 3c: what used to be `user_memberships.next_billing_date` — the
+ * member's Active ProductSet with one scheduled Billing Event on `billingDate`
+ * (a `YYYY-MM-DD` string or a SQL date expression such as `CURDATE()`).
+ */
+export async function seedScheduledEvent(
+  gymId: string, memberId: number, userMembershipId: number | null, billingDate: string, amount = 29.99,
+): Promise<number> {
+  const setId = await ensureTestProductSet(gymId, memberId, userMembershipId);
+  const isExpr = /[()]/.test(billingDate);
   const { insertId } = await db.query(
-    `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, user_membership_id)
-     VALUES (?, ?, 'active', '2000-01-01', ?)`,
-    [gymId, memberId, userMembershipId]);
-  await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
+    `INSERT INTO billing_events (gym_id, member_id, product_set_id, event_type, source, amount, billing_date, is_scheduled)
+     VALUES (?, ?, ?, 'charge_created', 'system', ?, ${isExpr ? billingDate : '?'}, 1)`,
+    isExpr ? [gymId, memberId, setId, amount] : [gymId, memberId, setId, amount, billingDate]);
   return Number(insertId);
+}
+
+/** Removes every scheduled event of the member's Active ProductSet. */
+export async function clearScheduledEvents(gymId: string, memberId: number): Promise<void> {
+  await db.query(
+    `DELETE be FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id
+      WHERE be.gym_id = ? AND ps.owner_member_id = ? AND be.is_scheduled = 1`, [gymId, memberId]);
 }
 
 /** Deletes gyms created by this worker and their dependent rows. */
@@ -155,6 +190,8 @@ export async function cleanupTestGyms() {
   // #1325: ProductSet children cascade from `product_sets`, which cascades from
   // the gym; `owner_member_id` is RESTRICT, so the sets go before `members`.
   await db.query(`DELETE FROM product_sets WHERE gym_id IN (${marks})`, ids);
+  await db.query(
+    `DELETE ps FROM product_sets ps JOIN members m ON m.id = ps.owner_member_id WHERE m.gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_products_oneoff_promotion_snapshot WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_products_oneoff_snapshot WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_requests WHERE gym_id IN (${marks})`, ids);

@@ -1,4 +1,4 @@
-import { withDerivedBilling } from './derived-billing';
+import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
 import { cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
@@ -9,7 +9,6 @@ import { parseQuery, z } from '../infra/validate';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
-import { rollStaleNextBillingDateForward } from '../domain/nextBillingDateStamp';
 import { actorSnapshot } from '../domain/nutritionLibrary';
 import {
   applyPromotionToMembership,
@@ -201,7 +200,8 @@ export const LIST_SELECT = `
   JOIN members m ON m.id = um.member_id
   LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
 `;
-// Note: um.* already includes next_billing_date and last_billed_at (added in migration 111).
+// Note: the four billing values (`next_billing_date`, `last_billed_at`, `failed_attempts`,
+// `last_failed_at`) are derived from the ledger by `withDerivedBilling()` (#1325).
 
 /**
  * One assignment as every write endpoint answers with it: its row plus
@@ -929,11 +929,6 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           req.params.id, gymId,
         ],
       );
-      // #790: a pause is not a debt — a `next_billing_date` that went by while
-      // the assignment was off the run moves to the first boundary after today.
-      if (status === 'active' && current[0].status !== 'active') {
-        await rollStaleNextBillingDateForward(tx, current[0].id, gymId);
-      }
       if (status && status !== current[0].status) {
         await recordStatusChange(tx, {
           gymId, userMembershipId: current[0].id, memberId: current[0].member_id,
@@ -1455,12 +1450,6 @@ async function transitionMembership(
       `UPDATE user_memberships SET status = ? WHERE id = ? AND gym_id = ?`,
       [targetStatus, prev.id, gymId],
     );
-    // #790: and "again" means from the next boundary after today — a pause is
-    // not a debt, so the cycles that went by while it was paused are not
-    // charged one per night when it comes back.
-    if (targetStatus === 'active') {
-      await rollStaleNextBillingDateForward(tx, prev.id, gymId);
-    }
     await recordStatusChange(tx, {
       gymId, userMembershipId: prev.id, memberId: prev.member_id,
       previousStatus: prev.status, newStatus: targetStatus,
@@ -1496,8 +1485,8 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // Q1a's answer is that a Draft with no payment behind it simply sits there
 // until staff cancel or delete it, with no expiry sweep, so it needs a way out
 // that is not activation. Closing one is also always warning-free, because
-// `computeUnusedValueWarnings()` reads `next_billing_date`, which a Draft has
-// never had.
+// `computeUnusedValueWarnings()` reads the derived next billing date, which a
+// Draft never has.
 const CLOSEABLE_FROM: readonly Status[] = ['draft', 'pending_payment', 'active', 'paused'];
 
 // #511 stage 3 also counted a `session_count` allowance with sessions left in
@@ -1524,14 +1513,18 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
   })) return;
   const confirm = req.body?.confirm === true;
 
-  const { rows: currentRows } = await db.query(
-    `SELECT id, status, membership_plan_id, next_billing_date,
-            (next_billing_date IS NOT NULL AND next_billing_date >= CURDATE()) AS has_pending_billing
-     FROM user_memberships WHERE id = ? AND gym_id = ?`,
+  const { rows: currentRows } = await db.query<any>(
+    `SELECT id, status, membership_plan_id FROM user_memberships WHERE id = ? AND gym_id = ?`,
     [req.params.id, gymId],
   );
   if (currentRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
-  const current = currentRows[0];
+  // #1325 PR 3c: what is still scheduled is the ProductSet's, read off its ledger.
+  const derivedNext = (await loadDerivedBilling(gymId, [Number(currentRows[0].id)])).get(Number(currentRows[0].id))?.next_billing_date ?? null;
+  const current = {
+    ...currentRows[0],
+    next_billing_date: derivedNext,
+    has_pending_billing: derivedNext != null && derivedNext >= new Date().toISOString().slice(0, 10) ? 1 : 0,
+  };
   if (!CLOSEABLE_FROM.includes(current.status)) {
     return res.status(400).json({ error: `Cannot close a membership with status '${current.status}'` });
   }

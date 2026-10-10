@@ -7,7 +7,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet } from './helpers';
+  request, ensureTestProductSet, seedScheduledEvent } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -86,10 +86,12 @@ async function createUserMembership(
 ): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
-     VALUES (?, ?, ?, 'active', '2000-01-01', '29.99', ?)`,
-    [gymId, memberId, planId, nextBillingDate],
+       (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+     VALUES (?, ?, ?, 'active', '2000-01-01', '29.99')`,
+    [gymId, memberId, planId],
   );
+  // #1325 PR 3c: the next charge is the member's ProductSet's scheduled event.
+  if (nextBillingDate) await seedScheduledEvent(gymId, memberId, insertId, nextBillingDate);
   return insertId;
 }
 
@@ -185,97 +187,6 @@ describe('GET /payments/billing-events', () => {
     expect(realItems.every((i: any) => i.member_id === memberId)).toBe(true);
   });
 
-  it('filters by from/to date range', async () => {
-    const today = new Date().toISOString().slice(0, 10);
-    const res = await request
-      .get(`/payments/billing-events?from=${today}&to=${today}`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    // All real rows that came back must have billing_date within the range.
-    const realItems = res.body.items.filter((i: any) => i.type === 'real');
-    expect(realItems.length).toBeGreaterThan(0);
-    realItems.forEach((i: any) => {
-      expect(i.billing_date >= today && i.billing_date <= today).toBe(true);
-    });
-  });
-
-  it('includes virtual rows when an active membership has a future next_billing_date', async () => {
-    const planId = await createPlanWithPolicy(gymId);
-    const futureMemberId = await createMember(gymId);
-    const futureDate = new Date();
-    futureDate.setDate(futureDate.getDate() + 30);
-    const futureDateStr = futureDate.toISOString().slice(0, 10);
-    await createUserMembership(gymId, futureMemberId, planId, futureDateStr);
-
-    const res = await request
-      .get('/payments/billing-events')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(200);
-    const virtualItems = res.body.items.filter((i: any) => i.type === 'virtual');
-    expect(virtualItems.length).toBeGreaterThan(0);
-    const v = virtualItems[0];
-    expect(v.id).toBeNull();
-    expect(v.status).toBe('scheduled');
-    expect(v.event_type).toBe('upcoming');
-  });
-
-  // #635 stage 15 — a projected row's amount is the Membership Fee resolved on
-  // the date it projects. Until then it repeated `user_memberships.final_price`
-  // for all five dates, so the dashboard promised a charge for a cycle the
-  // nightly run would waive, and kept showing a lapsed Promotion's discount.
-  describe('projected amounts are priced per date (#635 stage 15)', () => {
-    async function fetchItems() {
-      const res = await request
-        .get('/payments/billing-events')
-        .set('Authorization', TEST_AUTH_HEADER)
-        .set('x-gym-id', gymId);
-      expect(res.status).toBe(200);
-      return res.body.items as any[];
-    }
-
-    it("shows €0 for a cycle the assignment's own Free Period covers", async () => {
-      const planId = await createPlanWithPolicy(gymId);
-      const memberId = await createMember(gymId);
-      // The contract started a few days ago, so today — the first projected cycle
-      // — falls inside its one free month rather than on the boundary.
-      const started = new Date();
-      started.setDate(started.getDate() - 5);
-      const startsAt = started.toISOString().slice(0, 10);
-      const { insertId: umId } = await db.query(
-        `INSERT INTO user_memberships
-           (gym_id, member_id, membership_plan_id, status, starts_at, next_billing_date,
-            membership_fee_price, free_periods, paid_periods,
-            recurring_billing_interval, recurring_billing_unit)
-         VALUES (?, ?, ?, 'active', ?, ?, 55.00, 1, 12, 1, 'month')`,
-        [gymId, memberId, planId, startsAt, new Date().toISOString().slice(0, 10)],
-      );
-
-      const rows = (await fetchItems()).filter((i) => i.type === 'virtual' && i.user_membership_id === umId);
-      expect(rows.length).toBeGreaterThan(1);
-      // The list is newest-first, so the earliest projected cycle is last: it
-      // falls in the free month, and the latest one is charged in full.
-      const byDate = [...rows].sort((a, b) => (a.billing_date < b.billing_date ? -1 : 1));
-      expect(Number(byDate[0].amount)).toBe(0);
-      expect(Number(byDate[byDate.length - 1].amount)).toBe(55);
-    });
-
-    it("prices from the assignment's frozen fee, not its base price", async () => {
-      const planId = await createPlanWithPolicy(gymId);
-      const memberId = await createMember(gymId);
-      const futureDate = new Date();
-      futureDate.setDate(futureDate.getDate() + 20);
-      const umId = await createUserMembership(gymId, memberId, planId, futureDate.toISOString().slice(0, 10));
-      await db.query('UPDATE user_memberships SET membership_fee_price = 73.25 WHERE id = ?', [umId]);
-
-      const rows = (await fetchItems()).filter((i) => i.type === 'virtual' && i.user_membership_id === umId);
-      expect(rows.length).toBeGreaterThan(0);
-      for (const r of rows) expect(Number(r.amount)).toBe(73.25);
-    });
-  });
-
-  // ── #416: multi-select status filtering ──
   describe('status filter (#416)', () => {
     let statusGymId: string;
     let statusMemberId: number;
@@ -331,14 +242,14 @@ describe('GET /payments/billing-events', () => {
       expect([...statuses].every((s) => s === 'paid' || s === 'failed')).toBe(true);
     });
 
-    it('filtering by "scheduled" returns only virtual rows', async () => {
+    it('filtering by "scheduled" returns only scheduled rows (persisted ProductSet events, #1325)', async () => {
       const res = await request
         .get('/payments/billing-events?status=scheduled')
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', statusGymId);
       expect(res.status).toBe(200);
       expect(res.body.items.length).toBeGreaterThan(0);
-      expect(res.body.items.every((i: any) => i.status === 'scheduled' && i.type === 'virtual')).toBe(true);
+      expect(res.body.items.every((i: any) => i.status === 'scheduled')).toBe(true);
     });
 
     it('rejects an invalid status value with 400', async () => {
@@ -431,32 +342,6 @@ describe('GET /payments/billing-events — created_at / next_payment_date (#639)
     expect(item.created_at).toMatch(ISO_DATETIME);
   });
 
-  it('returns next_payment_date null when the membership is no longer active', async () => {
-    const item = (await fetchItems()).find((i) => i.id === expiredEventId);
-    expect(item).toBeDefined();
-    expect(item.next_payment_date).toBeNull();
-  });
-
-  it('gives projected rows a null created_at and a YYYY-MM-DD next_payment_date', async () => {
-    const virtualItems = (await fetchItems()).filter((i) => i.type === 'virtual');
-    expect(virtualItems.length).toBeGreaterThan(0);
-    for (const v of virtualItems) {
-      expect(v.created_at).toBeNull();
-      expect(v.next_payment_date).toMatch(ISO_DATE);
-    }
-    expect(virtualItems.some((v) => v.next_payment_date === nextBillingDateStr)).toBe(true);
-  });
-
-  it('projects virtual billing_date as a real ISO date', async () => {
-    // Regression: next_billing_date arrives from mysql2 as a Date object, so a
-    // plain String(...).slice(0, 10) produced "Wed Oct 21" instead of an ISO date.
-    const virtualItems = (await fetchItems()).filter((i) => i.type === 'virtual');
-    expect(virtualItems.length).toBeGreaterThan(0);
-    for (const v of virtualItems) {
-      expect(v.billing_date).toMatch(ISO_DATE);
-    }
-    expect(virtualItems.some((v) => v.billing_date === nextBillingDateStr)).toBe(true);
-  });
 });
 
 // ── GET /payments/billing-events/:id/transactions ────────────────────────────

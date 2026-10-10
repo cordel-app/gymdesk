@@ -150,8 +150,8 @@ export async function projectActiveProductSet(tx: Tx, gymId: string, productSetI
           membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
           recurring_billing_interval, recurring_billing_unit, auto_renew,
           personal_fee_benefit_action, personal_fee_benefit_value,
-          created_by_name, created_by_type, next_billing_date)
-       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+          created_by_name, created_by_type)
+       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at), ...columns,
         set.created_by_name, set.created_by_type],
     );
