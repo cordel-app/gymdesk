@@ -66,14 +66,12 @@ async function scheduled(setId: number) {
 }
 
 beforeAll(async () => {
-  process.env.PRODUCT_SET_BILLING = 'true';
   process.env.MONEI_API_KEY = 'test-api-key';
   process.env.MONEI_WEBHOOK_SECRET = SECRET;
   gymId = await createTestGym('Bridge gym');
   await createTestMembership(gymId, 'admin');
 });
 afterAll(async () => {
-  delete process.env.PRODUCT_SET_BILLING;
   delete process.env.MONEI_API_KEY;
   delete process.env.MONEI_WEBHOOK_SECRET;
   await db.query('DELETE FROM payment_requests WHERE gym_id = ?', [gymId]);
@@ -213,19 +211,5 @@ describe('an edit of a projected assignment is a new version (#1325 PR 5)', () =
     const future = (await scheduled(v1.id)).filter((e: any) => e.billing_date > TODAY);
     expect(future.length).toBe(0);
     expect((await scheduled(sets[1].id)).length).toBe(0);
-  });
-});
-
-describe('the bridge is off unless asked for (#1325 PR 5)', () => {
-  it('with the flag off an activation creates no ProductSet', async () => {
-    process.env.PRODUCT_SET_BILLING = 'false';
-    try {
-      const memberId = await member();
-      const umId = await assign(memberId, await plan(0));
-      await auth(request.post(`/user-memberships/${umId}/activate`)).send({});
-      expect(await setsOf(memberId)).toHaveLength(0);
-    } finally {
-      process.env.PRODUCT_SET_BILLING = 'true';
-    }
   });
 });
