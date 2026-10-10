@@ -340,15 +340,9 @@ Invited rows use a placeholder `user_id` of the form `invited_<timestamp>` until
 
 `members.invitation_id` (nullable, migration 051) mirrors `gym_memberships.invitation_id` — the pending Clerk invitation id, used to revoke on removal or explicit un-invite. Unlike `gym_memberships`, there's no `status` column: a member row is always "real" (it's the billing/plan record) independent of portal access, so portal state is derived as `clerk_user_id IS NULL AND invitation_id IS NOT NULL` (invited) vs `clerk_user_id` set (linked) vs neither (never invited). See "Member invite + auto-link flow" below.
 
-### `user_memberships` — billing columns (migration 111)
+### `user_memberships` — the four billing values are derived (#1325)
 
-Two nullable columns added for recurring MIT billing:
-- `next_billing_date DATE NULL` — set by the payment webhook on the first successful charge to the first `starts_at + n·cadence` strictly after UTC today (#790, `stampFirstNextBillingDate()` in `domain/nextBillingDateStamp.ts` — so a back-dated assignment is never charged the cycles that elapsed before it paid); advanced by the billing run after each subsequent charge; walked forward the same way when a transition back to `active` finds it in the past (`rollStaleNextBillingDateForward()` — a pause is not a debt).
-- `last_billed_at DATETIME NULL` — stamped by the billing run on success.
-
-**Dunning state (#785, migration 194)** — two more columns the nightly run owns:
-- `failed_attempts INT UNSIGNED NOT NULL DEFAULT 0` — consecutive provider rejections of the cycle `next_billing_date` names. `2` is the pause threshold (`MAX_BILLING_RUN_ATTEMPTS`); `domain/billingDunning.ts` clamps whatever it reads, because `user_memberships` carries no CHECK.
-- `last_failed_at DATETIME NULL` — when the last rejection was recorded, and the run-**day** marker the escalation reads (`DATE(last_failed_at) = UTC_DATE()`).
+Migration 111 added `next_billing_date` and `last_billed_at`, migration 194 `failed_attempts` and `last_failed_at`; migrations 252 (PR 3a) and 255 (PR 3c) dropped all four. An assignment's obligations are its ProductSet's persisted Billing Events, so the values are read off the ledger (`domain/derivedBilling.ts`, `api/src/api/derived-billing.ts`): next billing date = the earliest unsettled obligation, last billed = the latest money-moving attempt, failed attempts = the failed provider days of the event being charged. A reader calls `withDerivedBilling()` / `loadDerivedBilling()`; nothing stores them.
 
 Both are **run state, not editable fields**: they are written by the rejection branch of `POST /billing/run` and cleared by every path where money arrives or the assignment resumes — the run's own success and waived branches, the payment webhook's `completed` branch, `clearDunningState()` behind the two staff payment actions, and a transition to `active` (`/reactivate` or a direct `PUT` status flip, so a resumed assignment gets the full two attempts again). No route accepts them as input. They are not part of the Assigned Plan snapshot (`has_billing_snapshot`) for migration 192's reason, and because the Assigned Plan reads select `um.*` they do appear in list/detail responses and in `recordAudit` snapshots — a diff of two audit entries around a rejection can therefore differ by a field no human touched.
 
@@ -422,7 +416,7 @@ A member's card lives in `payment_methods` (one row per member and gym, `payment
 
 **The row it writes is not a financial row.** The hosted page loads by `page_token` and the webhook reconciles by `provider_order`, both columns of `payment_requests`, so a verification needs a row there — with `source = 'card_update'` (migration 195 widens `chk_payment_requests_source` for the fourth time), `amount = 0.00` and `charge_type_id` **NULL** (the same migration makes the column nullable: a verification bills nothing, and inventing a `card_verification` charge type would put a non-charge in the cash-payment picker and in charge-type reporting). Three surfaces exclude it by that value — `GET /members`' derived `payment_status`, the staff `GET /payment-requests` list and the member's own `GET /me/payment-requests` — so a pending verification can never read as an unpaid fee, and the member app's return page cannot mistake one for a payment. `domain/storedCards.ts` owns the constant and the rules (pure, unit-tested); `api/card-updates.ts` owns the provider call, the insert and the reads, shared by the staff router and `/me` so the two surfaces cannot drift.
 
-**Removal is allowed only once nothing is scheduled to be charged** (`cardRemovalBlock()`): while any of the member's assignments is `active` or `paused` with a `next_billing_date`, `DELETE /me/payment-method` answers `409 billable_membership` and the app offers **Replace card** instead. The reason is that the nightly run skips an assignment with no `payment_methods` row *silently* — it writes nothing at all — so a member under a live contract could stop paying with nobody the wiser; the surfaces that would make that visible to the staff (#779) do not exist yet. Replacing is never blocked, in any status, and a member who wants to stop paying cancels the membership. Once #779 lands, this is the decision to revisit.
+**Removal is allowed only once nothing is scheduled to be charged** (`cardRemovalBlock()`): while any of the member's assignments is `active` or `paused` and their Active ProductSet still holds a scheduled or unsettled obligation (`has_pending_obligation`, #1325), `DELETE /me/payment-method` answers `409 billable_membership` and the app offers **Replace card** instead. The reason is that the nightly run skips an assignment with no `payment_methods` row *silently* — it writes nothing at all — so a member under a live contract could stop paying with nobody the wiser; the surfaces that would make that visible to the staff (#779) do not exist yet. Replacing is never blocked, in any status, and a member who wants to stop paying cancels the membership. Once #779 lands, this is the decision to revisit.
 
 **Where the member sees it.** My Membership gains a *Payment method* section (brand, last four, when the card on file was stored — `COALESCE(payment_methods.updated_at, created_at)`) with **Replace card** / **Add card** and, when allowed, **Remove card**. There is no consent modal on that side: the hosted page's own consent checkbox is what authorises the future recurring charges, and it names them. `PAYMENT_OK_URL`/`PAYMENT_KO_URL` carry `purpose=card_update` back, so the member app's payment return page polls `GET /me/payment-method`'s `last_update` instead of the payment history a verification deliberately never joins. Staff see the same card read-only in Members → Payments, beside a **Send replace-card link** action.
 
@@ -445,7 +439,7 @@ A member's card lives in `payment_methods` (one row per member and gym, `payment
 
 `user_membership_promotions.revoked_at` (nullable `DATETIME`, migration 150) is stamped when a promotion is revoked (`DELETE /user-memberships/:id/promotions/:promotionId`) — together with `applied_at`, it defines the `[applied_at, revoked_at]` window used to tag whether a given billing event (or projected cycle) was affected by that promotion, independent of the row's `status`. Migration 150 also adds a `billing_events (user_membership_id, created_at)` composite index, since the range calculation reads every ledger row for one membership ordered by `created_at`.
 
-The Close action's unused-value check warns on a pending `next_billing_date`. #511 stage 3 also warned about a `session_count` allowance with sessions left in its window; #635 stage 4 (part 2) retired Included Services, so that half is gone — a Plan's Session Benefits are billed up front rather than consumed per booking, so closing forfeits nothing.
+The Close action's unused-value check warns on a pending derived next billing date (a scheduled event of a legacy, non-projected assignment; a projected plan is retired through its ProductSet, #1325). #511 stage 3 also warned about a `session_count` allowance with sessions left in its window; #635 stage 4 (part 2) retired Included Services, so that half is gone — a Plan's Session Benefits are billed up front rather than consumed per booking, so closing forfeits nothing.
 
 ### Draft Assigned Plans (#1108 stage 1, migration 227)
 
@@ -656,7 +650,7 @@ Two things stage 11 left alone (stage 12 below closes the first). A cycle that i
 
 - The Billing Events projection's `computeMembershipFeePriceAt()` delegated to it until #854 removed it — the projection served only the `draft` status #786 retired.
 - `priceMembershipFeeOn()` / `currentMembershipFee()` / `currentMembershipFees()` (`api/src/api/membership-fee-pricing.ts`) wrap it for every staff screen and payment request that shows or raises a fee.
-- Applying or revoking a Promotion (`membership-promotions.ts`) resolves the cycle `next_billing_date` names — never a date already past, never before `starts_at` — instead of discounting a date-less number.
+- Applying or revoking a Promotion (`membership-promotions.ts`) resolves the cycle containing today (`currentCycleDate()`) — never a date already past, never before `starts_at` — instead of discounting a date-less number.
 - `GET /me/membership` prices each of its two `upcoming_payments` on its own date (`computeUpcomingPayments`'s `priceOn` callback) rather than repeating one stored number, so the second can legitimately cost more than the first.
 - `POST /billing/run` charges what the resolver returns for the cycle, not a stored price flat.
 
@@ -674,7 +668,7 @@ What replaces it is one shared module, **`api/src/api/membership-fee-pricing.ts`
 |---|---|
 | `priceMembershipFeeOn(row, date)` | The fee owed on one date: `{ amount, waived, periodStatus }`, resolved through `resolveMembershipFee()` over the assignment's own regular fee, Billing & Duration and standing applications. |
 | `priceMembershipFeesFor(rows, dateFor)` | The same over many assignments and dates, with one query for every row's applications — what a list page needs instead of N round trips. |
-| `currentCycleDate(row)` | The date "what does this member pay **now**" means: `max(next_billing_date, today)`, never before `starts_at` and never a cycle already past. |
+| `currentCycleDate(row)` | The date "what does this member pay **now**" means: today, never before `starts_at` (#1325 PR 3c: no stored next billing date). |
 | `currentMembershipFee(gymId, umId)` / `currentMembershipFees(gymId, ids)` | That cycle's fee, for one assignment or a list. |
 | `FEE_ASSIGNMENT_COLUMNS` / `FEE_ASSIGNMENT_FROM` / `loadFeeAssignment(s)` | The columns and joins any of the above needs, so no caller re-derives the snapshot/fallback SQL. |
 
@@ -1536,7 +1530,9 @@ The four routes an alert can take, in the order to consider them:
 
 **The other suppressed-in-name-only rule.** `js/missing-rate-limiting` was marked on
 `/products` and `/taxes` alone, which never reflected the code: `app.ts` applies a
-global `apiLimiter` (500 requests / 15 min per IP) with `app.use()` ahead of every route,
+global `apiLimiter` (`API_RATE_LIMIT_MAX`, default 500, / 15 min per signed-in person — the
+bearer token's subject, read unverified — or per IP for an unauthenticated request, #1395)
+with `app.use()` ahead of every route,
 and several routers add their own on top. Whatever the rule saw, those two routes are not
 less throttled than the rest of the API — the `as any` cast the limiter needs to satisfy
 Express 5's types is the likeliest reason the flow is invisible to it. Treat an alert of

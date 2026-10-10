@@ -2240,9 +2240,10 @@ the row's children**, never an edit of the row:
    intervention (previous/new status, per-attempt results) goes to
    `audit_logs` via `recordAudit`, which is append-only and immutable.
 7. **Side effects that belong to an existing flow reuse that flow's helper.**
-   A settled charge advances `next_billing_date`/`last_billed_at` the same way
-   the nightly run does, and a status flip goes through `recordStatusChange`
-   so the pause is explicable from the ledger like every other transition.
+   A settled charge settles the Billing Event it was an attempt on (the four
+   billing values are derived from the ledger, #1325), and a status flip goes
+   through `recordStatusChange` so the pause is explicable from the audit log
+   like every other transition.
 
 Reference implementation: `api/src/domain/billingEventPayments.ts` +
 `domain/billingEventStatus.ts` + the three `/payments/billing-events/:id*`

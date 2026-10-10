@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { loadDerivedBilling } from './derived-billing';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { parseQuery, z } from '../infra/validate';
@@ -18,6 +19,7 @@ import {
 import { issueReceiptNumber } from '../domain/receiptNumbers';
 import { recordManualPayment, retryBillingEventPayment } from '../domain/billingEventPayments';
 import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
+import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import {
   FEE_ASSIGNMENT_COLUMNS,
@@ -153,12 +155,21 @@ paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) 
     // with the ledger row, so neither can land without the other. A row in any
     // other status is the ordinary case and commits nothing.
     const row = await db.transaction(async (tx) => {
+      // #1325 PR 3b: a money row belongs to a ProductSet — the assignment's
+      // (pending first), else the member's Active one; a member with none has
+      // nothing to record it against.
+      const setId = user_membership_id
+        ? await productSetIdForAssignment(tx, gymId, Number(user_membership_id))
+        : await activeProductSetIdForMember(tx, gymId, Number(memberId));
+      if (setId == null) {
+        throw Object.assign(new Error('This member has no ProductSet to record the event against'), { status: 400 });
+      }
       const { insertId } = await tx.query(
         `INSERT INTO billing_events
-         (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (gym_id, user_membership_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          gymId, user_membership_id ?? null, memberId, event_type, charge_type_id ?? null,
+          gymId, user_membership_id ?? null, setId, memberId, event_type, charge_type_id ?? null,
           source ?? sourceForRole(role), userId, parsedAmount,
           notes && String(notes).trim() ? String(notes).trim() : null,
         ],
@@ -215,7 +226,7 @@ paymentsRouter.get('/member/:memberId', async (req, res) => {
 
 // ── Billing Events (admin view) ───────────────────────────────────────────────
 // Billing Event = billing_events row (parent); Payment Transaction = payment_requests row (child).
-// Past rows come from DB; future rows are projected from user_memberships.next_billing_date.
+// Every row comes from the ledger: a ProductSet's future obligations are persisted (#1325).
 
 function advanceBillingDate(
   current: string,
@@ -271,7 +282,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       user_membership_id: number | null; plan_name: string | null;
       created_at: Date; amount: string | null; event_type: string;
       currency: string | null;
-      membership_status: string | null; next_billing_date: Date | string | null;
+      membership_status: string | null;
       latest_tx_status: string | null;
       event_billing_date: Date | string | null; is_scheduled: number | boolean;
       from_product_set: number | boolean;
@@ -282,7 +293,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
               be.created_at, be.amount, be.event_type, NULL AS currency,
               be.billing_date AS event_billing_date, be.is_scheduled,
               (be.product_set_id IS NOT NULL) AS from_product_set,
-              COALESCE(um.status, ps_um.status) AS membership_status, um.next_billing_date,
+              COALESCE(um.status, ps_um.status) AS membership_status,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
@@ -319,6 +330,10 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     // #1325: the persisted, not-yet-executed events of a ProductSet are
     // obligations still ahead (`scheduled`), listed with the due date they carry;
     // every other event keeps the ledger's own creation date.
+    // #1325 PR 3c: the next payment date of the membership an event belongs to
+    // is the ProductSet's next scheduled event, read off the ledger.
+    const derivedByUm = await loadDerivedBilling(
+      gymId, realRows.map((r) => Number(r.user_membership_id)).filter((n) => Number.isInteger(n) && n > 0));
     const past: BillingEventRow[] = realRows.map((r) => {
       const scheduledEvent = Number(r.is_scheduled) === 1;
       const status = scheduledEvent ? 'scheduled' : deriveBillingEventStatus(r.event_type, r.latest_tx_status);
@@ -333,7 +348,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
           ? toDateOnly(r.event_billing_date) as string
           : new Date(r.created_at).toISOString().slice(0, 10),
         created_at: new Date(r.created_at).toISOString(),
-        next_payment_date: r.membership_status === 'active' ? toDateOnly(r.next_billing_date) : null,
+        next_payment_date: r.membership_status === 'active' ? (derivedByUm.get(Number(r.user_membership_id))?.next_billing_date ?? null) : null,
         amount: r.amount,
         event_type: r.event_type,
         status,
@@ -348,95 +363,11 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       };
     });
 
-    // ── Future (virtual) billing events — rolling 5-date window per active membership ──
-    const futureWhere: string[] = [
-      'um.gym_id = ?',
-      "um.status = 'active'",
-      'um.next_billing_date IS NOT NULL',
-      // #635 stage 3 — the assignment's own cadence, else its Plan's live one.
-      `${ASSIGNMENT_CADENCE.interval()} IS NOT NULL`,
-      `${ASSIGNMENT_CADENCE.unit()} IS NOT NULL`,
-    ];
-    const futureParams: any[] = [gymId];
-    if (q.member_id !== undefined) { futureWhere.push('um.member_id = ?'); futureParams.push(q.member_id); }
-
-    // #635 stage 15 — a projected row's amount is the fee resolved for the date
-    // it projects, not one stored number repeated five times. The staff screen
-    // therefore shows a Free Period's €0 and the cycle after an applied
-    // Promotion's timeline ends at the regular price, which is exactly what the
-    // nightly run will charge on those dates.
-    const includeScheduled = !q.status || q.status.includes('scheduled');
-    const activeRows = includeScheduled ? (await db.query<FeeAssignmentRow & {
-      member_id: number; member_name: string | null;
-      plan_name: string | null;
-      recurring_billing_interval: number; recurring_billing_unit: 'day' | 'week' | 'month' | 'year';
-      currency: string | null;
-    }>(
-      `SELECT ${FEE_ASSIGNMENT_COLUMNS},
-              um.member_id, m.name AS member_name,
-              mp.name AS plan_name,
-              ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
-              ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
-              NULL AS currency
-       FROM user_memberships um
-       LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
-       LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id
-       LEFT JOIN members m ON m.id = um.member_id
-       LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
-       WHERE ${futureWhere.join(' AND ')}`,
-      futureParams,
-    )).rows : [];
-
-    const today = new Date().toISOString().slice(0, 10);
+    // #1325 PR 3c: nothing is projected here any more — a ProductSet's future
+    // obligations are persisted (`is_scheduled = 1`) and listed above.
     const future: BillingEventRow[] = [];
 
-    // The dates each assignment projects, worked out once so every fee can be
-    // priced in one batch rather than one query per projected row.
-    const projectedDates = new Map<number, string[]>();
-    for (const um of activeRows) {
-      const nextPaymentDate = toDateOnly(um.next_billing_date);
-      if (!nextPaymentDate) continue;
-      const dates: string[] = [];
-      let date = nextPaymentDate;
-      for (let i = 0; i < 5; i++) {
-        if (date < today) {
-          date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit);
-          continue;
-        }
-        if (q.from && date < q.from.slice(0, 10)) { date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit); continue; }
-        if (q.to   && date > q.to.slice(0, 10))   break;
-        dates.push(date);
-        date = advanceBillingDate(date, um.recurring_billing_interval, um.recurring_billing_unit);
-      }
-      projectedDates.set(um.id, dates);
-    }
-    const pricedFees = await priceMembershipFeesFor(activeRows, (row) => projectedDates.get(row.id) ?? []);
-
-    for (const um of activeRows) {
-      const nextPaymentDate = toDateOnly(um.next_billing_date);
-      if (!nextPaymentDate) continue;
-      for (const date of projectedDates.get(um.id) ?? []) {
-        future.push({
-          id: null as any,
-          type: 'virtual',
-          member_id: um.member_id,
-          member_name: um.member_name,
-          user_membership_id: um.id,
-          plan_name: um.plan_name,
-          billing_date: date,
-          // Projected rows aren't persisted yet, so they have no creation instant.
-          created_at: null,
-          next_payment_date: nextPaymentDate,
-          amount: (pricedFees.get(um.id)?.get(date)?.amount ?? 0).toFixed(2),
-          event_type: 'upcoming',
-          status: 'scheduled',
-          currency: um.currency,
-          payment_actions_available: false,
-        });
-      }
-    }
-
-    // Merge, sort by billing_date (DESC unless `order=asc`)
+    // Sort by billing_date (DESC unless `order=asc`)
     const dir = q.order === 'asc' ? -1 : 1;
     const merged = [...past, ...future].sort((a, b) => {
       if (b.billing_date !== a.billing_date) return (b.billing_date < a.billing_date ? -1 : 1) * dir;
@@ -586,7 +517,7 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
               ct.code AS charge_type_code,
               m.name AS member_name,
               mp.name AS plan_name,
-              um.status AS membership_status, um.next_billing_date,
+              um.status AS membership_status,
               (SELECT gm.name FROM gym_memberships gm
                 WHERE gm.user_id = be.actor_user_id AND gm.gym_id = be.gym_id LIMIT 1) AS created_by_name,
               (SELECT gm.name FROM gym_memberships gm
@@ -638,7 +569,9 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       created_by: be.created_by_name ?? (be.actor_user_id ? be.actor_user_id : null),
       modified_at: be.modified_at ? new Date(be.modified_at).toISOString() : null,
       modified_by: be.modified_by_name ?? (be.modified_by_user_id ? be.modified_by_user_id : null),
-      next_payment_date: be.membership_status === 'active' ? toDateOnly(be.next_billing_date) : null,
+      next_payment_date: be.membership_status === 'active' && be.user_membership_id != null
+        ? ((await loadDerivedBilling(gymId, [Number(be.user_membership_id)])).get(Number(be.user_membership_id))?.next_billing_date ?? null)
+        : null,
       failure_reason: failureReason,
       can_retry: actionable,
       can_record_manual_payment: actionable,

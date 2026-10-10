@@ -23,27 +23,27 @@ describe('cardRemovalBlock', () => {
   });
 
   it('blocks removal while an active assignment is scheduled to be charged', () => {
-    expect(cardRemovalBlock([{ status: 'active', next_billing_date: '2026-11-01' }]))
+    expect(cardRemovalBlock([{ status: 'active', has_pending_obligation: true }]))
       .toBe('billable_membership');
   });
 
   it('blocks removal for a paused assignment that still has a due date', () => {
     // #785 pauses an assignment after the second consecutive rejection, and
     // reactivating it means "bill this again" — so the card is still owed.
-    expect(cardRemovalBlock([{ status: 'paused', next_billing_date: '2026-11-01' }]))
+    expect(cardRemovalBlock([{ status: 'paused', has_pending_obligation: true }]))
       .toBe('billable_membership');
   });
 
   it('allows removal for an active assignment with no due date', () => {
     // Nothing has ever been billed and nothing is scheduled: the nightly run's
     // due query cannot select it, so removing the card takes no money away.
-    expect(cardRemovalBlock([{ status: 'active', next_billing_date: null }])).toBeNull();
+    expect(cardRemovalBlock([{ status: 'active', has_pending_obligation: false }])).toBeNull();
   });
 
   it('allows removal once every assignment is cancelled or expired', () => {
     expect(cardRemovalBlock([
-      { status: 'cancelled', next_billing_date: '2026-11-01' },
-      { status: 'expired', next_billing_date: '2026-12-01' },
+      { status: 'cancelled', has_pending_obligation: true },
+      { status: 'expired', has_pending_obligation: true },
     ])).toBeNull();
   });
 
@@ -51,13 +51,13 @@ describe('cardRemovalBlock', () => {
     // #634: a member may hold several Assigned Plans at once, and they share the
     // one stored card — so one live contract is enough to keep it.
     expect(cardRemovalBlock([
-      { status: 'cancelled', next_billing_date: '2026-10-01' },
-      { status: 'active', next_billing_date: '2026-11-01' },
+      { status: 'cancelled', has_pending_obligation: true },
+      { status: 'active', has_pending_obligation: true },
     ])).toBe('billable_membership');
   });
 
   it('accepts a Date, as mysql2 may return a DATE column', () => {
-    expect(cardRemovalBlock([{ status: 'active', next_billing_date: new Date('2026-11-01') }]))
+    expect(cardRemovalBlock([{ status: 'active', has_pending_obligation: true }]))
       .toBe('billable_membership');
   });
 });

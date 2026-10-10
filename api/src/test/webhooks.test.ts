@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, request } from './helpers';
+import { cleanupTestGyms, createTestGym, ensureTestProductSet, request } from './helpers';
 
 const MONEI_WEBHOOK_SECRET = 'test-webhook-secret';
 
@@ -67,6 +67,9 @@ async function createUserMembership(gymId: string, memberId: number, planId: num
      VALUES (?, ?, ?, 'active', CURDATE(), '5.00')`,
     [gymId, memberId, planId],
   );
+  // #1325 PR 3b: every money row belongs to a ProductSet, so an assignment
+  // seeded by hand gets the Active version it would have been imported as.
+  await ensureTestProductSet(gymId, memberId, insertId);
   return insertId;
 }
 
@@ -275,6 +278,7 @@ async function createMembershipStartingOn(
      VALUES (?, ?, ?, 'active', ?, '5.00')`,
     [gymId, memberId, planId, startsAt],
   );
+  await ensureTestProductSet(gymId, memberId, insertId);
   return insertId;
 }
 
@@ -308,14 +312,6 @@ async function readStoredCard(gymId: string, memberId: number) {
     [gymId, memberId],
   );
   return rows;
-}
-
-async function readNextBillingDate(id: number): Promise<string | null> {
-  const { rows } = await db.query<{ next_billing_date: Date | string | null }>(
-    'SELECT next_billing_date FROM user_memberships WHERE id = ?',
-    [id],
-  );
-  return dateOnly(rows[0].next_billing_date);
 }
 
 function randomCard(): MoneiCard {
@@ -364,88 +360,6 @@ describe('POST /webhooks/payment — what a completed CIT charge writes', () => 
     expect(stored[0].card_brand).toBe(card.brand);
   });
 
-  it('a second completed payment replaces the stored card rather than adding a row', async () => {
-    const { memberId, userMembershipId } = await fixture();
-
-    const first = randomCard();
-    const firstOrder = crypto.randomUUID();
-    await insertPendingPaymentRequest(gymId, userMembershipId, memberId, chargeTypeId, firstOrder);
-    expect(
-      (await postWebhook(buildMoneiEnvelope(firstOrder, 'SUCCEEDED', crypto.randomBytes(20).toString('hex'), first)))
-        .status,
-    ).toBe(200);
-
-    const second: MoneiCard = { ...randomCard(), last4: '1881', brand: 'mastercard' };
-    const secondOrder = crypto.randomUUID();
-    await insertPendingPaymentRequest(gymId, userMembershipId, memberId, chargeTypeId, secondOrder);
-    expect(
-      (await postWebhook(buildMoneiEnvelope(secondOrder, 'SUCCEEDED', crypto.randomBytes(20).toString('hex'), second)))
-        .status,
-    ).toBe(200);
-
-    // One row per member and gym — the upsert's ON DUPLICATE KEY.
-    const stored = await readStoredCard(gymId, memberId);
-    expect(stored).toHaveLength(1);
-    expect(stored[0].payment_token).toBe(second.paymentToken);
-    expect(stored[0].sequence_id).toBe(second.sequenceId);
-    expect(stored[0].card_last4).toBe('1881');
-    expect(stored[0].card_brand).toBe('mastercard');
-  });
-
-  // Future `starts_at` throughout this file: since #790 a back-dated one stamps
-  // the first boundary after *today*, so a fixed past date here would make the
-  // expected value depend on the day the suite runs. The back-dated and
-  // starts-today cases live in `backdated-first-charge.test.ts`.
-  it('stamps the first next_billing_date as starts_at + the assignment cadence', async () => {
-    const { memberId, userMembershipId } = await fixture('2099-01-15', 1, 'month');
-    expect(await readNextBillingDate(userMembershipId)).toBeNull();
-
-    const orderId = crypto.randomUUID();
-    await insertPendingPaymentRequest(gymId, userMembershipId, memberId, chargeTypeId, orderId);
-
-    expect(
-      (await postWebhook(buildMoneiEnvelope(orderId, 'SUCCEEDED', crypto.randomBytes(20).toString('hex'), randomCard())))
-        .status,
-    ).toBe(200);
-
-    expect(await readNextBillingDate(userMembershipId)).toBe('2099-02-15');
-  });
-
-  it('takes the cadence from the assignment snapshot, not the Plan, when it has one', async () => {
-    const { memberId, userMembershipId } = await fixture('2099-03-01', 1, 'month');
-    // #635 stage 3: ASSIGNMENT_CADENCE is COALESCE(um.*, bp.*) — a frozen
-    // cadence outranks the Plan's live policy.
-    await db.query(
-      `UPDATE user_memberships
-       SET recurring_billing_interval = 3, recurring_billing_unit = 'month'
-       WHERE id = ?`,
-      [userMembershipId],
-    );
-
-    const orderId = crypto.randomUUID();
-    await insertPendingPaymentRequest(gymId, userMembershipId, memberId, chargeTypeId, orderId);
-    expect(
-      (await postWebhook(buildMoneiEnvelope(orderId, 'SUCCEEDED', crypto.randomBytes(20).toString('hex'), randomCard())))
-        .status,
-    ).toBe(200);
-
-    expect(await readNextBillingDate(userMembershipId)).toBe('2099-06-01');
-  });
-
-  it('leaves next_billing_date alone when it is already set', async () => {
-    const { memberId, userMembershipId } = await fixture('2026-01-15', 1, 'month');
-    await db.query('UPDATE user_memberships SET next_billing_date = ? WHERE id = ?', ['2026-11-30', userMembershipId]);
-
-    const orderId = crypto.randomUUID();
-    await insertPendingPaymentRequest(gymId, userMembershipId, memberId, chargeTypeId, orderId);
-    expect(
-      (await postWebhook(buildMoneiEnvelope(orderId, 'SUCCEEDED', crypto.randomBytes(20).toString('hex'), randomCard())))
-        .status,
-    ).toBe(200);
-
-    expect(await readNextBillingDate(userMembershipId)).toBe('2026-11-30');
-  });
-
   it('back-links the payment_request to the billing_events row it wrote', async () => {
     const { memberId, userMembershipId } = await fixture();
     const orderId = crypto.randomUUID();
@@ -469,7 +383,7 @@ describe('POST /webhooks/payment — what a completed CIT charge writes', () => 
     expect(Number(events[0].amount)).toBe(5);
   });
 
-  it('stores no card and stamps no date when the provider returned no reusable token', async () => {
+  it('stores no card when the provider returned no reusable token', async () => {
     const { memberId, userMembershipId } = await fixture();
     const orderId = crypto.randomUUID();
     const prId = await insertPendingPaymentRequest(gymId, userMembershipId, memberId, chargeTypeId, orderId);
@@ -483,7 +397,6 @@ describe('POST /webhooks/payment — what a completed CIT charge writes', () => 
     // The payment still lands; only the MIT-enabling half is absent.
     expect((await readRequest(prId)).status).toBe('completed');
     expect(await readStoredCard(gymId, memberId)).toHaveLength(0);
-    expect(await readNextBillingDate(userMembershipId)).toBeNull();
   });
 });
 
@@ -568,7 +481,6 @@ describe('POST /webhooks/payment — cleanup must not lose a payment that was ma
     expect(stored).toHaveLength(1);
     expect(stored[0].payment_token).toBe(card.paymentToken);
 
-    expect(await readNextBillingDate(userMembershipId)).toBe('2099-02-15');
   });
 
   // The second half of the fix, and the safety net for every other way a row can
@@ -591,7 +503,6 @@ describe('POST /webhooks/payment — cleanup must not lose a payment that was ma
     expect(pr.status).toBe('completed');
     expect(pr.billing_event_id).not.toBeNull();
     expect((await readStoredCard(gymId, memberId))[0].payment_token).toBe(card.paymentToken);
-    expect(await readNextBillingDate(userMembershipId)).toBe('2099-02-15');
   });
 
   it('does not revive an expired request on a failed webhook — only money reopens one', async () => {
@@ -696,13 +607,6 @@ describe('POST /webhooks/payment — card update (#788)', () => {
       [userMembershipId],
     );
     expect(events).toEqual([]);
-
-    // And no billing schedule was invented for a member who has not paid yet.
-    const { rows: um } = await db.query<{ next_billing_date: Date | null }>(
-      'SELECT next_billing_date FROM user_memberships WHERE id = ?',
-      [userMembershipId],
-    );
-    expect(um[0].next_billing_date).toBeNull();
   });
   it('a rejected verification leaves the previous card in place', async () => {
     const ownMemberId = await createMember(gymId);

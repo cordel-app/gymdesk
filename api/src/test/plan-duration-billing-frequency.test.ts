@@ -121,12 +121,12 @@ async function createAssignment(params: {
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
-        next_billing_date, membership_fee_price,
+        membership_fee_price,
         recurring_billing_interval, recurring_billing_unit,
         free_periods, paid_periods, bonus_periods, pay_beforehand_periods)
-     VALUES (?, ?, ?, 'active', ?, 0, ?, 50, ?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, 'active', ?, 0, 50, ?, ?, ?, ?, ?, ?)`,
     [
-      gymId, params.memberId, params.planId, params.startsAt, params.nextBillingDate,
+      gymId, params.memberId, params.planId, params.startsAt,
       params.cadence.interval, params.cadence.unit, free, paid, bonus, prepaid,
     ],
   );

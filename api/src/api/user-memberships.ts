@@ -1,6 +1,6 @@
-import { withDerivedBilling } from './derived-billing';
+import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
-import { linkInitialPaymentToSet } from './product-set-bridge';
+import { cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
@@ -9,7 +9,6 @@ import { parseQuery, z } from '../infra/validate';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
-import { rollStaleNextBillingDateForward } from '../domain/nextBillingDateStamp';
 import { actorSnapshot } from '../domain/nutritionLibrary';
 import {
   applyPromotionToMembership,
@@ -201,7 +200,8 @@ export const LIST_SELECT = `
   JOIN members m ON m.id = um.member_id
   LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
 `;
-// Note: um.* already includes next_billing_date and last_billed_at (added in migration 111).
+// Note: the four billing values (`next_billing_date`, `last_billed_at`, `failed_attempts`,
+// `last_failed_at`) are derived from the ledger by `withDerivedBilling()` (#1325).
 
 /**
  * One assignment as every write endpoint answers with it: its row plus
@@ -929,11 +929,6 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           req.params.id, gymId,
         ],
       );
-      // #790: a pause is not a debt — a `next_billing_date` that went by while
-      // the assignment was off the run moves to the first boundary after today.
-      if (status === 'active' && current[0].status !== 'active') {
-        await rollStaleNextBillingDateForward(tx, current[0].id, gymId);
-      }
       if (status && status !== current[0].status) {
         await recordStatusChange(tx, {
           gymId, userMembershipId: current[0].id, memberId: current[0].member_id,
@@ -1175,21 +1170,44 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
     if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
 
     const outcome = await db.transaction(async (tx) => {
+      // #1325 PR 3b: the pending version's initial event is what the cash
+      // settles — a `cash` attempt on it, no second ledger row — and the commit
+      // below activates the version. An assignment with no pending version
+      // (none written at Save & Pay) keeps the older shape: commit first, then
+      // the payment's event on the version the commit created.
+      const open = await openInitialEventForAssignment(tx, gymId, Number(req.params.id));
+      if (open) {
+        const { rows: prev } = await tx.query<{ n: number }>(
+          'SELECT COALESCE(MAX(attempt), 0) AS n FROM payment_requests WHERE billing_event_id = ?', [open.eventId]);
+        await tx.query(
+          `INSERT INTO payment_requests
+             (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
+              source, attempt, method, initiated_by, notes, created_at, completed_at)
+           VALUES (?, ?, (SELECT member_id FROM user_memberships WHERE id = ?), ?, 'EUR', ?, ?, 'completed', 'monei',
+                   'manual', ?, 'cash', ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+          [gymId, req.params.id, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
+            Number(prev[0]?.n ?? 0) + 1, userId,
+            typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null]);
+      }
       const committed = await commitAssignment(tx, {
         gymId, userMembershipId: String(req.params.id), fromStatuses: [PENDING_PAYMENT_STATUS],
         confirm: true, source: sourceForRole(role), actorUserId: userId,
       });
       if (committed.kind !== 'committed') return committed;
-      await tx.query(
-        `INSERT INTO billing_events
-           (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
-         VALUES (?, ?, ?, 'payment_recorded', ?, ?, ?, ?, ?)`,
-        [gymId, req.params.id, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), userId,
-         typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null],
-      );
-      // #1325 PR 5: the cash payment's event is written after the commit, so the
-      // import could not see it — link it to the first period now.
-      await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));
+      if (!open) {
+        const setId = await productSetIdForAssignment(tx, gymId, Number(req.params.id));
+        if (setId == null) {
+          throw Object.assign(new Error('This membership has no ProductSet to record the payment against'), { status: 400 });
+        }
+        await tx.query(
+          `INSERT INTO billing_events
+             (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
+           VALUES (?, ?, ?, ?, 'payment_recorded', ?, ?, ?, ?, ?)`,
+          [gymId, req.params.id, setId, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), userId,
+           typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null],
+        );
+        await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));
+      }
       return committed;
     });
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -1432,12 +1450,6 @@ async function transitionMembership(
       `UPDATE user_memberships SET status = ? WHERE id = ? AND gym_id = ?`,
       [targetStatus, prev.id, gymId],
     );
-    // #790: and "again" means from the next boundary after today — a pause is
-    // not a debt, so the cycles that went by while it was paused are not
-    // charged one per night when it comes back.
-    if (targetStatus === 'active') {
-      await rollStaleNextBillingDateForward(tx, prev.id, gymId);
-    }
     await recordStatusChange(tx, {
       gymId, userMembershipId: prev.id, memberId: prev.member_id,
       previousStatus: prev.status, newStatus: targetStatus,
@@ -1473,8 +1485,8 @@ userMembershipsRouter.post('/:id/reactivate', requireModuleWrite('PAYMENTS'), as
 // Q1a's answer is that a Draft with no payment behind it simply sits there
 // until staff cancel or delete it, with no expiry sweep, so it needs a way out
 // that is not activation. Closing one is also always warning-free, because
-// `computeUnusedValueWarnings()` reads `next_billing_date`, which a Draft has
-// never had.
+// `computeUnusedValueWarnings()` reads the derived next billing date, which a
+// Draft never has.
 const CLOSEABLE_FROM: readonly Status[] = ['draft', 'pending_payment', 'active', 'paused'];
 
 // #511 stage 3 also counted a `session_count` allowance with sessions left in
@@ -1501,14 +1513,18 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
   })) return;
   const confirm = req.body?.confirm === true;
 
-  const { rows: currentRows } = await db.query(
-    `SELECT id, status, membership_plan_id, next_billing_date,
-            (next_billing_date IS NOT NULL AND next_billing_date >= CURDATE()) AS has_pending_billing
-     FROM user_memberships WHERE id = ? AND gym_id = ?`,
+  const { rows: currentRows } = await db.query<any>(
+    `SELECT id, status, membership_plan_id FROM user_memberships WHERE id = ? AND gym_id = ?`,
     [req.params.id, gymId],
   );
   if (currentRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
-  const current = currentRows[0];
+  // #1325 PR 3c: what is still scheduled is the ProductSet's, read off its ledger.
+  const derivedNext = (await loadDerivedBilling(gymId, [Number(currentRows[0].id)])).get(Number(currentRows[0].id))?.next_billing_date ?? null;
+  const current = {
+    ...currentRows[0],
+    next_billing_date: derivedNext,
+    has_pending_billing: derivedNext != null && derivedNext >= new Date().toISOString().slice(0, 10) ? 1 : 0,
+  };
   if (!CLOSEABLE_FROM.includes(current.status)) {
     return res.status(400).json({ error: `Cannot close a membership with status '${current.status}'` });
   }
@@ -1530,6 +1546,11 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
     if (locked.length === 0) return { kind: 'not_found' } as const;
     const prev = locked[0];
     if (!CLOSEABLE_FROM.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
+    // #1325 PR 3b: a pending assignment's version goes with it (or the close is
+    // refused while a payment on it is unresolved).
+    if (prev.status === 'pending_payment' && !(await cancelPendingSetForAssignment(tx, gymId, Number(prev.id)))) {
+      return { kind: 'unresolved' } as const;
+    }
     await tx.query(
       "UPDATE user_memberships SET status = 'cancelled', closed_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?",
       [prev.id, gymId],
@@ -1545,6 +1566,9 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
   if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
   if (result.kind === 'invalid') {
     return res.status(400).json({ error: `Cannot close a membership with status '${result.from}'` });
+  }
+  if (result.kind === 'unresolved') {
+    return res.status(409).json({ error: 'payment_unresolved', message: 'A payment on this membership is still unresolved; reconcile it before closing.' });
   }
   const closed = await loadAssignmentRow(gymId, req.params.id);
   recordAudit(req, { action: 'close', entityType: 'user_membership', entityId: req.params.id, next: closed });

@@ -132,7 +132,7 @@ userClassPackagesRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, re
         await tx.query(
           `INSERT INTO billing_events
            (gym_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-           VALUES (?, ?, 'charge_created', ?, ?, ?, ?, 'Class package purchase')`,
+           VALUES (?, ?, 'product_purchase', ?, ?, ?, ?, 'Class package purchase')`,
           [gymId, memberId, ctRows[0].id, role === 'admin' ? 'admin' : 'employee', userId, pkgRows[0].price],
         );
       }

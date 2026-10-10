@@ -83,7 +83,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // ones the Services section and the simulation act on.
   const { rows: rawPlans } = await db.query(
     `SELECT um.id, um.membership_plan_id, um.status,
-            um.starts_at, um.ends_at, um.next_billing_date,
+            um.starts_at, um.ends_at,
             um.closed_at, um.created_at,
             um.created_by_name, um.created_by_type, um.member_id AS owner_member_id,
             p.name AS plan_name,
@@ -172,6 +172,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       created_by_type: p.created_by_type ?? null,
       starts_at: toDateOnly(p.starts_at),
       ends_at: toDateOnly(p.ends_at),
+      // Derived by `withDerivedBilling()` above (#1325).
       next_billing_date: toDateOnly(p.next_billing_date),
       // #1191 — derived: a covered Member of someone else's Membership sees
       // the same contract as `linked`; the owner sees `primary`.

@@ -1,6 +1,6 @@
-import { withDerivedBilling } from './derived-billing';
+import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { createProductSetCheckout, initialCharge } from './product-set-checkout';
-import { findOpenInitialEvent } from './plan-checkout';
+import { openInitialEventForAssignment } from './product-set-bridge';
 import { memberInviteTarget } from '../domain/memberInviteTarget';
 import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
@@ -1686,7 +1686,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       `SELECT um.id, um.member_id, um.membership_plan_id,
               um.base_price, um.discount_reason, um.discount_expires_at,
               um.starts_at, um.ends_at, um.status, um.created_at,
-              um.next_billing_date, um.membership_fee_price,
+              um.membership_fee_price,
               um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
               um.personal_fee_benefit_action, um.personal_fee_benefit_value,
               p.free_periods AS plan_free_periods,
@@ -1811,8 +1811,10 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     const membership_fee = regularFee != null
       ? Math.round(Math.max(0, resolveMembershipFee(regularFee, currentCycleDate(um), feeContext).amount) * 100) / 100
       : null;
+    // #1325 PR 3c: the next charge is the ProductSet's next scheduled event.
+    const derivedNext = (await loadDerivedBilling(gymId, [Number(um.id)])).get(Number(um.id))?.next_billing_date ?? null;
     const upcoming_payments = computeUpcomingPayments(
-      um.next_billing_date,
+      derivedNext,
       um.billing_interval,
       um.billing_unit,
       regularFee != null
@@ -2135,7 +2137,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     // #1288: a row awaiting its first payment already has its Billing Event
     // (written at Save & Pay); a retry links to it so the webhook settles that
     // one event instead of adding a second for the same charge.
-    const openEventId = um.status === 'pending_payment' ? await findOpenInitialEvent(gymId, um.id) : null;
+    const openEventId = um.status === 'pending_payment' ? (await openInitialEventForAssignment(db, gymId, um.id))?.eventId ?? null : null;
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
          (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,

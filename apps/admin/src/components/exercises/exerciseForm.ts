@@ -194,11 +194,11 @@ function sharedPayload(form: ExerciseFormValues, { muscles, resultTypeIds }: Pay
 /**
  * The creation payload — `POST /exercises` for a Gym Exercise, `POST
  * /platform/exercises` for a Base Exercise (#806 §6: the fields are shared, the
- * route is the context's). The creation form is the one place that submits
- * `video_url`.
+ * route is the context's). No form submits `video_url` (#1380): the video is
+ * managed through the upload control.
  */
 export function toExerciseCreatePayload(form: ExerciseFormValues, extras: PayloadExtras) {
-  return { ...sharedPayload(form, extras), video_url: textOrNull(form.video_url) };
+  return sharedPayload(form, extras);
 }
 
 /**

@@ -116,7 +116,7 @@ import { gymLocalizationRouter } from './api/gym-localization';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
 import { internalRunRateLimitConfig, spendsInternalRunBudget } from './domain/internalRunRateLimit';
-import { API_RATE_LIMIT_WINDOW_MS, apiRateLimitMax } from './domain/apiRateLimit';
+import { API_RATE_LIMIT_WINDOW_MS, apiRateLimitKey, apiRateLimitMax } from './domain/apiRateLimit';
 import { internalRunClientKey, trustProxyHops } from './domain/forwardedClient';
 import { httpErrorStatus, publicErrorMessage } from './domain/httpErrorResponse';
 
@@ -131,11 +131,18 @@ app.set('trust proxy', trustProxyHops());
 
 app.use(requestLogger);
 
+// #1395: keyed on the signed-in person, not on the address. Both Next apps'
+// `/api/proxy` routes forward no `X-Forwarded-For`, so by address every member
+// is the Members App container and every staff user the admin container, and
+// one person spending the budget locked everyone else out. See
+// domain/apiRateLimit.ts for why the token is read unverified and why this is
+// not a `trust proxy` change.
 const apiLimiter = rateLimit({
   windowMs: API_RATE_LIMIT_WINDOW_MS,
   limit: apiRateLimitMax(),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: (req) => apiRateLimitKey(req.headers.authorization, ipKeyGenerator(req.ip ?? '')),
 });
 app.use(apiLimiter as any);
 

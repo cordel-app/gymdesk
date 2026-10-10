@@ -37,7 +37,8 @@ export type RemovalBlockReason = 'billable_membership';
 
 export interface AssignmentBillingState {
   status: string;
-  next_billing_date: string | Date | null;
+  /** Whether the member's ProductSet still has an obligation to charge (#1325). */
+  has_pending_obligation: boolean;
 }
 
 /**
@@ -55,7 +56,7 @@ export interface AssignmentBillingState {
  */
 export function cardRemovalBlock(assignments: AssignmentBillingState[]): RemovalBlockReason | null {
   const billable = assignments.some(
-    (a) => BILLABLE_STATUSES.has(a.status) && a.next_billing_date != null,
+    (a) => BILLABLE_STATUSES.has(a.status) && a.has_pending_obligation,
   );
   return billable ? 'billable_membership' : null;
 }
