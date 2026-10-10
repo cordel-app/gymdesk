@@ -51,9 +51,18 @@ export function chargeGuard(attempts: readonly EarlierAttempt[]): ChargeGuardDec
     else if (cls === 'in_flight') inFlight.push(a.id);
     else if (cls === 'returned') returned.push(a.id);
     else if (cls === 'unknown') {
-      // Never submitted (no provider reference) is "not started"; a submitted
-      // attempt with no status is an unknown outcome — a timeout.
-      if (a.providerRef !== null || a.status === 'pending') unknown.push(a.id);
+      if (a.providerStatus === null || a.providerStatus === undefined) {
+        // No raw status was stored. An attempt written before the provider's own
+        // status was kept (or one whose outcome never came back) is read off the
+        // internal outcome it does carry: completed settled it, failed / expired
+        // did not, and a pending one with no status is an unknown outcome — a
+        // timeout. Never submitted (no reference, not pending) is "not started".
+        if (a.status === 'completed') settled.push(a.id);
+        else if (a.status === 'pending') unknown.push(a.id);
+      } else {
+        // A status the vocabulary does not know is unresolved, never a failure.
+        unknown.push(a.id);
+      }
     }
   }
 

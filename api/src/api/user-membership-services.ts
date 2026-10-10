@@ -1,3 +1,5 @@
+import { redirectEditToProductSet } from './assignment-edit-redirect';
+import { addService as psAddService, removeService as psRemoveService } from './product-set-draft';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -242,6 +244,11 @@ userMembershipServicesRouter.get('/', async (req, res) => {
 
 userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => {
   const { gymId, gymMembershipId } = getTenantContext(req);
+  if (await redirectEditToProductSet(req, res, {
+    userMembershipId: Number((req.params as any).id), action: 'update', detail: { add_service: req.body },
+    mutate: async (tx, d) => { const r = await psAddService(tx, d, req.body); return 'kind' in r ? r : { ok: true as const }; },
+    respond: () => loadAssignedPlanServices(gymId, Number((req.params as any).id)),
+  })) return;
   const plan = await loadAssignedPlan(gymId, (req.params as any).id);
   if (!plan) return res.status(404).json({ error: 'Membership not found' });
   if (!ATTACHABLE_STATUSES.includes(plan.status)) {
@@ -352,6 +359,22 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
  */
 userMembershipServicesRouter.delete('/:serviceId', requireModuleWrite('PAYMENTS'), async (req, res) => {
   const { gymId } = getTenantContext(req);
+  if (await redirectEditToProductSet(req, res, {
+    userMembershipId: Number((req.params as any).id), action: 'update', detail: { remove_service: req.params.serviceId },
+    // The service id on the screen is the projected row's; the version's own row is
+    // the one with the same Product, so the removal is addressed by that.
+    mutate: async (tx, d) => {
+      const { rows } = await tx.query<{ product_id: number }>(
+        'SELECT product_id FROM user_membership_services WHERE id = ? AND gym_id = ?', [Number(req.params.serviceId), d.gym_id]);
+      if (!rows[0]) return { kind: 'not_found' as const };
+      const { rows: own } = await tx.query<{ id: number }>(
+        'SELECT id FROM user_membership_services WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND ends_at IS NULL LIMIT 1',
+        [d.gym_id, d.id, rows[0].product_id]);
+      if (!own[0]) return { kind: 'not_found' as const };
+      return psRemoveService(tx, d, Number(own[0].id));
+    },
+    respond: async () => ({ ok: true }),
+  })) return;
   const plan = await loadAssignedPlan(gymId, (req.params as any).id);
   if (!plan) return res.status(404).json({ error: 'Membership not found' });
 

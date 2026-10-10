@@ -728,12 +728,14 @@ const PROMOTION_GRANT_SNAPSHOT_TABLE: Record<ProductBenefitCategory, string> = {
  */
 export async function loadPromotionGrantSnapshots(
   gymId: string, applicationIds: number[],
+  /** A transaction, when the applications were written in it and are not yet visible to the pool. */
+  exec: { query: Tx['query'] } = db,
 ): Promise<Map<number, SimulationGrant[]>> {
   const byApplication = new Map<number, SimulationGrant[]>();
   if (applicationIds.length === 0) return byApplication;
 
   const marks = applicationIds.map(() => '?').join(',');
-  const { rows } = await db.query(
+  const { rows } = await exec.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, user_membership_promotion_id, product_id,
              product_name, quantity, item_billing_frequency, unit_price,

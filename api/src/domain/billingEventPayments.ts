@@ -1,3 +1,4 @@
+import { chargeGuard } from './chargeGuard';
 import crypto from 'crypto';
 import { Tx, db } from '../infra/db';
 import { advanceBillingDate } from './billingDate';
@@ -67,6 +68,10 @@ interface EventContext {
   gym_id: string;
   member_id: number | null;
   user_membership_id: number | null;
+  /** #1325: the ProductSet version that owns the obligation, when one does. */
+  product_set_id: number | null;
+  is_scheduled: number;
+  billing_date: Date | string | null;
   event_type: string;
   amount: string | null;
   charge_type_id: number | null;
@@ -87,6 +92,7 @@ interface EventContext {
 async function loadEventContext(gymId: string, billingEventId: number): Promise<EventContext | null> {
   const { rows } = await db.query<EventContext>(
     `SELECT be.id, be.gym_id, be.member_id, be.user_membership_id, be.event_type,
+            be.product_set_id, be.is_scheduled, be.billing_date,
             be.amount, be.charge_type_id,
             (SELECT pr.status FROM payment_requests pr
               WHERE pr.billing_event_id = be.id
@@ -118,10 +124,17 @@ function guardActionable(ev: EventContext | null): ActionFailure | null {
     return { status: 409, error: 'This billing event has already been paid.' };
   }
   const status = deriveBillingEventStatus(ev.event_type, ev.latest_tx_status);
-  if (!isPaymentActionable(status)) {
+  // #1325: a ProductSet's persisted obligation that is due and nothing has
+  // collected — a member with no stored card is the usual case — is payable by
+  // staff exactly like a failed one.
+  const today = new Date().toISOString().slice(0, 10);
+  const dueDate = ev.billing_date == null ? null
+    : (ev.billing_date instanceof Date ? ev.billing_date.toISOString() : String(ev.billing_date)).slice(0, 10);
+  const scheduledAndDue = Number(ev.is_scheduled) === 1 && dueDate != null && dueDate <= today;
+  if (!isPaymentActionable(status) && !scheduledAndDue) {
     return { status: 400, error: `Payment actions are only available for failed billing events (this one is '${status}').` };
   }
-  if (!ev.user_membership_id) {
+  if (!ev.user_membership_id && !ev.product_set_id) {
     return { status: 400, error: 'This billing event is not linked to an assigned plan.' };
   }
   const amount = ev.amount != null ? parseFloat(ev.amount) : NaN;
@@ -129,6 +142,20 @@ function guardActionable(ev: EventContext | null): ActionFailure | null {
     return { status: 400, error: 'This billing event has no amount to charge.' };
   }
   return null;
+}
+
+/**
+ * #1325: the event of a ProductSet leaves the scheduled state once somebody has
+ * dealt with it, and its type says how it ended. Idempotent and a no-op for a
+ * legacy event (`is_scheduled` is 0 and the type is already settled).
+ */
+async function closeScheduledEvent(tx: Tx, ev: EventContext, outcome: 'paid' | 'failed'): Promise<void> {
+  if (!ev.product_set_id) return;
+  await tx.query(
+    `UPDATE billing_events SET is_scheduled = 0, event_type = ?
+      WHERE id = ? AND gym_id = ? AND (is_scheduled = 1 OR event_type IN ('charge_created', 'failed_billing'))`,
+    [outcome === 'paid' ? 'recurring_payment' : 'failed_billing', ev.id, ev.gym_id],
+  );
 }
 
 /**
@@ -223,14 +250,17 @@ async function insertTransaction(params: {
   failureMessage: string | null;
   notes: string | null;
   actorUserId: string | null;
+  /** #1325: the provider's own status, verbatim (a manual payment has none). */
+  providerStatus?: string | null;
 }): Promise<number> {
   const { insertId } = await db.query(
     `INSERT INTO payment_requests
        (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
         billing_event_id, status, provider, provider_order, provider_ref,
         source, attempt, initiated_by, failure_code, failure_message, notes,
+        method, provider_status,
         created_at, completed_at, modified_at, modified_by_user_id)
-     VALUES (?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+     VALUES (?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
              UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(), ?)`,
     [
       params.ev.gym_id, params.ev.user_membership_id, params.ev.member_id,
@@ -238,6 +268,7 @@ async function insertTransaction(params: {
       params.status, params.provider, params.providerOrder, params.providerRef,
       params.source, params.attempt, params.actorUserId,
       params.failureCode, params.failureMessage, params.notes,
+      params.source === 'manual' ? 'cash' : 'provider', params.providerStatus ?? null,
       params.status === 'completed' ? new Date() : null,
       params.actorUserId,
     ],
@@ -265,6 +296,19 @@ export async function retryBillingEventPayment(
 
   const chargeTypeId = await resolveChargeTypeId(event);
   if (!chargeTypeId) return { failure: { status: 500, error: 'charge_type membership_fee not configured' } };
+
+  // #1325: the duplicate-charge rule, over the raw status of every earlier
+  // attempt — a settled, in-flight, unknown or refunded one refuses the retry.
+  const { rows: earlier } = await db.query<any>(
+    `SELECT id, method, provider_status, provider_ref, status FROM payment_requests WHERE billing_event_id = ?`,
+    [event.id]);
+  const guarded = chargeGuard(earlier.map((a: any) => ({
+    id: Number(a.id), method: (a.method ?? 'provider') as 'provider' | 'cash' | 'waive',
+    providerStatus: a.provider_status ?? null, providerRef: a.provider_ref ?? null, status: String(a.status),
+  })));
+  if (!guarded.allowed) {
+    return { failure: { status: 409, error: `This charge cannot be retried (${guarded.reason}); reconcile the earlier attempt first.` } };
+  }
 
   const { rows: pmRows } = await db.query<{ payment_token: string | null; sequence_id: string | null; provider: string }>(
     'SELECT payment_token, sequence_id, provider FROM payment_methods WHERE member_id = ? AND gym_id = ? LIMIT 1',
@@ -294,6 +338,7 @@ export async function retryBillingEventPayment(
     let providerRef: string | null = null;
     let failureCode: string | null = null;
     let failureMessage: string | null = null;
+    let rawProviderStatus: string | null = null;
 
     try {
       const result = await getPaymentProvider().executeRecurring({
@@ -304,6 +349,7 @@ export async function retryBillingEventPayment(
         sequenceId: pm.sequence_id,
       });
       providerRef = result.providerRef ?? null;
+      rawProviderStatus = result.providerStatus ?? null;
       if (result.success) {
         status = 'completed';
       } else {
@@ -321,6 +367,7 @@ export async function retryBillingEventPayment(
       ev: event, chargeTypeId, amount, status, source: 'retry', attempt,
       provider: pm.provider, providerOrder: orderId, providerRef,
       failureCode, failureMessage, notes: null, actorUserId,
+      providerStatus: rawProviderStatus,
     });
 
     attempts.push({
@@ -331,9 +378,10 @@ export async function retryBillingEventPayment(
   }
 
   let membershipPaused = false;
+  await db.transaction((tx) => closeScheduledEvent(tx, event, succeeded ? 'paid' : 'failed'));
   if (succeeded) {
     await settleCycleAfterPayment(event);
-  } else if (event.membership_status === 'active') {
+  } else if (event.membership_status === 'active' && event.user_membership_id) {
     // Q3: two consecutive rejections pause the assigned plan. The status flip
     // goes through the same append-only ledger row every other transition
     // writes (`recordStatusChange`), so the pause is explicable from the ledger.
@@ -410,6 +458,7 @@ export async function recordManualPayment(
     failureCode: null, failureMessage: null, notes, actorUserId,
   });
 
+  await db.transaction((tx) => closeScheduledEvent(tx, event, 'paid'));
   await settleCycleAfterPayment(event);
   await stampEventModified(gymId, event.id, actorUserId);
 
