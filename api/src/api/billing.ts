@@ -11,6 +11,8 @@ import { cancelAbandonedPurchases } from './me-products';
 import { recordStatusChange } from './billing-events';
 import { ClaimResult, RunLogTable, claimRun, finishRun } from '../infra/run-log';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
+import { executeDueScheduledEvents } from './scheduled-event-execution';
+import { expireDrafts } from './product-sets';
 import {
   FEE_ASSIGNMENT_COLUMNS,
   FeeAssignmentRow,
@@ -499,15 +501,33 @@ billingRouter.post('/run', async (req: Request, res: Response) => {
       }
     }
 
+    // #1325 PR 2c — the second pass: a ProductSet's persisted Billing Events.
+    // It is separate on purpose (its own responsibilities and its own failure
+    // handling): a failure here costs this pass alone and never fails the
+    // assignment pass. It runs *before* the run is closed as completed, because
+    // a completed run makes today's second attempt a no-op (#780) — closing
+    // first would leave a crash in this pass unretried until tomorrow.
+    // Reported beside the legacy counters, which keep their names and meaning
+    // because `.github/workflows/billing-run.yml` parses them (#778).
+    let scheduledEvents: Record<string, number> | null = null;
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const s = await executeDueScheduledEvents({ today, log: req.log });
+      scheduledEvents = { ...s };
+    } catch (eventsErr) {
+      req.log.error({ err: (eventsErr as Error).message }, 'billing/run: scheduled-event pass failed');
+    }
+
     await finishRun(BILLING_RUN_LOG, claim.runId, 'completed', { processed, succeeded, failed, waived });
 
     req.log.info(
-      { processed, succeeded, failed, waived, paused, receiptsIssued },
+      { processed, succeeded, failed, waived, paused, receiptsIssued, scheduledEvents },
       'billing/run: complete',
     );
     res.json({
       processed, succeeded, failed, waived, paused,
       receipts_issued: receiptsIssued,
+      scheduled_events: scheduledEvents,
     });
   } catch (err) {
     // Close the run as `failed` with whatever it got through. Without this the
@@ -580,6 +600,12 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     // folded into `expired`, which `.github/workflows/billing-run.yml` parses.
     const purchasesCancelled = await cancelAbandonedPurchases();
 
+    // #1325: a ProductSet Draft idle for more than two hours is deleted here as
+    // well as lazily when its owner starts a new one. The statement re-evaluates
+    // status and age in the database, so a set that was committed in between
+    // survives. Reported beside the totals, never folded into `expired`.
+    const draftsExpired = await expireDrafts();
+
     const expired = unopened + abandoned;
     req.log.info(
       { expired, unopened, abandoned, abandonedAfterHours: hours, purchasesCancelled },
@@ -590,6 +616,7 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
       expired_unopened: unopened,
       expired_abandoned: abandoned,
       purchases_cancelled: purchasesCancelled,
+      drafts_expired: draftsExpired,
     });
   } catch (err) {
     req.log.error({ err: (err as Error).message }, 'billing cleanup failed');

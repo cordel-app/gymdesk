@@ -142,7 +142,8 @@ describe('#958: the actions stay in the ⋮ menu (Q2)', () => {
     // is a menu item; the only buttons left are the inline add draft's own
     // Save/Cancel, `+ Add Membership Plan` and — since #1107 — the Past Plans
     // disclosure header, which belongs to the section rather than to a row and
-    // so leaves this rule intact.
+    // so leaves this rule intact. The in-flight ProductSet versions' own actions
+    // live in `ProductSetsInFlight.tsx` (#1325 PR 3b), not in this file.
     const buttons = sectionSrc.match(/<button/g) ?? [];
     expect(buttons.length).toBeLessThanOrEqual(4);
   });
@@ -217,10 +218,13 @@ describe('#958: no generic add while a plan is held (#956)', () => {
     expect(sectionSrc).toContain('{canWrite && live.length === 0 && !adding && (');
   });
 
-  it('keeps the replacement confirmation, which the server still raises', () => {
+  it('shows the server\'s refusal as its own sentence — there is no replacement to confirm (#1325 PR 3b)', () => {
     // A Member covered by a family plan somebody else owns holds one too
-    // (#956 Q4), so the 409 is reachable even with the button gated.
-    expect(sectionSrc).toContain('<ReplacePlanDialog');
+    // (#956 Q4), so `409 active_plan_exists` is reachable even with the button
+    // gated. Adding is a new ProductSet version and never overwrites, so the
+    // section reports the server's message instead of opening a dialog.
+    expect(sectionSrc).not.toContain('<ReplacePlanDialog');
+    expect(sectionSrc).toContain('apiErrorMessage(err)');
   });
 });
 

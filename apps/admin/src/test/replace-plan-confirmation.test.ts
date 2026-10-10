@@ -37,13 +37,13 @@ const read = (...parts: string[]) => stripComments(readFileSync(join(SRC, ...par
 const dialogSrc = read('components', 'ReplacePlanDialog.tsx');
 const confirmDialogSrc = read('components', 'ConfirmDialog.tsx');
 
-/** The four admin entry points that can assign a Membership Plan. */
+/**
+ * The admin entry points that replace a Membership Plan through the assignment
+ * flow. The Member card's "+ Add Membership Plan" left this list in #1325 PR 3b:
+ * it creates a ProductSet version, which never overwrites, so the server has no
+ * confirmable replacement to ask about (see `member-membership-sections.test.ts`).
+ */
 const ENTRY_POINTS: Array<{ name: string; src: string; confirmSpelling: string }> = [
-  {
-    name: 'the Member card\'s + Add Membership Plan',
-    src: read('app', '[locale]', 'members', 'MemberMembershipPlans.tsx'),
-    confirmSpelling: '...(confirmReplacement ? { confirm: true } : {})',
-  },
   {
     name: 'the Member card\'s Assign New Plan',
     src: read('app', '[locale]', 'members', 'AssignPlanInlineEditor.tsx'),
@@ -182,7 +182,7 @@ describe('The dialog is the app\'s existing confirmation (#956 UI considerations
   });
 });
 
-describe('All four assignment paths confirm through the one dialog (#956 All assignment paths)', () => {
+describe('Every assignment path that can replace a plan confirms through the one dialog (#956 All assignment paths)', () => {
   for (const entry of ENTRY_POINTS) {
     it(`${entry.name} raises it from the 409 and resends with confirm: true`, () => {
       expect(entry.src).toContain('activePlanConflict');
