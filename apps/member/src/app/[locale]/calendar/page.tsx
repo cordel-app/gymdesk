@@ -9,6 +9,8 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateTime } from '@/lib/gymFormat';
 import { requiredServiceIds, productsPathForServices } from '@/lib/serviceRequired';
 import { weeklyToBusinessHours, holidayBackgroundEvents, type WeeklyShiftDTO, type HolidayDTO } from '@/lib/operatingHoursDisplay';
 import { CalendarThemeStyles } from '@/components/CalendarThemeStyles';
@@ -89,6 +91,7 @@ export default function MemberCalendarPage() {
   // #1162 — the cancellation copy lives once, in `member_schedule`, for the three screens that offer the action.
   const tRoot = useTranslations();
   const locale = useLocale();
+  const gymFormat = useGymFormatSettings();
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, centers, activeCenterId } = useApp();
@@ -501,14 +504,14 @@ export default function MemberCalendarPage() {
             <div style={{ width: 36, height: 4, background: memberTheme.inputBorder, borderRadius: 2, margin: '0 auto 16px' }} />
             <h3 style={{ margin: '0 0 4px', fontSize: 16, color: memberTheme.title3, fontFamily: memberTheme.title3Font }}>{selected.class_type_name}</h3>
             <p style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
-              {new Date(selected.starts_at).toLocaleString(locale, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+              {formatGymDateTime(selected.starts_at, gymFormat)}
               {selected.trainer_name ? ` · ${selected.trainer_name}` : ''}
               {selected.center_name ? ` · ${selected.center_name}` : ''}
               {selected.space_name ? ` · ${selected.space_name}` : ''}
             </p>
             {selected.my_booking_id && selected.booked_on && (
               <p style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
-                {tRoot(BOOKED_ON_KEY, { date: new Date(selected.booked_on).toLocaleString(locale, { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) })}
+                {tRoot(BOOKED_ON_KEY, { date: formatGymDateTime(selected.booked_on, gymFormat) })}
               </p>
             )}
 
