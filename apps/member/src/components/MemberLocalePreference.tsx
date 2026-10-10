@@ -26,11 +26,13 @@ import { preferredLocalePath } from '@/lib/memberLocale';
  * itself is `preferredLocalePath()`'s — including every case that answers
  * "stay put", so this cannot loop.
  *
- * **Not while impersonating.** The preference belongs to the member; a
- * superadmin looking at a member's app through impersonation picked their own
- * locale in the URL, and bouncing them into a language they may not read is a
- * staff-facing surprise the ticket never asks for. The member's own session is
- * unaffected, since `isImpersonating` is false there.
+ * **Impersonating applies the member's language too**, because the whole point of
+ * impersonating is to see what the member sees (a text that does not fit, a key
+ * that is not translated, a format) and none of that reproduces in the
+ * superadmin's own language. The locale the superadmin came from is kept in
+ * `sessionStorage` the first time the preference moves them and is restored
+ * when the impersonation ends, so they are not left in the member's language.
+ * Nothing is stored for a member's own session, which never impersonates.
  */
 export function MemberLocalePreference() {
   const locale = useLocale();
@@ -41,12 +43,41 @@ export function MemberLocalePreference() {
   const { isImpersonating } = useImpersonation();
 
   useEffect(() => {
-    if (loading || isImpersonating || !member) return;
+    if (loading) return;
+    const go = (target: string) => {
+      const query = searchParams?.toString();
+      router.replace(query ? `${target}?${query}` : target);
+    };
+
+    if (!isImpersonating) {
+      // Back from an impersonation: return to the locale the superadmin was in.
+      const saved = readReturnLocale();
+      if (saved) {
+        clearReturnLocale();
+        const back = preferredLocalePath(pathname ?? '/', locale, saved);
+        if (back) { go(back); return; }
+      }
+    }
+
+    if (!member) return;
     const target = preferredLocalePath(pathname ?? '/', locale, member.preferred_locale);
     if (!target) return;
-    const query = searchParams?.toString();
-    router.replace(query ? `${target}?${query}` : target);
+    if (isImpersonating) rememberReturnLocale(locale);
+    go(target);
   }, [loading, isImpersonating, member, pathname, locale, searchParams, router]);
 
   return null;
+}
+
+const RETURN_LOCALE_KEY = 'impersonation_return_locale';
+
+function readReturnLocale(): string | null {
+  try { return sessionStorage.getItem(RETURN_LOCALE_KEY); } catch { return null; }
+}
+function clearReturnLocale(): void {
+  try { sessionStorage.removeItem(RETURN_LOCALE_KEY); } catch {}
+}
+/** Kept once per impersonation: a second switch must not overwrite where they came from. */
+function rememberReturnLocale(locale: string): void {
+  try { if (!sessionStorage.getItem(RETURN_LOCALE_KEY)) sessionStorage.setItem(RETURN_LOCALE_KEY, locale); } catch {}
 }

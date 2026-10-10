@@ -112,6 +112,19 @@ describe('the Members App side of the preference', () => {
     expect(profile).toContain('preferred_locale');
   });
 
+  it('applies the member\'s language while impersonating and restores the superadmin\'s', () => {
+    // Impersonating exists to see what the member sees, so the preference is not
+    // skipped for a superadmin; the locale they came from is kept and restored.
+    const component = memberFile('components/MemberLocalePreference.tsx')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(component).not.toMatch(/loading \|\| isImpersonating/);
+    expect(component).toContain("'impersonation_return_locale'");
+    expect(component).toContain('rememberReturnLocale(locale)');
+    expect(component).toContain('clearReturnLocale()');
+    // Remembered only once, so a second switch does not overwrite where they came from.
+    expect(component).toMatch(/if \(!sessionStorage\.getItem\(RETURN_LOCALE_KEY\)\)/);
+  });
+
   it('labels every language in every locale file', () => {
     for (const code of ['en', 'es', 'ca']) {
       const messages = JSON.parse(readFileSync(join(MEMBER_LOCALES_DIR, `${code}.json`), 'utf-8'));
