@@ -188,8 +188,7 @@ describe('GET /exercises: the shared filter vocabulary', () => {
   });
 
   it('never searches or filters a slug here (§4)', async () => {
-    // `withSlug: false`: a gym's own exercises have no slug an editor can
-    // write, so neither `?q=` nor `?slug=` may be answered from one.
+    // #1356: the slug is internal, so neither `?q=` nor `?slug=` uses it.
     const byQ = await gymList(`?q=zz969-metadata-carrier-${suffix}`);
     expect(byQ.status).toBe(200);
     expect(mine(byQ.body)).toEqual([]);
@@ -251,11 +250,13 @@ describe('GET /exercises/facets', () => {
 // ─── GET /exercises/base — the Import modal's library ───────────────────────
 
 describe('GET /exercises/base: the same vocabulary, on the library', () => {
-  it('matches a Base Exercise by its slug, through ?q= and ?slug= (§4)', async () => {
-    expect(mine((await baseList(`?q=zz969-base-dumbbell-row-${suffix}`)).body))
+  it('no longer searches a Base Exercise by its slug (#1356)', async () => {
+    expect(mine((await baseList(`?q=zz969-base-dumbbell-row-${suffix}`)).body)).toEqual([]);
+    const bySlug = await baseList(`?slug=zz969-base-bench-press-${suffix}`);
+    expect(bySlug.status).toBe(200);
+    expect(mine(bySlug.body).length).toBeGreaterThan(1);
+    expect(mine((await baseList(`?q=Zz969 Base Dumbbell Row ${suffix}`)).body))
       .toEqual([`Zz969 Base Dumbbell Row ${suffix}`]);
-    expect(mine((await baseList(`?slug=zz969-base-bench-press-${suffix}`)).body))
-      .toEqual([`Zz969 Base Bench Press ${suffix}`]);
   });
 
   it('supports the muscle filter in all three roles and both match modes', async () => {
@@ -291,7 +292,7 @@ describe('GET /exercises/base: the same vocabulary, on the library', () => {
     expect(names).not.toContain(`Zz969 Bench Press ${suffix}`);
   });
 
-  it('carries the slug the toolbar’s field searches', async () => {
+  it('still carries the slug internally', async () => {
     const row = (await baseList()).body.find((e: any) => e.name === `Zz969 Base Bench Press ${suffix}`);
     expect(row.slug).toBe(`zz969-base-bench-press-${suffix}`);
   });

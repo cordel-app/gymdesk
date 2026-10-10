@@ -56,8 +56,6 @@ export const DEFAULT_MUSCLE_MATCH: ExerciseMuscleMatch = 'any';
 export interface ExerciseListFilter {
   /** Matches the base name or any stored translation (#967 §7, §3/§18 here). */
   q: string | null;
-  /** The slug, partial (§4). Only Base Exercises carry one. */
-  slug: string | null;
   status: ExerciseFilterStatus | null;
   metadata: { column: ExerciseMetadataColumn; values: string[] }[];
   muscles: { role: 'principal' | 'secondary' | null; values: string[] }[];
@@ -118,7 +116,6 @@ export function parseExerciseListFilter(
   return {
     filter: {
       q: textParam(query.q),
-      slug: textParam(query.slug),
       status: (status as ExerciseFilterStatus | null) ?? null,
       metadata,
       muscles,
@@ -129,7 +126,7 @@ export function parseExerciseListFilter(
 
 /** Whether a parsed filter narrows anything at all. */
 export function isExerciseListFiltered(filter: ExerciseListFilter): boolean {
-  return Boolean(filter.q || filter.slug || filter.status)
+  return Boolean(filter.q || filter.status)
     || filter.metadata.length > 0
     || filter.muscles.length > 0;
 }
@@ -140,14 +137,10 @@ export function isExerciseListFiltered(filter: ExerciseListFilter): boolean {
  * `status != 'deleted'`).
  *
  * @param alias the `exercises` alias in the enclosing query
- * @param withSlug whether the context has slugs to search — a gym's own
- *   exercises carry none (no editor writes one), so §4's field is not offered
- *   there and the parameter keeps the clause from being built for it.
  */
 export function exerciseListFilterSql(
   alias: string,
   filter: ExerciseListFilter,
-  { withSlug = true }: { withSlug?: boolean } = {},
 ): { sql: string; params: unknown[] } {
   const parts: string[] = [];
   const params: unknown[] = [];
@@ -157,21 +150,10 @@ export function exerciseListFilterSql(
     params.push(filter.status);
   }
   if (filter.q) {
-    // #967 §7: the base name or any stored translation. The `slug` arm is
-    // #964's — a Free Exercise DB row is found by its source handle too — and
-    // is dropped where there are no slugs to match.
-    const arms = [exerciseNameSearchSql(alias)];
+    // #967 §7: the base name or any stored translation. The slug is an
+    // internal identifier (#1356) and is never searched.
+    parts.push(`(${exerciseNameSearchSql(alias)})`);
     params.push(`%${filter.q}%`, `%${filter.q}%`);
-    if (withSlug) {
-      arms.push(`${alias}.slug LIKE ?`);
-      params.push(`%${filter.q}%`);
-    }
-    parts.push(`(${arms.join(' OR ')})`);
-  }
-  if (filter.slug && withSlug) {
-    // Partial *and* exact (§4): a full slug is a substring of itself.
-    parts.push(`${alias}.slug LIKE ?`);
-    params.push(`%${filter.slug}%`);
   }
   for (const { column, values } of filter.metadata) {
     // The column itself, not `LOWER(…)`: the table's collation is

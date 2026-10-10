@@ -34,8 +34,8 @@ import {
  *  * **A control a context has no data for is absent, not empty** (§9, §19):
  *    the `equipment` and `category` options are the values actually present
  *    (`GET …/facets`), so a catalogue with none renders no such dropdown — a
- *    gym's own exercises carry no source metadata and no slug at all, which is
- *    what `showSlug` and empty facets express.
+ *    gym's own exercises carry no source metadata, which is what empty facets
+ *    express.
  *  * **The active filters read as compact inline chips** (§12) in the list's
  *    own `listNameBadgeStyle` pill (#724/#913), each removing itself, with the
  *    inline `Clear` (§13) and the result count (§14) on the same line.
@@ -50,7 +50,7 @@ export interface ExerciseFacetOptions {
 
 export function ExerciseFilterBar({
   value, onChange, muscleKeys, muscleLabel, facets,
-  showSlug = false, showStatus = false, shown, total = null, autoFocusSearch = false,
+  showStatus = false, shown, total = null, autoFocusSearch = false,
 }: {
   value: ExerciseFilterState;
   onChange: (next: ExerciseFilterState) => void;
@@ -60,7 +60,6 @@ export function ExerciseFilterBar({
   muscleLabel: (key: string) => string;
   /** The values present in this context; an empty list hides its control. */
   facets?: ExerciseFacetOptions | null;
-  showSlug?: boolean;
   showStatus?: boolean;
   /** How many rows the filtered list is showing (§14). */
   shown: number;
@@ -81,7 +80,6 @@ export function ExerciseFilterBar({
 
   const chips = exerciseFilterChips(value, {
     search: (v) => t('filter_chip_search', { value: v }),
-    slug: (v) => t('filter_chip_slug', { value: v }),
     status: (v) => tStatus(v as 'active' | 'inactive'),
     muscle: muscleLabel,
     equipment: exerciseFacetValueLabel,
@@ -102,20 +100,6 @@ export function ExerciseFilterBar({
             style={{ ...filterControlStyle, minWidth: 220 }}
           />
         </FilterField>
-
-        {/* §4: only where the exercises carry a slug — a gym's own never do. */}
-        {showSlug && (
-          <FilterField label={t('filter_slug')} htmlFor="exercise-filter-slug">
-            <input
-              id="exercise-filter-slug"
-              type="search"
-              value={value.slug}
-              onChange={(e) => onChange({ ...value, slug: e.target.value })}
-              placeholder={t('filter_slug_placeholder')}
-              style={{ ...filterControlStyle, minWidth: 140 }}
-            />
-          </FilterField>
-        )}
 
         {/* The three popovers name themselves on their trigger, as the ticket's
             sketch has them (`[ Muscles ▾ ]`), so they take no label above —
