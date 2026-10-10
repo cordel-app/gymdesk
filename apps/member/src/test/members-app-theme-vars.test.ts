@@ -5,6 +5,7 @@ import {
   DEFAULT_MEMBERS_APP_SOURCE_ADVANCED,
   MEMBERS_APP_SETTINGS,
   alignmentCssValue,
+  cardBoxShadow,
   cardEffectCssValue,
   cardEdgeFlags,
   applyMembersAppTokens,
@@ -80,7 +81,7 @@ describe('Members App theme settings: resolution (#833)', () => {
       const expected =
         setting.type === 'pixels' || setting.type === 'font-size' ? `${inherited}px`
         : setting.type === 'align-v' || setting.type === 'align-h' ? alignmentCssValue(setting.type, inherited)
-        : setting.type === 'card-shape' || setting.type === 'card-edges' || setting.type === 'card-shadow' ? cardEffectCssValue(setting.type, inherited)
+        : setting.type === 'card-shape' || setting.type === 'card-edges' || setting.type === 'card-shadow' || setting.type === 'card-glow' || setting.type === 'card-style' ? cardEffectCssValue(setting.type, inherited)
         : String(inherited);
       expect(written[setting.cssVar], `${setting.key} does not follow its Admin source`).toBe(expected);
     }
@@ -357,6 +358,38 @@ describe('Section Cards border width accepts bare pixels (#1216)', () => {
     expect(widthVar('1px')).toBe('1px');
     expect(widthVar('0.5px')).toBe('0.5px');
     expect(widthVar()).toBe('1px');
+  });
+});
+
+describe('Section Card glow and visual style (#1321 stage 2)', () => {
+  const themed = (membersApp: Record<string, string>) => ({ ...DEFAULT_TOKENS, membersApp }) as ThemeTokens;
+
+  it('changes nothing by default: no glow, the clean style, the soft shadow alone', () => {
+    const vars = membersAppCssVars(DEFAULT_TOKENS);
+    expect(vars['--gd-members-card-style']).toBe('clean');
+    expect(vars['--gd-members-card-effects']).toBe('0 1px 3px rgba(0,0,0,0.05)');
+  });
+
+  it('composes the drop shadow and the glow in one list, dropping a part that is off', () => {
+    expect(cardBoxShadow('none', 'none', '#fff')).toBe('none');
+    expect(cardBoxShadow('none', 'subtle', '#ff0000')).toBe('0 0 8px 1px color-mix(in srgb, #ff0000 60%, transparent)');
+    expect(cardBoxShadow('0 1px 2px #000', 'strong', '#ff0000')).toContain('0 1px 2px #000, 0 0 18px 3px');
+  });
+
+  it('lets a style fill only what the theme has not set', () => {
+    expect(membersAppCssVars(themed({ sectionCardsVisualStyle: 'outlined' }))['--gd-members-card-shadow']).toBe('none');
+    // an explicit shadow outranks the style's default
+    const vars = membersAppCssVars(themed({ sectionCardsVisualStyle: 'outlined', sectionCardsShadow: 'strong' }));
+    expect(vars['--gd-members-card-shadow']).toBe('0 8px 24px rgba(0,0,0,0.2)');
+    expect(vars['--gd-members-card-border-width']).toBe('2px');
+    const glass = membersAppCssVars(themed({ sectionCardsVisualStyle: 'glass' }));
+    expect(glass['--gd-members-card-effects']).toContain('0 0 8px 1px');
+  });
+
+  it('falls back on a glow or style word outside its set', () => {
+    const vars = membersAppCssVars(themed({ sectionCardsGlow: 'bogus', sectionCardsVisualStyle: 'bogus' }));
+    expect(vars['--gd-members-card-glow']).toBe('none');
+    expect(vars['--gd-members-card-style']).toBe('clean');
   });
 });
 

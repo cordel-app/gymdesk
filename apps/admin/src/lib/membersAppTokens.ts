@@ -69,12 +69,14 @@ export const MEMBERS_APP_CARD_SHAPES = ['rounded', 'square', 'none'];
 export const MEMBERS_APP_CARD_BORDER_EDGES = ['all', 'none', 'top', 'bottom', 'left', 'right'];
 export const MEMBERS_APP_CARD_SHADOWS = ['none', 'soft', 'medium', 'strong'];
 
-export type CardEffectType = 'card-shape' | 'card-edges' | 'card-shadow';
+export type CardEffectType = 'card-shape' | 'card-edges' | 'card-shadow' | 'card-glow' | 'card-style';
 
 export const MEMBERS_APP_CARD_OPTIONS: Record<CardEffectType, string[]> = {
   'card-shape': MEMBERS_APP_CARD_SHAPES,
   'card-edges': MEMBERS_APP_CARD_BORDER_EDGES,
   'card-shadow': MEMBERS_APP_CARD_SHADOWS,
+  'card-glow': ['none', 'subtle', 'strong'],
+  'card-style': ['clean', 'outlined', 'glass'],
 };
 
 const CARD_SHAPE_CSS: Record<string, string> = { rounded: '12px', square: '4px', none: '0px' };
@@ -85,12 +87,46 @@ const CARD_SHADOW_CSS: Record<string, string> = {
   strong: '0 8px 24px rgba(0,0,0,0.2)',
 };
 
+
+/** #1321 stage 2 — the glow word and the Visual Style word, closed sets like the other three. */
+export const MEMBERS_APP_CARD_GLOWS = ['none', 'subtle', 'strong'];
+export const MEMBERS_APP_CARD_STYLES = ['clean', 'outlined', 'glass'];
+
+/**
+ * A Visual Style is a bundle of *defaults*: it supplies a value only for a
+ * setting the Theme has not overridden, so it can never overwrite an explicit
+ * choice. `clean` supplies nothing — it is today's card.
+ */
+export const CARD_STYLE_DEFAULTS: Record<string, Record<string, string>> = {
+  clean: {},
+  outlined: { sectionCardsShadow: 'none', sectionCardsBorderWidth: '2px' },
+  glass: { sectionCardsShadow: 'medium', sectionCardsGlow: 'subtle' },
+};
+
+const CARD_GLOW_CSS: Record<string, string> = {
+  none: '',
+  subtle: '0 0 8px 1px',
+  strong: '0 0 18px 3px',
+};
+
+/**
+ * The card's whole `box-shadow`: the drop shadow and the glow in one list.
+ * `none` is not valid inside a list, so each part is dropped when it is off.
+ */
+export function cardBoxShadow(shadowCss: string, glow: string, glowColor: string): string {
+  const parts: string[] = [];
+  if (shadowCss && shadowCss !== 'none') parts.push(shadowCss);
+  const g = CARD_GLOW_CSS[glow];
+  if (g) parts.push(`${g} color-mix(in srgb, ${glowColor} 60%, transparent)`);
+  return parts.length ? parts.join(', ') : 'none';
+}
+
 /** The CSS a stored shape, edge or shadow word becomes; `null` for a word outside its set. */
 export function cardEffectCssValue(type: CardEffectType, value: unknown): string | null {
   if (typeof value !== 'string' || !MEMBERS_APP_CARD_OPTIONS[type].includes(value)) return null;
   if (type === 'card-shape') return CARD_SHAPE_CSS[value];
   if (type === 'card-shadow') return CARD_SHADOW_CSS[value];
-  return value;
+  return value; // edges, glow and style are words; their CSS is composed by cardBoxShadow()
 }
 
 /** Which edges carry the border (1) and which do not (0), for a stored edges word. */
@@ -287,6 +323,36 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     source: null,
     default: 'soft',
     cssVar: '--gd-members-card-shadow',
+  },
+  {
+    // #1321 stage 2 — Glow, its colour and the Visual Style. Glow inherits from
+    // nothing (default none); its colour inherits the primary button colour so a
+    // glow follows the brand until someone picks one. The Visual Style supplies
+    // defaults only for settings the Theme has not overridden.
+    key: 'sectionCardsGlow',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_glow',
+    type: 'card-glow',
+    source: null,
+    default: 'none',
+    cssVar: '--gd-members-card-glow',
+  },
+  {
+    key: 'sectionCardsGlowColor',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_glow_color',
+    type: 'color',
+    source: { kind: 'color', key: 'primaryButton', labelKey: 'label_primary_btn' },
+    cssVar: '--gd-members-card-glow-color',
+  },
+  {
+    key: 'sectionCardsVisualStyle',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_style',
+    type: 'card-style',
+    source: null,
+    default: 'clean',
+    cssVar: '--gd-members-card-style',
   },
   // #1152 §3 — the text inside a Section Card. Colour and font family have an
   // honest Admin source (the primary text colour and the body font, which is
@@ -594,6 +660,12 @@ export function inheritedMembersAppValue(tokens: ThemeTokens, setting: MembersAp
 export function effectiveMembersAppValue(tokens: ThemeTokens, setting: MembersAppSetting): string | number {
   const override = membersAppOverrides(tokens)[setting.key];
   if (override !== null && override !== undefined) return override;
+  // #1321 stage 2 — a Visual Style fills only what nothing overrides.
+  if (setting.key !== 'sectionCardsVisualStyle') {
+    const styleOverride = ((tokens as any).membersApp ?? {})['sectionCardsVisualStyle'];
+    const styleDefault = CARD_STYLE_DEFAULTS[typeof styleOverride === 'string' ? styleOverride : 'clean']?.[setting.key];
+    if (styleDefault !== undefined) return styleDefault;
+  }
   return inheritedMembersAppValue(tokens, setting);
 }
 
@@ -683,6 +755,9 @@ export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetti
     case 'card-edges':
     case 'card-shadow':
       return cardEffectCssValue(setting.type, value) ?? cardEffectCssValue(setting.type, inherited) ?? '';
+    case 'card-glow':
+    case 'card-style':
+      return cardEffectCssValue(setting.type, value) ?? cardEffectCssValue(setting.type, inherited) ?? '';
     case 'length':
     default:
       return cssLength(typeof value === 'string' && value.trim() !== '' ? value.trim() : String(inherited));
@@ -699,5 +774,10 @@ export function membersAppCssVars(tokens: ThemeTokens): Record<string, string> {
       for (const edge of ['top', 'right', 'bottom', 'left'] as const) out[`${setting.cssVar}-${edge}`] = String(flags[edge]);
     }
   }
+  out['--gd-members-card-effects'] = cardBoxShadow(
+    out['--gd-members-card-shadow'],
+    out['--gd-members-card-glow'],
+    out['--gd-members-card-glow-color'],
+  );
   return out;
 }
