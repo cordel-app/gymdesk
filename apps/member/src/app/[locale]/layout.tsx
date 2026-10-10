@@ -93,14 +93,15 @@ export default async function LocaleLayout({
               <AppProvider>
                 <FeatureFlagsProvider>
                   <ThemeProvider>
-                    <MemberLocalePreference />
                     <NativeShell />
                     <NativeAppState />
                     <MembersBackground />
                     <AdminBar />
                     <TopBar />
                     <GymSwitcher />
-                    {children}
+                    {/* Holds the page back while the member's language is being
+                        applied, so it is never painted in the wrong one first. */}
+                    <MemberLocalePreference>{children}</MemberLocalePreference>
                   </ThemeProvider>
                 </FeatureFlagsProvider>
               </AppProvider>
