@@ -1,0 +1,81 @@
+name: Reset Dev Billing Data
+
+# #1325 — the development billing reset: deletes assigned Membership Plans,
+# Billing Events, payments, one-off purchases and the audit rows of those
+# entities. What it deletes is `api/src/domain/devBillingReset.ts`; the guard
+# that refuses to run against anything but the development database is
+# `evaluateResetGuard()` there.
+#
+# Manual dispatch, `dev` environment ONLY — there is no `environment` input on
+# purpose: the `pro` environment must not be selectable, and the database it
+# reaches is whatever that environment's secrets name. The database is
+# VCN-private, so — like `exercises-import.yml` — the compiled script runs from
+# the VPS against the deployed image.
+#
+# Defaults to a dry run: counts per table, deletes nothing.
+
+on:
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: Delete (leave unchecked for a dry run that only counts)
+        type: boolean
+        default: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/fitness-api
+
+jobs:
+  reset:
+    name: Reset dev billing data
+    runs-on: ubuntu-24.04-arm
+    environment: dev
+
+    steps:
+      - name: Run on the VPS
+        uses: appleboy/ssh-action@v1
+        env:
+          CORDEL_FITNESS_DB_HOST: ${{ secrets.CORDEL_FITNESS_DB_HOST }}
+          CORDEL_FITNESS_DB_USER: ${{ secrets.CORDEL_FITNESS_DB_USER }}
+          CORDEL_FITNESS_DB_PASSWORD: ${{ secrets.CORDEL_FITNESS_DB_PASSWORD }}
+          CORDEL_FITNESS_DB_NAME: ${{ secrets.CORDEL_FITNESS_DB_NAME }}
+          EXECUTE: ${{ inputs.execute }}
+        with:
+          host: ${{ secrets.CORBACK_SSH_HOST }}
+          username: podman
+          key: ${{ secrets.CORBACK_SSH_PRIVATE_KEY }}
+          envs: CORDEL_FITNESS_DB_HOST,CORDEL_FITNESS_DB_USER,CORDEL_FITNESS_DB_PASSWORD,CORDEL_FITNESS_DB_NAME,EXECUTE
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+
+            for v in CORDEL_FITNESS_DB_HOST CORDEL_FITNESS_DB_USER \
+                     CORDEL_FITNESS_DB_PASSWORD CORDEL_FITNESS_DB_NAME; do
+              if [ -z "${!v:-}" ]; then
+                echo "ERROR: $v is not set for this GitHub environment. Nothing was deleted."
+                exit 1
+              fi
+            done
+
+            IMAGE=ghcr.io/${{ env.IMAGE_NAME }}:latest
+            if ! podman image exists "$IMAGE"; then
+              echo "ERROR: $IMAGE is not present on this host — deploy the API first (Deploy API workflow)."
+              exit 1
+            fi
+
+            ARGS=""
+            if [ "${EXECUTE}" = "true" ]; then
+              ARGS="--execute"
+              export RESET_CONFIRM=DELETE-DEV-BILLING-DATA
+            fi
+            # No value on podman's command line (#1192): `-e NAME` copies it.
+            export CORDEL_FITNESS_DB_HOST CORDEL_FITNESS_DB_USER CORDEL_FITNESS_DB_PASSWORD CORDEL_FITNESS_DB_NAME 
+            podman run --rm \
+              -e CORDEL_FITNESS_DB_HOST \
+              -e CORDEL_FITNESS_DB_USER \
+              -e CORDEL_FITNESS_DB_PASSWORD \
+              -e CORDEL_FITNESS_DB_NAME \
+              ${RESET_CONFIRM:+-e RESET_CONFIRM} \
+              "$IMAGE" \
+              node dist/scripts/reset-dev-billing.js $ARGS

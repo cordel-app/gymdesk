@@ -2274,7 +2274,7 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
   // carries it like any other column — that is the whole point: the Member's
   // plan cards show *Created by* without one `audit_logs` subquery per row. What
   // stays off the list is the *modified* pair, which is still derived.
-  it('carries the stored creation actor on the list endpoint, but no derived modification metadata', async () => {
+  it('carries the stored creation actor on the list endpoint; the stored modified pair is present and NULL until a writer snapshots it (#1325)', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
@@ -2289,8 +2289,13 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
     // A raw DB insert snapshots no actor, so the column is present and null.
     expect(row.created_by_name).toBeNull();
     expect(row.created_by_type).toBeNull();
-    expect(row.modified_by_name).toBeUndefined();
-    expect(row.modified_at).toBeUndefined();
+    // #1325 added the stored `modified_*` / `deleted_*` pairs (migration 246).
+    // No writer snapshots them yet, so they read NULL — and the *derived*
+    // modification metadata (an `audit_logs` subquery per row) is still not on
+    // the list.
+    expect(row.modified_by_name).toBeNull();
+    expect(row.modified_at).toBeNull();
+    expect(row.last_modified_at).toBeUndefined();
   });
 });
 

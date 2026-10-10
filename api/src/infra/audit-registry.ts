@@ -137,6 +137,21 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
     },
   },
 
+  product_set: {
+    kind: 'composed', label: 'Product Sets',
+    resolve: async (id) => {
+      const { rows } = await db.query<{ member_name: string; version: number }>(
+        `SELECT m.name AS member_name, ps.version
+         FROM product_sets ps
+         JOIN members m ON m.id = ps.owner_member_id
+         WHERE ps.id = ?`,
+        [id],
+      );
+      if (!rows[0]) return null;
+      return `${rows[0].member_name} — v${rows[0].version}`;
+    },
+  },
+
   billing_event: {
     kind: 'composed', label: 'Billing Events',
     resolve: async (id) => {

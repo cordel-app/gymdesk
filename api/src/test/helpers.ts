@@ -126,6 +126,9 @@ export async function cleanupTestGyms() {
   // before `promotions`, whose FK from here is ON DELETE RESTRICT for the same
   // reason the Product's is — the application is the record of what the member
   // was charged under.
+  // #1325: ProductSet children cascade from `product_sets`, which cascades from
+  // the gym; `owner_member_id` is RESTRICT, so the sets go before `members`.
+  await db.query(`DELETE FROM product_sets WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_product_promotions WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_products WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_requests WHERE gym_id IN (${marks})`, ids);
