@@ -389,16 +389,33 @@ export async function loadPromotionApplications(
 export async function loadPromotionApplicationsFor(
   gymId: string, umIds: number[],
 ): Promise<Map<number, PromotionApplication[]>> {
+  return loadApplicationsKeyedBy(gymId, 'user_membership_id', umIds);
+}
+
+/**
+ * #1325 — the same read for ProductSet versions: each application is owned by
+ * the version it was applied to (`product_set_id`), so a new version carries its
+ * own copies and an earlier one is never read through it.
+ */
+export async function loadPromotionApplicationsForSets(
+  gymId: string, productSetIds: number[],
+): Promise<Map<number, PromotionApplication[]>> {
+  return loadApplicationsKeyedBy(gymId, 'product_set_id', productSetIds);
+}
+
+async function loadApplicationsKeyedBy(
+  gymId: string, column: 'user_membership_id' | 'product_set_id', keys: number[],
+): Promise<Map<number, PromotionApplication[]>> {
   const byAssignment = new Map<number, PromotionApplication[]>();
-  const ids = [...new Set(umIds)];
+  const ids = [...new Set(keys)];
   if (ids.length === 0) return byAssignment;
   const { rows } = await db.query(
-    `SELECT ump.id, ump.user_membership_id, ump.promotion_id, ump.status,
+    `SELECT ump.id, ump.${column} AS owner_key, ump.promotion_id, ump.status,
             ump.applied_at, ump.revoked_at, ump.snapshot,
             p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months
      FROM user_membership_promotions ump
      LEFT JOIN promotions p ON p.id = ump.promotion_id
-     WHERE ump.user_membership_id IN (${ids.map(() => '?').join(',')}) AND ump.gym_id = ?`,
+     WHERE ump.${column} IN (${ids.map(() => '?').join(',')}) AND ump.gym_id = ?`,
     [...ids, gymId],
   );
   const shaped = await Promise.all(rows.map(async (row: any) => {
@@ -420,7 +437,7 @@ export async function loadPromotionApplicationsFor(
     }));
     const num = (v: unknown) => Math.max(0, Math.trunc(Number(v)) || 0);
     return {
-      userMembershipId: Number(row.user_membership_id),
+      userMembershipId: Number(row.owner_key),
       application: {
         id: row.id as number,
         promotionId: row.promotion_id as number,

@@ -65,9 +65,28 @@ export interface MemberPlanRow {
 
 export type MemberServiceRow = AssignedPlanService & { plan_name: string | null };
 
+/**
+ * #1325 PR 3b — a ProductSet version still in flight: a Draft being configured
+ * or a Save & Pay awaiting its first payment. It has no assignment yet (that is
+ * what activation projects), so it is listed beside `plans` and acted on through
+ * `/product-sets`. A Draft idle past two hours is `expired` and only discardable.
+ */
+export interface ProductSetRow {
+  id: number;
+  status: 'draft' | 'pending_payment' | string;
+  version: number;
+  plan_name: string | null;
+  starts_at: string | null;
+  /** The initial payment Save & Pay wrote, or `null` for a Draft. */
+  amount_due: number | null;
+  expired: boolean;
+  created_by_name: string | null;
+}
+
 export interface MemberConfiguration {
   plans: MemberPlanRow[];
   services: MemberServiceRow[];
+  product_sets: ProductSetRow[];
 }
 
-export const EMPTY_CONFIGURATION: MemberConfiguration = { plans: [], services: [] };
+export const EMPTY_CONFIGURATION: MemberConfiguration = { plans: [], services: [], product_sets: [] };
