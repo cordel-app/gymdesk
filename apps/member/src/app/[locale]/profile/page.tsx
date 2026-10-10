@@ -9,6 +9,7 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { MEMBER_LOCALES, isMemberLocale, memberLocaleLabel } from '@/lib/memberLocale';
+import { MemberPhotoField } from '@/components/MemberPhotoField';
 import {
   inputStyle,
   memberTheme,
@@ -25,6 +26,9 @@ interface Profile {
   phone: string | null;
   /** #1039: the member's stored default language, or `null` for no preference. */
   preferred_locale: string | null;
+  /** #1374/#1375: the member's photo and the stamp its preview is busted on. */
+  image_url?: string | null;
+  modified_at?: string | null;
   /** #1234: Clerk account history, stored dates. */
   clerk_user_id?: string | null;
   invitation_id?: string | null;
@@ -154,6 +158,17 @@ export default function ProfilePage() {
     }
   }
 
+  /**
+   * #1375: the photo control answers with the profile as `GET /me/profile`
+   * shapes it, so the page takes it whole and the context's copy — which is
+   * what the top-bar avatar reads — follows in the same breath.
+   */
+  function photoChanged(updated: unknown) {
+    const next = updated as Profile;
+    setProfile(next);
+    if (member) updateMember({ ...member, image_url: next.image_url ?? null, modified_at: next.modified_at ?? null });
+  }
+
   if (loading) {
     return <main style={styles.container}><p style={styles.hint}>{t('profile.loading')}</p></main>;
   }
@@ -169,6 +184,14 @@ export default function ProfilePage() {
       {toast && <div style={styles.toast}>{toast}</div>}
 
       <div style={styles.card}>
+        {/* #1375: the member's own photo. A superadmin impersonating them sees
+            it and gets no control (§2) — the staff path is the Member card. */}
+        <MemberPhotoField
+          member={profile}
+          canEdit={!isImpersonating}
+          label={(key) => t(`profile.${key}`)}
+          onChanged={photoChanged}
+        />
         <Field label={t('profile.name')} value={profile.name} />
         <Field label={t('profile.email')} value={profile.email} note={t('profile.email_readonly')} />
 

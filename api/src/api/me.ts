@@ -527,6 +527,25 @@ function shapeMemberProfile<T extends { preferred_locale?: unknown }>(row: T) {
   return { ...row, preferred_locale: toMemberPreferredLocale(row.preferred_locale) };
 }
 
+/**
+ * The member's own profile as `GET /me/profile` answers it — the row, the plan
+ * name, and `preferred_locale` narrowed to a locale this deployment configures.
+ * One loader for the read, the `PATCH` and the image routes (#1375), so every
+ * answer of "the member's profile" is one shape. `null` for a member outside
+ * the gym or soft-deleted.
+ */
+export async function loadMemberProfile(gymId: string, memberId: number): Promise<Record<string, any> | null> {
+  const { rows } = await db.query(
+    `SELECT m.*, m.membership_plan_id AS fare_id,
+            p.name AS fare_name
+     FROM members m
+     LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
+     WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
+    [gymId, memberId],
+  );
+  return rows[0] ? shapeMemberProfile(rows[0]) : null;
+}
+
 // #1246 stage 5: the gym's Time & Localization settings, read-only, so the
 // Members App formats dates and amounts by the same conventions as the staff.
 meRouter.get('/localization', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
@@ -547,16 +566,9 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
   const { gymId } = ctx;
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const { rows } = await db.query(
-      `SELECT m.*, m.membership_plan_id AS fare_id,
-              p.name AS fare_name
-       FROM members m
-       LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
-       WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
-      [gymId, memberId],
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
-    res.json(shapeMemberProfile(rows[0]));
+    const profile = await loadMemberProfile(gymId, memberId);
+    if (!profile) return res.status(404).json({ error: 'Member not found' });
+    res.json(profile);
   } catch (err) {
     next(err);
   }
@@ -593,15 +605,7 @@ meRouter.patch('/profile', requireRole('member'), async (req: Request, res: Resp
       ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Member not found' });
-    const { rows } = await db.query(
-      `SELECT m.*, m.membership_plan_id AS fare_id,
-              p.name AS fare_name
-       FROM members m
-       LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
-       WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
-      [gymId, memberId],
-    );
-    res.json(shapeMemberProfile(rows[0]));
+    res.json(await loadMemberProfile(gymId, memberId));
   } catch (err) {
     next(err);
   }
