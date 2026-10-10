@@ -3774,6 +3774,7 @@
     "frequency_legacy_notice": "Aquest producte es factura «{frequency}», una freqüència que ja no està disponible. Si trieu una altra, la substituireu i no la podreu tornar a seleccionar.",
     "system_badge": "Sistema",
     "mandatory_badge": "Obligatori",
+    "one_time_badge": "Compra única",
     "section_general": "General",
     "section_billing": "Configuració de cobrament",
     "section_package_info": "Informació del paquet",

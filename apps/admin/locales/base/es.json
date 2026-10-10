@@ -3747,6 +3747,7 @@
     "frequency_legacy_notice": "Este producto se factura «{frequency}», una frecuencia que ya no está disponible. Si eliges otra, la reemplazarás y no podrás volver a seleccionarla.",
     "system_badge": "Sistema",
     "mandatory_badge": "Obligatorio",
+    "one_time_badge": "Compra única",
     "section_general": "General",
     "section_billing": "Configuración de cobro",
     "section_package_info": "Información del paquete",

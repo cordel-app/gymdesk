@@ -73,6 +73,8 @@ export type DefaultGymProduct = {
   enrollmentStatus: 'public' | 'staff_only';
   /** #832: part of every Membership Plan benefit section while set. */
   mandatory: boolean;
+  /** #1349: meant to be purchased once by a member. A flag, not enforcement. */
+  oneTimePurchase: boolean;
   /** #371: 6 calendar months, as migration 124 approximated them. */
   validityDays: number | null;
 };
@@ -93,6 +95,7 @@ export const DEFAULT_GYM_PRODUCTS: readonly DefaultGymProduct[] = [
     enrollmentStatus: 'staff_only',
     mandatory: false,
     validityDays: null,
+    oneTimePurchase: false,
   },
   {
     chargeTypeCode: 'insurance_fee',
@@ -105,6 +108,7 @@ export const DEFAULT_GYM_PRODUCTS: readonly DefaultGymProduct[] = [
     enrollmentStatus: 'staff_only',
     mandatory: true,
     validityDays: null,
+    oneTimePurchase: false,
   },
   {
     chargeTypeCode: 'locker_rental',
@@ -117,6 +121,7 @@ export const DEFAULT_GYM_PRODUCTS: readonly DefaultGymProduct[] = [
     enrollmentStatus: 'public',
     mandatory: false,
     validityDays: null,
+    oneTimePurchase: false,
   },
   {
     chargeTypeCode: 'parking_fee',
@@ -129,6 +134,7 @@ export const DEFAULT_GYM_PRODUCTS: readonly DefaultGymProduct[] = [
     enrollmentStatus: 'public',
     mandatory: false,
     validityDays: null,
+    oneTimePurchase: false,
   },
   {
     // #371 / migration 124: the one System Product with no charge type.
@@ -142,6 +148,7 @@ export const DEFAULT_GYM_PRODUCTS: readonly DefaultGymProduct[] = [
     enrollmentStatus: 'public',
     mandatory: false,
     validityDays: 182,
+    oneTimePurchase: false,
   },
   {
     chargeTypeCode: 'premium_fitness_app',
@@ -155,6 +162,7 @@ export const DEFAULT_GYM_PRODUCTS: readonly DefaultGymProduct[] = [
     enrollmentStatus: 'staff_only',
     mandatory: false,
     validityDays: null,
+    oneTimePurchase: true,
   },
   {
     chargeTypeCode: 'registration_fee',
@@ -167,6 +175,7 @@ export const DEFAULT_GYM_PRODUCTS: readonly DefaultGymProduct[] = [
     enrollmentStatus: 'staff_only',
     mandatory: true,
     validityDays: null,
+    oneTimePurchase: true,
   },
 ];
 

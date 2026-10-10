@@ -27,6 +27,7 @@ const SELECT = `
     gc.enrollment_status,
     gc.is_system,
     gc.mandatory,
+    gc.one_time_purchase,
     gc.description,
     gc.amount,
     gc.currency,
@@ -305,9 +306,9 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
       const { insertId } = await tx.query(
         `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
-            is_system, mandatory, notes, package_information, validity_days, tax_rate_id, tax_behavior,
+            is_system, mandatory, one_time_purchase, notes, package_information, validity_days, tax_rate_id, tax_behavior,
             created_by_membership_id, modified_by_membership_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name,
@@ -326,6 +327,8 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
           // #832: Duplicate is a copy, not the form — the flag comes over as it
           // stands, the same rule the frequency above follows.
           orig.mandatory,
+          // #1349: copied as it stands, like the flag above.
+          orig.one_time_purchase,
           orig.notes,
           orig.package_information,
           orig.validity_days,

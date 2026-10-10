@@ -32,7 +32,7 @@ import {
 const COLUMNS = `
   (gym_id, charge_type_id, name, type, units, amount, currency, billing_frequency,
    status, availability, enrollment_status, is_system, mandatory, validity_days,
-   tax_rate_id, tax_behavior, created_at, modified_at)
+   one_time_purchase, tax_rate_id, tax_behavior, created_at, modified_at)
 `;
 
 /**
@@ -67,6 +67,7 @@ function configurationValues(product: DefaultGymProduct) {
     product.enrollmentStatus,
     product.mandatory ? 1 : 0,
     product.validityDays,
+    product.oneTimePurchase ? 1 : 0,
   ];
 }
 
@@ -77,7 +78,7 @@ function configurationValues(product: DefaultGymProduct) {
  * `is_product` charge type the catalogue holds.
  */
 const UNDECLARED: ReturnType<typeof configurationValues> = [
-  null, null, null, 'active', 'available', 'public', 0, null,
+  null, null, null, 'active', 'available', 'public', 0, null, 0,
 ];
 
 /**
@@ -97,7 +98,7 @@ export async function seedDefaultGymProducts(gymId: string): Promise<void> {
     const declared = defaultProductForChargeType(chargeType.code);
     await db.query(
       `INSERT IGNORE INTO products ${COLUMNS}
-       SELECT ?, ct.id, ct.name, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ${SYSTEM_TAX_RATE},
+       SELECT ?, ct.id, ct.name, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ${SYSTEM_TAX_RATE},
          'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP()
        FROM charge_types ct WHERE ct.id = ?`,
       [gymId, declared?.type ?? 'fee', ...(declared ? configurationValues(declared) : UNDECLARED), gymId, chargeType.id],
@@ -107,7 +108,7 @@ export async function seedDefaultGymProducts(gymId: string): Promise<void> {
   for (const product of defaultProductsWithoutChargeType()) {
     await db.query(
       `INSERT INTO products ${COLUMNS}
-       SELECT ?, NULL, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ${SYSTEM_TAX_RATE},
+       SELECT ?, NULL, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ${SYSTEM_TAX_RATE},
          'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP()
        FROM DUAL
        WHERE NOT EXISTS (

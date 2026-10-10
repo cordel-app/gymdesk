@@ -159,6 +159,8 @@ interface Product {
   is_system: number;
   /** #832: 0/1 from MySQL, like `is_system` — read through Boolean(). */
   mandatory: number;
+  /** #1349: 0/1 from MySQL; a badge only, never derived from billing_frequency. */
+  one_time_purchase?: number;
   description: string | null;
   amount: string | null;
   currency: string;
@@ -951,6 +953,11 @@ export default function ProductsPage() {
             {isMandatory && (
               <span style={listNameBadgeAccentStyle}>
                 {t('mandatory_badge')}
+              </span>
+            )}
+            {Boolean(item.one_time_purchase) && (
+              <span style={listNameBadgeStyle}>
+                {t('one_time_badge')}
               </span>
             )}
           </div>

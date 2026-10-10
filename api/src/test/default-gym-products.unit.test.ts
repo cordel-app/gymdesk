@@ -115,3 +115,20 @@ describe('#1149 default gym Products — the declaration', () => {
     }
   });
 });
+
+// #1349: the One-time pair, and nothing else, independent of frequency.
+describe('#1349 one-time purchase flag', () => {
+  it('flags Premium Fitness App and Registration Fee only', () => {
+    const flagged = DEFAULT_GYM_PRODUCTS.filter((p) => p.oneTimePurchase).map((p) => p.name).sort();
+    expect(flagged).toEqual(['Premium Fitness App', 'Registration Fee']);
+  });
+
+  it('does not derive the flag from a Once frequency', () => {
+    const onceUnflagged = DEFAULT_GYM_PRODUCTS.filter((p) => p.billingFrequency === 'once' && !p.oneTimePurchase);
+    expect(onceUnflagged.length).toBeGreaterThan(0);
+  });
+
+  it('the seeder writes the column', () => {
+    expect(read('api/gym-default-products.ts')).toContain('one_time_purchase');
+  });
+});
