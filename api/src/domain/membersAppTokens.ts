@@ -26,7 +26,10 @@ export type MembersAppSettingType =
   | 'pixels'
   | 'font-size'
   | 'align-v'
-  | 'align-h';
+  | 'align-h'
+  | 'card-shape'
+  | 'card-edges'
+  | 'card-shadow';
 
 /** The bounds of a `font-size` setting, in CSS pixels. */
 export const MEMBERS_APP_FONT_SIZE = { min: 8, max: 48 } as const;
@@ -35,6 +38,13 @@ export const MEMBERS_APP_FONT_SIZE = { min: 8, max: 48 } as const;
 export const MEMBERS_APP_VERTICAL_ALIGNMENTS = ['top', 'center', 'bottom'] as const;
 /** The three horizontal positions a Section Card's text may take (#1152 §3). */
 export const MEMBERS_APP_HORIZONTAL_ALIGNMENTS = ['left', 'center', 'right'] as const;
+
+/** #1321 stage 1 — the closed sets of the three Section Card effect settings. */
+export const MEMBERS_APP_CARD_OPTIONS = {
+  'card-shape': ['rounded', 'square', 'none'],
+  'card-edges': ['all', 'none', 'top', 'bottom', 'left', 'right'],
+  'card-shadow': ['none', 'soft', 'medium', 'strong'],
+} as const;
 
 export const MEMBERS_APP_SETTING_TYPES: Record<string, MembersAppSettingType> = {
   headerColor:                       'color',
@@ -46,6 +56,9 @@ export const MEMBERS_APP_SETTING_TYPES: Record<string, MembersAppSettingType> = 
   sectionCardsBackgroundColor:       'color',
   sectionCardsBorderColor:           'color',
   sectionCardsBorderWidth:           'length',
+  sectionCardsShape:                 'card-shape',
+  sectionCardsBorderEdges:           'card-edges',
+  sectionCardsShadow:                'card-shadow',
   sectionCardsTextColor:             'color',
   sectionCardsTextSize:              'font-size',
   sectionCardsTextFont:              'font',
@@ -114,6 +127,11 @@ export function validateMembersApp(membersApp: any): string | null {
     } else if (type === 'align-v') {
       if (typeof value !== 'string' || !(MEMBERS_APP_VERTICAL_ALIGNMENTS as readonly string[]).includes(value)) {
         return `membersApp.${key} must be one of ${MEMBERS_APP_VERTICAL_ALIGNMENTS.join(', ')}`;
+      }
+    } else if (type === 'card-shape' || type === 'card-edges' || type === 'card-shadow') {
+      const options = MEMBERS_APP_CARD_OPTIONS[type] as readonly string[];
+      if (typeof value !== 'string' || !options.includes(value)) {
+        return `membersApp.${key} must be one of ${options.join(', ')}`;
       }
     } else if (type === 'align-h') {
       if (typeof value !== 'string' || !(MEMBERS_APP_HORIZONTAL_ALIGNMENTS as readonly string[]).includes(value)) {

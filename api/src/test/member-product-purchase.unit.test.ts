@@ -223,14 +223,14 @@ describe('what a purchase row keeps (#1121 Q2, #635 §16)', () => {
   // cannot create an `active` purchase nobody paid for.
   it('is written pending, with its status named', () => {
     const loader = read(REPO, 'api', 'src', 'api', 'me-products.ts');
-    const insert = loader.slice(loader.indexOf('INSERT INTO member_products'));
+    const insert = loader.slice(loader.indexOf('INSERT INTO member_products_oneoff_snapshot'));
     expect(insert.slice(0, 400)).toContain('status');
     expect(loader).toContain('PENDING_PURCHASE_STATUS');
   });
 
   it('completion and cancellation are both constrained on the pending status', () => {
     const loader = read(REPO, 'api', 'src', 'api', 'me-products.ts');
-    const updates = loader.match(/UPDATE member_products[\s\S]*?`/g) ?? [];
+    const updates = loader.match(/UPDATE member_products_oneoff_snapshot[\s\S]*?`/g) ?? [];
     expect(updates.length).toBeGreaterThanOrEqual(3);
     for (const update of updates) {
       expect(update).toMatch(/status = \?|status = 'cancelled'|mp\.status = \?/);
@@ -262,7 +262,7 @@ describe('the vocabulary matches its CHECKs (migration 228)', () => {
     const source = read(REPO, 'api', 'src', 'infra', 'migrations', '228_member_product_purchases.js');
     expect(source).toContain('gym_id               CHAR(36)      NOT NULL');
     const loader = read(REPO, 'api', 'src', 'api', 'me-products.ts');
-    for (const statement of loader.match(/FROM member_products[\s\S]*?`/g) ?? []) {
+    for (const statement of loader.match(/FROM member_products_oneoff_snapshot[\s\S]*?`/g) ?? []) {
       expect(statement).toContain('gym_id = ?');
     }
   });
@@ -289,8 +289,12 @@ describe('a purchase is not a membership cycle (the money paths)', () => {
 
   it('writes the Billing Event the ledger reads, with no assignment', () => {
     const branch = webhook();
+    // #1325 PR 2: the `product_purchase` event is written with the request, so
+    // the webhook settles it; the insert is only a fallback for a request that
+    // predates that, and never a `payment_recorded` event.
     expect(branch).toContain('INSERT INTO billing_events');
-    expect(branch).toContain("'payment_recorded'");
+    expect(branch).toContain("'product_purchase'");
+    expect(branch).not.toContain("'payment_recorded'");
     expect(branch).toContain('NULL, ?');
     expect(branch).toContain('completeProductPurchase');
   });

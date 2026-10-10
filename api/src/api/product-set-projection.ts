@@ -197,14 +197,14 @@ export async function projectActiveProductSet(tx: Tx, gymId: string, productSetI
 
   // Additional recurring services, for the legacy readers that price them from
   // the assignment-keyed rows. The set's own rows stay keyed to the version.
-  await tx.query('DELETE FROM user_membership_services WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
+  await tx.query('DELETE FROM member_products_recurrent_snapshot WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
   await tx.query(
-    `INSERT INTO user_membership_services
+    `INSERT INTO member_products_recurrent_snapshot
        (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at,
         item_name, item_type, unit_price, item_billing_frequency, currency)
      SELECT gym_id, ?, product_id, quantity, starts_at, ends_at,
             item_name, item_type, unit_price, item_billing_frequency, currency
-       FROM user_membership_services WHERE gym_id = ? AND product_set_id = ?`,
+       FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?`,
     [umId, gymId, productSetId],
   );
 

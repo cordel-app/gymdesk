@@ -59,7 +59,7 @@ import {
  *
  * `promotions` is what may still be applied; `applied_promotion` is the
  * snapshot of the one a live purchase was actually made under, read from
- * `member_product_promotions` and never from the live Promotion (§13).
+ * `member_products_oneoff_promotion_snapshot` and never from the live Promotion (§13).
  */
 export type MemberCatalogueProduct = MemberProduct & ProductPurchaseFields & {
   promotions: MemberProductPromotionOffer[];
@@ -168,7 +168,7 @@ async function loadLivePurchases(
 ): Promise<Map<number, { id: number; status: string }[]>> {
   const { rows } = await db.query<{ id: number; product_id: number; status: string }>(
     `SELECT id, product_id, status
-       FROM member_products
+       FROM member_products_oneoff_snapshot
       WHERE gym_id = ? AND member_id = ? AND status <> 'cancelled'
       ORDER BY id DESC`,
     [gymId, memberId],
@@ -201,7 +201,7 @@ export interface StartPurchaseInput {
 }
 
 export interface StartPurchaseResult {
-  /** The `member_products` row created, pending its payment. */
+  /** The `member_products_oneoff_snapshot` row created, pending its payment. */
   purchaseId: number;
   /** The hosted page the member types their card on. */
   checkoutUrl: string;
@@ -236,7 +236,7 @@ const ER_DUP_ENTRY = 1062;
 
 /**
  * Starts a purchase: the provider-side payment, the `payment_requests` row that
- * carries its page token, and the `member_products` row the webhook completes.
+ * carries its page token, and the `member_products_oneoff_snapshot` row the webhook completes.
  *
  * Four things about it are the rule rather than the implementation.
  *
@@ -291,10 +291,10 @@ export async function startProductPurchase(
   if (block) throw new PurchaseRefused(block);
 
   // #1118 §5 — what the member applied, re-read and re-priced now. The
-  // purchase is charged the Promotion's Final price, so `member_products.amount`
+  // purchase is charged the Promotion's Final price, so `member_products_oneoff_snapshot.amount`
   // stays what it has always been: the figure actually charged. The regular
   // price it was discounted from is the application's own
-  // (`member_product_promotions.regular_amount`), which is where §13's *Price*
+  // (`member_products_oneoff_promotion_snapshot.regular_amount`), which is where §13's *Price*
   // line reads it from.
   const offer = input.promotionId
     ? await resolvePurchasePromotion(input.gymId, input.memberId, {
@@ -356,8 +356,25 @@ export async function startProductPurchase(
         ],
       );
 
+      // The purchase's Billing Event is written with the request, before the
+      // money moves (#1325 PR 2): a `product_purchase` event whose derived
+      // status is `pending` until the provider confirms, so a request always
+      // has an event and the webhook settles it instead of inserting one. It
+      // belongs to no ProductSet and no assignment — a one-off purchase sits
+      // outside the version chain — so both keys stay NULL.
+      const { insertId: billingEventId } = await tx.query(
+        `INSERT INTO billing_events
+           (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
+         VALUES (?, NULL, ?, 'product_purchase', ?, ?, 'provider', NULL)`,
+        [input.gymId, input.memberId, snapshot.amount.toFixed(2), row.charge_type_id ?? null],
+      );
+      await tx.query(
+        `UPDATE payment_requests SET billing_event_id = ? WHERE id = ? AND gym_id = ?`,
+        [billingEventId, paymentRequestId, input.gymId],
+      );
+
       const { insertId } = await tx.query(
-        `INSERT INTO member_products
+        `INSERT INTO member_products_oneoff_snapshot
            (gym_id, member_id, product_id, status,
             product_name, product_type, billing_frequency, units,
             amount, currency, tax_rate_percent,
@@ -399,7 +416,7 @@ async function hasPendingPurchase(
   productId: number,
 ): Promise<boolean> {
   const { rows } = await db.query<{ id: number }>(
-    `SELECT id FROM member_products
+    `SELECT id FROM member_products_oneoff_snapshot
       WHERE gym_id = ? AND member_id = ? AND product_id = ? AND status = ?
       LIMIT 1`,
     [gymId, memberId, productId, PENDING_PURCHASE_STATUS],
@@ -418,17 +435,16 @@ export async function completeProductPurchase(
   tx: Tx,
   gymId: string,
   paymentRequestId: number,
-  billingEventId: number | null,
 ): Promise<number> {
   const { rowCount } = await tx.query(
     // `gym_id` is in the WHERE although `payment_request_id` is unique on its
     // own: every query of a domain table filters by the gym (CLAUDE.md), and
     // the webhook has the request's own `gym_id` in hand.
-    `UPDATE member_products
+    `UPDATE member_products_oneoff_snapshot
         SET status = 'active', purchased_at = UTC_TIMESTAMP(),
-            billing_event_id = ?, modified_at = UTC_TIMESTAMP()
+            modified_at = UTC_TIMESTAMP()
       WHERE gym_id = ? AND payment_request_id = ? AND status = ?`,
-    [billingEventId, gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
+    [gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
   );
   return rowCount;
 }
@@ -447,7 +463,7 @@ export async function cancelProductPurchase(
   paymentRequestId: number,
 ): Promise<number> {
   const { rowCount } = await conn.query(
-    `UPDATE member_products
+    `UPDATE member_products_oneoff_snapshot
         SET status = 'cancelled', modified_at = UTC_TIMESTAMP()
       WHERE gym_id = ? AND payment_request_id = ? AND status = ?`,
     [gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
@@ -474,7 +490,7 @@ export async function cancelAbandonedPurchases(
   conn: Pick<typeof db, 'query'> = db,
 ): Promise<number> {
   const { rowCount } = await conn.query(
-    `UPDATE member_products mp
+    `UPDATE member_products_oneoff_snapshot mp
        JOIN payment_requests pr ON pr.id = mp.payment_request_id
         SET mp.status = 'cancelled', mp.modified_at = UTC_TIMESTAMP()
       WHERE mp.status = ? AND pr.status IN ('expired', 'failed')`,

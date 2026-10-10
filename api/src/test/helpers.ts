@@ -122,15 +122,15 @@ export async function cleanupTestGyms() {
   // NULL, so leaving it would null the link rather than fail) and well before
   // `products`, whose FK from here is ON DELETE RESTRICT — a purchase is the
   // record of money that moved, so a Product may not be hard-deleted under it.
-  // #1118: before `member_products` (CASCADE would take them anyway) and well
+  // #1118: before `member_products_oneoff_snapshot` (CASCADE would take them anyway) and well
   // before `promotions`, whose FK from here is ON DELETE RESTRICT for the same
   // reason the Product's is — the application is the record of what the member
   // was charged under.
   // #1325: ProductSet children cascade from `product_sets`, which cascades from
   // the gym; `owner_member_id` is RESTRICT, so the sets go before `members`.
   await db.query(`DELETE FROM product_sets WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM member_product_promotions WHERE gym_id IN (${marks})`, ids);
-  await db.query(`DELETE FROM member_products WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM member_products_oneoff_promotion_snapshot WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM member_products_oneoff_snapshot WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_requests WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM payment_methods WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM calendar_event_shared_training_requests WHERE gym_id IN (${marks})`, ids);
@@ -145,10 +145,10 @@ export async function cleanupTestGyms() {
   await db.query(`DELETE FROM member_nutrition_plan_meals WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plan_days WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM member_nutrition_plans WHERE gym_id IN (${marks})`, ids);
-  // #631: user_membership_services.product_id has no ON DELETE CASCADE, so
+  // #631: member_products_recurrent_snapshot.product_id has no ON DELETE CASCADE, so
   // these rows must go before products below (deleting members cascades them
   // via user_memberships, but only for gyms whose members are deleted here).
-  await db.query(`DELETE FROM user_membership_services WHERE gym_id IN (${marks})`, ids);
+  await db.query(`DELETE FROM member_products_recurrent_snapshot WHERE gym_id IN (${marks})`, ids);
   // #647 stage 3 note: `member_recurring_slots` needs no line of its own —
   // every one of its FKs (gym, member, activity type, professional service,
   // center) is ON DELETE CASCADE, so the members delete below clears it.
@@ -218,7 +218,7 @@ export async function cleanupTestGyms() {
   // #635 stage 2: the Assigned Plan snapshot tables key to `products`
   // *without* ON DELETE CASCADE (the snapshot must outlive a retired item), so
   // unlike the Plan-side tables above these genuinely have to go before
-  // products — same reason as `user_membership_services` further up.
+  // products — same reason as `member_products_recurrent_snapshot` further up.
   await db.query(`DELETE FROM user_membership_session WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM user_membership_oneoff WHERE gym_id IN (${marks})`, ids);
   await db.query(`DELETE FROM user_membership_periodical WHERE gym_id IN (${marks})`, ids);

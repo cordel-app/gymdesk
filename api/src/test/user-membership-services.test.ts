@@ -195,7 +195,7 @@ describe('/user-memberships/:id/services — PAYMENTS module permissions', () =>
     accountantItemId = await createProduct(accountantGymId);
     // Seeded directly: an accountant cannot create one through the API.
     const { insertId } = await db.query(
-      `INSERT INTO user_membership_services (gym_id, user_membership_id, product_id, quantity, starts_at)
+      `INSERT INTO member_products_recurrent_snapshot (gym_id, user_membership_id, product_id, quantity, starts_at)
        VALUES (?, ?, ?, 1, ?)`,
       [accountantGymId, accountantUmId, accountantItemId, dayOffset(-5)],
     );
@@ -224,7 +224,7 @@ describe('/user-memberships/:id/services — PAYMENTS module permissions', () =>
     expect(res.status).toBe(403);
     // Nothing was written.
     const { rows } = await db.query(
-      'SELECT ends_at FROM user_membership_services WHERE id = ?',
+      'SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?',
       [accountantServiceId],
     );
     expect(rows).toHaveLength(1);
@@ -283,14 +283,14 @@ describe('/user-memberships/:id/services — tenant isolation', () => {
   it('returns 404 removing gym A\'s service with gym B\'s x-gym-id', async () => {
     const res = await removeService(gymB, umA, serviceA);
     expect(res.status).toBe(404);
-    const { rows } = await db.query('SELECT ends_at FROM user_membership_services WHERE id = ?', [serviceA]);
+    const { rows } = await db.query('SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?', [serviceA]);
     expect(rows[0].ends_at).toBeNull();
   });
 
   it('returns 404 removing a service that belongs to a different Assigned Plan in the same gym', async () => {
     const res = await removeService(gymA, otherUmA, serviceA);
     expect(res.status).toBe(404);
-    const { rows } = await db.query('SELECT ends_at FROM user_membership_services WHERE id = ?', [serviceA]);
+    const { rows } = await db.query('SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?', [serviceA]);
     expect(rows[0].ends_at).toBeNull();
   });
 
@@ -578,7 +578,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
 
     const list = await listServices(gymId, umId);
     expect(list.body).toEqual([]);
-    const { rows } = await db.query('SELECT id FROM user_membership_services WHERE id = ?', [created.body.id]);
+    const { rows } = await db.query('SELECT id FROM member_products_recurrent_snapshot WHERE id = ?', [created.body.id]);
     expect(rows).toHaveLength(0);
   });
 
@@ -609,7 +609,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect((await removeService(gymId, umId, created.body.id)).status).toBe(200);
 
     // Move the stamped removal date into the past, as it would be the day after.
-    await db.query('UPDATE user_membership_services SET ends_at = ? WHERE id = ?', [dayOffset(-1), created.body.id]);
+    await db.query('UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE id = ?', [dayOffset(-1), created.body.id]);
 
     const list = await listServices(gymId, umId);
     expect(list.body).toHaveLength(1);
@@ -650,7 +650,7 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect(second.status).toBe(409);
 
     // The original end date was not moved by the second attempt.
-    const { rows } = await db.query('SELECT ends_at FROM user_membership_services WHERE id = ?', [created.body.id]);
+    const { rows } = await db.query('SELECT ends_at FROM member_products_recurrent_snapshot WHERE id = ?', [created.body.id]);
     expect(rows).toHaveLength(1);
   });
 

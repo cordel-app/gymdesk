@@ -243,12 +243,12 @@ export async function addService(tx: Tx, draft: LockedDraft, body: any): Promise
     return { kind: 'invalid', message: 'Only a recurring Product can be attached as an Additional Periodic Service' };
   }
   const { rows: dup } = await tx.query(
-    'SELECT id FROM user_membership_services WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND ends_at IS NULL',
+    'SELECT id FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND ends_at IS NULL',
     [draft.gym_id, draft.id, productId]);
   if (dup.length > 0) return { kind: 'invalid', message: 'This service is already attached to the ProductSet' };
 
   const { insertId } = await tx.query(
-    `INSERT INTO user_membership_services
+    `INSERT INTO member_products_recurrent_snapshot
        (gym_id, product_set_id, product_id, quantity, starts_at, item_name, item_type, unit_price, item_billing_frequency, currency)
      SELECT ?, ?, gc.id, ?, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR}, COALESCE(gc.amount, 0), gc.billing_frequency, gc.currency
        FROM products gc LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
@@ -262,7 +262,7 @@ export async function addService(tx: Tx, draft: LockedDraft, body: any): Promise
 export async function removeService(tx: Tx, draft: LockedDraft, serviceId: number): Promise<{ ok: true } | DraftRefusal> {
   // A Draft has billed nothing, so a removed service is deleted outright.
   const { rowCount } = await tx.query(
-    'DELETE FROM user_membership_services WHERE id = ? AND gym_id = ? AND product_set_id = ?',
+    'DELETE FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ? AND product_set_id = ?',
     [serviceId, draft.gym_id, draft.id]);
   if (rowCount === 0) return { kind: 'not_found' };
   await touch(tx, draft);

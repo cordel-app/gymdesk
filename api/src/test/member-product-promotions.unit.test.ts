@@ -247,10 +247,10 @@ describe('the snapshot (§7, §13, §14, §15)', () => {
     // Asserted of the two reads themselves: the same file holds the
     // live-catalogue query the *offers* come from, which legitimately joins
     // `promotions`.
-    expect(statementFrom(ioSrc, 'FROM member_product_promotions mpp')).not.toMatch(/JOIN/);
+    expect(statementFrom(ioSrc, 'FROM member_products_oneoff_promotion_snapshot mpp')).not.toMatch(/JOIN/);
     // Nor does the purchase read touch the live Product: every column of a
     // purchase is its own snapshot (migration 228).
-    expect(statementFrom(ioSrc, 'FROM member_products mp')).not.toMatch(/JOIN/);
+    expect(statementFrom(ioSrc, 'FROM member_products_oneoff_snapshot mp')).not.toMatch(/JOIN/);
     expect(membersRouterSrc).toContain('loadMemberPurchases(gymId, memberId)');
   });
 
@@ -291,8 +291,8 @@ describe('migration 229', () => {
 
   it('is cleaned up before the catalogue tables it points at', () => {
     const helpers = read(__dirname, 'helpers.ts');
-    const applications = helpers.indexOf('DELETE FROM member_product_promotions');
-    const purchases = helpers.indexOf('DELETE FROM member_products');
+    const applications = helpers.indexOf('DELETE FROM member_products_oneoff_promotion_snapshot');
+    const purchases = helpers.indexOf('DELETE FROM member_products_oneoff_snapshot');
     const promotions = helpers.indexOf('DELETE FROM promotions WHERE');
     expect(applications).toBeGreaterThan(-1);
     expect(applications).toBeLessThan(purchases);

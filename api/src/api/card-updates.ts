@@ -100,20 +100,44 @@ export async function createCardUpdateRequest(
     notificationUrl: process.env.PAYMENT_NOTIFICATION_URL ?? '',
   });
 
-  const { insertId } = await db.query(
-    `INSERT INTO payment_requests
-       (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
-        status, provider, provider_order, provider_ref, page_token, page_token_expires,
-        consent_given_at, initiated_by, source)
-     VALUES (?, ?, ?, '0.00', 'EUR', NULL, 'pending', 'monei', ?, ?, ?, ?, ${
-       input.stampConsent ? 'UTC_TIMESTAMP()' : 'NULL'
-     }, ?, '${CARD_UPDATE_SOURCE}')`,
-    [
-      input.gymId, input.userMembershipId, input.memberId,
-      orderId, result.providerOrderId, pageToken, pageTokenExpires,
-      input.initiatedBy,
-    ],
-  );
+  const insertId = await db.transaction(async (tx) => {
+    // #1325 PR 2: every payment request has a Billing Event, a verification's
+    // included. It is a `card_verification` event of amount 0 that belongs to
+    // the member's Active ProductSet when there is one (NULL otherwise — the
+    // member may hold none), is never counted as revenue or as an obligation
+    // (`isNonObligationEvent()`), and settles by its request's status.
+    const { rows: setRows } = await tx.query<{ id: number }>(
+      `SELECT id FROM product_sets
+        WHERE gym_id = ? AND owner_member_id = ? AND status = 'active'
+        LIMIT 1`,
+      [input.gymId, input.memberId],
+    );
+    const { insertId: billingEventId } = await tx.query(
+      `INSERT INTO billing_events
+         (gym_id, user_membership_id, product_set_id, member_id, event_type, amount,
+          charge_type_id, source, actor_user_id)
+       VALUES (?, ?, ?, ?, 'card_verification', 0, NULL, 'provider', ?)`,
+      [
+        input.gymId, input.userMembershipId, setRows[0]?.id ?? null, input.memberId,
+        input.initiatedBy,
+      ],
+    );
+    const { insertId: requestId } = await tx.query(
+      `INSERT INTO payment_requests
+         (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+          status, provider, provider_order, provider_ref, page_token, page_token_expires,
+          consent_given_at, initiated_by, source, billing_event_id)
+       VALUES (?, ?, ?, '0.00', 'EUR', NULL, 'pending', 'monei', ?, ?, ?, ?, ${
+         input.stampConsent ? 'UTC_TIMESTAMP()' : 'NULL'
+       }, ?, '${CARD_UPDATE_SOURCE}', ?)`,
+      [
+        input.gymId, input.userMembershipId, input.memberId,
+        orderId, result.providerOrderId, pageToken, pageTokenExpires,
+        input.initiatedBy, billingEventId,
+      ],
+    );
+    return requestId;
+  });
 
   const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;
   return { id: insertId, checkoutUrl };

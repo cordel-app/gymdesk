@@ -1,6 +1,7 @@
 /**
  * #964 §18 — the Base Exercises list, filtered server-side over the columns
- * migration 209 added: name **or** slug, the five source metadata values, and
+ * migration 209 added: name (never the slug, since #1356), the five source
+ * metadata values, and
  * multi-select muscle filtering in all three flavours (either role, primary,
  * secondary).
  *
@@ -195,9 +196,10 @@ describe('§18 — search and filtering', () => {
     expect(names(res.body)).toEqual([`Treadmill Interval ${suffix}`]);
   });
 
-  it('q matches the slug too', async () => {
+  it('q never matches the slug (#1356: an internal identifier)', async () => {
     const res = await list(`?q=dumbbell-row-${suffix}`);
-    expect(names(res.body)).toEqual([`Dumbbell Row ${suffix}`]);
+    expect(res.status).toBe(200);
+    expect(names(res.body)).toEqual([]);
   });
 
   it('filters by equipment, and accepts several values', async () => {
@@ -253,27 +255,22 @@ describe('§18 — search and filtering', () => {
 });
 
 /**
- * #969 — what the inline filter toolbar adds on top of #964's query: a Slug
- * field of its own (§4), `Any`/`All` within the muscle filter (§6), and the
- * facets the Equipment and Category dropdowns are built from (§8, §9, §14).
+ * #969 — what the inline filter toolbar adds on top of #964's query:
+ * `Any`/`All` within the muscle filter (§6) and the facets the Equipment and
+ * Category dropdowns are built from (§8, §9, §14). The Slug field §4 added was
+ * removed by #1356: the slug is an internal identifier and `?slug=` is ignored.
  *
  * Deliberately **no pagination**: the thread's `Q3` answer is "do not paginate,
  * display all", so the list response is still the plain array and §14's count
  * is the toolbar's own.
  */
 describe('#969 — the filter toolbar’s own parameters', () => {
-  it('§4 — ?slug= matches partially, and an exact slug matches itself', async () => {
-    expect(names((await list(`?slug=barbell-bench-press-${suffix}`)).body))
-      .toEqual([`Barbell Bench Press ${suffix}`]);
-    expect(names((await list(`?slug=treadmill-interval-${suffix}`)).body))
-      .toEqual([`Treadmill Interval ${suffix}`]);
-    // Partial: the three seeds' slugs all end in the suffix.
-    expect(names((await list(`?slug=${suffix}`)).body).length).toBe(3);
-  });
-
-  it('§4 — the slug filter is separate from ?q=, and combines with it', async () => {
-    expect(names((await list(`?q=Treadmill&slug=barbell-bench-press-${suffix}`)).body)).toEqual([]);
-    expect(names((await list(`?q=Barbell&slug=barbell-bench-press-${suffix}`)).body))
+  it('§4 is gone — ?slug= is ignored rather than refused (#1356)', async () => {
+    const res = await list(`?slug=barbell-bench-press-${suffix}`);
+    expect(res.status).toBe(200);
+    expect(names(res.body).length).toBe(3);
+    // Nor does it narrow a ?q= it is combined with.
+    expect(names((await list(`?q=Barbell&slug=treadmill-interval-${suffix}`)).body))
       .toEqual([`Barbell Bench Press ${suffix}`]);
   });
 

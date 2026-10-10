@@ -2728,7 +2728,7 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
     const itemId = await createProduct(gymId, 'Personal Training', 'service', 'month', 30);
     await db.query(
-      `INSERT INTO user_membership_services (gym_id, user_membership_id, product_id, quantity, starts_at)
+      `INSERT INTO member_products_recurrent_snapshot (gym_id, user_membership_id, product_id, quantity, starts_at)
        VALUES (?, ?, ?, 2, '2026-04-01')`,
       [gymId, umId, itemId],
     );
@@ -2758,7 +2758,7 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     await setPromotionDuration(promoId, { free: 3 });
     await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
     await db.query(
-      `INSERT INTO user_membership_services (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
+      `INSERT INTO member_products_recurrent_snapshot (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
        VALUES (?, ?, ?, 1, '2026-03-01', '2026-04-15')`,
       [gymId, umId, itemId],
     );

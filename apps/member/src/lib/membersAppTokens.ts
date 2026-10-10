@@ -19,11 +19,53 @@
 // than the stored word, so `memberChrome.ts` reads them with no mapping.
 import { DEFAULT_TOKENS, isHexColor, type ThemeTokens } from './themeTokens';
 
-export type MembersAppSettingType = 'color' | 'font' | 'length' | 'pixels' | 'font-size' | 'align-v' | 'align-h';
+export type MembersAppSettingType = 'color' | 'font' | 'length' | 'pixels' | 'font-size' | 'align-v' | 'align-h' | CardEffectType;
 
 export const MEMBERS_APP_FONT_SIZE = { min: 8, max: 48 } as const;
 export const MEMBERS_APP_VERTICAL_ALIGNMENTS = ['top', 'center', 'bottom'];
 export const MEMBERS_APP_HORIZONTAL_ALIGNMENTS = ['left', 'center', 'right'];
+
+/**
+ * #1321 stage 1 — the Section Card's three enum settings. Each is a closed set:
+ * a value is one the Members App can paint or a 400, never a coercion. Shape and
+ * Shadow write the CSS value itself (`cardEffectCssValue()`), so
+ * `memberChrome.ts` maps nothing; Border edges write the keyword plus four
+ * 0/1 flags (`cardEdgeFlags()`) that scale the border width per edge.
+ */
+export const MEMBERS_APP_CARD_SHAPES = ['rounded', 'square', 'none'];
+export const MEMBERS_APP_CARD_BORDER_EDGES = ['all', 'none', 'top', 'bottom', 'left', 'right'];
+export const MEMBERS_APP_CARD_SHADOWS = ['none', 'soft', 'medium', 'strong'];
+
+export type CardEffectType = 'card-shape' | 'card-edges' | 'card-shadow';
+
+export const MEMBERS_APP_CARD_OPTIONS: Record<CardEffectType, string[]> = {
+  'card-shape': MEMBERS_APP_CARD_SHAPES,
+  'card-edges': MEMBERS_APP_CARD_BORDER_EDGES,
+  'card-shadow': MEMBERS_APP_CARD_SHADOWS,
+};
+
+const CARD_SHAPE_CSS: Record<string, string> = { rounded: '12px', square: '4px', none: '0px' };
+const CARD_SHADOW_CSS: Record<string, string> = {
+  none: 'none',
+  soft: '0 1px 3px rgba(0,0,0,0.05)',
+  medium: '0 4px 12px rgba(0,0,0,0.12)',
+  strong: '0 8px 24px rgba(0,0,0,0.2)',
+};
+
+/** The CSS a stored shape, edge or shadow word becomes; `null` for a word outside its set. */
+export function cardEffectCssValue(type: CardEffectType, value: unknown): string | null {
+  if (typeof value !== 'string' || !MEMBERS_APP_CARD_OPTIONS[type].includes(value)) return null;
+  if (type === 'card-shape') return CARD_SHAPE_CSS[value];
+  if (type === 'card-shadow') return CARD_SHADOW_CSS[value];
+  return value;
+}
+
+/** Which edges carry the border (1) and which do not (0), for a stored edges word. */
+export function cardEdgeFlags(value: unknown): { top: 0 | 1; right: 0 | 1; bottom: 0 | 1; left: 0 | 1 } {
+  const v = typeof value === 'string' && MEMBERS_APP_CARD_BORDER_EDGES.includes(value) ? value : 'all';
+  const on = (edge: string): 0 | 1 => (v === 'all' || v === edge ? 1 : 0);
+  return { top: on('top'), right: on('right'), bottom: on('bottom'), left: on('left') };
+}
 
 export type MembersAppSource =
   | { kind: 'color'; key: string; labelKey: string }
@@ -132,6 +174,40 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     type: 'length',
     source: { kind: 'advanced', key: 'cardBorderWidth', labelKey: 'adv_card_border_width' },
     cssVar: '--gd-members-card-border-width',
+  },
+  {
+    // #1321 stage 1 — the Section Card's shape, border edges and shadow. The
+    // Admin theme has no counterpart for any of them (its `cardBorderRadius` is
+    // a pixel attribute for the Admin's own cards), so each declares `source:
+    // null` and the default that is today's rendering (12px corners, a border on
+    // every edge, a soft shadow). Border edges say *where* the border is drawn;
+    // its colour and width stay the two settings above, so position and
+    // appearance remain separate concepts.
+    key: 'sectionCardsShape',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_shape',
+    type: 'card-shape',
+    source: null,
+    default: 'rounded',
+    cssVar: '--gd-members-card-radius',
+  },
+  {
+    key: 'sectionCardsBorderEdges',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_border_edges',
+    type: 'card-edges',
+    source: null,
+    default: 'all',
+    cssVar: '--gd-members-card-edges',
+  },
+  {
+    key: 'sectionCardsShadow',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_shadow',
+    type: 'card-shadow',
+    source: null,
+    default: 'soft',
+    cssVar: '--gd-members-card-shadow',
   },
   {
     key: 'sectionCardsTextColor',
@@ -439,6 +515,10 @@ export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetti
     case 'align-v':
     case 'align-h':
       return alignmentCssValue(setting.type, value) ?? alignmentCssValue(setting.type, inherited) ?? 'center';
+    case 'card-shape':
+    case 'card-edges':
+    case 'card-shadow':
+      return cardEffectCssValue(setting.type, value) ?? cardEffectCssValue(setting.type, inherited) ?? '';
     case 'length':
     default:
       return cssLength(typeof value === 'string' && value.trim() !== '' ? value.trim() : String(inherited));
@@ -447,7 +527,13 @@ export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetti
 
 export function membersAppCssVars(tokens: ThemeTokens): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const setting of MEMBERS_APP_SETTINGS) out[setting.cssVar] = membersAppVarValue(tokens, setting);
+  for (const setting of MEMBERS_APP_SETTINGS) {
+    out[setting.cssVar] = membersAppVarValue(tokens, setting);
+    if (setting.type === 'card-edges') {
+      const flags = cardEdgeFlags(out[setting.cssVar]);
+      for (const edge of ['top', 'right', 'bottom', 'left'] as const) out[`${setting.cssVar}-${edge}`] = String(flags[edge]);
+    }
+  }
   return out;
 }
 
