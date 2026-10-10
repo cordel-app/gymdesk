@@ -7,16 +7,15 @@ import { resolveMemberId } from './me';
 import { computePriceFields } from './products';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
 import {
-  ASSIGNMENT_CREATION_STATUS, effectivePrice, planAssignabilityError,
+  effectivePrice, planAssignabilityError,
 } from './user-memberships';
-import { recordStatusChange } from './billing-events';
-import { snapshotAssignedPlan } from './assigned-plan-snapshot';
-import { resolveDeclinedBenefits, recordDeclinedBenefitsAudit, loadNamedPlanBenefitLines } from './declined-plan-benefits';
-import { applyPromotionToMembership, validatePromotionSelection } from './membership-promotions';
-import { currentMembershipFee } from './membership-fee-pricing';
-import { commitAssignment, submitForPayment, PENDING_PAYMENT_STATUS } from './assignment-commit';
-import { activePlanConflictBody, LIVE_ASSIGNMENT_STATUSES } from '../domain/oneActivePlan';
-import { createPlanCheckout } from './plan-checkout';
+import { resolveDeclinedBenefits, loadNamedPlanBenefitLines } from './declined-plan-benefits';
+import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
+import { addCoverage, createDraft, submitForPayment as submitSetForPayment } from './product-sets';
+import { activateWithEvents, snapshotProductSetFromPlan } from './product-set-configuration';
+import { createProductSetCheckout, initialCharge } from './product-set-checkout';
+import { PENDING_PAYMENT_STATUS } from './assignment-commit';
+import { LIVE_ASSIGNMENT_STATUSES } from '../domain/oneActivePlan';
 import { isNewMemberStatus } from './new-member-eligibility';
 import {
   PLAN_PROMOTION_TARGET, firstCycleFinalPrice, isOfferableFeeBenefit,
@@ -197,6 +196,14 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
         ORDER BY FIELD(um.status, ?) DESC LIMIT 1`,
       [gymId, ...LIVE_ASSIGNMENT_STATUSES, PENDING_PAYMENT_STATUS, memberId, memberId, PENDING_PAYMENT_STATUS],
     );
+    const { rows: inFlight } = await db.query<{ id: number }>(
+      `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('draft','pending_payment')
+        AND NOT (status = 'draft' AND last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) LIMIT 1`,
+      [gymId, memberId],
+    );
+    if (inFlight[0]) {
+      return res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' });
+    }
     if (held[0]) {
       return held[0].status === PENDING_PAYMENT_STATUS
         ? res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' })
@@ -231,94 +238,73 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     const declinedResult = await resolveDeclinedBenefits(gymId, planId, req.body?.declined_benefits);
     if (declinedResult.error !== undefined) return res.status(400).json({ error: declinedResult.error });
 
-    // The Draft, written as `POST /user-memberships` writes one.
-    const umId = await db.transaction(async (tx) => {
-      const { insertId } = await tx.query(
-        `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, starts_at, status,
-          created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'member')`,
-        [memberId, gymId, planId, eff.base_price, eff.plan_price_id, startsAt, ASSIGNMENT_CREATION_STATUS, memberRows[0].name],
-      );
-      await recordStatusChange(tx, {
-        gymId, userMembershipId: insertId, memberId,
-        previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
-        source: 'customer', actorUserId: userId,
+    // #1325 PR 3a: the member's plan is a ProductSet version, not an assignment
+    // Draft. The Draft is created with its frozen plan, its declined benefits and
+    // each applied Promotion (its own snapshot, §16) in one transaction, and then
+    // either activated at once — a first cycle that owes nothing — or saved for
+    // payment with its initial event and checkout. The operational assignment the
+    // member's screens read is projected at activation (`product-set-projection`).
+    const actor = { name: memberRows[0].name, type: 'member' };
+    const today = new Date().toISOString().slice(0, 10);
+    const created = await db.transaction(async (tx) => {
+      const draft = await createDraft(tx, {
+        gymId, ownerMemberId: memberId, membershipPlanId: planId, startsAt, actor,
       });
-      await tx.query(
-        'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
-        [gymId, insertId, memberId],
-      );
-      await snapshotAssignedPlan(tx, {
-        gymId, userMembershipId: insertId, membershipPlanId: planId,
+      if (draft.kind !== 'created') return draft;
+      await snapshotProductSetFromPlan(tx, {
+        gymId, productSetId: draft.productSet.id, membershipPlanId: planId,
         membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
-        declinedBenefits: declinedResult.declined,
+        startsAt, declinedBenefits: declinedResult.declined,
       });
-      return Number(insertId);
+      await addCoverage(tx, {
+        gymId, rootProductSetId: Number(draft.productSet.root_product_set_id), memberId, isOwner: true,
+      });
+      for (const promotionId of promotionIds) {
+        await applyPromotionToProductSet(tx, gymId, userId, draft.productSet.id, promotionId);
+      }
+      return draft;
     });
-
-    // §5/§6: each Promotion is applied with its own immutable snapshot, after
-    // the Draft exists — the staff assign path does the same.
-    for (const promotionId of promotionIds) {
-      await applyPromotionToMembership(gymId, userId, 'customer', umId, promotionId);
+    if (created.kind === 'in_flight') {
+      return res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' });
     }
+    const setId = created.productSet.id;
 
-    // Save & Pay (#1108 stage 2): the point of no return. A first cycle that
-    // owes nothing — a free plan, or a Promotion waiving it — activates now.
-    const fee = await currentMembershipFee(gymId, umId);
-    const owesNothing = !(fee != null && fee > 0);
-    const outcome = await db.transaction(async (tx) => owesNothing
-      ? commitAssignment(tx, { gymId, userMembershipId: umId, fromStatuses: [ASSIGNMENT_CREATION_STATUS], confirm: false, source: 'customer', actorUserId: userId })
-      : submitForPayment(tx, { gymId, userMembershipId: umId, confirm: false, source: 'customer', actorUserId: userId }));
-
-    if (outcome.kind === 'conflict' || outcome.kind === 'pending_conflict' || outcome.kind === 'bad_date') {
-      // The Draft stays — nobody's plan — and is discarded so the member can
-      // try again from a clean state rather than accumulating Drafts.
-      await db.query(
-        `UPDATE user_memberships SET status = 'cancelled', closed_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ? AND status = ?`,
-        [umId, gymId, ASSIGNMENT_CREATION_STATUS],
-      );
-      if (outcome.kind === 'conflict') {
-        const { rows: planRows } = await db.query<{ name: string }>('SELECT name FROM membership_plans WHERE id = ?', [planId]);
-        return res.status(409).json(activePlanConflictBody(outcome.conflicts, planRows[0]?.name ?? null));
-      }
-      if (outcome.kind === 'pending_conflict') {
-        return res.status(409).json({ error: 'plan_pending_payment', message: 'You already have a membership awaiting payment.' });
-      }
-      return res.status(400).json({ error: outcome.message });
-    }
-    if (outcome.kind !== 'committed' && outcome.kind !== 'submitted') {
-      return res.status(500).json({ error: 'Membership could not be saved' });
-    }
-
-    // #1288: Save & Pay writes the initial Billing Event and its payment
-    // request now and hands back the hosted page, so the member pays without a
-    // second step. A first cycle that owes nothing activated above and has none.
-    let checkout: { id: number; checkoutUrl: string; billing_event_id: number } | null = null;
-    if (outcome.kind === 'submitted' && fee != null) {
+    // Save & Pay: the point of no return. A first cycle that owes nothing — a
+    // free plan, or a Promotion waiving it — activates now.
+    const charge = await initialCharge(gymId, setId, startsAt);
+    const owesNothing = !(charge != null && charge.amount > 0);
+    let checkout: { paymentRequestId: number; checkoutUrl: string; billingEventId: number } | null = null;
+    let status = 'active';
+    if (owesNothing) {
+      const out = await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: setId, today }));
+      if (out.kind !== 'ok') return res.status(500).json({ error: 'Membership could not be saved' });
+    } else {
+      const moved = await db.transaction((tx) => submitSetForPayment(tx, gymId, setId));
+      if (moved.kind !== 'ok') return res.status(500).json({ error: 'Membership could not be saved' });
+      status = 'pending_payment';
       const { rows: emailRows } = await db.query<{ email: string | null }>(
         'SELECT email FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId],
       );
-      checkout = await createPlanCheckout({
-        gymId, memberId, memberEmail: emailRows[0]?.email ?? '', userMembershipId: umId, fee,
+      checkout = await createProductSetCheckout({
+        gymId, productSetId: setId, memberId, memberEmail: emailRows[0]?.email ?? '',
+        startsAt, charge: charge as NonNullable<typeof charge>,
       });
     }
 
-    const { rows } = await db.query<any>(
-      `SELECT um.id, um.status, um.starts_at, mp.name AS plan_name FROM user_memberships um
-         LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id WHERE um.id = ?`,
-      [umId],
-    );
+    const { rows: planNameRows } = await db.query<{ name: string }>(
+      'SELECT name FROM membership_plans WHERE id = ?', [planId]);
+    const body = {
+      id: setId, status, starts_at: startsAt, plan_name: planNameRows[0]?.name ?? null,
+    };
     recordAudit(req, {
-      action: 'create', entityType: 'user_membership', entityId: umId,
-      next: { ...rows[0], promotion_ids: promotionIds, membership_fee: fee },
+      action: 'create', entityType: 'product_set', entityId: setId,
+      next: { ...body, promotion_ids: promotionIds, membership_fee: charge?.amount ?? 0 },
     });
-    recordDeclinedBenefitsAudit(req, umId, declinedResult.declined);
     res.status(201).json({
-      ...rows[0], membership_fee: fee, promotion_ids: promotionIds,
+      ...body, membership_fee: charge?.amount ?? 0, promotion_ids: promotionIds,
       checkout_url: checkout?.checkoutUrl ?? null,
-      payment_request_id: checkout?.id ?? null,
-      billing_event_id: checkout?.billing_event_id ?? null,
+      payment_request_id: checkout?.paymentRequestId ?? null,
+      billing_event_id: checkout?.billingEventId ?? null,
     });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
