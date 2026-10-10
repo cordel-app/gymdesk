@@ -1,5 +1,7 @@
 import crypto from 'crypto';
 import { db, Tx } from '../infra/db';
+
+type Exec = { query: Tx['query'] };
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { BlockingEvent, blockingEvents, LockEvent } from '../domain/billingEventEditLock';
@@ -58,8 +60,8 @@ export interface InitialCharge {
 }
 
 /** What the version's first obligation is: every line dated on its start date. */
-export async function initialCharge(gymId: string, productSetId: number, startsAt: string): Promise<InitialCharge | null> {
-  const planned = await planScheduledEvents(gymId, productSetId, startsAt, 1);
+export async function initialCharge(gymId: string, productSetId: number, startsAt: string, exec: Exec = db): Promise<InitialCharge | null> {
+  const planned = await planScheduledEvents(gymId, productSetId, startsAt, 1, exec);
   const first = planned.filter((e) => e.date === startsAt);
   if (first.length === 0) return null;
   const lines = first.flatMap((e) => e.lines.map((l) => lineFromSimulation(l)));

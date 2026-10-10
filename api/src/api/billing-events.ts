@@ -3,6 +3,7 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite, GymRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
+import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 
 /**
  * P1.6 (#10): append-only billing ledger. GET + POST only — rows are never
@@ -153,12 +154,19 @@ billingEventsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, n
   }
 
   try {
+    // #1325 PR 3b: a money row belongs to a ProductSet.
+    const setId = user_membership_id
+      ? await productSetIdForAssignment(db, gymId, Number(user_membership_id))
+      : await activeProductSetIdForMember(db, gymId, Number(memberId));
+    if (setId == null) {
+      return res.status(400).json({ error: 'This member has no ProductSet to record the event against' });
+    }
     const row = await insertAndFetch(
       `INSERT INTO billing_events
-       (gym_id, user_membership_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (gym_id, user_membership_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        gymId, user_membership_id ?? null, memberId, event_type, charge_type_id ?? null,
+        gymId, user_membership_id ?? null, setId, memberId, event_type, charge_type_id ?? null,
         source ?? sourceForRole(role), userId, parsedAmount,
         notes && String(notes).trim() ? String(notes).trim() : null,
       ],

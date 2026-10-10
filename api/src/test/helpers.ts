@@ -104,6 +104,32 @@ export async function activateAssignment(
   }
 }
 
+/**
+ * #1325: an Active ProductSet of the member (created once per member), linked
+ * to `userMembershipId` when given — what a test's hand-written Billing Event
+ * must belong to since migration 253.
+ */
+export async function ensureTestProductSet(
+  gymId: string, memberId: number | null, userMembershipId: number | null = null,
+): Promise<number | null> {
+  if (memberId == null) return null;
+  const { rows } = await db.query<{ id: number }>(
+    "SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' LIMIT 1",
+    [gymId, memberId]);
+  if (rows[0]) {
+    if (userMembershipId != null) {
+      await db.query('UPDATE product_sets SET user_membership_id = COALESCE(user_membership_id, ?) WHERE id = ?', [userMembershipId, rows[0].id]);
+    }
+    return Number(rows[0].id);
+  }
+  const { insertId } = await db.query(
+    `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, user_membership_id)
+     VALUES (?, ?, 'active', '2000-01-01', ?)`,
+    [gymId, memberId, userMembershipId]);
+  await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
+  return Number(insertId);
+}
+
 /** Deletes gyms created by this worker and their dependent rows. */
 export async function cleanupTestGyms() {
   // #780: the two run histories are the deliberate no-`gym_id` exception, so

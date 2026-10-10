@@ -179,5 +179,8 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
     previousStatus: DRAFT_STATUS, newStatus: PENDING_PAYMENT_STATUS,
     source: input.source, actorUserId: input.actorUserId,
   });
+  // #1325 PR 3b: the Pending Payment version exists from here, with its initial
+  // Billing Event, so every payment raised for this row is an attempt on it.
+  await importAssignmentAsProductSet(tx, input.gymId, Number(row.id), { pending: true });
   return { kind: 'submitted', memberId: Number(row.member_id) };
 }
