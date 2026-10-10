@@ -205,3 +205,35 @@ jobs:
           fi
 
           echo "expired=$expired promotion(s) past their end date."
+
+      - name: POST /plan-allowance-renewals/run
+        # #1227 stage 2: renewing the Session Benefit allowances of active
+        # Membership Plans is independent of the charge outcome, so it runs even
+        # when the run step went red (but not without an API to call). Every
+        # insert is idempotent under a UNIQUE key and there is no run-log guard,
+        # so the 10:00 UTC safety net (#781) finds nothing left to renew.
+        if: ${{ !cancelled() && steps.config.outcome == 'success' }}
+        env:
+          BILLING_INTERNAL_SECRET: ${{ secrets.BILLING_INTERNAL_SECRET }}
+        run: |
+          set -euo pipefail
+
+          rc=0
+          body="$(curl -sS --fail-with-body -X POST "$API_BASE_URL/plan-allowance-renewals/run" \
+            -H "X-Internal-Secret: $BILLING_INTERNAL_SECRET" \
+            -H "Content-Type: application/json" \
+            --max-time 120)" || rc=$?
+
+          printf 'POST /plan-allowance-renewals/run -> %s\n' "$body"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error title=Allowance renewal did not execute::POST /plan-allowance-renewals/run failed (curl exit $rc). Members on a plan with a renewing Session Benefit did not receive tonight's sessions; the next run catches them up from the last renewal written."
+            exit 1
+          fi
+
+          if ! renewed="$(printf '%s' "$body" | jq -er '.renewed | numbers')"; then
+            echo "::error title=Allowance renewal answered an unreadable body::POST /plan-allowance-renewals/run returned 2xx but carried no renewed counter. The body is in the step log."
+            exit 1
+          fi
+
+          echo "renewed=$renewed session allowance renewal(s)."

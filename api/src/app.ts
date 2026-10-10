@@ -103,6 +103,7 @@ import { paymentPageRouter } from './api/payment-page';
 import { billingRouter } from './api/billing';
 import { recurringBookingsRouter } from './api/recurring-bookings';
 import { promotionLifecycleRouter } from './api/promotion-lifecycle';
+import { planAllowanceRenewalsRouter } from './api/plan-allowance-renewals';
 import { bookingRemindersRouter } from './api/booking-reminders';
 import { healthRouter } from './api/health';
 import { tenantContext, requireFeatureAccess, requireModuleAccess } from './infra/tenantContext';
@@ -251,6 +252,10 @@ app.use('/recurring-bookings', internalRunLimiter as any, recurringBookingsRoute
 // here rather than on the tenant-scoped `/promotions` router below because it
 // walks every gym.
 app.use('/promotion-lifecycle', internalRunLimiter as any, promotionLifecycleRouter);
+
+// #1227 stage 2: nightly renewal of plan Session Benefit allowances — same
+// X-Internal-Secret pattern, a step of the billing workflow (shares its secret).
+app.use('/plan-allowance-renewals', internalRunLimiter as any, planAllowanceRenewalsRouter);
 
 // #1113: internal runner that raises the 2-hour training reminder — same
 // X-Internal-Secret pattern, with its own secret because it has a schedule of

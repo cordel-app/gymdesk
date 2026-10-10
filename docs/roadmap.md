@@ -39,7 +39,7 @@ Every open issue, with what has merged and what is left. An issue appears once, 
 - [#1321](https://github.com/cordel-app/gymdesk/issues/1321) Section Card visual effects, touch interactions and illustrated previews. Typed as a Task but asks for about ten new theme settings; waiting to be retyped so a plan can be written.
 
 **Calendar & Professional Services**
-- [#1227](https://github.com/cordel-app/gymdesk/issues/1227) Professional Services member wallets. Stage 1 (visible balance, transaction history, staff adjustment) is PR #1279, open; stage 2 is renewals.
+- [#1227](https://github.com/cordel-app/gymdesk/issues/1227) Professional Services member wallets. Stage 1 (visible balance, transaction history, staff adjustment) has merged; stage 2 (nightly renewal of plan Session Benefit allowances, grant entries in the history) is in review. Nothing is left after it.
 
 **Members & Goals**
 - [#1231](https://github.com/cordel-app/gymdesk/issues/1231) Member Progress tab: one card per exercise with a graph and its readings; staff edit value and notes, never the date; no audit rows. Decisions taken 2026-10-08, not started.

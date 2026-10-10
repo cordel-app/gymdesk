@@ -111,11 +111,31 @@ memberProfessionalServicesRouter.get('/:serviceId/history', async (req, res, nex
         ORDER BY id ASC`,
       [gymId, memberId, serviceId],
     );
+    // #1227 stage 2: each renewal of a plan Session Benefit allowance is a grant.
+    const { rows: renewals } = await db.query(
+      `SELECT par.quantity, par.renewal_date
+         FROM plan_allowance_renewals par
+         JOIN user_membership_session umss ON umss.id = par.user_membership_session_id
+         JOIN user_memberships um ON um.id = umss.user_membership_id AND um.gym_id = par.gym_id
+        WHERE par.gym_id = ? AND um.status = 'active'
+          AND (um.member_id = ?
+               OR EXISTS (SELECT 1 FROM user_membership_members umm
+                          WHERE umm.user_membership_id = um.id AND umm.member_id = ?))
+          AND EXISTS (SELECT 1 FROM product_professional_services sips
+                       WHERE sips.product_id = umss.product_id AND sips.gym_id = par.gym_id
+                         AND sips.professional_service_id = ?)
+        ORDER BY par.renewal_date ASC, par.id ASC`,
+      [gymId, memberId, memberId, serviceId],
+    );
     const iso = (v: Date | string) => (v instanceof Date ? v.toISOString() : new Date(v).toISOString());
     const entries: BalanceHistoryEntry[] = [
       ...adjustments.map((a: any) => ({
         kind: 'adjustment' as const, at: iso(a.created_at), quantity: Number(a.delta), reason: a.reason,
         balance_before: Number(a.balance_before), balance_after: Number(a.balance_after), actor: a.created_by,
+      })),
+      ...renewals.map((r: any) => ({
+        kind: 'grant' as const, at: iso(r.renewal_date), quantity: Number(r.quantity), reason: 'plan_renewal',
+        balance_before: null, balance_after: null, actor: null,
       })),
       ...consumptions.flatMap((c: any) => {
         const spent: BalanceHistoryEntry = {

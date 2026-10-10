@@ -455,6 +455,7 @@
     "search_placeholder": "Buscar por nombre…",
     "searching": "Buscando…",
     "search_empty": "No se encontraron miembros activos.",
+    "error_search": "No se han podido cargar los miembros. Inténtalo de nuevo.",
     "type_member": "Miembro",
     "type_staff": "Personal",
     "cancel": "Cancelar",
