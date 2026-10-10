@@ -103,14 +103,14 @@ export function applyAdjustmentsToGrants(
   return rows;
 }
 
-export type BalanceHistoryKind = 'adjustment' | 'consumption';
+export type BalanceHistoryKind = 'adjustment' | 'consumption' | 'grant';
 
 export interface BalanceHistoryEntry {
   kind: BalanceHistoryKind;
   at: string;
   /** Signed: an adjustment's delta, `-1` for a consumed session, `+1` for a returned one. */
   quantity: number;
-  /** `attendance` | `late_cancel` | `no_show` | `returned` for a consumption; the staff reason for an adjustment. */
+  /** `attendance` | `late_cancel` | `no_show` | `returned` for a consumption; `plan_renewal` for a grant; the staff reason for an adjustment. */
   reason: string | null;
   balance_before: number | null;
   balance_after: number | null;

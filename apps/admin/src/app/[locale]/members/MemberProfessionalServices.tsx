@@ -36,7 +36,7 @@ interface WalletRow {
 }
 
 interface HistoryEntry {
-  kind: 'adjustment' | 'consumption';
+  kind: 'adjustment' | 'consumption' | 'grant';
   at: string;
   quantity: number;
   reason: string | null;
@@ -116,6 +116,7 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
 
   function historyLabel(h: HistoryEntry): string {
     if (h.kind === 'adjustment') return t('prof_services_history_adjustment');
+    if (h.kind === 'grant') return t('prof_services_history_plan_renewal');
     return CONSUMPTION_REASONS.includes(h.reason ?? '')
       ? t(`prof_services_history_${h.reason}`)
       : t('prof_services_history_consumption');
