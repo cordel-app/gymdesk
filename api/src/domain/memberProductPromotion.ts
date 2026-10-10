@@ -47,7 +47,7 @@
 //    §7/§13/§14 restate #635 §16 word for word, so the purchase keeps the
 //    Promotion's name, its `(action, value)` pair, its duration and both
 //    amounts, and `promotion_id` stays beside them as the link to the live row —
-//    the same "snapshot beside a link" `member_products` itself is built on.
+//    the same "snapshot beside a link" `member_products_oneoff_snapshot` itself is built on.
 //    Nothing reads the live Promotion to describe an application again.
 
 import { type ProductBenefitCategory, classifyProduct } from './productClassification';
@@ -176,7 +176,7 @@ export function promotionalPrice(
   return applyLineBenefit(regularPriceInclTax, 1, benefit);
 }
 
-/** What a `member_product_promotions` row is written with, beside its ids. */
+/** What a `member_products_oneoff_promotion_snapshot` row is written with, beside its ids. */
 export interface PromotionApplicationSnapshot {
   promotion_name: string;
   benefit_action: PromotionBenefitAction;

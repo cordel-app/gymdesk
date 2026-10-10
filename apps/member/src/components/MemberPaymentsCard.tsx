@@ -157,7 +157,7 @@ const styles: Record<string, CSSProperties> = {
   summary: { fontSize: 12.5, color: memberTheme.textMuted },
   caret: { fontSize: 12, color: memberTheme.textMuted },
   subcards: { display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 12px' },
-  subcard: { ...sectionCardStyle, borderRadius: 10 },
+  subcard: { ...sectionCardStyle },
   subcardToggle: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
     width: '100%', padding: '11px 12px', background: 'none', border: 'none',
@@ -168,7 +168,7 @@ const styles: Record<string, CSSProperties> = {
     ...rowDividerStyle,
     display: 'flex', flexDirection: 'column', gap: 10, padding: '12px',
   },
-  eventCard: { ...sectionCardStyle, borderRadius: 10, padding: '12px 14px' },
+  eventCard: { ...sectionCardStyle, padding: '12px 14px' },
   eventHead: {
     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
     gap: 8, flexWrap: 'wrap',

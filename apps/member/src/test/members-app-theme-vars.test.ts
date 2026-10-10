@@ -5,6 +5,8 @@ import {
   DEFAULT_MEMBERS_APP_SOURCE_ADVANCED,
   MEMBERS_APP_SETTINGS,
   alignmentCssValue,
+  cardEffectCssValue,
+  cardEdgeFlags,
   applyMembersAppTokens,
   effectiveMembersAppValue,
   inheritedMembersAppValue,
@@ -78,6 +80,7 @@ describe('Members App theme settings: resolution (#833)', () => {
       const expected =
         setting.type === 'pixels' || setting.type === 'font-size' ? `${inherited}px`
         : setting.type === 'align-v' || setting.type === 'align-h' ? alignmentCssValue(setting.type, inherited)
+        : setting.type === 'card-shape' || setting.type === 'card-edges' || setting.type === 'card-shadow' ? cardEffectCssValue(setting.type, inherited)
         : String(inherited);
       expect(written[setting.cssVar], `${setting.key} does not follow its Admin source`).toBe(expected);
     }
@@ -354,5 +357,32 @@ describe('Section Cards border width accepts bare pixels (#1216)', () => {
     expect(widthVar('1px')).toBe('1px');
     expect(widthVar('0.5px')).toBe('0.5px');
     expect(widthVar()).toBe('1px');
+  });
+});
+
+describe('Section Card shape, border edges and shadow (#1321 stage 1)', () => {
+  it('defaults to today’s card: 12px corners, a border on every edge, a soft shadow', () => {
+    const vars = membersAppCssVars(DEFAULT_TOKENS);
+    expect(vars['--gd-members-card-radius']).toBe('12px');
+    expect(vars['--gd-members-card-shadow']).toBe('0 1px 3px rgba(0,0,0,0.05)');
+    for (const edge of ['top', 'right', 'bottom', 'left']) expect(vars[`--gd-members-card-edges-${edge}`]).toBe('1');
+  });
+
+  it('maps each option to its CSS and falls back on a word outside the set', () => {
+    expect(cardEffectCssValue('card-shape', 'square')).toBe('4px');
+    expect(cardEffectCssValue('card-shape', 'none')).toBe('0px');
+    expect(cardEffectCssValue('card-shadow', 'none')).toBe('none');
+    expect(cardEffectCssValue('card-shadow', 'bogus')).toBeNull();
+    const themed = { ...DEFAULT_TOKENS, membersApp: { sectionCardsShape: 'bogus' } } as ThemeTokens;
+    expect(membersAppCssVars(themed)['--gd-members-card-radius']).toBe('12px');
+  });
+
+  it('turns a single-edge choice into per-edge flags, independent of colour and width', () => {
+    expect(cardEdgeFlags('left')).toEqual({ top: 0, right: 0, bottom: 0, left: 1 });
+    expect(cardEdgeFlags('none')).toEqual({ top: 0, right: 0, bottom: 0, left: 0 });
+    const themed = { ...DEFAULT_TOKENS, membersApp: { sectionCardsBorderEdges: 'top' } } as ThemeTokens;
+    const vars = membersAppCssVars(themed);
+    expect(vars['--gd-members-card-edges-top']).toBe('1');
+    expect(vars['--gd-members-card-edges-bottom']).toBe('0');
   });
 });

@@ -291,7 +291,7 @@ const styles: Record<string, React.CSSProperties> = {
   cancelNotice: { ...noticeStyle('warning'), fontSize: 13, flex: 1 },
   sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   dayHead: { margin: '0 0 8px', fontSize: 13, fontWeight: 700, color: memberTheme.title3, fontFamily: memberTheme.title3Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
-  card: { ...sectionCardStyle, borderRadius: 10, padding: 14, marginBottom: 10, cursor: 'pointer' },
+  card: { ...sectionCardStyle, padding: 14, marginBottom: 10, cursor: 'pointer' },
   details: { marginTop: 8, paddingTop: 8, borderTop: `1px solid ${memberTheme.separator}` },
   time: { fontVariantNumeric: 'tabular-nums', fontSize: 14, fontWeight: 600, color: memberTheme.text },
   name: { fontSize: 16, fontWeight: 600, color: memberTheme.text },

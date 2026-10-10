@@ -525,7 +525,7 @@ describe('attaching an Additional Periodic Service snapshots its price', () => {
 
   it('reports no snapshot for an attachment made before migration 174', async () => {
     const { insertId } = await db.query(
-      `INSERT INTO user_membership_services (gym_id, user_membership_id, product_id, quantity, starts_at)
+      `INSERT INTO member_products_recurrent_snapshot (gym_id, user_membership_id, product_id, quantity, starts_at)
        VALUES (?, ?, ?, 1, ?)`,
       [gymId, umId, await createProduct(gymId), dayOffset(-1)],
     );

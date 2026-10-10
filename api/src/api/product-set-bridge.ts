@@ -68,12 +68,12 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
       [toSetId, gymId, fromSetId]);
   }
   await tx.query(
-    `INSERT INTO user_membership_services
+    `INSERT INTO member_products_recurrent_snapshot
        (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,
         unit_price, item_billing_frequency, currency, schedule_id)
      SELECT gym_id, ?, product_id, quantity, starts_at, ends_at, item_name, item_type,
             unit_price, item_billing_frequency, currency, schedule_id
-       FROM user_membership_services WHERE gym_id = ? AND product_set_id = ?`,
+       FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?`,
     [toSetId, gymId, fromSetId]);
 
   await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId });
@@ -195,12 +195,12 @@ export async function importAssignmentAsProductSet(tx: Tx, gymId: string, userMe
       [setId, gymId, userMembershipId]);
   }
   await tx.query(
-    `INSERT INTO user_membership_services
+    `INSERT INTO member_products_recurrent_snapshot
        (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,
         unit_price, item_billing_frequency, currency)
      SELECT gym_id, ?, product_id, quantity, starts_at, ends_at, item_name, item_type,
             unit_price, item_billing_frequency, currency
-       FROM user_membership_services WHERE gym_id = ? AND user_membership_id = ?`,
+       FROM member_products_recurrent_snapshot WHERE gym_id = ? AND user_membership_id = ?`,
     [setId, gymId, userMembershipId]);
   await copyApplications(tx, gymId, { userMembershipId }, { productSetId: Number(setId) });
   await tx.query(

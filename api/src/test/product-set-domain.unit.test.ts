@@ -64,7 +64,7 @@ describe('development billing reset (#1325)', () => {
     const order = RESET_STEPS.map((s) => s.table);
     const before = (a: string, b: string) => order.indexOf(a) < order.indexOf(b);
     expect(before('payment_requests', 'billing_events')).toBe(true);
-    expect(before('member_products', 'payment_requests')).toBe(true);
+    expect(before('member_products_oneoff_snapshot', 'payment_requests')).toBe(true);
     expect(before('user_membership_promotions', 'user_memberships')).toBe(true);
     expect(before('user_membership_members', 'user_memberships')).toBe(true);
     expect(before('product_set_members', 'product_sets')).toBe(true);

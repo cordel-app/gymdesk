@@ -11,7 +11,7 @@
 //   1. user_class_packages  — a purchased package (sessions_remaining)
 //   2. promotion_session    — Session benefits of a Promotion applied to an
 //                             ACTIVE assignment (user_membership_promotions)
-//   3. user_membership_services — Additional Services attached to an ACTIVE
+//   3. member_products_recurrent_snapshot — Additional Services attached to an ACTIVE
 //                             assignment (quantity * products.units)
 //
 // aggregateProfessionalServiceGrants() — the pure folding step — is covered
@@ -244,7 +244,7 @@ async function attachMembershipService(
 ): Promise<number> {
   const { quantity = 1, startsAt = dayOffset(-10), endsAt = null } = opts;
   const { insertId } = await db.query(
-    `INSERT INTO user_membership_services
+    `INSERT INTO member_products_recurrent_snapshot
        (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [gymId, userMembershipId, productId, quantity, startsAt, endsAt],
