@@ -527,6 +527,21 @@ function shapeMemberProfile<T extends { preferred_locale?: unknown }>(row: T) {
   return { ...row, preferred_locale: toMemberPreferredLocale(row.preferred_locale) };
 }
 
+// #1246 stage 5: the gym's Time & Localization settings, read-only, so the
+// Members App formats dates and amounts by the same conventions as the staff.
+meRouter.get('/localization', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      'SELECT time_zone, first_day_of_week, currency, date_format, time_format, number_format FROM gyms WHERE id = ?',
+      [gymId],
+    );
+    res.json(rows[0] ?? null);
+  } catch (err) {
+    next(err);
+  }
+});
+
 meRouter.get('/profile', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;

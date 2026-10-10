@@ -5,6 +5,8 @@ import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateTime } from '@/lib/gymFormat';
 import { memberTheme, secondaryButtonStyle, sectionCardStyle } from '@/lib/memberChrome';
 
 interface Notification {
@@ -55,6 +57,7 @@ const DETAIL_TYPES = ['event_reactivated', 'waitlist_closed', 'waitlist_removed'
 export default function NotificationsPage() {
   const t = useTranslations('notifications');
   const locale = useLocale();
+  const gymFormat = useGymFormatSettings();
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, refreshUnreadCount } = useApp();
@@ -140,10 +143,7 @@ export default function NotificationsPage() {
               )}
               {n.payload?.starts_at && (
                 <div style={styles.sub}>
-                  {new Date(n.payload.starts_at).toLocaleString(locale, {
-                    weekday: 'short', month: 'short', day: 'numeric',
-                    hour: '2-digit', minute: '2-digit',
-                  })}
+                  {formatGymDateTime(n.payload.starts_at, gymFormat)}
                 </div>
               )}
               {!n.read_at && <div style={styles.unreadDot} />}
