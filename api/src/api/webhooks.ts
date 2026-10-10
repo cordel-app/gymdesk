@@ -9,6 +9,7 @@ import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import { stampFirstNextBillingDate } from '../domain/nextBillingDateStamp';
 import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
+import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
 import { PRODUCT_PURCHASE_SOURCE } from '../domain/memberProductPurchase';
 import { cancelProductPurchase, completeProductPurchase } from './me-products';
@@ -335,11 +336,18 @@ paymentWebhookRouter.post(
           // status derives from this request, which just became `completed` —
           // instead of appending a second one for the same charge.
           if (pr.billing_event_id == null) {
+            // A request raised with no event (none since #1325 PR 3b) still
+            // records the money, against the ProductSet the assignment or the
+            // member holds — a ledger row with no set is not written any more.
+            const setId = pr.user_membership_id != null
+              ? await productSetIdForAssignment(tx, pr.gym_id, pr.user_membership_id)
+              : null;
+            const ownerSetId = setId ?? (pr.member_id != null ? await activeProductSetIdForMember(tx, pr.gym_id, pr.member_id) : null);
             const { insertId: billingEventId } = await tx.query(
               `INSERT INTO billing_events
-                 (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
-               VALUES (?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
-              [pr.gym_id, pr.user_membership_id, pr.member_id, pr.amount, pr.charge_type_id],
+                 (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
+               VALUES (?, ?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
+              [pr.gym_id, pr.user_membership_id, ownerSetId, pr.member_id, pr.amount, pr.charge_type_id],
             );
 
             await tx.query(

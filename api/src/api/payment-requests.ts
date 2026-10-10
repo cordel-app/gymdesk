@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../infra/db';
+import { openInitialEventForAssignment } from './product-set-bridge';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
@@ -110,7 +111,12 @@ paymentRequestsRouter.post(
       );
       if (!ctRows[0]) return res.status(500).json({ error: 'charge_type membership_fee not configured' });
 
-      const amount = toMinorUnits(fee);
+      // #1325 PR 3b: a Pending Payment assignment's version already holds its
+      // initial Billing Event; the link raised here is an attempt on it, for
+      // the amount that event owes.
+      const open = await openInitialEventForAssignment(db, gymId, Number(user_membership_id));
+      const charged = open ? open.amount : fee;
+      const amount = toMinorUnits(charged);
       const orderId = crypto.randomUUID();
       const pageToken = crypto.randomUUID();
       const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
@@ -131,16 +137,19 @@ paymentRequestsRouter.post(
 
       req.log.info({ orderId, providerOrderId: result.providerOrderId }, 'Provider API call succeeded');
 
+      const { rows: prevAttempt } = open
+        ? await db.query<{ n: number }>('SELECT COALESCE(MAX(attempt), 0) AS n FROM payment_requests WHERE billing_event_id = ?', [open.eventId])
+        : { rows: [{ n: 0 }] };
       const { insertId } = await db.query(
         `INSERT INTO payment_requests
-           (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
+           (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
             status, provider, provider_order, provider_ref, page_token, page_token_expires,
-            initiated_by, source)
-         VALUES (?, ?, ?, ?, 'EUR', ?, 'pending', 'monei', ?, ?, ?, ?, ?, 'admin')`,
+            initiated_by, source, attempt)
+         VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, ?, 'admin', ?)`,
         [
-          gymId, user_membership_id, um.member_id, fee.toFixed(2), ctRows[0].id,
+          gymId, user_membership_id, um.member_id, charged.toFixed(2), ctRows[0].id, open ? open.eventId : null,
           orderId, result.providerOrderId, pageToken, pageTokenExpires,
-          (req as any).auth.userId,
+          (req as any).auth.userId, Number(prevAttempt[0]?.n ?? 0) + 1,
         ],
       );
 
