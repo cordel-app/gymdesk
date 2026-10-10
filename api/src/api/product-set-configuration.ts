@@ -9,7 +9,7 @@ import {
 } from '../domain/billingSimulation';
 import { ProductBenefitCategory, planBenefitTableForCategory } from '../domain/productClassification';
 import { BillingEventLineRow, linesMatchTotal, linesTotal, lineFromSimulation } from '../domain/billingEventLines';
-import { PLAN_SCHEDULE_KEY, cadenceForFrequency } from '../domain/scheduleAllocation';
+import { PLAN_SCHEDULE_KEY, allocateSchedule, cadenceForFrequency, type ExistingSchedule } from '../domain/scheduleAllocation';
 import { loadPromotionApplicationsForSets } from './user-memberships';
 import { loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
 import { activate, MoveOutcome } from './product-sets';
@@ -152,6 +152,57 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
       [gymId, productSetId, membershipPlanId, gymId, ...declined],
     );
   }
+  await allocateItemSchedules(tx, gymId, productSetId);
+}
+
+
+/**
+ * Gives every recurring item of a version a schedule (Q8, one rule): an item on
+ * the plan's cadence joins the `plan` schedule, one matching another item's
+ * cadence joins that schedule, anything else opens an independent schedule
+ * anchored on its own start. Items that already have one are left alone, so
+ * running it twice — or after a version is cloned — changes nothing.
+ */
+export async function allocateItemSchedules(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+  const { rows: setRows } = await tx.query<any>(
+    'SELECT root_product_set_id, starts_at FROM product_sets WHERE id = ? AND gym_id = ?', [productSetId, gymId]);
+  if (!setRows[0]) return;
+  const rootId = Number(setRows[0].root_product_set_id ?? productSetId);
+  const setStart = toDateOnly(setRows[0].starts_at);
+
+  const { rows: sched } = await tx.query<any>(
+    `SELECT id, schedule_key, anchor_date, cadence_interval, cadence_unit
+       FROM product_set_schedules WHERE root_product_set_id = ?`, [rootId]);
+  const schedules: ExistingSchedule[] = sched.map((r: any) => ({
+    id: Number(r.id), key: String(r.schedule_key), anchorDate: toDateOnly(r.anchor_date),
+    cadence: { interval: Number(r.cadence_interval), unit: r.cadence_unit },
+  }));
+
+  for (const table of ['user_membership_periodical', 'user_membership_services'] as const) {
+    const { rows } = await tx.query<any>(
+      `SELECT id, item_billing_frequency${table === 'user_membership_services' ? ', starts_at' : ''}
+         FROM ${table} WHERE gym_id = ? AND product_set_id = ? AND schedule_id IS NULL`,
+      [gymId, productSetId]);
+    for (const row of rows) {
+      const cadence = cadenceForFrequency(row.item_billing_frequency);
+      if (!cadence) continue;
+      const purchaseDate = row.starts_at ? toDateOnly(row.starts_at) : setStart;
+      const allocation = allocateSchedule({ cadence, purchaseDate, schedules });
+      let scheduleId: number | null = null;
+      if (allocation.kind === 'new') {
+        scheduleId = await ensureSchedule(tx, {
+          gymId, rootProductSetId: rootId, key: allocation.key, anchorDate: allocation.anchorDate,
+          cadenceInterval: cadence.interval, cadenceUnit: cadence.unit,
+        });
+        schedules.push({ id: scheduleId, key: allocation.key, anchorDate: allocation.anchorDate, cadence });
+      } else {
+        scheduleId = schedules.find((s) => s.key === allocation.key)?.id ?? null;
+      }
+      if (scheduleId != null) {
+        await tx.query(`UPDATE ${table} SET schedule_id = ? WHERE id = ?`, [scheduleId, row.id]);
+      }
+    }
+  }
 }
 
 /** Adds a recurring Additional Product to a version, on its own schedule. */
@@ -174,10 +225,17 @@ export async function addProductSetService(tx: Tx, input: {
 
 /* ── Reading it back for the engine ──────────────────────────────────────── */
 
+type Exec = { query: typeof db.query };
+
+/**
+ * `exec` is the transaction a version was written in, when it is read back
+ * before that transaction commits (an assignment imported at commit); otherwise
+ * the pool.
+ */
 export async function loadProductSetSimulationAssignment(
-  gymId: string, productSetId: number,
+  gymId: string, productSetId: number, exec: Exec = db,
 ): Promise<SimulationAssignment | null> {
-  const { rows } = await db.query(
+  const { rows } = await exec.query(
     `SELECT ps.id, ps.owner_member_id, ps.membership_plan_id, ps.starts_at, ps.ends_at,
             mp.name AS plan_name,
             snap.membership_fee_price, snap.free_periods, snap.paid_periods, snap.bonus_periods,
@@ -194,14 +252,14 @@ export async function loadProductSetSimulationAssignment(
   const row = rows[0];
   if (!row) return null;
 
-  const applications = ((await loadPromotionApplicationsForSets(gymId, [productSetId])).get(productSetId) ?? [])
+  const applications = ((await loadPromotionApplicationsForSets(gymId, [productSetId], exec)).get(productSetId) ?? [])
     .filter((a) => a.status === 'applied');
-  const grants = await loadPromotionGrantSnapshots(gymId, applications.map((a) => a.id));
+  const grants = await loadPromotionGrantSnapshots(gymId, applications.map((a) => a.id), exec);
 
   const cadence = toPlanDurationCadence(row.cadence_interval, row.cadence_unit);
   const startsAt = toDateOnly(row.starts_at);
 
-  const { rows: benefitRows } = await db.query(
+  const { rows: benefitRows } = await exec.query(
     CATEGORIES.map((category) => `
       SELECT '${category}' AS category, product_id, quantity, item_name, item_billing_frequency,
              unit_price, \`action\`, \`value\`,
@@ -220,7 +278,7 @@ export async function loadProductSetSimulationAssignment(
     benefit: toProductBenefit('plan', b.action, b.value),
   }));
 
-  const { rows: serviceRows } = await db.query(
+  const { rows: serviceRows } = await exec.query(
     `SELECT id, product_id, quantity, starts_at, ends_at, item_name, item_billing_frequency, unit_price
        FROM user_membership_services WHERE gym_id = ? AND product_set_id = ?
       ORDER BY starts_at ASC, id ASC`,
@@ -289,17 +347,22 @@ interface PlannedEvent {
  */
 export async function planScheduledEvents(
   gymId: string, productSetId: number, from: string, cycles: number = MAX_COVERED_CYCLES,
+  exec: Exec = db,
 ): Promise<PlannedEvent[]> {
-  const assignment = await loadProductSetSimulationAssignment(gymId, productSetId);
+  const assignment = await loadProductSetSimulationAssignment(gymId, productSetId, exec);
   if (!assignment) return [];
   const result = computeBillingSimulation({ assignments: [assignment], horizonFrom: from, minimumCycles: cycles });
   if (!result.available) return [];
 
-  const { rows: scheduled } = await db.query(
+  const { rows: scheduled } = await exec.query(
     `SELECT s.product_id, sch.schedule_key
        FROM user_membership_services s JOIN product_set_schedules sch ON sch.id = s.schedule_id
-      WHERE s.gym_id = ? AND s.product_set_id = ?`,
-    [gymId, productSetId],
+      WHERE s.gym_id = ? AND s.product_set_id = ?
+     UNION
+     SELECT p.product_id, sch.schedule_key
+       FROM user_membership_periodical p JOIN product_set_schedules sch ON sch.id = p.schedule_id
+      WHERE p.gym_id = ? AND p.product_set_id = ?`,
+    [gymId, productSetId, gymId, productSetId],
   );
   const keyByProduct = new Map<number, string>((scheduled as any[]).map((r) => [Number(r.product_id), String(r.schedule_key)]));
   const planCadence = assignment.recurringInterval != null && assignment.recurringUnit != null
@@ -356,7 +419,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
   if (!setRows[0]) return { created: 0 };
   const rootId = Number(setRows[0].root_product_set_id);
 
-  const planned = await planScheduledEvents(gymId, productSetId, today, input.cycles);
+  const planned = await planScheduledEvents(gymId, productSetId, today, input.cycles, tx);
   const scheduleIds = new Map<string, number>();
   const { rows: schedules } = await tx.query<{ id: number; schedule_key: string }>(
     'SELECT id, schedule_key FROM product_set_schedules WHERE root_product_set_id = ?', [rootId]);
