@@ -8,8 +8,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, seedScheduledEvent } from './helpers';
 
 // #788: the card-replacement flow talks to the provider through
 // createCardVerificationRequest(), which takes no amount at all — the row's own
@@ -63,10 +62,12 @@ async function createUserMembership(
   const planId = await createMembershipPlan(gymId);
   const { insertId } = await db.query(
     `INSERT INTO user_memberships
-       (gym_id, member_id, membership_plan_id, status, starts_at, base_price, next_billing_date)
-     VALUES (?, ?, ?, ?, CURDATE(), '29.99', ?)`,
-    [gymId, memberId, planId, status, nextBillingDate],
+       (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
+     VALUES (?, ?, ?, ?, CURDATE(), '29.99')`,
+    [gymId, memberId, planId, status],
   );
+  // #1325 PR 3c: "scheduled to be charged" is a scheduled event of the member's set.
+  if (nextBillingDate) await seedScheduledEvent(gymId, memberId, insertId, nextBillingDate);
   return insertId;
 }
 
@@ -295,9 +296,9 @@ describe('GET /payment-methods', () => {
   it('allows removal when a card is stored and nothing is scheduled to be charged', async () => {
     const memberId = await createMember(gymId);
     await storeCard(gymId, memberId);
-    // Cancelled assignment, and an active one with no next billing date: neither
-    // is billable, so nothing blocks removal.
-    await createUserMembership(gymId, memberId, 'cancelled', '2099-01-01');
+    // A cancelled assignment (its version's future events were replaced), and
+    // an active one with nothing scheduled: nothing blocks removal.
+    await createUserMembership(gymId, memberId, 'cancelled', null);
     await createUserMembership(gymId, memberId, 'active', null);
 
     const res = await request

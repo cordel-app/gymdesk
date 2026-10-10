@@ -31,6 +31,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
+  ensureTestProductSet,
   request,
 } from './helpers';
 
@@ -61,6 +62,9 @@ async function createAssignment(gymId: string, planId: number, basePrice = 100):
      VALUES (?, ?, ?, 'active', CURDATE(), ?)`,
     [gymId, memberId, planId, basePrice],
   );
+  // #1325 PR 3b: an adjustment belongs to the member's ProductSet. Not linked
+  // to the assignment: these cases exercise the assignment-keyed apply path.
+  await ensureTestProductSet(gymId, memberId);
   return insertId;
 }
 

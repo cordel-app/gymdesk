@@ -88,6 +88,7 @@ import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
 // goals exist; this says who holds which.
 import { memberPersonalGoalsRouter } from './api/member-personal-goals';
 import { mePersonalGoalsRouter } from './api/me-personal-goals';
+import { meProfileImageRouter } from './api/me-profile-image';
 import { meMembershipPlansRouter } from './api/me-membership-plans';
 import { nutritionDashboardRouter } from './api/nutrition-dashboard';
 import { calendarEventsRouter } from './api/calendar-events';
@@ -115,7 +116,7 @@ import { gymLocalizationRouter } from './api/gym-localization';
 import { swaggerSpec } from './infra/swagger';
 import { requestLogger } from './middleware/requestLogger';
 import { internalRunRateLimitConfig, spendsInternalRunBudget } from './domain/internalRunRateLimit';
-import { API_RATE_LIMIT_WINDOW_MS, apiRateLimitMax } from './domain/apiRateLimit';
+import { API_RATE_LIMIT_WINDOW_MS, apiRateLimitKey, apiRateLimitMax } from './domain/apiRateLimit';
 import { internalRunClientKey, trustProxyHops } from './domain/forwardedClient';
 import { httpErrorStatus, publicErrorMessage } from './domain/httpErrorResponse';
 
@@ -130,11 +131,18 @@ app.set('trust proxy', trustProxyHops());
 
 app.use(requestLogger);
 
+// #1395: keyed on the signed-in person, not on the address. Both Next apps'
+// `/api/proxy` routes forward no `X-Forwarded-For`, so by address every member
+// is the Members App container and every staff user the admin container, and
+// one person spending the budget locked everyone else out. See
+// domain/apiRateLimit.ts for why the token is read unverified and why this is
+// not a `trust proxy` change.
 const apiLimiter = rateLimit({
   windowMs: API_RATE_LIMIT_WINDOW_MS,
   limit: apiRateLimitMax(),
   standardHeaders: 'draft-7',
   legacyHeaders: false,
+  keyGenerator: (req) => apiRateLimitKey(req.headers.authorization, ipKeyGenerator(req.ip ?? '')),
 });
 app.use(apiLimiter as any);
 
@@ -305,6 +313,8 @@ app.use('/me/gyms', requireAuth(), meGymsRouter);
 // the two feature flags it needs are declared on the router itself, beside
 // the rules that read them.
 app.use('/me/personal-goals', requireAuth(), tenantContext, centerContext, mePersonalGoalsRouter);
+// #1375: the member's own profile image. Mounted BEFORE /me for the same reason.
+app.use('/me/profile/image', requireAuth(), tenantContext, centerContext, meProfileImageRouter);
 // #1122: the Members App's Add Plan — the member's own Draft, Promotions and Save & Pay.
 app.use('/me/membership-plans', requireAuth(), tenantContext, centerContext, meMembershipPlansRouter);
 app.use('/me',      requireAuth(), tenantContext, centerContext, meRouter);

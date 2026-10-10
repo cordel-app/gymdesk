@@ -1,6 +1,6 @@
-import { withDerivedBilling } from './derived-billing';
+import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { createProductSetCheckout, initialCharge } from './product-set-checkout';
-import { findOpenInitialEvent } from './plan-checkout';
+import { openInitialEventForAssignment } from './product-set-bridge';
 import { memberInviteTarget } from '../domain/memberInviteTarget';
 import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
@@ -527,6 +527,25 @@ function shapeMemberProfile<T extends { preferred_locale?: unknown }>(row: T) {
   return { ...row, preferred_locale: toMemberPreferredLocale(row.preferred_locale) };
 }
 
+/**
+ * The member's own profile as `GET /me/profile` answers it — the row, the plan
+ * name, and `preferred_locale` narrowed to a locale this deployment configures.
+ * One loader for the read, the `PATCH` and the image routes (#1375), so every
+ * answer of "the member's profile" is one shape. `null` for a member outside
+ * the gym or soft-deleted.
+ */
+export async function loadMemberProfile(gymId: string, memberId: number): Promise<Record<string, any> | null> {
+  const { rows } = await db.query(
+    `SELECT m.*, m.membership_plan_id AS fare_id,
+            p.name AS fare_name
+     FROM members m
+     LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
+     WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
+    [gymId, memberId],
+  );
+  return rows[0] ? shapeMemberProfile(rows[0]) : null;
+}
+
 // #1246 stage 5: the gym's Time & Localization settings, read-only, so the
 // Members App formats dates and amounts by the same conventions as the staff.
 meRouter.get('/localization', requireRole('member'), async (req: Request, res: Response, next: NextFunction) => {
@@ -547,16 +566,9 @@ meRouter.get('/profile', requireRole('member'), async (req: Request, res: Respon
   const { gymId } = ctx;
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const { rows } = await db.query(
-      `SELECT m.*, m.membership_plan_id AS fare_id,
-              p.name AS fare_name
-       FROM members m
-       LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
-       WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
-      [gymId, memberId],
-    );
-    if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
-    res.json(shapeMemberProfile(rows[0]));
+    const profile = await loadMemberProfile(gymId, memberId);
+    if (!profile) return res.status(404).json({ error: 'Member not found' });
+    res.json(profile);
   } catch (err) {
     next(err);
   }
@@ -593,15 +605,7 @@ meRouter.patch('/profile', requireRole('member'), async (req: Request, res: Resp
       ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Member not found' });
-    const { rows } = await db.query(
-      `SELECT m.*, m.membership_plan_id AS fare_id,
-              p.name AS fare_name
-       FROM members m
-       LEFT JOIN membership_plans p ON p.id = m.membership_plan_id
-       WHERE m.gym_id = ? AND m.id = ? AND m.deleted_at IS NULL`,
-      [gymId, memberId],
-    );
-    res.json(shapeMemberProfile(rows[0]));
+    res.json(await loadMemberProfile(gymId, memberId));
   } catch (err) {
     next(err);
   }
@@ -1628,7 +1632,7 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
       `SELECT um.id, um.member_id, um.membership_plan_id,
               um.base_price, um.discount_reason, um.discount_expires_at,
               um.starts_at, um.ends_at, um.status, um.created_at,
-              um.next_billing_date, um.membership_fee_price,
+              um.membership_fee_price,
               um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
               um.personal_fee_benefit_action, um.personal_fee_benefit_value,
               p.free_periods AS plan_free_periods,
@@ -1753,8 +1757,10 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     const membership_fee = regularFee != null
       ? Math.round(Math.max(0, resolveMembershipFee(regularFee, currentCycleDate(um), feeContext).amount) * 100) / 100
       : null;
+    // #1325 PR 3c: the next charge is the ProductSet's next scheduled event.
+    const derivedNext = (await loadDerivedBilling(gymId, [Number(um.id)])).get(Number(um.id))?.next_billing_date ?? null;
     const upcoming_payments = computeUpcomingPayments(
-      um.next_billing_date,
+      derivedNext,
       um.billing_interval,
       um.billing_unit,
       regularFee != null
@@ -2077,7 +2083,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
     // #1288: a row awaiting its first payment already has its Billing Event
     // (written at Save & Pay); a retry links to it so the webhook settles that
     // one event instead of adding a second for the same charge.
-    const openEventId = um.status === 'pending_payment' ? await findOpenInitialEvent(gymId, um.id) : null;
+    const openEventId = um.status === 'pending_payment' ? (await openInitialEventForAssignment(db, gymId, um.id))?.eventId ?? null : null;
     const { insertId } = await db.query(
       `INSERT INTO payment_requests
          (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,

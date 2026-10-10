@@ -6,8 +6,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, ensureTestProductSet } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -40,6 +39,8 @@ describe('Billing Events', () => {
     await createTestMembership(otherGymId);
 
     memberId = await createMember(gymId);
+    // #1325 PR 3b: a manual ledger row belongs to the member's Active ProductSet.
+    await ensureTestProductSet(gymId, memberId);
     chargeTypeId = await getChargeTypeId('membership_fee');
   });
 
@@ -165,9 +166,9 @@ describe('Billing Events', () => {
     beforeAll(async () => {
       // Insert a known event for this member
       await db.query(
-        `INSERT INTO billing_events (gym_id, member_id, event_type, source, actor_user_id, amount)
-         VALUES (?, ?, 'payment_recorded', 'admin', ?, 25.00)`,
-        [gymId, memberId, TEST_USER_ID],
+        `INSERT INTO billing_events (gym_id, member_id, product_set_id, event_type, source, actor_user_id, amount)
+         VALUES (?, ?, ?, 'payment_recorded', 'admin', ?, 25.00)`,
+        [gymId, memberId, await ensureTestProductSet(gymId, memberId), TEST_USER_ID],
       );
     });
 
@@ -197,9 +198,9 @@ describe('Billing Events', () => {
     it('GET /billing-events does not leak events across gyms', async () => {
       // Insert an event in gymId
       await db.query(
-        `INSERT INTO billing_events (gym_id, member_id, event_type, source, actor_user_id, amount)
-         VALUES (?, ?, 'adjustment', 'admin', ?, 5.00)`,
-        [gymId, memberId, TEST_USER_ID],
+        `INSERT INTO billing_events (gym_id, member_id, product_set_id, event_type, source, actor_user_id, amount)
+         VALUES (?, ?, ?, 'adjustment', 'admin', ?, 5.00)`,
+        [gymId, memberId, await ensureTestProductSet(gymId, memberId), TEST_USER_ID],
       );
 
       // Query with otherGymId — should get 0 items from gymId

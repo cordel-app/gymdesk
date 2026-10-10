@@ -196,16 +196,13 @@ export async function loadCardRemovalBlock(
   gymId: string,
   memberId: number,
 ): Promise<RemovalBlockReason | null> {
-  const { rows } = await db.query<{ status: string; next_billing_date: string | Date | null }>(
-    `SELECT status, next_billing_date
-       FROM user_memberships
-      WHERE gym_id = ? AND member_id = ?`,
+  const { rows } = await db.query<{ status: string }>(
+    `SELECT status FROM user_memberships WHERE gym_id = ? AND member_id = ?`,
     [gymId, memberId],
   );
-  // #1325: a plan a ProductSet bills has no `next_billing_date` on its
-  // assignment; what is scheduled to be charged is the set's persisted events.
-  // Any scheduled event, or a failed one still owed, of a version the member
-  // owns makes the card billable exactly as a legacy next billing date did.
+  // #1325: what is scheduled to be charged is the ProductSet's persisted
+  // events. Any scheduled event, or a failed one still owed, of a version the
+  // member owns makes the card billable.
   const { rows: scheduled } = await db.query<{ n: number }>(
     `SELECT COUNT(*) AS n
        FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id
@@ -216,5 +213,5 @@ export async function loadCardRemovalBlock(
     [gymId, memberId],
   );
   const owedByProductSet = Number(scheduled[0]?.n ?? 0) > 0;
-  return cardRemovalBlock(owedByProductSet ? [...rows, { status: 'active', next_billing_date: new Date() }] : rows);
+  return cardRemovalBlock(rows.map((r) => ({ status: r.status, has_pending_obligation: owedByProductSet })));
 }

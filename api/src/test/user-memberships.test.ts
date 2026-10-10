@@ -9,8 +9,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, ensureTestProductSet, seedScheduledEvent, clearScheduledEvents } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -236,9 +235,9 @@ async function insertBillingEvent(
   gymId: string, umId: number, memberId: number, eventType: string, amount: number, createdAt: string,
 ): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO billing_events (gym_id, user_membership_id, member_id, event_type, source, amount, created_at)
-     VALUES (?, ?, ?, ?, 'system', ?, ?)`,
-    [gymId, umId, memberId, eventType, amount, createdAt],
+    `INSERT INTO billing_events (gym_id, user_membership_id, product_set_id, member_id, event_type, source, amount, created_at)
+     VALUES (?, ?, ?, ?, ?, 'system', ?, ?)`,
+    [gymId, umId, await ensureTestProductSet(gymId, memberId, umId), memberId, eventType, amount, createdAt],
   );
   return insertId;
 }
@@ -2007,12 +2006,11 @@ describe('POST /user-memberships/:id/close', () => {
     await createTestMembership(gymId, 'admin');
   });
 
+  // #1325 PR 3c: what is pending is a scheduled event of the member's ProductSet.
   async function setNextBillingDate(umId: number, dateExpr: string | null) {
-    if (dateExpr === null) {
-      await db.query('UPDATE user_memberships SET next_billing_date = NULL WHERE id = ?', [umId]);
-    } else {
-      await db.query(`UPDATE user_memberships SET next_billing_date = ${dateExpr} WHERE id = ?`, [umId]);
-    }
+    const { rows } = await db.query<{ member_id: number }>('SELECT member_id FROM user_memberships WHERE id = ?', [umId]);
+    await clearScheduledEvents(gymId, rows[0].member_id);
+    if (dateExpr !== null) await seedScheduledEvent(gymId, rows[0].member_id, umId, dateExpr);
   }
 
   it('returns 401 without an Authorization header', async () => {
@@ -2112,67 +2110,26 @@ describe('POST /user-memberships/:id/close', () => {
     expect(res.body.status).toBe('cancelled');
   });
 
-  it('returns 409 with unused_value_impacted + warnings when next_billing_date is today, and does not close', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId);
-    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
-    await setNextBillingDate(umId, 'CURDATE()');
-
-    const res = await request
-      .post(`/user-memberships/${umId}/close`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe('unused_value_impacted');
-    expect(Array.isArray(res.body.warnings)).toBe(true);
-    expect(res.body.warnings.length).toBeGreaterThan(0);
-    expect(res.body.message).toEqual(expect.any(String));
-
-    const { rows } = await db.query('SELECT status, closed_at FROM user_memberships WHERE id = ?', [umId]);
-    expect(rows[0].status).toBe('active');
-    expect(rows[0].closed_at).toBeNull();
-  });
-
-  it('returns 409 when next_billing_date is in the future, and does not close', async () => {
-    const memberId = await createMember(gymId);
-    const planId = await createPlan(gymId);
-    const umId = await createUserMembershipDirect(gymId, memberId, planId, 'paused');
-    await setNextBillingDate(umId, 'DATE_ADD(CURDATE(), INTERVAL 7 DAY)');
-
-    const res = await request
-      .post(`/user-memberships/${umId}/close`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(res.status).toBe(409);
-    expect(res.body.error).toBe('unused_value_impacted');
-
-    const { rows } = await db.query('SELECT status FROM user_memberships WHERE id = ?', [umId]);
-    expect(rows[0].status).toBe('paused');
-  });
-
-  it('closes when confirm: true is sent despite a pending next_billing_date', async () => {
+  // #1325 PR 3: a plan a ProductSet projects is closed by retiring the set — a
+  // new, empty version whose activation replaces the obsolete future events —
+  // so there is no unused value to warn about and no confirm to ask for.
+  it('closes a projected plan with a future scheduled event: the event is replaced, nothing is charged', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
     await setNextBillingDate(umId, 'DATE_ADD(CURDATE(), INTERVAL 7 DAY)');
 
-    const warned = await request
-      .post(`/user-memberships/${umId}/close`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(warned.status).toBe(409);
-
     const res = await request
       .post(`/user-memberships/${umId}/close`)
       .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ confirm: true });
+      .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('cancelled');
 
-    const { rows } = await db.query('SELECT status, closed_at FROM user_memberships WHERE id = ?', [umId]);
-    expect(rows[0].status).toBe('cancelled');
-    expect(rows[0].closed_at).not.toBeNull();
+    const { rows: scheduled } = await db.query<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id
+        WHERE ps.owner_member_id = ? AND be.is_scheduled = 1 AND be.billing_date > CURDATE()`, [memberId]);
+    expect(Number(scheduled[0].n)).toBe(0);
   });
 });
 

@@ -122,12 +122,11 @@ describe('Exercises: inline creation (#805)', () => {
       }
     });
 
-    it('the creation card keeps the Video URL field the editor dropped (#717 Q6)', () => {
+    it('neither mode offers a Video URL input (#1380)', () => {
       expect(newRowSrc).toContain('mode="create"');
       expect(slice('function renderEditSection(', 'function renderViewSection(')).toContain('mode="edit"');
-      // The one field the two modes differ on, and the only branch on `mode`.
-      expect(editorSrc).toContain("const showVideoUrl = mode === 'create';");
-      expect(formSrc).toContain("t('label_video_url')");
+      expect(editorSrc).not.toContain('video_url');
+      expect(editorSrc).not.toContain('showVideoUrl');
     });
 
     it('both statuses are still offered', () => {
@@ -306,7 +305,6 @@ describe('Exercises: inline creation (#805)', () => {
       expect(toExerciseCreatePayload(form, extras)).toEqual({
         name: 'Back Squat',
         description: 'heavy',
-        video_url: 'https://example.com/v.mp4',
         min_reps_default: 5,
         max_reps_default: 8,
         sets_default: 4,
@@ -325,20 +323,19 @@ describe('Exercises: inline creation (#805)', () => {
     it('an empty optional field becomes null, not an empty string or NaN', () => {
       const payload = toExerciseCreatePayload({ ...emptyExerciseForm(), name: 'Row' }, noExtras);
       expect(payload.description).toBeNull();
-      expect(payload.video_url).toBeNull();
       expect(payload.min_reps_default).toBeNull();
       expect(payload.rest_default_seconds).toBeNull();
       expect(payload.notes_default).toBeNull();
     });
 
-    it('the update payload never carries video_url (#717 Q6)', () => {
+    it('neither payload carries video_url (#717 Q6, #1380)', () => {
+      expect(toExerciseCreatePayload(form, extras)).not.toHaveProperty('video_url');
       expect(toExerciseUpdatePayload(form, extras)).not.toHaveProperty('video_url');
       expect(pageSrc).not.toMatch(/method: 'PUT'[\s\S]{0,200}video_url/);
     });
 
     it('the two payloads agree on everything else', () => {
-      const { video_url, ...create } = toExerciseCreatePayload(form, extras);
-      expect(create).toEqual(toExerciseUpdatePayload(form, extras));
+      expect(toExerciseCreatePayload(form, extras)).toEqual(toExerciseUpdatePayload(form, extras));
     });
   });
 

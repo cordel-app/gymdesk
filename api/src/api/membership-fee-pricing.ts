@@ -55,7 +55,7 @@ import { PromotionTimelineStatus } from '../domain/promotionTimeline';
  * already select under those names.
  */
 export const FEE_ASSIGNMENT_COLUMNS = `
-  um.id, um.gym_id, um.starts_at, um.next_billing_date,
+  um.id, um.gym_id, um.starts_at,
   um.membership_fee_price, um.membership_plan_id, um.base_price,
   um.discount_reason, um.discount_expires_at,
   um.personal_fee_benefit_action, um.personal_fee_benefit_value,
@@ -85,8 +85,6 @@ export interface FeeAssignmentRow {
   gym_id: string;
   /** The contract's anchor — every Billing & Duration boundary is counted from it. */
   starts_at: Date | string;
-  /** The cycle the assignment is next charged for; null once it bills nothing further. */
-  next_billing_date: Date | string | null;
   /**
    * The regular Membership Fee frozen at assignment time (§13) — the number every
    * Promotion benefit discounts *from*. NULL for an assignment that captured no
@@ -193,21 +191,18 @@ function durationForRow(row: FeeAssignmentRow) {
 }
 
 /**
- * The date "what this member pays now" means: the next cycle they will actually
- * be charged for.
- *
- * Never a date already past, even when `next_billing_date` is (an assignment
- * whose run was missed, or a fixture) — a screen asked for today's price would
- * otherwise report a discount from a cycle before the Promotion was applied. And
- * never before `starts_at`: nothing is waived, or discounted, before the
- * contract it belongs to begins.
+ * The date "what this member pays now" means: the cycle containing today, or
+ * the contract's start when it has not begun. Never a date already past — a
+ * screen asked for today's price would otherwise report a discount from a cycle
+ * before the Promotion was applied — and never before `starts_at`: nothing is
+ * waived, or discounted, before the contract it belongs to begins. (#1325 PR 3c:
+ * the assignment carries no stored next billing date; the ProductSet's events
+ * are the schedule, and this is the resolver's own anchor.)
  */
-export function currentCycleDate(row: Pick<FeeAssignmentRow, 'starts_at' | 'next_billing_date'>): string {
+export function currentCycleDate(row: Pick<FeeAssignmentRow, 'starts_at'>): string {
   const startsAt = toDateOnly(row.starts_at);
   const today = new Date().toISOString().slice(0, 10);
-  const next = row.next_billing_date != null ? toDateOnly(row.next_billing_date) : startsAt;
-  const date = next > today ? next : today;
-  return date > startsAt ? date : startsAt;
+  return today > startsAt ? today : startsAt;
 }
 
 /**

@@ -7,8 +7,8 @@ import { unlinkClerkAccount } from '../infra/clerk-account-links';
 import { recordPlatformAudit } from '../infra/audit';
 import { db } from '../infra/db';
 import { getPaymentProvider } from '../payments';
-import { stampFirstNextBillingDate } from '../domain/nextBillingDateStamp';
 import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
+import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { CARD_UPDATE_SOURCE } from '../domain/storedCards';
 import { PRODUCT_PURCHASE_SOURCE } from '../domain/memberProductPurchase';
 import { cancelProductPurchase, completeProductPurchase } from './me-products';
@@ -334,20 +334,6 @@ paymentWebhookRouter.post(
           // `createPlanCheckout()`), so the payment settles that event — its
           // status derives from this request, which just became `completed` —
           // instead of appending a second one for the same charge.
-          if (pr.billing_event_id == null) {
-            const { insertId: billingEventId } = await tx.query(
-              `INSERT INTO billing_events
-                 (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
-               VALUES (?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
-              [pr.gym_id, pr.user_membership_id, pr.member_id, pr.amount, pr.charge_type_id],
-            );
-
-            await tx.query(
-              `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
-              [billingEventId, pr.id],
-            );
-          }
-
           if (payload.paymentToken && payload.sequenceId) {
             await tx.query(
               `INSERT INTO payment_methods
@@ -362,17 +348,6 @@ paymentWebhookRouter.post(
               [pr.gym_id, pr.member_id, payload.paymentToken, payload.sequenceId, payload.cardLast4, payload.cardBrand],
             );
 
-            // Stamp next_billing_date on the membership (only if not yet set).
-            // #790: the first cycle boundary of the `starts_at`-anchored
-            // schedule *strictly after today*, never `starts_at + cadence`
-            // unconditionally — on a back-dated assignment that date is in the
-            // past, and the nightly run then charged one elapsed cycle per
-            // night, the last of them the very cycle this payment was priced on.
-            // The elapsed cycles are written off. The cadence is the
-            // assignment's own via ASSIGNMENT_CADENCE (LEFT JOIN, #635 stage 3).
-            if (pr.user_membership_id != null) {
-              await stampFirstNextBillingDate(tx, pr.user_membership_id, pr.gym_id);
-            }
           }
 
           // #1108 stage 2: a first payment on a Pending Payment row is what
@@ -395,6 +370,36 @@ paymentWebhookRouter.post(
               req.log.error(
                 { orderId: payload.orderId, userMembershipId: pr.user_membership_id, outcome: committed },
                 'Payment webhook: a paid membership pending payment could not be activated',
+              );
+            }
+          }
+
+          if (pr.billing_event_id == null) {
+            // A request raised with no event (none since #1325 PR 3b) still
+            // records the money, against the ProductSet the assignment or the
+            // member holds — a ledger row with no set is not written any more.
+            const setId = pr.user_membership_id != null
+              ? await productSetIdForAssignment(tx, pr.gym_id, pr.user_membership_id)
+              : null;
+            const ownerSetId = setId ?? (pr.member_id != null ? await activeProductSetIdForMember(tx, pr.gym_id, pr.member_id) : null);
+            if (ownerSetId == null) {
+              // The request stays completed (the money is the provider's fact);
+              // the missing ledger row is an error to reconcile, never a reason to
+              // fail the delivery and have Monei retry it for ever.
+              req.log.error(
+                { orderId: payload.orderId, paymentRequestId: pr.id },
+                'Payment webhook: completed payment with no ProductSet to record it against',
+              );
+            } else {
+              const { insertId: billingEventId } = await tx.query(
+                `INSERT INTO billing_events
+                   (gym_id, user_membership_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
+                 VALUES (?, ?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
+                [pr.gym_id, pr.user_membership_id, ownerSetId, pr.member_id, pr.amount, pr.charge_type_id],
+              );
+              await tx.query(
+                `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
+                [billingEventId, pr.id],
               );
             }
           }

@@ -1,6 +1,5 @@
 import { Tx } from '../infra/db';
 import { recordStatusChange } from './billing-events';
-import { rollStaleNextBillingDateForward } from '../domain/nextBillingDateStamp';
 import { LiveAssignment, supersedeStartsAtError } from '../domain/oneActivePlan';
 import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-active-plan';
 import { importAssignmentAsProductSet } from './product-set-bridge';
@@ -130,11 +129,6 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
     [row.id, input.gymId, row.status],
   );
   if (rowCount === 0) return { kind: 'not_committable', status: row.status };
-  // #790: an assignment joining the run's schedule is never put on a cycle
-  // that has already gone by. A pre-activation row carries no
-  // `next_billing_date` — the first payment stamps it — so this is a no-op
-  // today and the one place that answers it either way.
-  await rollStaleNextBillingDateForward(tx, Number(row.id), input.gymId);
   await recordStatusChange(tx, {
     gymId: input.gymId, userMembershipId: Number(row.id), memberId: Number(row.member_id),
     previousStatus: row.status, newStatus: 'active',
@@ -185,5 +179,8 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
     previousStatus: DRAFT_STATUS, newStatus: PENDING_PAYMENT_STATUS,
     source: input.source, actorUserId: input.actorUserId,
   });
+  // #1325 PR 3b: the Pending Payment version exists from here, with its initial
+  // Billing Event, so every payment raised for this row is an attempt on it.
+  await importAssignmentAsProductSet(tx, input.gymId, Number(row.id), { pending: true });
   return { kind: 'submitted', memberId: Number(row.member_id) };
 }

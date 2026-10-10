@@ -61,7 +61,7 @@ Each one, in the same transaction:
 - calls `snapshotAssignedPlan()` (`api/src/api/assigned-plan-snapshot.ts`) — the Assigned
   Plan owns the commercial configuration it was assigned with (#635 §11–§17).
 
-What it does **not** write: `next_billing_date` (still NULL), a `payment_requests` row, or
+What it does **not** write: a ProductSet version, a `payment_requests` row, or
 a `payment_methods` row. A Draft is therefore **not billable and not bookable**: the nightly
 run and `api/src/api/activity-eligibility.ts` both read `um.status = 'active'`.
 
@@ -88,16 +88,28 @@ taken as given (the money has arrived, and a paid-up member must not be left pla
 
 - the provider's `completed` webhook (A5) — the member's own *Pay now* (`POST /me/payment-requests`
   accepts a pending row, ahead of an active one) or a staff-raised checkout link (`POST /payment-requests`);
-- `POST /user-memberships/:id/record-payment` — a cash / manual first payment: one `payment_recorded`
-  Billing Event at the fee the cycle resolves to (or an explicit `amount`) plus the commit, one
-  transaction, no card stored and no `next_billing_date` stamped;
+- `POST /user-memberships/:id/record-payment` — a cash / manual first payment: a `cash` attempt on
+  the version's initial Billing Event (below) plus the commit, one transaction, no card stored;
 - a `payment_recorded` event appended through `POST /payments` against a pending row, so the
   Payments page's own recording activates it too.
 
+**Since #1325 PR 3b Save & Pay also creates the member's Pending Payment ProductSet version**
+(`importAssignmentAsProductSet(…, { pending: true })`, in `submitForPayment()`'s transaction):
+the assignment's configuration frozen as the version's own rows, and the version's **initial
+`payment_recorded` Billing Event written now, with its lines** — what the version owes on its
+start date, the fee and every Product dated on it. Nothing is superseded and no obligations are
+generated. Every payment raised for the pending assignment is then an **attempt on that one
+event** (`openInitialEventForAssignment()`): the staff link and the member's Pay now carry its
+`billing_event_id` for the event's own amount, the cash payment is a `payment_requests` row of
+method `cash` on it. The commit (`commitAssignment()` → `importAssignmentAsProductSet()`) finds
+the pending version and activates it through `activateWithEvents()`: the Active version
+superseded, its obsolete future events replaced, the new version's generated, the assignment
+re-projected.
+
 Nothing is superseded at Save & Pay time: a payment that never arrives leaves the member's
-current plan exactly as it was, and the pending row is discarded through `POST /:id/close`.
-The webhook's `completed` branch still stamps `next_billing_date` (card) and the nightly run
-skips a card-less assignment, as before — see
+current plan exactly as it was, and the pending row is discarded through `POST /:id/close`,
+which cancels the pending version with it (`cancelPendingSetForAssignment()`; refused with
+`409 payment_unresolved` while an attempt on its event is still unresolved). See
 [Assigned Plan status model](#assigned-plan-status-model).
 
 ### A3. A payment request is raised
@@ -264,34 +276,14 @@ The `completed` transaction (`webhooks.ts`, the `completed` branch):
 3. `payment_requests.billing_event_id` ← that insert's `insertId`
    (read off the query result, *not* off `rows` — the defect #635 stage 3 fixed, which
    rolled back every real completion);
-4. `user_memberships.failed_attempts = 0, last_failed_at = NULL` — #785's dunning state is
-   spent, unconditionally, because the cycle is settled whether or not a token came back;
-5. **only when `paymentToken` *and* `sequenceId` are present**: the `payment_methods`
+4. **only when `paymentToken` *and* `sequenceId` are present**: the `payment_methods`
    upsert (`ON DUPLICATE KEY UPDATE` on `(gym_id, member_id, provider)`, stamping
-   `updated_at`), and the **first `next_billing_date`** through
-   `stampFirstNextBillingDate()` (`api/src/domain/nextBillingDateStamp.ts`): the **first
-   cycle boundary strictly after UTC today** — `starts_at + n·cadence` for the smallest
-   `n ≥ 1` whose date is later than `UTC_DATE()` (#790).
+   `updated_at`).
 
-The boundary is computed by `firstBillingDateAfter()` (`api/src/domain/billingDate.ts`),
-which steps with `advanceBillingDate()` — the same step the nightly run takes — so it is
-always a date the run would itself reach from `starts_at` (31 Jan steps to 3 Mar, then
-3 Apr). The schedule stays anchored to `starts_at`, so `classifyPlanDurationPeriod()`'s
-Free/Paid/Bonus arithmetic is untouched; only the *first charge date* moves, and only
-forward past today. For an assignment starting today or later that is exactly
-`starts_at + 1 cadence`, as before. The cadence is `ASSIGNMENT_CADENCE`
-(`api/src/api/assigned-plan-snapshot.ts`) — the assignment's frozen pair, its Plan's live
-`billing_policies` row only as a fallback, hence the **LEFT** JOIN — and every date,
-`UTC_DATE()` included, is read as a `YYYY-MM-DD` string from SQL, so none crosses a
-timezone conversion. `WHERE next_billing_date IS NULL` means only the *first* payment
-stamps it.
-
-Why "strictly after today": the first payment is priced by `currentMembershipFee()` on
-`currentCycleDate()`, which for a back-dated assignment with no `next_billing_date` is
-**today**. Stamping `starts_at + cadence` (the pre-#790 SQL) put the next charge in the
-past, so the run charged one elapsed cycle per night — and the last of them was the very
-cycle the first payment had just been priced on, a double charge nothing could deduplicate.
-A boundary *equal* to today would be charged by tonight's run for the same reason.
+Nothing stamps a billing date (#1325 PR 3c retired `next_billing_date` with #790's
+`stampFirstNextBillingDate()`): the schedule is the ProductSet's persisted events, generated
+from today onwards when the version is activated (step 6 below), so a back-dated assignment
+is never charged the cycles that went by before it paid — which is what #790 protected.
 
 > **Decisions (2026-09-27, #790)** — change them here if they turn out wrong:
 > - **(a1) write-off.** The first payment covers every cycle that elapsed between a
@@ -926,22 +918,17 @@ Pay transaction that produces it rather than as a value nothing can write for a 
 > - The Draft's projection is the Assigned Plan card's existing **Billing Event Forecast**;
 >   no fourth section and no new name (#1108 Q3).
 > - A Draft nobody commits does **not** expire (Q1a): staff discard it through
->   `POST /:id/close`, which is warning-free because a Draft has never had a
->   `next_billing_date`.
+>   `POST /:id/close`, which is warning-free because a Draft has no ProductSet
+>   and so no obligation.
 
 `expired` is reached only by `assign-new-plan`'s supersede logic, never by request.
 
-**Back to `active` (#790).** Both paths that move an existing assignment to `active` —
-`POST /user-memberships/:id/reactivate` (`transitionMembership()`) and a `status` flip
-through `PUT /user-memberships/:id` — do two things in the transaction that flips the
-status: clear #785's dunning pair, and call `rollStaleNextBillingDateForward()`
-(`api/src/domain/nextBillingDateStamp.ts`). If `next_billing_date <= UTC_DATE()` it is
-walked forward along its own schedule, with the same `firstBillingDateAfter()` the first
-payment uses, to the first boundary strictly after today. **A pause is not a debt**: the
-cycles that went by while the assignment was off the run are not collected, one per night
-or otherwise. A date still in the future is left alone, and a NULL one stays NULL — an
-assignment that never paid has no schedule until its first payment stamps one. Pausing
-never touches the date.
+**Back to `active` (#790, retired by #1325 PR 3c).** `POST /user-memberships/:id/reactivate`
+and a `status` flip through `PUT /user-memberships/:id` flip the status and nothing else:
+there is no stored billing date to walk forward and no dunning pair to clear. **A pause is
+still not a debt** — a ProductSet's obligations are its persisted scheduled events, and the
+nightly run charges only the events of an `active` set that are due; what fell due while the
+assignment was paused is not collected in a catch-up.
 
 ### Provider layer
 

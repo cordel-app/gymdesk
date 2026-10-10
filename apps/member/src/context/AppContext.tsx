@@ -20,6 +20,13 @@ export interface MemberProfile {
    * is written. `MemberLocalePreference` is the one consumer.
    */
   preferred_locale: string | null;
+  /**
+   * #1374/#1375: the member's profile image (the R2 URL), and the
+   * `modified_at` the avatar is cache-busted on, since the key is deterministic.
+   * `MemberAvatar` is the one consumer.
+   */
+  image_url?: string | null;
+  modified_at?: string | null;
 }
 
 export interface MemberCenter {

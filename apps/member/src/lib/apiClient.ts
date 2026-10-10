@@ -49,5 +49,35 @@ export function useApiClient() {
     return res.json();
   }
 
-  return { apiFetch };
+  /**
+   * #1375: a raw-bytes upload — the file's own `Content-Type`, the same tenant,
+   * locale and impersonation headers as `apiFetch`, and never a JSON content
+   * type. The admin's `uploadFetch` one app over; a hand-rolled `fetch` here
+   * would reach the API with no gym and answer a bare 401 (#824's lesson).
+   */
+  async function uploadFetch<T>(path: string, file: Blob): Promise<T> {
+    const token = await getToken();
+    const headers: Record<string, string> = { 'Content-Type': file.type };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (gymId) headers['x-gym-id'] = gymId;
+    if (activeCenterId) headers['x-center-id'] = String(activeCenterId);
+    if (locale) headers['x-locale'] = locale;
+    try {
+      const stored = typeof window !== 'undefined' ? sessionStorage.getItem(IMPERSONATION_KEY) : null;
+      if (stored) {
+        const session = JSON.parse(stored);
+        if (session?.effectiveUserId) headers['x-impersonate-as'] = session.effectiveUserId;
+      }
+    } catch {}
+
+    const res = await fetch(`/api/proxy${path}`, { method: 'POST', headers, body: file });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw Object.assign(new Error(body.error ?? `Request failed: ${res.status}`), { status: res.status, body });
+    }
+    if (res.status === 204) return undefined as T;
+    return res.json();
+  }
+
+  return { apiFetch, uploadFetch };
 }
