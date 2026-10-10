@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useLocale } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
@@ -35,46 +35,64 @@ import { DEFAULT_MEMBER_LOCALE, isMemberLocale, preferredLocalePath } from '@/li
  * A member with no preference is shown the app's default language while impersonated.
  * Nothing is stored for a member's own session, which never impersonates.
  */
-export function MemberLocalePreference() {
+export function MemberLocalePreference({ children }: { children: ReactNode }) {
   const locale = useLocale();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
   const { member, loading } = useApp();
   const { isImpersonating } = useImpersonation();
+  const [gaveUp, setGaveUp] = useState(false);
 
-  useEffect(() => {
-    if (loading) return;
-    const go = (target: string) => {
-      const query = searchParams?.toString();
-      router.replace(query ? `${target}?${query}` : target);
-    };
-
+  // What, if anything, has to change language. Decided during render so the
+  // page below can be held back for exactly as long as the switch is pending
+  // (#1039): rendering the member's screens first in the wrong language and
+  // then replacing the route is the flicker a superadmin saw on impersonating.
+  // `loading` is true on the first client render, so this is null on both the
+  // server and the first client pass and nothing mismatches on hydration.
+  let pending: { target: string; kind: 'return' | 'preference' } | null = null;
+  if (!loading) {
     if (!isImpersonating) {
       // Back from an impersonation: return to the locale the superadmin was in.
       const saved = readReturnLocale();
-      if (saved) {
-        clearReturnLocale();
-        const back = preferredLocalePath(pathname ?? '/', locale, saved);
-        if (back) { go(back); return; }
-      }
+      const back = saved ? preferredLocalePath(pathname ?? '/', locale, saved) : null;
+      if (back) pending = { target: back, kind: 'return' };
     }
+    if (!pending && member) {
+      // A member with no preference (or one this app cannot render) sees the app's
+      // default language, not the superadmin's: impersonating is to see what they
+      // see. Their own session keeps following the browser, so nothing is forced there.
+      const preferred = isImpersonating && !isMemberLocale(member.preferred_locale)
+        ? DEFAULT_MEMBER_LOCALE
+        : member.preferred_locale;
+      const target = preferredLocalePath(pathname ?? '/', locale, preferred);
+      if (target) pending = { target, kind: 'preference' };
+    }
+  }
 
-    if (!member) return;
-    // A member with no preference (or one this app cannot render) sees the app's
-    // default language, not the superadmin's: impersonating is to see what they
-    // see. Their own session keeps following the browser, so nothing is forced there.
-    const preferred = isImpersonating && !isMemberLocale(member.preferred_locale)
-      ? DEFAULT_MEMBER_LOCALE
-      : member.preferred_locale;
-    const target = preferredLocalePath(pathname ?? '/', locale, preferred);
+  const target = pending?.target ?? null;
+  const kind = pending?.kind ?? null;
+
+  useEffect(() => {
     if (!target) return;
-    if (isImpersonating) rememberReturnLocale(locale);
-    go(target);
-  }, [loading, isImpersonating, member, pathname, locale, searchParams, router]);
+    if (kind === 'return') clearReturnLocale();
+    else if (isImpersonating) rememberReturnLocale(locale);
+    const query = searchParams?.toString();
+    router.replace(query ? `${target}?${query}` : target);
+  }, [target, kind, isImpersonating, locale, searchParams, router]);
 
-  return null;
+  // A switch that never lands must not leave the app blank.
+  useEffect(() => {
+    if (!target) { setGaveUp(false); return; }
+    const timer = setTimeout(() => setGaveUp(true), SWITCH_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [target]);
+
+  return <>{target && !gaveUp ? null : children}</>;
 }
+
+/** How long the page is held back for a language switch before it is shown anyway. */
+const SWITCH_TIMEOUT_MS = 3000;
 
 const RETURN_LOCALE_KEY = 'impersonation_return_locale';
 
