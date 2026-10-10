@@ -1,5 +1,6 @@
 'use client';
 
+import { EXERCISE_CATEGORIES, isExerciseCategory, exerciseCategoryLabelKey } from '@/lib/exerciseCategories';
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { primaryBtnSmall } from '@/components/ui';
@@ -159,6 +160,15 @@ export function ExerciseEditor({
         <div style={exerciseFieldWideStyle}>
           <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
           <input id={id('description')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={inlineInputSt} />
+        </div>
+        <div>
+          <label htmlFor={id('category')} style={inlineLabelSt}>{t('label_category')}</label>
+          <select id={id('category')} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={inlineSelectSt}>
+            <option value="">{t('category_none')}</option>
+            {/* A stored legacy value outside the supported set is shown, disabled, so it still reads correctly (#980's pattern). */}
+            {form.category && !isExerciseCategory(form.category) && <option value={form.category} disabled>{form.category}</option>}
+            {EXERCISE_CATEGORIES.map((c) => <option key={c} value={c}>{t(exerciseCategoryLabelKey(c) as any)}</option>)}
+          </select>
         </div>
         <div>
           <label htmlFor={id('status')} style={inlineLabelSt}>{t('label_status')}</label>

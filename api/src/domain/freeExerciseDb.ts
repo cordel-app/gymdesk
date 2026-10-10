@@ -132,7 +132,7 @@ export function parseSourceExercise(raw: unknown): ParseResult {
       level: optionalText(row.level),
       mechanic: optionalText(row.mechanic),
       equipment: optionalText(row.equipment),
-      category: optionalText(row.category),
+      category: optionalText(row.category)?.toLowerCase() ?? null,
       primaryMuscles,
       secondaryMuscles,
       instructions: stringList(row.instructions),

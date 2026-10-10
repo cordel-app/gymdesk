@@ -1,5 +1,6 @@
 'use client';
 
+import { exerciseCategoryLabelKey } from '@/lib/exerciseCategories';
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -110,6 +111,10 @@ export function ExerciseReadOnlyView({
             />
           ))}
         <Field wide label={t('label_description')} value={exerciseDisplayValue(exercise.description)} />
+        <Field
+          label={t('label_category')}
+          value={exerciseDisplayValue(exerciseCategoryLabelKey(exercise.category) ? t(exerciseCategoryLabelKey(exercise.category) as any) : exercise.category)}
+        />
         <div>
           <p style={exerciseFieldLabelStyle}>{t('label_status')}</p>
           <div style={{ ...exerciseFieldValueStyle, marginBottom: 8 }}>

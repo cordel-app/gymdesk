@@ -1,3 +1,4 @@
+import { parseExerciseCategoryInput } from '../domain/exerciseCategories';
 import express, { Request, Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -455,6 +456,8 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
   }
   const muscles = parseMuscles(req.body.muscles);
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
+  const categoryInput = parseExerciseCategoryInput(req.body);
+  if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
   const allowedResultTypeIds: number[] | undefined =
     Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
   // #967: the name in every other supported language. A request that omits the
@@ -470,10 +473,10 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description, video_url, image_url,
+          (gym_id, name, description, video_url, image_url, category,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, name.trim(), description ?? null, video_url ?? null, image_url ?? null,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, name.trim(), description ?? null, video_url ?? null, image_url ?? null, categoryInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, notes_default ?? null, status ?? 'active', callerMemberId ?? null],
       );
@@ -509,6 +512,8 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
   }
   const muscles = parseMuscles(req.body.muscles);
   if (typeof muscles === 'string') return res.status(400).json({ error: muscles });
+  const categoryInput = parseExerciseCategoryInput(req.body);
+  if (categoryInput.error) return res.status(400).json({ error: categoryInput.error });
   const allowedResultTypeIds: number[] | undefined =
     Array.isArray(req.body.allowed_result_type_ids) ? req.body.allowed_result_type_ids.map(Number) : undefined;
   // #967: replace-all, like every other collection this PUT carries — the
@@ -547,6 +552,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           rest_default_seconds  = IF(?, ?, rest_default_seconds),
           sets_default          = IF(?, ?, sets_default),
           notes_default         = IF(?, ?, notes_default),
+          category              = IF(?, ?, category),
           status                = COALESCE(?, status),
           modified_at           = UTC_TIMESTAMP(),
           modified_by           = ?
@@ -563,6 +569,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           'rest_default_seconds' in req.body ? 1 : 0, rest_default_seconds ?? null,
           'sets_default' in req.body ? 1 : 0, sets_default ?? null,
           'notes_default' in req.body ? 1 : 0, notes_default ?? null,
+          categoryInput.provided ? 1 : 0, categoryInput.value,
           status ?? null,
           callerMemberId ?? null,
           id, gymId,

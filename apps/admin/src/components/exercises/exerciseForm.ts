@@ -101,6 +101,8 @@ export interface ExerciseFormValues {
   sets_default: string;
   rest_default_seconds: string;
   notes_default: string;
+  /** #1360: one of the supported categories, or '' for none. */
+  category: string;
   status: string;
 }
 
@@ -108,6 +110,7 @@ export function emptyExerciseForm(): ExerciseFormValues {
   return {
     name: '', translations: {}, description: '', video_url: '',
     min_reps_default: '', max_reps_default: '', sets_default: '', rest_default_seconds: '', notes_default: '',
+    category: '',
     status: 'active',
   };
 }
@@ -129,6 +132,7 @@ export interface ExerciseRowValues {
   sets_default: number | null;
   rest_default_seconds: number | null;
   notes_default: string | null;
+  category?: string | null;
   status: string;
 }
 
@@ -143,6 +147,7 @@ export function exerciseFormFromRow(e: ExerciseRowValues): ExerciseFormValues {
     sets_default: e.sets_default != null ? String(e.sets_default) : '',
     rest_default_seconds: e.rest_default_seconds != null ? String(e.rest_default_seconds) : '',
     notes_default: e.notes_default ?? '',
+    category: e.category ?? '',
     status: e.status,
   };
 }
@@ -185,6 +190,8 @@ function sharedPayload(form: ExerciseFormValues, { muscles, resultTypeIds }: Pay
     sets_default: intOrNull(form.sets_default),
     rest_default_seconds: intOrNull(form.rest_default_seconds),
     notes_default: textOrNull(form.notes_default),
+    // #1360: the API judges it (absent keeps, null clears, unknown is a 400).
+    category: form.category || null,
     status: form.status,
     muscles: Array.from(muscles.entries()).map(([key, role]) => ({ key, role })),
     allowed_result_type_ids: Array.from(resultTypeIds),
