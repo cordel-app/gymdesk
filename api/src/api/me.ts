@@ -7,6 +7,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
 import { createClerkClient } from '@clerk/backend';
 import { parseBlockLogResult } from '../domain/blockResultUnits';
+import { FUTURE_WORKOUT_CODE, gymToday, isFutureLoggedDate, trainingProgress } from '../domain/workoutProgress';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
@@ -1178,6 +1179,46 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
   } catch (err) { next(err); }
 });
 
+/** #1370: Day / Week / Month completed-over-scheduled workouts, in the gym's zone. */
+meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const { rows: gym } = await db.query('SELECT time_zone, first_day_of_week FROM gyms WHERE id = ?', [gymId]);
+    const tz: string = gym[0]?.time_zone ?? 'Europe/Madrid';
+    const today = gymToday(new Date(), tz);
+    const { rows: blocks } = await db.query(
+      `SELECT w.id AS workout_id, w.scheduled_weekday, wb.id AS block_id
+       FROM workouts w
+       JOIN training_plans tp ON tp.id = w.training_plan_id
+       JOIN member_training_plans mtp ON mtp.training_plan_id = tp.id
+       LEFT JOIN workout_blocks wb ON wb.workout_id = w.id AND wb.deleted_at IS NULL
+       WHERE tp.gym_id = ? AND tp.member_id = ? AND mtp.status = 'active' AND tp.status != 'deleted'
+         AND w.deleted_at IS NULL`,
+      [gymId, memberId],
+    );
+    const byWorkout = new Map<number, { id: number; weekday: number | null; blockIds: number[] }>();
+    for (const r of blocks as any[]) {
+      const w = byWorkout.get(r.workout_id) ?? { id: r.workout_id, weekday: r.scheduled_weekday, blockIds: [] as number[] };
+      if (r.block_id != null) w.blockIds.push(r.block_id);
+      byWorkout.set(r.workout_id, w);
+    }
+    const monthStart = today.slice(0, 8) + '01';
+    const { rows: logs } = await db.query(
+      `SELECT workout_block_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM workout_block_logs
+       WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
+      [gymId, memberId, monthStart, today],
+    );
+    res.json(trainingProgress(
+      [...byWorkout.values()],
+      (logs as any[]).map((l) => ({ blockId: l.workout_block_id, date: l.d })),
+      today,
+      Number(gym[0]?.first_day_of_week ?? 1),
+    ));
+  } catch (err) { next(err); }
+});
+
 /**
  * #361: caller's own active nutrition plan with full hierarchy (days -> meals ->
  * items, restrictions, goals). Used by the Home "Today's Nutrition Plan" card
@@ -1298,6 +1339,13 @@ export async function resolveMemberId(gymId: string, ctx: TenantContext): Promis
   return rows[0].id;
 }
 
+
+/** #1370: the gym's zone, for "is this date after today". */
+async function gymTimeZone(gymId: string): Promise<string> {
+  const { rows } = await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+  return rows[0]?.time_zone ?? 'Europe/Madrid';
+}
+
 /**
  * #55: log a performed exercise + its sets. Member can only log against a
  * WorkoutExercise that belongs to one of their own (non-deleted) TrainingPlans.
@@ -1312,6 +1360,9 @@ meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('tr
   if (sets != null && !Array.isArray(sets)) return res.status(400).json({ error: 'sets must be an array' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
+    if (isFutureLoggedDate(logged_date, new Date(), await gymTimeZone(gymId))) {
+      return res.status(400).json({ error: 'A workout cannot be marked done before its day.', code: FUTURE_WORKOUT_CODE });
+    }
     const { rows: weRows } = await db.query(
       `SELECT we.exercise_id FROM workout_exercises we
        JOIN workout_blocks wb ON wb.id = we.workout_block_id
@@ -1457,6 +1508,9 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
   }
   try {
     const memberId = await resolveMemberId(gymId, ctx);
+    if (isFutureLoggedDate(logged_date, new Date(), await gymTimeZone(gymId))) {
+      return res.status(400).json({ error: 'A workout cannot be marked done before its day.', code: FUTURE_WORKOUT_CODE });
+    }
     const { rows: blockRows } = await db.query(
       `SELECT wb.result_unit FROM workout_blocks wb
        JOIN workouts w ON w.id = wb.workout_id
