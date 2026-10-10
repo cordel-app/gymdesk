@@ -1,4 +1,5 @@
 // #1219 — the Members App's profile avatar: initials plus a colour pair.
+// #1375 — and the member's own photo, when there is one (`memberAvatarSrc()`).
 //
 // Pure, no React and no `t()`. The colours are *roles* from `memberChrome.ts`
 // (#983), never a literal, so a gym's Theme moves them; each pair's text role is
@@ -39,4 +40,20 @@ export function memberAvatarColors(seed: string | number | null | undefined): Av
   let h = 0;
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
   return AVATAR_PALETTE[h % AVATAR_PALETTE.length];
+}
+
+/**
+ * #1375 — the `src` of the member's photo, or `null` when there is none and the
+ * initials are drawn instead. Cache-busted on the row's own `modified_at`,
+ * because the object key is deterministic (`gyms/<prefix>/members/<id>-<name>.png`,
+ * #1374): a replacement rewrites the same key, so without this the browser would
+ * keep showing the picture it already has. Only an `http(s)` reference is handed
+ * to the DOM.
+ */
+export function memberAvatarSrc(
+  imageUrl: string | null | undefined,
+  modifiedAt: string | null | undefined,
+): string | null {
+  if (!imageUrl || !/^https?:\/\//i.test(imageUrl)) return null;
+  return modifiedAt ? `${imageUrl}?v=${encodeURIComponent(modifiedAt)}` : imageUrl;
 }

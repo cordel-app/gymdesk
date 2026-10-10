@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties } from 'react';
 import { useRouter } from 'next/navigation';
 import { useLocale, useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
-import { memberAvatarColors, memberInitials } from '@/lib/memberAvatar';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import { userMenuItems } from '@/lib/memberUserMenu';
 import { memberTheme, rowDividerStyle } from '@/lib/memberChrome';
 import { LogoutConfirmDialog } from '@/components/LogoutConfirmDialog';
@@ -56,9 +56,11 @@ export function MemberUserMenu() {
         aria-controls={open ? menuId : undefined}
         aria-label={member?.name ? `${t('nav.user_menu')}: ${member.name}` : t('nav.user_menu')}
         title={member?.name || undefined}
-        style={{ ...styles.avatar, ...memberAvatarColors(member?.id ?? member?.name) }}
+        style={styles.avatar}
       >
-        {memberInitials(member?.name) || '◉'}
+        {/* #1375: the photo when there is one, the initials otherwise — one
+            rendering, shared with the Profile page. */}
+        <MemberAvatar member={member} size={32} />
       </button>
 
       {open && (
@@ -97,7 +99,7 @@ const styles: Record<string, CSSProperties> = {
   avatar: {
     width: 32, height: 32, flexShrink: 0, borderRadius: '50%', border: 'none', cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    fontSize: 13, fontWeight: 700, lineHeight: 1, padding: 0, fontFamily: 'inherit',
+    padding: 0, background: 'none', fontFamily: 'inherit',
   },
   menu: {
     position: 'absolute', top: 'calc(100% + 8px)', right: 0, zIndex: 50,
