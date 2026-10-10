@@ -1536,7 +1536,9 @@ The four routes an alert can take, in the order to consider them:
 
 **The other suppressed-in-name-only rule.** `js/missing-rate-limiting` was marked on
 `/products` and `/taxes` alone, which never reflected the code: `app.ts` applies a
-global `apiLimiter` (500 requests / 15 min per IP) with `app.use()` ahead of every route,
+global `apiLimiter` (`API_RATE_LIMIT_MAX`, default 500, / 15 min per signed-in person — the
+bearer token's subject, read unverified — or per IP for an unauthenticated request, #1395)
+with `app.use()` ahead of every route,
 and several routers add their own on top. Whatever the rule saw, those two routes are not
 less throttled than the rest of the API — the `as any` cast the limiter needs to satisfy
 Express 5's types is the likeliest reason the flow is invisible to it. Treat an alert of
