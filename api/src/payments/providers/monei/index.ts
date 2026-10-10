@@ -108,6 +108,7 @@ export class MoneiProvider implements PaymentProvider {
       providerRef: payment.id,
       errorCode: success ? null : (payment.statusCode ?? null),
       errorMessage: success ? null : (payment.statusMessage ?? null),
+      providerStatus: typeof payment.status === 'string' ? payment.status : null,
     };
   }
 }
