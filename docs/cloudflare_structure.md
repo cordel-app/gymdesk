@@ -6,6 +6,10 @@
 │   ├── goals/
 │   │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 512 × 512 px
 │   │
+│   ├── muscles/
+│   │   └── images/
+│   │       └── {muscle_id}-{muscle_name}.png                — 512 × 512 px
+│   │
 │   ├── exercises/
 │   │   └── images/
 │   │       ├── {exercise_id}-{exercise_name}.png                          — 2048 × 2048 px
