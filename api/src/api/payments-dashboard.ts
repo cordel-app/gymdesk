@@ -125,6 +125,10 @@ paymentsDashboardRouter.get('/summary', async (req, res, next) => {
             WHERE be.gym_id = ?
               AND be.created_at >= ?
               AND be.created_at < ?
+              -- #1325 PR 2: a one-off purchase and a card verification are
+              -- ledger rows, not membership/ProductSet obligations, and are
+              -- not counted in the billing cards.
+              AND be.event_type NOT IN ('product_purchase', 'card_verification')
               -- #1325: a persisted, not-yet-executed obligation is not a ledger row yet.
               AND be.is_scheduled = 0
          ) e

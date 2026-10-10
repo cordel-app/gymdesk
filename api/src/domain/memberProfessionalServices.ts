@@ -29,7 +29,7 @@ import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND } from
  *      `api/src/api/billing-simulation.ts` does, because the
  *      `user_membership_promotion_session_snapshot` table (migration 156) is
  *      still not written by anything.
- *   3. `user_membership_services` — Additional Services attached directly to
+ *   3. `member_products_recurrent_snapshot` — Additional Services attached directly to
  *      an assignment (#631), counted only while their window is open and
  *      only when the attached Product is itself a session package.
  *
@@ -64,7 +64,7 @@ export interface ProfessionalServiceGrantRow {
   professional_service_id: number;
   professional_service_name: string;
   kind: ProfessionalServiceGrantKind;
-  /** Row id of the granting record — `user_class_packages.id`, `user_membership_promotions.id`, `user_membership_services.id`. */
+  /** Row id of the granting record — `user_class_packages.id`, `user_membership_promotions.id`, `member_products_recurrent_snapshot.id`. */
   reference_id: number;
   product_id: number;
   product_name: string;
@@ -225,7 +225,7 @@ export async function loadMemberProfessionalServiceGrants(
             gc.name               AS product_name,
             umsv.quantity * COALESCE(gc.units, 1) AS sessions
      FROM user_memberships um
-     JOIN user_membership_services umsv
+     JOIN member_products_recurrent_snapshot umsv
        ON umsv.user_membership_id = um.id AND umsv.gym_id = um.gym_id
      JOIN products gc ON gc.id = umsv.product_id AND gc.type = 'sessions'
      JOIN product_professional_services sips

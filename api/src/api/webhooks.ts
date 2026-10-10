@@ -270,24 +270,30 @@ paymentWebhookRouter.post(
         await db.transaction(async (tx) => {
           await tx.query(
             `UPDATE payment_requests
-             SET status = 'completed', provider_ref = ?, completed_at = UTC_TIMESTAMP()
+             SET status = 'completed', provider_ref = ?, provider_status = ?, completed_at = UTC_TIMESTAMP()
              WHERE id = ?`,
-            [payload.providerRef, pr.id],
+            [payload.providerRef, payload.providerStatus ?? 'SUCCEEDED', pr.id],
           );
 
-          const { insertId: billingEventId } = await tx.query(
-            `INSERT INTO billing_events
-               (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
-             VALUES (?, NULL, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
-            [pr.gym_id, pr.member_id, pr.amount, pr.charge_type_id],
-          );
+          // The purchase's `product_purchase` Billing Event was written with the
+          // request (#1325 PR 2), so there is nothing to insert: the request
+          // becoming `completed` is what moves the event's derived status to
+          // paid. A request that predates that change has no event, and gets
+          // one here so the ledger still records the money that arrived.
+          if (pr.billing_event_id == null) {
+            const { insertId: billingEventId } = await tx.query(
+              `INSERT INTO billing_events
+                 (gym_id, user_membership_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
+               VALUES (?, NULL, ?, 'product_purchase', ?, ?, 'provider', NULL)`,
+              [pr.gym_id, pr.member_id, pr.amount, pr.charge_type_id],
+            );
+            await tx.query(
+              `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
+              [billingEventId, pr.id],
+            );
+          }
 
-          await tx.query(
-            `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
-            [billingEventId, pr.id],
-          );
-
-          const completed = await completeProductPurchase(tx, pr.gym_id, pr.id, billingEventId);
+          const completed = await completeProductPurchase(tx, pr.gym_id, pr.id);
           if (completed === 0) {
             // The payment is real either way, so the Billing Event above
             // stands; what is missing is a purchase row to mark, which means

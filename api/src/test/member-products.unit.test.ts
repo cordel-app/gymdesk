@@ -123,7 +123,7 @@ describe('which Products a member may be shown (#1121 Q1)', () => {
   // question with one answer.
   it('the predicate module says nothing about a purchase', () => {
     const source = withoutComments(read(REPO, 'api', 'src', 'domain', 'memberProductCatalogue.ts'));
-    expect(source).not.toContain('member_products');
+    expect(source).not.toContain('member_products_oneoff_snapshot');
     expect(source).not.toContain('purchase');
   });
 });

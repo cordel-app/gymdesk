@@ -45,7 +45,7 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
          -- nullable). An INNER JOIN answered "token not found or expired" for
          -- every purchase, which is indistinguishable from a real expiry.
          LEFT JOIN user_memberships um ON um.id = pr.user_membership_id
-         LEFT JOIN member_products mprod ON mprod.payment_request_id = pr.id
+         LEFT JOIN member_products_oneoff_snapshot mprod ON mprod.payment_request_id = pr.id
          LEFT JOIN billing_policies bp
            ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
          LEFT JOIN themes t ON t.id = g.theme_id AND t.deleted_at IS NULL
@@ -126,7 +126,7 @@ paymentPageRouter.get('/token/:token', tokenRateLimit as any, async (req: Reques
       gymName: row.gym_name,
       memberName: row.member_name,
       // #1121 stage 2: what is being bought, for the one-off consent sentence.
-      // The snapshot's name (`member_products.product_name`), never the live
+      // The snapshot's name (`member_products_oneoff_snapshot.product_name`), never the live
       // catalogue's — the page must say what the member agreed to buy.
       itemName: row.product_name ?? null,
       billingInterval,

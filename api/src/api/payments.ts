@@ -487,6 +487,7 @@ export async function loadFailedPaymentsAttention(gymId: string): Promise<Failed
                   LIMIT 1) AS latest_tx_status
            FROM billing_events be
           WHERE be.gym_id = ?
+            AND be.event_type NOT IN ('product_purchase', 'card_verification')
             AND (be.event_type = 'failed_billing'
                  OR EXISTS (SELECT 1 FROM payment_requests pf
                              WHERE pf.billing_event_id = be.id

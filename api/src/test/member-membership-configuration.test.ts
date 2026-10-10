@@ -128,7 +128,7 @@ async function attachService(
 ): Promise<number> {
   const { quantity = 1, startsAt = '2026-03-01', endsAt = null } = opts;
   const { insertId } = await db.query(
-    `INSERT INTO user_membership_services
+    `INSERT INTO member_products_recurrent_snapshot
        (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
     [gymId, umId, chargeId, quantity, startsAt, endsAt],

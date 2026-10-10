@@ -44,7 +44,7 @@ function severityOrderSql(column: string): string {
  */
 function conceptSql(alias: string): string {
   return `COALESCE(CONCAT('um:', ${alias}.user_membership_id),
-            CONCAT('mp:', (SELECT mp.product_id FROM member_products mp
+            CONCAT('mp:', (SELECT mp.product_id FROM member_products_oneoff_snapshot mp
                            WHERE mp.payment_request_id = ${alias}.id)),
             CONCAT('src:', ${alias}.source))`;
 }
