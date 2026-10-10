@@ -5,7 +5,7 @@ import { useLocale } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
-import { preferredLocalePath } from '@/lib/memberLocale';
+import { DEFAULT_MEMBER_LOCALE, isMemberLocale, preferredLocalePath } from '@/lib/memberLocale';
 
 /**
  * #1039 — the **one** place a member's stored default language is applied to
@@ -32,6 +32,7 @@ import { preferredLocalePath } from '@/lib/memberLocale';
  * superadmin's own language. The locale the superadmin came from is kept in
  * `sessionStorage` the first time the preference moves them and is restored
  * when the impersonation ends, so they are not left in the member's language.
+ * A member with no preference is shown the app's default language while impersonated.
  * Nothing is stored for a member's own session, which never impersonates.
  */
 export function MemberLocalePreference() {
@@ -60,7 +61,13 @@ export function MemberLocalePreference() {
     }
 
     if (!member) return;
-    const target = preferredLocalePath(pathname ?? '/', locale, member.preferred_locale);
+    // A member with no preference (or one this app cannot render) sees the app's
+    // default language, not the superadmin's: impersonating is to see what they
+    // see. Their own session keeps following the browser, so nothing is forced there.
+    const preferred = isImpersonating && !isMemberLocale(member.preferred_locale)
+      ? DEFAULT_MEMBER_LOCALE
+      : member.preferred_locale;
+    const target = preferredLocalePath(pathname ?? '/', locale, preferred);
     if (!target) return;
     if (isImpersonating) rememberReturnLocale(locale);
     go(target);

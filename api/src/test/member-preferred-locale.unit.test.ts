@@ -120,6 +120,8 @@ describe('the Members App side of the preference', () => {
     expect(component).not.toMatch(/loading \|\| isImpersonating/);
     expect(component).toContain("'impersonation_return_locale'");
     expect(component).toContain('rememberReturnLocale(locale)');
+    // No preference while impersonating means the default language, not the superadmin's.
+    expect(component).toContain('DEFAULT_MEMBER_LOCALE');
     expect(component).toContain('clearReturnLocale()');
     // Remembered only once, so a second switch does not overwrite where they came from.
     expect(component).toMatch(/if \(!sessionStorage\.getItem\(RETURN_LOCALE_KEY\)\)/);
