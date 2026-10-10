@@ -42,9 +42,7 @@
     "logout": "Tanca la sessió",
     "logout_confirm_title": "Vols tancar la sessió?",
     "logout_confirm_body": "Es tancarà la sessió d'aquest compte en aquest dispositiu.",
-    "logout_cancel": "Cancel·la",
-    "logout_impersonating_title": "Deixar de suplantar?",
-    "logout_impersonating_body": "Sortiràs del compte d'aquest membre i tornaràs al Mode de suport."
+    "logout_cancel": "Cancel·la"
   },
   "common": {
     "error": "Alguna cosa ha anat malament.",
@@ -455,6 +453,7 @@
     "search_placeholder": "Cerca per nom…",
     "searching": "Cercant…",
     "search_empty": "No s'han trobat membres actius.",
+    "error_search": "No s'han pogut carregar els membres. Torna-ho a provar.",
     "type_member": "Membre",
     "type_staff": "Personal",
     "cancel": "Cancel·lar",

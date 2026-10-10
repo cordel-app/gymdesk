@@ -42,7 +42,7 @@ import {
 import { logger } from '../lib/logger';
 // What a goal **target** is lives in one module, shared with the assignment side
 // (#1034 §1 — "do not introduce a second, incompatible unit system").
-import { normalizeTargetUnit, normalizeTargetValue, targetPairError } from '../domain/goalTarget';
+import { normalizeTargetType, normalizeTargetUnit, normalizeTargetValue, targetPairError } from '../domain/goalTarget';
 // The description rules and the actor snapshot are the Foods library's, reused
 // rather than restated: a goal row carries the same `description` + three actor
 // pairs migration 196 put on `nutrition_library_items`, for the same #799 reasons,
@@ -97,7 +97,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
    * administered from Cordel — so their actor names are Cordel employees' and are
    * not published to every tenant. A gym's own rows carry theirs.
    */
-  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit,' : ''}${hasImage ? ' g.image_url,' : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
+  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasImage ? ' g.image_url,' : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g', { maskPlatformActors: true })}`;
   /** The parameters `COLUMNS` binds before a query's own — the gym of `gym_status`, for a configurable kind. */
@@ -146,13 +146,15 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
    * ignored rather than refused, exactly as a submitted `slug` is — there is no
    * column for it, and the field is not part of that kind's contract.
    */
-  function readTarget(body: any): { value: { value: number | null | undefined; unit: string | null | undefined } } | { error: string } {
-    if (!measurable) return { value: { value: undefined, unit: undefined } };
-    const value = normalizeTargetValue(body?.target_value);
+  function readTarget(body: any): { value: { value: number | null | undefined; unit: string | null | undefined; type: 'absolute' | 'relative' | undefined } } | { error: string } {
+    if (!measurable) return { value: { value: undefined, unit: undefined, type: undefined } };
+    const value = normalizeTargetValue(body?.target_value, { allowNegative: true });
     if ('error' in value) return { error: value.error };
+    const type = normalizeTargetType(body?.target_type);
+    if ('error' in type) return { error: type.error };
     const unit = normalizeTargetUnit(body?.target_unit);
     if ('error' in unit) return { error: unit.error };
-    return { value: { value: value.value, unit: unit.value } };
+    return { value: { value: value.value, unit: unit.value, type: type.value } };
   }
 
   /* ── List ───────────────────────────────────────────────────────────────── */
@@ -204,6 +206,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     const pairError = targetPairError({
       targetValue: target.value.value ?? null,
       targetUnit: target.value.unit ?? null,
+      targetType: target.value.type ?? 'absolute',
     });
     if (pairError) return res.status(400).json({ error: pairError });
     const actor = actorSnapshot({ name: actorName, isSuperadmin });
@@ -222,12 +225,12 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // `chk_<prefix>_slug_system_only` refuses one on a gym row.
       const insertId = await db.transaction(async (tx) => {
         const { insertId: goalId } = await tx.query(
-          `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit,' : ''}
+          `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
              status, created_by_name, created_by_type)
-           VALUES (?, ?, ?,${measurable ? ' ?, ?,' : ''} 'active', ?, ?)`,
+           VALUES (?, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?, ?)`,
           [
             gymId, name.value, description.value ?? null,
-            ...(measurable ? [target.value.value ?? null, target.value.unit ?? null] : []),
+            ...(measurable ? [target.value.value ?? null, target.value.unit ?? null, target.value.type ?? 'absolute'] : []),
             actor.name, actor.type,
           ],
         );
@@ -256,7 +259,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
     try {
       const { rows: existing } = await db.query(
-        `SELECT id, gym_id, name, description, status${measurable ? ', target_value, target_unit' : ''}
+        `SELECT id, gym_id, name, description, status${measurable ? ', target_value, target_unit, target_type' : ''}
          FROM ${table} WHERE id = ?`,
         [id],
       );
@@ -290,10 +293,12 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
             ? toNumberOrNull(existing[0].target_value) : target.value.value,
           targetUnit: target.value.unit === undefined
             ? (existing[0].target_unit ?? null) : target.value.unit,
+          targetType: target.value.type ?? (existing[0].target_type === 'relative' ? 'relative' : 'absolute'),
         });
         if (pairError) return res.status(400).json({ error: pairError });
         if (target.value.value !== undefined) { updates.push('target_value = ?'); params.push(target.value.value); }
         if (target.value.unit !== undefined) { updates.push('target_unit = ?'); params.push(target.value.unit); }
+        if (target.value.type !== undefined) { updates.push('target_type = ?'); params.push(target.value.type); }
       }
       params.push(id);
       await db.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`, params);
@@ -565,7 +570,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   async function loadVisibleGoal(req: any, res: any) {
     const { gymId } = getTenantContext(req);
     const { rows } = await db.query(
-      `SELECT id, gym_id, name, description, status${measurable ? ', target_value, target_unit' : ''}${hasImage ? ', image_url' : ''}
+      `SELECT id, gym_id, name, description, status${measurable ? ', target_value, target_unit, target_type' : ''}${hasImage ? ', image_url' : ''}
        FROM ${table} WHERE id = ? AND (gym_id IS NULL OR gym_id = ?)`,
       [req.params.id, gymId],
     );
@@ -651,12 +656,12 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         // copied once the row has the id its key is built from.
         const insertId = await db.transaction(async (tx) => {
           const { insertId: goalId } = await tx.query(
-            `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit,' : ''}
+            `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
                status, created_by_name, created_by_type)
-             VALUES (?, ?, ?,${measurable ? ' ?, ?,' : ''} 'active', ?, ?)`,
+             VALUES (?, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?, ?)`,
             [
               gymId, newName, source.description ?? null,
-              ...(measurable ? [source.target_value ?? null, source.target_unit ?? null] : []),
+              ...(measurable ? [source.target_value ?? null, source.target_unit ?? null, source.target_type ?? 'absolute'] : []),
               actor.name, actor.type,
             ],
           );

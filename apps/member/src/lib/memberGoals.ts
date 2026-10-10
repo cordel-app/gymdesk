@@ -44,6 +44,8 @@ export interface MemberGoal extends GoalReadingSummaryFields {
   goal_slug: string | null;
   target_value: number | null;
   target_unit: string | null;
+  /** #1229 — a `relative` target is a change from the baseline reading. */
+  target_type?: 'absolute' | 'relative';
   start_date: string | null;
   target_date: string | null;
   /** When it stopped being pursued — removed, achieved or abandoned. */
@@ -315,6 +317,8 @@ export interface GoalReadingSummaryFields {
   /** §10 — the most recent reading, whatever period it falls in. */
   latest_reading: number | null;
   latest_reading_at: string | null;
+  /** #1229 — what progress is measured against (absolute target, or baseline + relative change). */
+  effective_target: number | null;
   /** §11 — 0..100, or `null` when it cannot be computed. */
   progress_percent: number | null;
   reading_count: number;

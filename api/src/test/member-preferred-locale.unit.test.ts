@@ -112,6 +112,33 @@ describe('the Members App side of the preference', () => {
     expect(profile).toContain('preferred_locale');
   });
 
+  it('applies the member\'s language while impersonating and restores the superadmin\'s', () => {
+    // Impersonating exists to see what the member sees, so the preference is not
+    // skipped for a superadmin; the locale they came from is kept and restored.
+    const component = memberFile('components/MemberLocalePreference.tsx')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(component).not.toMatch(/loading \|\| isImpersonating/);
+    expect(component).toContain("'impersonation_return_locale'");
+    expect(component).toContain('rememberReturnLocale(locale)');
+    expect(component).toContain('clearReturnLocale()');
+    // Remembered only once, so a second switch does not overwrite where they came from.
+    expect(component).toMatch(/if \(!sessionStorage\.getItem\(RETURN_LOCALE_KEY\)\)/);
+  });
+
+  it('holds the page back while a language switch is pending, with a way out', () => {
+    // The flicker: rendering the screens in the wrong language and then replacing
+    // the route. The component wraps the page and renders nothing for it while a
+    // switch is pending, and gives up after a timeout rather than leave it blank.
+    const component = memberFile('components/MemberLocalePreference.tsx')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(component).toMatch(/export function MemberLocalePreference\(\{ children \}/);
+    expect(component).toContain('SWITCH_TIMEOUT_MS');
+    expect(component).toMatch(/target && !gaveUp \? null : children/);
+    const layout = memberFile('app/[locale]/layout.tsx');
+    expect(layout).toContain('<MemberLocalePreference>{children}</MemberLocalePreference>');
+    expect(layout).not.toContain('<MemberLocalePreference />');
+  });
+
   it('labels every language in every locale file', () => {
     for (const code of ['en', 'es', 'ca']) {
       const messages = JSON.parse(readFileSync(join(MEMBER_LOCALES_DIR, `${code}.json`), 'utf-8'));

@@ -9,6 +9,7 @@
     "db:migrate": "knex migrate:latest --knexfile knexfile.cjs",
     "db:migrate:down": "knex migrate:rollback --knexfile knexfile.cjs",
     "db:seed": "node -r tsx/cjs src/infra/seed.ts",
+    "billing:reset-dev": "tsx src/scripts/reset-dev-billing.ts",
     "exercises:import-free-db": "tsx src/scripts/import-free-exercise-db.ts",
     "memberships:multi-active": "tsx src/scripts/report-multi-active-memberships.ts",
     "nutrition:base-images": "tsx src/scripts/backfill-base-nutrition-images.ts",

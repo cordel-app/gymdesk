@@ -23,6 +23,7 @@ describe('the allowlist', () => {
       '/billing/run',
       '/billing/cleanup',
       '/promotion-lifecycle/run',
+      '/plan-allowance-renewals/run',
       '/recurring-bookings/run',
       // #1113: the 2-hour training reminder, the one run that is not nightly.
       '/booking-reminders/run',

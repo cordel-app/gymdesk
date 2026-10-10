@@ -54,6 +54,8 @@ export interface AssignedPersonalGoalRow extends GoalReadingSummaryFields {
   /** A number, not mysql2's DECIMAL string — the router converts it once. */
   target_value: number | null;
   target_unit: string | null;
+  /** #1229 — `relative` targets are a change from the baseline reading. */
+  target_type: 'absolute' | 'relative';
   start_date: string | null;
   target_date: string | null;
   status: AssignedGoalStatus;
@@ -91,6 +93,7 @@ export interface AssignedPersonalGoalFormValues {
   personal_goal_id: string;
   target_value: string;
   target_unit: string;
+  target_type: 'absolute' | 'relative';
   start_date: string;
   target_date: string;
   status: AssignedGoalStatus;
@@ -103,6 +106,7 @@ export function emptyAssignedPersonalGoalForm(memberId?: number): AssignedPerson
     personal_goal_id: '',
     target_value: '',
     target_unit: '',
+    target_type: 'absolute',
     start_date: '',
     target_date: '',
     // The column's own default, so a form that never touches the selector
@@ -119,6 +123,7 @@ export function toAssignedPersonalGoalFormValues(row: AssignedPersonalGoalRow): 
     personal_goal_id: String(row.personal_goal_id),
     target_value: row.target_value === null ? '' : String(row.target_value),
     target_unit: row.target_unit ?? '',
+    target_type: row.target_type === 'relative' ? 'relative' : 'absolute',
     start_date: dateInputValue(row.start_date),
     target_date: dateInputValue(row.target_date),
     status: row.status,
@@ -165,6 +170,7 @@ function editableFields(form: AssignedPersonalGoalFormValues) {
   return {
     target_value: value === '' ? null : Number(value),
     target_unit: form.target_unit.trim() || null,
+    target_type: form.target_type,
     start_date: form.start_date || null,
     target_date: form.target_date || null,
     status: form.status,
@@ -186,7 +192,7 @@ export function assignedPersonalGoalFormError(form: AssignedPersonalGoalFormValu
   if (!form.member_id) return 'error_member_required';
   if (!form.personal_goal_id) return 'error_goal_required';
   const value = form.target_value.trim();
-  if (value !== '' && !(Number.isFinite(Number(value)) && Number(value) >= 0)) {
+  if (value !== '' && !(Number.isFinite(Number(value)) && (form.target_type === 'relative' || Number(value) >= 0))) {
     return 'error_target_value';
   }
   if (form.target_unit.trim() !== '' && value === '') return 'error_unit_needs_value';
@@ -201,11 +207,13 @@ export function assignedPersonalGoalFormError(form: AssignedPersonalGoalFormValu
  * when there is none at all. Both screens ask for it rather than composing the
  * pair themselves, so a target cannot read two ways on one card.
  */
-export function formatTarget(row: Pick<AssignedPersonalGoalRow, 'target_value' | 'target_unit'>): string {
+export function formatTarget(row: Pick<AssignedPersonalGoalRow, 'target_value' | 'target_unit'> & { target_type?: string }): string {
   if (row.target_value === null) return '—';
   // Trailing zeros trimmed: a DECIMAL(10,2) of `5.00` is a target somebody typed
   // as `5`, and `5.00 kg` reads as a precision the gym never claimed.
-  const value = String(Number(row.target_value));
+  const n = Number(row.target_value);
+  // #1229: a relative target is a change, so it is shown signed (`+2 kg`, `-5 kg`).
+  const value = row.target_type === 'relative' && n > 0 ? `+${n}` : String(n);
   return row.target_unit ? `${value} ${row.target_unit}` : value;
 }
 

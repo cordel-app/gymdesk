@@ -193,6 +193,8 @@ export interface GoalRow {
    */
   target_value?: number | null;
   target_unit?: string | null;
+  /** #1229 — `absolute` (a final value) or `relative` (a change from the baseline). */
+  target_type?: 'absolute' | 'relative';
   /**
    * #1035 stage 2 — the Cloudflare URL of this goal's image, or `null` for one
    * that has none (which is every goal written before migration 225: nothing is
@@ -240,10 +242,11 @@ export interface GoalFormValues {
   description: string;
   target_value: string;
   target_unit: string;
+  target_type: 'absolute' | 'relative';
 }
 
 export function emptyGoalForm(): GoalFormValues {
-  return { name: '', description: '', target_value: '', target_unit: '' };
+  return { name: '', description: '', target_value: '', target_unit: '', target_type: 'absolute' };
 }
 
 /** Persisted row → Edit form values: the single mapping both pages seed from. */
@@ -254,6 +257,7 @@ export function toGoalFormValues(goal: GoalRow): GoalFormValues {
     target_value: goal.target_value === null || goal.target_value === undefined
       ? '' : String(goal.target_value),
     target_unit: goal.target_unit ?? '',
+    target_type: goal.target_type === 'relative' ? 'relative' : 'absolute',
   };
 }
 
@@ -273,6 +277,7 @@ export function toGoalPayload(form: GoalFormValues, kind: GoalKind): {
   description: string;
   target_value?: number | null;
   target_unit?: string | null;
+  target_type?: 'absolute' | 'relative';
 } {
   const base = { name: form.name.trim(), description: form.description.trim() };
   if (!isMeasurableGoalKind(kind)) return base;
@@ -281,6 +286,7 @@ export function toGoalPayload(form: GoalFormValues, kind: GoalKind): {
     ...base,
     target_value: value === '' ? null : Number(value),
     target_unit: form.target_unit.trim() || null,
+    target_type: form.target_type,
   };
 }
 
@@ -298,7 +304,7 @@ export function goalFormError(form: GoalFormValues, kind: GoalKind): string | nu
   if (!form.name.trim()) return 'error_required';
   if (!isMeasurableGoalKind(kind)) return null;
   const value = form.target_value.trim();
-  if (value !== '' && !(Number.isFinite(Number(value)) && Number(value) >= 0)) {
+  if (value !== '' && !(Number.isFinite(Number(value)) && (form.target_type === 'relative' || Number(value) >= 0))) {
     return 'error_target_value';
   }
   if (form.target_unit.trim() !== '' && value === '') return 'error_unit_needs_value';

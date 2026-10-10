@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useLocale } from 'next-intl';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
@@ -26,27 +26,76 @@ import { preferredLocalePath } from '@/lib/memberLocale';
  * itself is `preferredLocalePath()`'s — including every case that answers
  * "stay put", so this cannot loop.
  *
- * **Not while impersonating.** The preference belongs to the member; a
- * superadmin looking at a member's app through impersonation picked their own
- * locale in the URL, and bouncing them into a language they may not read is a
- * staff-facing surprise the ticket never asks for. The member's own session is
- * unaffected, since `isImpersonating` is false there.
+ * **Impersonating applies the member's language too**, because the whole point of
+ * impersonating is to see what the member sees (a text that does not fit, a key
+ * that is not translated, a format) and none of that reproduces in the
+ * superadmin's own language. The locale the superadmin came from is kept in
+ * `sessionStorage` the first time the preference moves them and is restored
+ * when the impersonation ends, so they are not left in the member's language.
+ * Nothing is stored for a member's own session, which never impersonates.
  */
-export function MemberLocalePreference() {
+export function MemberLocalePreference({ children }: { children: ReactNode }) {
   const locale = useLocale();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const router = useRouter();
   const { member, loading } = useApp();
   const { isImpersonating } = useImpersonation();
+  const [gaveUp, setGaveUp] = useState(false);
+
+  // What, if anything, has to change language. Decided during render so the
+  // page below can be held back for exactly as long as the switch is pending
+  // (#1039): rendering the member's screens first in the wrong language and
+  // then replacing the route is the flicker a superadmin saw on impersonating.
+  // `loading` is true on the first client render, so this is null on both the
+  // server and the first client pass and nothing mismatches on hydration.
+  let pending: { target: string; kind: 'return' | 'preference' } | null = null;
+  if (!loading) {
+    if (!isImpersonating) {
+      // Back from an impersonation: return to the locale the superadmin was in.
+      const saved = readReturnLocale();
+      const back = saved ? preferredLocalePath(pathname ?? '/', locale, saved) : null;
+      if (back) pending = { target: back, kind: 'return' };
+    }
+    if (!pending && member) {
+      const target = preferredLocalePath(pathname ?? '/', locale, member.preferred_locale);
+      if (target) pending = { target, kind: 'preference' };
+    }
+  }
+
+  const target = pending?.target ?? null;
+  const kind = pending?.kind ?? null;
 
   useEffect(() => {
-    if (loading || isImpersonating || !member) return;
-    const target = preferredLocalePath(pathname ?? '/', locale, member.preferred_locale);
     if (!target) return;
+    if (kind === 'return') clearReturnLocale();
+    else if (isImpersonating) rememberReturnLocale(locale);
     const query = searchParams?.toString();
     router.replace(query ? `${target}?${query}` : target);
-  }, [loading, isImpersonating, member, pathname, locale, searchParams, router]);
+  }, [target, kind, isImpersonating, locale, searchParams, router]);
 
-  return null;
+  // A switch that never lands must not leave the app blank.
+  useEffect(() => {
+    if (!target) { setGaveUp(false); return; }
+    const timer = setTimeout(() => setGaveUp(true), SWITCH_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [target]);
+
+  return <>{target && !gaveUp ? null : children}</>;
+}
+
+/** How long the page is held back for a language switch before it is shown anyway. */
+const SWITCH_TIMEOUT_MS = 3000;
+
+const RETURN_LOCALE_KEY = 'impersonation_return_locale';
+
+function readReturnLocale(): string | null {
+  try { return sessionStorage.getItem(RETURN_LOCALE_KEY); } catch { return null; }
+}
+function clearReturnLocale(): void {
+  try { sessionStorage.removeItem(RETURN_LOCALE_KEY); } catch {}
+}
+/** Kept once per impersonation: a second switch must not overwrite where they came from. */
+function rememberReturnLocale(locale: string): void {
+  try { if (!sessionStorage.getItem(RETURN_LOCALE_KEY)) sessionStorage.setItem(RETURN_LOCALE_KEY, locale); } catch {}
 }

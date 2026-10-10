@@ -42,9 +42,7 @@
     "logout": "Cerrar sesión",
     "logout_confirm_title": "¿Cerrar sesión?",
     "logout_confirm_body": "Se cerrará la sesión de esta cuenta en este dispositivo.",
-    "logout_cancel": "Cancelar",
-    "logout_impersonating_title": "¿Dejar de suplantar?",
-    "logout_impersonating_body": "Saldrás de la cuenta de este miembro y volverás al Modo soporte."
+    "logout_cancel": "Cancelar"
   },
   "common": {
     "error": "Algo ha ido mal.",
@@ -455,6 +453,7 @@
     "search_placeholder": "Buscar por nombre…",
     "searching": "Buscando…",
     "search_empty": "No se encontraron miembros activos.",
+    "error_search": "No se han podido cargar los miembros. Inténtalo de nuevo.",
     "type_member": "Miembro",
     "type_staff": "Personal",
     "cancel": "Cancelar",

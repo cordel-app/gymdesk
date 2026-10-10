@@ -257,13 +257,15 @@ describe('summarizeReadings', () => {
       latest_reading_at: '2026-09-29T00:00:00.000Z',
       // §25: measured from the **active** initial reading (76 → 75 → 70), not
       // from the 80 the goal started at, which would read 50%.
+      effective_target: 70,
       progress_percent: 16.7,
       reading_count: 4,
     });
   });
 
   it('reports nothing measured rather than zero progress', () => {
-    expect(summarizeReadings([], 70)).toEqual(EMPTY_READING_SUMMARY);
+    // An absolute target is its own effective target even before any reading (#1229).
+    expect(summarizeReadings([], 70)).toEqual({ ...EMPTY_READING_SUMMARY, effective_target: 70 });
   });
 
   it('reports a latest reading with no progress when the goal has no target', () => {

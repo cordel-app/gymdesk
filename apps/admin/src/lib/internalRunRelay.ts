@@ -37,6 +37,8 @@ export const INTERNAL_RUN_API_PATHS = [
   '/billing/run',
   '/billing/cleanup',
   '/promotion-lifecycle/run',
+  // #1227 stage 2: nightly renewal of plan Session Benefit allowances.
+  '/plan-allowance-renewals/run',
   '/recurring-bookings/run',
   // #1113: the 2-hour training reminder. The only one of these that is not
   // nightly — it runs several times an hour — which changes nothing about the

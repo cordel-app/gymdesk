@@ -55,6 +55,8 @@ export interface GoalReadingSummaryFields {
   latest_reading: number | null;
   latest_reading_at: string | null;
   /** §11 — 0..100, or `null` when it cannot be computed (no readings, no target). */
+  /** #1229 — what progress is measured against (absolute target, or baseline + relative change). */
+  effective_target: number | null;
   progress_percent: number | null;
   reading_count: number;
 }

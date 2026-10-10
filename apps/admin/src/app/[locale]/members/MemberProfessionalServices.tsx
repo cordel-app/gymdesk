@@ -28,6 +28,8 @@ import {
   innerCardStyle,
   secondaryBtnSmall,
 } from '@/components/formChrome';
+import { formatGymDateTime } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 interface WalletRow {
   professional_service_id: number;
@@ -36,7 +38,7 @@ interface WalletRow {
 }
 
 interface HistoryEntry {
-  kind: 'adjustment' | 'consumption';
+  kind: 'adjustment' | 'consumption' | 'grant';
   at: string;
   quantity: number;
   reason: string | null;
@@ -49,6 +51,7 @@ const CONSUMPTION_REASONS = ['attendance', 'late_cancel', 'no_show', 'returned']
 
 export function MemberProfessionalServices({ memberId }: { memberId: number }) {
   const t = useTranslations('members');
+  const gymFmt = useGymFormatSettings();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const { canWrite, readOnlyTitle } = useModuleAccess('MEMBERS');
@@ -116,6 +119,7 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
 
   function historyLabel(h: HistoryEntry): string {
     if (h.kind === 'adjustment') return t('prof_services_history_adjustment');
+    if (h.kind === 'grant') return t('prof_services_history_plan_renewal');
     return CONSUMPTION_REASONS.includes(h.reason ?? '')
       ? t(`prof_services_history_${h.reason}`)
       : t('prof_services_history_consumption');
@@ -195,7 +199,7 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
                 ) : (
                   history.map((h, i) => (
                     <div key={i} style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 13, padding: '3px 0' }}>
-                      <span>{new Date(h.at).toLocaleString()}</span>
+                      <span>{formatGymDateTime(h.at, gymFmt)}</span>
                       <strong>{h.quantity > 0 ? `+${h.quantity}` : h.quantity}</strong>
                       <span>{historyLabel(h)}</span>
                       {h.balance_before !== null && h.balance_after !== null && (

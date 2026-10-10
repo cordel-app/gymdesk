@@ -177,6 +177,8 @@ export default function MembersPage() {
   // any other row left expanded repeats its own one-row centers read too —
   // cheaper than threading the edited id through every render.
   const [profileVersion, setProfileVersion] = useState(0);
+  // #1326: bumped by invite / re-invite / revoke so an open row re-reads its Clerk status.
+  const [accountVersion, setAccountVersion] = useState(0);
 
   useEffect(() => {
     if (editingId === null) return;
@@ -446,6 +448,7 @@ export default function MembersPage() {
       } else {
         await apiFetch(`/members/${id}/revoke-invite`, { method: 'POST' });
         toast(t('members.toast_revoked'), 'success');
+        setAccountVersion((v) => v + 1);
       }
       load();
     } catch (err: any) {
@@ -460,6 +463,7 @@ export default function MembersPage() {
     try {
       await apiFetch(`/members/${id}/invite`, { method: 'POST' });
       toast(t('members.toast_invited'), 'success');
+      setAccountVersion((v) => v + 1);
       load();
     } catch (err: any) {
       toast(err.message ?? t('members.error_generic'), 'error');
@@ -470,6 +474,7 @@ export default function MembersPage() {
     try {
       await apiFetch(`/members/${id}/reinvite`, { method: 'POST' });
       toast(t('members.toast_reinvited'), 'success');
+      setAccountVersion((v) => v + 1);
       load();
     } catch (err: any) {
       toast(err.message ?? t('members.error_generic'), 'error');
@@ -649,6 +654,7 @@ export default function MembersPage() {
               member={m}
               tab={activeTab}
               profileVersion={profileVersion}
+              accountVersion={accountVersion}
               editing={editingId === m.id}
               canManageTraining={canManageTraining}
               canManagePackages={canManagePackages}

@@ -29,7 +29,6 @@ export function LogoutConfirmDialog({ onClose }: { onClose: () => void }) {
   const { apiFetch } = useApiClient();
   const { session, stopImpersonation } = useImpersonation();
   const [busy, setBusy] = useState(false);
-  const impersonating = session !== null;
 
   async function confirmLogout() {
     setBusy(true);
@@ -51,7 +50,7 @@ export function LogoutConfirmDialog({ onClose }: { onClose: () => void }) {
   return (
     <MemberDialog
       labelledBy="logout-confirm-title"
-      title={t(impersonating ? 'nav.logout_impersonating_title' : 'nav.logout_confirm_title')}
+      title={t('nav.logout_confirm_title')}
       onClose={busy ? () => {} : onClose}
       actions={(
         <>
@@ -74,9 +73,7 @@ export function LogoutConfirmDialog({ onClose }: { onClose: () => void }) {
         </>
       )}
     >
-      <p style={styles.confirmText}>
-        {t(impersonating ? 'nav.logout_impersonating_body' : 'nav.logout_confirm_body')}
-      </p>
+      <p style={styles.confirmText}>{t('nav.logout_confirm_body')}</p>
     </MemberDialog>
   );
 }
