@@ -7,6 +7,7 @@ import { isDraftExpired } from '../domain/productSet';
 import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { effectivePrice } from './user-memberships';
 import { resolveMemberId } from './me';
+import { productSetDraftRouter } from './product-set-draft-router';
 import { findLiveAssignmentsForMembers } from './one-active-plan';
 import { activePlanConflictBody } from '../domain/oneActivePlan';
 import {
@@ -77,6 +78,10 @@ function shape(row: any) {
 }
 
 export const productSetsRouter = Router({ mergeParams: true });
+
+// The Draft's configuration (sections, Billing & Duration, fee, services,
+// Promotions, coverage, forecast) — registered after the fixed paths below it
+// would shadow, so only `/:id/<segment>` reaches it.
 
 productSetsRouter.get('/edit-check', async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -318,6 +323,8 @@ productSetsRouter.delete('/:id', requireModuleWrite('PAYMENTS'), async (req, res
   recordAudit(req, { action: 'cancel', entityType: 'product_set', entityId: set.id });
   res.status(204).end();
 });
+
+productSetsRouter.use('/:id', productSetDraftRouter);
 
 /** The member's own versions — never named by the request (#1036). */
 export const meProductSetsRouter = Router();
