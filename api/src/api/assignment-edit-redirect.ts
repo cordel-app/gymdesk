@@ -4,17 +4,15 @@ import { getTenantContext } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
 import { DraftRefusal, LockedDraft } from './product-set-draft';
-import {
-  productSetBillingEnabled, reconfigureProjected, retireProjected, type ReconfigureOutcome,
-} from './product-set-bridge';
+import { reconfigureProjected, retireProjected, type ReconfigureOutcome } from './product-set-bridge';
 
 /**
  * #1325 PR 5 — one place that turns an **assignment-keyed edit** into a new
  * ProductSet version, for the routes the Admin's Assigned Plan card calls.
  *
  * `handled` is the only thing a route needs: `false` means the edit is not for
- * this module (the bridge is off, or the assignment is not a projection of an
- * Active set) and the route carries on with its own legacy write exactly as it
+ * this module (the assignment is not a projection of an Active set — a Draft or
+ * a pending one) and the route carries on with its own write exactly as it
  * did; `true` means the response has been sent. The legacy handler therefore
  * keeps its whole body and gains one early line.
  */
@@ -55,6 +53,9 @@ function sendRefusal(res: Response, r: ReconfigureOutcome): boolean {
     case 'invalid':
       res.status(400).json({ error: r.message });
       return true;
+    case 'conflict':
+      res.status(409).json({ error: r.error, message: r.message });
+      return true;
     default:
       return false;
   }
@@ -67,8 +68,9 @@ export async function redirectEditToProductSet(req: Request, res: Response, inpu
   mutate: (tx: Tx, draft: LockedDraft) => Promise<{ ok: true } | DraftRefusal>;
   /** What the legacy route answers with, read after the new version is live. */
   respond: () => Promise<unknown>;
+  /** The legacy route's own success status (an apply answers 201). */
+  status?: number;
 }): Promise<boolean> {
-  if (!productSetBillingEnabled()) return false;
   const { gymId } = getTenantContext(req);
   if (!Number.isInteger(input.userMembershipId) || input.userMembershipId <= 0) return false;
 
@@ -95,7 +97,7 @@ export async function redirectEditToProductSet(req: Request, res: Response, inpu
     action: input.action, entityType: 'product_set', entityId: (outcome as { productSetId: number }).productSetId,
     next: input.detail,
   });
-  res.json(await input.respond());
+  res.status(input.status ?? 200).json(await input.respond());
   return true;
 }
 
@@ -105,7 +107,6 @@ export async function redirectRetireToProductSet(req: Request, res: Response, in
   /** `null` answers `204 No Content`, as the cancel route does. */
   respond: (() => Promise<unknown>) | null;
 }): Promise<boolean> {
-  if (!productSetBillingEnabled()) return false;
   const { gymId } = getTenantContext(req);
   if (!Number.isInteger(input.userMembershipId) || input.userMembershipId <= 0) return false;
 

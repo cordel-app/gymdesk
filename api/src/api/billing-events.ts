@@ -6,9 +6,14 @@ import { insertAndFetch } from '../infra/db-helpers';
 
 /**
  * P1.6 (#10): append-only billing ledger. GET + POST only — rows are never
- * updated or deleted. status_changed rows are system-emitted (see
- * recordStatusChange, called from the user-memberships router inside the
- * same transaction as the status flip) and cannot be posted manually.
+ * updated or deleted.
+ *
+ * #1325 PR 3 (A4): a membership status transition is **not a ledger row any
+ * more**. `recordStatusChange()` writes the existing audit log (entity
+ * `user_membership`, action `status_change`), so `billing_events` holds
+ * financial events only and every one of them belongs to a ProductSet (the
+ * one exception being a one-off purchase). The `status_changed` value stays in
+ * the CHECK as history; nothing writes it.
  */
 
 const POSTABLE_EVENT_TYPES = ['charge_created', 'payment_recorded', 'adjustment'] as const;
@@ -32,13 +37,25 @@ export interface StatusChange {
   actorUserId: string | null;
 }
 
-/** Inserts a status_changed ledger row; call inside the transaction that flips the status. */
+/**
+ * Records a membership status transition in the audit log; call inside the
+ * transaction that flips the status, so the two land together. The row is the
+ * same shape `recordAudit()` writes (`previous_values` / `new_values` carry the
+ * status), keyed to the `user_membership` entity, with the actor the caller
+ * knows — a nightly run or a webhook is `actor_user_id NULL`.
+ */
 export async function recordStatusChange(tx: Tx, c: StatusChange): Promise<void> {
   await tx.query(
-    `INSERT INTO billing_events
-     (gym_id, user_membership_id, member_id, event_type, previous_status, new_status, source, actor_user_id)
-     VALUES (?, ?, ?, 'status_changed', ?, ?, ?, ?)`,
-    [c.gymId, c.userMembershipId, c.memberId, c.previousStatus, c.newStatus, c.source, c.actorUserId],
+    `INSERT INTO audit_logs
+       (gym_id, actor_user_id, actor_name, action, entity_type, entity_id, entity_name,
+        previous_values, new_values, source, ip, user_agent)
+     VALUES (?, ?, NULL, 'status_change', 'user_membership', ?, NULL, ?, ?, ?, NULL, NULL)`,
+    [
+      c.gymId, c.actorUserId, String(c.userMembershipId),
+      JSON.stringify({ status: c.previousStatus, member_id: c.memberId }),
+      JSON.stringify({ status: c.newStatus, member_id: c.memberId }),
+      c.source,
+    ],
   );
 }
 

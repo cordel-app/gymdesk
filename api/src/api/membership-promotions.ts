@@ -959,6 +959,7 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
     userMembershipId: umId, action: 'update', detail: { apply_promotion: promotion_id },
     mutate: applyPromotionMutator(gymId, userId ?? null, Number(promotion_id)),
     respond: async () => ({ ok: true }),
+    status: 201,
   })) return;
 
   try {

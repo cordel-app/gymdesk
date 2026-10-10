@@ -1,7 +1,7 @@
 import { withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
-import { linkInitialPaymentToSet, productSetBillingEnabled } from './product-set-bridge';
-import { setBillingDuration as psSetBillingDuration, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
+import { linkInitialPaymentToSet } from './product-set-bridge';
+import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
@@ -308,14 +308,18 @@ userMembershipsRouter.get('/', async (req, res) => {
 // backfilled from these same audit rows) and read as the plain column it is.
 const LINKED_BILLING_EVENTS_REASON = 'Billing Events are available from the primary Member of this Membership.';
 const CREATION_ACTIONS = ['create', 'assign_new_plan', 'assign_plan'];
+// #1325 PR 3 (A4): a status transition is an audit row now, written by
+// `recordStatusChange()` inside the transaction that flips the status; the
+// route's own `recordAudit` (pause, close, …) is the modification it reports.
+const TRANSITION_ACTIONS = ['status_change'];
 
 async function loadAuditMetadata(gymId: string, userMembershipId: string | number) {
   const { rows: modifiedRows } = await db.query(
     `SELECT actor_name, created_at FROM audit_logs
      WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ?
-       AND action NOT IN (${CREATION_ACTIONS.map(() => '?').join(',')})
+       AND action NOT IN (${[...CREATION_ACTIONS, ...TRANSITION_ACTIONS].map(() => '?').join(',')})
      ORDER BY created_at DESC LIMIT 1`,
-    [gymId, String(userMembershipId), ...CREATION_ACTIONS],
+    [gymId, String(userMembershipId), ...CREATION_ACTIONS, ...TRANSITION_ACTIONS],
   );
   return {
     modified_by_name: modifiedRows[0]?.actor_name ?? null,
@@ -908,20 +912,13 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           && !ALLOWED_TRANSITIONS[current[0].status as Status].includes(status as Status)) {
         return { kind: 'invalid_transition', from: current[0].status } as const;
       }
-      // #785: a direct flip to `active` clears the nightly run's dunning state
-      // for the same reason `/reactivate` does — the resumed assignment gets the
-      // documented two attempts, not one. Nothing else on this route touches the
-      // pair, which is run state and not an editable field.
-      const resetDunning = status === 'active' && current[0].status !== 'active'
-        ? ', failed_attempts = 0, last_failed_at = NULL'
-        : '';
       await tx.query(
         `UPDATE user_memberships SET
           starts_at            = COALESCE(?, starts_at),
           ends_at              = IF(?, ?, ends_at),
           status               = COALESCE(?, status),
           discount_reason      = IF(?, ?, discount_reason),
-          discount_expires_at  = IF(?, ?, discount_expires_at)${resetDunning}
+          discount_expires_at  = IF(?, ?, discount_expires_at)
          WHERE id = ? AND gym_id = ?`,
         [
           starts_at ?? null,
@@ -934,7 +931,7 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
       );
       // #790: a pause is not a debt — a `next_billing_date` that went by while
       // the assignment was off the run moves to the first boundary after today.
-      if (resetDunning) {
+      if (status === 'active' && current[0].status !== 'active') {
         await rollStaleNextBillingDateForward(tx, current[0].id, gymId);
       }
       if (status && status !== current[0].status) {
@@ -1192,7 +1189,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       );
       // #1325 PR 5: the cash payment's event is written after the commit, so the
       // import could not see it — link it to the first period now.
-      if (productSetBillingEnabled()) await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));
+      await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));
       return committed;
     });
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -1431,17 +1428,8 @@ async function transitionMembership(
     if (current.length === 0) return { kind: 'not_found' } as const;
     const prev = current[0];
     if (!allowedFrom.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
-    // #785: reactivating means "bill this again", so the nightly run's dunning
-    // state starts over. An assignment the run paused carries
-    // `failed_attempts = 2`; leaving it there would give the resumed assignment
-    // one attempt instead of the documented two — the next rejection would pause
-    // it immediately. Only on the way *to* `active`: pausing or cancelling has
-    // no reason to forget how the last cycle went.
-    const resetDunning = targetStatus === 'active'
-      ? ', failed_attempts = 0, last_failed_at = NULL'
-      : '';
     await tx.query(
-      `UPDATE user_memberships SET status = ?${resetDunning} WHERE id = ? AND gym_id = ?`,
+      `UPDATE user_memberships SET status = ? WHERE id = ? AND gym_id = ?`,
       [targetStatus, prev.id, gymId],
     );
     // #790: and "again" means from the next boundary after today — a pause is
@@ -1644,13 +1632,23 @@ userMembershipsRouter.put('/:id/billing-duration', requireModuleWrite('PAYMENTS'
   // #1325 PR 5: a plan a ProductSet projects is edited as a new version, never in place.
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: Number(req.params.id), action: 'update', detail: { billing_duration: req.body },
-    mutate: (tx, d) => {
-      for (const f of ['recurring_billing_interval', 'recurring_billing_unit', 'membership_fee_price']) {
+    mutate: async (tx, d) => {
+      // The cadence is the schedule's: it is anchored once per chain and never
+      // re-anchored by a version, so it cannot be edited here.
+      for (const f of ['recurring_billing_interval', 'recurring_billing_unit']) {
         if (f in (req.body ?? {})) {
-          return Promise.resolve({ kind: 'invalid' as const, message: `${f} cannot be changed on a plan billed from a ProductSet; use the negotiated fee or a new plan` });
+          return { kind: 'invalid' as const, message: `${f} cannot be changed on a plan billed from a ProductSet; assign a new plan` };
         }
       }
-      return psSetBillingDuration(tx, d, req.body);
+      const hasFee = 'membership_fee_price' in (req.body ?? {});
+      if (hasFee) {
+        const r = await psSetMembershipFeePrice(tx, d, req.body.membership_fee_price);
+        if ('kind' in r) return r;
+      }
+      const rest = { ...(req.body ?? {}) };
+      delete rest.membership_fee_price;
+      if (hasFee && Object.keys(rest).length === 0) return { ok: true as const };
+      return psSetBillingDuration(tx, d, rest);
     },
     respond: () => loadAssignedPlanSnapshot(gymId, Number(req.params.id)),
   })) return;
@@ -2026,6 +2024,7 @@ userMembershipsRouter.post('/:id/members', requireModuleWrite('PAYMENTS'), async
     userMembershipId: Number(req.params.id), action: 'update', detail: { add_member: req.body?.member_id },
     mutate: (tx, d) => psAddCoveredMember(tx, d, Number(req.body?.member_id)),
     respond: async () => (await db.query(MEMBERS_SELECT, [req.params.id, gymId])).rows,
+    status: 201,
   })) return;
   const { member_id } = req.body;
   if (!member_id) return res.status(400).json({ error: 'member_id is required' });
