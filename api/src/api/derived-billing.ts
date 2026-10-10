@@ -2,17 +2,14 @@ import { db } from '../infra/db';
 import { AttemptFact, DerivedBilling, EventFact, deriveBilling } from '../domain/derivedBilling';
 
 /**
- * #1325 — reads the derived billing values of assignments.
- *
- * For an assignment an **Active ProductSet projects** (`product_sets.
- * user_membership_id`) the four values come from the chain's Billing Events and
- * attempts (`domain/derivedBilling.ts`); for any other assignment they are the
- * row's own legacy columns, untouched. So a reader switches to
- * `withDerivedBilling()` once and is right for both, and when the legacy columns
- * are dropped the fallback goes with them.
+ * #1325 PR 3c — the four billing values of an assignment are derived from the
+ * ledger of the Active ProductSet that projects it (`product_sets.
+ * user_membership_id`, `domain/derivedBilling.ts`); `user_memberships` no longer
+ * stores them (migrations 252 and 255). A row no set projects reports them empty
+ * (`null` / 0), so a reader switches to `withDerivedBilling()` once.
  */
 
-export interface LegacyBilling {
+export interface DerivedBillingRow {
   id: number;
   next_billing_date?: unknown;
   last_billed_at?: unknown;
@@ -80,7 +77,7 @@ export async function loadDerivedBilling(gymId: string, assignmentIds: number[])
 }
 
 /** The rows with the four values replaced by the derived ones where a ProductSet owns the billing. */
-export async function withDerivedBilling<T extends LegacyBilling>(gymId: string, rows: T[]): Promise<T[]> {
+export async function withDerivedBilling<T extends DerivedBillingRow>(gymId: string, rows: T[]): Promise<T[]> {
   if (rows.length === 0) return rows;
   const derived = await loadDerivedBilling(gymId, rows.map((r) => Number(r.id)));
   // #1325 PR 3c: the columns are gone, so a row no set projects (a Draft, a
