@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, ensureTestProductSet, request } from './helpers';
+import { cleanupTestGyms, createTestGym, ensureTestProductSet, request, billingEventsOfAssignment } from './helpers';
 
 const MONEI_WEBHOOK_SECRET = 'test-webhook-secret';
 
@@ -222,10 +222,8 @@ describe('POST /webhooks/payment — completion flow', () => {
     expect(afterCompleted[0].status).toBe('completed');
     expect(afterCompleted[0].completed_at).not.toBeNull();
 
-    const { rows: billingEvents } = await db.query(
-      `SELECT id FROM billing_events WHERE user_membership_id = ? AND event_type = 'payment_recorded'`,
-      [userMembershipId],
-    );
+    const billingEvents = (await billingEventsOfAssignment(gymId, userMembershipId, 'id, event_type'))
+      .filter((e) => e.event_type === 'payment_recorded');
     expect(billingEvents.length).toBe(1);
   });
 
@@ -536,10 +534,8 @@ describe('POST /webhooks/payment — cleanup must not lose a payment that was ma
     expect((await postWebhook(buildMoneiEnvelope(orderId, 'SUCCEEDED', chargeId, card))).status).toBe(200);
 
     expect((await readRequest(prId)).billing_event_id).toBe(firstEventId);
-    const { rows: events } = await db.query(
-      `SELECT id FROM billing_events WHERE user_membership_id = ? AND event_type = 'payment_recorded'`,
-      [userMembershipId],
-    );
+    const events = (await billingEventsOfAssignment(gymId, userMembershipId, 'id, event_type'))
+      .filter((e) => e.event_type === 'payment_recorded');
     expect(events).toHaveLength(1);
   });
 });
@@ -602,10 +598,7 @@ describe('POST /webhooks/payment — card update (#788)', () => {
     expect(request_row[0].completed_at).not.toBeNull();
 
     // No Billing Event of any kind: the ledger records money, and none moved.
-    const { rows: events } = await db.query(
-      'SELECT id, event_type FROM billing_events WHERE user_membership_id = ?',
-      [userMembershipId],
-    );
+    const events = await billingEventsOfAssignment(gymId, userMembershipId, 'id, event_type');
     expect(events).toEqual([]);
   });
   it('a rejected verification leaves the previous card in place', async () => {

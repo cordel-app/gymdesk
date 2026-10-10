@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite, GymRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -64,6 +65,7 @@ export const billingEventsRouter = Router();
 
 const LIST_SELECT = `
   SELECT be.*,
+         ${eventAssignmentSql()} AS user_membership_id,
          m.name AS member_name,
          ct.code AS charge_type_code
   FROM billing_events be
@@ -79,7 +81,7 @@ billingEventsRouter.get('/', async (req, res) => {
   const where: string[] = ['be.gym_id = ?'];
   const params: any[] = [gymId];
   if (member_id) { where.push('be.member_id = ?'); params.push(member_id); }
-  if (user_membership_id) { where.push('be.user_membership_id = ?'); params.push(user_membership_id); }
+  if (user_membership_id) { where.push(eventsOfAssignmentSql()); params.push(...eventsOfAssignmentParams(gymId, Number(user_membership_id))); }
   if (event_type) { where.push('be.event_type = ?'); params.push(event_type); }
   if (from) { const f = String(from); where.push('be.created_at >= ?'); params.push(f.length === 10 ? `${f} 00:00:00` : f); }
   if (to) { const t = String(to); where.push('be.created_at <= ?'); params.push(t.length === 10 ? `${t} 23:59:59` : t); }
@@ -163,10 +165,10 @@ billingEventsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, n
     }
     const row = await insertAndFetch(
       `INSERT INTO billing_events
-       (gym_id, user_membership_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (gym_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        gymId, user_membership_id ?? null, setId, memberId, event_type, charge_type_id ?? null,
+        gymId, setId, memberId, event_type, charge_type_id ?? null,
         source ?? sourceForRole(role), userId, parsedAmount,
         notes && String(notes).trim() ? String(notes).trim() : null,
       ],

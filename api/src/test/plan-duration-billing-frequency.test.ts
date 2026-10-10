@@ -28,7 +28,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, billingEventsOfAssignment,
 } from './helpers';
 
 const SECRET = 'test-billing-secret';
@@ -136,10 +136,7 @@ async function createAssignment(params: {
 const runBilling = () => request.post('/billing/run').set('x-internal-secret', SECRET);
 
 async function chargeFor(umId: number) {
-  const { rows } = await db.query(
-    'SELECT event_type, amount, notes FROM billing_events WHERE user_membership_id = ? ORDER BY id ASC',
-    [umId],
-  );
+  const rows = await billingEventsOfAssignment(gymId, umId, 'event_type, amount, notes');
   return rows;
 }
 

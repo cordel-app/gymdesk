@@ -466,9 +466,9 @@ async function recordFeeAdjustment(tx: Tx, params: {
   const chargeTypeId = ctRows[0]?.id ?? null;
   await tx.query(
     `INSERT INTO billing_events
-     (gym_id, user_membership_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
-     VALUES (?, ?, ?, ?, 'adjustment', ?, ?, ?, ?, ?)`,
-    [gymId, umId, setId, memberId, chargeTypeId, source, userId, after - before, note],
+     (gym_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+     VALUES (?, ?, ?, 'adjustment', ?, ?, ?, ?, ?)`,
+    [gymId, setId, memberId, chargeTypeId, source, userId, after - before, note],
   );
 }
 

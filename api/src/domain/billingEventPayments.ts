@@ -1,3 +1,4 @@
+import { eventAssignmentSql } from './billingEventOwnership';
 import { chargeGuard } from './chargeGuard';
 import crypto from 'crypto';
 import { Tx, db } from '../infra/db';
@@ -89,7 +90,7 @@ interface EventContext {
  */
 async function loadEventContext(gymId: string, billingEventId: number): Promise<EventContext | null> {
   const { rows } = await db.query<EventContext>(
-    `SELECT be.id, be.gym_id, be.member_id, be.user_membership_id, be.event_type,
+    `SELECT be.id, be.gym_id, be.member_id, um.id AS user_membership_id, be.event_type,
             be.product_set_id, be.is_scheduled, be.billing_date,
             be.amount, be.charge_type_id,
             (SELECT pr.status FROM payment_requests pr
@@ -101,7 +102,7 @@ async function loadEventContext(gymId: string, billingEventId: number): Promise<
               WHERE pr.billing_event_id = be.id) AS last_attempt,
             um.status AS membership_status
        FROM billing_events be
-       LEFT JOIN user_memberships um ON um.id = be.user_membership_id
+       LEFT JOIN user_memberships um ON um.id = ${eventAssignmentSql()}
       WHERE be.id = ? AND be.gym_id = ?`,
     [billingEventId, gymId],
   );
@@ -111,7 +112,7 @@ async function loadEventContext(gymId: string, billingEventId: number): Promise<
 /**
  * Shared guards: the event must exist, be in a failed/rejected state, not
  * already be settled, and hang off a membership (a `payment_requests` row
- * cannot exist without one — `user_membership_id` is NOT NULL there).
+ * cannot exist without one).
  */
 function guardActionable(ev: EventContext | null): ActionFailure | null {
   if (!ev) return { status: 404, error: 'Billing event not found' };
@@ -132,8 +133,8 @@ function guardActionable(ev: EventContext | null): ActionFailure | null {
   if (!isPaymentActionable(status) && !scheduledAndDue) {
     return { status: 400, error: `Payment actions are only available for failed billing events (this one is '${status}').` };
   }
-  if (!ev.user_membership_id && !ev.product_set_id) {
-    return { status: 400, error: 'This billing event is not linked to an assigned plan.' };
+  if (!ev.product_set_id) {
+    return { status: 400, error: 'This billing event is not linked to a ProductSet.' };
   }
   const amount = ev.amount != null ? parseFloat(ev.amount) : NaN;
   if (!(amount > 0)) {
