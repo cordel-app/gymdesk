@@ -21,7 +21,7 @@ import { EMPTY_EXERCISE_FILTER, exerciseFilterQuery, type ExerciseFilterState } 
  * filter never drops what is already ticked.
  *
  * Since #969 the filters are the catalogue toolbar every exercise screen wears
- * — name/translation, slug, muscles (multi-select, Any/All, Primary/Secondary)
+ * — name/translation, muscles (multi-select, Any/All, Primary/Secondary)
  * and the metadata facets — and the Status control is deliberately **not**
  * offered: this list is `status = 'active'` by definition, since an inactive
  * Base Exercise is not importable at all.
@@ -206,9 +206,9 @@ export function ImportExercisesModal({ open, muscleKeys, muscleLabel, onCancel, 
           <h2 style={{ margin: 0, fontSize: 18 }}>{t('import_modal_title')}</h2>
         </div>
 
-        {/* §19: the catalogue toolbar, not a second filtering UX. A Base
-            Exercise carries a slug, so §4's field is offered here as it is on
-            Base Exercises; Status is not, because the library is active-only. */}
+        {/* §19: the catalogue toolbar, not a second filtering UX. No Slug
+            field (#1356/#1358, the slug is internal); Status is not offered
+            either, because the library is active-only. */}
         <div style={{ padding: '0 22px' }}>
           <ExerciseFilterBar
             value={filter}
