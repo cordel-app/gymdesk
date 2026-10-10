@@ -26,7 +26,9 @@ export type DraftRefusal =
   | { kind: 'not_found' }
   | { kind: 'not_a_draft'; status: string }
   | { kind: 'expired' }
-  | { kind: 'invalid'; message: string };
+  | { kind: 'invalid'; message: string }
+  /** A 409 with a code the client recognises (#956's `active_plan_exists`). */
+  | { kind: 'conflict'; error: string; message: string };
 
 export interface LockedDraft {
   id: number;
@@ -146,15 +148,16 @@ export async function writeBenefitSection(tx: Tx, draft: LockedDraft, category: 
 
 /* ── Plan snapshot fields ────────────────────────────────────────────────── */
 
-const nonNegInt = (v: unknown): number | false => {
-  if (v === null || v === undefined || v === '') return 0;
+/** `null` / `''` clears the field (stored NULL, as the assignment snapshot reads it). */
+const nonNegInt = (v: unknown): number | null | false => {
+  if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   return Number.isInteger(n) && n >= 0 ? n : false;
 };
 
 export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any): Promise<{ ok: true } | DraftRefusal> {
   if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan has no Billing & Duration' };
-  const patch: Record<string, number> = {};
+  const patch: Record<string, number | null> = {};
   for (const field of ['free_periods', 'paid_periods', 'bonus_periods', 'pay_beforehand_periods'] as const) {
     if (!(field in (body ?? {}))) continue;
     const v = nonNegInt(body[field]);
@@ -173,13 +176,31 @@ export async function setBillingDuration(tx: Tx, draft: LockedDraft, body: any):
     'SELECT paid_periods, pay_beforehand_periods FROM product_set_plan_snapshots WHERE product_set_id = ? AND gym_id = ? FOR UPDATE',
     [draft.id, draft.gym_id]);
   if (!rows[0]) return { kind: 'invalid', message: 'This ProductSet has no plan snapshot' };
-  const paid = 'paid_periods' in patch ? patch.paid_periods : Number(rows[0].paid_periods ?? 0);
-  const prepaid = 'pay_beforehand_periods' in patch ? patch.pay_beforehand_periods : Number(rows[0].pay_beforehand_periods ?? 0);
+  const paid = 'paid_periods' in patch ? Number(patch.paid_periods ?? 0) : Number(rows[0].paid_periods ?? 0);
+  const prepaid = 'pay_beforehand_periods' in patch ? Number(patch.pay_beforehand_periods ?? 0) : Number(rows[0].pay_beforehand_periods ?? 0);
   if (prepaid > paid) return { kind: 'invalid', message: 'pay_beforehand_periods cannot exceed paid_periods' };
 
   const sets = Object.keys(patch).map((k) => `${k} = ?`).join(', ');
   await tx.query(`UPDATE product_set_plan_snapshots SET ${sets} WHERE product_set_id = ? AND gym_id = ?`,
     [...Object.values(patch), draft.id, draft.gym_id]);
+  await touch(tx, draft);
+  return { ok: true };
+}
+
+/**
+ * The agreed Membership Fee of the version (what the Admin's Billing & Duration
+ * editor writes as `membership_fee_price`): the price alone, the stored reason
+ * left as it is — a negotiated fee with its reason is `setNegotiatedFee()`.
+ */
+export async function setMembershipFeePrice(tx: Tx, draft: LockedDraft, raw: unknown): Promise<{ ok: true } | DraftRefusal> {
+  if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan has no Membership Fee' };
+  const price = raw === null || raw === '' ? null : Number(raw);
+  if (price != null && (!Number.isFinite(price) || price < 0)) {
+    return { kind: 'invalid', message: 'membership_fee_price must be a non-negative number' };
+  }
+  await tx.query(
+    'UPDATE product_set_plan_snapshots SET membership_fee_price = ? WHERE product_set_id = ? AND gym_id = ?',
+    [price, draft.id, draft.gym_id]);
   await touch(tx, draft);
   return { ok: true };
 }
@@ -212,7 +233,8 @@ export async function setFeeBenefit(tx: Tx, draft: LockedDraft, body: any): Prom
   }
   let value: number | null = null;
   if (action === 'percentage_discount') {
-    const raw = Number(body?.value);
+    if (body?.value == null || body.value === '') return { kind: 'invalid', message: 'value is required for a percentage discount' };
+    const raw = Number(body.value);
     if (!Number.isFinite(raw) || raw < 0 || raw > 100) return { kind: 'invalid', message: 'value must be a percentage between 0 and 100' };
     value = Math.round(raw * 100) / 100;
   }
@@ -294,9 +316,12 @@ export async function addCoveredMember(tx: Tx, draft: LockedDraft, memberId: num
   const { rows: held } = await tx.query(
     `SELECT 1 FROM product_set_members psm
        JOIN product_sets ps ON ps.root_product_set_id = psm.root_product_set_id AND ps.status = 'active'
+        AND ps.membership_plan_id IS NOT NULL
       WHERE psm.gym_id = ? AND psm.member_id = ? AND psm.root_product_set_id <> ? LIMIT 1`,
     [draft.gym_id, memberId, draft.root_product_set_id]);
-  if (held.length > 0) return { kind: 'invalid', message: 'This Member already holds a Membership Plan' };
+  if (held.length > 0) {
+    return { kind: 'conflict', error: 'active_plan_exists', message: 'This member already has an active Membership Plan. Close it before adding them to this one.' };
+  }
   await tx.query(
     `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner) VALUES (?, ?, ?, 0)`,
     [draft.gym_id, draft.root_product_set_id, memberId]);

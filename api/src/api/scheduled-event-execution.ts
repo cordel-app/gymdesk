@@ -5,6 +5,7 @@ import { toMinorUnits } from '../payments/money';
 import { chargeGuard, EarlierAttempt } from '../domain/chargeGuard';
 import { classifyProviderStatus, normaliseProviderStatus } from '../domain/providerPaymentStatus';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
+import { recordStatusChange } from './billing-events';
 
 /**
  * #1325 PR 2c — executing a ProductSet's persisted Billing Events.
@@ -15,17 +16,20 @@ import { issueReceiptNumber } from '../domain/receiptNumbers';
  * persisted by `materialiseScheduledEvents()` from the engine, and a ProductSet
  * edit replaces it before it is due, never after.
  *
- * It is a **separate pass** beside the assignment-driven one in
- * `POST /billing/run`, and inert until a ProductSet is Active: the legacy pass is
- * untouched, so the two cannot charge the same obligation (an event belongs to a
- * ProductSet, an assignment-driven charge to a `user_memberships` row).
+ * Since #1325 PR 3 it is the **whole** of `POST /billing/run`: the assignment
+ * pass that priced the cycle `next_billing_date` named is gone, and every
+ * committed assignment is a ProductSet version whose obligations are here.
  *
  * Per event, in order, under the event's row lock:
  *   1. `chargeGuard()` over the raw status of *every* earlier attempt — a
  *      settled, in-flight, unknown or refunded one refuses the charge (logged
  *      for reconciliation, never retried);
  *   2. one attempt per UTC day, and at most `MAX_FAILED_DAYS` failed days
- *      (#785's cadence: the retry is the next run day, never the same loop);
+ *      (#785's cadence: the retry is the next run day, never the same loop) —
+ *      reaching that count **pauses** the assignment the set projects
+ *      (`recordStatusChange`, `active → paused`, `source = 'system'`), which is
+ *      #785's escalation on the event's own attempts rather than on a stored
+ *      counter; reactivating is explicit, as it always was;
  *   3. a zero amount is **waived**: a `payment_requests` row of method `waive`,
  *      no provider call;
  *   4. no stored card: nothing is attempted and the event stays scheduled and
@@ -45,12 +49,15 @@ export interface ExecutionSummary {
   failed: number;
   waived: number;
   skipped: number;
+  /** Assignments paused after `MAX_FAILED_DAYS` failed days on one event (#785). */
+  paused: number;
   receiptsIssued: number;
 }
 
 interface DueEvent {
   id: number;
   gym_id: string;
+  product_set_id: number;
   member_id: number | null;
   amount: string | number;
   payment_token: string | null;
@@ -70,6 +77,38 @@ async function loadAttempts(tx: Tx, eventId: number) {
   return rows;
 }
 
+/**
+ * #785's escalation, on the event's own attempts: once this event has failed on
+ * `MAX_FAILED_DAYS` distinct UTC days, the assignment the set projects is paused
+ * — inside the transaction that closes the attempt, so the failure and the pause
+ * land together. Decided from the rows under the lock, never from a stored
+ * counter. Only an `active` assignment is ours to pause; the audit row is how
+ * it is explicable afterwards, and reactivating stays explicit.
+ */
+async function pauseAfterFailedDays(tx: Tx, event: DueEvent): Promise<boolean> {
+  const { rows: days } = await tx.query<{ n: number | string }>(
+    `SELECT COUNT(DISTINCT DATE(created_at)) AS n FROM payment_requests
+      WHERE billing_event_id = ? AND method = 'provider' AND status = 'failed'`,
+    [event.id],
+  );
+  if (Number(days[0]?.n ?? 0) < MAX_FAILED_DAYS) return false;
+
+  const { rows } = await tx.query<{ id: number; member_id: number; status: string }>(
+    `SELECT um.id, um.member_id, um.status
+       FROM product_sets ps JOIN user_memberships um ON um.id = ps.user_membership_id
+      WHERE ps.id = ? AND ps.gym_id = ? FOR UPDATE`,
+    [event.product_set_id, event.gym_id],
+  );
+  const um = rows[0];
+  if (!um || um.status !== 'active') return false;
+  await tx.query("UPDATE user_memberships SET status = 'paused' WHERE id = ? AND gym_id = ?", [um.id, event.gym_id]);
+  await recordStatusChange(tx, {
+    gymId: event.gym_id, userMembershipId: Number(um.id), memberId: Number(um.member_id),
+    previousStatus: um.status, newStatus: 'paused', source: 'system', actorUserId: null,
+  });
+  return true;
+}
+
 async function chargeTypeId(): Promise<number | null> {
   const { rows } = await db.query<{ id: number }>(
     "SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1");
@@ -80,13 +119,13 @@ export async function executeDueScheduledEvents(opts: {
   today: string;
   log?: { info: (o: object, m: string) => void; warn: (o: object, m: string) => void; error: (o: object, m: string) => void };
 }): Promise<ExecutionSummary> {
-  const summary: ExecutionSummary = { processed: 0, succeeded: 0, failed: 0, waived: 0, skipped: 0, receiptsIssued: 0 };
+  const summary: ExecutionSummary = { processed: 0, succeeded: 0, failed: 0, waived: 0, skipped: 0, paused: 0, receiptsIssued: 0 };
   const log = opts.log;
   const feeTypeId = await chargeTypeId();
 
   // First attempts (scheduled and due) and retries (failed, set still Active).
   const { rows: due } = await db.query<DueEvent>(
-    `SELECT be.id, be.gym_id, be.member_id, be.amount, pm.payment_token, pm.sequence_id, pm.provider
+    `SELECT be.id, be.gym_id, be.product_set_id, be.member_id, be.amount, pm.payment_token, pm.sequence_id, pm.provider
        FROM billing_events be
        JOIN product_sets ps ON ps.id = be.product_set_id AND ps.status = 'active'
        LEFT JOIN payment_methods pm ON pm.member_id = be.member_id AND pm.gym_id = be.gym_id
@@ -192,6 +231,7 @@ export async function executeDueScheduledEvents(opts: {
           await tx.query(`UPDATE billing_events SET event_type = 'recurring_payment' WHERE id = ?`, [event.id]);
         } else if (internal === 'failed') {
           await tx.query(`UPDATE billing_events SET event_type = 'failed_billing' WHERE id = ?`, [event.id]);
+          if (await pauseAfterFailedDays(tx, event)) summary.paused += 1;
         }
       });
       outcome = internal === 'completed' ? 'succeeded' : internal === 'failed' ? 'failed' : 'unknown';

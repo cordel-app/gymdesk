@@ -40,6 +40,7 @@ function refuse(res: Response, r: DraftRefusal) {
     case 'not_a_draft': return res.status(409).json({ error: 'not_a_draft', status: r.status, message: 'Only a Draft can be edited; a committed version is changed through a new version.' });
     case 'expired': return res.status(410).json({ error: 'draft_expired' });
     case 'invalid': return res.status(400).json({ error: r.message });
+    case 'conflict': return res.status(409).json({ error: r.error, message: r.message });
   }
 }
 

@@ -55,8 +55,9 @@ Three routes insert a `user_memberships` row, and all three write
 
 Each one, in the same transaction:
 
-- writes a `status_changed` Billing Event through `recordStatusChange()`
-  (`api/src/api/billing-events.ts`), `previousStatus: null → 'draft'`;
+- records the transition in the audit log through `recordStatusChange()`
+  (`api/src/api/billing-events.ts`; `user_membership` / `status_change`, `null → 'draft'` —
+  an audit row, not a Billing Event, since #1325 PR 3);
 - calls `snapshotAssignedPlan()` (`api/src/api/assigned-plan-snapshot.ts`) — the Assigned
   Plan owns the commercial configuration it was assigned with (#635 §11–§17).
 
@@ -435,22 +436,27 @@ The field is `skipped_reason`, never `skipped`, because the recurring booking ru
 reports a numeric `skipped` counter. A new run status goes in **two** places: `RunLogStatus`
 in `domain/runGuard.ts` and `chk_<table>_status` (migration 193).
 
-### B3. Selection
+### B3. Selection (#1325 PR 3)
+
+The run is `executeDueScheduledEvents()` (`api/src/api/scheduled-event-execution.ts`) and
+nothing else. It reads **no** `user_memberships` row: every committed assignment is a
+ProductSet version whose obligations were persisted as Billing Events when it was committed
+(`materialiseScheduledEvents()`), so the schedule *is* the ledger.
 
 ```sql
-WHERE um.status = 'active'
-  AND um.next_billing_date IS NOT NULL
-  AND um.next_billing_date <= UTC_DATE()
-  AND <cadence interval> IS NOT NULL AND <cadence unit> IS NOT NULL
+SELECT be.id, be.gym_id, be.product_set_id, be.member_id, be.amount, pm.payment_token, pm.sequence_id, pm.provider
+  FROM billing_events be
+  JOIN product_sets ps ON ps.id = be.product_set_id AND ps.status = 'active'
+  LEFT JOIN payment_methods pm ON pm.member_id = be.member_id AND pm.gym_id = be.gym_id
+ WHERE be.billing_date <= <today>
+   AND (be.is_scheduled = 1 OR be.event_type = 'failed_billing')
 ```
 
-plus `JOIN payment_methods pm ON pm.member_id = um.member_id AND pm.gym_id = um.gym_id`
-(INNER — no card, no selection), and LEFT JOINs to `membership_plans` and
-`billing_policies` because the cadence is `ASSIGNMENT_CADENCE`
-(`COALESCE(um.recurring_billing_*, bp.recurring_billing_*)`).
-
-What is **not** checked: `ends_at` and `auto_renew`. An assignment past its end date is
-still charged while its status is `active` and its `next_billing_date` is due.
+Only an **Active** set's events are executed (a Draft or a Pending Payment version bills
+nothing), and a `failed_billing` event is selected again for its retry. The stored card is a
+LEFT JOIN: an event with no card is not skipped silently — it stays scheduled and past due,
+which blocks the next ProductSet edit (the editing lock) until a card or a cash payment
+resolves it.
 
 Before the loop the run resolves `charge_types.code = 'membership_fee'` and **fails the
 whole run** (`500`, log row closed as `failed`) if it is missing — since migration 195 made
@@ -459,107 +465,66 @@ between a broken install and charges recorded with no charge type.
 
 ### B4. Pricing
 
-The cycle billed is the one `next_billing_date` **names**, never "today":
+**Nothing is priced at run time.** The event's persisted `amount` is what the provider is
+asked for (`toMinorUnits()` at the boundary). The amount was computed when the version was
+committed, by the same engine every screen reads — `computeBillingSimulation()` over the
+version's own frozen rows (`loadProductSetSimulationAssignment()`), which prices the
+Membership Fee through `resolveMembershipFee()` (`api/src/domain/billingSimulation.ts`), the
+**one** implementation of "what does the Membership Fee cost on this date", shared with the
+Billing Simulation, `GET /me/membership` and every staff screen — and persisted with its
+`billing_event_lines`. So what the run charges cannot drift from what the member was shown,
+and a change of configuration has to **replace** the event before it is due
+(`replaceFutureScheduledEvents()`), never re-price it afterwards.
 
-```ts
-const billingDate = toDateOnly(row.next_billing_date);
-const priced      = await priceMembershipFeeOn(row, billingDate);
-const nextBillingDate = advanceBillingDate(row.next_billing_date, interval, unit);
-```
-
-`priceMembershipFeeOn()` (`api/src/api/membership-fee-pricing.ts`) delegates to
-`resolveMembershipFee()` (`api/src/domain/billingSimulation.ts`) — the **one**
-implementation of "what does the Membership Fee cost on this date", shared with the Billing
-Simulation, `GET /me/membership`, the Promotion apply/revoke adjustment and every staff
-screen (through `currentMembershipFee()` / `currentMembershipFees()`). So what the run
-charges cannot drift from what the member was shown.
-
-**The Billing & Duration it prices against is a cycle (#1130, migration 230).** Free ->
-Pre-paid -> Paid -> Bonus used to run once, after which the contract billed its regular fee
-for ever; `billing_policies.auto_renew` was stored, shown on the Plan card and read by
-nothing. It is read now, through the assignment's **own** frozen copy
-(`user_memberships.auto_renew`, `ASSIGNMENT_AUTO_RENEW`): with it set,
-`classifyPlanDurationPeriod()` classifies a date inside whichever iteration of the cycle it
-falls in, so a `12 pre-paid + 3 bonus` contract is Pre-paid again at period 16 and
-`prepaidPeriodsDueOn()` collects the whole lump a second time there; `pay_regular` is
-unreachable for such a contract. With it unset — every assignment that existed before the
-migration, which the column's `NOT NULL DEFAULT 0` backfilled, and every Plan whose Auto
-Renew is unticked — the engine is exactly what it was: one cycle, then the regular price,
-and the membership does **not** expire (the ticket's answer C — "one cycle only" is about the
-benefit cycle, never about billing stopping). Because the flag lives on the assignment and is
-captured at creation, deploying this moved no live member's billing, and a Plan whose Auto
-Renew is changed later cannot move a contract already agreed (#635 §13/§17).
-
-Since #635 stage 15 (migration 191) this is unconditional: there is no
-`billing.date_aware_membership_fee` flag, no stored `user_memberships.final_price`, and no
-Membership Fee Drift report. `advanceBillingDate()` (`api/src/domain/billingDate.ts`)
-advances the date exactly **one** interval per run. It does the arithmetic in **JS**, not in
-SQL, because MySQL will not take an `INTERVAL` unit as a bind parameter; month and year steps
-therefore clamp the way `Date.setUTCMonth` does (31 Jan + 1 month = 3 Mar), and every
-projection in the codebase inherits that by going through this one function.
+Everything the resolver decides — the Billing & Duration cycle (#1130), the Pre-paid
+Duration charged on the first of its periods (#946), an applied Promotion's Membership Fee
+Benefit, the Personal Membership Fee Benefit — is therefore in the persisted amount, and a
+zero amount is a cycle the contract waives.
 
 ### B5. Outcomes
 
-Per due assignment, exactly one of these:
+Per due event, under the event's row lock, exactly one of these:
 
-| Outcome | Provider called | `billing_events` | `payment_requests` | `user_memberships` |
-|---|---|---|---|---|
-| **Waived** (`priced.waived`) | no | `waived_billing`, `amount 0`, `notes = periodStatus` | — | `next_billing_date` advanced, `failed_attempts = 0`, `last_failed_at = NULL`. **`last_billed_at` untouched** |
-| **No stored token** | no | `failed_billing`, `notes 'no_payment_method'` | — | nothing |
-| **Success** | yes | `recurring_payment` | one `completed` row, `source 'billing_run'`, back-linked | `last_billed_at = now`, `next_billing_date` advanced, dunning cleared |
-| **Rejected** | yes, declined | `failed_billing`, `notes = "<code>: <message>"` | one `failed` row, `source 'billing_run'`, with `failure_code`/`failure_message` | `failed_attempts`, `last_failed_at`; possibly `status = 'paused'` |
-| **Provider error** (threw / never answered) | attempted | `failed_billing`, `notes 'provider_error'` | — | **nothing at all** |
+| Outcome | Provider called | `billing_events` | `payment_requests` |
+|---|---|---|---|
+| **Refused by the charge guard** (an earlier attempt settled, is in flight, has an unknown outcome or was refunded) | no | untouched | untouched; logged for reconciliation |
+| **Already attempted today**, or `MAX_FAILED_DAYS` (2) failed days reached | no | untouched | untouched |
+| **Waived** (`amount = 0`) | no | `is_scheduled = 0`, `event_type = 'waived_billing'` | one `completed` row, `method 'waive'` |
+| **No stored card** | no | untouched — stays scheduled, past due | nothing attempted |
+| **Success** | yes | `is_scheduled = 0`, `event_type = 'recurring_payment'` | the attempt row, written **before** the call, closed `completed` with the raw `provider_status` |
+| **Rejected** | yes, declined | `event_type = 'failed_billing'` | the attempt closed `failed`, with `failure_code`/`failure_message` and the raw status |
+| **In flight** (`PENDING_PROCESSING`, …) | yes | unchanged | the attempt stays `pending` with the raw status — the webhook settles it |
+| **Provider error** (threw / never answered) | attempted | unchanged | the attempt stays `pending` with **no** provider status: an unknown outcome, never a failure |
 
-Counters returned: `{ processed, succeeded, failed, waived, paused, receipts_issued }`.
-
-**A Pre-paid Duration is charged, not waived (#946).** `resolveMembershipFee()` prices the
-first period of an assignment's Pre-paid Duration at `regular x pay_beforehand_periods` — the
-member pays those periods up front — and the periods it covers at 0 (`waived_billing`,
-`notes 'prepaid_plan'`, exactly as before). So a cycle landing in that first prepaid period
-takes the **Success** row of the table above with a multi-period amount
-(`€70/month` x 3 pre-paid = `€210`, `5998`-style minor units at the provider boundary), and
-every later prepaid cycle takes the **Waived** row. Nothing special-cases it in `billing.ts`:
-the rule is `prepaidPeriodsDueOn()` in `api/src/domain/planDuration.ts`, read through the one
-fee resolver, so a staff or member payment request, the Payments dashboard, My Membership and
-the two Plan-card projections quote the same €210 for that cycle.
-The first four are also written to `billing_run_log`; `paused` and `receipts_issued` are
-reported only — a pause is already explicable from its `status_changed` ledger row, and a
+Counters returned: `{ processed, succeeded, failed, waived, paused, receipts_issued,
+scheduled_events }`. The first four are also written to `billing_run_log`; `paused` and
+`receipts_issued` are reported only — a pause is explicable from its audit row, and a
 receipt that failed to auto-issue is not a failed run.
 
 A settled charge also allocates a receipt number, **after** the charge transaction has
-committed and in one of its own, with any failure logged and swallowed
-(`api/src/api/billing.ts`; see [Receipts](#receipts)).
+committed and in one of its own, with any failure logged and swallowed (see
+[Receipts](#receipts)).
 
-### B6. Dunning — a rejection escalates, it does not repeat (#785)
+### B6. Dunning — a rejection escalates, it does not repeat (#785, on the event since #1325 PR 3)
 
-The rule is pure and unit-tested in `api/src/domain/billingDunning.ts`
-(`countsTowardPause`, `registerRejection`), and migration 194 adds
-`user_memberships.failed_attempts` + `last_failed_at`.
-
-- Only a **provider rejection** counts. `provider_error` (outcome unknown — a night the
-  provider is unreachable would otherwise pause a gym's whole book) and
-  `no_payment_method` (nothing was attempted) leave the counter exactly as it was, in both
-  directions.
-- The count advances per run **day**: `DATE(last_failed_at) = UTC_DATE()`, compared in SQL.
-  A rejection on a date the assignment was already rejected on is recorded but does **not**
-  escalate, because #781's 10:00 attempt becomes the day's real run whenever the 06:00 one
-  crashed.
-- The **second** consecutive rejection of the cycle `next_billing_date` names sets
-  `status = 'paused'` through `recordStatusChange(… 'active' → 'paused', source 'system')`.
-  That *is* the whole mechanism: a `paused` row is outside the run's
-  `WHERE status = 'active'`.
-- The retry is therefore the **next run day** — `next_billing_date` not moving is what
-  schedules it.
-- The decision is taken from the row **under the run's `FOR UPDATE` lock**, never from the
-  row the due query read before the provider round trip: a staff payment landing in that
-  window clears the pair, and deciding from the stale count would pause a member who has
-  just paid.
-- Everything that settles or skips the cycle clears the pair: the run's success and waived
-  branches, the webhook's `completed` branch, both staff actions via `clearDunningState()`
-  (`api/src/domain/billingEventPayments.ts`), and any transition back to `active`.
-- Reactivation stays **explicit**. Clearing the count never flips `paused → active`; staff
-  use `POST /user-memberships/:id/reactivate`, which also walks a past `next_billing_date`
-  forward to the first boundary after today (#790 — a pause is not a debt).
+- One attempt per UTC day on the same Billing Event: a rejection on a date the event was
+  already attempted on is not retried, so the retry is the **next run day** — which is also
+  why #781's 10:00 attempt becomes the day's real run whenever the 06:00 one crashed.
+- After `MAX_FAILED_DAYS = 2` distinct failed days the automatic retries stop, and the
+  assignment the ProductSet projects is **paused**: `pauseAfterFailedDays()` runs inside the
+  transaction that closes the failed attempt, decides from the attempt rows under the lock
+  (never from a stored counter — `user_memberships.failed_attempts` / `last_failed_at` are
+  dropped by migration 252) and writes `recordStatusChange(… 'active' → 'paused', source
+  'system')`, which since A4 is an **audit row** (`user_membership` / `status_change`),
+  not a ledger row.
+- Only a **provider rejection** counts. An unknown outcome (the provider threw, timed out or
+  answered in flight) leaves an attempt with no definite status, which the charge guard then
+  refuses to charge again until it is reconciled; a missing card attempts nothing.
+- The surfaces that still show the pair (`failed_attempts`, `last_failed_at` on an assignment)
+  derive it from the ledger: `domain/derivedBilling.ts` counts the failed provider attempts of
+  the latest unresolved failed event by distinct UTC date.
+- Reactivation stays **explicit**: settling the event never flips `paused → active`; staff use
+  `POST /user-memberships/:id/reactivate`.
 
 ### B7. Failure handling by the staff (#640)
 
@@ -770,12 +735,14 @@ no status column: an event's status is its latest linked transaction's, falling 
 event type (`deriveBillingEventStatus()`, `api/src/domain/billingEventStatus.ts`).
 
 - `event_type` ∈ `charge_created | payment_recorded | status_changed | adjustment |
-  recurring_payment | failed_billing | waived_billing` — `billing_events_event_type_check`,
-  current definition in **migration 185**. A new type goes in **two** places: the writer
+  recurring_payment | failed_billing | waived_billing | product_purchase | card_verification`
+  — `billing_events_event_type_check`, current definition in **migration 247**.
+  `status_changed` is history only: nothing writes it since #1325 PR 3 (migration 252 moved
+  the existing rows into `audit_logs`), a transition is an audit row. A new type goes in **two** places: the writer
   *and* that CHECK, or the INSERT fails and takes the run's transaction with it.
 - `source` ∈ `admin | system | employee | customer | provider`.
 - `receipt_number` + `receipt_issued_at` — see [Receipts](#receipts).
-- `previous_status`/`new_status` carry a `status_changed` row's transition.
+- `previous_status`/`new_status` are the retired `status_changed` row's columns (unused now).
 
 **Future rows are never persisted.** Three surfaces project the gym-wide future on read,
 each pricing every projected date through the same resolver the run uses:
@@ -1188,7 +1155,7 @@ FROM user_memberships WHERE member_id = <id>;
 ```
 
 Expect `status = 'active'`, `next_billing_date` **NULL**, and a frozen
-`membership_fee_price`. Also expect one `status_changed` row in `billing_events`.
+`membership_fee_price`. Also expect one `status_change` row in `audit_logs` for the assignment.
 
 **3. Raise the payment request.** Either the staff route (Payments → the member → request a
 payment) or, signed in as the member on :8082, the member's own **Start payment**. Verify a
@@ -1267,10 +1234,11 @@ declining test card), make the cycle due again, and run step 9 on **two differen
 dates** (the day gate is `DATE(last_failed_at) = UTC_DATE()`; to simulate, set
 `last_failed_at` back a day rather than waiting):
 
-- run 1 → `failed: 1`, `paused: 0`, `failed_attempts = 1`, a `failed_billing` event with the
-  provider's code in `notes`, and `next_billing_date` **unchanged**;
-- run 2 → `failed: 1`, `paused: 1`, `status = 'paused'`, plus a `status_changed` row with
-  `source = 'system'`;
+- run 1 → `failed: 1`, `paused: 0`, the event is `failed_billing` with one `failed` attempt
+  carrying the provider's code, and `GET /user-memberships/:id` reports a derived
+  `failed_attempts = 1`;
+- run 2 (next UTC day) → `failed: 1`, `paused: 1`, `status = 'paused'`, plus a
+  `status_change` audit row with `source = 'system'`;
 - run 3 → the assignment is no longer selected at all.
 
 **12. Settle it by hand.** On the failed event, Payments → Billing Events → **Retry Payment**

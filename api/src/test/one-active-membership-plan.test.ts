@@ -191,7 +191,7 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     expect(liveRows(rows)).toHaveLength(1);
   });
 
-  it('records a status_changed ledger row for the plan it cancelled', async () => {
+  it('records a status_change audit row for the plan it cancelled', async () => {
     const memberId = await createMember(gymId);
     const first = await createPlan(gymId, 'Premium');
     const second = await createPlan(gymId, 'Basic');
@@ -199,13 +199,8 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     const draftId = await assignDraft(memberId, second, '2026-10-01');
     expect((await commit(draftId, { confirm: true })).status).toBe(200);
 
-    const { rows } = await db.query(
-      `SELECT previous_status, new_status FROM billing_events
-       WHERE gym_id = ? AND user_membership_id = ? AND event_type = 'status_changed'
-       ORDER BY id DESC LIMIT 1`,
-      [gymId, liveId],
-    );
-    expect(rows[0]).toMatchObject({ previous_status: 'active', new_status: 'cancelled' });
+    const rows = await statusChangeRows(gymId, liveId);
+    expect(rows[rows.length - 1]).toMatchObject({ previous_status: 'active', new_status: 'cancelled' });
   });
 
   it('counts a paused plan as the one plan (#956 Q2)', async () => {
@@ -480,3 +475,15 @@ describe('POST /membership-plans/:id/assign — the one-active-plan rule', () =>
     expect(res.body.current_plan.blocked_member_id).toBe(coMember);
   });
 });
+
+/** #1325 PR 3 (A4): a status transition is an audit row, not a ledger row. */
+async function statusChangeRows(gymId: string, umId: number): Promise<Array<{ previous_status: string | null; new_status: string }>> {
+  const { rows } = await db.query<any>(
+    `SELECT previous_values, new_values FROM audit_logs
+      WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'
+      ORDER BY id ASC`,
+    [gymId, String(umId)],
+  );
+  const parse = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v) ?? {};
+  return rows.map((r: any) => ({ previous_status: parse(r.previous_values).status ?? null, new_status: parse(r.new_values).status }));
+}

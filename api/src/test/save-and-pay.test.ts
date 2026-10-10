@@ -80,13 +80,21 @@ async function status(umId: number): Promise<string> {
 }
 
 async function statusChanges(umId: number): Promise<Array<{ previous_status: string | null; new_status: string }>> {
-  const { rows } = await db.query(
-    `SELECT previous_status, new_status FROM billing_events
-      WHERE user_membership_id = ? AND event_type = 'status_changed' ORDER BY id ASC`,
-    [umId],
-  );
-  return rows;
+  return statusChangeRows(gymId, umId);
 }
+
+/** #1325 PR 3 (A4): a status transition is an audit row, not a ledger row. */
+async function statusChangeRows(gymId: string, umId: number): Promise<Array<{ previous_status: string | null; new_status: string }>> {
+  const { rows } = await db.query<any>(
+    `SELECT previous_values, new_values FROM audit_logs
+      WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'
+      ORDER BY id ASC`,
+    [gymId, String(umId)],
+  );
+  const parse = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v) ?? {};
+  return rows.map((r: any) => ({ previous_status: parse(r.previous_values).status ?? null, new_status: parse(r.new_values).status }));
+}
+
 
 function signedHeaders(body: string) {
   const timestamp = String(Math.floor(Date.now() / 1000));
@@ -257,8 +265,12 @@ describe('the payment activates', () => {
     expect(await status(umId)).toBe('active');
     const { rows: pr } = await db.query('SELECT status FROM payment_requests WHERE id = ?', [prId]);
     expect(pr[0].status).toBe('completed');
+    // #1325 PR 3: the activation hands the assignment to a ProductSet, whose
+    // persisted events are the schedule — the assignment carries no date.
     const { rows: um } = await db.query('SELECT next_billing_date FROM user_memberships WHERE id = ?', [umId]);
-    expect(um[0].next_billing_date).not.toBeNull();
+    expect(um[0].next_billing_date).toBeNull();
+    const { rows: sets } = await db.query("SELECT status FROM product_sets WHERE user_membership_id = ? AND status = 'active'", [umId]);
+    expect(sets).toHaveLength(1);
     const changes = await statusChanges(umId);
     expect(changes[changes.length - 1]).toEqual({ previous_status: 'pending_payment', new_status: 'active' });
   });

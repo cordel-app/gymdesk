@@ -248,6 +248,7 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
     userMembershipId: Number((req.params as any).id), action: 'update', detail: { add_service: req.body },
     mutate: async (tx, d) => { const r = await psAddService(tx, d, req.body); return 'kind' in r ? r : { ok: true as const }; },
     respond: () => loadAssignedPlanServices(gymId, Number((req.params as any).id)),
+    status: 201,
   })) return;
   const plan = await loadAssignedPlan(gymId, (req.params as any).id);
   if (!plan) return res.status(404).json({ error: 'Membership not found' });

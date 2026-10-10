@@ -142,18 +142,20 @@ describe('PUT /user-memberships/:id/billing-duration', () => {
   });
 
   it('edits this assignment only — not the Plan, not another assignment (§15)', async () => {
+    // #1325 PR 3: the cadence is the ProductSet schedule's and is never edited
+    // on a live plan (a new plan is), so the edit is durations and fee.
     const res = await putBillingDuration(gymId, umId, {
       free_periods: 0, paid_periods: 6, bonus_periods: 3,
-      recurring_billing_interval: 3, recurring_billing_unit: 'month',
       membership_fee_price: 90,
     });
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       free_periods: 0, paid_periods: 6, bonus_periods: 3,
-      recurring_billing_interval: 3, recurring_billing_unit: 'month',
+      recurring_billing_interval: 1, recurring_billing_unit: 'month',
       membership_fee_price: 90,
       snapshot_captured: true,
     });
+    expect((await putBillingDuration(gymId, umId, { recurring_billing_interval: 3 })).status).toBe(400);
 
     const { rows: planRows } = await db.query(
       'SELECT free_periods, paid_periods, bonus_periods FROM membership_plans WHERE id = ?', [planId],
@@ -390,11 +392,10 @@ describe('materialising, on an assignment that captured nothing', () => {
     await createTestMembership(gymId, 'admin');
   });
 
-  it('accepts half the cadence, because the other half is captured with it', async () => {
+  it('refuses a cadence edit on a live plan — the schedule is the ProductSet chain\'s (#1325)', async () => {
     const umId = await uncapturedAssignment();
     const res = await putBillingDuration(gymId, umId, { recurring_billing_interval: 2 });
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ recurring_billing_interval: 2, recurring_billing_unit: 'month' });
+    expect(res.status).toBe(400);
   });
 
   it('rolls the capture back with a rejected edit', async () => {
