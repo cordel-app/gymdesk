@@ -72,13 +72,14 @@
 **Stages 1 and 2 (shipped).** `POST /platform/gyms/:id/storage/initialize`
 ("Initialize Cloudflare Bucket") writes the **gym** tree only, lowercase, as
 zero-byte folder markers: `nutrition/`, `exercises/`, `exercises/images/`,
-`exercises/videos/`, `themes/` and — since stage 2 — `goals/`. Every name comes
-from one constant — `NUTRITION_STORAGE_FOLDER`, `EXERCISE_STORAGE_FOLDER` and its
-two leaves, `THEMES_FOLDER` and `GOALS_FOLDER`, all in
-`api/src/infra/storage.ts` — which the key builders in `domain/baseNutritionImages.ts`,
-`domain/exerciseImages.ts`, `domain/exerciseVideos.ts`, `domain/themeFolders.ts`
-and `domain/personalGoalImages.ts` re-export, so a marker can never disagree with
-the keys written into it. `goals/` is appended last, so a gym's existing markers
+`exercises/videos/`, `themes/`, since stage 2 `goals/` and since #1374 `members/`.
+Every name comes from one constant — `NUTRITION_STORAGE_FOLDER`,
+`EXERCISE_STORAGE_FOLDER` and its two leaves, `THEMES_FOLDER`, `GOALS_FOLDER` and
+`MEMBERS_FOLDER`, all in `api/src/infra/storage.ts` — which the key builders in
+`domain/baseNutritionImages.ts`, `domain/exerciseImages.ts`,
+`domain/exerciseVideos.ts`, `domain/themeFolders.ts`, `domain/personalGoalImages.ts`
+and `domain/memberImages.ts` re-export, so a marker can never disagree with the keys
+written into it. `goals/` is appended last, so a gym's existing markers
 keep the order they were written in, and a gym initialized before stage 2 gets the
 folder by re-running the action — cosmetic, since R2 has no directories and an
 upload stores its object under the prefix either way.
@@ -117,6 +118,23 @@ Nutrition Goal has no image at all: `IMAGE_GOAL_KINDS` says so, and its
 `goals/` is the first-level folder that proves #826's rule rather than bending it:
 stage 1 deliberately left it out because nothing wrote a Personal Goal image, and it
 arrived with its writer.
+
+**`members/` holds a Member's profile image** (#1374):
+`{gym prefix}/members/{member_id}-{member_name}.png`, written by
+`POST /members/:id/image` and cleared by `DELETE /members/:id/image`, both on the
+gym's own router (MEMBERS write). One column holds it — `members.image_url`
+(migration 252) — and `api/src/domain/memberImages.ts` is the one place the key is
+built and the bytes are judged: a PNG of **exactly** 512 × 512 (the admin crops and
+scales whatever staff pick before uploading), no transparency requirement, read from
+the bytes rather than the `Content-Type` header. The key is deterministic, so a
+replacement overwrites its own object; a **rename** is what moves one, and
+`PUT /members/:id` does it in the safe order — copy to the new key, re-point the row,
+then delete the old object — leaving the row on the old URL if the copy fails. Gym
+root only: a Member belongs to one gym, so there is no `cordel/members/`. A
+soft-deleted Member keeps the object (Members have a Recycle Bin restore). The
+Member's own `/me` pair is #1375's. `members/` is appended last to the gym's
+first-level markers, with its writer, exactly as `goals/` was — and it is not the
+`Members/` #826 removed, which held nothing.
 
 **The `members_app/` slot names above are the target, not the code.** The seven slots
 `MEMBER_IMAGE_SLOTS` (`api/src/domain/themeMemberImages.ts`) and the

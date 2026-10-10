@@ -126,7 +126,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gym_123-GymName');
 
-    expect(sendMock).toHaveBeenCalledTimes(7);
+    expect(sendMock).toHaveBeenCalledTimes(8);
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys).toEqual([
       'gym_123-GymName/',
@@ -138,6 +138,8 @@ describe('initializeGymBucket()', () => {
       // #1035 stage 2, appended last: a folder slotted into the middle would
       // change the order every existing gym's markers were written in.
       'gym_123-GymName/goals/',
+      // #1374, appended last for the same reason: a Member's profile image.
+      'gym_123-GymName/members/',
     ]);
     for (const call of sendMock.mock.calls) {
       expect(call[0].input.Bucket).toBe('test-bucket');
@@ -162,7 +164,7 @@ describe('initializeGymBucket()', () => {
     return [...new Set(segments)];
   }
 
-  it('creates nutrition/, exercises/, themes/ and goals/ as the only first-level folders', async () => {
+  it('creates nutrition/, exercises/, themes/, goals/ and members/ as the only first-level folders', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
@@ -170,8 +172,10 @@ describe('initializeGymBucket()', () => {
     // #1035 lowercased the first two; `themes/` was already (#829), and stage 2
     // appended `goals/` with its writer — which is #826's rule, not an exception
     // to it: a first-level folder exists because something uploads into it.
+    // #1374 appended `members/` the same way: a Member's profile image is its
+    // writer from the day the folder appears.
     expect(firstLevelFolders('gyms/gym_123-GymName'))
-      .toEqual(['nutrition', 'exercises', 'themes', 'goals']);
+      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members']);
   });
 
   // #1035 §7: `goals/` is the fourth folder in the ticket's target tree, and
@@ -179,15 +183,29 @@ describe('initializeGymBucket()', () => {
   // yet. Stage 2 is that writer, so it is created now — appended last, so every
   // folder that existed before keeps the position it was written in, and with no
   // leaf, since a goal's image is all that branch holds.
-  it('creates goals/ last, and with no leaf below it', async () => {
+  it('creates goals/ after the three before it, and with no leaf below it', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-1)).toBe('goals');
+    // #1374 appended `members/` after it, so `goals/` is the fourth marker.
+    expect(firstLevelFolders('gyms/gym_123-GymName')[3]).toBe('goals');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/goals/')))
       .toEqual(['gyms/gym_123-GymName/goals/']);
+  });
+
+  // #1374: `members/` holds a Member's profile image — `members/<member_id>-<name>.png`
+  // directly under it — so it is appended last, with no leaf.
+  it('creates members/ last, and with no leaf below it', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-1)).toBe('members');
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/members/')))
+      .toEqual(['gyms/gym_123-GymName/members/']);
   });
 
   // #1035 §2/§7: Gym Bucket Initialization writes a *gym's* tree and has never
