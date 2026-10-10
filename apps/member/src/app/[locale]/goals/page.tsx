@@ -357,7 +357,8 @@ export default function GoalsPage() {
    * line rather than one reading `Target —`.
    */
   function chartLabels(goal: MemberGoal) {
-    const target = formatReadingValue(goal.target_value, goal.target_unit);
+    // #1229: the line is drawn at the effective target (baseline + change for a relative goal).
+    const target = formatReadingValue(goal.effective_target ?? goal.target_value, goal.target_unit);
     return {
       title: t('goals.section_progress_chart'),
       ariaLabel: t('goals.chart_aria_label'),
@@ -547,7 +548,7 @@ export default function GoalsPage() {
                   <GoalReadingChart
                     readings={readings[goal.id]?.readings ?? []}
                     unit={goal.target_unit}
-                    target={goal.target_value}
+                    target={goal.effective_target ?? goal.target_value}
                     locale={locale}
                     labels={chartLabels(goal)}
                   />

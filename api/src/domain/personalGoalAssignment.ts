@@ -18,7 +18,7 @@
  * status from a measurement, is a later ticket's.
  */
 
-import { Normalized, targetPairError } from './goalTarget';
+import { Normalized, TargetType, targetPairError } from './goalTarget';
 
 /**
  * The progress of an assignment. Mirrored by `chk_mpgoal_status` (migration
@@ -58,9 +58,9 @@ export const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
  * assignment's vocabulary still reaches its callers in one import.
  */
 export {
-  TARGET_UNIT_MAX_LENGTH, TARGET_VALUE_MAX, normalizeTargetUnit, normalizeTargetValue,
+  TARGET_UNIT_MAX_LENGTH, TARGET_VALUE_MAX, TARGET_TYPES, normalizeTargetType, normalizeTargetUnit, normalizeTargetValue,
 } from './goalTarget';
-export type { Normalized } from './goalTarget';
+export type { Normalized, TargetType } from './goalTarget';
 
 export function normalizeNotes(input: unknown): Normalized<string | null | undefined> {
   if (input === undefined) return { value: undefined };
@@ -110,6 +110,7 @@ export function normalizeStatus(input: unknown, { required }: { required: boolea
 export function goalAssignmentFieldError(next: {
   targetValue: number | null;
   targetUnit: string | null;
+  targetType?: TargetType;
   startDate: string | null;
   targetDate: string | null;
 }): string | null {

@@ -247,12 +247,13 @@ describe('row shape and payloads', () => {
   it('seeds the Edit form from the persisted row', () => {
     expect(toGoalFormValues({ ...row, target_value: 3, target_unit: 'kg' })).toEqual({
       name: 'Competition Preparation', description: '  the season  ',
-      target_value: '3', target_unit: 'kg',
+      target_value: '3', target_unit: 'kg', target_type: 'absolute',
     });
     expect(toGoalFormValues({ ...row, description: null })).toEqual({
-      name: 'Competition Preparation', description: '', target_value: '', target_unit: '',
+      name: 'Competition Preparation', description: '', target_value: '', target_unit: '', target_type: 'absolute',
     });
-    expect(emptyGoalForm()).toEqual({ name: '', description: '', target_value: '', target_unit: '' });
+    expect(emptyGoalForm()).toEqual({ name: '', description: '', target_value: '', target_unit: '', target_type: 'absolute' });
+    expect(goalFormError({ ...emptyGoalForm(), name: 'x', target_value: '-5', target_type: 'relative' }, 'personal')).toBeNull();
   });
 
   it('submits a trimmed description as `` so clearing it persists', () => {
@@ -286,10 +287,10 @@ describe('a Personal Goal is measurable, a Nutrition Goal is not (#1034 §1)', (
   it('submits the pair for a measurable kind only, with an empty value as an explicit clear', () => {
     const form = { ...emptyGoalForm(), name: 'Lose weight', target_value: ' 3 ', target_unit: ' kg ' };
     expect(toGoalPayload(form, 'personal')).toEqual({
-      name: 'Lose weight', description: '', target_value: 3, target_unit: 'kg',
+      name: 'Lose weight', description: '', target_value: 3, target_unit: 'kg', target_type: 'absolute',
     });
     expect(toGoalPayload({ ...form, target_value: '', target_unit: '' }, 'personal')).toEqual({
-      name: 'Lose weight', description: '', target_value: null, target_unit: null,
+      name: 'Lose weight', description: '', target_value: null, target_unit: null, target_type: 'absolute',
     });
     // A Nutrition Goal has no such columns, so the payload must not carry keys
     // the router would ignore (#974).
