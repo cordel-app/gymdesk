@@ -178,5 +178,19 @@ export async function loadCardRemovalBlock(
       WHERE gym_id = ? AND member_id = ?`,
     [gymId, memberId],
   );
-  return cardRemovalBlock(rows);
+  // #1325: a plan a ProductSet bills has no `next_billing_date` on its
+  // assignment; what is scheduled to be charged is the set's persisted events.
+  // Any scheduled event, or a failed one still owed, of a version the member
+  // owns makes the card billable exactly as a legacy next billing date did.
+  const { rows: scheduled } = await db.query<{ n: number }>(
+    `SELECT COUNT(*) AS n
+       FROM billing_events be JOIN product_sets ps ON ps.id = be.product_set_id
+      WHERE be.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'active'
+        AND (be.is_scheduled = 1 OR (be.event_type = 'failed_billing'
+             AND NOT EXISTS (SELECT 1 FROM payment_requests pr
+                              WHERE pr.billing_event_id = be.id AND pr.status = 'completed')))`,
+    [gymId, memberId],
+  );
+  const owedByProductSet = Number(scheduled[0]?.n ?? 0) > 0;
+  return cardRemovalBlock(owedByProductSet ? [...rows, { status: 'active', next_billing_date: new Date() }] : rows);
 }

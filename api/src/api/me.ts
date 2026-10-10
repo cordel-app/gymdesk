@@ -1,3 +1,4 @@
+import { withDerivedBilling } from './derived-billing';
 import { createProductSetCheckout, initialCharge } from './product-set-checkout';
 import { findOpenInitialEvent } from './plan-checkout';
 import { memberInviteTarget } from '../domain/memberInviteTarget';
@@ -1687,7 +1688,9 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     const active_products_count = Number(activeProductRows[0]?.n ?? 0);
     if (!current) return res.json({ membership: null, past_memberships: [], pending_membership, active_products_count });
 
-    const um = current;
+    // #1325: the next billing date (and so the upcoming payments below) of a plan
+    // a ProductSet bills is read off its ledger, not the legacy column.
+    const um = (await withDerivedBilling(gymId, [current as any]))[0] as typeof current;
     // The assignment's own benefit rows, never the Plan's live sections — the
     // loader falls back to those only for an assignment that captured nothing.
     // (Until stage 10 this read `membership_plan_benefits`, P1.4's plan-keyed

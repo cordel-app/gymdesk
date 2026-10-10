@@ -1,3 +1,4 @@
+import { withDerivedBilling } from './derived-billing';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
@@ -80,7 +81,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // Every assignment, newest first — the Member page has shown the full plan
   // history since #412 and #634 §14 does not retire it; `is_live` marks the
   // ones the Services section and the simulation act on.
-  const { rows: plans } = await db.query(
+  const { rows: rawPlans } = await db.query(
     `SELECT um.id, um.membership_plan_id, um.status,
             um.starts_at, um.ends_at, um.next_billing_date,
             um.closed_at, um.created_at,
@@ -95,6 +96,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     [...LIVE_STATUSES, gymId, memberId, memberId],
   );
 
+  // #1325: the next billing date of a plan a ProductSet bills is its ledger's.
+  const plans = await withDerivedBilling(gymId, rawPlans as any[]);
   const livePlans = plans.filter((p: any) => Number(p.is_live) === 1);
   const planNameById = new Map<number, string | null>(livePlans.map((p: any) => [p.id, p.plan_name]));
   const liveIds = livePlans.map((p: any) => p.id as number);
