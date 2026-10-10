@@ -115,7 +115,36 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // and an applied Promotion's discount stops with the Promotion's own timeline.
   const fees = await currentMembershipFees(gymId, plans.map((p: any) => Number(p.id)));
 
+  // #1325 PR 3b — the member's in-flight ProductSet versions (a Draft being
+  // configured, or a Save & Pay awaiting its first payment). They have no
+  // assignment yet — that is what activation projects — so they are reported
+  // beside `plans` for the Member card to show and act on. A Draft idle past two
+  // hours is reported `expired` and is never offered an action.
+  const { rows: inFlight } = await db.query<any>(
+    `SELECT ps.id, ps.status, ps.version, ps.starts_at, ps.created_by_name,
+            (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
+            mp.name AS plan_name,
+            (SELECT be.amount FROM billing_events be
+              WHERE be.product_set_id = ps.id AND be.event_type = 'payment_recorded'
+              ORDER BY be.id DESC LIMIT 1) AS amount_due
+       FROM product_sets ps
+       LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status IN ('draft', 'pending_payment')
+      ORDER BY ps.id DESC`,
+    [gymId, memberId],
+  );
+
   res.json({
+    product_sets: inFlight.map((r: any) => ({
+      id: Number(r.id),
+      status: String(r.status),
+      version: Number(r.version),
+      plan_name: r.plan_name ?? null,
+      starts_at: toDateOnly(r.starts_at),
+      amount_due: r.amount_due != null ? Number(r.amount_due) : null,
+      expired: Number(r.expired) === 1,
+      created_by_name: r.created_by_name ?? null,
+    })),
     plans: plans.map((p: any) => ({
       id: p.id,
       membership_plan_id: p.membership_plan_id,

@@ -34,6 +34,7 @@ function read(file: string): string {
 
 const expandedRowSrc = read('MemberExpandedRow.tsx');
 const plansSrc = read('MemberMembershipPlans.tsx');
+const inFlightSrc = read('ProductSetsInFlight.tsx');
 const simulationSrc = read('MemberBillingSimulation.tsx');
 
 const SECTION_KEYS = [
@@ -75,10 +76,40 @@ describe('Member Membership sections (#634)', () => {
   });
 
   it('adds a Membership Plan additively, never superseding another (§14)', () => {
-    // POST /user-memberships creates a new assignment; assign-new-plan (the
-    // supersede action) is deliberately not what "+ Add Membership Plan" calls.
-    expect(plansSrc).toMatch(/apiFetch\('\/user-memberships',\s*\{\s*method: 'POST'/);
+    // #1325 PR 3b: "+ Add Membership Plan" creates a ProductSet version through
+    // `POST /product-sets` and commits it (activate, or save-and-pay when a
+    // payment is owed); assign-new-plan (the supersede action) is deliberately
+    // not what it calls, and neither is the legacy `/user-memberships` create.
+    expect(plansSrc).toMatch(/apiFetch<\{ id: number \}>\('\/product-sets',\s*\{\s*method: 'POST'/);
+    expect(plansSrc).toContain('commitProductSetVersion(apiFetch, created.id)');
     expect(plansSrc).not.toContain('assign-new-plan');
+    expect(plansSrc).not.toMatch(/apiFetch\('\/user-memberships',\s*\{\s*method: 'POST'/);
+  });
+
+  it('never sends `confirm` for a plan that is only being added (the server owns the one-plan rule)', () => {
+    expect(plansSrc).not.toContain('confirm: true');
+  });
+
+  it('lists the in-flight versions and acts on them only through /product-sets (#1325 PR 3b)', () => {
+    expect(plansSrc).toContain('<ProductSetsInFlight');
+    expect(plansSrc).toContain('productSets={productSets}');
+    expect(inFlightSrc).toContain('`/product-sets/${ps.id}/record-payment`');
+    expect(inFlightSrc).toContain('`/product-sets/${ps.id}/save-and-pay`');
+    expect(inFlightSrc).toContain('`/product-sets/${ps.id}`, { method: \'DELETE\' }');
+    // The write actions follow the permission the page hands in, and nothing is
+    // offered for an expired Draft but discarding it.
+    expect(inFlightSrc).toContain('{canWrite && (');
+    expect(inFlightSrc).toContain("ps.status === 'draft' && !ps.expired");
+    // The screen never decides whether a payment is owed or what to confirm.
+    expect(inFlightSrc).not.toContain('confirm');
+  });
+
+  it('commits through the server\'s own answer — activate, then save-and-pay on payment_required', () => {
+    const lib = stripComments(readFileSync(join(__dirname, '..', 'lib', 'productSetCommit.ts'), 'utf-8'));
+    expect(lib).toContain('/product-sets/${id}/activate');
+    expect(lib).toContain("PAYMENT_REQUIRED = 'payment_required'");
+    expect(lib).toContain('/product-sets/${id}/save-and-pay');
+    expect(lib).not.toContain('confirm');
   });
 
   it('offers only Active + Public plans, selected with radio buttons (§2)', () => {

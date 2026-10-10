@@ -7,6 +7,8 @@ import { isDraftExpired } from '../domain/productSet';
 import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { effectivePrice } from './user-memberships';
 import { resolveMemberId } from './me';
+import { findLiveAssignmentsForMembers } from './one-active-plan';
+import { activePlanConflictBody } from '../domain/oneActivePlan';
 import {
   Actor, cancelInFlight, createDraft, submitForPayment,
 } from './product-sets';
@@ -132,6 +134,26 @@ productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => 
     declined = resolved.declined ?? [];
   }
 
+  // #956: a Member holds zero or one Membership Plan. A version that carries a
+  // plan may not be created for a Member who is already on one — their own
+  // legacy assignment, or somebody else's plan that covers them. The one
+  // assignment that is *not* a conflict is the one this owner's own Active
+  // version projects: a new version of their own chain replaces it by design.
+  // No `confirm` exists here — replacing is a new version, never an overwrite.
+  if (planId !== null) {
+    const { rows: own } = await db.query<{ user_membership_id: number | null }>(
+      `SELECT user_membership_id FROM product_sets
+        WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' LIMIT 1`, [gymId, memberId]);
+    const ownUmId = own[0]?.user_membership_id != null ? Number(own[0].user_membership_id) : null;
+    const conflicts = await findLiveAssignmentsForMembers(db, gymId, [memberId],
+      ownUmId != null ? { excludeUserMembershipId: ownUmId } : {});
+    if (conflicts.length > 0) {
+      const { rows: planRows } = await db.query<{ name: string }>(
+        'SELECT name FROM membership_plans WHERE id = ? AND gym_id = ?', [planId, gymId]);
+      return res.status(409).json(activePlanConflictBody(conflicts, planRows[0]?.name ?? null));
+    }
+  }
+
   // Q1: an unresolved past obligation of the active configuration blocks a new
   // version — enforced here, not only by the editor that opened the page.
   const blocking = await loadEditLock(gymId, memberId, todayUtc());
@@ -215,6 +237,45 @@ productSetsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (r
   if (out.kind !== 'ok') return res.status(409).json({ error: out.kind });
   recordAudit(req, { action: 'activate', entityType: 'product_set', entityId: set.id, next: { status: 'active' } });
   res.json({ product_set_id: Number(set.id), status: 'active', events_created: (out as any).eventsCreated ?? 0 });
+});
+
+/**
+ * A first payment taken in cash: recorded as a request of method `cash` (no
+ * provider attempt) on the version's initial event, which settles it, and the
+ * version is activated in the same transaction. Only a `pending_payment` set —
+ * Save & Pay wrote the event — and only once.
+ */
+productSetsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), async (req, res) => {
+  const { gymId } = getTenantContext(req);
+  const set = await loadSet(gymId, req.params.id);
+  if (!set) return res.status(404).json({ error: 'ProductSet not found' });
+  if (set.status !== 'pending_payment') return res.status(409).json({ error: 'not_pending_payment', status: set.status });
+
+  const { rows: ct } = await db.query<{ id: number }>("SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1");
+  const out = await db.transaction(async (tx) => {
+    const { rows: ev } = await tx.query<{ id: number; amount: string }>(
+      `SELECT be.id, be.amount FROM billing_events be
+        WHERE be.gym_id = ? AND be.product_set_id = ? AND be.event_type = 'payment_recorded'
+          AND NOT EXISTS (SELECT 1 FROM payment_requests pr WHERE pr.billing_event_id = be.id AND pr.status = 'completed')
+        ORDER BY be.id DESC LIMIT 1 FOR UPDATE`,
+      [gymId, Number(set.id)]);
+    if (!ev[0]) return { kind: 'no_open_event' as const };
+    const { rows: prev } = await tx.query<{ n: number }>(
+      'SELECT COALESCE(MAX(attempt), 0) AS n FROM payment_requests WHERE billing_event_id = ?', [ev[0].id]);
+    await tx.query(
+      `INSERT INTO payment_requests
+         (gym_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
+          source, attempt, method, initiated_by, created_at, completed_at)
+       VALUES (?, ?, ?, 'EUR', ?, ?, 'completed', 'monei', 'manual', ?, 'cash', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+      [gymId, Number(set.owner_member_id), ev[0].amount, ct[0]?.id ?? null, ev[0].id,
+        Number(prev[0]?.n ?? 0) + 1, getTenantContext(req).userId ?? null]);
+    const activated = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc() });
+    return { kind: activated.kind, billingEventId: Number(ev[0].id) };
+  });
+  if (out.kind === 'no_open_event') return res.status(409).json({ error: 'no_open_event' });
+  if (out.kind !== 'ok') return res.status(409).json({ error: out.kind });
+  recordAudit(req, { action: 'record_payment', entityType: 'product_set', entityId: set.id, next: { status: 'active', method: 'cash' } });
+  res.json({ product_set_id: Number(set.id), status: 'active', billing_event_id: out.billingEventId });
 });
 
 productSetsRouter.delete('/:id', requireModuleWrite('PAYMENTS'), async (req, res) => {

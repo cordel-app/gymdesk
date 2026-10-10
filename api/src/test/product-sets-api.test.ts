@@ -190,4 +190,64 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     const res = await request.get('/product-sets?member_id=1');
     expect(res.status).toBe(401);
   });
+
+  it('a cash payment settles the initial event and activates the version', async () => {
+    const memberId = await member();
+    const planId = await plan(25);
+    const c = await auth(request.post('/product-sets')).send({ member_id: memberId, membership_plan_id: planId, starts_at: TODAY });
+    expect(c.status).toBe(201);
+
+    // The Member card reads the in-flight version beside the assignments.
+    const cfg1 = await auth(request.get(`/user-memberships/member/${memberId}/configuration`));
+    expect(cfg1.status).toBe(200);
+    expect(cfg1.body.product_sets).toEqual([expect.objectContaining({ id: c.body.id, status: 'draft', expired: false })]);
+
+    const pay = await auth(request.post(`/product-sets/${c.body.id}/save-and-pay`)).send({});
+    expect(pay.status).toBe(201);
+    const cfg2 = await auth(request.get(`/user-memberships/member/${memberId}/configuration`));
+    expect(cfg2.body.product_sets[0]).toMatchObject({ status: 'pending_payment', amount_due: 25 });
+
+    const cash = await auth(request.post(`/product-sets/${c.body.id}/record-payment`)).send({});
+    expect(cash.status).toBe(200);
+    expect(cash.body.status).toBe('active');
+    const { rows: attempts } = await db.query<any>(
+      'SELECT method, status, provider_status FROM payment_requests WHERE billing_event_id = ? ORDER BY attempt', [pay.body.billing_event_id]);
+    expect(attempts[attempts.length - 1]).toMatchObject({ method: 'cash', status: 'completed', provider_status: null });
+
+    // The operational assignment is now projected, and the version is no longer in flight.
+    const cfg3 = await auth(request.get(`/user-memberships/member/${memberId}/configuration`));
+    expect(cfg3.body.product_sets).toEqual([]);
+    expect(cfg3.body.plans.map((p: any) => p.membership_plan_id)).toEqual([planId]);
+    expect(cfg3.body.plans[0].is_live).toBe(true);
+
+    // A second cash payment finds nothing pending.
+    const again = await auth(request.post(`/product-sets/${c.body.id}/record-payment`)).send({});
+    expect(again.status).toBe(409);
+  });
+
+  it('refuses a plan for a Member already on one (#956) and offers no confirmation', async () => {
+    const memberId = await member();
+    const planId = await plan(0);
+    const { insertId } = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at) VALUES (?, ?, ?, 'active', ?)`,
+      [gymId, memberId, planId, TODAY]);
+    const res = await auth(request.post('/product-sets')).send({
+      member_id: memberId, membership_plan_id: planId, starts_at: TODAY, confirm: true,
+    });
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe('active_plan_exists');
+    expect(res.body.current_plan.id).toBe(insertId);
+    const { rows } = await db.query('SELECT id FROM product_sets WHERE owner_member_id = ?', [memberId]);
+    expect(rows.length).toBe(0);
+  });
+
+  it('a new version of the owner\'s own plan is not a conflict with its own projection', async () => {
+    const memberId = await member();
+    const free = await plan(0);
+    const v1 = await auth(request.post('/product-sets')).send({ member_id: memberId, membership_plan_id: free, starts_at: TODAY });
+    await auth(request.post(`/product-sets/${v1.body.id}/activate`)).send({});
+    const v2 = await auth(request.post('/product-sets')).send({ member_id: memberId, membership_plan_id: free, starts_at: TODAY });
+    expect(v2.status).toBe(201);
+    expect(v2.body.version).toBe(2);
+  });
 });
