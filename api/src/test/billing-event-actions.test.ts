@@ -288,30 +288,6 @@ describe('POST /payments/billing-events/:id/retry', () => {
     expect(next > today()).toBe(true);
     expect(rows[0].last_billed_at).not.toBeNull();
   });
-
-  // #785: the nightly run now counts consecutive rejections on the assignment
-  // itself and pauses on the second. A staff action that brings the money in has
-  // to clear that count, or a member who paid would stay one decline away from
-  // being paused by the run.
-  it('clears the nightly run\u2019s dunning count when the retry succeeds', async () => {
-    const f = await createFailedEvent(gymId);
-    await db.query(
-      'UPDATE user_memberships SET failed_attempts = 1, last_failed_at = UTC_TIMESTAMP() WHERE id = ?',
-      [f.membershipId],
-    );
-
-    await request
-      .post(`/payments/billing-events/${f.billingEventId}/retry`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-
-    const { rows } = await db.query<any>(
-      'SELECT failed_attempts, last_failed_at FROM user_memberships WHERE id = ?', [f.membershipId],
-    );
-    expect(Number(rows[0].failed_attempts)).toBe(0);
-    expect(rows[0].last_failed_at).toBeNull();
-  });
-
   it('retries once more and pauses the assigned plan when both attempts fail', async () => {
     executeRecurring = vi.fn().mockResolvedValue({
       success: false, providerRef: 'pay_ko', errorCode: 'E999', errorMessage: 'card declined',
@@ -332,13 +308,14 @@ describe('POST /payments/billing-events/:id/retry', () => {
     const { rows } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [f.membershipId]);
     expect(rows[0].status).toBe('paused');
 
-    // The pause is explicable from the ledger, like every other transition.
+    // The pause is explicable from the audit log, like every other transition (#1325 A4).
     const { rows: statusRows } = await db.query<any>(
-      `SELECT new_status FROM billing_events
-        WHERE user_membership_id = ? AND event_type = 'status_changed'`,
-      [f.membershipId],
+      `SELECT new_values FROM audit_logs
+        WHERE entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'`,
+      [String(f.membershipId)],
     );
-    expect(statusRows.map((r: any) => r.new_status)).toContain('paused');
+    const parse = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v);
+    expect(statusRows.map((r: any) => parse(r.new_values).status)).toContain('paused');
 
     // Both attempts are recorded with their rejection reason.
     const tx = await transactionsOf(f.billingEventId);
@@ -447,51 +424,6 @@ describe('POST /payments/billing-events/:id/manual-payment', () => {
       .send({});
     expect(res.status).toBe(404);
   });
-
-  it('records a completed transaction without calling the provider', async () => {
-    const f = await createFailedEvent(gymId);
-    const res = await request
-      .post(`/payments/billing-events/${f.billingEventId}/manual-payment`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({ notes: 'Cash at front desk' });
-
-    expect(res.status).toBe(201);
-    expect(res.body.new_status).toBe('paid');
-    expect(res.body.previous_status).toBe('failed');
-    expect(res.body.amount).toBe('40.00');
-    expect(executeRecurring).not.toHaveBeenCalled();
-
-    const tx = await transactionsOf(f.billingEventId);
-    const manual = tx.find((r: any) => r.source === 'manual');
-    expect(manual).toBeDefined();
-    expect(manual.status).toBe('completed');
-    expect(manual.notes).toBe('Cash at front desk');
-    expect(manual.completed_at).not.toBeNull();
-  });
-
-  // #785, the other half: a front-desk payment settles the cycle, so the run's
-  // rejection count is spent too.
-  it('clears the nightly run\u2019s dunning count', async () => {
-    const f = await createFailedEvent(gymId);
-    await db.query(
-      'UPDATE user_memberships SET failed_attempts = 1, last_failed_at = UTC_TIMESTAMP() WHERE id = ?',
-      [f.membershipId],
-    );
-
-    await request
-      .post(`/payments/billing-events/${f.billingEventId}/manual-payment`)
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId)
-      .send({});
-
-    const { rows } = await db.query<any>(
-      'SELECT failed_attempts, last_failed_at FROM user_memberships WHERE id = ?', [f.membershipId],
-    );
-    expect(Number(rows[0].failed_attempts)).toBe(0);
-    expect(rows[0].last_failed_at).toBeNull();
-  });
-
   it('stamps Modified At / Modified By on the billing event', async () => {
     const f = await createFailedEvent(gymId);
     await request

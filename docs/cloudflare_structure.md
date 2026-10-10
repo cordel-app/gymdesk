@@ -123,7 +123,7 @@ arrived with its writer.
 `{gym prefix}/members/{member_id}-{member_name}.png`, written by
 `POST /members/:id/image` and cleared by `DELETE /members/:id/image`, both on the
 gym's own router (MEMBERS write). One column holds it — `members.image_url`
-(migration 252) — and `api/src/domain/memberImages.ts` is the one place the key is
+(migration 253) — and `api/src/domain/memberImages.ts` is the one place the key is
 built and the bytes are judged: a PNG of **exactly** 512 × 512 (the admin crops and
 scales whatever staff pick before uploading), no transparency requirement, read from
 the bytes rather than the `Content-Type` header. The key is deterministic, so a

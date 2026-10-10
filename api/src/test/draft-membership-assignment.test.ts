@@ -129,12 +129,7 @@ describe('#1108 stage 1 — every assignment path creates a Draft', () => {
     const planId = await createPlan(gymId, `Draft Ledger Plan ${uniq()}`);
     const created = await assignPlan(gymId, memberId, planId);
 
-    const { rows } = await db.query<{ previous_status: string | null; new_status: string }>(
-      `SELECT previous_status, new_status FROM billing_events
-        WHERE user_membership_id = ? AND event_type = 'status_changed'
-        ORDER BY id ASC`,
-      [created.id],
-    );
+    const rows = await statusChangeRows(gymId, created.id);
     expect(rows.length).toBe(1);
     expect(rows[0].previous_status).toBeNull();
     expect(rows[0].new_status).toBe('draft');
@@ -216,14 +211,9 @@ describe('#1108 stage 1 — committing a Draft', () => {
     expect(res.body.status).toBe('active');
     expect(await readStatus(draft.id)).toBe('active');
 
-    const { rows } = await db.query<{ previous_status: string | null; new_status: string }>(
-      `SELECT previous_status, new_status FROM billing_events
-        WHERE user_membership_id = ? AND event_type = 'status_changed'
-        ORDER BY id DESC LIMIT 1`,
-      [draft.id],
-    );
-    expect(rows[0].previous_status).toBe('draft');
-    expect(rows[0].new_status).toBe('active');
+    const rows = await statusChangeRows(gymId, draft.id);
+    expect(rows[rows.length - 1].previous_status).toBe('draft');
+    expect(rows[rows.length - 1].new_status).toBe('active');
   });
 
   it('refuses to activate anything that is not a Draft', async () => {
@@ -371,3 +361,15 @@ describe('#1108 stage 1 — a Draft is editable, projected, and not billable', (
     expect(Number(rows[0].n)).toBe(0);
   });
 });
+
+/** #1325 PR 3 (A4): a status transition is an audit row, not a ledger row. */
+async function statusChangeRows(gymId: string, umId: number): Promise<Array<{ previous_status: string | null; new_status: string }>> {
+  const { rows } = await db.query<any>(
+    `SELECT previous_values, new_values FROM audit_logs
+      WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'
+      ORDER BY id ASC`,
+    [gymId, String(umId)],
+  );
+  const parse = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v) ?? {};
+  return rows.map((r: any) => ({ previous_status: parse(r.previous_values).status ?? null, new_status: parse(r.new_values).status }));
+}

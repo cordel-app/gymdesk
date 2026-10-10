@@ -99,14 +99,22 @@ async function waitForAuditLog(
 // runs inside the same transaction as the status flip, so (unlike audit_logs) this
 // is available synchronously once the HTTP response has been returned.
 async function latestStatusChangeEvent(gymId: string, userMembershipId: number): Promise<any | null> {
-  const { rows } = await db.query(
-    `SELECT * FROM billing_events
-     WHERE gym_id = ? AND user_membership_id = ? AND event_type = 'status_changed'
-     ORDER BY id DESC LIMIT 1`,
-    [gymId, userMembershipId],
-  );
-  return rows[0] ?? null;
+  const rows = await statusChangeRows(gymId, userMembershipId);
+  return rows[rows.length - 1] ?? null;
 }
+
+/** #1325 PR 3 (A4): a status transition is an audit row, not a ledger row. */
+async function statusChangeRows(gymId: string, umId: number): Promise<Array<{ previous_status: string | null; new_status: string }>> {
+  const { rows } = await db.query<any>(
+    `SELECT previous_values, new_values FROM audit_logs
+      WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'
+      ORDER BY id ASC`,
+    [gymId, String(umId)],
+  );
+  const parse = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v) ?? {};
+  return rows.map((r: any) => ({ previous_status: parse(r.previous_values).status ?? null, new_status: parse(r.new_values).status }));
+}
+
 
 // ─── Helpers for expanded detail + Billing Events (#511 stage 3) ──────────────
 

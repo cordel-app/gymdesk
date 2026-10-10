@@ -259,7 +259,6 @@ describe('reactivation — a pause is not a debt (#790)', () => {
   it('Reactivate walks a stale next_billing_date forward along its own schedule, and the run charges nothing', async () => {
     const stale = monthsAgo(2);
     const { membershipId } = await assignment({ startsAt: monthsAgo(6), status: 'paused', nextBillingDate: stale });
-    await db.query('UPDATE user_memberships SET failed_attempts = 2, last_failed_at = UTC_TIMESTAMP() WHERE id = ?', [membershipId]);
 
     const res = await request
       .post(`/user-memberships/${membershipId}/reactivate`)
@@ -272,17 +271,14 @@ describe('reactivation — a pause is not a debt (#790)', () => {
     expect(await nextBillingDate(membershipId)).toBe(expected);
     expect(expected > today).toBe(true);
 
-    // #785's reset still happens beside it.
-    const { rows } = await db.query<{ failed_attempts: number; last_failed_at: Date | null; status: string }>(
-      'SELECT status, failed_attempts, last_failed_at FROM user_memberships WHERE id = ?',
-      [membershipId],
+    const { rows } = await db.query<{ status: string }>(
+      'SELECT status FROM user_memberships WHERE id = ?', [membershipId],
     );
-    expect(rows[0]).toMatchObject({ status: 'active', last_failed_at: null });
-    expect(Number(rows[0].failed_attempts)).toBe(0);
+    expect(rows[0]).toMatchObject({ status: 'active' });
 
     await runBilling();
     expect(chargesFor(membershipId)).toHaveLength(0);
-    expect(await ledger(membershipId)).toEqual(['status_changed']);
+    expect(await ledger(membershipId)).toEqual([]);
   });
 
   it('a date due exactly today also moves — strictly after today', async () => {

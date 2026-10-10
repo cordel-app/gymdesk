@@ -147,6 +147,37 @@ describe('executing persisted Billing Events (#1325 PR 2c)', () => {
     expect(provider.calls.length).toBe(before);
   });
 
+  it('pauses the projected assignment after MAX_FAILED_DAYS failed days, with an audit row (#785)', async () => {
+    provider.next = { success: false, providerRef: 'r1', providerStatus: 'FAILED', errorCode: 'E', errorMessage: 'declined' };
+    const { eventId, memberId } = await setup();
+    const { rows: ps } = await db.query<any>('SELECT product_set_id FROM billing_events WHERE id = ?', [eventId]);
+    const um = await db.query(
+      `INSERT INTO user_memberships (gym_id, member_id, status, starts_at, base_price) VALUES (?, ?, 'active', ?, 0)`,
+      [gymId, memberId, YESTERDAY]);
+    await db.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [um.insertId, ps[0].product_set_id]);
+
+    await executeDueScheduledEvents({ today: TODAY });
+    let status = (await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [um.insertId])).rows[0].status;
+    expect(status).toBe('active'); // one failed day: not yet
+
+    await db.query('UPDATE payment_requests SET created_at = DATE_SUB(created_at, INTERVAL 1 DAY) WHERE billing_event_id = ?', [eventId]);
+    const s = await executeDueScheduledEvents({ today: TODAY });
+    expect(s.paused).toBe(1);
+    status = (await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [um.insertId])).rows[0].status;
+    expect(status).toBe('paused');
+    const { rows: audit } = await db.query<any>(
+      `SELECT action, previous_values, new_values, source FROM audit_logs
+        WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ?`, [gymId, String(um.insertId)]);
+    expect(audit).toHaveLength(1);
+    expect(audit[0]).toMatchObject({ action: 'status_change', source: 'system' });
+    const parse = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v);
+    expect(parse(audit[0].previous_values).status).toBe('active');
+    expect(parse(audit[0].new_values).status).toBe('paused');
+    // No status_changed ledger row any more (A4).
+    const { rows: sc } = await db.query<any>("SELECT id FROM billing_events WHERE gym_id = ? AND event_type = 'status_changed'", [gymId]);
+    expect(sc).toHaveLength(0);
+  });
+
   it('only executes events of an Active ProductSet', async () => {
     const { eventId } = await setup({ setStatus: 'superseded' });
     await executeDueScheduledEvents({ today: TODAY });

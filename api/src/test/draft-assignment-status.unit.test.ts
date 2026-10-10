@@ -194,8 +194,12 @@ describe('a Draft is not the member\'s Membership Plan', () => {
 });
 
 describe('a Draft bills nothing and books nothing', () => {
-  it('leaves the nightly run reading active assignments only', () => {
-    expect(code(API_SRC, 'api', 'billing.ts')).toContain("WHERE um.status = 'active'");
+  it('leaves the nightly run reading no assignment at all — it executes ProductSet events (#1325 PR 3)', () => {
+    const run = code(API_SRC, 'api', 'billing.ts');
+    expect(run).not.toContain('FROM user_memberships');
+    expect(run).toContain('executeDueScheduledEvents');
+    // Only an Active set's events are executed, so a Draft bills nothing.
+    expect(code(API_SRC, 'api', 'scheduled-event-execution.ts')).toContain("ps.status = 'active'");
   });
 
   it('leaves the booking gate reading active assignments only', () => {

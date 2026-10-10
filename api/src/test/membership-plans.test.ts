@@ -1556,14 +1556,16 @@ describe('POST /membership-plans/:id/assign', () => {
     expect(ummRows[0].member_id).toBe(memberId);
     expect(Number(ummRows[0].is_owner)).toBe(1);
 
-    const { rows: beRows } = await db.query(
-      `SELECT * FROM billing_events WHERE user_membership_id = ? AND event_type = 'status_changed'`,
-      [userMembershipId],
+    // #1325 PR 3 (A4): the creation transition is an audit row, not a ledger row.
+    const { rows: beRows } = await db.query<any>(
+      `SELECT previous_values, new_values FROM audit_logs
+        WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ? AND action = 'status_change'`,
+      [gymId, String(userMembershipId)],
     );
     expect(beRows).toHaveLength(1);
-    expect(beRows[0].new_status).toBe('draft');
-    expect(beRows[0].previous_status).toBeNull();
-    expect(beRows[0].member_id).toBe(memberId);
+    const parse = (v: any) => (typeof v === 'string' ? JSON.parse(v) : v);
+    expect(parse(beRows[0].new_values)).toMatchObject({ status: 'draft', member_id: memberId });
+    expect(parse(beRows[0].previous_values).status).toBeNull();
   });
 
   // ── Happy path: member_limit = '2' ──

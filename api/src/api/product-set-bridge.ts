@@ -11,13 +11,15 @@ import { createDraft } from './product-sets';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
 
 /**
- * #1325 PR 5 — the bridge between the assignment screens and ProductSets.
+ * #1325 PR 5 / PR 3 — the bridge between the assignment screens and ProductSets.
  *
  * The Admin's Assigned Plan card, *Assign New Plan*, the Plans page's bulk
  * assign and the Memberships modal all create and edit **assignment-keyed**
  * configuration (`user_membership_id`). Rather than rewriting every one of those
- * screens at once, a deployment that sets `PRODUCT_SET_BILLING=true` makes the
- * server hand each of them over to ProductSets at the two moments that matter:
+ * screens at once, the server hands each of them over to ProductSets at the two
+ * moments that matter (unconditionally since PR 3 — the `PRODUCT_SET_BILLING`
+ * flag that gated this in PR 5 is gone, because the assignment pass it kept
+ * alive is gone with it):
  *
  *  - **commit** (`commitAssignment()`): the assignment's frozen configuration is
  *    imported as the owner's next ProductSet version (`importAssignmentAsProductSet`),
@@ -27,13 +29,8 @@ import type { BlockingEvent } from '../domain/billingEventEditLock';
  *    applied as a **new version** of that set (`reconfigureProjected`) — never
  *    written to the assignment's rows, which the next projection would overwrite.
  *
- * Off (the default), nothing here runs and the assignment flow is exactly what it
- * was. It is removed with the legacy columns.
+ * It is removed with the assignment-keyed screens.
  */
-
-export function productSetBillingEnabled(): boolean {
-  return process.env.PRODUCT_SET_BILLING === 'true';
-}
 
 const todayUtc = () => new Date().toISOString().slice(0, 10);
 const dateOnly = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
@@ -214,10 +211,11 @@ export async function importAssignmentAsProductSet(tx: Tx, gymId: string, userMe
 
   await linkInitialPaymentToSet(tx, gymId, userMembershipId);
 
-  // Off the assignment pass for good.
+  // The assignment carries no billing date of its own any more: the set's
+  // events are the schedule (`next_billing_date` is dropped in the final stage).
   await tx.query(
-    `UPDATE user_memberships SET next_billing_date = NULL, failed_attempts = 0, last_failed_at = NULL
-      WHERE id = ? AND gym_id = ?`, [userMembershipId, gymId]);
+    `UPDATE user_memberships SET next_billing_date = NULL WHERE id = ? AND gym_id = ?`,
+    [userMembershipId, gymId]);
 
   if (prev) {
     await replaceFutureScheduledEvents(tx, { gymId, previousProductSetId: Number(prev.id), today: todayUtc() });
@@ -297,6 +295,10 @@ export async function reconfigureProjected(
 ): Promise<ReconfigureOutcome> {
   const set = await projectedSetFor(tx, input.gymId, input.userMembershipId);
   if (!set) return { kind: 'not_projected' };
+  // A closed assignment is not a live projection whatever its set says: the
+  // legacy route refuses the edit with the reason it always gave.
+  const { rows: umRows } = await tx.query<any>('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [input.userMembershipId, input.gymId]);
+  if (!umRows[0] || umRows[0].status === 'cancelled' || umRows[0].status === 'expired') return { kind: 'not_projected' };
 
   const blocking = await loadEditLock(input.gymId, set.owner_member_id, todayUtc());
   if (blocking.length > 0) return { kind: 'edit_locked', blocking };
