@@ -323,7 +323,7 @@ export const swaggerSpec = swaggerJsdoc({
         },
         post: {
           tags: ['Billing'],
-          summary: 'Append a ledger event (admin, staff) — no update/delete; status_changed is system-emitted',
+          summary: 'Append a ledger event (admin, staff) — no update/delete; status_changed is history only (transitions are audit rows since #1325)',
           parameters: [{ $ref: '#/components/parameters/gymId' }],
           requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', required: ['event_type'], properties: { event_type: { type: 'string', enum: ['charge_created', 'payment_recorded', 'adjustment'] }, member_id: { type: 'integer' }, user_membership_id: { type: 'integer' }, charge_type_id: { type: 'integer' }, amount: { type: 'number' }, notes: { type: 'string' }, source: { type: 'string', enum: ['admin', 'system', 'employee', 'customer', 'provider'] } } } } } },
           responses: {

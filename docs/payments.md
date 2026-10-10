@@ -55,8 +55,9 @@ Three routes insert a `user_memberships` row, and all three write
 
 Each one, in the same transaction:
 
-- writes a `status_changed` Billing Event through `recordStatusChange()`
-  (`api/src/api/billing-events.ts`), `previousStatus: null → 'draft'`;
+- records the transition in the audit log through `recordStatusChange()`
+  (`api/src/api/billing-events.ts`; `user_membership` / `status_change`, `null → 'draft'` —
+  an audit row, not a Billing Event, since #1325 PR 3);
 - calls `snapshotAssignedPlan()` (`api/src/api/assigned-plan-snapshot.ts`) — the Assigned
   Plan owns the commercial configuration it was assigned with (#635 §11–§17).
 
@@ -734,12 +735,14 @@ no status column: an event's status is its latest linked transaction's, falling 
 event type (`deriveBillingEventStatus()`, `api/src/domain/billingEventStatus.ts`).
 
 - `event_type` ∈ `charge_created | payment_recorded | status_changed | adjustment |
-  recurring_payment | failed_billing | waived_billing` — `billing_events_event_type_check`,
-  current definition in **migration 185**. A new type goes in **two** places: the writer
+  recurring_payment | failed_billing | waived_billing | product_purchase | card_verification`
+  — `billing_events_event_type_check`, current definition in **migration 247**.
+  `status_changed` is history only: nothing writes it since #1325 PR 3 (migration 252 moved
+  the existing rows into `audit_logs`), a transition is an audit row. A new type goes in **two** places: the writer
   *and* that CHECK, or the INSERT fails and takes the run's transaction with it.
 - `source` ∈ `admin | system | employee | customer | provider`.
 - `receipt_number` + `receipt_issued_at` — see [Receipts](#receipts).
-- `previous_status`/`new_status` carry a `status_changed` row's transition.
+- `previous_status`/`new_status` are the retired `status_changed` row's columns (unused now).
 
 **Future rows are never persisted.** Three surfaces project the gym-wide future on read,
 each pricing every projected date through the same resolver the run uses:
@@ -1152,7 +1155,7 @@ FROM user_memberships WHERE member_id = <id>;
 ```
 
 Expect `status = 'active'`, `next_billing_date` **NULL**, and a frozen
-`membership_fee_price`. Also expect one `status_changed` row in `billing_events`.
+`membership_fee_price`. Also expect one `status_change` row in `audit_logs` for the assignment.
 
 **3. Raise the payment request.** Either the staff route (Payments → the member → request a
 payment) or, signed in as the member on :8082, the member's own **Start payment**. Verify a
@@ -1231,10 +1234,11 @@ declining test card), make the cycle due again, and run step 9 on **two differen
 dates** (the day gate is `DATE(last_failed_at) = UTC_DATE()`; to simulate, set
 `last_failed_at` back a day rather than waiting):
 
-- run 1 → `failed: 1`, `paused: 0`, `failed_attempts = 1`, a `failed_billing` event with the
-  provider's code in `notes`, and `next_billing_date` **unchanged**;
-- run 2 → `failed: 1`, `paused: 1`, `status = 'paused'`, plus a `status_changed` row with
-  `source = 'system'`;
+- run 1 → `failed: 1`, `paused: 0`, the event is `failed_billing` with one `failed` attempt
+  carrying the provider's code, and `GET /user-memberships/:id` reports a derived
+  `failed_attempts = 1`;
+- run 2 (next UTC day) → `failed: 1`, `paused: 1`, `status = 'paused'`, plus a
+  `status_change` audit row with `source = 'system'`;
 - run 3 → the assignment is no longer selected at all.
 
 **12. Settle it by hand.** On the failed event, Payments → Billing Events → **Retry Payment**
