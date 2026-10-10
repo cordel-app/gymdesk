@@ -96,14 +96,14 @@ interface ListColumn extends ListGridColumn {
 }
 
 // #1011 stage 2: `mobile` says what each column is on a phone, in the one
-// vocabulary `listChrome` declares. The plan's name is the row's identity and
-// carries the member's name under it already, so a phone keeps the two facts
-// that identify the row — whose plan it is and what state it is in — and reads
-// the three dates in the expanded card.
+// vocabulary `listChrome` declares. The plan's name is the row's identity;
+// the member column is secondary on a phone and is read
+// in the expanded card, like the three dates.
 const LIST_COLUMNS: ListColumn[] = [
   // The chevron is the row's own affordance rather than a value, so it stays.
   { key: 'expand', width: 20, mobile: 'keep' },
   { key: 'name', labelKey: 'col_name', sortKey: 'name', width: 180, grow: 2, mobile: 'name' },
+  { key: 'member', labelKey: 'col_member', sortKey: 'member', width: 160, mobile: 'secondary' },
   { key: 'status', labelKey: 'col_status', sortKey: 'status', width: 100, mobile: 'keep' },
   { key: 'start_date', labelKey: 'col_start_date', sortKey: 'start_date', width: 120, mobile: 'secondary' },
   // Wide enough for the longest translated title plus its sort arrow.
@@ -638,11 +638,12 @@ function PlanCard({
         <div onClick={onToggleExpand} className={LIST_GRID_ROW_CLASS} style={headerRowStyle} role="button" tabIndex={0}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onToggleExpand(); }}>
           <span className={CELL_CLASS.expand} style={{ ...cellStyle, fontSize: 12, color: '#aaa', userSelect: 'none' }}>{expanded ? '▼' : '▶'}</span>
-          <div className={CELL_CLASS.name} style={cellStyle} title={`${row.name} · ${row.member_name}`}>
+          <div className={CELL_CLASS.name} style={cellStyle} title={row.name}>
             <div style={nameCellStyle}>{row.name}</div>
-            <div style={subCellStyle}>
-              {row.member_name}{row.description ? ` · ${row.description}` : ''}
-            </div>
+            {row.description && <div style={subCellStyle}>{row.description}</div>}
+          </div>
+          <div className={CELL_CLASS.member} style={cellStyle} title={row.member_name}>
+            <div style={nameCellStyle}>{row.member_name || '—'}</div>
           </div>
           <div className={CELL_CLASS.status} style={badgeCellStyle}>
             <StatusBadge status={row.status} label={t(`status.${row.status}`)} />
