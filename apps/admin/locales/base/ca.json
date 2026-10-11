@@ -1790,6 +1790,8 @@
     "label_rest_default_seconds": "Descans per defecte (segons)",
     "label_notes_default": "Notes per defecte",
     "label_result_types": "Tipus de resultat permesos",
+    "label_recorded_metrics": "Mètriques registrades",
+    "recorded_metrics_help": "Les mètriques registrades es determinen automàticament segons la categoria de l'exercici.",
     "result_type_repetitions": "Repeticions",
     "result_type_weight": "Pes",
     "result_type_distance": "Distància",

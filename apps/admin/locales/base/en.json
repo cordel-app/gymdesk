@@ -1804,6 +1804,8 @@
     "label_rest_default_seconds": "Default rest (seconds)",
     "label_notes_default": "Default notes",
     "label_result_types": "Allowed Result Types",
+    "label_recorded_metrics": "Recorded Metrics",
+    "recorded_metrics_help": "Recorded metrics are determined automatically by the exercise category.",
     "result_type_repetitions": "Repetitions",
     "result_type_weight": "Weight",
     "result_type_distance": "Distance",

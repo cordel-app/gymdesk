@@ -1790,6 +1790,8 @@
     "label_rest_default_seconds": "Descanso por defecto (segundos)",
     "label_notes_default": "Notas por defecto",
     "label_result_types": "Tipos de resultado permitidos",
+    "label_recorded_metrics": "Métricas registradas",
+    "recorded_metrics_help": "Las métricas registradas se determinan automáticamente según la categoría del ejercicio.",
     "result_type_repetitions": "Repeticiones",
     "result_type_weight": "Peso",
     "result_type_distance": "Distancia",
