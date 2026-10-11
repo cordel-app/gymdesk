@@ -321,7 +321,10 @@ describe('editing an assignment that predates the snapshot', () => {
     expect(res.status).toBe(201);
     umId = res.body.id;
     // Strip the snapshot stage 2 captured, reproducing a row the migration-174
-    // backfill could not reach: it resolves the live catalogue today.
+    // backfill could not reach: it resolves the live catalogue today. Such a row
+    // predates ProductSets as well, so it has no version either (#1325 PR 3e-2:
+    // a version, when there is one, is what its configuration is read from).
+    await db.query('DELETE FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
     await db.query(
       `UPDATE user_memberships SET free_periods = NULL, paid_periods = NULL, bonus_periods = NULL,
           recurring_billing_interval = NULL, recurring_billing_unit = NULL, membership_fee_price = NULL
@@ -400,6 +403,8 @@ describe('materialising, on an assignment that captured nothing', () => {
 
   it('rolls the capture back with a rejected edit', async () => {
     const umId = await uncapturedAssignment();
+    // A row that captured nothing predates ProductSets too: no version behind it.
+    await db.query('DELETE FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
     // The Plan has a cadence, so clearing only the unit would leave half of one.
     const res = await putBillingDuration(gymId, umId, { recurring_billing_unit: null });
     expect(res.status).toBe(400);

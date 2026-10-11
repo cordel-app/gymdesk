@@ -2,6 +2,7 @@ import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billi
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
 import { createDraftSetForAssignment, deleteLinkedDraftSet, syncDraftSetFromAssignment } from './assignment-draft-set';
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, withAssignmentConfig } from './assignment-config';
 import { cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
@@ -202,6 +203,8 @@ export const LIST_SELECT = `
   JOIN members m ON m.id = um.member_id
   LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
 `;
+// Note: the commercial columns on `um.*` are the cache; `withAssignmentConfig()` overlays the
+// version's own values (#1325 PR 3e-2), and `withDerivedBilling()` the four billing values.
 // Note: the four billing values (`next_billing_date`, `last_billed_at`, `failed_attempts`,
 // `last_failed_at`) are derived from the ledger by `withDerivedBilling()` (#1325).
 
@@ -217,7 +220,7 @@ async function loadAssignmentRow(gymId: string, id: string | string[] | number, 
     ? await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [id, gymId])
     : await db.query(`${LIST_SELECT} WHERE um.id = ?`, [id]);
   if (rows.length === 0) return null;
-  const [row] = await withDerivedBilling(gymId, [rows[0]]);
+  const [row] = await withDerivedBilling(gymId, await withAssignmentConfig(gymId, [rows[0]]));
   return { ...row, membership_fee: await currentMembershipFee(gymId, Number(row.id)) };
 }
 
@@ -269,7 +272,7 @@ userMembershipsRouter.get('/', async (req, res) => {
 
   // #1325: an assignment a ProductSet bills reports the four billing values the
   // ledger derives, not the legacy columns (which are NULL / 0 for it).
-  const rows = await withDerivedBilling(gymId, (await db.query(sql, params)).rows as any[]);
+  const rows = await withDerivedBilling(gymId, await withAssignmentConfig(gymId, (await db.query(sql, params)).rows as any[]));
   // #635 stage 15 — `membership_fee` is what each assignment pays for the cycle
   // it is next charged for, resolved through the one rule the nightly run uses.
   // It replaces the stored `final_price` this list used to return: a number with
@@ -509,7 +512,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows: rawRows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
   if (rawRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
-  const um = (await withDerivedBilling(gymId, [rawRows[0]]))[0];
+  const um = (await withDerivedBilling(gymId, await withAssignmentConfig(gymId, [rawRows[0]])))[0];
 
   const [audit, members, billingPolicy, promotions, additionalServices, snapshot] = await Promise.all([
     loadAuditMetadata(gymId, req.params.id),
@@ -613,9 +616,9 @@ userMembershipsRouter.get('/:id/billing-events', async (req, res) => {
     return res.status(403).json({ error: LINKED_READ_ONLY_ERROR, message: LINKED_BILLING_EVENTS_REASON });
   }
   const { rows } = await db.query(
-    `SELECT id, membership_plan_id, status, base_price, starts_at, ends_at,
-            recurring_billing_interval, recurring_billing_unit
-     FROM user_memberships WHERE id = ? AND gym_id = ?`,
+    `SELECT um.id, um.membership_plan_id, um.status, ${assignmentConfig('base_price')} AS base_price,
+            um.starts_at, um.ends_at, um.recurring_billing_interval, um.recurring_billing_unit
+     FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()} WHERE um.id = ? AND um.gym_id = ?`,
     [req.params.id, gymId],
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Membership not found' });
