@@ -224,7 +224,8 @@ describe('#958: no generic add while a plan is held (#956)', () => {
     // gated. Adding is a new ProductSet version and never overwrites, so the
     // section reports the server's message instead of opening a dialog.
     expect(sectionSrc).not.toContain('<ReplacePlanDialog');
-    expect(sectionSrc).toContain('apiErrorMessage(err)');
+    // #1450: the request and its error line are the shared modal's.
+    expect(sectionSrc).not.toContain('apiErrorMessage');
   });
 });
 
