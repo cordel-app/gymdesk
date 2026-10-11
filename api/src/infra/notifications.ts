@@ -49,7 +49,13 @@ export type NotificationType =
    * now raise nothing at all (the UI already said so), and this one is the
    * platform telling them something they did not know.
    */
-  | 'booking_reminder_2h';
+  | 'booking_reminder_2h'
+  /**
+   * #1391: a message a staff member wrote by hand (e.g. to the attendees of an
+   * event). The one alert whose text is the gym's own rather than a locale key;
+   * the Alerts page files it under *Staff*, every other type under *Auto*.
+   */
+  | 'staff_message';
 
 export interface NotificationPayload {
   title: string;

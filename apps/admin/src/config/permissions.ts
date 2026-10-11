@@ -48,6 +48,7 @@ export const PERMISSION_MATRIX: Record<AppModule, Record<AppRole, PermissionLeve
  */
 export const FEATURE_PERMISSION_OVERRIDES: Record<string, Partial<Record<AppRole, PermissionLevel>>> = {
   'nutrition.personal_goals': { trainer_performance: 'RW' },
+  'calendar.staff_communications': { nutritionist: 'RW' },
 };
 
 /** The level a feature key overrides for a role, or `null` when it inherits. */

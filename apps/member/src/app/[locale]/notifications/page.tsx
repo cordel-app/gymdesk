@@ -7,14 +7,16 @@ import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDateTime } from '@/lib/gymFormat';
-import { memberTheme, secondaryButtonStyle, sectionCardStyle } from '@/lib/memberChrome';
+import { memberTheme, primaryButtonStyle, secondaryButtonStyle, sectionCardStyle } from '@/lib/memberChrome';
 
 interface Notification {
   id: number;
   type: string;
+  /** #1391: derived by the API from the type — Staff wrote it, Auto was raised by the platform. */
+  category?: 'staff' | 'auto';
   entity_type: 'session' | null;
   entity_id: number | null;
-  payload: { title?: string; starts_at?: string; [key: string]: unknown } | null;
+  payload: { title?: string; message?: string; reason?: string; starts_at?: string; [key: string]: unknown } | null;
   read_at: string | null;
   created_at: string;
 }
@@ -52,6 +54,9 @@ function timeAgo(iso: string, locale: string): string {
 // hours, with the occurrence's name and its start time already rendered below
 // from the payload. Both halves are locale keys, because next-intl prints a
 // missing key verbatim and a `t()` fallback is not one (CLAUDE.md).
+type CategoryFilter = 'all' | 'staff' | 'auto';
+const CATEGORY_FILTERS: CategoryFilter[] = ['all', 'staff', 'auto'];
+
 const DETAIL_TYPES = ['event_reactivated', 'waitlist_closed', 'waitlist_removed', 'booking_reminder_2h'];
 
 export default function NotificationsPage() {
@@ -66,6 +71,7 @@ export default function NotificationsPage() {
   const [unread, setUnread] = useState(0);
   const [loading, setLoading] = useState(true);
   const [marking, setMarking] = useState(false);
+  const [category, setCategory] = useState<CategoryFilter>('all');
 
   async function load() {
     setLoading(true);
@@ -108,6 +114,8 @@ export default function NotificationsPage() {
     try { return t(key); } catch { return type; }
   }
 
+  const visible = items.filter((n) => category === 'all' || (n.category ?? 'auto') === category);
+
   return (
     <main style={styles.container}>
       <div style={styles.header}>
@@ -119,24 +127,49 @@ export default function NotificationsPage() {
         )}
       </div>
 
+      <div role="tablist" aria-label={t('title')} style={styles.filters}>
+        {CATEGORY_FILTERS.map((c) => (
+          <button
+            key={c}
+            role="tab"
+            aria-selected={category === c}
+            onClick={() => setCategory(c)}
+            style={category === c ? styles.filterActive : styles.filter}
+          >
+            {t(`category_${c}` as any)}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <p style={styles.hint}>{t('loading')}</p>
       ) : items.length === 0 ? (
         <p style={styles.hint}>{t('empty')}</p>
+      ) : visible.length === 0 ? (
+        <p style={styles.hint}>{t('empty_category')}</p>
       ) : (
         <ul style={styles.list}>
-          {items.map((n) => (
+          {visible.map((n) => (
             <li
               key={n.id}
               style={{ ...styles.item, ...(n.read_at ? null : styles.itemUnread) }}
               onClick={() => !n.read_at && markRead(n.id)}
             >
               <div style={styles.itemTop}>
-                <span style={styles.typeLabel}>{typeLabel(n.type)}</span>
+                <span style={styles.typeLabel}>
+                  {typeLabel(n.type)}
+                  <span style={styles.categoryTag}>{t(`category_${n.category ?? 'auto'}` as any)}</span>
+                </span>
                 <span style={styles.timeLabel}>{timeAgo(n.created_at, locale)}</span>
               </div>
               {n.payload?.title && (
                 <div style={styles.title2}>{n.payload.title}</div>
+              )}
+              {n.type === 'staff_message' && n.payload?.message && (
+                <div style={styles.message}>{n.payload.message}</div>
+              )}
+              {n.type === 'event_cancelled' && typeof n.payload?.reason === 'string' && n.payload.reason && (
+                <div style={styles.sub}>{t('cancel_reason', { reason: n.payload.reason })}</div>
               )}
               {DETAIL_TYPES.includes(n.type) && (
                 <div style={styles.sub}>{t(`detail_${n.type}` as any)}</div>
@@ -181,5 +214,13 @@ const styles: Record<string, React.CSSProperties> = {
     position: 'absolute', top: 12, right: 12, width: 8, height: 8,
     borderRadius: '50%', background: memberTheme.primaryButton,
   },
+  filters: { display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' },
+  filter: { ...secondaryButtonStyle, padding: '4px 12px', fontSize: 13, fontWeight: 500 },
+  filterActive: { ...primaryButtonStyle, padding: '4px 12px', fontSize: 13, fontWeight: 600 },
+  categoryTag: {
+    marginLeft: 8, fontSize: 10, fontWeight: 600, color: memberTheme.textMuted,
+    textTransform: 'uppercase', letterSpacing: '0.04em',
+  },
+  message: { fontSize: 14, color: memberTheme.text, marginTop: 4, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '40px 0' },
 };
