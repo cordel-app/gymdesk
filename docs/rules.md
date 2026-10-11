@@ -459,6 +459,8 @@ Conventions in the entries: a **Membership Plan** is the gym's catalogue offer; 
 
 - **Every secret and setting the API runs with is written by the deployment, and none of it is visible in logs** (#1177, #1192, #1186). Deploying rewrites the API's whole environment file from the GitHub environment's variables and secrets — relay hop counts, internal secrets, provider keys — so a value edited by hand on the server is lost on the next deploy and a setting that is not forwarded there does not exist (the gate `api/src/test/deploy-env-forwarding.unit.test.ts` fails the build for one). No value is ever placed on a container's command line, because the hosts' command lines are shipped to the central log store; the API's own log lines are sent to that store through journald. Enforced in `.github/workflows/deploy.yml`.
 
+- **Staff resolve an outstanding payment by cash, external card terminal, retry or waiver** (#1459). Cash and external-card payments are recorded only when staff click Accept after receiving the money; the card terminal is outside Gymdesk and is not verified by it. Closing the confirmation changes nothing, and there is no Cancel action. A waiver needs a written reason, is not a received payment and never produces a receipt. Enforced by `paymentActionsFor()`, `recordManualPayment()` and `waiveBillingEvent()`.
+
 ## Not in this file
 
 Constraints that are purely about how the code is organised stay in `CLAUDE.md` alone: where a new status or notification type must be declared, which component renders what, the shared form and list chrome, test gates, naming of identifiers, and the "one place decides it" structure behind most of the entries above. They change how a feature is built, not what a gym or a member sees.

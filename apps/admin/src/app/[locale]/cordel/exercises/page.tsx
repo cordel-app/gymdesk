@@ -28,6 +28,8 @@ import { ExerciseMediaPreview } from '@/components/exercises/ExerciseMediaPrevie
 import { ExerciseDetailModal } from '@/components/exercises/ExerciseDetailModal';
 // #969: the one exercise filter toolbar, over the one filter-state declaration.
 // Both are shared with the gym Exercises page and the Import modal (§19).
+import { ExerciseCard, ExerciseCardGrid } from '@/components/exercises/ExerciseCard';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { ExerciseFilterBar, type ExerciseFacetOptions } from '@/components/exercises/ExerciseFilterBar';
 import { EMPTY_EXERCISE_FILTER, exerciseFilterQuery, type ExerciseFilterState } from '@/lib/exerciseFilters';
 import {
@@ -96,6 +98,8 @@ export default function CordelExercisesPage() {
 
   const [rows, setRows] = useState<Exercise[]>([]);
   const [loading, setLoading] = useState(true);
+  // #1386: Cards by default, the saved choice afterwards.
+  const [viewMode, setViewMode] = useExerciseViewMode();
   // #969: every filter the toolbar offers, applied server-side — ~900 Base
   // Exercises after the Free Exercise DB import are never narrowed in the
   // browser (§16/§17).
@@ -451,6 +455,7 @@ export default function CordelExercisesPage() {
         showStatus
         shown={rows.length}
         total={total}
+        trailing={<ExerciseViewToggle value={viewMode} onChange={setViewMode} />}
       />
 
       {creating && (
@@ -474,7 +479,48 @@ export default function CordelExercisesPage() {
         </div>
       )}
 
-      <DataTable
+      {viewMode === 'cards' && (
+        loading ? <p style={{ color: '#888' }}>{t('loading')}</p>
+        : rows.length === 0 ? <p style={{ color: '#888' }}>No base exercises yet.</p>
+        : (
+          <ExerciseCardGrid>
+            {rows.map((row) => editingId === row.id ? (
+              <div key={row.id} style={{ ...cardSurfaceStyle, gridColumn: '1 / -1' }}>
+                <div style={{ padding: '16px 20px' }}>
+                  <ExerciseEditor
+                    mode="edit"
+                    idPrefix={`base-exercise-${row.id}`}
+                    state={editState}
+                    nameLocales={nameLocales}
+                    muscleKeys={muscleKeys}
+                    muscleLabel={muscleLabel}
+                    resultTypes={resultTypes}
+                    nameRef={nameInputRef}
+                    media={renderEditorMedia(row)}
+                    onCancel={cancelEdit}
+                    onSave={() => saveInlineEdit(row)}
+                  />
+                </div>
+              </div>
+            ) : (
+              <ExerciseCard
+                key={row.id}
+                exercise={row}
+                muscleLabel={muscleLabel}
+                menuItems={[
+                  { label: t('details'), onClick: () => setDetailFor(row) },
+                  { label: t('edit'), onClick: () => openInlineEdit(row) },
+                  { label: t('delete'), danger: true, onClick: () => setDeleting(row) },
+                ]}
+                expanded={expanded.has(row.id)}
+                onToggle={() => toggleExpand(row.id)}
+              />
+            ))}
+          </ExerciseCardGrid>
+        )
+      )}
+
+      {viewMode === 'list' && <DataTable
         columns={columns}
         rows={rows}
         rowKey={(row) => row.id}
@@ -502,7 +548,7 @@ export default function CordelExercisesPage() {
         )}
         expandedRowKeys={new Set([...expanded, ...(editingId !== null ? [editingId] : [])])}
         onToggleExpand={(row) => toggleExpand(row.id)}
-      />
+      />}
 
       {detailFor && (
         <ExerciseDetailModal exercise={detailFor} scope="platform" onClose={() => setDetailFor(null)} />

@@ -16,10 +16,12 @@ import {
   isAwaitingAction,
   isPaymentActionable,
   isReceiptableEvent,
+  paymentActionsFor,
   receiptRefusalReason,
 } from '../domain/billingEventStatus';
 import { issueReceiptNumber } from '../domain/receiptNumbers';
-import { recordManualPayment, retryBillingEventPayment } from '../domain/billingEventPayments';
+import { recordManualPayment, retryBillingEventPayment, waiveBillingEvent } from '../domain/billingEventPayments';
+import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { PENDING_PAYMENT_STATUS, commitAssignment } from './assignment-commit';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
@@ -327,6 +329,13 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
       created_at: string | null; next_payment_date: string | null;
       /** #640: whether Retry Payment / Manual payment apply to this row. */
       payment_actions_available: boolean;
+      /** #1459: the individual actions the row's `⋮` menu offers. */
+      can_retry: boolean;
+      can_pay_cash: boolean;
+      can_pay_card: boolean;
+      can_waive: boolean;
+      /** #1459: a first payment settles through `POST /user-memberships/:id/record-payment`. */
+      first_payment: boolean;
     };
 
     // #1325: the persisted, not-yet-executed events of a ProductSet are
@@ -357,11 +366,23 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
         currency: r.currency,
         // A transaction needs a membership to hang off, and a charge needs an
         // amount — an event missing either offers no payment action.
-        payment_actions_available:
-          (isPaymentActionable(status)
-            || (scheduledEvent && (toDateOnly(r.event_billing_date) as string) <= new Date().toISOString().slice(0, 10)))
-          && (r.user_membership_id != null || Number(r.from_product_set) === 1)
-          && parseFloat(r.amount ?? '0') > 0,
+        ...(() => {
+          const a = paymentActionsFor({
+            status: deriveBillingEventStatus(r.event_type, r.latest_tx_status),
+            eventType: r.event_type,
+            scheduledAndDue: scheduledEvent
+              && (toDateOnly(r.event_billing_date) as string) <= new Date().toISOString().slice(0, 10),
+            linked: r.user_membership_id != null || Number(r.from_product_set) === 1,
+            membershipStatus: r.membership_status,
+            hasMembership: r.user_membership_id != null,
+            amount: parseFloat(r.amount ?? '0'),
+          });
+          return {
+            payment_actions_available: a.retry || a.payCash,
+            can_retry: a.retry, can_pay_cash: a.payCash, can_pay_card: a.payCard,
+            can_waive: a.waive, first_payment: a.firstPayment,
+          };
+        })(),
       };
     });
 
@@ -534,8 +555,12 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
     const ev = rows[0];
 
     const status = deriveBillingEventStatus(ev.event_type, ev.latest_tx_status);
-    const actionable =
-      isPaymentActionable(status) && ev.product_set_id != null && parseFloat(ev.amount ?? '0') > 0;
+    const actions = paymentActionsFor({
+      status, eventType: ev.event_type, scheduledAndDue: false,
+      linked: ev.product_set_id != null, membershipStatus: ev.membership_status,
+      hasMembership: ev.user_membership_id != null, amount: parseFloat(ev.amount ?? '0'),
+    });
+    const actionable = actions.retry;
 
     // The nightly run records a failed charge's reason on the ledger row's
     // notes; a transaction-level reason (#640) is more specific, so it wins.
@@ -567,8 +592,13 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
         ? ((await loadDerivedBilling(gymId, [Number(ev.user_membership_id)])).get(Number(ev.user_membership_id))?.next_billing_date ?? null)
         : null,
       failure_reason: failureReason,
-      can_retry: actionable,
-      can_record_manual_payment: actionable,
+      can_retry: actions.retry,
+      can_record_manual_payment: actions.payCash,
+      // #1459
+      can_pay_cash: actions.payCash,
+      can_pay_card: actions.payCard,
+      can_waive: actions.waive,
+      first_payment: actions.firstPayment,
       // #787: the Details view offers the receipt action on any event that
       // represents money received, not only a cash `payment_recorded`. Issuing
       // is a write; downloading an already-issued receipt is not, so the flag
@@ -627,7 +657,9 @@ paymentsRouter.post('/billing-events/:id/manual-payment', requireModuleWrite('PA
   if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
 
   try {
-    const outcome = await recordManualPayment(gymId, billingEventId, userId, req.body ?? {}, resolveRequestActor(getTenantContext(req)));
+    const method = parseManualPaymentMethod(req.body?.method);
+    if (!method) return res.status(400).json({ error: "method must be 'cash' or 'card_terminal'" });
+    const outcome = await recordManualPayment(gymId, billingEventId, userId, req.body ?? {}, resolveRequestActor(getTenantContext(req)), method);
     if ('failure' in outcome) {
       return res.status(outcome.failure.status).json({ error: outcome.failure.error });
     }
@@ -641,7 +673,42 @@ paymentsRouter.post('/billing-events/:id/manual-payment', requireModuleWrite('PA
         status: result.new_status,
         payment_request_id: result.payment_request_id,
         amount: result.amount,
+        method: result.method,
         notes: result.notes,
+      },
+    });
+    res.status(201).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /payments/billing-events/:id/waive — #1459. Staff give up an
+ * outstanding amount (reason required). Not a received payment: no provider
+ * call, no receipt, no new Billing Event.
+ */
+paymentsRouter.post('/billing-events/:id/waive', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId, userId } = getTenantContext(req);
+  const billingEventId = parseInt(String(req.params.id), 10);
+  if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
+
+  try {
+    const outcome = await waiveBillingEvent(gymId, billingEventId, userId, req.body ?? {}, resolveRequestActor(getTenantContext(req)));
+    if ('failure' in outcome) {
+      return res.status(outcome.failure.status).json({ error: outcome.failure.error });
+    }
+    const { result } = outcome;
+    recordAudit(req, {
+      action: 'waive_payment',
+      entityType: 'billing_event',
+      entityId: result.billing_event_id,
+      previous: { status: result.previous_status },
+      next: {
+        event_type: 'waived_billing',
+        waived_amount: result.waived_amount,
+        reason: result.reason,
+        payment_request_id: result.payment_request_id,
       },
     });
     res.status(201).json(result);
