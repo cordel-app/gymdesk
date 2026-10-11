@@ -4471,7 +4471,11 @@
     "deleted": "Múscul eliminat",
     "saved": "Múscul desat",
     "name_required": "El nom és obligatori",
-    "image_after_create": "Desa primer el múscul i puja'n la imatge des d'Edita."
+    "image_after_create": "Desa primer el múscul i puja'n la imatge des d'Edita.",
+    "col_created_at": "Creat el",
+    "col_modified_at": "Modificat el",
+    "close": "Tanca",
+    "detail_title": "Detalls del múscul"
   },
   "mobile_builds": {
       "title": "Builds mòbils",
