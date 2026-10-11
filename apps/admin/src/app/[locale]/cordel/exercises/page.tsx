@@ -11,6 +11,7 @@ import { DataTable, Column } from '@/components/DataTable';
 import { ExerciseImageField } from '@/components/ExerciseImageField';
 import { ExerciseVideoField } from '@/components/ExerciseVideoField';
 import { cardSurfaceStyle, primaryBtnStyle } from '@/components/ui';
+import { listNameBadgeStyle } from '@/components/listChrome';
 import type { PreparedExerciseImage } from '@/lib/exerciseImageUpload';
 import type { PreparedExerciseVideo } from '@/lib/exerciseVideoUpload';
 // #806: one Exercise editor, one form declaration, one form-state hook — the
@@ -383,8 +384,27 @@ export default function CordelExercisesPage() {
       header: t('col_description'),
       mobile: 'secondary',
       render: (row) => row.description
-        ? <span style={{ color: '#666' }}>{row.description}</span>
+        // #1383: at most two lines with an ellipsis; the whole text stays in the
+        // expanded body, and `title` carries it for a hover.
+        ? <span title={row.description} style={{ color: '#666', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }}>{row.description}</span>
         : <span style={{ color: 'var(--text-muted, #9ca3af)' }}>—</span>,
+    },
+    {
+      // #1383: the principal muscles only, from the muscles the list already
+      // returns — no extra request. Same label resolver as the expanded view.
+      header: t('col_primary_muscles'),
+      width: 200,
+      mobile: 'secondary',
+      render: (row) => {
+        const keys = (row.muscles ?? []).filter((m) => m.role === 'principal').map((m) => m.key);
+        return keys.length === 0
+          ? <span style={{ color: 'var(--text-muted, #9ca3af)' }}>—</span>
+          : (
+            <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+              {keys.map((k) => <span key={k} style={listNameBadgeStyle}>{muscleLabel(k)}</span>)}
+            </span>
+          );
+      },
     },
     { header: t('col_created_at'), width: 120, mobile: 'secondary', render: (row) => <span style={{ color: '#888' }}>{formatExerciseDate(row.created_at)}</span> },
     {
