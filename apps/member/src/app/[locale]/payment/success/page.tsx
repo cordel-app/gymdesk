@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { memberTheme, primaryButtonStyle, sectionCardStyle } from '@/lib/memberChrome';
+import { InlineStyle } from '@/components/InlineStyle';
 
 const POLL_INTERVAL_MS = 3000;
 const TIMEOUT_MS = 30000;
@@ -61,7 +62,7 @@ export default function PaymentSuccessPage() {
 
   return (
     <main style={styles.container}>
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <InlineStyle css={`@keyframes spin { to { transform: rotate(360deg); } }`} />
       <div style={styles.card}>
         {status === 'processing' && (
           <>

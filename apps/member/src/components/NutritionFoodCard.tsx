@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { NutritionFoodItem, formatQuantity, humanizeSlug, translatedLabel } from '@/lib/nutritionFood';
 import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
+import { InlineStyle } from './InlineStyle';
 
 /**
  * #722 — one food of a member's nutrition plan: its image on top, then the
@@ -37,7 +38,7 @@ export function NutritionFoodCard({ item, eager = false }: {
 
   return (
     <article style={styles.card}>
-      <style>{FOOD_IMAGE_MOBILE_CSS}</style>
+      <InlineStyle css={FOOD_IMAGE_MOBILE_CSS} />
       <div className="gd-food-image" style={styles.imageBox}>
         {imageSrc ? (
           <img

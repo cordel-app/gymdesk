@@ -1,5 +1,7 @@
 'use client';
 
+import { InlineStyle } from './InlineStyle';
+
 /**
  * #559 stages 2 & 3 — applies the theme's Calendar tokens to FullCalendar.
  *
@@ -250,5 +252,5 @@ export const CALENDAR_THEME_CSS = `
 `;
 
 export function CalendarThemeStyles() {
-  return <style>{CALENDAR_THEME_CSS}</style>;
+  return <InlineStyle css={CALENDAR_THEME_CSS} />;
 }
