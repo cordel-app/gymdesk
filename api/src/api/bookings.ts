@@ -4,7 +4,7 @@ import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tena
 import { handleDupEntry } from '../infra/db-helpers';
 import { recordAudit } from '../infra/audit';
 import { sendNotification } from '../infra/notifications';
-import { resolveRequestActor } from '../domain/auditActor';
+import { resolveRequestActor, SYSTEM_ACTOR } from '../domain/auditActor';
 import { isLateCancellation, reasonForAttendance } from '../domain/serviceConsumption';
 // Late-imported by callers to avoid a cycle (package-credits imports registerBookingAccessHook).
 let serviceConsumptionModule: typeof import('./service-consumption') | null = null;
@@ -97,6 +97,8 @@ export async function bookMemberOnSession(
   forceWaitlist = false,
   existingTx?: Tx,
   overrideAccess = false,
+  /** #1182 stage 3: who booked — `created_by`. Plain text from `resolveRequestActor()`, `SYSTEM_ACTOR` for a run. */
+  actor: string | null = null,
 ) {
   const run = async (tx: Tx) => {
     const { rows: session } = await tx.query(
@@ -132,9 +134,9 @@ export async function bookMemberOnSession(
       }
       const position = Number(nextRows[0].next);
       const { insertId } = await tx.query(
-        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at)
-         VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP())`,
-        [gymId, session[0].center_id, memberId, sessionId, position],
+        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at, created_by)
+         VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP(), ?)`,
+        [gymId, session[0].center_id, memberId, sessionId, position, actor],
       );
       return { id: insertId, status: 'waitlisted', waitlist_position: position, over_capacity: false };
     }
@@ -148,9 +150,9 @@ export async function bookMemberOnSession(
 
     if (!overCapacity || force) {
       const { insertId } = await tx.query(
-        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
-         VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
-        [gymId, session[0].center_id, memberId, sessionId],
+        `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, created_by)
+         VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), ?)`,
+        [gymId, session[0].center_id, memberId, sessionId, actor],
       );
       return { id: insertId, status: 'booked', waitlist_position: null, over_capacity: force && overCapacity };
     }
@@ -161,9 +163,9 @@ export async function bookMemberOnSession(
 
     const position = Number(nextRows[0].next);
     const { insertId } = await tx.query(
-      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at)
-       VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP())`,
-      [gymId, session[0].center_id, memberId, sessionId, position],
+      `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, waitlist_position, waitlisted_at, created_by)
+       VALUES (?, ?, ?, ?, 'waitlisted', ?, UTC_TIMESTAMP(), ?)`,
+      [gymId, session[0].center_id, memberId, sessionId, position, actor],
     );
     return { id: insertId, status: 'waitlisted', waitlist_position: position, over_capacity: false };
   };
@@ -174,7 +176,7 @@ export async function bookMemberOnSession(
 export async function cancelBooking(
   gymId: string,
   bookingId: number,
-  actorMembershipId?: number | null,
+  _actorMembershipId?: number | null,
   opts: { actor?: string | null; spendLateCancel?: boolean } = {},
 ) {
   return db.transaction(async (tx) => {
@@ -192,8 +194,8 @@ export async function cancelBooking(
     if (b.status === 'cancelled') throw Object.assign(new Error('Already cancelled'), { status: 400 });
 
     await tx.query(
-      "UPDATE calendar_event_bookings SET status='cancelled', cancelled_at=UTC_TIMESTAMP(), modified_at=UTC_TIMESTAMP(), modified_by_membership_id=? WHERE id = ?",
-      [actorMembershipId ?? null, bookingId],
+      "UPDATE calendar_event_bookings SET status='cancelled', cancelled_at=UTC_TIMESTAMP(), modified_at=UTC_TIMESTAMP(), modified_by=? WHERE id = ?",
+      [opts.actor ?? null, bookingId],
     );
 
     // #1189 stage 3: a cancellation inside the notice window spends a session
@@ -213,7 +215,7 @@ export async function cancelBooking(
       const cancelledInAdvance = Number(dayRows[0].cancelled_in_advance) === 1;
       if (cancelledInAdvance) {
         const pc = await packageCredits();
-        await pc.refundPackageCredit(tx, bookingId, b.user_class_package_id, gymId);
+        await pc.refundPackageCredit(tx, bookingId, b.user_class_package_id, gymId, undefined, null, opts.actor ?? null);
       }
     }
 
@@ -235,8 +237,8 @@ export async function cancelBooking(
       return { promoted: null, promotedMemberId: null, previousStatus: b.status as string, memberId: Number(b.member_id) };
     }
     await tx.query(
-      "UPDATE calendar_event_bookings SET status='booked', booked_at=UTC_TIMESTAMP(), waitlist_position=NULL WHERE id = ?",
-      [waitRows[0].id],
+      "UPDATE calendar_event_bookings SET status='booked', booked_at=UTC_TIMESTAMP(), waitlist_position=NULL, modified_at=UTC_TIMESTAMP(), modified_by=? WHERE id = ?",
+      [SYSTEM_ACTOR, waitRows[0].id],
     );
 
     const promotedMemberId = waitRows[0].member_id;
@@ -271,7 +273,7 @@ bookingsRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =
   try {
     const result = await bookMemberOnSession(
       gymId, member_id, class_session_id, Boolean(force), Boolean(waitlist),
-      undefined, Boolean(override_eligibility),
+      undefined, Boolean(override_eligibility), resolveRequestActor(getTenantContext(req)),
     );
     const { rows } = await db.query(`${SELECT} WHERE ceb.id = ?`, [result.id]);
     // #980 stage 2 (the thread's `Q2`: every update to the waiting list reaches
@@ -366,9 +368,9 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
              attendance_recorded_at = UTC_TIMESTAMP(),
              attendance_recorded_by_membership_id = ?,
              modified_at = UTC_TIMESTAMP(),
-             modified_by_membership_id = ?
+             modified_by = ?
          WHERE id = ? AND gym_id = ?`,
-        [status, gymMembershipId, gymMembershipId, req.params.id, gymId],
+        [status, gymMembershipId, actor, req.params.id, gymId],
       );
       const sc = await serviceConsumption();
       if (status === 'absent' && !consume) {
@@ -404,7 +406,7 @@ bookingsRouter.post('/:id/refund-credit', requireRole('admin', 'front_desk', 'tr
         throw Object.assign(new Error('Booking has no consumed package credit available to refund'), { status: 400 });
       }
       const pc = await packageCredits();
-      await pc.refundPackageCredit(tx, b.id, b.user_class_package_id, gymId, 'Manual refund (same-day cancellation)', userId);
+      await pc.refundPackageCredit(tx, b.id, b.user_class_package_id, gymId, 'Manual refund (same-day cancellation)', userId, resolveRequestActor(getTenantContext(req)));
       return { userClassPackageId: b.user_class_package_id };
     });
 

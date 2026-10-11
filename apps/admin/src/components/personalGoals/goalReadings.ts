@@ -71,8 +71,8 @@ export interface GoalReadingRow {
   is_initial: boolean;
   /** §38 — which period it falls in, 0-based. Read by the chart (stage 4). */
   period: number;
-  created_by_name?: string | null;
-  created_by_type?: string | null;
+  /** #1182: plain-text actor snapshot of who recorded it. */
+  created_by?: string | null;
 }
 
 export interface GoalReadingsResponse extends GoalReadingSummaryFields {

@@ -16,7 +16,6 @@ import { selectPlanTaxRates } from '../domain/planTaxRate';
 import { activePlanConflictBody, supersedeStartsAtError } from '../domain/oneActivePlan';
 import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-active-plan';
 import { computePlanExampleTimeline } from '../domain/planExampleTimeline';
-import { actorSnapshot } from '../domain/nutritionLibrary';
 import { resolveRequestActor } from '../domain/auditActor';
 import {
   PlanSimulationItem,
@@ -727,10 +726,10 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
 // creation billing event as POST /user-memberships (P1.6 ledger).
 
 membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId, role, actorName, isSuperadmin } = getTenantContext(req);
-  // #958 — who assigned the plan, snapshotted onto every row this route
-  // inserts (migration 215). The third and last of the creation paths.
-  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+  const { gymId, userId, role } = getTenantContext(req);
+  // #958 / #1182 — who assigned the plan, the plain-text snapshot written onto
+  // every row this route inserts. The third and last of the creation paths.
+  const actorText = resolveRequestActor(getTenantContext(req));
   const { member_ids, owner_member_id, starts_at } = req.body;
 
   const { rows: planRows } = await db.query(
@@ -783,12 +782,12 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, starts_at, status,
-          created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          created_by)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
           ownerId, gymId, req.params.id, starts_at,
           ASSIGNMENT_CREATION_STATUS,
-          actor.name, actor.type,
+          actorText,
         ],
       );
       await recordStatusChange(tx, {
@@ -811,7 +810,7 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
         basePrice: eff.base_price ?? null, planPriceId: eff.plan_price_id ?? null,
         discountReason: null, discountExpiresAt: null,
         declinedBenefits: declinedResult.declined,
-        actor: { name: actor.name, type: actor.type },
+        actor: { name: actorText },
       });
       for (const memberId of uniqueMemberIds) {
         if (memberId === ownerId) continue;
@@ -837,7 +836,7 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
     );
     for (const promo of promoRows) {
       try {
-        await applyPromotionToMembership(gymId, userId, sourceForRole(role), insertId, promo.id);
+        await applyPromotionToMembership(gymId, userId, sourceForRole(role), insertId, promo.id, actorText);
       } catch {
         // Not stackable with one already applied, or otherwise inapplicable — skip it.
       }
@@ -1425,8 +1424,7 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
     // #1325 PR 3e-2: each assignment is repriced on the version its configuration
     // is (see `assignment-reprice.ts`), one transaction per row so a locked or
     // refused one leaves only itself as it was.
-    const { userId, actorName, isSuperadmin } = getTenantContext(req);
-    const actor = actorSnapshot({ name: actorName, isSuperadmin });
+    const actorText = resolveRequestActor(getTenantContext(req));
     const { rows: candidates } = await db.query(
       `SELECT um.id, um.starts_at, ${assignmentConfig('discount_reason')} AS discount_reason
          FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
@@ -1446,7 +1444,7 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
             return;
           }
           const outcome = await repriceOnVersion(tx, {
-            gymId, userMembershipId: umId, price, planPriceId: current.id, actor: { name: actor.name, type: actor.type },
+            gymId, userMembershipId: umId, price, planPriceId: current.id, actor: { name: actorText },
           });
           if (outcome === 'updated') updated += 1;
         });

@@ -363,7 +363,7 @@ describe('goal readings — the member\'s own', () => {
     expect(added.body.latest_reading).toBe(75);
     expect(added.body.progress_percent).toBe(50);
     // The member is not shown who recorded a measurement.
-    expect(added.body.readings[0].created_by_name).toBeUndefined();
+    expect(added.body.readings[0].created_by).toBeUndefined();
 
     const rebased = await me('post', `${ME}/${goal.id}/initial-reading`).send({ value: 76, recorded_at: '2026-09-23' });
     expect(rebased.status).toBe(201);
@@ -381,12 +381,15 @@ describe('goal readings — the member\'s own', () => {
     const goal = await myGoal(secondMemberGymGoalId, { target_value: 80, target_unit: 'kg', initial_reading: 70 });
     await me('post', `${ME}/${goal.id}/readings`).send({ value: 75 });
 
-    const { rows } = await db.query<{ created_by_type: string }>(
-      `SELECT created_by_type FROM member_personal_goal_readings
+    const { rows } = await db.query<{ created_by: string | null }>(
+      `SELECT created_by FROM member_personal_goal_readings
        WHERE member_personal_goal_id = ? ORDER BY id ASC`,
       [goal.id],
     );
-    expect(rows.map((r) => r.created_by_type)).toEqual(['member', 'member']);
+    // #1182: one plain-text actor column; both readings were written by the same member.
+    expect(rows).toHaveLength(2);
+    expect(rows[0].created_by).toBeTruthy();
+    expect(rows[1].created_by).toBe(rows[0].created_by);
   });
 
   it('refuses another member\'s assignment whatever id the URL carries', async () => {

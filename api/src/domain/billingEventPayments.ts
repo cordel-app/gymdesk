@@ -1,3 +1,4 @@
+import { SYSTEM_ACTOR } from './auditActor';
 import { eventAssignmentSql } from './billingEventOwnership';
 import { chargeGuard } from './chargeGuard';
 import crypto from 'crypto';
@@ -148,12 +149,13 @@ function guardActionable(ev: EventContext | null): ActionFailure | null {
  * dealt with it, and its type says how it ended. Idempotent and a no-op for a
  * legacy event (`is_scheduled` is 0 and the type is already settled).
  */
-async function closeScheduledEvent(tx: Tx, ev: EventContext, outcome: 'paid' | 'failed'): Promise<void> {
+async function closeScheduledEvent(tx: Tx, ev: EventContext, outcome: 'paid' | 'failed', actor: string | null): Promise<void> {
   if (!ev.product_set_id) return;
   await tx.query(
-    `UPDATE billing_events SET is_scheduled = 0, event_type = ?
+    `UPDATE billing_events SET is_scheduled = 0, event_type = ?,
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE id = ? AND gym_id = ? AND (is_scheduled = 1 OR event_type IN ('charge_created', 'failed_billing'))`,
-    [outcome === 'paid' ? 'recurring_payment' : 'failed_billing', ev.id, ev.gym_id],
+    [outcome === 'paid' ? 'recurring_payment' : 'failed_billing', actor, ev.id, ev.gym_id],
   );
 }
 
@@ -173,10 +175,10 @@ async function resolveChargeTypeId(ev: EventContext): Promise<number | null> {
 
 
 /** Stamps §2's Modified At / Modified By on the parent Billing Event. */
-async function stampEventModified(gymId: string, billingEventId: number, actorUserId: string | null): Promise<void> {
+async function stampEventModified(gymId: string, billingEventId: number, actor: string | null): Promise<void> {
   await db.query(
-    'UPDATE billing_events SET modified_at = UTC_TIMESTAMP(), modified_by_user_id = ? WHERE id = ? AND gym_id = ?',
-    [actorUserId, billingEventId, gymId],
+    'UPDATE billing_events SET modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+    [actor, billingEventId, gymId],
   );
 }
 
@@ -193,7 +195,8 @@ async function insertTransaction(params: {
   failureCode: string | null;
   failureMessage: string | null;
   notes: string | null;
-  actorUserId: string | null;
+  /** #1182: plain-text actor snapshot written as `created_by` / `modified_by`. */
+  actor: string | null;
   /** #1325: the provider's own status, verbatim (a manual payment has none). */
   providerStatus?: string | null;
 }): Promise<number> {
@@ -201,20 +204,20 @@ async function insertTransaction(params: {
     `INSERT INTO payment_requests
        (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
         billing_event_id, status, provider, provider_order, provider_ref,
-        source, attempt, initiated_by, failure_code, failure_message, notes,
+        source, attempt, created_by, failure_code, failure_message, notes,
         method, provider_status,
-        created_at, completed_at, modified_at, modified_by_user_id)
+        created_at, completed_at, modified_at, modified_by)
      VALUES (?, ?, ?, ?, 'EUR', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
              UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(), ?)`,
     [
       params.ev.gym_id, params.ev.user_membership_id, params.ev.member_id,
       params.amount.toFixed(2), params.chargeTypeId, params.ev.id,
       params.status, params.provider, params.providerOrder, params.providerRef,
-      params.source, params.attempt, params.actorUserId,
+      params.source, params.attempt, params.actor,
       params.failureCode, params.failureMessage, params.notes,
       params.source === 'manual' ? 'cash' : 'provider', params.providerStatus ?? null,
       params.status === 'completed' ? new Date() : null,
-      params.actorUserId,
+      params.actor,
     ],
   );
   return insertId;
@@ -232,7 +235,10 @@ export async function retryBillingEventPayment(
   billingEventId: number,
   actorUserId: string | null,
   actorSource: string,
+  /** #1182: the plain-text actor snapshot, written as `modified_by` of a plan the rejections pause. */
+  actorArg?: string | null,
 ): Promise<{ failure: ActionFailure } | { result: RetryResult }> {
+  const actor = actorArg === undefined ? (actorUserId ? null : SYSTEM_ACTOR) : actorArg;
   const ev = await loadEventContext(gymId, billingEventId);
   const guard = guardActionable(ev);
   if (guard) return { failure: guard };
@@ -310,7 +316,7 @@ export async function retryBillingEventPayment(
     const paymentRequestId = await insertTransaction({
       ev: event, chargeTypeId, amount, status, source: 'retry', attempt,
       provider: pm.provider, providerOrder: orderId, providerRef,
-      failureCode, failureMessage, notes: null, actorUserId,
+      failureCode, failureMessage, notes: null, actor,
       providerStatus: rawProviderStatus,
     });
 
@@ -322,7 +328,7 @@ export async function retryBillingEventPayment(
   }
 
   let membershipPaused = false;
-  await db.transaction((tx) => closeScheduledEvent(tx, event, succeeded ? 'paid' : 'failed'));
+  await db.transaction((tx) => closeScheduledEvent(tx, event, succeeded ? 'paid' : 'failed', actor));
   if (succeeded) {
   } else if (event.membership_status === 'active' && event.user_membership_id) {
     // Q3: two consecutive rejections pause the assigned plan. The status flip
@@ -334,7 +340,11 @@ export async function retryBillingEventPayment(
         [event.user_membership_id, gymId],
       );
       if (current.length === 0 || current[0].status !== 'active') return;
-      await tx.query('UPDATE user_memberships SET status = ? WHERE id = ? AND gym_id = ?', ['paused', current[0].id, gymId]);
+      await tx.query(
+        `UPDATE user_memberships
+            SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+          WHERE id = ? AND gym_id = ?`,
+        ['paused', actor, current[0].id, gymId]);
       await recordStatusChange(tx, {
         gymId, userMembershipId: current[0].id, memberId: current[0].member_id,
         previousStatus: current[0].status, newStatus: 'paused',
@@ -344,7 +354,7 @@ export async function retryBillingEventPayment(
     });
   }
 
-  await stampEventModified(gymId, event.id, actorUserId);
+  await stampEventModified(gymId, event.id, actor);
 
   return {
     result: {
@@ -368,7 +378,10 @@ export async function recordManualPayment(
   billingEventId: number,
   actorUserId: string | null,
   input: { amount?: unknown; notes?: unknown },
+  /** #1182: the plain-text actor snapshot (`resolveRequestActor()`); omitted with no user = System. */
+  actorArg?: string | null,
 ): Promise<{ failure: ActionFailure } | { result: ManualPaymentResult }> {
+  const actor = actorArg === undefined ? (actorUserId ? null : SYSTEM_ACTOR) : actorArg;
   const ev = await loadEventContext(gymId, billingEventId);
   const guard = guardActionable(ev);
   if (guard) return { failure: guard };
@@ -398,11 +411,11 @@ export async function recordManualPayment(
     ev: event, chargeTypeId, amount, status: 'completed', source: 'manual',
     attempt: Number(event.last_attempt ?? 0) + 1,
     provider: 'manual', providerOrder: null, providerRef: null,
-    failureCode: null, failureMessage: null, notes, actorUserId,
+    failureCode: null, failureMessage: null, notes, actor,
   });
 
-  await db.transaction((tx) => closeScheduledEvent(tx, event, 'paid'));
-  await stampEventModified(gymId, event.id, actorUserId);
+  await db.transaction((tx) => closeScheduledEvent(tx, event, 'paid', actor));
+  await stampEventModified(gymId, event.id, actor);
 
   return {
     result: {

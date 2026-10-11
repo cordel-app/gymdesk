@@ -62,12 +62,12 @@ export async function spendSessionForBooking(
 
   if (grant.kind === 'class_package') {
     await tx.query(
-      "UPDATE user_class_packages SET sessions_remaining = sessions_remaining - 1, status = IF(sessions_remaining - 1 = 0, 'consumed', status) WHERE id = ? AND gym_id = ?",
-      [grant.reference_id, gymId],
+      "UPDATE user_class_packages SET sessions_remaining = sessions_remaining - 1, status = IF(sessions_remaining - 1 = 0, 'consumed', status), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?",
+      [actor, grant.reference_id, gymId],
     );
     await tx.query(
-      'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, calendar_event_booking_id, amount, reason) VALUES (?, ?, NULL, ?, -1, ?)',
-      [gymId, grant.reference_id, bookingId, `Session spent (${reason})`],
+      'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, calendar_event_booking_id, amount, reason, created_by) VALUES (?, ?, NULL, ?, -1, ?, ?)',
+      [gymId, grant.reference_id, bookingId, `Session spent (${reason})`, actor],
     );
   }
   return { spent: true };
@@ -97,12 +97,12 @@ export async function returnSessionForBooking(
   );
   if (rows[0].source_kind === 'class_package') {
     await tx.query(
-      "UPDATE user_class_packages SET sessions_remaining = sessions_remaining + 1, status = IF(status = 'consumed', 'active', status) WHERE id = ? AND gym_id = ?",
-      [rows[0].source_reference_id, gymId],
+      "UPDATE user_class_packages SET sessions_remaining = sessions_remaining + 1, status = IF(status = 'consumed', 'active', status), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?",
+      [actor, rows[0].source_reference_id, gymId],
     );
     await tx.query(
-      'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, calendar_event_booking_id, amount, reason) VALUES (?, ?, NULL, ?, 1, ?)',
-      [gymId, rows[0].source_reference_id, bookingId, 'Session returned'],
+      'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, calendar_event_booking_id, amount, reason, created_by) VALUES (?, ?, NULL, ?, 1, ?, ?)',
+      [gymId, rows[0].source_reference_id, bookingId, 'Session returned', actor],
     );
   }
   return true;

@@ -61,8 +61,7 @@ export interface PurchasedProduct {
   currency: string;
   purchased_at: string | null;
   created_at: string | null;
-  created_by_name: string | null;
-  created_by_type: string | null;
+  created_by: string | null;
   regular_amount: number;
   promotion: PurchasedProductPromotion | null;
 }

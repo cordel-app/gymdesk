@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { resolveRequestActor } from '../domain/auditActor';
 import { recordAudit } from '../infra/audit';
 
 /** Mounted at /staff/:staffId/centers (mergeParams: true), like member-centers.ts. */
@@ -21,7 +22,9 @@ staffCentersRouter.get('/', async (req, res) => {
 });
 
 staffCentersRouter.put('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { staffId } = req.params as { staffId: string };
   const { center_ids, default_center_id } = req.body as { center_ids: unknown; default_center_id: unknown };
 
@@ -57,9 +60,9 @@ staffCentersRouter.put('/', requireRole('admin'), async (req, res, next) => {
       // unique on staff_id while is_default=1 AND deleted_at IS NULL).
       await tx.query(
         `UPDATE staff_centers
-         SET is_default = 0, modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+         SET is_default = 0, modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE staff_id = ? AND gym_id = ? AND deleted_at IS NULL AND is_default = 1`,
-        [gymMembershipId, staffId, gymId],
+        [actor, staffId, gymId],
       );
 
       const { rows: current } = await tx.query<{ center_id: number }>(
@@ -71,19 +74,20 @@ staffCentersRouter.put('/', requireRole('admin'), async (req, res, next) => {
 
       for (const centerId of toRemove) {
         await tx.query(
-          `UPDATE staff_centers SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+          `UPDATE staff_centers SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
+                  modified_at = UTC_TIMESTAMP(), modified_by = ?
            WHERE staff_id = ? AND center_id = ? AND gym_id = ?`,
-          [gymMembershipId, staffId, centerId, gymId],
+          [actor, actor, staffId, centerId, gymId],
         );
       }
       for (const centerId of ids) {
         const isDefault = centerId === defaultId;
         await tx.query(
-          `INSERT INTO staff_centers (gym_id, staff_id, center_id, is_default, assigned_at, assigned_by_membership_id, modified_at, modified_by_membership_id)
+          `INSERT INTO staff_centers (gym_id, staff_id, center_id, is_default, assigned_at, created_by, modified_at, modified_by)
            VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(), ?)
-           ON DUPLICATE KEY UPDATE is_default = VALUES(is_default), deleted_at = NULL,
-             modified_at = UTC_TIMESTAMP(), modified_by_membership_id = VALUES(modified_by_membership_id)`,
-          [gymId, staffId, centerId, isDefault, gymMembershipId, gymMembershipId],
+           ON DUPLICATE KEY UPDATE is_default = VALUES(is_default), deleted_at = NULL, deleted_by = NULL,
+             modified_at = UTC_TIMESTAMP(), modified_by = VALUES(modified_by)`,
+          [gymId, staffId, centerId, isDefault, actor, actor],
         );
       }
     });

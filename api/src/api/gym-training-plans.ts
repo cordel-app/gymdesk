@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 import { createTrainingPlanTx } from './training-plan-creation';
 import { planTreeSelect } from './training-plans';
 import { getRequestLocale } from '../infra/locale';
@@ -30,7 +31,7 @@ const SORT_COLUMNS: Record<string, string> = {
   template: 'tpt.name',
   status: 'tp.status',
   start_date: 'tp.start_date',
-  created_by: 'gm.name',
+  created_by: 'tp.created_by',
   created_at: 'tp.created_at',
   modified_at: 'tp.modified_at',
 };
@@ -49,8 +50,8 @@ gymTrainingPlansRouter.get('/', async (req, res, next) => {
   const toId = (v: any) => (v == null || v === '' ? null : Number(v));
   const memberId = toId(req.query.member_id);
   if (memberId !== null && !Number.isInteger(memberId)) return res.status(400).json({ error: 'member_id must be a member id' });
-  const createdBy = toId(req.query.created_by);
-  if (createdBy !== null && !Number.isInteger(createdBy)) return res.status(400).json({ error: 'created_by must be a membership id' });
+  // #1182: created_by is the plain-text actor snapshot, so the filter is its exact text.
+  const createdBy = typeof req.query.created_by === 'string' && req.query.created_by !== '' ? req.query.created_by : null;
   // template_id: numeric id, or the literal 'custom' for plans created from scratch
   const templateRaw = req.query.template_id;
   let templateId: number | 'custom' | null = null;
@@ -77,7 +78,7 @@ gymTrainingPlansRouter.get('/', async (req, res, next) => {
     if (status) { where.push('tp.status = ?'); params.push(status); }
     if (name) { where.push('tp.name LIKE ?'); params.push(`%${name}%`); }
     if (memberId !== null) { where.push('tp.member_id = ?'); params.push(memberId); }
-    if (createdBy !== null) { where.push('tp.assigned_by_membership_id = ?'); params.push(createdBy); }
+    if (createdBy !== null) { where.push('tp.created_by = ?'); params.push(createdBy); }
     if (templateId === 'custom') where.push('tp.template_id IS NULL');
     else if (templateId !== null) { where.push('tp.template_id = ?'); params.push(templateId); }
     const createdFrom = dateFilter('created_from');
@@ -93,17 +94,14 @@ gymTrainingPlansRouter.get('/', async (req, res, next) => {
     const fromSql = `
       FROM training_plans tp
       JOIN members m ON m.id = tp.member_id
-      LEFT JOIN training_plan_templates tpt ON tpt.id = tp.template_id
-      LEFT JOIN gym_memberships gm ON gm.id = tp.assigned_by_membership_id
-      LEFT JOIN gym_memberships gm2 ON gm2.id = tp.modified_by_membership_id`;
+      LEFT JOIN training_plan_templates tpt ON tpt.id = tp.template_id`;
 
     const { rows: countRows } = await db.query(`SELECT COUNT(*) AS total ${fromSql} WHERE ${whereSql}`, params);
     const { rows } = await db.query(
       `SELECT tp.id, tp.name, tp.description, tp.status, tp.start_date, tp.end_date,
               tp.member_id, m.name AS member_name,
               tp.template_id, tpt.name AS template_name,
-              tp.assigned_by_membership_id, gm.name AS created_by_name,
-              tp.created_at, tp.modified_at, gm2.name AS modified_by_name
+              tp.created_by, tp.created_at, tp.modified_at, tp.modified_by
        ${fromSql}
        WHERE ${whereSql}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,
@@ -121,11 +119,10 @@ gymTrainingPlansRouter.get('/created-by-options', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT DISTINCT gm.id AS membership_id, gm.name
+      `SELECT DISTINCT tp.created_by AS name
        FROM training_plans tp
-       JOIN gym_memberships gm ON gm.id = tp.assigned_by_membership_id
-       WHERE tp.gym_id = ? AND tp.status != 'deleted' AND gm.name IS NOT NULL
-       ORDER BY gm.name ASC`,
+       WHERE tp.gym_id = ? AND tp.status != 'deleted' AND tp.created_by IS NOT NULL
+       ORDER BY tp.created_by ASC`,
       [gymId],
     );
     res.json(rows);
@@ -147,11 +144,10 @@ gymTrainingPlansRouter.get('/:id', async (req, res, next) => {
     if (rows.length === 0) return res.status(404).json({ error: 'Training plan not found' });
     const plan = rows[0];
     const { rows: nameRows } = await db.query(
-      `SELECT m.name AS member_name, tpt.name AS template_name, gm.name AS created_by_name
+      `SELECT m.name AS member_name, tpt.name AS template_name
        FROM training_plans tp
        JOIN members m ON m.id = tp.member_id
        LEFT JOIN training_plan_templates tpt ON tpt.id = tp.template_id
-       LEFT JOIN gym_memberships gm ON gm.id = tp.assigned_by_membership_id
        WHERE tp.id = ?`,
       [id],
     );
@@ -162,7 +158,9 @@ gymTrainingPlansRouter.get('/:id', async (req, res, next) => {
 });
 
 gymTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { member_id, template_id, name, description, start_date, on_existing_active } = req.body;
 
   const memberId = Number(member_id);
@@ -206,9 +204,9 @@ gymTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res
         const marks = activeIds.map(() => '?').join(',');
         await tx.query(
           `UPDATE training_plans SET status = 'expired', end_date = ?,
-                  modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+                  modified_at = UTC_TIMESTAMP(), modified_by = ?
            WHERE id IN (${marks}) AND gym_id = ?`,
-          [start_date, gymMembershipId, ...activeIds, gymId],
+          [start_date, actor, ...activeIds, gymId],
         );
         await tx.query(
           `UPDATE member_training_plans SET status = 'completed', valid_to = ?
@@ -217,7 +215,7 @@ gymTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res
         );
       }
       const created = await createTrainingPlanTx(tx, {
-        gymId, memberId, gymMembershipId,
+        gymId, memberId, gymMembershipId, actor,
         templateId,
         name: name?.trim() || null,
         description,
@@ -234,11 +232,10 @@ gymTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res
       });
     }
     const { rows } = await db.query(
-      `SELECT tp.*, m.name AS member_name, tpt.name AS template_name, gm.name AS created_by_name
+      `SELECT tp.*, m.name AS member_name, tpt.name AS template_name
        FROM training_plans tp
        JOIN members m ON m.id = tp.member_id
        LEFT JOIN training_plan_templates tpt ON tpt.id = tp.template_id
-       LEFT JOIN gym_memberships gm ON gm.id = tp.assigned_by_membership_id
        WHERE tp.id = ?`,
       [result.planId],
     );

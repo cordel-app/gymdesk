@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { promotionExpiryWhereSql } from '../domain/promotionLifecycle';
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 
 /**
  * #900: the scheduled sweep that moves a Promotion past its End Date to
@@ -70,8 +71,11 @@ promotionLifecycleRouter.post('/run', async (req: Request, res: Response) => {
   try {
     const { rowCount: expired } = await db.query(
       `UPDATE promotions p
-          SET p.lifecycle_status = 'expired'
+          SET p.lifecycle_status = 'expired',
+              p.modified_at = UTC_TIMESTAMP(),
+              p.modified_by = ?
         WHERE ${promotionExpiryWhereSql('p')}`,
+      [SYSTEM_ACTOR],
     );
 
     req.log.info({ expired }, 'promotion lifecycle sweep: expired promotions past their end date');

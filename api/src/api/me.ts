@@ -998,7 +998,7 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
   if (!class_session_id) return res.status(400).json({ error: 'class_session_id is required' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id));
+    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, resolveRequestActor(ctx));
     // #1113 §1/§7: no alert. The member just performed this action and the
     // response is their confirmation, so a persistent `booking_confirmed` (or
     // `waitlist_joined`) row told them something they had just done — which is
@@ -1094,7 +1094,7 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
     }
     // #1189 stage 3: a member's cancellation that reaches here was allowed
     // free of charge (outside the notice window, or inside the grace period).
-    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { spendLateCancel: false });
+    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { spendLateCancel: false, actor: resolveRequestActor(ctx) });
     if (cancelResult.promotedMemberId) {
       sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
         rows[0].class_session_id, { title: rows[0].title, starts_at: rows[0].starts_at });
@@ -2119,6 +2119,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
         const checkout = await createProductSetCheckout({
           gymId, productSetId: Number(pendingSets[0].id), memberId,
           memberEmail: pendingSets[0].member_email ?? '', startsAt, charge,
+          actor: resolveRequestActor(ctx),
         });
         return res.status(201).json({ id: checkout.paymentRequestId, checkoutUrl: checkout.checkoutUrl });
       }
@@ -2178,9 +2179,9 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       `INSERT INTO payment_requests
          (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
-          consent_given_at, source)
-       VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
-      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires],
+          consent_given_at, source, created_by)
+       VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer', ?)`,
+      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
     );
 
     const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;
@@ -2258,7 +2259,7 @@ meRouter.post('/payment-method/replace-requests', requireRole('member'), memberC
       memberId,
       memberEmail: memberRows[0]?.email ?? '',
       userMembershipId,
-      initiatedBy: null,
+      actor: resolveRequestActor(ctx),
       stampConsent: true,
     });
 

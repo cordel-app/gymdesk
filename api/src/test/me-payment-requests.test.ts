@@ -111,7 +111,7 @@ async function readRequestRow(id: number) {
     status: string;
     source: string;
     consent_given_at: Date | null;
-    initiated_by: string | null;
+    created_by: string | null;
     page_token: string | null;
     provider_order: string;
   }>('SELECT * FROM payment_requests WHERE id = ?', [id]);
@@ -187,7 +187,7 @@ describe('POST /me/payment-requests — the row it writes', () => {
     // The consent the hosted page's checkbox stands behind. A staff-raised
     // request leaves this NULL, which is the whole distinction.
     expect(row.consent_given_at).not.toBeNull();
-    expect(row.initiated_by).toBeNull();
+    expect(row.created_by).toBe('Test User');
     expect(Number(row.amount)).toBe(29.99);
     // The token the page is loaded with is only in the URL and this column.
     expect(row.page_token).not.toBeNull();

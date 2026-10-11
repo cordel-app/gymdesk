@@ -40,6 +40,8 @@ export async function issueReceiptNumber(
   tx: Tx,
   gymId: string,
   billingEventId: number,
+  /** #1182: plain-text actor of whoever issued it (`System` for the nightly run). */
+  actor: string | null,
 ): Promise<IssuedReceipt> {
   const { rows: existing } = await tx.query<{ receipt_number: string | null; receipt_issued_at: Date | null }>(
     `SELECT receipt_number, receipt_issued_at FROM billing_events
@@ -76,8 +78,8 @@ export async function issueReceiptNumber(
   const receiptNumber = `${year}-${String(seqRows[0].last_seq).padStart(4, '0')}`;
 
   await tx.query(
-    'UPDATE billing_events SET receipt_number = ?, receipt_issued_at = UTC_TIMESTAMP() WHERE id = ?',
-    [receiptNumber, billingEventId],
+    'UPDATE billing_events SET receipt_number = ?, receipt_issued_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+    [receiptNumber, actor, billingEventId],
   );
   // Read the stamp back rather than trusting the app clock: the PDF prints
   // this date and it has to be the one the ledger row carries.

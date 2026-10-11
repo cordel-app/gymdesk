@@ -12,7 +12,7 @@ import { parseQuery, z } from '../infra/validate';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
-import { actorSnapshot } from '../domain/nutritionLibrary';
+import { resolveRequestActor } from '../domain/auditActor';
 import {
   applyPromotionToMembership,
   fetchAppliedPromotions,
@@ -284,49 +284,14 @@ userMembershipsRouter.get('/', async (req, res) => {
   })));
 });
 
-// #511 (stage 2 — Assigned Plan Details modal): "modified" means the latest
-// action of any kind after creation — edit, close, pause, reactivate,
-// apply/revoke promotion, add/remove member — never just 'update', per the
-// ticket's requirement that it reflect the last change regardless of which
-// action produced it. It stays derived from `audit_logs` and stays out of
-// LIST_SELECT, because an assignment is also modified by things that are not
-// people: the nightly run advancing `next_billing_date`, the payment webhook
-// stamping the first one, the dunning escalation pausing it. None of those has
-// an actor to snapshot, and the audit log records them with their own `source`.
-//
-// There is one creation action per insert path, and all three are excluded
-// here: 'create' (POST /), 'assign_new_plan' (#412 — supersede a member's
-// current plan) and 'assign_plan' (the Plans page's bulk assign, written by
-// membership-plans.ts). Each counts as a row's creation, never as a later
-// "modification" of it — 'assign_plan' was missing from this list until #958,
-// which made a bulk-assigned plan report its creator as the last person to
-// modify it, since the creation row was then the newest row not excluded.
-//
-// #958: `created_by` is **not** read from here any more. The Member's
-// MEMBERSHIP PLANS section shows it on every card, and one correlated subquery
-// per row is exactly what #511 declined to pay — so the creation actor is
-// snapshotted onto the row by the three paths that insert one (migration 215,
-// backfilled from these same audit rows) and read as the plain column it is.
+// #511 (stage 2) / #1182 stage 3: who created and who last modified an
+// assignment are the row's own plain-text snapshots — `created_by`,
+// `modified_by` (with `modified_at`) and `deleted_by` ride along on `um.*`, one
+// shape on every read. They used to be derived from `audit_logs`, which could
+// not name the nightly run or the payment webhook; every writer of the row now
+// records its actor (`System` for those) in the statement that makes the change.
+// The audit log still keeps the detailed previous/new values.
 const LINKED_BILLING_EVENTS_REASON = 'Billing Events are available from the primary Member of this Membership.';
-const CREATION_ACTIONS = ['create', 'assign_new_plan', 'assign_plan'];
-// #1325 PR 3 (A4): a status transition is an audit row now, written by
-// `recordStatusChange()` inside the transaction that flips the status; the
-// route's own `recordAudit` (pause, close, …) is the modification it reports.
-const TRANSITION_ACTIONS = ['status_change'];
-
-async function loadAuditMetadata(gymId: string, userMembershipId: string | number) {
-  const { rows: modifiedRows } = await db.query(
-    `SELECT actor_name, created_at FROM audit_logs
-     WHERE gym_id = ? AND entity_type = 'user_membership' AND entity_id = ?
-       AND action NOT IN (${[...CREATION_ACTIONS, ...TRANSITION_ACTIONS].map(() => '?').join(',')})
-     ORDER BY created_at DESC LIMIT 1`,
-    [gymId, String(userMembershipId), ...CREATION_ACTIONS, ...TRANSITION_ACTIONS],
-  );
-  return {
-    modified_by_name: modifiedRows[0]?.actor_name ?? null,
-    modified_at: modifiedRows[0]?.created_at ?? null,
-  };
-}
 
 // ─── Expanded detail + Billing Events (#511 stage 3) ──────────────────────────
 // GET /:id below embeds everything the expanded card / Details modal needs in
@@ -519,8 +484,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   if (rawRows.length === 0) return res.status(404).json({ error: 'Membership not found' });
   const um = (await withDerivedBilling(gymId, await withAssignmentConfig(gymId, [rawRows[0]])))[0];
 
-  const [audit, members, billingPolicy, promotions, additionalServices, snapshot] = await Promise.all([
-    loadAuditMetadata(gymId, req.params.id),
+  const [members, billingPolicy, promotions, additionalServices, snapshot] = await Promise.all([
     db.query(MEMBERS_SELECT, [req.params.id, gymId]).then((r) => r.rows),
     loadBillingPolicy(gymId, um.membership_plan_id),
     fetchAppliedPromotions(gymId, um.id),
@@ -554,7 +518,7 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   const billingEventSimulation = await assignedPlanBillingForecast(gymId, Number(um.id));
 
   res.json({
-    ...um, ...audit,
+    ...um,
     // The fee resolved for this assignment's current cycle (#635 stage 15) —
     // the read-only counterpart of `snapshot.membership_fee_price`, which is the
     // regular fee it is priced from and the one an edit writes.
@@ -777,11 +741,11 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
   }
 
   try {
-    const { userId, role, actorName, isSuperadmin } = getTenantContext(req);
-    // #958 — the creation actor, snapshotted onto the row (migration 215) so
-    // the Member's plan cards can show *Created by* without a per-row audit
-    // subquery. One of the three paths that insert a `user_memberships` row.
-    const actor = actorSnapshot({ name: actorName, isSuperadmin });
+    const { userId, role } = getTenantContext(req);
+    // #958 / #1182 — the creation actor, the plain-text snapshot written onto
+    // the row so the Member's plan cards show *Created by* with no per-row
+    // audit subquery. One of the three paths that insert a `user_memberships` row.
+    const actorText = resolveRequestActor(getTenantContext(req));
     // #1108 stage 1: the assignment is created as a **Draft**, which is not the
     // Member's Membership Plan (Q2). So #956's one-plan check does not run here
     // any more — a Draft replacement has to be configurable *beside* the plan it
@@ -796,16 +760,13 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, starts_at, ends_at, status,
-          created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           member_id, gymId, membership_plan_id,
           starts_at, ends_at ?? null,
           ASSIGNMENT_CREATION_STATUS,
-          // #958 — who assigned the plan, snapshotted in the same INSERT
-          // (migration 215). The Member's MEMBERSHIP PLANS section shows it on
-          // every card, which is why it is a column rather than an audit read.
-          actor.name, actor.type,
+          actorText,
         ],
       );
       await recordStatusChange(tx, {
@@ -827,7 +788,7 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         discountReason: feeOverride ? String(discount_reason).trim() : null,
         discountExpiresAt: discount_expires_at || null,
         declinedBenefits: declinedResult.declined,
-        actor: { name: actor.name, type: actor.type },
+        actor: { name: actorText },
       });
       return { kind: 'created' as const, insertId };
     });
@@ -917,12 +878,15 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
         `UPDATE user_memberships SET
           starts_at            = COALESCE(?, starts_at),
           ends_at              = IF(?, ?, ends_at),
-          status               = COALESCE(?, status)
+          status               = COALESCE(?, status),
+          modified_at          = UTC_TIMESTAMP(),
+          modified_by          = ?
          WHERE id = ? AND gym_id = ?`,
         [
           starts_at ?? null,
           'ends_at' in req.body ? 1 : 0, ends_at ?? null,
           status ?? null,
+          resolveRequestActor(getTenantContext(req)),
           req.params.id, gymId,
         ],
       );
@@ -1004,8 +968,10 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     );
     if (current.length === 0) return false;
     await tx.query(
-      "UPDATE user_memberships SET status = 'cancelled' WHERE id = ? AND gym_id = ?",
-      [req.params.id, gymId],
+      `UPDATE user_memberships
+          SET status = 'cancelled', modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE id = ? AND gym_id = ?`,
+      [resolveRequestActor(getTenantContext(req)), req.params.id, gymId],
     );
     await recordStatusChange(tx, {
       gymId, userMembershipId: current[0].id, memberId: current[0].member_id,
@@ -1052,6 +1018,7 @@ userMembershipsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), asyn
     const outcome = await db.transaction((tx) => commitAssignment(tx, {
       gymId, userMembershipId: String(req.params.id), fromStatuses: [ASSIGNMENT_CREATION_STATUS],
       confirm, source: sourceForRole(role), actorUserId: userId,
+      actor: resolveRequestActor(getTenantContext(req)),
     }));
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
     if (outcome.kind === 'not_committable') {
@@ -1118,9 +1085,11 @@ userMembershipsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), 
       ? commitAssignment(tx, {
         gymId, userMembershipId: String(req.params.id), fromStatuses: [ASSIGNMENT_CREATION_STATUS],
         confirm, source: sourceForRole(role), actorUserId: userId,
+        actor: resolveRequestActor(getTenantContext(req)),
       })
       : submitForPayment(tx, {
         gymId, userMembershipId: String(req.params.id), confirm, source: sourceForRole(role), actorUserId: userId,
+        actor: resolveRequestActor(getTenantContext(req)),
       }));
     if (outcome.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
     if (outcome.kind === 'not_committable') {
@@ -1189,16 +1158,17 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
         await tx.query(
           `INSERT INTO payment_requests
              (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
-              source, attempt, method, initiated_by, notes, created_at, completed_at)
+              source, attempt, method, created_by, notes, created_at, completed_at)
            VALUES (?, ?, (SELECT member_id FROM user_memberships WHERE id = ?), ?, 'EUR', ?, ?, 'completed', 'monei',
                    'manual', ?, 'cash', ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
           [gymId, req.params.id, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
-            Number(prev[0]?.n ?? 0) + 1, userId,
+            Number(prev[0]?.n ?? 0) + 1, resolveRequestActor(getTenantContext(req)),
             typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null]);
       }
       const committed = await commitAssignment(tx, {
         gymId, userMembershipId: String(req.params.id), fromStatuses: [PENDING_PAYMENT_STATUS],
         confirm: true, source: sourceForRole(role), actorUserId: userId,
+        actor: resolveRequestActor(getTenantContext(req)),
       });
       if (committed.kind !== 'committed') return committed;
       if (!open) {
@@ -1208,9 +1178,9 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
         }
         await tx.query(
           `INSERT INTO billing_events
-             (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
+             (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source, created_by, notes)
            VALUES (?, ?, ?, 'payment_recorded', ?, ?, ?, ?, ?)`,
-          [gymId, setId, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), userId,
+          [gymId, setId, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), resolveRequestActor(getTenantContext(req)),
            typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null],
         );
         await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));
@@ -1289,9 +1259,9 @@ function parsePromotionIds(raw: unknown): number[] | null {
 // transaction, so the applies can only run after this one commits, and an
 // invalid selection must never leave a half-configured assignment behind.
 userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId, role, actorName, isSuperadmin } = getTenantContext(req);
-  // #958 — the creation actor of the assignment this route creates (migration 215).
-  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+  const { gymId, userId, role } = getTenantContext(req);
+  // #958 / #1182 — the creation actor of the assignment this route creates.
+  const actorText = resolveRequestActor(getTenantContext(req));
   const { membership_plan_id, starts_at, ends_at, membership_fee_price, discount_reason, discount_expires_at, promotion_ids } = req.body;
   if (!membership_plan_id || !starts_at) {
     return res.status(400).json({ error: 'membership_plan_id and starts_at are required' });
@@ -1360,15 +1330,15 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, starts_at, ends_at, status,
-          created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
           prev.member_id, gymId, membership_plan_id,
           starts_at, ends_at ?? null,
           ASSIGNMENT_CREATION_STATUS,
           // #958 — the successor is a new Assigned Plan, so it records who
-          // assigned *it* (migration 215); the superseded row keeps its own.
-          actor.name, actor.type,
+          // assigned *it*; the superseded row keeps its own.
+          actorText,
         ],
       );
       await recordStatusChange(tx, {
@@ -1398,7 +1368,7 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
         discountReason: feeOverride ? String(discount_reason).trim() : null,
         discountExpiresAt: discount_expires_at || null,
         declinedBenefits: declinedResult.declined,
-        actor: { name: actor.name, type: actor.type },
+        actor: { name: actorText },
       });
       return { kind: 'created' as const, insertId };
     });
@@ -1411,7 +1381,7 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
     // underneath us between the two steps — surface it rather than silently
     // assigning a plan without the promotions that were asked for.
     for (const promotionId of promotionIds) {
-      await applyPromotionToMembership(gymId, userId, sourceForRole(role), newId, promotionId);
+      await applyPromotionToMembership(gymId, userId, sourceForRole(role), newId, promotionId, actorText);
     }
 
     const created = await loadAssignmentRow(gymId, newId, false);
@@ -1451,8 +1421,10 @@ async function transitionMembership(
     const prev = current[0];
     if (!allowedFrom.includes(prev.status as Status)) return { kind: 'invalid', from: prev.status } as const;
     await tx.query(
-      `UPDATE user_memberships SET status = ? WHERE id = ? AND gym_id = ?`,
-      [targetStatus, prev.id, gymId],
+      `UPDATE user_memberships
+          SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE id = ? AND gym_id = ?`,
+      [targetStatus, resolveRequestActor(getTenantContext(req)), prev.id, gymId],
     );
     await recordStatusChange(tx, {
       gymId, userMembershipId: prev.id, memberId: prev.member_id,
@@ -1557,8 +1529,10 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
       return { kind: 'unresolved' } as const;
     }
     await tx.query(
-      "UPDATE user_memberships SET status = 'cancelled', closed_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?",
-      [prev.id, gymId],
+      `UPDATE user_memberships
+          SET status = 'cancelled', closed_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE id = ? AND gym_id = ?`,
+      [resolveRequestActor(getTenantContext(req)), prev.id, gymId],
     );
     await recordStatusChange(tx, {
       gymId, userMembershipId: prev.id, memberId: prev.member_id,

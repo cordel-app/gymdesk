@@ -19,6 +19,7 @@
  */
 
 import { Normalized, TargetType, targetPairError } from './goalTarget';
+import { resolveRequestActor } from './auditActor';
 
 /**
  * The progress of an assignment. Mirrored by `chk_mpgoal_status` (migration
@@ -151,21 +152,19 @@ export function buildAssignmentListWhere(
 /* ── #1036: the member's own half ─────────────────────────────────────────── */
 
 /**
- * The actor pair a **reading** records. `member_personal_goal_readings` is an
- * append-only ledger outside #1182 stage 2's entity set and keeps its own
- * `created_by_name` + `created_by_type` shape (migration 224), so the pair is
- * still decided here: a member's own write is `member`, a superadmin
- * `superadmin` (impersonating or not — whoever's login it is), staff `staff`.
+ * The actor a **reading** records (#1182 stage 3): the plain-text snapshot every
+ * audited table carries in `created_by` — `Ada` when a member records their own
+ * reading, `Coach` for staff, `Oscar (impersonating Ada)` when a superadmin
+ * acts as the member. The old `created_by_name` + `created_by_type` pair
+ * (migration 224) is gone; the kind of actor is part of the text only when it
+ * is an impersonation.
  */
-export function readingActor(
-  actor: { actorName?: string | null; isSuperadmin: boolean },
-  memberInitiated: boolean,
-): { name: string | null; type: 'staff' | 'superadmin' | 'member' } {
-  const name = actor.actorName?.trim();
-  return {
-    name: name ? name : null,
-    type: actor.isSuperadmin ? 'superadmin' : memberInitiated ? 'member' : 'staff',
-  };
+export function readingActor(ctx: {
+  actorName: string | null;
+  impersonatedUserId?: string;
+  impersonatedActorName?: string | null;
+}): string | null {
+  return resolveRequestActor(ctx);
 }
 
 /**

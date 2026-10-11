@@ -3,6 +3,7 @@ import { eventAssignmentSql, eventsOfAssignmentParams, eventsOfAssignmentSql } f
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite, GymRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 import { insertAndFetch } from '../infra/db-helpers';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
 
@@ -103,7 +104,8 @@ billingEventsRouter.get('/', async (req, res) => {
 });
 
 billingEventsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
-  const { gymId, userId, role } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, role } = ctx;
   const { event_type, member_id, user_membership_id, charge_type_id, amount, notes, source } = req.body;
 
   if (!POSTABLE_EVENT_TYPES.includes(event_type)) {
@@ -165,11 +167,11 @@ billingEventsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, n
     }
     const row = await insertAndFetch(
       `INSERT INTO billing_events
-       (gym_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+       (gym_id, product_set_id, member_id, event_type, charge_type_id, source, created_by, amount, notes)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         gymId, setId, memberId, event_type, charge_type_id ?? null,
-        source ?? sourceForRole(role), userId, parsedAmount,
+        source ?? sourceForRole(role), resolveRequestActor(ctx), parsedAmount,
         notes && String(notes).trim() ? String(notes).trim() : null,
       ],
       `${LIST_SELECT} WHERE be.id = ?`,

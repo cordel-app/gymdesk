@@ -1,0 +1,95 @@
+/**
+ * The acceptance matrix of #1182: every base table of the schema has an explicit
+ * classification, so a table added later cannot silently carry no audit
+ * metadata (`audit-inventory.test.ts` fails until it is classified here).
+ *
+ *  - `audited`: carries the plain-text `created_by` / `modified_by` /
+ *    `deleted_by` its lifecycle has, and is in `AUDITED_TABLES`
+ *    (that list is the source of truth for this class, not repeated here);
+ *  - `parent`: a line, junction or snapshot written only inside its parent's
+ *    transaction with no lifecycle of its own — the parent carries the audit;
+ *  - `ledger`: an append-only record or log with its own actor semantics;
+ *  - `lookup`: a global reference table nothing writes at runtime;
+ *  - `technical`: identity, storage, counters and member-authored logs, where
+ *    the owner column or the provider is the actor;
+ *  - `legacy`: no business writer left.
+ */
+export type AuditClass = 'parent' | 'ledger' | 'lookup' | 'technical' | 'legacy';
+
+export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, string]>> = {
+  "action_types": ["lookup", "global lookup, no runtime writer"],
+  "activity_type_eligible_professional_services": ["parent", "activity_types"],
+  "activity_type_schedule_rule_members": ["parent", "activity_type_schedule_rules, itself a child of activity_types"],
+  "activity_type_schedule_rules": ["parent", "activity_types (a rule edit is an edit of the Activity Type)"],
+  "audit_logs": ["ledger", "is the activity log itself (actor_user_id, actor_name)"],
+  "benefit_types": ["lookup", "global lookup, no runtime writer"],
+  "billing_event_lines": ["parent", "billing_events (priced components of one event)"],
+  "billing_policies": ["parent", "membership_plans (Billing & Duration section)"],
+  "billing_run_log": ["ledger", "system run log"],
+  "bookings": ["legacy", "legacy table, no writer left (replaced by calendar_event_bookings)"],
+  "calendar_event_eligible_professional_services": ["parent", "calendar_events"],
+  "calendar_event_shared_training_requests": ["parent", "calendar_events; the review is its own domain fact (reviewed_by_membership_id)"],
+  "charge_types": ["lookup", "global lookup, no runtime writer"],
+  "class_types": ["legacy", "legacy activity catalogue kept only for the FK of the legacy class_sessions (replaced by activity_types); no writer"],
+  "class_sessions": ["legacy", "legacy table read by the public API only (replaced by calendar_events)"],
+  "class_type_user_memberships": ["legacy", "legacy plan-to-class-type relation; the plan-based booking gate is retired (#973)"],
+  "exercise_allowed_result_types": ["parent", "exercises (derived from the category, #1360)"],
+  "exercise_log_sets": ["parent", "exercise_logs"],
+  "exercise_logs": ["technical", "member-authored workout log; member_id is the author"],
+  "exercise_muscles": ["parent", "exercises"],
+  "exercise_translations": ["parent", "exercises"],
+  "gym_memberships": ["technical", "login grant; the actor is recorded on the staff / member row that caused it"],
+  "member_device_tokens": ["technical", "push registration of an installation, upserted by the app"],
+  "member_notifications": ["ledger", "system-written alerts; the member is the owner"],
+  "member_nutrition_plan_days": ["parent", "member_nutrition_plans"],
+  "member_nutrition_plan_goals": ["parent", "member_nutrition_plans"],
+  "member_nutrition_plan_meal_items": ["parent", "member_nutrition_plans"],
+  "member_nutrition_plan_meals": ["parent", "member_nutrition_plans"],
+  "member_nutrition_plan_restrictions": ["parent", "member_nutrition_plans"],
+  "member_products_oneoff_promotion_snapshot": ["parent", "member_products_oneoff_snapshot"],
+  "member_products_recurrent_snapshot": ["parent", "product_sets (version-owned rows, replaced per version)"],
+  "membership_plan_centers": ["parent", "membership_plans"],
+  "membership_plan_oneoff": ["parent", "membership_plans"],
+  "membership_plan_periodical": ["parent", "membership_plans"],
+  "membership_plan_prices": ["parent", "membership_plans (its Price History)"],
+  "membership_plan_session": ["parent", "membership_plans"],
+  "nutrition_library_categories": ["lookup", "catalogue of Food Types"],
+  "nutrition_library_item_categories": ["parent", "nutrition_library_items"],
+  "nutrition_library_item_qualities": ["parent", "nutrition_library_items"],
+  "nutrition_library_item_translations": ["parent", "nutrition_library_items"],
+  "nutrition_plan_template_days": ["parent", "nutrition_plan_templates"],
+  "nutrition_plan_template_goals": ["parent", "nutrition_plan_templates"],
+  "nutrition_plan_template_meal_items": ["parent", "nutrition_plan_templates"],
+  "nutrition_plan_template_meals": ["parent", "nutrition_plan_templates"],
+  "nutrition_plan_template_restrictions": ["parent", "nutrition_plan_templates"],
+  "nutritional_qualities": ["lookup", "global lookup, no runtime writer"],
+  "payment_methods": ["technical", "stored card written by provider webhooks; replaced wholesale"],
+  "product_professional_services": ["parent", "products"],
+  "product_set_members": ["parent", "product_sets (coverage of the chain)"],
+  "product_set_plan_snapshots": ["parent", "product_sets (frozen configuration of a version)"],
+  "product_set_schedules": ["parent", "product_sets (the chain's schedule)"],
+  "promotion_membership_fee_benefits": ["parent", "promotions"],
+  "promotion_membership_plans": ["parent", "promotions"],
+  "promotion_oneoff": ["parent", "promotions"],
+  "promotion_periodical": ["parent", "promotions"],
+  "promotion_session": ["parent", "promotions"],
+  "receipt_sequences": ["technical", "gapless counter per gym and year"],
+  "recurring_booking_run_log": ["ledger", "system run log"],
+  "resources": ["legacy", "legacy table, no reader or writer"],
+  "result_types": ["lookup", "global lookup, no runtime writer"],
+  "shared_training_requests": ["parent", "the member who asks is its owner column; reviewed_by_membership_id is the domain fact"],
+  "theme_member_images": ["parent", "themes (an upload is a modification of the theme)"],
+  "training_plan_template_workouts": ["parent", "training_plan_templates"],
+  "user_membership_oneoff": ["parent", "user_memberships"],
+  "user_membership_periodical": ["parent", "user_memberships"],
+  "user_membership_promotion_oneoff_snapshot": ["parent", "user_membership_promotions"],
+  "user_membership_promotion_periodical_snapshot": ["parent", "user_membership_promotions"],
+  "user_membership_promotion_session_snapshot": ["parent", "user_membership_promotions"],
+  "user_membership_session": ["parent", "user_memberships"],
+  "workout_block_logs": ["technical", "member-authored workout log; member_id is the author"],
+  "workout_blocks": ["parent", "training_plans"],
+  "workout_exercises": ["parent", "training_plans"],
+  "workout_template_blocks": ["parent", "workout_templates"],
+  "workout_template_exercises": ["parent", "workout_templates"],
+  "workouts": ["parent", "training_plans"],
+};

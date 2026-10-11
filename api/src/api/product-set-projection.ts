@@ -1,4 +1,5 @@
 import { Tx } from '../infra/db';
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 
 /**
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
@@ -35,8 +36,7 @@ interface SetRow {
   starts_at: Date | string;
   ends_at: Date | string | null;
   user_membership_id: number | null;
-  created_by_name: string | null;
-  created_by_type: string | null;
+  created_by: string | null;
   membership_fee_price: string | number | null;
   free_periods: number | null;
   paid_periods: number | null;
@@ -54,7 +54,7 @@ interface SetRow {
 const dateOnly = (v: unknown): string | null =>
   v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
 
-async function closeAssignment(tx: Tx, gymId: string, id: number, endsAt: string) {
+async function closeAssignment(tx: Tx, gymId: string, id: number, endsAt: string, actor: string | null) {
   const { rows: before } = await tx.query<{ status: string; member_id: number }>(
     `SELECT status, member_id FROM user_memberships
       WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','draft') FOR UPDATE`,
@@ -63,9 +63,10 @@ async function closeAssignment(tx: Tx, gymId: string, id: number, endsAt: string
   await tx.query(
     `UPDATE user_memberships
         SET status = 'cancelled', closed_at = UTC_TIMESTAMP(),
-            ends_at = LEAST(COALESCE(ends_at, ?), ?)
+            ends_at = LEAST(COALESCE(ends_at, ?), ?),
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE id = ? AND gym_id = ?`,
-    [endsAt, endsAt, id, gymId],
+    [endsAt, endsAt, actor, id, gymId],
   );
   // A transition is an audit row (#1325 PR 3, A4), whichever path made it.
   const { recordStatusChange } = await import('./billing-events');
@@ -78,7 +79,7 @@ async function closeAssignment(tx: Tx, gymId: string, id: number, endsAt: string
 const SET_SELECT = `
   SELECT ps.id, ps.gym_id, ps.owner_member_id, ps.root_product_set_id, ps.previous_product_set_id,
          ps.membership_plan_id, ps.starts_at, ps.ends_at, ps.user_membership_id,
-         ps.created_by_name, ps.created_by_type,
+         ps.created_by,
          snap.membership_fee_price, snap.free_periods, snap.paid_periods, snap.bonus_periods,
          snap.pay_beforehand_periods, snap.auto_renew,
          snap.personal_fee_benefit_action, snap.personal_fee_benefit_value,
@@ -95,7 +96,11 @@ async function loadSet(tx: Tx, gymId: string, productSetId: number): Promise<Set
 }
 
 /** Projects the (just activated) version onto its operational assignment. */
-export async function projectActiveProductSet(tx: Tx, gymId: string, productSetId: number): Promise<number | null> {
+export async function projectActiveProductSet(
+  tx: Tx, gymId: string, productSetId: number, actorArg?: string | null,
+): Promise<number | null> {
+  // #1182: who made the move. Left out means the system did (webhook, run).
+  const actor = actorArg === undefined ? SYSTEM_ACTOR : actorArg;
   const set = await loadSet(tx, gymId, productSetId);
   if (!set) return null;
 
@@ -117,7 +122,7 @@ export async function projectActiveProductSet(tx: Tx, gymId: string, productSetI
 
   // A plan-less version has no assignment; a previous one is closed.
   if (set.membership_plan_id == null) {
-    if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt);
+    if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt, actor);
     await tx.query('UPDATE product_sets SET user_membership_id = NULL WHERE id = ?', [productSetId]);
     return null;
   }
@@ -129,19 +134,20 @@ export async function projectActiveProductSet(tx: Tx, gymId: string, productSetI
     umId = previousUmId;
     await tx.query(
       `UPDATE user_memberships
-          SET ends_at = ?, status = IF(status IN ('cancelled','expired'), status, 'active')
+          SET ends_at = ?, status = IF(status IN ('cancelled','expired'), status, 'active'),
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ?`,
-      [dateOnly(set.ends_at), umId, gymId],
+      [dateOnly(set.ends_at), actor, umId, gymId],
     );
   } else {
-    if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt);
+    if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt, actor);
     const { insertId } = await tx.query(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, starts_at, ends_at, status,
-          created_by_name, created_by_type)
-       VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
+          created_by)
+       VALUES (?, ?, ?, ?, ?, 'active', ?)`,
       [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at),
-        set.created_by_name, set.created_by_type],
+        set.created_by],
     );
     umId = Number(insertId);
   }
@@ -163,12 +169,21 @@ export async function projectActiveProductSet(tx: Tx, gymId: string, productSetI
  * from its Plan at creation and cannot be edited, while the chain's schedule may
  * carry an earlier plan's cadence (a schedule keeps the chain's identity).
  */
-export async function syncDraftAssignment(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+export async function syncDraftAssignment(
+  tx: Tx, gymId: string, productSetId: number, actor?: string | null,
+): Promise<void> {
   const set = await loadSet(tx, gymId, productSetId);
   if (!set || set.user_membership_id == null) return;
   const umId = Number(set.user_membership_id);
+  // A caller that passes the actor is an edit of the Draft (recorded as the
+  // row's modification); one that does not is re-deriving the cache of a row it
+  // has just created, which is not a modification of anything.
+  const touched = actor !== undefined;
   await tx.query(
-    'UPDATE user_memberships SET starts_at = ?, ends_at = ? WHERE id = ? AND gym_id = ?',
-    [dateOnly(set.starts_at), dateOnly(set.ends_at), umId, gymId],
+    `UPDATE user_memberships
+        SET starts_at = ?, ends_at = ?,
+            modified_at = IF(?, UTC_TIMESTAMP(), modified_at), modified_by = IF(?, ?, modified_by)
+      WHERE id = ? AND gym_id = ?`,
+    [dateOnly(set.starts_at), dateOnly(set.ends_at), touched ? 1 : 0, touched ? 1 : 0, actor ?? null, umId, gymId],
   );
 }

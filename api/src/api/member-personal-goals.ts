@@ -359,8 +359,7 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
             startDate: startDate.value ?? null,
           }),
           isInitial: true,
-          actorName: readingActor(ctx, false).name,
-          actorType: readingActor(ctx, false).type,
+          actor: readingActor(ctx),
         });
       }
       return assignmentId;
@@ -518,8 +517,7 @@ memberPersonalGoalsRouter.post('/:id/readings', requireWrite, async (req, res, n
       value: value.value,
       recordedAt: recordedAt.value,
       isInitial: false,
-      actorName: readingActor(ctx, false).name,
-      actorType: readingActor(ctx, false).type,
+      actor: readingActor(ctx),
     });
 
     // Audited against the **assignment**, which is the entity the Audit Log
@@ -561,8 +559,7 @@ memberPersonalGoalsRouter.post('/:id/initial-reading', requireWrite, async (req,
       value: value.value,
       recordedAt: recordedAt.value,
       isInitial: true,
-      actorName: readingActor(ctx, false).name,
-      actorType: readingActor(ctx, false).type,
+      actor: readingActor(ctx),
     });
 
     recordAudit(req, {

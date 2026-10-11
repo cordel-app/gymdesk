@@ -2,7 +2,7 @@ import express, { Router } from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
-import { actorSnapshot } from '../domain/nutritionLibrary';
+import { resolvePlatformActor } from '../domain/auditActor';
 import {
   EXERCISE_IMAGE_MASTER_MAX_BYTES,
   EXERCISE_IMAGE_MIME,
@@ -48,7 +48,7 @@ import {
 export const platformMusclesRouter = Router();
 
 function platformActor(req: { superadminName?: string | null }) {
-  return actorSnapshot({ name: req.superadminName, isSuperadmin: true });
+  return resolvePlatformActor(req.superadminName);
 }
 
 export const PLATFORM_MUSCLE_IMAGE_UPLOAD_PATH = /^\/platform\/muscles\/[^/]+\/image\/?$/;
@@ -148,8 +148,8 @@ platformMusclesRouter.post('/', requireSuperadmin, async (req, res, next) => {
 
     const actor = platformActor(req);
     const result = await db.query(
-      'INSERT INTO muscles (slug, name, created_by_name, created_by_type) VALUES (?, ?, ?, ?)',
-      [slug, parsed.value, actor.name, actor.type],
+      'INSERT INTO muscles (slug, name, created_by) VALUES (?, ?, ?)',
+      [slug, parsed.value, actor],
     );
     const id = (result as any).insertId;
     recordAudit(req, { action: 'create', entityType: 'muscle', entityId: id, next: { slug, name: parsed.value } });
@@ -202,8 +202,8 @@ platformMusclesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
     const actor = platformActor(req);
     await db.query(
       `UPDATE muscles SET name = ?, image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(),
-              modified_by_name = ?, modified_by_type = ? WHERE id = ?`,
-      [name, imageUrl, thumbnailUrl, actor.name, actor.type, muscle.id],
+              modified_by = ? WHERE id = ?`,
+      [name, imageUrl, thumbnailUrl, actor, muscle.id],
     );
     if (moves.length) await sweepMuscleObjects([muscle.image_url, muscle.image_thumbnail_url], [imageUrl, thumbnailUrl]);
 
@@ -285,8 +285,8 @@ platformMusclesRouter.post('/:id/image', requireSuperadmin, async (req, res, nex
     const actor = platformActor(req);
     await db.query(
       `UPDATE muscles SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(),
-              modified_by_name = ?, modified_by_type = ? WHERE id = ?`,
-      [imageUrl, thumbnailUrl, actor.name, actor.type, muscle.id],
+              modified_by = ? WHERE id = ?`,
+      [imageUrl, thumbnailUrl, actor, muscle.id],
     );
     await sweepMuscleObjects([muscle.image_url, muscle.image_thumbnail_url], [imageUrl, thumbnailUrl]);
     recordAudit(req, {
@@ -305,8 +305,8 @@ platformMusclesRouter.delete('/:id/image', requireSuperadmin, async (req, res, n
     const actor = platformActor(req);
     await db.query(
       `UPDATE muscles SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(),
-              modified_by_name = ?, modified_by_type = ? WHERE id = ?`,
-      [actor.name, actor.type, muscle.id],
+              modified_by = ? WHERE id = ?`,
+      [actor, muscle.id],
     );
     await sweepMuscleObjects([muscle.image_url, muscle.image_thumbnail_url], []);
     recordAudit(req, {

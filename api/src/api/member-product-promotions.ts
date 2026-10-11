@@ -241,8 +241,8 @@ export interface MemberPurchasedProduct {
   currency: string;
   purchased_at: string | null;
   created_at: string | null;
-  created_by_name: string | null;
-  created_by_type: string | null;
+  /** The plain-text actor snapshot (#1182): the member, or `Staff (impersonating …)`. */
+  created_by: string | null;
   /** The Product's regular price: the application's own, else the charge itself. */
   regular_amount: number;
   promotion: AppliedPromotion | null;
@@ -268,7 +268,7 @@ export async function loadMemberPurchases(
   const { rows } = await db.query<any>(
     `SELECT mp.id, mp.product_id, mp.status, mp.product_name, mp.product_type,
             mp.billing_frequency, mp.units, mp.amount, mp.currency,
-            mp.purchased_at, mp.created_at, mp.created_by_name, mp.created_by_type
+            mp.purchased_at, mp.created_at, mp.created_by
        FROM member_products_oneoff_snapshot mp
       WHERE mp.gym_id = ? AND mp.member_id = ?
       ORDER BY mp.created_at DESC, mp.id DESC`,
@@ -290,8 +290,7 @@ export async function loadMemberPurchases(
       currency: row.currency ?? 'EUR',
       purchased_at: row.purchased_at ?? null,
       created_at: row.created_at ?? null,
-      created_by_name: row.created_by_name ?? null,
-      created_by_type: row.created_by_type ?? null,
+      created_by: row.created_by ?? null,
       // With no Promotion the two figures are the same number: the purchase was
       // charged at the Product's own price, and §13's *Price* line still has
       // something honest to read.
