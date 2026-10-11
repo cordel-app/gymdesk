@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import { defaultTokens } from '../domain/themeTokens';
-import { cleanupTestGyms, createTestGym, request } from './helpers';
+import { cleanupTestGyms, createTestGym, request, legacyAssignmentQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -31,7 +31,7 @@ async function createUserMembership(
   memberId: number,
   planId: number,
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', CURDATE(), '29.99')`,
     [gymId, memberId, planId],

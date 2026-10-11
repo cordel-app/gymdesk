@@ -104,6 +104,181 @@ export async function activateAssignment(
   }
 }
 
+/* ── Assignment configuration fixtures (#1325 PR 3e-3) ───────────────────────
+ *
+ * `user_memberships` carries no commercial column since migration 258: an
+ * assignment's fee, Billing & Duration, cadence, renewal flag and negotiated
+ * fee are the plan snapshot of the ProductSet version linked to it. A fixture
+ * that used to write them on the row writes them here instead — on the latest
+ * version linked to the assignment, or on a **superseded** one it creates for
+ * the purpose (it holds no one-active or one-in-flight slot and generates
+ * nothing; `ensureTestProductSet()` adopts its snapshot when the same fixture
+ * later needs an Active version).
+ */
+
+const ASSIGNMENT_CONFIG_COLUMNS = [
+  'base_price', 'plan_price_id', 'discount_reason', 'discount_expires_at', 'membership_fee_price',
+  'free_periods', 'paid_periods', 'bonus_periods', 'pay_beforehand_periods',
+  'recurring_billing_interval', 'recurring_billing_unit', 'auto_renew',
+  'personal_fee_benefit_action', 'personal_fee_benefit_value',
+] as const;
+export type AssignmentConfigColumn = (typeof ASSIGNMENT_CONFIG_COLUMNS)[number];
+export type AssignmentConfigPatch = Partial<Record<AssignmentConfigColumn, unknown>>;
+
+async function latestLinkedSet(umId: number): Promise<number | null> {
+  const { rows } = await db.query<{ id: number }>(
+    'SELECT id FROM product_sets WHERE user_membership_id = ? ORDER BY version DESC, id DESC LIMIT 1', [umId]);
+  return rows[0] ? Number(rows[0].id) : null;
+}
+
+/** Copies a config holder's snapshot onto a freshly created Active version. */
+async function adoptConfigHolder(setId: number, umId: number | null): Promise<void> {
+  if (umId == null) return;
+  // A version is the assignment's: it carries its plan (a plan-less version is
+  // the retirement of a plan, which the projection treats as such).
+  await db.query(
+    `UPDATE product_sets
+        SET membership_plan_id = COALESCE(membership_plan_id,
+              (SELECT membership_plan_id FROM user_memberships WHERE id = ?))
+      WHERE id = ?`, [umId, setId]);
+  const { rows: own } = await db.query('SELECT id FROM product_set_plan_snapshots WHERE product_set_id = ?', [setId]);
+  if (own.length > 0) return;
+  const { rows: holder } = await db.query<{ id: number }>(
+    `SELECT ps.id FROM product_sets ps
+       JOIN product_set_plan_snapshots s ON s.product_set_id = ps.id
+      WHERE ps.user_membership_id = ? AND ps.id <> ? ORDER BY ps.version DESC, ps.id DESC LIMIT 1`, [umId, setId]);
+  if (!holder[0]) return;
+  const cols = ASSIGNMENT_CONFIG_COLUMNS.join(', ');
+  await db.query(
+    `INSERT INTO product_set_plan_snapshots (gym_id, product_set_id, ${cols})
+     SELECT gym_id, ?, ${cols} FROM product_set_plan_snapshots WHERE product_set_id = ?`, [setId, holder[0].id]);
+}
+
+/** The configuration an assignment has — its latest linked version's plan snapshot — as the row used to carry it. */
+export async function getAssignmentConfig(umId: number): Promise<Record<string, any>> {
+  const { rows } = await db.query<any>(
+    `SELECT snap.*, ps.id AS product_set_id, ps.status AS product_set_status
+       FROM product_sets ps
+       LEFT JOIN product_set_plan_snapshots snap ON snap.product_set_id = ps.id
+      WHERE ps.user_membership_id = ? ORDER BY ps.version DESC, ps.id DESC LIMIT 1`, [umId]);
+  return rows[0] ?? {};
+}
+
+/** Writes configuration values onto an assignment's version (creating the holder if none). */
+export async function setAssignmentConfig(umId: number, patch: AssignmentConfigPatch): Promise<void> {
+  const keys = Object.keys(patch) as AssignmentConfigColumn[];
+  if (keys.length === 0) return;
+  let setId = await latestLinkedSet(umId);
+  if (setId == null) {
+    const { rows } = await db.query<any>(
+      'SELECT gym_id, member_id, membership_plan_id, starts_at, ends_at FROM user_memberships WHERE id = ?', [umId]);
+    const um = rows[0];
+    if (!um) throw new Error(`setAssignmentConfig: assignment ${umId} not found`);
+    const { insertId } = await db.query(
+      `INSERT INTO product_sets
+         (gym_id, owner_member_id, version, status, membership_plan_id, starts_at, ends_at,
+          user_membership_id, superseded_at)
+       VALUES (?, ?, 1, 'superseded', ?, ?, ?, ?, UTC_TIMESTAMP())`,
+      [um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at, umId]);
+    await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
+    setId = Number(insertId);
+  }
+  const { rows: snap } = await db.query('SELECT id FROM product_set_plan_snapshots WHERE product_set_id = ?', [setId]);
+  if (snap.length === 0) {
+    await db.query(
+      'INSERT INTO product_set_plan_snapshots (gym_id, product_set_id) SELECT gym_id, id FROM product_sets WHERE id = ?',
+      [setId]);
+  }
+  const defined = keys.filter((k) => patch[k] !== undefined);
+  await db.query(
+    `UPDATE product_set_plan_snapshots SET ${defined.map((k) => `${k} = ?`).join(', ')} WHERE product_set_id = ?`,
+    [...defined.map((k) => patch[k] ?? (k === 'personal_fee_benefit_action' ? 'no_benefit' : k === 'auto_renew' ? 0 : null)), setId]);
+}
+
+function splitTopLevel(text: string): string[] {
+  const out: string[] = [];
+  let depth = 0; let quote: string | null = null; let cur = '';
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (quote) { cur += ch; if (ch === quote) quote = null; continue; }
+    if (ch === "'" || ch === '"') { quote = ch; cur += ch; continue; }
+    if (ch === '(') depth += 1;
+    if (ch === ')') depth -= 1;
+    if (ch === ',' && depth === 0) { out.push(cur.trim()); cur = ''; continue; }
+    cur += ch;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+function literalValue(token: string, params: unknown[]): unknown {
+  if (token === '?') return params.shift();
+  if (/^NULL$/i.test(token)) return null;
+  if (/^-?\d+(\.\d+)?$/.test(token)) return Number(token);
+  const quoted = token.match(/^'(.*)'$/s);
+  if (quoted) return quoted[1];
+  throw new Error(`legacy assignment fixture: unsupported value ${token}`);
+}
+
+/**
+ * The fixtures' `INSERT INTO user_memberships` / `UPDATE user_memberships SET …`
+ * as they were written when the row carried the configuration: the columns it
+ * no longer has are taken out of the statement and written on the assignment's
+ * version instead. Same signature as `db.query`, so a call site changes by its
+ * function name only.
+ */
+export async function legacyAssignmentQuery(sql: string, params: unknown[] = []): Promise<any> {
+  const queue = [...params];
+  const insert = sql.match(/^\s*INSERT INTO user_memberships\s*\(([^)]*)\)\s*VALUES\s*\(([\s\S]*)\)\s*$/i);
+  if (insert) {
+    const columns = insert[1].split(',').map((c) => c.trim());
+    const tokens = splitTopLevel(insert[2]);
+    if (columns.length !== tokens.length) throw new Error('legacy assignment fixture: column/value mismatch');
+    const keptCols: string[] = []; const keptTokens: string[] = []; const keptParams: unknown[] = [];
+    const config: AssignmentConfigPatch = {};
+    columns.forEach((col, i) => {
+      const token = tokens[i];
+      if ((ASSIGNMENT_CONFIG_COLUMNS as readonly string[]).includes(col)) {
+        config[col as AssignmentConfigColumn] = literalValue(token, queue);
+        return;
+      }
+      keptCols.push(col); keptTokens.push(token);
+      const need = (token.match(/\?/g) ?? []).length;
+      for (let n = 0; n < need; n += 1) keptParams.push(queue.shift());
+    });
+    const result = await db.query(
+      `INSERT INTO user_memberships (${keptCols.join(', ')}) VALUES (${keptTokens.join(', ')})`, keptParams);
+    if (Object.keys(config).length > 0) await setAssignmentConfig(result.insertId, config);
+    return result;
+  }
+  const update = sql.match(/^\s*UPDATE user_memberships\s+SET\s+([\s\S]*?)\s+WHERE\s+([\s\S]*)$/i);
+  if (update) {
+    const assignments = splitTopLevel(update[1]);
+    const config: AssignmentConfigPatch = {};
+    const kept: string[] = []; const keptParams: unknown[] = [];
+    for (const a of assignments) {
+      const m = a.match(/^(\w+)\s*=\s*([\s\S]+)$/);
+      if (!m) throw new Error(`legacy assignment fixture: cannot parse ${a}`);
+      if ((ASSIGNMENT_CONFIG_COLUMNS as readonly string[]).includes(m[1])) {
+        config[m[1] as AssignmentConfigColumn] = literalValue(m[2].trim(), queue);
+      } else {
+        kept.push(a);
+        const need = (m[2].match(/\?/g) ?? []).length;
+        for (let n = 0; n < need; n += 1) keptParams.push(queue.shift());
+      }
+    }
+    const where = update[2];
+    const whereParams = [...queue];
+    const { rows } = await db.query<{ id: number }>(`SELECT id FROM user_memberships WHERE ${where}`, whereParams);
+    for (const r of rows) await setAssignmentConfig(Number(r.id), config);
+    if (kept.length > 0) {
+      return db.query(`UPDATE user_memberships SET ${kept.join(', ')} WHERE ${where}`, [...keptParams, ...whereParams]);
+    }
+    return { rows: [], rowCount: rows.length, insertId: 0 };
+  }
+  throw new Error('legacyAssignmentQuery: unsupported statement');
+}
+
 /**
  * #1325: an Active ProductSet of the member (created once per member), linked
  * to `userMembershipId` when given — what a test's hand-written Billing Event
@@ -125,6 +300,7 @@ export async function ensureTestProductSet(
     await db.query(
       'UPDATE product_sets SET gym_id = ?, user_membership_id = COALESCE(?, user_membership_id) WHERE id = ?',
       [gymId, userMembershipId, rows[0].id]);
+    await adoptConfigHolder(Number(rows[0].id), userMembershipId);
     return Number(rows[0].id);
   }
   try {
@@ -133,6 +309,7 @@ export async function ensureTestProductSet(
        VALUES (?, ?, 'active', '2000-01-01', ?)`,
       [gymId, memberId, userMembershipId]);
     await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
+    await adoptConfigHolder(Number(insertId), userMembershipId);
     return Number(insertId);
   } catch (err: any) {
     // Two fixtures of one member racing on `product_sets_one_active`: the set exists now.

@@ -23,7 +23,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 afterAll(async () => {
@@ -92,7 +92,7 @@ describe('Applied Promotion grant prices (#924 stage 2)', () => {
       'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
       [gymId, 'APGP Member', `apgp-${uniq()}@test.com`],
     );
-    const { insertId } = await db.query(
+    const { insertId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', CURDATE(), 100)`,

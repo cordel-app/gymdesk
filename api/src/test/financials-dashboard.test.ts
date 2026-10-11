@@ -11,7 +11,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 const PATH = '/financials/dashboard/membership-plans';
@@ -55,7 +55,7 @@ async function assignPlan(
   endsAt: string | null = null,
   startsAt: string | null = null,
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
      VALUES (?, ?, ?, ?, COALESCE(?, CURDATE()), ?, 29.99)`,
     [gym, memberId, planId, status, startsAt, endsAt],

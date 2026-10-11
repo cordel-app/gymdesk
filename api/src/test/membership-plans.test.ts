@@ -7,7 +7,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet } from './helpers';
+  request, ensureTestProductSet, legacyAssignmentQuery, getAssignmentConfig } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -1878,7 +1878,9 @@ describe('Membership Plan Pricing (#547)', () => {
     await savePricing(planId, { price: 60, tax_rate_id: taxRate21 });
     const memberId = await createMember(gymId);
     const membershipId = await createActiveUserMembership(gymId, memberId, planId);
-    await db.query('UPDATE user_memberships SET base_price = 40, membership_fee_price = 40 WHERE id = ?', [membershipId]);
+    await legacyAssignmentQuery('UPDATE user_memberships SET base_price = 40, membership_fee_price = 40 WHERE id = ?', [membershipId]);
+    // A running assignment has its Active version, which carries the fee.
+    await ensureTestProductSet(gymId, memberId, membershipId);
 
     await savePricing(planId, { price: 75, tax_rate_id: taxRate21 });
     const res = await request
@@ -1890,9 +1892,9 @@ describe('Membership Plan Pricing (#547)', () => {
     expect(res.body.kept_discounted).toBe(0);
     expect(res.body.price).toBeCloseTo(75, 2);
 
-    const { rows } = await db.query('SELECT * FROM user_memberships WHERE id = ?', [membershipId]);
-    expect(Number(rows[0].base_price)).toBeCloseTo(75, 2);
-    expect(Number(rows[0].membership_fee_price)).toBeCloseTo(75, 2);
+    const config = await getAssignmentConfig(membershipId);
+    expect(Number(config.base_price)).toBeCloseTo(75, 2);
+    expect(Number(config.membership_fee_price)).toBeCloseTo(75, 2);
 
     const prices = await priceRows(planId);
     const current = prices.find((p) => Number(p.price) === 75);
@@ -1933,8 +1935,7 @@ describe('Membership Plan Pricing (#547)', () => {
     expect(versions.map((v: any) => v.status)).toEqual(['superseded', 'active']);
     expect(Number(versions[1].membership_fee_price)).toBeCloseTo(90, 2);
 
-    // The read model takes the fee from the version even if the row's cache is stale.
-    await db.query('UPDATE user_memberships SET membership_fee_price = 1 WHERE id = ?', [created.body.id]);
+    // The read model takes the fee from the version.
     const read = await request
       .get(`/user-memberships/${created.body.id}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -1948,7 +1949,7 @@ describe('Membership Plan Pricing (#547)', () => {
     await savePricing(planId, { price: 100, tax_rate_id: taxRate21 });
     const memberId = await createMember(gymId);
     const membershipId = await createActiveUserMembership(gymId, memberId, planId);
-    await db.query(
+    await legacyAssignmentQuery(
       "UPDATE user_memberships SET base_price = 100, membership_fee_price = 80, discount_reason = 'Loyalty' WHERE id = ?",
       [membershipId],
     );
@@ -1962,9 +1963,9 @@ describe('Membership Plan Pricing (#547)', () => {
     expect(res.body.updated).toBe(0);
     expect(res.body.kept_discounted).toBe(1);
 
-    const { rows } = await db.query('SELECT * FROM user_memberships WHERE id = ?', [membershipId]);
-    expect(Number(rows[0].base_price)).toBeCloseTo(130, 2);
-    expect(Number(rows[0].membership_fee_price)).toBeCloseTo(80, 2);
+    const config = await getAssignmentConfig(membershipId);
+    expect(Number(config.base_price)).toBeCloseTo(130, 2);
+    expect(Number(config.membership_fee_price)).toBeCloseTo(80, 2);
   });
 
   it('never touches a cancelled assigned plan or an already-generated billing event', async () => {
@@ -1972,7 +1973,7 @@ describe('Membership Plan Pricing (#547)', () => {
     await savePricing(planId, { price: 50, tax_rate_id: taxRate21 });
     const memberId = await createMember(gymId);
     const membershipId = await createActiveUserMembership(gymId, memberId, planId);
-    await db.query(
+    await legacyAssignmentQuery(
       "UPDATE user_memberships SET status = 'cancelled', base_price = 50, membership_fee_price = 50 WHERE id = ?",
       [membershipId],
     );
@@ -1990,8 +1991,7 @@ describe('Membership Plan Pricing (#547)', () => {
     expect(res.status).toBe(200);
     expect(res.body.updated).toBe(0);
 
-    const { rows: umRows } = await db.query('SELECT * FROM user_memberships WHERE id = ?', [membershipId]);
-    expect(Number(umRows[0].membership_fee_price)).toBeCloseTo(50, 2);
+    expect(Number((await getAssignmentConfig(membershipId)).membership_fee_price)).toBeCloseTo(50, 2);
     const { rows: beRows } = await db.query('SELECT * FROM billing_events WHERE id = ?', [eventId]);
     expect(Number(beRows[0].amount)).toBeCloseTo(50, 2);
   });

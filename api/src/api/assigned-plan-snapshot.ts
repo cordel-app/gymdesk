@@ -229,127 +229,6 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
 }
 
 /**
- * Captures the Plan's commercial configuration onto a freshly created
- * assignment. Runs inside the caller's transaction, so an assignment can never
- * commit half-snapshotted.
- *
- * `membershipFeePrice` is the *regular* (pre-Promotion, pre-discount) price the
- * caller already resolved with `effectivePrice()`. It is passed in rather than
- * re-read here because the caller may have no price window at all, in which
- * case there is no regular price to freeze and the column stays NULL. Since
- * #635 stage 15 it is also where a *negotiated* fee lives: there is no second
- * stored price any more, so a staff-agreed number is this column's value and the
- * assignment's Promotions are resolved on top of it, per cycle.
- *
- * Benefit rows carry the Product's price as it is now: the item itself
- * may be repriced, renamed or retired later without touching what was agreed
- * (§17). `INSERT ... SELECT` keeps each section a single statement, and
- * `products` is not filtered on `deleted_at` — an item already attached to
- * the Plan is part of the agreement even if it is retired in the same breath.
- */
-export async function snapshotAssignedPlan(tx: Tx, params: {
-  gymId: string;
-  userMembershipId: number;
-  membershipPlanId: number | null;
-  membershipFeePrice: number | null;
-  /**
-   * #1130 — whether to freeze the Plan's `auto_renew` onto the assignment.
-   *
-   * True for every path that *creates* an assignment, which is why it defaults
-   * that way: the contract is agreed now, so it renews the way the Plan renews
-   * now. False from `materialiseAssignedPlanSnapshot()` alone, and that is the
-   * load-bearing case — see the note on the UPDATE below.
-   */
-  captureAutoRenew?: boolean;
-  /**
-   * #1184 stage 3 — optional Plan benefits the assigner declined. Already
-   * validated by `resolveDeclinedBenefits()`; the lines are simply not copied,
-   * so billing and every projection read the accepted set and the Plan itself
-   * is untouched.
-   */
-  declinedBenefits?: Array<{ section: string; product_id: number }>;
-}): Promise<void> {
-  const { gymId, userMembershipId, membershipPlanId, membershipFeePrice } = params;
-  const captureAutoRenew = params.captureAutoRenew !== false;
-  if (membershipPlanId == null) return;
-
-  const { rows: planRows } = await tx.query(
-    `SELECT p.free_periods, p.paid_periods, p.bonus_periods, p.pay_beforehand_periods,
-            bp.recurring_billing_interval, bp.recurring_billing_unit, bp.auto_renew
-     FROM membership_plans p
-     LEFT JOIN billing_policies bp ON bp.membership_plan_id = p.id AND bp.gym_id = p.gym_id
-     WHERE p.id = ? AND p.gym_id = ?`,
-    [membershipPlanId, gymId],
-  );
-  const plan = planRows[0] ?? {};
-
-  /**
-   * #1130 — `auto_renew` is written only when the assignment is being created.
-   *
-   * It is the one snapshot column that must not be *materialised*: an
-   * assignment created before migration 230 is non-repeating today (the
-   * column's backfilled 0), so writing the live Plan's flag onto it the first
-   * time staff edit an unrelated benefit section would start a second Free /
-   * Pre-paid / Bonus cycle on a contract already past its first one, which is
-   * the retroactive change the ticket's answer A forbids. "What it resolves
-   * today" is the stored value, so there is genuinely nothing to capture.
-   *
-   * A Plan with no `billing_policies` row renews nothing — there is no cadence
-   * to step a cycle by — hence `?? false` rather than the column's own default.
-   */
-  await tx.query(
-    `UPDATE user_memberships
-     SET free_periods = ?, paid_periods = ?, bonus_periods = ?, pay_beforehand_periods = ?,
-         recurring_billing_interval = ?, recurring_billing_unit = ?, membership_fee_price = ?
-         ${captureAutoRenew ? ', auto_renew = ?' : ''}
-     WHERE id = ? AND gym_id = ?`,
-    [
-      plan.free_periods ?? null, plan.paid_periods ?? null, plan.bonus_periods ?? null,
-      plan.pay_beforehand_periods ?? null,
-      plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null,
-      membershipFeePrice ?? null,
-      ...(captureAutoRenew ? [toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0] : []),
-      userMembershipId, gymId,
-    ],
-  );
-
-  for (const category of CATEGORIES) {
-    const target = BENEFIT_TABLE_BY_CATEGORY[category];
-    const source = planBenefitTableForCategory(category);
-    // #918: the Session Benefit's renewal Frequency is copied with everything
-    // else, because billing and every display read the snapshot and never the
-    // live Plan — a Plan switched from Weekly to Monthly afterwards must not
-    // change what an existing member was agreed. Only the session tables carry
-    // the column.
-    const sessionFrequency = category === 'session';
-    const declinedIds = (params.declinedBenefits ?? [])
-      .filter((d) => d.section === category).map((d) => d.product_id);
-    const declinedClause = declinedIds.length > 0
-      ? `AND b.product_id NOT IN (${declinedIds.map(() => '?').join(',')})` : '';
-    await tx.query(
-      `INSERT INTO ${target}
-         (gym_id, user_membership_id, product_id, quantity,
-          item_name, item_type, item_billing_frequency, unit_price, currency, \`action\`, \`value\`,
-          mandatory
-          ${sessionFrequency ? ', frequency' : ''})
-       SELECT ?, ?, b.product_id, b.quantity,
-              ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
-              gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency,
-              b.\`action\`, b.\`value\`, b.mandatory
-              ${sessionFrequency ? ', b.frequency' : ''}
-       FROM ${source} b
-       JOIN products gc ON gc.id = b.product_id
-       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-       WHERE b.membership_plan_id = ? AND b.gym_id = ? ${declinedClause}`,
-      [gymId, userMembershipId, membershipPlanId, gymId, ...declinedIds],
-    );
-  }
-  // #1187 — every creation path inserts the covered Members before it
-  // snapshots, so the per-Member quantity is settled here, once.
-  await syncMandatoryProductQuantities(tx, gymId, userMembershipId);
-}
-
-/**
  * #1187 — sets the quantity of every catalogue-mandatory line (`products.mandatory
  * = 1`) of this assignment's three snapshot sections to the number of Members it
  * covers, counted from `user_membership_members` (owner included). The SQL half
@@ -382,61 +261,6 @@ export async function syncMandatoryProductQuantities(
   }
 }
 
-/**
- * True when this assignment already owns a snapshot — any of the seven billing
- * columns set, or any benefit row in any of the three sections. Exactly the
- * condition `snapshot_captured` reports and the one stage 3's fallbacks key
- * off, read inside the caller's transaction so an edit can decide whether it
- * still has to capture one (see `materialiseAssignedPlanSnapshot`).
- */
-export async function hasAssignedPlanSnapshot(tx: Tx, gymId: string, umId: number): Promise<boolean> {
-  const { rows } = await tx.query(
-    `SELECT EXISTS(
-       SELECT 1 FROM user_memberships
-        WHERE id = ? AND gym_id = ?
-          AND (free_periods IS NOT NULL OR paid_periods IS NOT NULL OR bonus_periods IS NOT NULL
-               OR pay_beforehand_periods IS NOT NULL
-               OR recurring_billing_interval IS NOT NULL OR recurring_billing_unit IS NOT NULL
-               OR membership_fee_price IS NOT NULL)
-     ) ${CATEGORIES.map((c) => `OR EXISTS(
-       SELECT 1 FROM ${BENEFIT_TABLE_BY_CATEGORY[c]}
-        WHERE user_membership_id = ? AND gym_id = ?
-     )`).join(' ')} AS captured`,
-    [umId, gymId, ...CATEGORIES.flatMap(() => [umId, gymId])],
-  );
-  return Number(rows[0]?.captured) === 1;
-}
-
-/**
- * #635 stage 6 — captures the snapshot of an assignment that never got one,
- * immediately before its first explicit edit.
- *
- * An assignment created before migration 174 that the backfill could not reach
- * still resolves live (`loadPlanBenefitsForSimulation`, `regularMembershipFee`),
- * and that fallback is all-or-nothing: the moment one section of it is edited,
- * the assignment stops being "uncaptured" and the other sections would silently
- * drop to nothing. So the live values it bills today are written down first —
- * the same numbers, from the same Plan, exactly as migration 174's backfill did
- * — and the edit then changes only the section the user asked for.
- *
- * A no-op for an assignment that already has a snapshot, which is the normal
- * case: every assignment created since stage 2 captures one at assignment time.
- */
-export async function materialiseAssignedPlanSnapshot(tx: Tx, params: {
-  gymId: string;
-  userMembershipId: number;
-  membershipPlanId: number | null;
-  membershipFeePrice: number | null;
-}): Promise<boolean> {
-  if (await hasAssignedPlanSnapshot(tx, params.gymId, params.userMembershipId)) return false;
-  // #1130 — everything else here is "write down what this assignment resolves
-  // live today"; `auto_renew` already has a stored answer (migration 230's
-  // backfilled 0) and capturing the Plan's current flag would change what the
-  // assignment bills from its second cycle on. See the note on the UPDATE.
-  await snapshotAssignedPlan(tx, { ...params, captureAutoRenew: false });
-  return true;
-}
-
 /** The snapshot of one assignment, for the expanded card and (in stage 3) billing. */
 export async function loadAssignedPlanSnapshot(
   gymId: string, umId: number,
@@ -446,7 +270,7 @@ export async function loadAssignedPlanSnapshot(
       `SELECT ${assignmentConfig('free_periods')} AS free_periods, ${assignmentConfig('paid_periods')} AS paid_periods,
               ${assignmentConfig('bonus_periods')} AS bonus_periods,
               ${assignmentConfig('pay_beforehand_periods')} AS pay_beforehand_periods,
-              um.recurring_billing_interval, um.recurring_billing_unit,
+              cfg.recurring_billing_interval, cfg.recurring_billing_unit,
               ${assignmentConfig('membership_fee_price')} AS membership_fee_price,
               ${assignmentConfig('personal_fee_benefit_action')} AS personal_fee_benefit_action,
               ${assignmentConfig('personal_fee_benefit_value')} AS personal_fee_benefit_value,
@@ -499,89 +323,6 @@ export async function loadAssignedPlanBenefitSection(
 }
 
 /**
- * #635 stage 6 §15 — replaces one benefit section of *this assignment's*
- * snapshot. Nothing else is touched: not the Membership Plan the assignment
- * came from, not another assignment of the same Plan, not the Product.
- *
- * A line whose item was already in the section keeps the commercial facts it
- * was captured with and only changes quantity — editing one line must never
- * silently reprice its neighbours to today's catalogue (§17). A line for an
- * item that was not in the section is new, so it freezes the item as it is
- * now, exactly as `snapshotAssignedPlan()` does at assignment time. Re-pricing
- * a kept line is therefore a deliberate remove-then-add, never a side effect.
- */
-export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
-  gymId: string;
-  userMembershipId: number;
-  category: ProductBenefitCategory;
-  items: { product_id: number; quantity: number }[];
-}): Promise<void> {
-  const { gymId, userMembershipId, category, items } = params;
-  const table = BENEFIT_TABLE_BY_CATEGORY[category];
-  // #918: a kept session line keeps its agreed renewal Frequency for the same
-  // reason it keeps its frozen price — this edit did not mention it, and the
-  // section's `PUT` takes quantity alone. A line added here has none: it was
-  // agreed on the assignment rather than copied from a Plan section, so there
-  // is no configured Frequency to carry.
-  const sessionFrequency = category === 'session';
-
-  const { rows: existing } = await tx.query(
-    `SELECT * FROM ${table} WHERE user_membership_id = ? AND gym_id = ? FOR UPDATE`,
-    [userMembershipId, gymId],
-  );
-  const kept = new Map<number, any>(existing.map((r: any) => [r.product_id, r]));
-
-  await tx.query(`DELETE FROM ${table} WHERE user_membership_id = ? AND gym_id = ?`, [userMembershipId, gymId]);
-
-  for (const item of items) {
-    const previous = kept.get(item.product_id);
-    if (previous) {
-      await tx.query(
-        `INSERT INTO ${table}
-           (gym_id, user_membership_id, product_id, quantity,
-            item_name, item_type, item_billing_frequency, unit_price, currency,
-            \`action\`, \`value\`, mandatory${sessionFrequency ? ', frequency' : ''})
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?${sessionFrequency ? ', ?' : ''})`,
-        [
-          gymId, userMembershipId, item.product_id, item.quantity,
-          previous.item_name, previous.item_type, previous.item_billing_frequency,
-          previous.unit_price, previous.currency,
-          // #896 stage 1: a kept line keeps its pricing treatment for the same
-          // reason it keeps its frozen price — this edit did not mention it.
-          previous.action, previous.value,
-          // #1184 stage 2: and its Mandatory flag — what was agreed.
-          previous.mandatory ? 1 : 0,
-          ...(sessionFrequency ? [previous.frequency ?? null] : []),
-        ],
-      );
-      continue;
-    }
-    // A newly added line freezes the Product as it is now. `products`
-    // is not filtered on `deleted_at` for the same reason as at assignment
-    // time: the route has already decided the item may be attached. Its
-    // `(action, value)` pair is the column's own neutral default (#896): the
-    // line was agreed here rather than copied from a Plan section, so there is
-    // no configured treatment to carry, and the item bills at its own price.
-    await tx.query(
-      `INSERT INTO ${table}
-         (gym_id, user_membership_id, product_id, quantity,
-          item_name, item_type, item_billing_frequency, unit_price, currency)
-       SELECT ?, ?, gc.id, ?, ${ITEM_NAME_EXPR}, ${ITEM_TYPE_EXPR},
-              gc.billing_frequency, COALESCE(gc.amount, 0), gc.currency
-       FROM products gc
-       LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-       WHERE gc.id = ? AND gc.gym_id = ?`,
-      [gymId, userMembershipId, item.quantity, item.product_id, gymId],
-    );
-  }
-  // #1187 — a catalogue-mandatory line's quantity is read-only: whatever the
-  // editor sent, it stays the covered-Member count.
-  await syncMandatoryProductQuantities(tx, gymId, userMembershipId);
-}
-
-/* ── Stage 3: billing reads the snapshot ─────────────────────────────────── */
-
-/**
  * The billing cadence of an assignment, in SQL: the cadence frozen onto the
  * assignment, falling back to its Plan's live `billing_policies` row only for
  * an assignment that has none.
@@ -594,8 +335,12 @@ export async function writeAssignedPlanBenefitSection(tx: Tx, params: {
  * site: a Plan whose policy was deleted still bills its existing assignments.
  */
 export const ASSIGNMENT_CADENCE = {
-  interval: (um = 'um', bp = 'bp') => `COALESCE(${um}.recurring_billing_interval, ${bp}.recurring_billing_interval)`,
-  unit: (um = 'um', bp = 'bp') => `COALESCE(${um}.recurring_billing_unit, ${bp}.recurring_billing_unit)`,
+  // #1325 PR 3e-3: the pair is the version's own (`product_set_plan_snapshots`,
+  // frozen from its Plan when the version was created), joined as `cfg` by
+  // `ASSIGNMENT_CONFIG_JOIN`; the first argument is kept for the callers that
+  // pass it.
+  interval: (_um = 'um', bp = 'bp') => `COALESCE(cfg.recurring_billing_interval, ${bp}.recurring_billing_interval)`,
+  unit: (_um = 'um', bp = 'bp') => `COALESCE(cfg.recurring_billing_unit, ${bp}.recurring_billing_unit)`,
 };
 
 /**

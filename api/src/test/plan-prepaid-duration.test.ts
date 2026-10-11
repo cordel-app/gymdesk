@@ -29,7 +29,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, getAssignmentConfig
 } from './helpers';
 
 afterAll(async () => {
@@ -218,9 +218,7 @@ describe('Billing Simulation — a Pre-paid month charges nothing', () => {
   });
 
   it('freezes the Plan\'s Pre-paid Duration onto the assignment (§11)', async () => {
-    const { rows } = await db.query(
-      'SELECT pay_beforehand_periods FROM user_memberships WHERE id = ?', [umId],
-    );
+    const { rows } = await (async () => ({ rows: [await getAssignmentConfig(umId)] }))();
     expect(Number(rows[0].pay_beforehand_periods)).toBe(2);
   });
 
@@ -303,9 +301,7 @@ describe('PUT /user-memberships/:id/billing-duration — Pre-paid Duration', () 
     expect(res.body.error).toMatch(/pay_beforehand_periods/);
 
     // Rejected inside the transaction, so nothing of the payload landed.
-    const { rows } = await db.query(
-      'SELECT pay_beforehand_periods FROM user_memberships WHERE id = ?', [umA],
-    );
+    const { rows } = await (async () => ({ rows: [await getAssignmentConfig(umA)] }))();
     expect(Number(rows[0].pay_beforehand_periods)).toBe(2);
   });
 

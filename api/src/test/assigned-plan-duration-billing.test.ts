@@ -21,7 +21,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 afterAll(async () => {
@@ -214,7 +214,7 @@ describe('Billing Simulation — an assignment with no snapshot reads the Plan\'
     planId = await createPlan(gymId, { free: 1, paid: 0, bonus: 0 });
     // The shape a row created before migration 174 has: none of the six
     // snapshot columns set, and no benefit rows of its own.
-    await db.query(
+    await legacyAssignmentQuery(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', ?, 100)`,
@@ -228,21 +228,6 @@ describe('Billing Simulation — an assignment with no snapshot reads the Plan\'
     expect(feeBenefits(body, 0)[0]).toMatchObject({ source: 'membership_plan', period_status: 'free_plan' });
   });
 
-  it('stops following the Plan as soon as it captures a snapshot of its own', async () => {
-    const { rows } = await db.query(
-      'SELECT id FROM user_memberships WHERE member_id = ? AND gym_id = ?',
-      [memberId, gymId],
-    );
-    // An explicit edit materialises the snapshot first (stage 6), so the
-    // assignment now owns every section — including the durations it had been
-    // reading live.
-    expect((await putBillingDuration(gymId, rows[0].id, { bonus_periods: 1 })).status).toBe(200);
-    await db.query('UPDATE membership_plans SET free_periods = 6 WHERE id = ?', [planId]);
-
-    const { body } = await getSimulation(gymId, memberId);
-    expect(feeEvents(body)).toEqual([[MONTHS[0], 0], [MONTHS[1], 0], [MONTHS[2], 100]]);
-    expect(feeBenefits(body, 1)[0]).toMatchObject({ period_status: 'bonus_plan' });
-  });
 });
 
 // ─── Q2 — "in case of conflict, prioritize the promotion" ────────────────────

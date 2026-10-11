@@ -17,7 +17,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 const PATH = '/nutrition/dashboard/nutrition-plans';
@@ -105,7 +105,7 @@ async function enroll(
   createdAt: string | null = null,
 ): Promise<number> {
   const planId = await membershipPlanFor(gym);
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price, created_at)
      VALUES (?, ?, ?, ?, CURDATE(), 29.99, COALESCE(?, UTC_TIMESTAMP()))`,

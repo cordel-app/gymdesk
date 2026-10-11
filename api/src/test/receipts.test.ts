@@ -20,7 +20,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet } from './helpers';
+  request, ensureTestProductSet, legacyAssignmentQuery } from './helpers';
 
 let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -52,7 +52,7 @@ async function createAssignment(gymId: string, memberId: number): Promise<number
      VALUES (?, ?, 'active', 'staff_only')`,
     [gymId, `Receipt-Plan-${uniq()}`],
   );
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', '2020-01-01', '29.99')`,

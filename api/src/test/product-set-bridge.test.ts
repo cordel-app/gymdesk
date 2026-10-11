@@ -18,7 +18,7 @@ vi.mock('../payments', async (importOriginal) => {
   };
 });
 
-import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, TEST_AUTH_HEADER, getAssignmentConfig } from './helpers';
 
 const SECRET = 'test-bridge-webhook';
 let gymId: string;
@@ -54,8 +54,9 @@ async function setsOf(memberId: number) {
   return rows;
 }
 async function um(id: number) {
-  const { rows } = await db.query<any>('SELECT status, personal_fee_benefit_value FROM user_memberships WHERE id = ?', [id]);
-  return rows[0];
+  const { rows } = await db.query<any>('SELECT status FROM user_memberships WHERE id = ?', [id]);
+  const config = await getAssignmentConfig(id);
+  return { ...rows[0], personal_fee_benefit_value: config.personal_fee_benefit_value ?? null };
 }
 async function scheduled(setId: number) {
   const { rows } = await db.query<any>(

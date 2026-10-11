@@ -1708,8 +1708,8 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
               ${ASSIGNMENT_AUTO_RENEW()} AS duration_repeats,
               um.closed_at,
               (${assignmentConfig('free_periods')} IS NOT NULL OR ${assignmentConfig('paid_periods')} IS NOT NULL OR ${assignmentConfig('pay_beforehand_periods')} IS NOT NULL
-               OR ${assignmentConfig('bonus_periods')} IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
-               OR um.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
+               OR ${assignmentConfig('bonus_periods')} IS NOT NULL OR cfg.recurring_billing_interval IS NOT NULL
+               OR cfg.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
               ) AS has_billing_snapshot
        FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
