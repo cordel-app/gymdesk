@@ -41,6 +41,7 @@ import { ExerciseDetailModal } from '@/components/exercises/ExerciseDetailModal'
 // screens, so it renders the *same* toolbar over the *same* filter-state
 // declaration as Base Exercises and the Import modal (§19) — never a search box
 // of its own.
+import { EXERCISE_CATEGORIES } from '@/lib/exerciseCategories';
 import { ExerciseFilterBar, type ExerciseFacetOptions } from '@/components/exercises/ExerciseFilterBar';
 import { EMPTY_EXERCISE_FILTER, exerciseFilterQuery, type ExerciseFilterState } from '@/lib/exerciseFilters';
 import { ImportExercisesModal } from './ImportExercisesModal';
@@ -235,7 +236,10 @@ export default function ExercisesPage() {
     if (!activeGymId) return;
     try {
       const res = await apiFetch<{ total: number; equipment: string[]; category: string[] }>('/exercises/facets');
-      setFacets({ equipment: res.equipment ?? [], category: res.category ?? [] });
+      // #1384: the seven supported categories are always offered (a gym's own
+      // exercises may be assigned one), beside any other stored value.
+      const categories = Array.from(new Set([...EXERCISE_CATEGORIES, ...(res.category ?? [])])).sort();
+      setFacets({ equipment: res.equipment ?? [], category: categories });
       setTotal(res.total ?? null);
     } catch { /* non-critical: the toolbar simply offers no metadata filter */ }
   }
@@ -661,15 +665,15 @@ export default function ExercisesPage() {
       {/* #969 §2: the search box and the Status dropdown that sat in the header
           are two fields of the shared toolbar now, and the list starts directly
           below it. This context carries no slug (§4 — no editor writes one) and
-          no source metadata, so it renders Search + Muscles + Status and
-          nothing else: the facets come back empty and §9's rule keeps a control
-          with no values off the row entirely. */}
+          no source metadata, so it renders Search + Muscles + Equipment +
+          Category + Status, the same row as Base Exercises (#1384). */}
       <ExerciseFilterBar
         value={filter}
         onChange={setFilter}
         muscleKeys={muscleKeys}
         muscleLabel={muscleLabel}
         facets={facets}
+        alwaysShowMetadata
         showStatus
         shown={rows.length}
         total={total}

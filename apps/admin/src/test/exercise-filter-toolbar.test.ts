@@ -240,6 +240,11 @@ describe('a gym’s own Exercises list (§19)', () => {
     expect(bar.slice(0, bar.indexOf('/>'))).toContain('showStatus');
   });
 
+  it('offers Equipment and Category like Base Exercises (#1384)', () => {
+    const bar = gymPage.slice(gymPage.indexOf('<ExerciseFilterBar'));
+    expect(bar.slice(0, bar.indexOf('/>'))).toContain('alwaysShowMetadata');
+  });
+
   it('reads the facets and the unfiltered total for §14’s count', () => {
     expect(gymPage).toContain("'/exercises/facets'");
     expect(gymPage).toContain('total={total}');
