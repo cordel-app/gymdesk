@@ -1,3 +1,4 @@
+import { parseManualPaymentMethod } from '../domain/paymentAttemptMethod';
 import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
@@ -1131,6 +1132,10 @@ userMembershipsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), 
 userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const { gymId, userId, role } = getTenantContext(req);
   const { amount, notes } = req.body ?? {};
+  // #1459: `cash` (default) or `card_terminal` — an external physical terminal
+  // the staff member confirms; neither calls the online provider.
+  const payMethod = parseManualPaymentMethod(req.body?.method);
+  if (!payMethod) return res.status(400).json({ error: "method must be 'cash' or 'card_terminal'" });
   try {
     const fee = await currentMembershipFee(gymId, Number(req.params.id));
     if (fee == null) return res.status(404).json({ error: 'Membership not found' });
@@ -1160,9 +1165,9 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
              (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
               source, attempt, method, created_by, notes, created_at, completed_at)
            VALUES (?, ?, (SELECT member_id FROM user_memberships WHERE id = ?), ?, 'EUR', ?, ?, 'completed', 'monei',
-                   'manual', ?, 'cash', ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
+                   'manual', ?, ?, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
           [gymId, req.params.id, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
-            Number(prev[0]?.n ?? 0) + 1, resolveRequestActor(getTenantContext(req)),
+            Number(prev[0]?.n ?? 0) + 1, payMethod, resolveRequestActor(getTenantContext(req)),
             typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null]);
       }
       const committed = await commitAssignment(tx, {
@@ -1211,7 +1216,7 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
       action: 'record_payment', entityType: 'user_membership', entityId: req.params.id,
       next: row,
       previous: {
-        status: PENDING_PAYMENT_STATUS, amount: paid.toFixed(2),
+        status: PENDING_PAYMENT_STATUS, amount: paid.toFixed(2), method: payMethod,
         ...(outcome.superseded.length > 0 ? { superseded_user_membership_ids: outcome.superseded } : {}),
       },
     });

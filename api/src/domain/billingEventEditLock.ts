@@ -13,11 +13,12 @@
  * commit so a concurrent payment cannot slip past the first check.
  */
 
+import { AttemptMethod } from './paymentAttemptMethod';
 import { ProviderStatusClass, classifyProviderStatus, normaliseProviderStatus } from './providerPaymentStatus';
 
 export interface LatestAttempt {
   /** `provider` attempts carry a provider status; `cash`/`waive` do not. */
-  method: 'provider' | 'cash' | 'waive';
+  method: AttemptMethod;
   providerStatus: string | null;
   /** The internal outcome (`pending`/`completed`/`failed`/`expired`). */
   status: string;
@@ -53,7 +54,7 @@ function reasonFor(event: LockEvent): BlockReason | null {
   }
   // Waive and cash are settled by the method itself: no provider attempt exists.
   if (attempt.method === 'waive') return attempt.status === 'completed' ? null : 'in_flight';
-  if (attempt.method === 'cash') return attempt.status === 'completed' ? null : 'in_flight';
+  if (attempt.method === 'cash' || attempt.method === 'card_terminal') return attempt.status === 'completed' ? null : 'in_flight';
 
   const cls: ProviderStatusClass = classifyProviderStatus(normaliseProviderStatus(attempt.providerStatus));
   switch (cls) {
