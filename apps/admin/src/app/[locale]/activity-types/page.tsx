@@ -25,6 +25,8 @@ import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyS
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
 import { WAITLIST_MODES } from '@/lib/waitlistModes';
+import { ActivityImageField } from '@/components/ActivityImageField';
+import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { dashedAddBtnStyle, inlineActionsRowStyle, rowRemoveBtnStyle } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -44,6 +46,7 @@ interface ActivityType {
   default_trainer_membership_id: number | null;
   default_trainer_name: string | null;
   color: string | null;
+  image_url: string | null;
   status: 'active' | 'inactive';
   public_event: boolean;
   waitlist_mode: 'disabled' | 'open' | 'closed';
@@ -120,6 +123,8 @@ type InlineNew = {
   duration_minutes: string;
   max_capacity: string;
   color: string;
+  /** #1373: the prepared 1080 × 1080 PNG, held until the activity exists. */
+  image: Blob | null;
   saving: boolean;
   error: string | null;
 };
@@ -188,7 +193,7 @@ export default function ActivityTypesPage() {
   const tWeekday = useTranslations('weekday');
   const locale = useLocale();
   const router = useRouter();
-  const { apiFetch } = useApiClient();
+  const { apiFetch, uploadFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   const { toast } = useToast();
 
@@ -218,6 +223,8 @@ export default function ActivityTypesPage() {
   const [editSelectedServices, setEditSelectedServices] = useState<Set<number>>(new Set());
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+  // #1373: a staged image whose upload failed right after the activity was created.
+  const [imageRetry, setImageRetry] = useState<{ activityId: number; file: Blob; error: string } | null>(null);
 
   // Inline new row
   const [inlineNew, setInlineNew] = useState<InlineNew | null>(null);
@@ -325,10 +332,16 @@ export default function ActivityTypesPage() {
     }
   }
 
+  /** The row the image routes answer with replaces the listed one (no reload: the form stays open). */
+  function applyImageChange(updated: unknown) {
+    const next = updated as ActivityType;
+    setRows((prev) => prev.map((r) => (r.id === next.id ? { ...r, image_url: next.image_url, modified_at: next.modified_at } : r)));
+  }
+
   // ─── Inline new ─────────────────────────────────────────────────────────────
 
   function openInlineNew() {
-    setInlineNew({ name: '', duration_minutes: '', max_capacity: '', color: '', saving: false, error: null });
+    setInlineNew({ name: '', duration_minutes: '', max_capacity: '', color: '', image: null, saving: false, error: null });
     setTimeout(() => newNameRef.current?.focus(), 50);
   }
 
@@ -340,7 +353,7 @@ export default function ActivityTypesPage() {
     }
     setInlineNew({ ...inlineNew, saving: true, error: null });
     try {
-      await apiFetch<ActivityType>('/activity-types', {
+      const created = await apiFetch<ActivityType>('/activity-types', {
         method: 'POST',
         body: JSON.stringify({
           name: inlineNew.name.trim(),
@@ -349,8 +362,23 @@ export default function ActivityTypesPage() {
           color: inlineNew.color || null,
         }),
       });
+      // #1373 §2: the key needs the activity's id, so a staged image is uploaded
+      // right after the save. A failed upload never discards the new activity:
+      // it opens in Edit mode with the error and a Retry.
+      let uploadFailure: string | null = null;
+      if (inlineNew.image) {
+        try {
+          await uploadFetch(`/activity-types/${created.id}/image`, inlineNew.image);
+        } catch (err: any) {
+          uploadFailure = err.message ?? t('image_created_upload_failed');
+        }
+      }
       setInlineNew(null);
-      load();
+      await load();
+      if (uploadFailure && inlineNew.image) {
+        setImageRetry({ activityId: created.id, file: inlineNew.image, error: `${t('image_created_upload_failed')} ${uploadFailure}` });
+        await openEdit(created);
+      }
     } catch (err: any) {
       setInlineNew({ ...inlineNew, saving: false, error: err.message ?? t('error_generic') });
     }
@@ -396,6 +424,7 @@ export default function ActivityTypesPage() {
 
   function cancelEdit() {
     setEditingId(null);
+    setImageRetry(null);
     setEditError(null);
     resetScheduleEditing();
   }
@@ -1120,6 +1149,24 @@ export default function ActivityTypesPage() {
               </div>
             </div>
 
+            <SectionHeader title={t('section_media')} />
+            <div style={{ marginBottom: 12 }}>
+              <ActivityImageField
+                target={{
+                  kind: 'immediate',
+                  activityId: row.id,
+                  imageUrl: row.image_url,
+                  stamp: row.modified_at,
+                  onChanged: applyImageChange,
+                  retry: imageRetry?.activityId === row.id ? imageRetry : null,
+                  onRetryConsumed: () => setImageRetry(null),
+                }}
+                disabled={!canWrite}
+                disabledTitle={readOnlyTitle}
+                label={(key) => t(key as any)}
+              />
+            </div>
+
             <SectionHeader title={t('section_booking_access')} />
             <div style={{ marginBottom: 10 }}>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
@@ -1207,6 +1254,11 @@ export default function ActivityTypesPage() {
               <DetailRow label={t('label_default_trainer')} value={row.default_trainer_name ?? '—'} />
             </div>
 
+            <SectionHeader title={t('section_media')} />
+            <div style={{ marginBottom: 8 }}>
+              <MemberImagePreview src={memberImagePreviewSrc(row.image_url, row.modified_at)} emptyLabel={t('image_none')} />
+            </div>
+
             <SectionHeader title={t('section_booking_access')} />
             <DetailRow label={t('label_public_event')} value={row.public_event ? t('public_event_yes') : t('public_event_no')} />
             <DetailRow label={t('label_waitlist_mode')} value={t(`waitlist_mode_${row.waitlist_mode}` as any)} />
@@ -1274,6 +1326,13 @@ export default function ActivityTypesPage() {
                 )}
               </div>
             </div>
+          </div>
+          <div style={{ margin: '12px 0' }}>
+            <label style={inlineLabelStyle}>{t('label_image')}</label>
+            <ActivityImageField
+              target={{ kind: 'staged', file: inlineNew.image, onFile: (image) => setInlineNew({ ...inlineNew, image }) }}
+              label={(key) => t(key as any)}
+            />
           </div>
           {inlineNew.error && <p style={errorStyle}>{inlineNew.error}</p>}
           <div style={inlineActionsRowStyle}>
