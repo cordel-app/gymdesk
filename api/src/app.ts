@@ -81,6 +81,7 @@ import {
   PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH, PLATFORM_EXERCISE_VIDEO_UPLOAD_PATH,
   platformExerciseImageBodyParser, platformExerciseVideoBodyParser, platformExercisesRouter,
 } from './api/platform-exercises';
+import { PLATFORM_MUSCLE_IMAGE_UPLOAD_PATH, platformMuscleImageBodyParser, platformMusclesRouter } from './api/platform-muscles';
 import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
 import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
 import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
@@ -197,6 +198,7 @@ app.use((req, res, next) => {
   if (req.method !== 'POST') return next();
   if (EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)) return exerciseImageBodyParser(req, res, next);
   if (PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)) return platformExerciseImageBodyParser(req, res, next);
+  if (PLATFORM_MUSCLE_IMAGE_UPLOAD_PATH.test(req.path)) return platformMuscleImageBodyParser(req, res, next);
   return next();
 });
 
@@ -285,6 +287,7 @@ app.use('/platform/personal-goals', requireAuth(), platformPersonalGoalsRouter);
 app.use('/platform/nutrition-goals', requireAuth(), platformNutritionGoalsRouter);
 app.use('/platform/nutrition-plan-templates', requireAuth(), platformNutritionPlanTemplatesRouter);
 app.use('/platform/exercises', requireAuth(), platformExercisesRouter);
+app.use('/platform/muscles', requireAuth(), platformMusclesRouter);
 app.use('/platform/workout-templates', requireAuth(), platformWorkoutTemplatesRouter);
 app.use('/platform/training-plan-templates', requireAuth(), platformTrainingPlanTemplatesRouter);
 app.use('/platform', requireAuth(), platformRouter);
