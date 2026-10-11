@@ -6,7 +6,7 @@ The record of how each ticket landed is `docs/changelog.md` — one entry per sh
 
 ## Status (2026-10-09)
 
-Derived from the GitHub issue state on that date: **1,305 issues closed, 16 open** (3 of those 16 are work already merged whose issue stays open for a later stage or a deployment step — they are named under *Open work*).
+Derived from the GitHub issue state on that date: **1,304 issues closed, 17 open** (4 of those 17 are work already merged whose issue stays open for a later stage or a deployment step — they are named under *Open work*).
 
 | Area | State | Shipped | Open |
 |---|---|---|---|
