@@ -10,6 +10,7 @@ import { ImpersonationDialog } from './ImpersonationDialog';
 import { useGym } from '@/context/GymContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { publicAppTitle } from '@/lib/appTitle';
+import { InlineStyle } from './InlineStyle';
 
 export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const { isSuperadmin, activeGym, gyms, loading } = useGym();
@@ -75,7 +76,7 @@ export function TopHeader({ onMenuToggle }: { onMenuToggle?: () => void }) {
           </strong>
         )}
       </div>
-      <style>{`@media (max-width: 768px) { .hamburger-btn { display: flex !important; } }`}</style>
+      <InlineStyle css={`@media (max-width: 768px) { .hamburger-btn { display: flex !important; } }`} />
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         {showSelector && <GymSelector />}
         {/* #930 — no Center selector here. Center selection is a Calendar
