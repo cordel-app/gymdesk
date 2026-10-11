@@ -12,14 +12,24 @@ import {
 } from '@/lib/declinedBenefits';
 import { MemberSearchInput, MemberResult } from '../calendar/MemberSearchInput';
 
-interface Plan {
+export interface AssignablePlan {
   id: number;
   name: string;
   member_limit: '1' | '2' | 'family';
 }
+type Plan = AssignablePlan;
 
 interface Props {
-  plan: Plan;
+  /** The Plan being assigned (Plans page). Omitted when launched from a Member. */
+  plan?: Plan;
+  /**
+   * #1450: launched from a Member's profile the Plan is not known yet, so the
+   * modal offers this list as a picker. Everything below it is the same
+   * workflow.
+   */
+  planOptions?: Plan[];
+  /** #1450: the Member the workflow was launched from — selected, and the owner. */
+  initialMember?: MemberResult;
   onClose: () => void;
   onAssigned: () => void;
 }
@@ -36,12 +46,16 @@ function todayISO() {
  * shared `ReplacePlanDialog` names them all before the resend carries
  * `confirm: true`.
  */
-export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
+export function AssignPlanModal({ plan: fixedPlan, planOptions, initialMember, onClose, onAssigned }: Props) {
   const t = useTranslations();
   const { apiFetch } = useApiClient();
 
-  const [members, setMembers] = useState<MemberResult[]>([]);
-  const [ownerId, setOwnerId] = useState<number | null>(null);
+  const [pickedPlanId, setPickedPlanId] = useState<number | null>(null);
+  const plan: Plan | null = fixedPlan
+    ?? planOptions?.find((p) => p.id === pickedPlanId)
+    ?? null;
+  const [members, setMembers] = useState<MemberResult[]>(initialMember ? [initialMember] : []);
+  const [ownerId, setOwnerId] = useState<number | null>(initialMember?.id ?? null);
   const [startsAt, setStartsAt] = useState(todayISO());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +65,9 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
   const [declinedKeys, setDeclinedKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
+    setBenefits([]);
+    setDeclinedKeys(new Set());
+    if (!plan) return;
     let cancelled = false;
     Promise.all(BENEFIT_ENDPOINTS.map(([section, path]) =>
       apiFetch<any[]>(`/membership-plans/${plan.id}/${path}`)
@@ -59,7 +76,7 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
     )).then((groups) => { if (!cancelled) setBenefits(groups.flat()); });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [plan.id]);
+  }, [plan?.id]);
 
   function toggleBenefit(b: AssignableBenefit) {
     setDeclinedKeys((prev) => {
@@ -69,7 +86,7 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
     });
   }
 
-  const limitCount = plan.member_limit === 'family' ? null : parseInt(plan.member_limit, 10);
+  const limitCount = !plan || plan.member_limit === 'family' ? null : parseInt(plan.member_limit, 10);
   const overCapacity = limitCount != null && members.length > limitCount;
 
   function addMember(m: MemberResult) {
@@ -88,6 +105,7 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
 
   async function handleSubmit(confirmReplacement = false) {
     setError(null);
+    if (!plan) { setError(t('members.assign_new_plan_error_no_plan')); return; }
     if (members.length === 0) { setError(t('plans.assign_error_no_members')); return; }
     if (limitCount != null && members.length !== limitCount) {
       setError(t('plans.assign_error_exact_count', { count: limitCount }));
@@ -127,11 +145,28 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
     <div style={overlayStyle} onClick={onClose}>
       <div style={{ ...modalStyle, width: 460 }} onClick={(e) => e.stopPropagation()}>
         <h3 style={{ margin: '0 0 4px', fontSize: 17 }}>{t('plans.assign_title')}</h3>
-        <p style={{ margin: '0 0 16px', fontSize: 13, color: '#888' }}>{plan.name}</p>
+        {fixedPlan ? (
+          <p style={{ margin: '0 0 16px', fontSize: 13, color: '#888' }}>{fixedPlan.name}</p>
+        ) : (
+          <div style={{ margin: '0 0 16px' }}>
+            <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>{t('members.assign_new_plan_label_plan')}</label>
+            <select
+              value={pickedPlanId ?? ''}
+              onChange={(e) => setPickedPlanId(e.target.value ? parseInt(e.target.value, 10) : null)}
+              disabled={saving}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 6, border: '1px solid #d1d5db', fontSize: 13, margin: '6px 0 0' }}
+            >
+              <option value="">{t('members.assign_new_plan_pick_plan')}</option>
+              {(planOptions ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </div>
+        )}
 
-        <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>
-          {t('plans.assign_capacity_label', { limit: plan.member_limit === 'family' ? t('plans.assign_family') : plan.member_limit })}
-        </label>
+        {plan && (
+          <label style={{ fontSize: 12, fontWeight: 600, color: '#555' }}>
+            {t('plans.assign_capacity_label', { limit: plan.member_limit === 'family' ? t('plans.assign_family') : plan.member_limit })}
+          </label>
+        )}
 
         <div style={{ margin: '6px 0 12px' }}>
           <MemberSearchInput placeholder={t('plans.assign_search_placeholder')} onSelect={addMember} disabled={saving} />
@@ -217,7 +252,7 @@ export function AssignPlanModal({ plan, onClose, onAssigned }: Props) {
 
         <ReplacePlanDialog
           conflict={conflict}
-          newPlanName={plan.name}
+          newPlanName={plan?.name ?? null}
           busy={saving}
           onConfirm={() => handleSubmit(true)}
           onCancel={() => setConflict(null)}
