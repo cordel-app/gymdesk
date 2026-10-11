@@ -29,8 +29,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery
-} from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -410,7 +409,7 @@ describe('tenant isolation', () => {
     // Gym B's benefit row, pointed at gym A's assignment id: the loaders filter
     // on gym_id, so it must not reach the simulation.
     const otherItemId = await createProduct(gymB, { amount: 999, billingFrequency: 'month' });
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO user_membership_periodical
          (gym_id, user_membership_id, product_id, quantity, item_name, item_type,
           item_billing_frequency, unit_price, currency)

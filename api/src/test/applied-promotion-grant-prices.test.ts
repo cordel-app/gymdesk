@@ -23,8 +23,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery
-} from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -290,7 +289,7 @@ describe('Applied Promotion grant prices (#924 stage 2)', () => {
     await grant(promotionId, 'periodical', locker, { action: 'waive' });
     // An application from before migration 149: no snapshot row and no grant
     // snapshot, which is the one case the live tables are still read for.
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO user_membership_promotions
          (gym_id, user_membership_id, promotion_id, status, snapshot)
        VALUES (?, ?, ?, 'applied', NULL)`,

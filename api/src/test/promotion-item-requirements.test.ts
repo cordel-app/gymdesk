@@ -26,8 +26,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery
-} from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -325,7 +324,7 @@ describe('Promotion item Requirement (#959)', () => {
     // #635 §16: the application prices and reports from its own snapshot, so the
     // flag has to be *in* the snapshot — otherwise the screen that will offer the
     // member the choice would read a Promotion that may have been edited since.
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       `SELECT s.product_id, s.requirement
          FROM user_membership_promotion_periodical_snapshot s
          JOIN user_membership_promotions ump ON ump.id = s.user_membership_promotion_id

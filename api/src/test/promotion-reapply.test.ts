@@ -32,8 +32,7 @@ import {
   createTestGym,
   createTestMembership,
   ensureTestProductSet,
-  request, legacyAssignmentQuery
-} from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -124,7 +123,7 @@ async function finalPrice(gymId: string, umId: number): Promise<number> {
 
 /** Every application of one Promotion on one assignment, oldest first. */
 async function applicationRows(umId: number, promotionId: number) {
-  const { rows } = await db.query<{ id: number; status: string; revoked_at: string | null; snapshot: any }>(
+  const { rows } = await legacyChildQuery<{ id: number; status: string; revoked_at: string | null; snapshot: any }>(
     `SELECT id, status, revoked_at, snapshot FROM user_membership_promotions
      WHERE user_membership_id = ? AND promotion_id = ? ORDER BY id ASC`,
     [umId, promotionId],
@@ -172,10 +171,16 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
     await applyPromotion(gymId, umId, promotionId);
 
     const rows = await applicationRows(umId, promotionId);
-    // The original row is untouched apart from its revocation: a re-apply that
-    // reused it would rewrite the window the ledger was tagged against.
-    expect(rows[0].id).toBe(before.id);
-    expect(rows[1].id).not.toBe(before.id);
+    // The original application is carried into the new version as it was —
+    // revoked, with its own window — and the re-apply is a second row: a
+    // re-apply that reused it would rewrite the window the ledger was tagged
+    // against. (A version is a new set of rows, so the id itself is the
+    // version's; the history is what is asserted.)
+    expect(rows).toHaveLength(2);
+    expect(rows[0].status).toBe('revoked');
+    expect(rows[0].revoked_at).not.toBeNull();
+    expect(rows[1].status).toBe('applied');
+    expect(before.status).toBe('applied');
 
     const res = await listPromotions(gymId, umId);
     const cards = res.body.filter((r: any) => r.promotion_id === promotionId);
@@ -204,7 +209,7 @@ describe('POST /user-memberships/:id/promotions — re-applying a revoked Promot
     await targetPlan(gymId, promotionId, planId);
     await applyPromotion(gymId, umId, promotionId);
 
-    await expect(db.query(
+    await expect(legacyChildQuery(
       `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status)
        VALUES (?, ?, ?, 'someone', 'applied')`,
       [gymId, umId, promotionId],
@@ -282,7 +287,7 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     expect(current.description).toBe('Repriced');
   });
 
-  it('records the price movement in the ledger, as any apply does', async () => {
+  it('moves the price through the new version, writing no ledger adjustment (#1325)', async () => {
     const umId = await createAssignment(gymId, planId, 100);
     const promotionId = await createPromotion(gymId, `Ledger-${uniq()}`);
     await targetPlan(gymId, promotionId, planId);
@@ -292,16 +297,15 @@ describe('Re-applying agrees the Promotion as it stands today (#635 §16)', () =
     await revokePromotion(gymId, umId, promotionId);
     await applyPromotion(gymId, umId, promotionId);
 
-    // #1325 PR 3d: the adjustment is on the member's ProductSet (the fixture
-    // links none to the assignment), so it is read by member.
-    const { rows } = await db.query<{ notes: string; amount: string }>(
-      `SELECT notes, amount FROM billing_events
+    // A version's price is resolved from its frozen configuration and its
+    // obligations are replaced, so there is no adjustment to record.
+    const { rows } = await db.query<{ notes: string }>(
+      `SELECT notes FROM billing_events
         WHERE gym_id = ? AND event_type = 'adjustment'
-          AND member_id = (SELECT member_id FROM user_memberships WHERE id = ?) ORDER BY id ASC`,
+          AND member_id = (SELECT member_id FROM user_memberships WHERE id = ?)`,
       [gymId, umId],
     );
-    expect(rows.map((r) => r.notes)).toEqual(['Promotion applied', 'Promotion revoked', 'Promotion applied']);
-    expect(parseFloat(rows[2].amount)).toBeCloseTo(-10, 2);
+    expect(rows).toEqual([]);
     expect(await finalPrice(gymId, umId)).toBeCloseTo(90, 2);
   });
 
@@ -460,7 +464,7 @@ describe('Re-applying a Promotion — tenant isolation and auth', () => {
     const umId = await createAssignment(readOnlyGym, planId);
     const promotionId = await createPromotion(readOnlyGym, `ReadOnly-${uniq()}`);
     await targetPlan(readOnlyGym, promotionId, planId);
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, revoked_at)
        VALUES (?, ?, ?, 'someone', 'revoked', UTC_TIMESTAMP())`,
       [readOnlyGym, umId, promotionId],

@@ -15,8 +15,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery, getAssignmentConfig
-} from './helpers';
+  request, legacyAssignmentQuery, getAssignmentConfig, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -384,7 +383,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
       'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
       [gym, insertId, memberId],
     );
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO user_membership_periodical
          (gym_id, user_membership_id, product_id, quantity, item_name, item_type,
           item_billing_frequency, unit_price, currency)

@@ -22,7 +22,7 @@ import { PlanBenefitPrices } from '../domain/planBenefitPrices';
 import { toProductBenefit } from '../domain/productBenefitActions';
 import { productBenefitPrices } from './product-benefit-pricing';
 import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPromotionGrantSnapshots } from './assigned-plan-snapshot';
-import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId } from './assignment-config';
 import {
   isNewMember,
   isNewMemberForNewAssignment,
@@ -347,7 +347,7 @@ async function loadStandingApplicationsForPricing(
             p.pay_beforehand_months
      FROM user_membership_promotions ump
      LEFT JOIN promotions p ON p.id = ump.promotion_id
-     WHERE ump.user_membership_id = ? AND ump.gym_id = ? AND ump.status = 'applied'
+     WHERE ump.product_set_id = ${assignmentVersionId('?')} AND ump.gym_id = ? AND ump.status = 'applied'
      ORDER BY ump.applied_at ASC, ump.id ASC`,
     [userMembershipId, gymId],
   );
@@ -490,6 +490,8 @@ export async function validatePromotionSelection(
   membershipPlanId: number,
   promotionIds: number[],
   memberId: number,
+  /** The assignment being edited, which never counts against its own Member. */
+  excludeUserMembershipId: number | null = null,
 ): Promise<{ status: number; error: string } | null> {
   if (promotionIds.length === 0) return null;
 
@@ -531,7 +533,9 @@ export async function validatePromotionSelection(
   // against them. Evaluated once for the whole selection, and only when some
   // promotion actually asks for it.
   if (promotionIds.some((id) => !!byId.get(id).only_applicable_for_new_members)) {
-    const isNew = await isNewMemberForNewAssignment(db, gymId, memberId);
+    const isNew = excludeUserMembershipId != null
+      ? await isNewMember(db, gymId, memberId, excludeUserMembershipId)
+      : await isNewMemberForNewAssignment(db, gymId, memberId);
     if (!isNew) {
       const blocked = promotionIds.find((id) => !!byId.get(id).only_applicable_for_new_members);
       return { status: 400, error: `Promotion ${blocked} is only applicable for new members` };
@@ -585,78 +589,13 @@ export async function applyPromotionToMembership(
       return { user_membership_id: umId, promotion_id: promotionId, membership_fee: drafted.price };
     }
 
-    // Priced before anything is written, so the adjustment below is the
-    // difference this application makes (#635 stage 15 — nothing is stored, so
-    // "the previous price" has to be resolved rather than read).
-    const feeBefore = (await currentMembershipFeeInTx(tx, gymId, umId))?.price ?? null;
-
-    const { rows: promoRows } = await tx.query(
-      `SELECT id, stackable, lifecycle_status, starts_at, ends_at, only_applicable_for_new_members
-       FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'`,
-      [promotionId, gymId],
+    // #1325 PR 3e-4a: every assignment has a version; the Draft's takes the
+    // application above and an Active one is edited as a new version through the
+    // route. What reaches here is a plan neither takes an application for.
+    throw Object.assign(
+      new Error(`Promotions cannot be applied to a membership with status '${um.status}'`),
+      { status: 409 },
     );
-    if (promoRows.length === 0) throw Object.assign(new Error('Promotion not found'), { status: 404 });
-    const promo = promoRows[0];
-    if (promo.lifecycle_status !== 'active') throw Object.assign(new Error('Promotion is inactive'), { status: 400 });
-    const now = new Date();
-    if (new Date(promo.starts_at) > now || new Date(promo.ends_at) < now) {
-      throw Object.assign(new Error('Promotion is outside its active window'), { status: 400 });
-    }
-
-    const { rows: matchRows } = await tx.query(
-      'SELECT 1 FROM promotion_membership_plans WHERE promotion_id = ? AND membership_plan_id = ? AND gym_id = ?',
-      [promotionId, um.membership_plan_id, gymId],
-    );
-    if (matchRows.length === 0) {
-      throw Object.assign(new Error("Promotion doesn't target this membership's plan"), { status: 400 });
-    }
-
-    // #634 §3 — "Only applicable for new members", excluding the assignment
-    // being configured (see new-member-eligibility.ts).
-    if (promo.only_applicable_for_new_members && !(await isNewMember(tx, gymId, um.member_id, umId))) {
-      throw Object.assign(new Error(NEW_MEMBERS_ONLY_ERROR), { status: 400 });
-    }
-
-    if (!promo.stackable) {
-      const { rows: existing } = await tx.query(
-        "SELECT id FROM user_membership_promotions WHERE user_membership_id = ? AND status = 'applied'",
-        [umId],
-      );
-      if (existing.length > 0) throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
-    }
-
-    // #635 stage 9, as in the POST handler above: only a *standing* application
-    // blocks the pair (`ump_one_standing_per_promotion`, migration 183), and a
-    // re-apply is a new application carrying its own snapshot.
-    const { rows: standing } = await tx.query(
-      "SELECT id FROM user_membership_promotions WHERE user_membership_id = ? AND promotion_id = ? AND gym_id = ? AND status = 'applied'",
-      [umId, promotionId, gymId],
-    );
-    if (standing.length > 0) {
-      throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
-    }
-
-    const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
-    let applicationId: number;
-    try {
-      const { insertId } = await tx.query(
-        "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, snapshot) VALUES (?, ?, ?, ?, 'applied', ?)",
-        [gymId, umId, promotionId, userId, snapshot != null ? JSON.stringify(snapshot) : null],
-      );
-      applicationId = insertId;
-    } catch (e: any) {
-      if (e.code === 'ER_DUP_ENTRY') throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
-      throw e;
-    }
-    await snapshotPromotionGrants(tx, gymId, applicationId, promotionId);
-
-    const calc = await currentMembershipFeeInTx(tx, gymId, umId);
-    if (!calc) throw Object.assign(new Error('Fee resolution failed'), { status: 500 });
-    await recordFeeAdjustment(tx, {
-      gymId, umId, memberId: calc.member_id, source, userId,
-      before: feeBefore, after: calc.price, note: 'Promotion applied',
-    });
-    return { user_membership_id: umId, promotion_id: promotionId, membership_fee: calc.price };
   });
 }
 
@@ -669,6 +608,18 @@ export async function applyPromotionToMembership(
  * moves nothing. No fee adjustment is written: a version's price is resolved
  * from its frozen configuration, and the ledger has no assignment to adjust.
  */
+/**
+ * The assignment a version is the edit of: its own link, else the one its
+ * previous version still carries while the edit is being written.
+ */
+export async function assignmentBeingEdited(tx: Tx, productSetId: number): Promise<number | null> {
+  const { rows } = await tx.query<any>(
+    `SELECT COALESCE(ps.user_membership_id, prev.user_membership_id) AS um
+       FROM product_sets ps LEFT JOIN product_sets prev ON prev.id = ps.previous_product_set_id
+      WHERE ps.id = ?`, [productSetId]);
+  return rows[0]?.um != null ? Number(rows[0].um) : null;
+}
+
 export async function applyPromotionToProductSet(
   tx: Tx,
   gymId: string,
@@ -707,8 +658,11 @@ export async function applyPromotionToProductSet(
     throw Object.assign(new Error("Promotion doesn't target this ProductSet's plan"), { status: 400 });
   }
 
+  const editedUm = await assignmentBeingEdited(tx, productSetId);
   if (promo.only_applicable_for_new_members
-      && !(await isNewMemberForNewAssignment(tx, gymId, Number(set.owner_member_id)))) {
+      && !(editedUm != null
+        ? await isNewMember(tx, gymId, Number(set.owner_member_id), editedUm)
+        : await isNewMemberForNewAssignment(tx, gymId, Number(set.owner_member_id)))) {
     throw Object.assign(new Error(NEW_MEMBERS_ONLY_ERROR), { status: 400 });
   }
 
@@ -934,7 +888,7 @@ async function loadAppliedPromotionGrants(
 // by `canReapplyPromotion()` so the card states it rather than deriving it.
 export async function fetchAppliedPromotions(gymId: string, umId: string | number) {
   const { rows } = await db.query(
-    `${SELECT} WHERE ump.user_membership_id = ? AND ump.gym_id = ? ORDER BY ump.applied_at DESC, ump.id DESC`,
+    `${SELECT} WHERE ump.product_set_id = ${assignmentVersionId('?')} AND ump.gym_id = ? ORDER BY ump.applied_at DESC, ump.id DESC`,
     [umId, gymId],
   );
   const merged = await Promise.all(rows.map(withSnapshot));
@@ -990,114 +944,19 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: umId, action: 'update', detail: { apply_promotion: promotion_id },
     mutate: applyPromotionMutator(gymId, userId ?? null, Number(promotion_id)),
-    respond: async () => ({ ok: true }),
+    // The contract of the route since it existed: what the plan now costs.
+    respond: async () => {
+      const fee = await db.transaction((tx) => currentMembershipFeeInTx(tx, gymId, umId));
+      return { user_membership_id: umId, promotion_id: Number(promotion_id), membership_fee: fee?.price ?? null };
+    },
     status: 201,
   })) return;
 
-  try {
-    const applied = await db.transaction(async (tx) => {
-      // Load target membership
-      const { rows: umRows } = await tx.query(
-        'SELECT id, member_id, membership_plan_id, status FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE',
-        [umId, gymId],
-      );
-      if (umRows.length === 0) throw Object.assign(new Error('Membership not found'), { status: 404 });
-      const um = umRows[0];
-
-      // Load promotion
-      const { rows: promoRows } = await tx.query(
-        `SELECT id, stackable, lifecycle_status, starts_at, ends_at, only_applicable_for_new_members
-         FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'`,
-        [promotion_id, gymId],
-      );
-      if (promoRows.length === 0) throw Object.assign(new Error('Promotion not found'), { status: 404 });
-      const promo = promoRows[0];
-      if (promo.lifecycle_status !== 'active') throw Object.assign(new Error('Promotion is inactive'), { status: 400 });
-      const now = new Date();
-      if (new Date(promo.starts_at) > now || new Date(promo.ends_at) < now) {
-        throw Object.assign(new Error('Promotion is outside its active window'), { status: 400 });
-      }
-
-      // Check plan targeting
-      const { rows: matchRows } = await tx.query(
-        'SELECT 1 FROM promotion_membership_plans WHERE promotion_id = ? AND membership_plan_id = ? AND gym_id = ?',
-        [promotion_id, um.membership_plan_id, gymId],
-      );
-      if (matchRows.length === 0) {
-        throw Object.assign(new Error("Promotion doesn't target this membership's plan"), { status: 400 });
-      }
-
-      // #634 §3 — "Only applicable for new members": the Member must not have
-      // held another Membership Plan in the trailing 12 months. The assignment
-      // this promotion is being added to never counts against them.
-      if (promo.only_applicable_for_new_members && !(await isNewMember(tx, gymId, um.member_id, umId))) {
-        throw Object.assign(new Error(NEW_MEMBERS_ONLY_ERROR), { status: 400 });
-      }
-
-      // Stackability
-      if (!promo.stackable) {
-        const { rows: existing } = await tx.query(
-          "SELECT id FROM user_membership_promotions WHERE user_membership_id = ? AND status = 'applied'",
-          [umId],
-        );
-        if (existing.length > 0) throw Object.assign(new Error('This promotion is not stackable with another already applied'), { status: 409 });
-      }
-
-      // #635 stage 9: a Promotion that is *standing* on this assignment cannot
-      // be applied a second time; one that was revoked can (the thread's Q2
-      // answer — "selectable and deselectable"). Since migration 183 the
-      // database enforces exactly that, through
-      // `ump_one_standing_per_promotion`; this check is what turns it into the
-      // message below instead of a raw duplicate-key error.
-      const { rows: standing } = await tx.query(
-        "SELECT id FROM user_membership_promotions WHERE user_membership_id = ? AND promotion_id = ? AND gym_id = ? AND status = 'applied'",
-        [umId, promotion_id, gymId],
-      );
-      if (standing.length > 0) {
-        throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
-      }
-
-      // Priced before the insert, for the adjustment below.
-      const feeBefore = (await currentMembershipFeeInTx(tx, gymId, umId))?.price ?? null;
-
-      // Insert row. Re-applying writes a *new* application rather than
-      // resurrecting the revoked one: the row owns the snapshot of the
-      // Promotion it was agreed with (§16) and its `[applied_at, revoked_at]`
-      // window is what the Billing Events range reads, so reusing it would
-      // rewrite what the member was already billed under. The snapshot is
-      // therefore the Promotion as it is *now* — this is a new agreement, made
-      // now, the same rule stage 6 applies to a newly added benefit line.
-      const snapshot = await buildPromotionSnapshot(tx, gymId, promotion_id);
-      let applicationId: number;
-      try {
-        const { insertId } = await tx.query(
-          "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, snapshot) VALUES (?, ?, ?, ?, 'applied', ?)",
-          [gymId, umId, promotion_id, userId, snapshot != null ? JSON.stringify(snapshot) : null],
-        );
-        applicationId = insertId;
-      } catch (e: any) {
-        if (e.code === 'ER_DUP_ENTRY') throw Object.assign(new Error('This promotion is already applied to this membership'), { status: 409 });
-        throw e;
-      }
-      await snapshotPromotionGrants(tx, gymId, applicationId, Number(promotion_id));
-
-      // What the assignment now pays for its next cycle, and the ledger entry
-      // for the difference the application made to it.
-      const calc = await currentMembershipFeeInTx(tx, gymId, umId);
-      if (!calc) throw Object.assign(new Error('Fee resolution failed'), { status: 500 });
-      await recordFeeAdjustment(tx, {
-        gymId, umId, memberId: calc.member_id,
-        source: role === 'admin' ? 'admin' : 'employee', userId,
-        before: feeBefore, after: calc.price, note: 'Promotion applied',
-      });
-      return { user_membership_id: umId, promotion_id, membership_fee: calc.price };
-    });
-    recordAudit(req, { action: 'apply_promotion', entityType: 'user_membership', entityId: umId, next: applied });
-    res.status(201).json(applied);
-  } catch (err: any) {
-    if (err.status) return res.status(err.status).json({ error: err.message });
-    next(err);
-  }
+  // #1325 PR 3e-4a: the application is the version's, written above. A plan
+  // whose version takes no edit (closed, or awaiting payment) answers here.
+  const { rows: gate } = await db.query('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [umId, gymId]);
+  if (gate.length === 0) return res.status(404).json({ error: 'Membership not found' });
+  return res.status(409).json({ error: `Promotions cannot be applied to a membership with status '${gate[0].status}'` });
 });
 
 membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
@@ -1109,31 +968,7 @@ membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'
     mutate: revokePromotionMutator(promotionId),
     respond: async () => ({ ok: true }),
   })) return;
-  try {
-    const result = await db.transaction(async (tx) => {
-      // Priced before the revoke, for the adjustment below.
-      const feeBefore = (await currentMembershipFeeInTx(tx, gymId, umId))?.price ?? null;
-      // #511 (stage 3): revoked_at stamps precisely when this promotion
-      // stopped affecting billing, so the Billing Events range calculation
-      // (assignedPlanBillingEvents.ts) can tell which persisted events fell
-      // inside vs. outside its applied window, independent of the row's
-      // `status` (kept for backward compatibility / existing callers).
-      const { rowCount } = await tx.query(
-        "UPDATE user_membership_promotions SET status = 'revoked', revoked_at = UTC_TIMESTAMP() WHERE user_membership_id = ? AND promotion_id = ? AND gym_id = ? AND status = 'applied'",
-        [umId, promotionId, gymId],
-      );
-      if (rowCount === 0) return null;
-      const calc = await currentMembershipFeeInTx(tx, gymId, umId);
-      if (!calc) return null;
-      await recordFeeAdjustment(tx, {
-        gymId, umId, memberId: calc.member_id,
-        source: role === 'admin' ? 'admin' : 'employee', userId,
-        before: feeBefore, after: calc.price, note: 'Promotion revoked',
-      });
-      return { membership_fee: calc.price };
-    });
-    if (!result) return res.status(404).json({ error: 'Applied promotion not found' });
-    recordAudit(req, { action: 'revoke_promotion', entityType: 'user_membership', entityId: umId, next: { promotion_id: promotionId, ...result } });
-    res.status(200).json(result);
-  } catch (err) { next(err); }
+  const { rows: gate } = await db.query('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [umId, gymId]);
+  if (gate.length === 0) return res.status(404).json({ error: 'Membership not found' });
+  return res.status(409).json({ error: `Promotions cannot be revoked on a membership with status '${gate[0].status}'` });
 });

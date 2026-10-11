@@ -14,8 +14,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery
-} from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -105,7 +104,7 @@ async function setMembershipFeeBenefit(
 }
 
 async function backdateAppliedAt(umId: number, promoId: number, monthsAgo: number) {
-  await db.query(
+  await legacyChildQuery(
     `UPDATE user_membership_promotions SET applied_at = applied_at - INTERVAL ? MONTH
      WHERE user_membership_id = ? AND promotion_id = ?`,
     [monthsAgo, umId, promoId],
@@ -320,7 +319,7 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
     expect(applyRes.status).toBe(201);
 
     // Confirm a snapshot was actually persisted at apply time.
-    const { rows: snapRows } = await db.query(
+    const { rows: snapRows } = await legacyChildQuery(
       'SELECT snapshot FROM user_membership_promotions WHERE user_membership_id = ? AND promotion_id = ?',
       [umId, promoId],
     );
@@ -368,7 +367,7 @@ describe('GET /user-memberships/:id/promotions — snapshot immutability (#511 s
 
     // Simulate a promotion applied before #511 stage 2 -- inserted directly
     // with snapshot = NULL, bypassing the router's buildPromotionSnapshot call.
-    await db.query(
+    await legacyChildQuery(
       "INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, snapshot) VALUES (?, ?, ?, ?, 'applied', NULL)",
       [gymId, umId, promoId, 'legacy-actor'],
     );

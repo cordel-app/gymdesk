@@ -21,8 +21,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery
-} from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -278,7 +277,7 @@ describe('Billing Simulation — a Promotion outranks the Plan\'s own Billing & 
     // the application is backdated to the assignment's start date — otherwise
     // the promotional window would begin in whatever month the suite runs in
     // and the two configurations would never overlap.
-    await db.query(
+    await legacyChildQuery(
       'UPDATE user_membership_promotions SET applied_at = ? WHERE user_membership_id = ? AND gym_id = ?',
       [START, umId, gymId],
     );

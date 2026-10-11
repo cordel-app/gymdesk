@@ -27,7 +27,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, seedScheduledEvent, legacyAssignmentQuery } from './helpers';
+  request, seedScheduledEvent, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -127,7 +127,7 @@ async function attachService(
   opts: { quantity?: number; startsAt?: string; endsAt?: string | null } = {},
 ): Promise<number> {
   const { quantity = 1, startsAt = '2026-03-01', endsAt = null } = opts;
-  const { insertId } = await db.query(
+  const { insertId } = await legacyChildQuery(
     `INSERT INTO member_products_recurrent_snapshot
        (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
      VALUES (?, ?, ?, ?, ?, ?)`,
@@ -162,7 +162,7 @@ async function applyPromotion(
   opts: { status?: 'applied' | 'revoked'; appliedAt?: string; revokedAt?: string | null } = {},
 ): Promise<number> {
   const { status = 'applied', appliedAt = '2026-03-01 10:00:00', revokedAt = null } = opts;
-  const { insertId } = await db.query(
+  const { insertId } = await legacyChildQuery(
     `INSERT INTO user_membership_promotions
        (gym_id, user_membership_id, promotion_id, applied_by, status, applied_at, revoked_at)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -319,7 +319,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
     // ── PROMOTIONS — #931: not part of a Member's configuration, even though
     //    this assignment carries one. It is read from the Assigned Plan instead.
     expect(res.body.promotions).toBeUndefined();
-    const { rows: stillApplied } = await db.query(
+    const { rows: stillApplied } = await legacyChildQuery(
       "SELECT id FROM user_membership_promotions WHERE user_membership_id = ? AND status = 'applied'",
       [umId],
     );
@@ -445,8 +445,9 @@ describe('GET /user-memberships/member/:memberId/configuration — a replaced pl
     expect(res.body.promotions).toBeUndefined();
     // Both applications are untouched in the database — only the read changed.
     const { rows } = await db.query(
-      `SELECT user_membership_id, promotion_id FROM user_membership_promotions
-       WHERE user_membership_id IN (?, ?) AND status = 'applied'`,
+      `SELECT DISTINCT ps.user_membership_id AS user_membership_id, ump.promotion_id
+         FROM user_membership_promotions ump JOIN product_sets ps ON ps.id = ump.product_set_id
+        WHERE ps.user_membership_id IN (?, ?) AND ump.status = 'applied'`,
       [standardUm, premiumUm],
     );
     expect(rows.map((r: any) => Number(r.promotion_id)).sort(byNumber))
@@ -645,7 +646,7 @@ describe('GET /user-memberships/member/:memberId/configuration — no promotions
     expect(res.body.plans).toHaveLength(1);
 
     // Both applications are still there, exactly as they were.
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       `SELECT promotion_id, status, revoked_at FROM user_membership_promotions
        WHERE user_membership_id = ? ORDER BY promotion_id`,
       [umId],

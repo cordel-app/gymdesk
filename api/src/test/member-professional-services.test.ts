@@ -28,8 +28,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery
-} from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -227,7 +226,7 @@ async function applyPromotionWithSessionBenefit(
     'INSERT INTO promotion_session (gym_id, promotion_id, product_id, quantity) VALUES (?, ?, ?, ?)',
     [gymId, promotionId, productId, quantity],
   );
-  const { insertId } = await db.query(
+  const { insertId } = await legacyChildQuery(
     `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, status)
      VALUES (?, ?, ?, ?)`,
     [gymId, userMembershipId, promotionId, status],
@@ -243,7 +242,7 @@ async function attachMembershipService(
   opts: { quantity?: number; startsAt?: string; endsAt?: string | null } = {},
 ): Promise<number> {
   const { quantity = 1, startsAt = dayOffset(-10), endsAt = null } = opts;
-  const { insertId } = await db.query(
+  const { insertId } = await legacyChildQuery(
     `INSERT INTO member_products_recurrent_snapshot
        (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
      VALUES (?, ?, ?, ?, ?, ?)`,

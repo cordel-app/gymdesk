@@ -2,7 +2,7 @@ import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billi
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
 import { createDraftSetForAssignment, deleteLinkedDraftSet, syncDraftSetFromAssignment, writeDiscountOnVersion } from './assignment-draft-set';
-import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, withAssignmentConfig } from './assignment-config';
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId, withAssignmentConfig } from './assignment-config';
 import { cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
@@ -33,7 +33,6 @@ import { assignedPlanBillingForecast } from './assigned-plan-billing-forecast';
 import {
   loadAssignedPlanBenefitSection,
   loadAssignedPlanSnapshot,
-  syncMandatoryProductQuantities,
 } from './assigned-plan-snapshot';
 import { resolveDeclinedBenefits, recordDeclinedBenefitsAudit } from './declined-plan-benefits';
 import {
@@ -423,13 +422,22 @@ async function loadApplicationsKeyedBy(
   const byAssignment = new Map<number, PromotionApplication[]>();
   const ids = [...new Set(keys)];
   if (ids.length === 0) return byAssignment;
+  // #1325 PR 3e-4a: an assignment's applications are its current version's own
+  // (`product_set_id`); there is no per-assignment copy.
+  const owner = column === 'user_membership_id'
+    ? `FROM user_memberships um
+       JOIN user_membership_promotions ump
+         ON ump.product_set_id = ${assignmentVersionId('um.id')} AND ump.gym_id = um.gym_id`
+    : 'FROM user_membership_promotions ump';
+  const ownerKey = column === 'user_membership_id' ? 'um.id' : 'ump.product_set_id';
+  const filter = column === 'user_membership_id' ? 'um.id' : 'ump.product_set_id';
   const { rows } = await exec.query(
-    `SELECT ump.id, ump.${column} AS owner_key, ump.promotion_id, ump.status,
+    `SELECT ump.id, ${ownerKey} AS owner_key, ump.promotion_id, ump.status,
             ump.applied_at, ump.revoked_at, ump.snapshot,
             p.name AS promotion_name, p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months
-     FROM user_membership_promotions ump
+     ${owner}
      LEFT JOIN promotions p ON p.id = ump.promotion_id
-     WHERE ump.${column} IN (${ids.map(() => '?').join(',')}) AND ump.gym_id = ?`,
+     WHERE ${filter} IN (${ids.map(() => '?').join(',')}) AND ump.gym_id = ?`,
     [...ids, gymId],
   );
   const shaped = await Promise.all(rows.map(async (row: any) => {
@@ -990,7 +998,7 @@ userMembershipsRouter.delete('/:id/draft', requireModuleWrite('PAYMENTS'), async
 // Cancel = admin-only status flip (soft; the row stays for history).
 userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   const { gymId, userId, role } = getTenantContext(req);
-  if (await redirectRetireToProductSet(req, res, { userMembershipId: Number(req.params.id), respond: null })) return;
+  if (await redirectRetireToProductSet(req, res, { userMembershipId: Number(req.params.id), respond: null, legacyAuditAction: 'cancel' })) return;
   // Ledger row (P1.6): cancellation emits status_changed in the same transaction.
   const found = await db.transaction(async (tx) => {
     const { rows: current } = await tx.query(
@@ -1513,6 +1521,7 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
   if (await redirectRetireToProductSet(req, res, {
     userMembershipId: Number(req.params.id),
     respond: () => loadAssignmentRow(gymId, req.params.id),
+    legacyAuditAction: 'close',
   })) return;
   const confirm = req.body?.confirm === true;
 
@@ -1808,83 +1817,12 @@ userMembershipsRouter.post('/:id/members', requireModuleWrite('PAYMENTS'), async
     respond: async () => (await db.query(MEMBERS_SELECT, [req.params.id, gymId])).rows,
     status: 201,
   })) return;
-  const { member_id } = req.body;
-  if (!member_id) return res.status(400).json({ error: 'member_id is required' });
-
-  const membership = await findMembershipWithPlanLimit(req.params.id, gymId);
-  if (!membership) return res.status(404).json({ error: 'Membership not found' });
-
-  const { rows: memberRows } = await db.query(
-    'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
-    [member_id, gymId],
-  );
-  if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
-
-  const { rows: countRows } = await db.query(
-    'SELECT COUNT(*) AS n FROM user_membership_members WHERE user_membership_id = ? AND gym_id = ?',
-    [req.params.id, gymId],
-  );
-  if (Number(countRows[0].n) >= memberLimitCount(membership.member_limit)) {
-    return res.status(400).json({ error: 'This membership has reached its member limit.' });
-  }
-
-  try {
-    // #956: covering a Member is the fourth way they come to hold a Membership
-    // Plan, so the rule applies here too — a Member who already has a live one
-    // cannot be added to a second. Unlike the three assignment paths this one
-    // offers **no** `confirm` replacement: the ticket settles the effective date
-    // of a replacement as the new plan's `starts_at` (Q3), and coverage added to
-    // a plan that started months ago has no such date to end their own plan on.
-    // So the staff action is the explicit one — close their plan, then add them —
-    // and the conflict payload names what is in the way.
-    const coverageConflict = await db.transaction(async (tx) => {
-      const conflicts = await findLiveAssignmentsForMembers(tx, gymId, [Number(member_id)], {
-        excludeUserMembershipId: Number(req.params.id),
-      });
-      return conflicts.length > 0 ? conflicts : null;
-    });
-    if (coverageConflict) {
-      const body = activePlanConflictBody(
-        coverageConflict, await membershipPlanName(gymId, Number(membership.membership_plan_id)),
-      );
-      return res.status(409).json({
-        ...body,
-        message: `${body.current_plan.blocked_member_name ?? 'This member'} already has an active `
-          + 'Membership Plan. Close it before adding them to this one.',
-      });
-    }
-    await db.transaction(async (tx) => {
-      await tx.query(
-        'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 0)',
-        [gymId, req.params.id, member_id],
-      );
-      await resyncMemberCountQuantities(tx, gymId, req.params.id as string);
-    });
-    const { rows } = await db.query(MEMBERS_SELECT, [req.params.id, gymId]);
-    recordAudit(req, { action: 'add_member', entityType: 'user_membership', entityId: req.params.id, next: { member_id } });
-    res.status(201).json(rows);
-  } catch (err: any) {
-    handleDupEntry(err, res, next, 'This Member is already covered by this Membership.');
-  }
+  // #1325 PR 3e-4a: the covered Members are the version's (above); a plan that
+  // version no longer takes an edit for (closed, or awaiting payment) answers here.
+  const closed = await findMembershipWithPlanLimit(req.params.id, gymId);
+  if (!closed) return res.status(404).json({ error: 'Membership not found' });
+  return res.status(400).json({ error: 'The covered Members of a closed or pending membership cannot be changed.' });
 });
-
-/**
- * #1187 §10 — the covered-Member count changed, so the catalogue-mandatory lines
- * of the Assigned Plan follow it. Only an assignment whose snapshot is still
- * editable (not cancelled or expired) is touched, and an uncaptured one is
- * materialised first so the live fallback does not drop the other sections.
- * Billing Events already written are never recalculated.
- */
-async function resyncMemberCountQuantities(tx: Tx, gymId: string, id: string): Promise<void> {
-  const { rows } = await tx.query(
-    `SELECT id, membership_plan_id, status, starts_at FROM user_memberships
-     WHERE id = ? AND gym_id = ? FOR UPDATE`,
-    [id, gymId],
-  );
-  const um = rows[0];
-  if (!um || !SNAPSHOT_EDITABLE_STATUSES.includes(um.status as Status)) return;
-  await syncMandatoryProductQuantities(tx, gymId, Number(um.id));
-}
 
 userMembershipsRouter.delete('/:id/members/:memberId', requireModuleWrite('PAYMENTS'), async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -1894,19 +1832,7 @@ userMembershipsRouter.delete('/:id/members/:memberId', requireModuleWrite('PAYME
     respond: async () => (await db.query(MEMBERS_SELECT, [req.params.id, gymId])).rows,
     status: 204,
   })) return;
-  const { rows } = await db.query(
-    'SELECT is_owner FROM user_membership_members WHERE user_membership_id = ? AND member_id = ? AND gym_id = ?',
-    [req.params.id, req.params.memberId, gymId],
-  );
-  if (rows.length === 0) return res.status(404).json({ error: 'This Member is not covered by this Membership.' });
-  if (rows[0].is_owner) return res.status(400).json({ error: 'Cannot remove the Membership owner.' });
-  await db.transaction(async (tx) => {
-    await tx.query(
-      'DELETE FROM user_membership_members WHERE user_membership_id = ? AND member_id = ? AND gym_id = ?',
-      [req.params.id, req.params.memberId, gymId],
-    );
-    await resyncMemberCountQuantities(tx, gymId, req.params.id as string);
-  });
-  recordAudit(req, { action: 'remove_member', entityType: 'user_membership', entityId: req.params.id, previous: { member_id: req.params.memberId } });
-  res.status(204).send();
+  const closed = await findMembershipWithPlanLimit(req.params.id, gymId);
+  if (!closed) return res.status(404).json({ error: 'Membership not found' });
+  return res.status(400).json({ error: 'The covered Members of a closed or pending membership cannot be changed.' });
 });

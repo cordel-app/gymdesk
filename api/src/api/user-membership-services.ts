@@ -1,3 +1,4 @@
+import { assignmentVersionId } from './assignment-config';
 import { redirectEditToProductSet } from './assignment-edit-redirect';
 import { addService as psAddService, removeService as psRemoveService } from './product-set-draft';
 import { Router } from 'express';
@@ -48,7 +49,7 @@ const DUPLICATE_ERROR = 'This service is already attached to the Assigned Plan f
 // (the FK has no ON DELETE CASCADE for the same reason). Its retired state is
 // reported on the row instead, so the UI can flag it.
 const SELECT = `
-  SELECT ums.id, ums.gym_id, ums.user_membership_id, ums.product_id,
+  SELECT ums.id, ums.gym_id, um.id AS user_membership_id, ums.product_id,
          ums.quantity, ums.starts_at, ums.ends_at, ums.created_at,
          ums.item_name AS snapshot_item_name,
          ums.item_billing_frequency AS snapshot_billing_frequency,
@@ -61,7 +62,9 @@ const SELECT = `
          gc.billing_frequency,
          gc.amount AS unit_price,
          gc.currency
-  FROM member_products_recurrent_snapshot ums
+  FROM user_memberships um
+  JOIN member_products_recurrent_snapshot ums
+    ON ums.product_set_id = ${assignmentVersionId('um.id')} AND ums.gym_id = um.gym_id
   JOIN products gc ON gc.id = ums.product_id
 `;
 
@@ -138,7 +141,7 @@ function shape(row: any): AssignedPlanServiceRow {
 /** Every service attached to one Assigned Plan, oldest window first. */
 export async function loadAssignedPlanServices(gymId: string, umId: number): Promise<AssignedPlanServiceRow[]> {
   const { rows } = await db.query(
-    `${SELECT} WHERE ums.gym_id = ? AND ums.user_membership_id = ? ORDER BY ums.starts_at ASC, ums.id ASC`,
+    `${SELECT} WHERE ums.gym_id = ? AND um.id = ? ORDER BY ums.starts_at ASC, ums.id ASC`,
     [gymId, umId],
   );
   return rows.map(shape);
@@ -155,7 +158,7 @@ export async function loadServicesForAssignments(
 ): Promise<AssignedPlanServiceRow[]> {
   if (umIds.length === 0) return [];
   const { rows } = await db.query(
-    `${SELECT} WHERE ums.gym_id = ? AND ums.user_membership_id IN (${umIds.map(() => '?').join(',')})
+    `${SELECT} WHERE ums.gym_id = ? AND um.id IN (${umIds.map(() => '?').join(',')})
      ORDER BY ums.starts_at ASC, ums.id ASC`,
     [gymId, ...umIds],
   );
@@ -181,7 +184,7 @@ export async function loadServicesForSimulation(
   if (umIds.length === 0) return byAssignment;
 
   const { rows } = await db.query(
-    `${SELECT} WHERE ums.gym_id = ? AND ums.user_membership_id IN (${umIds.map(() => '?').join(',')})
+    `${SELECT} WHERE ums.gym_id = ? AND um.id IN (${umIds.map(() => '?').join(',')})
      ORDER BY ums.starts_at ASC, ums.id ASC`,
     [gymId, ...umIds],
   );
@@ -246,7 +249,7 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   const { gymId, gymMembershipId } = getTenantContext(req);
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: Number((req.params as any).id), action: 'update', detail: { add_service: req.body },
-    mutate: async (tx, d) => { const r = await psAddService(tx, d, req.body); return 'kind' in r ? r : { ok: true as const }; },
+    mutate: async (tx, d) => { const r = await psAddService(tx, d, req.body, { legacy: true }); return 'kind' in r ? r : { ok: true as const }; },
     // The route's own contract is the attachment it created, not the list.
     respond: async () => {
       const list = await loadAssignedPlanServices(gymId, Number((req.params as any).id));
@@ -261,100 +264,9 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
     return res.status(409).json({ error: 'Services cannot be added to a cancelled or expired Assigned Plan' });
   }
 
-  const { product_id, quantity, starts_at } = req.body ?? {};
-
-  const chargeId = Number(product_id);
-  if (!Number.isInteger(chargeId) || chargeId <= 0) {
-    return res.status(400).json({ error: 'product_id must be a positive integer' });
-  }
-
-  const parsedQuantity = quantity === undefined || quantity === null || quantity === '' ? 1 : Number(quantity);
-  if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
-    return res.status(400).json({ error: 'quantity must be a positive integer' });
-  }
-
-  // Default: today, or the plan's start date when the plan hasn't started yet —
-  // a service can never be billed before the assignment it belongs to.
-  const startsAt = starts_at ? String(starts_at) : (todayISO() > plan.starts_at ? todayISO() : plan.starts_at);
-  if (!DATE_RE.test(startsAt)) {
-    return res.status(400).json({ error: 'starts_at must be YYYY-MM-DD' });
-  }
-  if (startsAt < plan.starts_at) {
-    return res.status(400).json({ error: 'starts_at cannot be earlier than the Assigned Plan start date' });
-  }
-  if (plan.ends_at != null && startsAt > plan.ends_at) {
-    return res.status(400).json({ error: 'starts_at cannot be later than the Assigned Plan end date' });
-  }
-
-  // `gc.name` is nullable — a system charge displays under its `charge_types`
-  // name — so it is resolved here the way every other reader resolves it,
-  // rather than snapshotting a NULL below.
-  const { rows: itemRows } = await db.query(
-    `SELECT gc.id, COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id)) AS name,
-            gc.type, gc.status, gc.billing_frequency, gc.amount, gc.currency
-     FROM products gc
-     LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
-     WHERE gc.id = ? AND gc.gym_id = ? AND gc.deleted_at IS NULL`,
-    [chargeId, gymId],
-  );
-  if (itemRows.length === 0) return res.status(404).json({ error: 'Product not found' });
-  const item = itemRows[0];
-  if (item.status !== 'active') {
-    return res.status(400).json({ error: 'Product is not active' });
-  }
-  // #631 §2: only recurring/periodic services are attachable. `classifyProduct`
-  // is the single source of truth for that rule (#550) — never re-derived here.
-  if (classifyProduct(item) !== 'periodical') {
-    return res.status(400).json({ error: 'Only recurring Products can be added as periodic services' });
-  }
-
-  // The same item may be attached again after an earlier stint ended, but not
-  // while one is still running (that is what `quantity` is for). The open case
-  // is additionally enforced by the `ums_one_open_per_item` unique index, which
-  // is what makes two simultaneous POSTs safe; this check also covers a closed
-  // window that still ends on or after the requested start date.
-  const { rows: overlapping } = await db.query(
-    `SELECT id FROM member_products_recurrent_snapshot
-     WHERE gym_id = ? AND user_membership_id = ? AND product_id = ?
-       AND (ends_at IS NULL OR ends_at >= ?)`,
-    [gymId, plan.id, chargeId, startsAt],
-  );
-  if (overlapping.length > 0) {
-    return res.status(409).json({ error: DUPLICATE_ERROR });
-  }
-
-  let insertId: number;
-  try {
-    ({ insertId } = await db.query(
-      // #635 (migration 174): the item's commercial facts are frozen onto the
-      // attachment as well as read live. §17 — repricing the Product
-      // must not move what an already-attached service costs, which is what
-      // the Billing Simulation reads since stage 3; the live join below still
-      // drives display, so the UI can flag an item that has changed.
-      `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, user_membership_id, product_id, quantity, starts_at, created_by_membership_id,
-        item_name, item_type, item_billing_frequency, unit_price, currency)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        gymId, plan.id, chargeId, parsedQuantity, startsAt, gymMembershipId ?? null,
-        item.name, item.type ?? 'other', item.billing_frequency ?? null,
-        item.amount != null ? item.amount : 0, item.currency ?? null,
-      ],
-    ));
-  } catch (err: any) {
-    if (err?.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: DUPLICATE_ERROR });
-    throw err;
-  }
-
-  const { rows } = await db.query(`${SELECT} WHERE ums.id = ? AND ums.gym_id = ?`, [insertId, gymId]);
-  const created = shape(rows[0]);
-  recordAudit(req, {
-    action: 'add_service',
-    entityType: 'user_membership',
-    entityId: plan.id,
-    next: { product_id: chargeId, product: item.name, quantity: parsedQuantity, starts_at: startsAt },
-  });
-  res.status(201).json(created);
+  // #1325 PR 3e-4a: the attachment is the version's (above); a plan whose
+  // version takes no edit (awaiting payment) answers here.
+  return res.status(409).json({ error: 'Services cannot be added to a membership awaiting payment' });
 });
 
 /**
@@ -365,55 +277,34 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
  */
 userMembershipServicesRouter.delete('/:serviceId', requireModuleWrite('PAYMENTS'), async (req, res) => {
   const { gymId } = getTenantContext(req);
-  if (await redirectEditToProductSet(req, res, {
-    userMembershipId: Number((req.params as any).id), action: 'update', detail: { remove_service: req.params.serviceId },
-    // The service id on the screen is the projected row's; the version's own row is
-    // the one with the same Product, so the removal is addressed by that.
-    mutate: async (tx, d) => {
-      const { rows } = await tx.query<{ product_id: number }>(
-        'SELECT product_id FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ?', [Number(req.params.serviceId), d.gym_id]);
-      if (!rows[0]) return { kind: 'not_found' as const };
-      const { rows: own } = await tx.query<{ id: number }>(
-        'SELECT id FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND ends_at IS NULL LIMIT 1',
-        [d.gym_id, d.id, rows[0].product_id]);
-      if (!own[0]) return { kind: 'not_found' as const };
-      return psRemoveService(tx, d, Number(own[0].id));
-    },
-    respond: async () => ({ ok: true }),
-  })) return;
-  const plan = await loadAssignedPlan(gymId, (req.params as any).id);
-  if (!plan) return res.status(404).json({ error: 'Membership not found' });
-
   const serviceId = Number(req.params.serviceId);
   if (!Number.isInteger(serviceId) || serviceId <= 0) {
     return res.status(400).json({ error: 'serviceId must be a positive integer' });
   }
-
-  const { rows } = await db.query(`${SELECT} WHERE ums.id = ? AND ums.gym_id = ? AND ums.user_membership_id = ?`,
-    [serviceId, gymId, plan.id]);
-  if (rows.length === 0) return res.status(404).json({ error: 'Service not found' });
-  const service = shape(rows[0]);
-  if (service.ends_at != null) {
-    return res.status(409).json({ error: 'Service has already been removed' });
-  }
-
-  const today = todayISO();
-  const deleted = service.starts_at > today;
-  if (deleted) {
-    await db.query('DELETE FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ?', [serviceId, gymId]);
-  } else {
-    await db.query(
-      'UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE id = ? AND gym_id = ?',
-      [today, serviceId, gymId],
-    );
-  }
-
-  recordAudit(req, {
-    action: 'remove_service',
-    entityType: 'user_membership',
-    entityId: plan.id,
-    previous: { product_id: service.product_id, product: service.product_name, starts_at: service.starts_at },
-    next: deleted ? null : { ends_at: today },
-  });
-  res.json({ id: serviceId, deleted, ends_at: deleted ? null : today });
+  let removed: { deleted: boolean; ends_at: string | null } = { deleted: false, ends_at: null };
+  if (await redirectEditToProductSet(req, res, {
+    userMembershipId: Number((req.params as any).id), action: 'update', detail: { remove_service: req.params.serviceId },
+    // The service id on the screen is the current version's row; the version
+    // being edited carries its own copy of it (cloned with the configuration),
+    // found by Product and start date, so the removal is addressed by that.
+    mutate: async (tx, d) => {
+      const { rows } = await tx.query<{ product_id: number; starts_at: string }>(
+        'SELECT product_id, starts_at FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ?', [serviceId, d.gym_id]);
+      if (!rows[0]) return { kind: 'not_found' as const };
+      const { rows: own } = await tx.query<{ id: number }>(
+        `SELECT id FROM member_products_recurrent_snapshot
+          WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND starts_at <=> ?
+          ORDER BY id DESC LIMIT 1`,
+        [d.gym_id, d.id, rows[0].product_id, rows[0].starts_at]);
+      if (!own[0]) return { kind: 'not_found' as const };
+      const out = await psRemoveService(tx, d, Number(own[0].id), { legacy: true });
+      if ('kind' in out) return out;
+      removed = { deleted: out.deleted, ends_at: out.ends_at };
+      return { ok: true as const };
+    },
+    respond: async () => ({ id: serviceId, deleted: removed.deleted, ends_at: removed.ends_at }),
+  })) return;
+  const plan = await loadAssignedPlan(gymId, (req.params as any).id);
+  if (!plan) return res.status(404).json({ error: 'Membership not found' });
+  return res.status(409).json({ error: 'Services cannot be removed from a membership that is closed or awaiting payment' });
 });

@@ -2,7 +2,7 @@
 // covered Member on the Assigned Plan snapshot, and follow Members added/removed.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, legacyChildQuery, request } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -42,7 +42,7 @@ async function quantities(gymId: string, umId: number) {
     ['session', 'user_membership_session'],
     ['periodical', 'user_membership_periodical'],
   ]) {
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       `SELECT product_id, quantity FROM ${table} WHERE user_membership_id = ? AND gym_id = ?`,
       [umId, gymId],
     );

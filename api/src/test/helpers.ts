@@ -116,6 +116,9 @@ export async function activateAssignment(
  * later needs an Active version).
  */
 
+/** Marks the superseded version a fixture creates only to carry configuration. */
+const FIXTURE_HOLDER = '__fixture_config_holder__';
+
 const ASSIGNMENT_CONFIG_COLUMNS = [
   'base_price', 'plan_price_id', 'discount_reason', 'discount_expires_at', 'membership_fee_price',
   'free_periods', 'paid_periods', 'bonus_periods', 'pay_beforehand_periods',
@@ -152,6 +155,11 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
   await db.query(
     `INSERT INTO product_set_plan_snapshots (gym_id, product_set_id, ${cols})
      SELECT gym_id, ?, ${cols} FROM product_set_plan_snapshots WHERE product_set_id = ?`, [setId, holder[0].id]);
+  // The Active version is the assignment's now: a holder only existed to carry
+  // what the fixture wrote before one did.
+  await db.query(
+    'DELETE FROM product_sets WHERE user_membership_id = ? AND id <> ? AND created_by_name = ?',
+    [umId, setId, FIXTURE_HOLDER]);
 }
 
 /** The configuration an assignment has — its latest linked version's plan snapshot — as the row used to carry it. */
@@ -180,6 +188,7 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
           user_membership_id, superseded_at)
        VALUES (?, ?, 1, 'superseded', ?, ?, ?, ?, UTC_TIMESTAMP())`,
       [um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at, umId]);
+    await db.query("UPDATE product_sets SET created_by_name = ? WHERE id = ?", [FIXTURE_HOLDER, insertId]);
     await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
     setId = Number(insertId);
   }
@@ -221,6 +230,52 @@ function literalValue(token: string, params: unknown[]): unknown {
 }
 
 /**
+ * #1325 PR 3e-4a: an assignment's benefit rows, applied Promotions and
+ * recurring services are its current ProductSet version's. A fixture written
+ * against the old assignment-keyed shape (`user_membership_id`) goes through
+ * this: an INSERT is re-keyed to the assignment's latest linked version (one is
+ * created when the assignment has none), and a `user_membership_id = ?` /
+ * `IN (?, …)` predicate becomes the same lookup through that version.
+ */
+const LATEST_VERSION = (idExpr: string) =>
+  `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${idExpr} ORDER BY p9.version DESC, p9.id DESC LIMIT 1)`;
+
+async function versionOfAssignment(userMembershipId: number): Promise<number> {
+  const { rows } = await db.query<{ id: number }>(
+    'SELECT id FROM product_sets WHERE user_membership_id = ? ORDER BY version DESC, id DESC LIMIT 1', [userMembershipId]);
+  if (rows[0]) return Number(rows[0].id);
+  const { rows: um } = await db.query<{ gym_id: string; member_id: number }>(
+    'SELECT gym_id, member_id FROM user_memberships WHERE id = ?', [userMembershipId]);
+  if (!um[0]) throw new Error(`legacy child fixture: assignment ${userMembershipId} not found`);
+  const id = await ensureTestProductSet(um[0].gym_id, Number(um[0].member_id), userMembershipId);
+  if (id == null) throw new Error('legacy child fixture: no version');
+  return id;
+}
+
+export async function legacyChildQuery(sql: string, params: unknown[] = []): Promise<any> {
+  const queue = [...params];
+  const insert = sql.match(/^(\s*INSERT INTO \w+\s*\()([^)]*)(\)\s*VALUES\s*\()([\s\S]*)(\)\s*)$/i);
+  if (insert && /\buser_membership_id\b/.test(insert[2])) {
+    const columns = insert[2].split(',').map((c) => c.trim());
+    const tokens = splitTopLevel(insert[4]);
+    if (columns.length !== tokens.length) throw new Error('legacy child fixture: column/value mismatch');
+    const at = columns.indexOf('user_membership_id');
+    let placeholders = 0;
+    for (let i = 0; i < at; i++) placeholders += (tokens[i].match(/\?/g) ?? []).length;
+    if (tokens[at].trim() !== '?') throw new Error('legacy child fixture: user_membership_id must be a placeholder');
+    queue[placeholders] = await versionOfAssignment(Number(queue[placeholders]));
+    columns[at] = 'product_set_id';
+    return db.query(`${insert[1]}${columns.join(', ')}${insert[3]}${tokens.join(', ')}${insert[5]}`, queue);
+  }
+  // A predicate: re-key `user_membership_id = ?` / `IN (?, ?)` through the version.
+  let out = sql.replace(/\b((?:\w+\.)?)user_membership_id\s*=\s*\?/g,
+    (_m, alias) => `${alias}product_set_id = ${LATEST_VERSION('?')}`);
+  out = out.replace(/\b((?:\w+\.)?)user_membership_id\s+IN\s*\(([^)]*)\)/g,
+    (_m, alias, list) => `${alias}product_set_id IN (${list.split(',').map(() => LATEST_VERSION('?')).join(', ')})`);
+  return db.query(out, queue);
+}
+
+/**
  * The fixtures' `INSERT INTO user_memberships` / `UPDATE user_memberships SET …`
  * as they were written when the row carried the configuration: the columns it
  * no longer has are taken out of the statement and written on the assignment's
@@ -249,6 +304,14 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
     const result = await db.query(
       `INSERT INTO user_memberships (${keptCols.join(', ')}) VALUES (${keptTokens.join(', ')})`, keptParams);
     if (Object.keys(config).length > 0) await setAssignmentConfig(result.insertId, config);
+    // A running assignment has its Active version (its Promotions, services and
+    // edits live there), carrying the configuration written above.
+    const { rows: created } = await db.query<any>(
+      'SELECT gym_id, member_id, status, membership_plan_id FROM user_memberships WHERE id = ?', [result.insertId]);
+    const row = created[0];
+    if (row && (row.status === 'active' || row.status === 'paused') && row.membership_plan_id != null) {
+      await ensureTestProductSet(row.gym_id, Number(row.member_id), result.insertId);
+    }
     return result;
   }
   const update = sql.match(/^\s*UPDATE user_memberships\s+SET\s+([\s\S]*?)\s+WHERE\s+([\s\S]*)$/i);
@@ -284,8 +347,19 @@ export async function legacyAssignmentQuery(sql: string, params: unknown[] = [])
  * to `userMembershipId` when given — what a test's hand-written Billing Event
  * must belong to since migration 253.
  */
+/** The version a fixture links to an assignment carries that assignment's dates. */
+async function followAssignmentDates(setId: number, userMembershipId: number | null): Promise<void> {
+  if (userMembershipId == null) return;
+  await db.query(
+    `UPDATE product_sets ps JOIN user_memberships um ON um.id = ?
+        SET ps.starts_at = um.starts_at, ps.ends_at = um.ends_at
+      WHERE ps.id = ?`,
+    [userMembershipId, setId]);
+}
+
 export async function ensureTestProductSet(
   gymId: string, memberId: number | null, userMembershipId: number | null = null,
+  opts: { takeActive?: boolean } = {},
 ): Promise<number | null> {
   if (memberId == null) return null;
   // The set is the member's: a fixture that names another gym (a tenant test)
@@ -294,13 +368,27 @@ export async function ensureTestProductSet(
   if (owner[0]) gymId = owner[0].gym_id;
   // One Active set per owner (`product_sets_one_active`), whichever gym a
   // fixture moved the member to since: it follows the member.
-  const { rows } = await db.query<{ id: number }>(
-    "SELECT id FROM product_sets WHERE owner_member_id = ? AND status = 'active' LIMIT 1", [memberId]);
+  const { rows } = await db.query<{ id: number; user_membership_id: number | null }>(
+    "SELECT id, user_membership_id FROM product_sets WHERE owner_member_id = ? AND status = 'active' LIMIT 1", [memberId]);
+  // A second live assignment of one member (a fixture the model forbids) is
+  // carried by a superseded version of its own, so the first keeps its set.
+  if (!opts.takeActive && rows[0] && userMembershipId != null && rows[0].user_membership_id != null
+      && Number(rows[0].user_membership_id) !== userMembershipId) {
+    const { insertId } = await db.query(
+      `INSERT INTO product_sets (gym_id, owner_member_id, status, starts_at, user_membership_id)
+       VALUES (?, ?, 'superseded', '2000-01-01', ?)`,
+      [gymId, memberId, userMembershipId]);
+    await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
+    await adoptConfigHolder(Number(insertId), userMembershipId);
+    await followAssignmentDates(Number(insertId), userMembershipId);
+    return Number(insertId);
+  }
   if (rows[0]) {
     await db.query(
       'UPDATE product_sets SET gym_id = ?, user_membership_id = COALESCE(?, user_membership_id) WHERE id = ?',
       [gymId, userMembershipId, rows[0].id]);
     await adoptConfigHolder(Number(rows[0].id), userMembershipId);
+    await followAssignmentDates(Number(rows[0].id), userMembershipId);
     return Number(rows[0].id);
   }
   try {
@@ -310,11 +398,12 @@ export async function ensureTestProductSet(
       [gymId, memberId, userMembershipId]);
     await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
     await adoptConfigHolder(Number(insertId), userMembershipId);
+    await followAssignmentDates(Number(insertId), userMembershipId);
     return Number(insertId);
   } catch (err: any) {
     // Two fixtures of one member racing on `product_sets_one_active`: the set exists now.
     if (err?.errno !== 1062) throw err;
-    return ensureTestProductSet(gymId, memberId, userMembershipId);
+    return ensureTestProductSet(gymId, memberId, userMembershipId, opts);
   }
 }
 
@@ -326,7 +415,7 @@ export async function ensureTestProductSet(
 export async function seedScheduledEvent(
   gymId: string, memberId: number, userMembershipId: number | null, billingDate: string, amount = 29.99,
 ): Promise<number> {
-  const setId = await ensureTestProductSet(gymId, memberId, userMembershipId);
+  const setId = await ensureTestProductSet(gymId, memberId, userMembershipId, { takeActive: true });
   const isExpr = /[()]/.test(billingDate);
   const { insertId } = await db.query(
     `INSERT INTO billing_events (gym_id, member_id, product_set_id, event_type, source, amount, billing_date, is_scheduled)

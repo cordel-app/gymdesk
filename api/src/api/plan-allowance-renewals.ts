@@ -1,3 +1,4 @@
+import { assignmentVersionId } from './assignment-config';
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { dueRenewals, type RenewalLine } from '../domain/planAllowanceRenewals';
@@ -39,8 +40,9 @@ export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: 
             (SELECT DATE_FORMAT(MAX(par.renewal_date), '%Y-%m-%d')
                FROM plan_allowance_renewals par
               WHERE par.user_membership_session_id = umss.id) AS last_renewal_date
-       FROM user_membership_session umss
-       JOIN user_memberships um ON um.id = umss.user_membership_id AND um.gym_id = umss.gym_id
+       FROM user_memberships um
+       JOIN user_membership_session umss
+         ON umss.product_set_id = ${assignmentVersionId('um.id')} AND umss.gym_id = um.gym_id
       WHERE um.status = 'active'
         AND umss.frequency IS NOT NULL AND umss.frequency <> 'once'
         AND umss.quantity > 0

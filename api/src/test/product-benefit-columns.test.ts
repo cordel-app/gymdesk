@@ -21,8 +21,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -352,7 +351,7 @@ describe('#896 — a snapshot carries the treatment it was agreed with', () => {
       .send({ member_id: memberId, membership_plan_id: planId, starts_at: today() });
     expect(assign.status).toBe(201);
 
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       'SELECT action, value FROM user_membership_session WHERE user_membership_id = ?',
       [assign.body.id],
     );
@@ -371,7 +370,7 @@ describe('#896 — a snapshot carries the treatment it was agreed with', () => {
       .send({ promotion_id: promotionId });
     expect(applied.status).toBe(201);
 
-    const snapshot = await db.query(
+    const snapshot = await legacyChildQuery(
       `SELECT s.action, s.value
          FROM user_membership_promotion_session_snapshot s
          JOIN user_membership_promotions ump ON ump.id = s.user_membership_promotion_id

@@ -20,8 +20,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -347,7 +346,7 @@ describe('Booking access after Included Services (#635 stage 4)', () => {
     const memberId = await createMember(gymId, centerId);
     const umId = await assignActivePlan(gymId, memberId, await createPlan(gymId, 'IS No Debit Plan'));
     const productId = await createSessionProduct(gymId, serviceId, 10);
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO member_products_recurrent_snapshot (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
        VALUES (?, ?, ?, 1, DATE_SUB(UTC_DATE(), INTERVAL 10 DAY), NULL)`,
       [gymId, umId, productId],

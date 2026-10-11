@@ -25,6 +25,15 @@ export type AssignmentConfigColumn =
   | 'auto_renew' | 'personal_fee_benefit_action' | 'personal_fee_benefit_value'
   | 'recurring_billing_interval' | 'recurring_billing_unit';
 
+/**
+ * #1325 PR 3e-4a — SQL for the id of the latest version linked to the assignment
+ * `idExpr` (a column or a `?`). The rows an assignment's benefits, applied
+ * Promotions and recurring services are read from are that version's own
+ * (`product_set_id = <this>`); there is no per-assignment copy of them.
+ */
+export const assignmentVersionId = (idExpr: string) =>
+  `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${idExpr} ORDER BY p9.version DESC, p9.id DESC LIMIT 1)`;
+
 /** Joins the latest linked version and its plan snapshot as `cfg_ps` / `cfg`. */
 export const ASSIGNMENT_CONFIG_JOIN = (um = 'um') => `
   LEFT JOIN product_sets cfg_ps ON cfg_ps.id = (

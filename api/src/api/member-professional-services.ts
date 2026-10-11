@@ -1,3 +1,4 @@
+import { assignmentVersionId } from './assignment-config';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -116,7 +117,9 @@ memberProfessionalServicesRouter.get('/:serviceId/history', async (req, res, nex
       `SELECT par.quantity, par.renewal_date
          FROM plan_allowance_renewals par
          JOIN user_membership_session umss ON umss.id = par.user_membership_session_id
-         JOIN user_memberships um ON um.id = umss.user_membership_id AND um.gym_id = par.gym_id
+         JOIN product_sets lps ON lps.id = umss.product_set_id
+         JOIN user_memberships um ON um.id = lps.user_membership_id AND um.gym_id = par.gym_id
+          AND ${assignmentVersionId('um.id')} = lps.id
         WHERE par.gym_id = ? AND um.status = 'active'
           AND (um.member_id = ?
                OR EXISTS (SELECT 1 FROM user_membership_members umm

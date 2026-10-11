@@ -345,7 +345,7 @@ export async function reconfigureProjected(
   const blocking = await loadEditLock(input.gymId, set.owner_member_id, todayUtc());
   if (blocking.length > 0) return { kind: 'edit_locked', blocking };
 
-  const { rows: setRows } = await tx.query<any>('SELECT starts_at FROM product_sets WHERE id = ?', [set.id]);
+  const { rows: setRows } = await tx.query<any>('SELECT starts_at, ends_at FROM product_sets WHERE id = ?', [set.id]);
   const created = await createDraft(tx, {
     gymId: input.gymId, ownerMemberId: set.owner_member_id, membershipPlanId: set.membership_plan_id,
     startsAt: dateOnly(setRows[0].starts_at), actor: input.actor,
@@ -353,7 +353,8 @@ export async function reconfigureProjected(
   if (created.kind === 'in_flight') return { kind: 'in_flight', productSetId: created.productSetId };
 
   const draftId = created.productSet.id;
-  await tx.query('UPDATE product_sets SET user_membership_id = NULL WHERE id = ?', [draftId]);
+  await tx.query('UPDATE product_sets SET user_membership_id = NULL, ends_at = ? WHERE id = ?',
+    [setRows[0].ends_at == null ? null : dateOnly(setRows[0].ends_at), draftId]);
   await cloneConfiguration(tx, input.gymId, set.id, draftId);
 
   const locked = await lockDraft(tx, input.gymId, draftId);
@@ -399,11 +400,14 @@ export function applyPromotionMutator(gymId: string, userId: string | null, prom
       return { kind: 'invalid', message: 'A ProductSet without a Membership Plan takes no Promotion' };
     }
     const { applyPromotionToProductSet, validatePromotionSelection } = await import('./membership-promotions');
-    const refusal = await validatePromotionSelection(gymId, draft.membership_plan_id, [promotionId], draft.owner_member_id);
+    const { assignmentBeingEdited } = await import('./membership-promotions');
+    const refusal = await validatePromotionSelection(gymId, draft.membership_plan_id, [promotionId], draft.owner_member_id,
+      await assignmentBeingEdited(tx, draft.id));
     if (refusal) return { kind: 'invalid', message: refusal.error };
     try {
       await applyPromotionToProductSet(tx, gymId, userId ?? 'unknown', draft.id, promotionId);
     } catch (err: any) {
+      if (err?.status === 409) return { kind: 'conflict', error: err.message, message: err.message };
       if (err?.status) return { kind: 'invalid', message: err.message };
       throw err;
     }

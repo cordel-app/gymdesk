@@ -1,4 +1,4 @@
-import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId } from './assignment-config';
 import { db, Tx } from '../infra/db';
 import { toPlanBenefitMandatory } from '../domain/planBenefitMandatory';
 import { coveredMemberCount } from '../domain/assignedBenefitQuantity';
@@ -182,7 +182,7 @@ function selectSnapshotSection(table: string): string {
           FROM ${table} b
           LEFT JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
           LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
-          WHERE b.user_membership_id = ? AND b.gym_id = ?
+          WHERE b.product_set_id = ${assignmentVersionId('?')} AND b.gym_id = ?
           ORDER BY b.item_name ASC, b.id ASC`;
 }
 
@@ -228,39 +228,6 @@ function shapeBenefit(row: any): AssignedPlanBenefitRow {
   };
 }
 
-/**
- * #1187 — sets the quantity of every catalogue-mandatory line (`products.mandatory
- * = 1`) of this assignment's three snapshot sections to the number of Members it
- * covers, counted from `user_membership_members` (owner included). The SQL half
- * of `resolveAssignedPlanBenefitQuantity()`.
- *
- * Idempotent, and it touches only the assignment's own snapshot rows: Billing
- * Events already written are the record of what was billed and are never
- * recalculated (§11), the Plan's configured quantity is not read or written, and
- * a line the Plan-level `mandatory` flag lets a Member decline is simply absent
- * when declined, so there is nothing here to special-case.
- */
-export async function syncMandatoryProductQuantities(
-  tx: Tx, gymId: string, userMembershipId: number,
-): Promise<void> {
-  const { rows } = await tx.query(
-    'SELECT COUNT(*) AS n FROM user_membership_members WHERE user_membership_id = ? AND gym_id = ?',
-    [userMembershipId, gymId],
-  );
-  const memberCount = coveredMemberCount(rows[0]?.n);
-  for (const category of CATEGORIES) {
-    const table = BENEFIT_TABLE_BY_CATEGORY[category];
-    await tx.query(
-      `UPDATE ${table} b
-       JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
-       SET b.quantity = ?
-       WHERE b.user_membership_id = ? AND b.gym_id = ? AND gc.mandatory = 1
-         AND b.quantity <> ?`,
-      [memberCount, userMembershipId, gymId, memberCount],
-    );
-  }
-}
-
 /** The snapshot of one assignment, for the expanded card and (in stage 3) billing. */
 export async function loadAssignedPlanSnapshot(
   gymId: string, umId: number,
@@ -284,7 +251,7 @@ export async function loadAssignedPlanSnapshot(
     )),
   ]);
   const um = umRows[0] ?? {};
-  const [session, oneoff, periodical] = benefitResults.map((r) => r.rows.map(shapeBenefit));
+  const [session, oneoff, periodical] = benefitResults.map((r) => r.rows.map((row: any) => shapeBenefit({ ...row, user_membership_id: umId })));
 
   const billing: AssignedPlanBillingSnapshot = {
     free_periods: um.free_periods ?? null,
@@ -319,7 +286,7 @@ export async function loadAssignedPlanBenefitSection(
   const { rows } = await db.query(
     selectSnapshotSection(BENEFIT_TABLE_BY_CATEGORY[category]), [umId, gymId],
   );
-  return rows.map(shapeBenefit);
+  return rows.map((row: any) => shapeBenefit({ ...row, user_membership_id: umId }));
 }
 
 /**
@@ -389,11 +356,13 @@ export async function loadPlanBenefitsForSimulation(
   const marks = ids.map(() => '?').join(',');
   const { rows } = await db.query(
     CATEGORIES.map((category) => `
-      SELECT '${category}' AS category, user_membership_id, product_id, quantity,
-             item_name, item_billing_frequency, unit_price, \`action\`, \`value\`,
-             ${category === 'session' ? 'frequency' : 'NULL'} AS session_frequency
-      FROM ${BENEFIT_TABLE_BY_CATEGORY[category]}
-      WHERE gym_id = ? AND user_membership_id IN (${marks})`).join(' UNION ALL '),
+      SELECT '${category}' AS category, um.id AS user_membership_id, b.product_id, b.quantity,
+             b.item_name, b.item_billing_frequency, b.unit_price, b.\`action\`, b.\`value\`,
+             ${category === 'session' ? 'b.frequency' : 'NULL'} AS session_frequency
+      FROM user_memberships um
+      JOIN ${BENEFIT_TABLE_BY_CATEGORY[category]} b
+        ON b.product_set_id = ${assignmentVersionId('um.id')} AND b.gym_id = um.gym_id
+      WHERE um.gym_id = ? AND um.id IN (${marks})`).join(' UNION ALL '),
     CATEGORIES.flatMap(() => [gymId, ...ids]),
   );
   for (const row of rows as any[]) {

@@ -107,6 +107,8 @@ export async function redirectRetireToProductSet(req: Request, res: Response, in
   userMembershipId: number;
   /** `null` answers `204 No Content`, as the cancel route does. */
   respond: (() => Promise<unknown>) | null;
+  /** The audit action the legacy route wrote on the assignment (`close`, `delete`). */
+  legacyAuditAction?: string;
 }): Promise<boolean> {
   const { gymId } = getTenantContext(req);
   if (!Number.isInteger(input.userMembershipId) || input.userMembershipId <= 0) return false;
@@ -128,6 +130,11 @@ export async function redirectRetireToProductSet(req: Request, res: Response, in
     action: 'retire', entityType: 'product_set', entityId: (outcome as { productSetId: number }).productSetId,
     next: { status: 'active', plan: null },
   });
+  if (input.legacyAuditAction) {
+    recordAudit(req, {
+      action: input.legacyAuditAction, entityType: 'user_membership', entityId: input.userMembershipId,
+    });
+  }
   if (input.respond === null) res.status(204).send();
   else res.json(await input.respond());
   return true;
