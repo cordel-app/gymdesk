@@ -82,13 +82,19 @@ describe('Member card tabs: the declaration (#961)', () => {
     // The thread's `Q2` answer: every section the ticket's own table left
     // unassigned goes to Products & Services, in the order the card had them —
     // with Membership Plans first, per #1051.
+    // #1463: organised around the current ProductSet, Past Product Sets last.
     expect(sectionsForTab('products_services')).toEqual([
+      'section_product_set',
       'section_membership_plans',
+      'section_one_off_products',
+      'section_recurring_products',
       'section_additional_services',
       'section_billing_simulation',
+      'section_billing_events_forecast',
       'section_pt_slots',
       'section_session_packages',
       'section_billing_events',
+      'section_past_product_sets',
     ]);
     // #1227: the Member's Professional Service balance is a tab of its own.
     expect(sectionsForTab('professional_services')).toEqual(['section_professional_services']);

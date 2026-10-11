@@ -32,7 +32,14 @@ const SELECT = `
          ce.starts_at AS session_starts_at, ce.ends_at AS session_ends_at,
          ce.status AS session_status,
          at.name AS class_type_name,
-         COALESCE(ce.capacity, at.max_capacity) AS effective_capacity
+         COALESCE(ce.capacity, at.max_capacity) AS effective_capacity,
+         -- #1382: what the refund action is offered from. A ledger row exists
+         -- only when this booking spent a Professional Service session
+         -- (#1189 stage 3); returned_at says it was already given back.
+         EXISTS (SELECT 1 FROM professional_service_consumptions psc
+                  WHERE psc.calendar_event_booking_id = ceb.id AND psc.returned_at IS NULL) AS service_consumed,
+         EXISTS (SELECT 1 FROM professional_service_consumptions psc
+                  WHERE psc.calendar_event_booking_id = ceb.id AND psc.returned_at IS NOT NULL) AS service_returned
   FROM calendar_event_bookings ceb
   JOIN members m ON m.id = ceb.member_id
   JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
@@ -383,6 +390,62 @@ bookingsRouter.post('/:id/attendance', requireRole('admin', 'front_desk', 'train
     const { rows } = await db.query(`${SELECT} WHERE ceb.id = ? AND ceb.gym_id = ?`, [req.params.id, gymId]);
     res.json(rows[0]);
   } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * #1382: return the Professional Service session an *absent* attendee's booking
+ * spent. A session refund through the ledger (`returnSessionForBooking()`), not
+ * a monetary one: the exact session the booking consumed goes back to the
+ * grant it came from, once. Eligibility is the server's: the booking must be
+ * explicitly `absent` and hold an unreturned ledger row; a repeated or
+ * concurrent call finds nothing to return and answers 409.
+ */
+bookingsRouter.post('/:id/refund-balance', requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'), async (req, res, next) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+  try {
+    await db.transaction(async (tx) => {
+      const { rows } = await tx.query(
+        `SELECT id, status, attendance_status, member_id, calendar_event_id
+           FROM calendar_event_bookings WHERE id = ? AND gym_id = ? FOR UPDATE`,
+        [req.params.id, gymId],
+      );
+      if (rows.length === 0) throw Object.assign(new Error('Booking not found'), { status: 404 });
+      const b = rows[0];
+      if (b.status !== 'booked' || b.attendance_status !== 'absent') {
+        throw Object.assign(new Error('Only an attendee explicitly marked absent can be refunded'), { status: 400, code: 'not_absent' });
+      }
+      const { rows: ledger } = await tx.query(
+        'SELECT id, returned_at FROM professional_service_consumptions WHERE calendar_event_booking_id = ? AND gym_id = ? FOR UPDATE',
+        [req.params.id, gymId],
+      );
+      if (ledger.length === 0) {
+        throw Object.assign(new Error('This booking did not consume any Professional Services balance'), { status: 400, code: 'nothing_consumed' });
+      }
+      if (ledger[0].returned_at) {
+        throw Object.assign(new Error('The balance for this booking has already been refunded'), { status: 409, code: 'already_refunded' });
+      }
+      const sc = await serviceConsumption();
+      const returned = await sc.returnSessionForBooking(tx, gymId, Number(req.params.id), actor);
+      if (!returned) {
+        throw Object.assign(new Error('The balance for this booking has already been refunded'), { status: 409, code: 'already_refunded' });
+      }
+    });
+
+    recordAudit(req, {
+      action: 'refund_balance',
+      entityType: 'booking',
+      entityId: req.params.id,
+      next: { returned: true },
+    });
+
+    const { rows } = await db.query(`${SELECT} WHERE ceb.id = ? AND ceb.gym_id = ?`, [req.params.id, gymId]);
+    res.json(rows[0]);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
     next(err);
   }
 });

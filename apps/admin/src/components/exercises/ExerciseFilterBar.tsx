@@ -50,7 +50,7 @@ export interface ExerciseFacetOptions {
 
 export function ExerciseFilterBar({
   value, onChange, muscleKeys, muscleLabel, facets,
-  showStatus = false, alwaysShowMetadata = false, shown, total = null, autoFocusSearch = false,
+  showStatus = false, alwaysShowMetadata = false, shown, total = null, autoFocusSearch = false, trailing,
 }: {
   value: ExerciseFilterState;
   onChange: (next: ExerciseFilterState) => void;
@@ -76,6 +76,8 @@ export function ExerciseFilterBar({
    * (the Import modal), never for a page the administrator is already reading.
    */
   autoFocusSearch?: boolean;
+  /** A control pinned to the row's right edge (#1386: the List / Cards toggle). */
+  trailing?: React.ReactNode;
 }) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
@@ -197,6 +199,7 @@ export function ExerciseFilterBar({
             {t('filter_clear')}
           </button>
         )}
+        {trailing && <div style={{ marginLeft: 'auto' }}>{trailing}</div>}
       </FilterBar>
 
       {/* §12 + §14 on one line, so neither costs a row of its own. */}

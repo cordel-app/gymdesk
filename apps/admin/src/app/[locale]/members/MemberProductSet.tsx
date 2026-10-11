@@ -1,0 +1,185 @@
+'use client';
+
+// #1463 — the Products tab organised around the Member's current ProductSet.
+//
+// Four read-only pieces over one version: its metadata (+ Membership Plan), its
+// One-off and Recurring Products, and its Billing Events Forecast; plus the
+// Past Product Sets card. Everything is the server's: the version, its frozen
+// configuration (`GET /product-sets/:id`) and its forecast
+// (`/product-sets/:id/billing-event-simulation`, the engine the nightly run
+// prices from). Nothing here creates a Billing Event — configuring, saving and
+// paying stay on the existing `/product-sets` workflow (ProductSetsInFlight).
+
+import React, { useEffect, useState } from 'react';
+import { useLocale, useTranslations } from 'next-intl';
+import { useApiClient } from '@/lib/apiClient';
+import { StatusBadge } from '@/components/StatusBadge';
+import { CardDetailRow } from '@/components/CardDetailRow';
+import { BillingEventSimulation, type BillingEventSimulationData } from '@/components/BillingEventSimulation';
+import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
+import { cardHintStyle } from '@/components/formChrome';
+import type { ProductSetSummary } from './membershipConfiguration';
+import {
+  productSetName,
+  productSetStatusKey,
+  splitProductSetProducts,
+  type ProductSetConfigurationLike,
+  type ProductSetProductLine,
+} from './productSetView';
+
+function fmtYmd(ymd: string | null, locale: string): string | null {
+  if (!ymd) return null;
+  const [y, m, d] = ymd.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(locale, {
+    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
+  });
+}
+
+function useStatusLabel() {
+  const t = useTranslations('members');
+  return (set: ProductSetSummary) => {
+    const key = productSetStatusKey(set.status, set.expired);
+    return key ? t(key as any) : set.status;
+  };
+}
+
+/** Section: the metadata of the current ProductSet and the Membership Plan it carries. */
+export function CurrentProductSetHeader({ set }: { set: ProductSetSummary | null }) {
+  const t = useTranslations('members');
+  const locale = useLocale();
+  const statusLabel = useStatusLabel();
+  if (!set) return <p style={cardHintStyle}>{t('product_set_none')}</p>;
+  const dash = '—';
+  return (
+    <div>
+      <CardDetailRow label={t('product_set_label_name')} value={productSetName(set, t('product_set_no_plan'))} />
+      <CardDetailRow label={t('product_set_label_plan')} value={set.plan_name ?? t('product_set_no_plan')} />
+      <CardDetailRow label={t('product_set_label_start')} value={fmtYmd(set.starts_at, locale) ?? dash} />
+      <CardDetailRow label={t('product_set_label_end')} value={fmtYmd(set.ends_at, locale) ?? t('product_set_open_ended')} />
+      <CardDetailRow label={t('product_set_label_created_at')} value={fmtYmd(set.created_at, locale) ?? dash} />
+      <CardDetailRow label={t('product_set_label_created_by')} value={set.created_by ?? dash} />
+      <CardDetailRow
+        label={t('product_set_label_status')}
+        value={<StatusBadge status={set.status} label={statusLabel(set)} />}
+      />
+    </div>
+  );
+}
+
+/** One group of Product lines — the same component renders One-off and Recurring. */
+function ProductLines({ lines }: { lines: ProductSetProductLine[] }) {
+  const t = useTranslations('members');
+  const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
+  if (lines.length === 0) return <p style={cardHintStyle}>{t('product_set_no_products')}</p>;
+  return (
+    <div>
+      {lines.map((l) => {
+        const freq = billingFrequencyLabel(l.billingFrequency, (k) => tFreq(k as any));
+        return (
+          <CardDetailRow
+            key={l.key}
+            label={l.name}
+            value={`${l.quantity} × €${l.unitPrice.toFixed(2)}${freq ? ` · ${freq}` : ''}`}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+interface ProductSetDetail { configuration?: ProductSetConfigurationLike | null }
+
+/**
+ * The version's frozen configuration and forecast, read once per version and
+ * status. `render` receives the two groups and the forecast so the host places
+ * them under its own section headings.
+ */
+export function useProductSetDetail(set: ProductSetSummary | null, reloadKey: unknown) {
+  const { apiFetch } = useApiClient();
+  const [state, setState] = useState<{
+    loading: boolean;
+    error: boolean;
+    products: { oneOff: ProductSetProductLine[]; recurring: ProductSetProductLine[] };
+    forecast: BillingEventSimulationData | null;
+  }>({ loading: false, error: false, products: { oneOff: [], recurring: [] }, forecast: null });
+
+  const id = set?.id ?? null;
+  const status = set?.status ?? null;
+  useEffect(() => {
+    if (id == null) {
+      setState({ loading: false, error: false, products: { oneOff: [], recurring: [] }, forecast: null });
+      return;
+    }
+    let cancelled = false;
+    setState((s) => ({ ...s, loading: true, error: false }));
+    (async () => {
+      try {
+        const [detail, forecast] = await Promise.all([
+          apiFetch<ProductSetDetail>(`/product-sets/${id}`),
+          apiFetch<BillingEventSimulationData>(`/product-sets/${id}/billing-event-simulation`),
+        ]);
+        if (cancelled) return;
+        setState({ loading: false, error: false, products: splitProductSetProducts(detail?.configuration), forecast });
+      } catch {
+        if (!cancelled) setState((s) => ({ ...s, loading: false, error: true }));
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id, status, reloadKey]);
+
+  return state;
+}
+
+export function ProductSetProducts({ lines, loading, error }: { lines: ProductSetProductLine[]; loading: boolean; error: boolean }) {
+  const t = useTranslations('members');
+  if (loading) return <p style={cardHintStyle}>{t('product_set_loading')}</p>;
+  if (error) return <p style={cardHintStyle}>{t('product_set_error')}</p>;
+  return <ProductLines lines={lines} />;
+}
+
+/** The Billing Events Forecast: expected events, computed on read and persisted nowhere. */
+export function ProductSetForecast({ forecast, loading, error }: {
+  forecast: BillingEventSimulationData | null; loading: boolean; error: boolean;
+}) {
+  const t = useTranslations('members');
+  const tPlan = useTranslations('assigned_plans_page');
+  const locale = useLocale();
+  if (loading) return <p style={cardHintStyle}>{t('product_set_loading')}</p>;
+  if (error) return <p style={cardHintStyle}>{t('product_set_error')}</p>;
+  return (
+    <BillingEventSimulation
+      simulation={forecast}
+      t={(key, values) => tPlan(key as any, values as any)}
+      formatDate={(date) => fmtYmd(date, locale) ?? date}
+    />
+  );
+}
+
+/** The Past Product Sets card: previous versions, clearly history, newest first. */
+export function PastProductSets({ sets }: { sets: ProductSetSummary[] }) {
+  const t = useTranslations('members');
+  const locale = useLocale();
+  const [open, setOpen] = useState(false);
+  if (sets.length === 0) return <p style={cardHintStyle}>{t('product_set_past_none')}</p>;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'inherit', fontSize: 13 }}
+      >
+        {open ? '▾' : '▸'} {t('product_set_past_count', { count: sets.length })}
+      </button>
+      {open && sets.map((s) => (
+        <div key={s.id} data-product-set-id={s.id} style={{ marginTop: 8, opacity: 0.85 }}>
+          <CardDetailRow
+            label={productSetName(s, t('product_set_no_plan'))}
+            value={`${fmtYmd(s.starts_at, locale) ?? '—'} → ${fmtYmd(s.ends_at, locale) ?? t('product_set_open_ended')} · ${t('product_set_status_superseded')}`}
+          />
+        </div>
+      ))}
+    </div>
+  );
+}

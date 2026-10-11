@@ -206,7 +206,7 @@ describe('GET /user-memberships/member/:memberId/configuration — auth', () => 
 
     const res = await getConfiguration(readOnlyGym, readOnlyMember);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ plans: [], services: [], product_sets: [] }); // #1325 PR 3b: in-flight versions ride beside the plans
+    expect(res.body).toEqual({ plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [] }); // #1325 PR 3b: in-flight versions ride beside the plans
   });
 });
 
@@ -274,7 +274,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
     const memberId = await createMember(gymId);
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ plans: [], services: [], product_sets: [] }); // #1325 PR 3b: in-flight versions ride beside the plans
+    expect(res.body).toEqual({ plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [] }); // #1325 PR 3b: in-flight versions ride beside the plans
   });
 
   it('returns the plan and its services, and never its promotions (#931)', async () => {
@@ -295,7 +295,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
 
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    expect(Object.keys(res.body).sort()).toEqual(['plans', 'product_sets', 'services']);
+    expect(Object.keys(res.body).sort()).toEqual(['current_product_set', 'past_product_sets', 'plans', 'product_sets', 'services']);
 
     // ── MEMBERSHIP PLANS ──
     expect(res.body.plans).toHaveLength(1);
@@ -353,7 +353,7 @@ describe('GET /user-memberships/member/:memberId/configuration — happy path', 
 
     const res = await getConfiguration(gymId, mine);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ plans: [], services: [], product_sets: [] }); // #1325 PR 3b: in-flight versions ride beside the plans
+    expect(res.body).toEqual({ plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [] }); // #1325 PR 3b: in-flight versions ride beside the plans
   });
 });
 
@@ -642,7 +642,7 @@ describe('GET /user-memberships/member/:memberId/configuration — no promotions
 
     const res = await getConfiguration(gymId, memberId);
     expect(res.status).toBe(200);
-    expect(Object.keys(res.body).sort()).toEqual(['plans', 'product_sets', 'services']);
+    expect(Object.keys(res.body).sort()).toEqual(['current_product_set', 'past_product_sets', 'plans', 'product_sets', 'services']);
     expect(res.body.plans).toHaveLength(1);
 
     // Both applications are still there, exactly as they were.
@@ -744,5 +744,56 @@ describe('GET /user-memberships/member/:memberId/configuration — new_member_el
 
     const eligibility = eligibilityById((await getConfiguration(gymId, memberId)).body);
     expect(eligibility.get(rejoinUm)).toBe(false);
+  });
+});
+
+// ─── #1463 — current and past ProductSets ─────────────────────────────────────
+
+describe('GET /user-memberships/member/:memberId/configuration — ProductSets (#1463)', () => {
+  let gymId: string;
+  let memberId: number;
+
+  beforeAll(async () => {
+    gymId = await createTestGym();
+    await createTestMembership(gymId, 'admin');
+    memberId = await createMember(gymId, 'PS Member');
+  });
+
+  it('reports no current ProductSet and no history for a Member with none', async () => {
+    const res = await getConfiguration(gymId, memberId);
+    expect(res.status).toBe(200);
+    expect(res.body.current_product_set).toBeNull();
+    expect(res.body.past_product_sets).toEqual([]);
+  });
+
+  it('reports the in-flight version as current and superseded ones as past, creating no Billing Event', async () => {
+    const insert = async (version: number, status: string, root: number | null) => {
+      const { insertId } = await db.query(
+        `INSERT INTO product_sets (gym_id, owner_member_id, root_product_set_id, version, status, starts_at, created_by)
+         VALUES (?, ?, ?, ?, ?, '2026-03-01', 'Tester')`,
+        [gymId, memberId, root, version, status],
+      );
+      return insertId as number;
+    };
+    const first = await insert(1, 'superseded', null);
+    await db.query('UPDATE product_sets SET root_product_set_id = ? WHERE id = ?', [first, first]);
+    const second = await insert(2, 'draft', first);
+
+    const before = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
+    const res = await getConfiguration(gymId, memberId);
+    const after = await db.query('SELECT COUNT(*) AS n FROM billing_events WHERE gym_id = ?', [gymId]);
+
+    expect(res.status).toBe(200);
+    expect(res.body.current_product_set).toMatchObject({ id: second, status: 'draft', version: 2, created_by: 'Tester' });
+    expect(res.body.past_product_sets.map((p: any) => p.id)).toEqual([first]);
+    expect(Number(after.rows[0].n)).toBe(Number(before.rows[0].n));
+  });
+
+  it('does not leak another gym\'s ProductSets', async () => {
+    const otherGym = await createTestGym();
+    await createTestMembership(otherGym, 'admin');
+    const otherMember = await createMember(otherGym, 'Other');
+    const res = await getConfiguration(otherGym, otherMember);
+    expect(res.body.current_product_set).toBeNull();
   });
 });

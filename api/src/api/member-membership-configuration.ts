@@ -138,7 +138,42 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     [gymId, memberId],
   );
 
+  // #1463 — the Products tab is organised around one ProductSet: the version
+  // being configured (or awaiting payment) if there is one, otherwise the Active
+  // one, with every Superseded version as history. A pure read: nothing here
+  // creates a Billing Event. `ends_at` is the plan's end date of the assignment
+  // the version projects (null while open-ended or never projected).
+  const { rows: setRows } = await db.query<any>(
+    `SELECT ps.id, ps.status, ps.version, ps.starts_at, ps.created_at, ps.created_by,
+            ps.activated_at, ps.superseded_at,
+            (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
+            mp.name AS plan_name, um.ends_at AS ends_at
+       FROM product_sets ps
+       LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
+       LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ?
+      ORDER BY ps.id DESC`,
+    [gymId, memberId],
+  );
+  const summary = (r: any) => ({
+    id: Number(r.id),
+    status: String(r.status),
+    version: Number(r.version),
+    plan_name: r.plan_name ?? null,
+    starts_at: toDateOnly(r.starts_at),
+    ends_at: toDateOnly(r.ends_at),
+    created_at: toDateOnly(r.created_at),
+    created_by: r.created_by ?? null,
+    expired: Number(r.expired) === 1,
+  });
+  const currentRow =
+    setRows.find((r: any) => r.status === 'draft' || r.status === 'pending_payment') ??
+    setRows.find((r: any) => r.status === 'active') ??
+    null;
+
   res.json({
+    current_product_set: currentRow ? summary(currentRow) : null,
+    past_product_sets: setRows.filter((r: any) => r.status === 'superseded').map(summary),
     product_sets: inFlight.map((r: any) => ({
       id: Number(r.id),
       status: String(r.status),

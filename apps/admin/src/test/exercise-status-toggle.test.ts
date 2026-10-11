@@ -47,11 +47,14 @@ const EXPECTED: Record<(typeof LOCALE_CODES)[number], { activate: string; deacti
 
 const source = stripComments(readFileSync(PAGE_PATH, 'utf-8'));
 
-/** The `menuItems` assignment in renderRow: base-exercise branch, then the gym one. */
+/**
+ * The menu items of one exercise: base-exercise branch, then the gym one. Since
+ * #1386 they live in `exerciseMenuItems()`, shared by the list row and the card.
+ */
 function menuItemsBlock(): string {
-  const start = source.indexOf('const menuItems');
+  const start = source.indexOf('function exerciseMenuItems');
   expect(start).toBeGreaterThan(-1);
-  const end = source.indexOf('return (', start);
+  const end = source.indexOf('function renderCard', start);
   expect(end).toBeGreaterThan(start);
   return source.slice(start, end);
 }
