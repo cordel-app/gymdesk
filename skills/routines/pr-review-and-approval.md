@@ -24,6 +24,20 @@ Before investing in a PR, confirm it is still work the product wants. Two runs e
 
 So look, cheaply: does `main` already carry a commit for this PR's ticket and stage? Does its branch conflict in *every single file it touches*, several of them add/add? Either is the signature of a second, independent implementation of finished work. Park it — a superseded PR is a human's call to close, never something to merge or to resolve file by file — and say in the comment what landed instead.
 
+## Strictly one PR at a time: sync, wait for CI, merge, then the next
+
+This routine exists to get every open PR merged without a person in the loop. Work the **oldest** PR until it is merged, and only then touch the next one. Never sync or push to several PRs in parallel: every merge moves `main` and the changelog, so a second PR synced early is conflicted again by the time the first one lands.
+
+For the PR at the head of the queue:
+
+1. Fetch `main` and the PR branch, check the branch out, `git merge origin/main` (never rebase) and resolve every conflict. A conflict in `docs/changelog.md` or `docs/roadmap.md` is the normal case: keep both sides' entries and delete only the conflict markers.
+2. Validate (typecheck and fast tests of the touched workspaces), then push the merge to the PR branch.
+3. Wait for CI on that head. If `main` moved while CI ran and the merge answers 405 with conflicts, go back to step 1 for the same PR. Keep looping on this PR; do not move on.
+4. When CI is green, squash-merge with `expectedHeadSha`.
+5. Only then take the next oldest PR and start again at step 1. Stop when a fresh list has no open PR.
+
+Conflicts, a stale base and a pending CI are work to do, never reasons to park. Do not add the `needs-human` label for them. Remove a `needs-human` label from a PR that is now being worked.
+
 ## Resolving conflicts
 
 Resolve by fetching `main`, merging `main` into the PR branch, and pushing the resolution. The judgement is *which* conflicts you may resolve, and it is the line between the three PRs that merged today and the one that did not:
