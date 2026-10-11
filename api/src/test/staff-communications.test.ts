@@ -4,6 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { invalidateFeatureFlagsCache } from '../infra/featureFlags';
 import {
   TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request,
 } from './helpers';
@@ -135,11 +136,13 @@ describe('POST /class-sessions/:id/communications', () => {
       `INSERT INTO feature_flags (feature_key, enabled, modified_at) VALUES (?, 0, UTC_TIMESTAMP())
        ON DUPLICATE KEY UPDATE enabled = 0`, [FLAG],
     );
+    invalidateFeatureFlagsCache();
     try {
       const res = await request.post(`/class-sessions/${eventId}/communications`).set(h(gymId)).send(body);
       expect(res.status).toBe(403);
     } finally {
       await db.query(`UPDATE feature_flags SET enabled = 1 WHERE feature_key = ?`, [FLAG]);
+      invalidateFeatureFlagsCache();
     }
   });
 });
