@@ -54,7 +54,6 @@ import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPla
 import {
   cardHintStyle,
   cardSubLabelStyle,
-  dashedAddBtnStyle,
   formControlStyle,
   formErrorStyle,
   formFieldLabelStyle,
@@ -333,7 +332,7 @@ export function MemberMembershipPlans({
 // pair are the same ones the Member card's other sections wear.
 const hint = cardHintStyle;
 const subLabel = cardSubLabelStyle;
-const addBtn = dashedAddBtnStyle;
+const addBtn = primaryBtnSmall();
 const editorStyle = inlineEditorStyle;
 const editorTitle = inlineEditorTitleStyle;
 const labelStyle = formFieldLabelStyle;
