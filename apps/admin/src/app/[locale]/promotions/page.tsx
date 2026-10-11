@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
@@ -1279,6 +1279,48 @@ export default function PromotionsPage() {
           </div>
         </div>
 
+      </>
+    );
+  }
+
+  // #1387: the two Membership-Plan-specific blocks of the main form, rendered
+  // inside the Membership Plan Promotion section. Same draft state as before.
+  function renderPlanScopeFields() {
+    return (
+      <>
+        {/* Billing & Duration — #1135: the Free / Paid / Pre-paid / Bonus months
+            are the span of the Membership Fee Promotion and of the Promotion's
+            own Membership Fee Simulation (`promotionTimeline.ts`); they decide
+            nothing about a granted Product, whose coverage is its own grant's
+            Duration. So the section is absent — not disabled — for a Product
+            Promotion, exactly as #926 left Suitable Membership Plans and the
+            Membership Fee Promotion. The stored months are untouched: the draft
+            still carries them, so a save while the target is a Product writes
+            them back unchanged and switching the target back shows them again. */}
+        {targetsMembershipPlan(editForm.applies_to) && (
+        <div style={nestedSt}>
+          <CardSectionHeader title={t('section_billing_duration')} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 16px' }}>
+            <div>
+              <label style={inlineLabelSt}>{t('label_free_months')}</label>
+              <input type="number" min="0" value={editForm.free_months} onChange={(e) => setEditForm({ ...editForm, free_months: e.target.value })} style={inlineInputSt} placeholder="0" />
+            </div>
+            <div>
+              <label style={inlineLabelSt}>{t('label_paid_months')}</label>
+              <input type="number" min="0" value={editForm.paid_months} onChange={(e) => setEditForm({ ...editForm, paid_months: e.target.value })} style={inlineInputSt} placeholder="0" />
+            </div>
+            <div>
+              <label style={inlineLabelSt}>{t('label_pay_beforehand_months')}</label>
+              <input type="number" min="0" value={editForm.pay_beforehand_months} onChange={(e) => setEditForm({ ...editForm, pay_beforehand_months: e.target.value })} style={inlineInputSt} placeholder="0" />
+            </div>
+            <div>
+              <label style={inlineLabelSt}>{t('label_bonus_months')}</label>
+              <input type="number" min="0" value={editForm.bonus_months} onChange={(e) => setEditForm({ ...editForm, bonus_months: e.target.value })} style={inlineInputSt} placeholder="0" />
+            </div>
+          </div>
+        </div>
+        )}
+
         {/* Suitable Membership Plans (#554) — which active plans this promotion
             can be applied to. Backed by promotion_membership_plans; eligibility
             is enforced server-side both here (active-plan validation on save)
@@ -1286,7 +1328,7 @@ export default function PromotionsPage() {
             #926: Membership-Plan-specific, so it is not shown while the target
             is a Product. */}
         {targetsMembershipPlan(editForm.applies_to) && (
-        <div style={subSectionSt}>
+        <div style={nestedSt}>
           {/* #963: Retry sits beside the section title like every other
               subsection action, not at the far right of the card. */}
           <CardSectionHeader
@@ -1327,40 +1369,6 @@ export default function PromotionsPage() {
           )}
         </div>
         )}
-
-        {/* Billing & Duration — #1135: the Free / Paid / Pre-paid / Bonus months
-            are the span of the Membership Fee Promotion and of the Promotion's
-            own Membership Fee Simulation (`promotionTimeline.ts`); they decide
-            nothing about a granted Product, whose coverage is its own grant's
-            Duration. So the section is absent — not disabled — for a Product
-            Promotion, exactly as #926 left Suitable Membership Plans and the
-            Membership Fee Promotion. The stored months are untouched: the draft
-            still carries them, so a save while the target is a Product writes
-            them back unchanged and switching the target back shows them again. */}
-        {targetsMembershipPlan(editForm.applies_to) && (
-        <div style={subSectionSt}>
-          <CardSectionHeader title={t('section_billing_duration')} />
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0 16px' }}>
-            <div>
-              <label style={inlineLabelSt}>{t('label_free_months')}</label>
-              <input type="number" min="0" value={editForm.free_months} onChange={(e) => setEditForm({ ...editForm, free_months: e.target.value })} style={inlineInputSt} placeholder="0" />
-            </div>
-            <div>
-              <label style={inlineLabelSt}>{t('label_paid_months')}</label>
-              <input type="number" min="0" value={editForm.paid_months} onChange={(e) => setEditForm({ ...editForm, paid_months: e.target.value })} style={inlineInputSt} placeholder="0" />
-            </div>
-            <div>
-              <label style={inlineLabelSt}>{t('label_pay_beforehand_months')}</label>
-              <input type="number" min="0" value={editForm.pay_beforehand_months} onChange={(e) => setEditForm({ ...editForm, pay_beforehand_months: e.target.value })} style={inlineInputSt} placeholder="0" />
-            </div>
-            <div>
-              <label style={inlineLabelSt}>{t('label_bonus_months')}</label>
-              <input type="number" min="0" value={editForm.bonus_months} onChange={(e) => setEditForm({ ...editForm, bonus_months: e.target.value })} style={inlineInputSt} placeholder="0" />
-            </div>
-          </div>
-        </div>
-        )}
-
       </>
     );
   }
@@ -1575,11 +1583,12 @@ export default function PromotionsPage() {
 
   function renderMembershipFeeSection(promo: Promo) {
     const editing = isEditingSection(promo.id, 'membership_fee');
+    const cardEditing = isEditingCard(promo.id);
     return (
       <div style={subSectionSt}>
         {renderSectionHeader(
           'section_membership_fee_benefits',
-          isEditingCard(promo.id) && !editing ? () => enterSectionEdit(promo, 'membership_fee') : null,
+          cardEditing && !editing ? () => enterSectionEdit(promo, 'membership_fee') : null,
           editing
             ? sectionHeaderActions(() => handleSaveBenefitSection(promo.id, 'membership_fee'), cancelSectionEdit)
             : null,
@@ -1590,6 +1599,10 @@ export default function PromotionsPage() {
             {renderSectionError(sectionError)}
           </>
         ) : renderMembershipFeeView(cachedMf[promo.id] ?? null)}
+        {/* #1387: Billing & Duration and Suitable Membership Plans belong to this
+            section; they follow the card's Edit mode and its main Save. */}
+        {cardEditing ? renderPlanScopeFields() : renderPlanScopeView(promo)}
+        {cardEditing && renderSectionActions(() => handleSaveMain(promo.id))}
       </div>
     );
   }
@@ -1604,18 +1617,21 @@ export default function PromotionsPage() {
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
         {editing
-          ? <>{renderMainFields()}{renderSectionActions(() => handleSaveMain(promo.id))}</>
+          ? <>{renderMainFields()}{!cardTargetsMembershipPlan(promo) && renderSectionActions(() => handleSaveMain(promo.id))}</>
           : renderMainView(promo)}
 
         {/* #626: the Charge Benefits section was removed from the Promotion
             editor. Promotion benefits are configured only through the
             Session / One-off / Periodical and Membership Fee sections below. */}
-        {PRODUCT_BENEFIT_SECTIONS.map((cfg) => renderProductBenefitSection(promo, cfg))}
-        {/* #926: the membership fee belongs to a Membership Plan, so this
-            section is absent — not disabled — for a Product Promotion.
-            The stored benefit row is untouched and comes back with the section
-            if the target is switched back. */}
-        {cardTargetsMembershipPlan(promo) && renderMembershipFeeSection(promo)}
+        {/* #1387: Membership Plan Promotion sits above One-off (after Session).
+            #926: absent — not disabled — for a Product Promotion; the stored
+            benefit row comes back if the target is switched back. */}
+        {PRODUCT_BENEFIT_SECTIONS.map((cfg) => (
+          <Fragment key={cfg.section}>
+            {renderProductBenefitSection(promo, cfg)}
+            {cfg.section === 'session' && cardTargetsMembershipPlan(promo) && renderMembershipFeeSection(promo)}
+          </Fragment>
+        ))}
 
         {/* The two projections, always read-only and kept last. They answer
             different questions: the Example Timeline is one row per period of
@@ -1640,27 +1656,81 @@ export default function PromotionsPage() {
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
         {renderMainFields()}
         {PRODUCT_BENEFIT_SECTIONS.map((cfg) => (
-          <div key={cfg.section} style={subSectionSt}>
-            {renderSectionHeader(cfg.titleKey, null)}
-            {renderProductBenefitEditor({
-              addKey: cfg.addKey,
-              draft: productSectionDraft(cfg.section),
-              setDraft: productSectionSetDraft(cfg.section),
-              categoryItems: productSectionItems(cfg.section),
-              showFrequency: cfg.showFrequency,
-              quantityColumn: cfg.quantityColumn,
-            })}
-          </div>
+          <Fragment key={cfg.section}>
+            <div style={subSectionSt}>
+              {renderSectionHeader(cfg.titleKey, null)}
+              {renderProductBenefitEditor({
+                addKey: cfg.addKey,
+                draft: productSectionDraft(cfg.section),
+                setDraft: productSectionSetDraft(cfg.section),
+                categoryItems: productSectionItems(cfg.section),
+                showFrequency: cfg.showFrequency,
+                quantityColumn: cfg.quantityColumn,
+              })}
+            </div>
+            {cfg.section === 'session' && targetsMembershipPlan(editForm.applies_to) && (
+              <div style={subSectionSt}>
+                {renderSectionHeader('section_membership_fee_benefits', null)}
+                {renderMembershipFeeEditor(NEW_ID)}
+                {renderPlanScopeFields()}
+              </div>
+            )}
+          </Fragment>
         ))}
-        {targetsMembershipPlan(editForm.applies_to) && (
-          <div style={subSectionSt}>
-            {renderSectionHeader('section_membership_fee_benefits', null)}
-            {renderMembershipFeeEditor(NEW_ID)}
-          </div>
-        )}
         {targetsMembershipPlan(editForm.applies_to) && renderTimeline()}
         {renderSectionActions(handleCreate)}
       </div>
+    );
+  }
+
+  // #1387: read-only counterpart, rendered inside the Membership Plan Promotion section.
+  function renderPlanScopeView(promo: Promo) {
+    const associatedPlans = cachedPlans[promo.id] ?? [];
+    const target = promotionTargetOrDefault(promo.applies_to);
+    const free = promo.free_months ?? 0;
+    const paid = promo.paid_months ?? 0;
+    const payBeforehand = promo.pay_beforehand_months ?? 0;
+    const bonus = promo.bonus_months ?? 0;
+    return (
+      <>
+        {/* Billing & Duration summary — #1135: Membership-Plan-specific, so
+            absent for a Product Promotion exactly as it is in the form above. */}
+        {targetsMembershipPlan(target) && (free > 0 || paid > 0 || bonus > 0) && (
+          <div style={nestedSt}>
+            <CardSectionHeader title={t('section_billing_duration')} />
+            {/* #879: the look of this summary now lives in the shared
+                component, so the Membership Plan card renders the same one.
+                Which items appear stays the Promotion's own decision — an
+                unconfigured month count is simply omitted here. */}
+            <BillingDurationSummary
+              items={billingDurationItems([
+                free > 0 && { key: 'free_months', label: t('label_free_months'), value: free },
+                paid > 0 && { key: 'paid_months', label: t('label_paid_months'), value: paid },
+                payBeforehand > 0 && { key: 'pay_beforehand_months', label: t('label_pay_beforehand_months'), value: payBeforehand },
+                bonus > 0 && { key: 'bonus_months', label: t('label_bonus_months'), value: bonus },
+              ])}
+            />
+          </div>
+        )}
+
+        {/* #926: Membership-Plan-specific, so absent for a Product
+            Promotion exactly as it is in the form above. */}
+        {targetsMembershipPlan(target) && (
+        <div style={nestedSt}>
+          <CardSectionHeader title={t('section_suitable_plans')} />
+          {associatedPlans.length === 0
+            ? <p style={hintSt}>{t('no_suitable_plans_selected')}</p>
+            // Renders directly off GET /promotions/:id/plans' own {id, name}
+            // rows (source of truth) rather than resolving against the
+            // active-only `plans` list, so a plan that has since gone
+            // inactive still shows its real name instead of "#<id>" (#554).
+            : associatedPlans.map((p) => (
+                <p key={p.id} style={{ margin: '2px 0', fontSize: 13 }}>{p.name}</p>
+              ))}
+        </div>
+        )}
+
+      </>
     );
   }
 
@@ -1684,43 +1754,6 @@ export default function PromotionsPage() {
           <CardSectionHeader title={t('section_applies_to')} />
           <p style={{ margin: '2px 0', fontSize: 13 }}>{t(targetLabelKey as any)}</p>
         </div>
-
-        {/* Billing & Duration summary — #1135: Membership-Plan-specific, so
-            absent for a Product Promotion exactly as it is in the form above. */}
-        {targetsMembershipPlan(target) && (free > 0 || paid > 0 || bonus > 0) && (
-          <div style={subSectionSt}>
-            <CardSectionHeader title={t('section_billing_duration')} />
-            {/* #879: the look of this summary now lives in the shared
-                component, so the Membership Plan card renders the same one.
-                Which items appear stays the Promotion's own decision — an
-                unconfigured month count is simply omitted here. */}
-            <BillingDurationSummary
-              items={billingDurationItems([
-                free > 0 && { key: 'free_months', label: t('label_free_months'), value: free },
-                paid > 0 && { key: 'paid_months', label: t('label_paid_months'), value: paid },
-                payBeforehand > 0 && { key: 'pay_beforehand_months', label: t('label_pay_beforehand_months'), value: payBeforehand },
-                bonus > 0 && { key: 'bonus_months', label: t('label_bonus_months'), value: bonus },
-              ])}
-            />
-          </div>
-        )}
-
-        {/* #926: Membership-Plan-specific, so absent for a Product
-            Promotion exactly as it is in the form above. */}
-        {targetsMembershipPlan(target) && (
-        <div style={subSectionSt}>
-          <CardSectionHeader title={t('section_suitable_plans')} />
-          {associatedPlans.length === 0
-            ? <p style={hintSt}>{t('no_suitable_plans_selected')}</p>
-            // Renders directly off GET /promotions/:id/plans' own {id, name}
-            // rows (source of truth) rather than resolving against the
-            // active-only `plans` list, so a plan that has since gone
-            // inactive still shows its real name instead of "#<id>" (#554).
-            : associatedPlans.map((p) => (
-                <p key={p.id} style={{ margin: '2px 0', fontSize: 13 }}>{p.name}</p>
-              ))}
-        </div>
-        )}
 
       </>
     );
@@ -1892,6 +1925,8 @@ const headerBandSt: React.CSSProperties = {
 const inlineLabelSt: React.CSSProperties = { display: 'block', fontSize: 12, fontWeight: 600, color: '#888', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' };
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
 const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };
+// #1387: a block nested inside a section — grouped by the section's header, no second rule.
+const nestedSt: React.CSSProperties = { paddingTop: 12, marginTop: 12, paddingLeft: 12, borderLeft: '2px solid var(--gd-card-border, #eee)' };
 const subSectionSt: React.CSSProperties = { paddingTop: 16, marginTop: 16, borderTop: '1px solid var(--gd-card-border, #eee)' };
 const hintSt: React.CSSProperties = { color: '#aaa', fontSize: 13, margin: 0 };
 const checkboxLabelSt: React.CSSProperties = { display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, cursor: 'pointer' };
