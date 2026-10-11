@@ -46,7 +46,7 @@
         │        
         ├── members
         │   ├── {member_id}-{member_name}.png                                 — 1080 × 1080 px
-        │   └── {member_id}-{member_name}-thumbnail.png                       — 1080 × 1080 px
+        │   └── {member_id}-{member_name}-thumbnail.png                       — 256 × 256 px
         │       
         ├── exercises/
         │   ├── images/
