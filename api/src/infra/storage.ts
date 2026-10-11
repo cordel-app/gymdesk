@@ -110,6 +110,15 @@ export const GOALS_FOLDER = 'goals';
  */
 export const MEMBERS_FOLDER = 'members';
 
+/**
+ * `activities` — the gym-root branch holding an Activity Type's image (#1373):
+ * `<gym prefix>/activities/<activity_id>-<activity_name>.png`. Declared here for
+ * {@link GOALS_FOLDER}'s reason: the marker {@link initializeGymBucket} creates
+ * and the segment the key builder writes into must never disagree in case.
+ * `domain/activityImages.ts` re-exports it and is the only place a key is built.
+ */
+export const ACTIVITIES_FOLDER = 'activities';
+
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 //
@@ -165,6 +174,9 @@ const GYM_FOLDERS = [
   // folder. No leaf: the key is `members/<member_id>-<name>.png` directly
   // under it.
   `${MEMBERS_FOLDER}/`,
+  // #1373: the gym-level `activities/` root, holding an Activity Type's image.
+  // Appended last, with its writer (`POST /activity-types/:id/image`).
+  `${ACTIVITIES_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;
