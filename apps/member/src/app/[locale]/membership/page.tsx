@@ -239,6 +239,9 @@ export default function MembershipPage() {
   // what the server reports beside the current one (#1108 stage 2).
   const [pendingMembership, setPendingMembership] = useState<MemberPendingPlan | null>(null);
   const [planCatalogue, setPlanCatalogue] = useState<MemberPlanOffer[] | null>(null);
+  // `null` = not read yet or the read failed: the control stays; `[]` = the gym has
+  // nothing to offer, so it is absent rather than leading to an empty list.
+  const gymOffersPlans = planCatalogue === null || planCatalogue.length > 0;
   const [catalogueOpen, setCatalogueOpen] = useState(false);
   const [catalogueLoading, setCatalogueLoading] = useState(false);
   const [appliedPlanPromotions, setAppliedPlanPromotions] = useState<Record<number, number>>({});
@@ -266,7 +269,7 @@ export default function MembershipPage() {
     setServiceFilter(filter);
     (async () => {
       try {
-        const [mship, ledger, pkgs, promos, prs, projection, catalogue] = await Promise.all([
+        const [mship, ledger, pkgs, promos, prs, projection, catalogue, plansRes] = await Promise.all([
           apiFetch<{ membership: Membership | null; past_memberships?: MemberPastPlan[]; pending_membership?: MemberPendingPlan | null }>('/me/membership'),
           apiFetch<{ items: BillingEvent[] }>('/me/billing-events?limit=50'),
           apiFetch<UserPackage[]>('/me/class-packages').catch(() => []),
@@ -274,6 +277,10 @@ export default function MembershipPage() {
           apiFetch<PaymentRequest[]>('/me/payment-requests').catch(() => []),
           apiFetch<BillingEventForecast>('/me/billing-event-forecast').catch(() => EMPTY_FORECAST),
           apiFetch<{ items: MemberProduct[] }>('/me/products' + (filter.length ? `?${SERVICE_FILTER_PARAM}=${filter.join(',')}` : '')).catch(() => null),
+          // Read with the page, not on opening the catalogue: a gym with no plans
+          // to offer must not show a control that opens onto "no plans". A failed
+          // read leaves `null`, which keeps the control (and the read on open).
+          apiFetch<{ plans: MemberPlanOffer[] }>('/me/membership-plans').catch(() => null),
         ]);
         if (cancelled) return;
         setMembership(mship.membership);
@@ -285,6 +292,7 @@ export default function MembershipPage() {
         setPaymentRequests(prs);
         setForecast(projection);
         setProducts(catalogue?.items ?? null);
+        setPlanCatalogue(plansRes?.plans ?? null);
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('common.error'));
       } finally {
@@ -659,7 +667,7 @@ export default function MembershipPage() {
       const res = await apiFetch<{ plans: MemberPlanOffer[] }>('/me/membership-plans');
       setPlanCatalogue(res.plans);
     } catch {
-      setPlanCatalogue([]);
+      // Stays `null`: the control remains and a second open reads again.
     } finally {
       setCatalogueLoading(false);
     }
@@ -747,7 +755,7 @@ export default function MembershipPage() {
             </div>
           </div>
         )}
-        {!pendingMembership && !catalogueOpen && (
+        {!pendingMembership && !catalogueOpen && gymOffersPlans && (
           <div style={styles.addPlanRow}>
             <button type="button" style={primaryButtonStyle} onClick={openCatalogue}>
               {t('membership.add_plan')}
