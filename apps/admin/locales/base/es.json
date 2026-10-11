@@ -1839,7 +1839,16 @@
     "save_changes": "Guardar cambios",
     "new_exercise": "Nuevo ejercicio",
     "save": "Guardar",
-    "name_translations_hint": "Deja un idioma en blanco para usar el nombre de arriba."
+    "name_translations_hint": "Deja un idioma en blanco para usar el nombre de arriba.",
+    "view_toggle_label": "Vista",
+    "view_cards": "Tarjetas",
+    "view_list": "Lista",
+    "card_no_image": "Sin imagen",
+    "card_view_details": "Ver descripción y valores por defecto",
+    "card_hide_details": "Ocultar detalles",
+    "card_full_description": "Descripción completa",
+    "card_muscles_worked": "Músculos trabajados",
+    "card_default_values": "Valores por defecto"
   },
   "muscles": {
     "chest": "Pecho",

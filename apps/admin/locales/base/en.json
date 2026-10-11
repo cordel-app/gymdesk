@@ -1853,7 +1853,16 @@
     "save_changes": "Save Changes",
     "new_exercise": "New Exercise",
     "save": "Save",
-    "name_translations_hint": "Leave a language blank to fall back to the name above."
+    "name_translations_hint": "Leave a language blank to fall back to the name above.",
+    "view_toggle_label": "View",
+    "view_cards": "Cards",
+    "view_list": "List",
+    "card_no_image": "No image",
+    "card_view_details": "View description and default values",
+    "card_hide_details": "Hide details",
+    "card_full_description": "Full description",
+    "card_muscles_worked": "Muscles worked",
+    "card_default_values": "Default values"
   },
   "muscles": {
     "chest": "Chest",
