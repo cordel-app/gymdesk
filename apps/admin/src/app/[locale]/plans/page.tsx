@@ -20,7 +20,7 @@ import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
-import { AssignPlanModal } from './AssignPlanModal';
+import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
@@ -1055,6 +1055,19 @@ export default function PlansPage() {
                   </div>
                 </div>
 
+                {/* #1460: Assign Plan to Member(s), inline in the plan's own card. */}
+                {assigningPlan?.id === plan.id && (
+                  <AssignPlanInlineEditor
+                    plan={plan}
+                    onCancel={() => setAssigningPlan(null)}
+                    onAssigned={() => {
+                      setAssigningPlan(null);
+                      toast(t('plans.assign_success'), 'success');
+                      load();
+                    }}
+                  />
+                )}
+
                 {/* #816: expanding a Membership Plan reads it — the complete
                     plan, in PLAN_SECTION_ORDER's order, with no control that
                     writes. `⋮ → Edit` is the single entry point into the General
@@ -1627,19 +1640,6 @@ export default function PlansPage() {
         onConfirm={handleApplyPricing}
         onCancel={() => setApplyPricingFor(null)}
       />
-
-      {/* Assign Plan to Member(s) (#376) */}
-      {assigningPlan && (
-        <AssignPlanModal
-          plan={assigningPlan}
-          onClose={() => setAssigningPlan(null)}
-          onAssigned={() => {
-            setAssigningPlan(null);
-            toast(t('plans.assign_success'), 'success');
-            load();
-          }}
-        />
-      )}
 
       {/* Details modal (#512) — read-only, independent from the row's expand/collapse state */}
       {detailFor && (
