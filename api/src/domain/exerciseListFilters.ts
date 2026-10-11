@@ -170,7 +170,7 @@ export function exerciseListFilterSql(
     for (const group of groups) {
       parts.push(`EXISTS (SELECT 1 FROM exercise_muscles em
         WHERE em.exercise_id = ${alias}.id
-          AND em.muscle IN (${group.map(() => '?').join(', ')})${role ? ' AND em.role = ?' : ''})`);
+          AND em.muscle_id IN (SELECT m.id FROM muscles m WHERE m.slug IN (${group.map(() => '?').join(', ')}))${role ? ' AND em.role = ?' : ''})`);
       params.push(...group);
       if (role) params.push(role);
     }

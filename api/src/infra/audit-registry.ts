@@ -49,6 +49,8 @@ export const AUDIT_ENTITY_REGISTRY: Record<string, EntityMeta> = {
   workout_template:               { kind: 'simple',   label: 'Workout Templates',        table: 'workout_templates',       nameColumn: 'name' },
   workout:                        { kind: 'simple',   label: 'Workouts',                 table: 'workouts',                nameColumn: 'name' },
   exercise:                       { kind: 'simple',   label: 'Exercises',                table: 'exercises',               nameColumn: 'name' },
+  // #1368 stage 3: the global muscle catalogue, administered from Cordel.
+  muscle:                         { kind: 'simple',   label: 'Muscles',                  table: 'muscles',                 nameColumn: 'name' },
   class_type:                     { kind: 'simple',   label: 'Class Types',              table: 'class_types',             nameColumn: 'name' },
   promotion:                      { kind: 'simple',   label: 'Promotions',               table: 'promotions',              nameColumn: 'name' },
   center:                         { kind: 'simple',   label: 'Centers',                  table: 'centers',                 nameColumn: 'name' },

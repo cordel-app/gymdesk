@@ -94,8 +94,9 @@ async function insertBaseExercise(row: SeedRow): Promise<number> {
   );
   for (const muscle of row.muscles) {
     await db.query(
-      'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, ?, ?)',
-      [insertId, muscle.key, muscle.role],
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role)
+       SELECT NULL, ?, m.slug, m.id, ? FROM muscles m WHERE m.slug = ?`,
+      [insertId, muscle.role, muscle.key],
     );
   }
   return Number(insertId);
