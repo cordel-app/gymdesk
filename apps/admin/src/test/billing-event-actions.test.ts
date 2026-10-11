@@ -7,8 +7,8 @@ import { join } from 'path';
 //
 // The two payment actions are hidden (not merely disabled) where they don't
 // apply (§1), Details is the same expanded row rather than a second surface,
-// and Manual payment is an inline card — the issue thread's Q2 answer is
-// explicit: "it should not be modal. It should be inline inside a card".
+// and — since #1459 — Pay Cash / Pay Card / Waive confirm in a modal that
+// records nothing until Accept (#640's inline card is superseded).
 // This repo has no component-test infra for apps/admin (see
 // docs/architecture.md's TL;DR), so — like additional-periodic-services.test.ts
 // (#631) — this pins the structure by scanning the source and the locale files.
@@ -28,7 +28,10 @@ const REQUIRED_KEYS = [
   'col_actions',
   'action_details',
   'action_retry',
-  'action_manual_payment',
+  'action_pay_cash',
+  'action_pay_card',
+  'action_waive',
+  'status_waived',
   'action_error',
   'status_pending',
   'details_heading',
@@ -39,13 +42,17 @@ const REQUIRED_KEYS = [
   'det_next_payment',
   'det_failure_reason',
   'actor_system',
-  'manual_heading',
-  'manual_hint',
-  'manual_amount',
-  'manual_notes',
-  'manual_confirm',
-  'manual_cancel',
+  'cash_modal_title',
+  'card_modal_title',
+  'waive_modal_title',
+  'cash_modal_body',
+  'card_modal_body',
+  'waive_modal_body',
+  'waive_reason',
+  'modal_accept',
+  'modal_close',
   'manual_success',
+  'waive_success',
   'retry_running',
   'retry_success',
   'retry_failed',
@@ -61,27 +68,28 @@ describe('Billing Events payment actions (#640)', () => {
     expect(pageSrc).toContain('<ContextMenu items={menuItems(row)}');
   });
 
-  it('offers Details unconditionally and the payment actions only when applicable', () => {
-    // §1: "Do not show payment actions for events where they are not applicable."
+  it('offers Details unconditionally and each payment action only on the API flag', () => {
     expect(pageSrc).toContain("label: t('billing_events_page.action_details')");
-    expect(pageSrc).toContain('if (row.payment_actions_available) {');
-    const guardIdx = pageSrc.indexOf('if (row.payment_actions_available)');
-    const retryIdx = pageSrc.indexOf("t('billing_events_page.action_retry')");
-    const manualIdx = pageSrc.indexOf("t('billing_events_page.action_manual_payment')");
-    expect(guardIdx).toBeGreaterThan(-1);
-    expect(retryIdx).toBeGreaterThan(guardIdx);
-    expect(manualIdx).toBeGreaterThan(guardIdx);
+    for (const flag of ['can_pay_cash', 'can_pay_card', 'can_retry', 'can_waive']) {
+      expect(pageSrc).toContain(`if (row.${flag}) {`);
+    }
   });
 
-  it('records the manual payment through an inline card, never a modal', () => {
-    expect(pageSrc).not.toContain('CrudModal');
-    expect(pageSrc).toContain('manual-payment');
-    // The card lives inside the expanded row component, not at page level.
-    const expandedIdx = pageSrc.indexOf('function ExpandedRow(');
-    const cardIdx = pageSrc.indexOf("t('billing_events_page.manual_heading')");
-    const pageIdx = pageSrc.indexOf('export default function BillingEventsPage(');
-    expect(cardIdx).toBeGreaterThan(expandedIdx);
-    expect(cardIdx).toBeLessThan(pageIdx);
+  it('has no separate Cancel action in the payment menu (#1459 §2)', () => {
+    const menu = pageSrc.slice(pageSrc.indexOf('function menuItems('), pageSrc.indexOf('return (\n    <div>'));
+    expect(menu).not.toMatch(/action_cancel|cancel_payment/);
+  });
+
+  it('confirms cash, card and waive in a modal that sends nothing until Accept', () => {
+    expect(pageSrc).toContain('<PaymentActionModal');
+    expect(pageSrc).toContain('onClose={() => setPending(null)}');
+    // The request is built only in the Accept handler, from the pure module.
+    expect(pageSrc).toContain('async function acceptAction(');
+    expect(pageSrc).toContain('actionRequest(kind');
+    const modal = readFileSync(join(PAGE, '..', 'PaymentActionModal.tsx'), 'utf-8');
+    expect(modal).toContain('onClick={() => onAccept(');
+    expect(modal).toContain('disabled={busy}');
+    expect(modal).not.toContain('apiFetch');
   });
 
   it('keeps Details on the same expanded row as the transactions list', () => {

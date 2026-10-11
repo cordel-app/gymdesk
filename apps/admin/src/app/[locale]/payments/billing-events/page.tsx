@@ -12,6 +12,8 @@ import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { useToast } from '@/components/Toast';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { readOnlyStyle } from '@/components/ui';
+import { PaymentActionModal } from './PaymentActionModal';
+import { PaymentActionKind, actionRequest } from './paymentActions';
 
 const STATUS_VALUES = ['paid', 'failed', 'pending', 'scheduled', 'recorded'] as const;
 
@@ -35,6 +37,13 @@ interface BillingEvent {
   currency: string | null;
   /** #640: Retry Payment / Manual payment apply to this row. */
   payment_actions_available: boolean;
+  /** #1459: the API's per-action flags — the menu renders them, it decides nothing. */
+  can_retry?: boolean;
+  can_pay_cash?: boolean;
+  can_pay_card?: boolean;
+  can_waive?: boolean;
+  /** #1459: a first payment settles through the membership's `record-payment`. */
+  first_payment?: boolean;
 }
 
 interface PageResult {
@@ -266,16 +275,12 @@ function DetailField({ label, children }: { label: string; children: React.React
  */
 function ExpandedRow({
   billingEvent,
-  manualOpen,
-  onManualOpenChange,
   onChanged,
   canWrite,
   readOnlyTitle,
   t,
 }: {
   billingEvent: BillingEvent;
-  manualOpen: boolean;
-  onManualOpenChange: (open: boolean) => void;
   onChanged: () => void;
   canWrite: boolean;
   readOnlyTitle?: string;
@@ -287,9 +292,6 @@ function ExpandedRow({
   const [details, setDetails] = useState<BillingEventDetails | null>(null);
   const [rows, setRows] = useState<Transaction[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [manualAmount, setManualAmount] = useState('');
-  const [manualNotes, setManualNotes] = useState('');
-  const [saving, setSaving] = useState(false);
   const [receiptBusy, setReceiptBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -301,7 +303,6 @@ function ExpandedRow({
       ]);
       setDetails(d);
       setRows(tx.items);
-      setManualAmount(d.amount ? parseFloat(d.amount).toFixed(2) : '');
     } catch {
       setDetails(null);
       setRows([]);
@@ -337,25 +338,6 @@ function ExpandedRow({
     }
   }
 
-  async function submitManualPayment() {
-    setSaving(true);
-    try {
-      await apiFetch(`/payments/billing-events/${billingEventId}/manual-payment`, {
-        method: 'POST',
-        body: JSON.stringify({ amount: manualAmount, notes: manualNotes || undefined }),
-      });
-      toast(t('billing_events_page.manual_success'), 'success');
-      onManualOpenChange(false);
-      setManualNotes('');
-      await load();
-      onChanged();
-    } catch (err: any) {
-      toast(err.message ?? t('billing_events_page.action_error'));
-    } finally {
-      setSaving(false);
-    }
-  }
-
   if (loading) {
     return (
       <td colSpan={9} style={{ padding: '12px 16px', fontSize: 13, color: '#6b7280' }}>
@@ -386,7 +368,9 @@ function ExpandedRow({
               <DetailField label={t('billing_events_page.det_status')}>
                 <StatusBadge
                   status={details.status}
-                  label={t(`billing_events_page.status_${details.status}` as any)}
+                  label={details.event_type === 'waived_billing'
+                    ? t('billing_events_page.status_waived')
+                    : t(`billing_events_page.status_${details.status}` as any)}
                 />
               </DetailField>
               <DetailField label={t('billing_events_page.det_event_type')}>{details.event_type}</DetailField>
@@ -435,68 +419,6 @@ function ExpandedRow({
               )}
             </div>
           </>
-        )}
-
-        {/* ── Manual payment (inline card — never a modal, #640 §4) ── */}
-        {manualOpen && details?.can_record_manual_payment && (
-          <div style={{
-            border: '1px solid #e5e7eb', borderRadius: 8, background: '#fff',
-            padding: 12, marginBottom: 16, maxWidth: 520,
-          }}>
-            <p style={{ margin: '0 0 4px', fontWeight: 600, fontSize: 13 }}>
-              {t('billing_events_page.manual_heading')}
-            </p>
-            <p style={{ margin: '0 0 10px', fontSize: 12, color: '#6b7280' }}>
-              {t('billing_events_page.manual_hint')}
-            </p>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-                  {t('billing_events_page.manual_amount')}
-                </label>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={manualAmount}
-                  onChange={(e) => setManualAmount(e.target.value)}
-                  style={{ width: 120, padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
-                />
-              </div>
-              <div style={{ flex: 1, minWidth: 200 }}>
-                <label style={{ display: 'block', fontSize: 12, color: '#6b7280', marginBottom: 4 }}>
-                  {t('billing_events_page.manual_notes')}
-                </label>
-                <input
-                  type="text"
-                  value={manualNotes}
-                  onChange={(e) => setManualNotes(e.target.value)}
-                  placeholder={t('billing_events_page.manual_notes_placeholder')}
-                  style={{ width: '100%', padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: 6, fontSize: 13 }}
-                />
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-              <button
-                onClick={submitManualPayment}
-                disabled={saving || !canWrite}
-                title={readOnlyTitle}
-                style={readOnlyStyle({
-                  padding: '6px 14px', fontSize: 13, cursor: 'pointer', borderRadius: 6,
-                  border: '1px solid #166534', background: '#166534', color: '#fff', fontWeight: 600,
-                }, !canWrite || saving)}
-              >
-                {saving ? t('billing_events_page.manual_saving') : t('billing_events_page.manual_confirm')}
-              </button>
-              <button
-                onClick={() => onManualOpenChange(false)}
-                disabled={saving}
-                style={{ padding: '6px 14px', fontSize: 13, cursor: 'pointer', borderRadius: 6, border: '1px solid #d1d5db', background: '#fff' }}
-              >
-                {t('billing_events_page.manual_cancel')}
-              </button>
-            </div>
-          </div>
         )}
 
         {/* ── Payment transactions ── */}
@@ -575,8 +497,10 @@ export default function BillingEventsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
-  /** #640: which row has its inline Manual payment card open (at most one). */
-  const [manualFor, setManualFor] = useState<number | null>(null);
+  /** #1459: the confirmation open for a Pay Cash / Pay Card / Waive (at most one). */
+  const [pending, setPending] = useState<{ kind: PaymentActionKind; row: BillingEvent } | null>(null);
+  const [actionBusy, setActionBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [retryingId, setRetryingId] = useState<number | null>(null);
 
   // Sync filter state to URL
@@ -611,7 +535,7 @@ export default function BillingEventsPage() {
       setTotal(data.total);
       setOffset(off);
       setExpanded(new Set()); // collapse all on new page/filter
-      setManualFor(null);
+      setPending(null);
     } catch {
       setError('Failed to load billing events.');
     } finally {
@@ -637,9 +561,35 @@ export default function BillingEventsPage() {
     setExpanded((prev) => new Set(prev).add(id));
   }
 
-  function openManualPayment(id: number) {
-    openDetails(id);
-    setManualFor(id);
+  function openAction(kind: PaymentActionKind, row: BillingEvent) {
+    setActionError(null);
+    setPending({ kind, row });
+  }
+
+  /**
+   * #1459: Accept is the only thing that records anything. The request is the
+   * server's to authorise and to refuse a second time (409); the busy flag only
+   * keeps this client from sending it twice.
+   */
+  async function acceptAction(input: { reason: string }) {
+    if (!pending || actionBusy) return;
+    const { kind, row } = pending;
+    const req = actionRequest(kind, {
+      id: row.id!, user_membership_id: row.user_membership_id, first_payment: row.first_payment,
+    }, input);
+    setActionBusy(true);
+    setActionError(null);
+    try {
+      await apiFetch(req.path, { method: 'POST', body: JSON.stringify(req.body) });
+      toast(t(kind === 'waive' ? 'billing_events_page.waive_success' : 'billing_events_page.manual_success'), 'success');
+      setPending(null);
+      openDetails(row.id!);
+      reloadCurrentPage();
+    } catch (err: any) {
+      setActionError(err.message ?? t('billing_events_page.action_error'));
+    } finally {
+      setActionBusy(false);
+    }
   }
 
   /**
@@ -680,21 +630,41 @@ export default function BillingEventsPage() {
     const items: ContextMenuItem[] = [
       { label: t('billing_events_page.action_details'), onClick: () => openDetails(id) },
     ];
-    // §1: payment actions are hidden — not merely disabled — where they don't apply.
-    if (row.payment_actions_available) {
+    // §1: payment actions are hidden — not merely disabled — where the API's
+    // flags say they don't apply. There is deliberately no Cancel item: closing
+    // a confirmation never alters the outstanding obligation (#1459 §2).
+    const busy = retryingId === id;
+    if (row.can_pay_cash) {
       items.push({
-        label: retryingId === id
-          ? t('billing_events_page.retry_running')
-          : t('billing_events_page.action_retry'),
-        onClick: () => retryPayment(id),
-        disabled: !canWrite || retryingId === id,
-        title: readOnlyTitle,
-      });
-      items.push({
-        label: t('billing_events_page.action_manual_payment'),
-        onClick: () => openManualPayment(id),
+        label: t('billing_events_page.action_pay_cash'),
+        onClick: () => openAction('cash', row),
         disabled: !canWrite,
         title: readOnlyTitle,
+      });
+    }
+    if (row.can_pay_card) {
+      items.push({
+        label: t('billing_events_page.action_pay_card'),
+        onClick: () => openAction('card', row),
+        disabled: !canWrite,
+        title: readOnlyTitle,
+      });
+    }
+    if (row.can_retry) {
+      items.push({
+        label: busy ? t('billing_events_page.retry_running') : t('billing_events_page.action_retry'),
+        onClick: () => retryPayment(id),
+        disabled: !canWrite || busy,
+        title: readOnlyTitle,
+      });
+    }
+    if (row.can_waive) {
+      items.push({
+        label: t('billing_events_page.action_waive'),
+        onClick: () => openAction('waive', row),
+        disabled: !canWrite,
+        title: readOnlyTitle,
+        danger: true,
       });
     }
     return items;
@@ -702,6 +672,17 @@ export default function BillingEventsPage() {
 
   return (
     <div>
+      {pending && (
+        <PaymentActionModal
+          kind={pending.kind}
+          memberName={pending.row.member_name ?? '—'}
+          amountLabel={`${fmtAmount(pending.row.amount)} ${pending.row.currency ?? 'EUR'}`}
+          busy={actionBusy}
+          error={actionError}
+          onAccept={acceptAction}
+          onClose={() => setPending(null)}
+        />
+      )}
       <h1 style={{ margin: '0 0 16px' }}>{t('billing_events_page.title')}</h1>
 
       {/* Filter bar */}
@@ -831,7 +812,7 @@ export default function BillingEventsPage() {
                         {fmtAmount(row.amount)} {row.currency ?? ''}
                       </td>
                       <td style={{ padding: '8px 12px' }}>
-                        <StatusBadge status={row.status} label={statusLabel[row.status] ?? row.status} />
+                        <StatusBadge status={row.status} label={row.event_type === 'waived_billing' ? t('billing_events_page.status_waived') : (statusLabel[row.status] ?? row.status)} />
                       </td>
                       <td style={{ padding: '8px 12px' }} onClick={(e) => e.stopPropagation()}>
                         {isExpandable && (
@@ -843,8 +824,6 @@ export default function BillingEventsPage() {
                       <tr key={`${rowKey}-expanded`} style={{ borderBottom: '1px solid #e5e7eb' }}>
                         <ExpandedRow
                           billingEvent={row}
-                          manualOpen={manualFor === row.id}
-                          onManualOpenChange={(open) => setManualFor(open ? row.id! : null)}
                           onChanged={reloadCurrentPage}
                           canWrite={canWrite}
                           readOnlyTitle={readOnlyTitle}
