@@ -39,6 +39,7 @@ import { themeLogoUrl } from '../domain/themeLogo';
 import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
 import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
 import { loadPromotionApplications, regularMembershipFee } from './user-memberships';
 import { currentCycleDate, currentMembershipFee } from './membership-fee-pricing';
 import {
@@ -1692,11 +1693,11 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows: mships } = await db.query(
       `SELECT um.id, um.member_id, um.membership_plan_id,
-              um.base_price, um.discount_reason, um.discount_expires_at,
+              ${assignmentConfig('base_price')} AS base_price, ${assignmentConfig('discount_reason')} AS discount_reason, ${assignmentConfig('discount_expires_at')} AS discount_expires_at,
               um.starts_at, um.ends_at, um.status, um.created_at,
-              um.membership_fee_price,
-              um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
-              um.personal_fee_benefit_action, um.personal_fee_benefit_value,
+              ${assignmentConfig('membership_fee_price')} AS membership_fee_price,
+              ${assignmentConfig('free_periods')} AS free_periods, ${assignmentConfig('paid_periods')} AS paid_periods, ${assignmentConfig('bonus_periods')} AS bonus_periods, ${assignmentConfig('pay_beforehand_periods')} AS pay_beforehand_periods,
+              ${assignmentConfig('personal_fee_benefit_action')} AS personal_fee_benefit_action, ${assignmentConfig('personal_fee_benefit_value')} AS personal_fee_benefit_value,
               p.free_periods AS plan_free_periods,
               p.paid_periods AS plan_paid_periods,
               p.bonus_periods AS plan_bonus_periods,
@@ -1706,11 +1707,11 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
               ${ASSIGNMENT_CADENCE.unit()} AS billing_unit,
               ${ASSIGNMENT_AUTO_RENEW()} AS duration_repeats,
               um.closed_at,
-              (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
-               OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
-               OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
+              (${assignmentConfig('free_periods')} IS NOT NULL OR ${assignmentConfig('paid_periods')} IS NOT NULL OR ${assignmentConfig('pay_beforehand_periods')} IS NOT NULL
+               OR ${assignmentConfig('bonus_periods')} IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
+               OR um.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
               ) AS has_billing_snapshot
-       FROM user_memberships um
+       FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
        WHERE um.gym_id = ? AND um.member_id = ?
