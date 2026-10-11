@@ -1,3 +1,4 @@
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
 import { db, Tx } from '../infra/db';
 import { toPlanBenefitMandatory } from '../domain/planBenefitMandatory';
 import { coveredMemberCount } from '../domain/assignedBenefitQuantity';
@@ -442,10 +443,15 @@ export async function loadAssignedPlanSnapshot(
 ): Promise<AssignedPlanSnapshot> {
   const [{ rows: umRows }, ...benefitResults] = await Promise.all([
     db.query(
-      `SELECT free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-              recurring_billing_interval, recurring_billing_unit, membership_fee_price,
-              personal_fee_benefit_action, personal_fee_benefit_value, auto_renew
-       FROM user_memberships WHERE id = ? AND gym_id = ?`,
+      `SELECT ${assignmentConfig('free_periods')} AS free_periods, ${assignmentConfig('paid_periods')} AS paid_periods,
+              ${assignmentConfig('bonus_periods')} AS bonus_periods,
+              ${assignmentConfig('pay_beforehand_periods')} AS pay_beforehand_periods,
+              um.recurring_billing_interval, um.recurring_billing_unit,
+              ${assignmentConfig('membership_fee_price')} AS membership_fee_price,
+              ${assignmentConfig('personal_fee_benefit_action')} AS personal_fee_benefit_action,
+              ${assignmentConfig('personal_fee_benefit_value')} AS personal_fee_benefit_value,
+              ${assignmentConfig('auto_renew')} AS auto_renew
+       FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()} WHERE um.id = ? AND um.gym_id = ?`,
       [umId, gymId],
     ),
     ...CATEGORIES.map((category) => db.query(
@@ -606,7 +612,7 @@ export const ASSIGNMENT_CADENCE = {
  * It is a function rather than a bare string for the reason the pair above is:
  * three of the five callers alias `user_memberships` as something else.
  */
-export const ASSIGNMENT_AUTO_RENEW = (um = 'um') => `${um}.auto_renew`;
+export const ASSIGNMENT_AUTO_RENEW = (um = 'um') => assignmentConfig('auto_renew', um);
 
 function toFrequency(v: unknown): ProductFrequency | null {
   return (v ?? null) as ProductFrequency | null;

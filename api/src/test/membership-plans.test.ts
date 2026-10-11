@@ -1900,6 +1900,49 @@ describe('Membership Plan Pricing (#547)', () => {
     expect(current.applied_at).not.toBeNull();
   });
 
+  it('reprices a running assignment as a new version, which is what the card then reads (#1325 PR 3e-2)', async () => {
+    const planId = await createPlan(gymId, { name: 'Pricing Apply Version Plan' });
+    await savePricing(planId, { price: 60, tax_rate_id: taxRate21 });
+    const memberId = await createMember(gymId);
+    const created = await request
+      .post(`/membership-plans/${planId}/assign`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({ member_ids: [memberId], owner_member_id: memberId, starts_at: '2026-06-01' });
+    expect(created.status).toBe(201);
+    const activated = await request
+      .post(`/user-memberships/${created.body.id}/activate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({});
+    expect(activated.status).toBe(200);
+
+    await savePricing(planId, { price: 90, tax_rate_id: taxRate21 });
+    const res = await request
+      .post(`/membership-plans/${planId}/pricing/apply-to-assigned-plans`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    expect(res.body.updated).toBe(1);
+
+    // A second version, active, at the new fee; the first superseded.
+    const { rows: versions } = await db.query(
+      `SELECT ps.status, snap.membership_fee_price FROM product_sets ps
+         JOIN product_set_plan_snapshots snap ON snap.product_set_id = ps.id
+        WHERE ps.gym_id = ? AND ps.owner_member_id = ? ORDER BY ps.version`, [gymId, memberId]);
+    expect(versions.map((v: any) => v.status)).toEqual(['superseded', 'active']);
+    expect(Number(versions[1].membership_fee_price)).toBeCloseTo(90, 2);
+
+    // The read model takes the fee from the version even if the row's cache is stale.
+    await db.query('UPDATE user_memberships SET membership_fee_price = 1 WHERE id = ?', [created.body.id]);
+    const read = await request
+      .get(`/user-memberships/${created.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(read.status).toBe(200);
+    expect(Number(read.body.membership_fee_price)).toBeCloseTo(90, 2);
+  });
+
   it('keeps the agreed price of an assigned plan that has a discount', async () => {
     const planId = await createPlan(gymId, { name: 'Pricing Apply Discount Plan' });
     await savePricing(planId, { price: 100, tax_rate_id: taxRate21 });

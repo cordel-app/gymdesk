@@ -1,3 +1,5 @@
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
+import { refreshPlanPriceReference, repriceOnVersion } from './assignment-reprice';
 import { createDraftSetForAssignment } from './assignment-draft-set';
 import { syncDraftAssignment } from './product-set-projection';
 import { Router, Request } from 'express';
@@ -1441,43 +1443,60 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
   const statusMarks = ASSIGNABLE_STATUSES.map(() => '?').join(',');
 
   try {
-    const result = await db.transaction(async (tx) => {
-      const { rows: repriced } = await tx.query(
-        `SELECT id, starts_at FROM user_memberships
-          WHERE membership_plan_id = ? AND gym_id = ? AND status IN (${statusMarks})
-            AND (discount_reason IS NULL OR discount_reason = '')
-          FOR UPDATE`,
-        [req.params.id, gymId, ...ASSIGNABLE_STATUSES],
-      );
-      for (const row of repriced) {
-        await materialiseAssignedPlanSnapshot(tx, {
-          gymId, userMembershipId: Number(row.id),
-          membershipPlanId: Number(req.params.id),
-          // The fee it bills today, so materialising changes nothing on its own;
-          // the UPDATE below is what moves it to the Plan's new price.
-          membershipFeePrice: await snapshotFeeForAssignment(gymId, row),
+    // #1325 PR 3e-2: each assignment is repriced on the version its configuration
+    // is (see `assignment-reprice.ts`), one transaction per row so a locked or
+    // refused one leaves only itself as it was.
+    const { userId, actorName, isSuperadmin } = getTenantContext(req);
+    const actor = actorSnapshot({ name: actorName, isSuperadmin });
+    const { rows: candidates } = await db.query(
+      `SELECT um.id, um.starts_at, ${assignmentConfig('discount_reason')} AS discount_reason
+         FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
+        WHERE um.membership_plan_id = ? AND um.gym_id = ? AND um.status IN (${statusMarks})`,
+      [req.params.id, gymId, ...ASSIGNABLE_STATUSES],
+    );
+    let updated = 0;
+    let keptDiscounted = 0;
+    for (const row of candidates) {
+      const negotiated = row.discount_reason != null && String(row.discount_reason) !== '';
+      try {
+        await db.transaction(async (tx) => {
+          const umId = Number(row.id);
+          if (negotiated) {
+            await refreshPlanPriceReference(tx, { gymId, userMembershipId: umId, price, planPriceId: current.id });
+            await tx.query(
+              'UPDATE user_memberships SET base_price = ?, plan_price_id = ? WHERE id = ? AND gym_id = ?',
+              [price, current.id, umId, gymId]);
+            keptDiscounted += 1;
+            return;
+          }
+          const outcome = await repriceOnVersion(tx, {
+            gymId, userMembershipId: umId, price, planPriceId: current.id, actor: { name: actor.name, type: actor.type },
+          });
+          if (outcome === 'legacy') {
+            await materialiseAssignedPlanSnapshot(tx, {
+              gymId, userMembershipId: umId, membershipPlanId: Number(req.params.id),
+              membershipFeePrice: await snapshotFeeForAssignment(gymId, row),
+            });
+            await tx.query(
+              'UPDATE user_memberships SET base_price = ?, plan_price_id = ?, membership_fee_price = ? WHERE id = ? AND gym_id = ?',
+              [price, current.id, price, umId, gymId]);
+            updated += 1;
+          } else if (outcome === 'updated') {
+            await tx.query(
+              'UPDATE user_memberships SET base_price = ?, plan_price_id = ? WHERE id = ? AND gym_id = ?',
+              [price, current.id, umId, gymId]);
+            updated += 1;
+          }
         });
+      } catch (err: any) {
+        if (!err?.skipped) throw err;
       }
-      const { rowCount: updated } = await tx.query(
-        `UPDATE user_memberships
-            SET base_price = ?, plan_price_id = ?, membership_fee_price = ?
-          WHERE membership_plan_id = ? AND gym_id = ? AND status IN (${statusMarks})
-            AND (discount_reason IS NULL OR discount_reason = '')`,
-        [price, current.id, price, req.params.id, gymId, ...ASSIGNABLE_STATUSES],
-      );
-      const { rowCount: keptDiscounted } = await tx.query(
-        `UPDATE user_memberships
-            SET base_price = ?, plan_price_id = ?
-          WHERE membership_plan_id = ? AND gym_id = ? AND status IN (${statusMarks})
-            AND discount_reason IS NOT NULL AND discount_reason <> ''`,
-        [price, current.id, req.params.id, gymId, ...ASSIGNABLE_STATUSES],
-      );
-      await tx.query(
-        `UPDATE membership_plan_prices SET status = 'applied', applied_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?`,
-        [current.id, gymId],
-      );
-      return { updated, kept_discounted: keptDiscounted };
-    });
+    }
+    await db.query(
+      `UPDATE membership_plan_prices SET status = 'applied', applied_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?`,
+      [current.id, gymId],
+    );
+    const result = { updated, kept_discounted: keptDiscounted };
 
     recordAudit(req, {
       action: 'update',
