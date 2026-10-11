@@ -30,6 +30,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "calendar_event_eligible_professional_services": ["parent", "calendar_events"],
   "calendar_event_shared_training_requests": ["parent", "calendar_events; the review is its own domain fact (reviewed_by_membership_id)"],
   "charge_types": ["lookup", "global lookup, no runtime writer"],
+  "class_types": ["legacy", "legacy activity catalogue kept only for the FK of the legacy class_sessions (replaced by activity_types); no writer"],
   "class_sessions": ["legacy", "legacy table read by the public API only (replaced by calendar_events)"],
   "class_type_user_memberships": ["legacy", "legacy plan-to-class-type relation; the plan-based booking gate is retired (#973)"],
   "exercise_allowed_result_types": ["parent", "exercises (derived from the category, #1360)"],
