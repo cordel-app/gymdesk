@@ -13,7 +13,7 @@ import { join } from 'path';
 //
 // The fix keeps the platform's own conventions: the member reuses the plan
 // name's typography (one `headerTitleStyle` both cells spread, so they cannot
-// drift), Created By renders as `created_by_name ?? '—'` the way every other
+// drift), Created By renders as `created_by ?? '—'` the way every other
 // list does, and the status stays the shared `StatusBadge`. Nothing about the
 // plan's data, its inline editor or its ⋮ menu changes — the ticket is a naming
 // and presentation change (§6).
@@ -96,7 +96,7 @@ describe('Assigned Nutrition Plans: rename and card header (#810)', () => {
   it('carries Created At, Created By and Status in the header', () => {
     for (const marker of [
       'formatDate(plan.created_at, locale)',
-      "{plan.created_by_name ?? '—'}",
+      "{plan.created_by ?? '—'}",
       'label={t(`status.${plan.status}`)}',
     ]) {
       expect(collapsedHeaderSrc, `the header no longer renders ${marker}`).toContain(marker);
@@ -112,7 +112,7 @@ describe('Assigned Nutrition Plans: rename and card header (#810)', () => {
 
   it('reads the metadata off the row the list already returns', () => {
     // No second fetch for the header: these are fields of the list payload.
-    for (const field of ['created_at: string;', 'created_by_name: string | null;']) {
+    for (const field of ['created_at: string;', 'created_by: string | null;']) {
       expect(pageSrc, `MemberNutritionPlan no longer declares ${field}`).toContain(field);
     }
   });

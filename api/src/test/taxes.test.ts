@@ -297,10 +297,8 @@ describe('POST /taxes', () => {
     expect(Number(res.body.rate_percent)).toBe(8.5);
     expect(res.body.is_system).toBe(0);
     expect(res.body.status).toBe('active');
-    expect(res.body.created_by_name).toBe('Test User');
-    expect(res.body.created_by_type).toBe('staff');
-    expect(res.body.modified_by_name).toBe('Test User');
-    expect(res.body.modified_by_type).toBe('staff');
+    expect(res.body.created_by).toBe('Test User');
+    expect(res.body.modified_by).toBeNull();
   });
 
   it('defaults description to null when omitted', async () => {
@@ -313,7 +311,7 @@ describe('POST /taxes', () => {
     expect(res.body.description).toBeNull();
   });
 
-  it('creates a tax rate with created_by_type = superadmin for a platform superadmin actor', async () => {
+  it('creates a tax rate with the superadmin name as created_by', async () => {
     mockNextActorAsSuperadmin();
     const res = await request
       .post('/taxes')
@@ -321,9 +319,7 @@ describe('POST /taxes', () => {
       .set('x-gym-id', gymId)
       .send({ name: 'Superadmin Created Tax', rate_percent: 12 });
     expect(res.status).toBe(201);
-    expect(res.body.created_by_name).toBe('Super Admin');
-    expect(res.body.created_by_type).toBe('superadmin');
-    expect(res.body.modified_by_type).toBe('superadmin');
+    expect(res.body.created_by).toBe('Super Admin');
   });
 
   it('returns 400 when name is missing', async () => {
@@ -428,7 +424,6 @@ describe('GET /taxes and GET /taxes/:id', () => {
     expect(res.body.id).toBe(taxId);
     expect(res.body.name).toBe('Fetchable Tax');
     expect(res.body.description).toBe('Fetch me');
-    expect(res.body.created_by_type).toBe('staff');
   });
 
   it('returns 404 for a non-existent id', async () => {
@@ -485,11 +480,10 @@ describe('PUT /taxes/:id', () => {
     expect(res.body.description).toBe('New description');
     expect(Number(res.body.rate_percent)).toBe(7.25);
     expect(res.body.status).toBe('inactive');
-    expect(res.body.modified_by_name).toBe('Test User');
-    expect(res.body.modified_by_type).toBe('staff');
+    expect(res.body.modified_by).toBe('Test User');
   });
 
-  it('sets modified_by_type = superadmin for a platform superadmin actor', async () => {
+  it('records the superadmin name as modified_by', async () => {
     mockNextActorAsSuperadmin();
     const res = await request
       .put(`/taxes/${taxId}`)
@@ -497,8 +491,7 @@ describe('PUT /taxes/:id', () => {
       .set('x-gym-id', gymId)
       .send({ name: 'Superadmin Edited Tax' });
     expect(res.status).toBe(200);
-    expect(res.body.modified_by_name).toBe('Super Admin');
-    expect(res.body.modified_by_type).toBe('superadmin');
+    expect(res.body.modified_by).toBe('Super Admin');
   });
 
   it('returns 404 for a non-existent id', async () => {
@@ -670,8 +663,7 @@ describe('POST /taxes/:id/activate and /deactivate', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('inactive');
-    expect(res.body.modified_by_name).toBe('Test User');
-    expect(res.body.modified_by_type).toBe('staff');
+    expect(res.body.modified_by).toBe('Test User');
   });
 
   it('reactivates a tax rate and stamps modified_by fields', async () => {
@@ -681,11 +673,10 @@ describe('POST /taxes/:id/activate and /deactivate', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     expect(res.body.status).toBe('active');
-    expect(res.body.modified_by_name).toBe('Test User');
-    expect(res.body.modified_by_type).toBe('staff');
+    expect(res.body.modified_by).toBe('Test User');
   });
 
-  it('sets modified_by_type = superadmin on activate for a platform superadmin actor', async () => {
+  it('records the superadmin name as modified_by on activate', async () => {
     await request
       .post(`/taxes/${taxId}/deactivate`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -697,8 +688,7 @@ describe('POST /taxes/:id/activate and /deactivate', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.modified_by_name).toBe('Super Admin');
-    expect(res.body.modified_by_type).toBe('superadmin');
+    expect(res.body.modified_by).toBe('Super Admin');
   });
 
   it('returns 404 on activate for a non-existent id', async () => {

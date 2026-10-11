@@ -51,14 +51,11 @@ interface ActivityType {
   public_event: boolean;
   waitlist_mode: 'disabled' | 'open' | 'closed';
   created_at: string;
-  created_by_membership_id: number | null;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_membership_id: number | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by_membership_id: number | null;
-  deleted_by_name: string | null;
+  deleted_by: string | null;
 }
 
 interface ScheduleRule {
@@ -1059,7 +1056,7 @@ export default function ActivityTypesPage() {
             )}
           </div>
           <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {row.created_by_name ?? '—'}
+            {row.created_by ?? '—'}
           </div>
           <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>
             {fmtDate(row.created_at)}
@@ -1519,11 +1516,11 @@ export default function ActivityTypesPage() {
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <div style={detailSectionLabelStyle}>{t('section_metadata')}</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-              <ModalDetail label={t('meta_created_by')} value={details.created_by_name ?? '—'} />
+              <ModalDetail label={t('meta_created_by')} value={details.created_by ?? '—'} />
               <ModalDetail label={t('meta_created_at')} value={fmtDate(details.created_at)} />
-              <ModalDetail label={t('meta_modified_by')} value={details.modified_by_name ?? '—'} />
+              <ModalDetail label={t('meta_modified_by')} value={details.modified_by ?? '—'} />
               <ModalDetail label={t('meta_modified_at')} value={fmtDateTime(details.modified_at)} />
-              <ModalDetail label={t('meta_deleted_by')} value={details.deleted_by_name ?? '—'} />
+              <ModalDetail label={t('meta_deleted_by')} value={details.deleted_by ?? '—'} />
               <ModalDetail label={t('meta_deleted_at')} value={fmtDateTime(details.deleted_at)} />
             </div>
           </div>

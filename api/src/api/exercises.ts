@@ -1,4 +1,5 @@
 import { parseExerciseCategoryInput, resultTypeSlugsForCategory } from '../domain/exerciseCategories';
+import { resolveRequestActor } from '../domain/auditActor';
 import { assertRequestedResultTypesMatch, effectiveCategory, syncExerciseResultTypes } from './exercise-result-types';
 import express, { Request, Router } from 'express';
 import { db, Tx } from '../infra/db';
@@ -122,13 +123,11 @@ musclesRouter.get('/', async (_req, res, next) => {
  * from a translation and saving would overwrite the English original, which is
  * why the two are separate fields rather than one localized `name` (#643).
  *
- * #965/migration 208 added `created_by_name` / `created_by_type` /
- * `modified_by_name` / `modified_by_type` to `exercises`, written **only** by the
- * platform router and therefore only ever on a Base Exercise — a superadmin has
- * no `gym_memberships` row for `created_by` to point at. A gym-owned exercise's
- * actor is still the membership this query joins.
+ * #1182 stage 2: `created_by` / `modified_by` / `deleted_by` are plain-text
+ * actor snapshots (a Base Exercise's is a superadmin's name, a gym's own the
+ * staff member's), read straight from the row.
  *
- * Which means the four aliases below do two jobs. They mask the platform actor
+ * Which means the three aliases below do two jobs. They mask the platform actor
  * on a `gym_id IS NULL` row, because this router serves base rows too
  * (`GET /exercises/:id`) and a shared catalogue's rows are not the reading gym's
  * to attribute — their administrator is a Cordel employee, and the catalogue is
@@ -144,10 +143,9 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
   SELECT e.*,
     ${localizedExerciseNameExpr('e', locale, 'display_name')},
     ${exerciseTranslationsExpr('e')},
-    CASE WHEN e.gym_id IS NULL THEN NULL ELSE gm_c.name END           AS created_by_name,
-    CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.created_by_type END   AS created_by_type,
-    CASE WHEN e.gym_id IS NULL THEN NULL ELSE gm_m.name END           AS modified_by_name,
-    CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.modified_by_type END  AS modified_by_type,
+    CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.created_by END        AS created_by,
+    CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.modified_by END       AS modified_by,
+    CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.deleted_by END        AS deleted_by,
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
      FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
     ${primaryMuscleImagesSql('e')},
@@ -156,8 +154,6 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
      JOIN result_types rt ON rt.id = eart.result_type_id
      WHERE eart.exercise_id = e.id ORDER BY rt.id) AS allowed_result_types
   FROM exercises e
-  LEFT JOIN gym_memberships gm_c ON gm_c.id = e.created_by
-  LEFT JOIN gym_memberships gm_m ON gm_m.id = e.modified_by
 `;
 
 /**
@@ -169,17 +165,6 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
 const shapeExercise = (row: any) => withEffectiveImage(withExerciseTranslations(row));
 
 const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
-
-async function getCallerMembershipId(req: Request): Promise<number | null> {
-  const userId = req.auth?.userId;
-  if (!userId) return null;
-  const { gymId } = getTenantContext(req);
-  const { rows } = await db.query(
-    'SELECT id FROM gym_memberships WHERE gym_id = ? AND user_id = ? LIMIT 1',
-    [gymId, userId],
-  );
-  return rows.length > 0 ? rows[0].id : null;
-}
 
 /** Parses body.muscles into normalized {key, role} pairs; returns an error string on bad input. */
 function parseMuscles(input: unknown): { key: string; role: 'principal' | 'secondary' }[] | string | undefined {
@@ -465,7 +450,7 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
     if (await nameTaken(gymId, name.trim())) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
     }
-    const callerMemberId = await getCallerMembershipId(req);
+    const actor = resolveRequestActor(getTenantContext(req));
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
@@ -474,7 +459,7 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, name.trim(), description ?? null, video_url ?? null, image_url ?? null, categoryInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
-         sets_default ?? null, notes_default ?? null, status ?? 'active', callerMemberId ?? null],
+         sets_default ?? null, notes_default ?? null, status ?? 'active', actor],
       );
       if (muscles) await replaceMuscles(tx, gymId, insertId, muscles);
       await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
@@ -524,7 +509,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
     if (name?.trim() && await nameTaken(gymId, name.trim(), id)) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
     }
-    const callerMemberId = await getCallerMembershipId(req);
+    const actor = resolveRequestActor(getTenantContext(req));
     await db.transaction(async (tx) => {
       const { rowCount } = await tx.query(
         `UPDATE exercises SET
@@ -568,7 +553,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           'notes_default' in req.body ? 1 : 0, notes_default ?? null,
           categoryInput.provided ? 1 : 0, categoryInput.value,
           status ?? null,
-          callerMemberId ?? null,
+          actor,
           id, gymId,
         ],
       );
@@ -590,16 +575,16 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
 });
 
 exercisesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
-  const { gymId, actorName } = getTenantContext(req);
+  const { gymId } = getTenantContext(req);
   const { rows: ownerCheck } = await db.query('SELECT gym_id FROM exercises WHERE id = ?', [req.params.id]);
   if (ownerCheck.length > 0 && ownerCheck[0].gym_id === null) {
     return res.status(403).json({ error: 'Base exercises can only be modified by Cordel administrators.' });
   }
-  const callerMemberId = await getCallerMembershipId(req);
+  const actor = resolveRequestActor(getTenantContext(req));
   const { rowCount } = await db.query(
-    `UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?, deleted_by_name = ?
+    `UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?
       WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
-    [callerMemberId ?? null, actorName, req.params.id, gymId],
+    [actor, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Exercise not found' });
   recordAudit(req, { action: 'delete', entityType: 'exercise', entityId: req.params.id });
@@ -616,7 +601,7 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
     );
     if (orig.length === 0) return res.status(404).json({ error: 'Exercise not found' });
     const src = orig[0];
-    const callerMemberId = await getCallerMembershipId(req);
+    const actor = resolveRequestActor(getTenantContext(req));
     const copyName = `${src.name} (Copy)`;
 
     const insertId = await db.transaction(async (tx) => {
@@ -632,7 +617,7 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
         // other exercise still references it (`isMediaStillReferenced()`).
         [gymId, copyName, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
          src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
-         callerMemberId ?? null],
+         actor],
       );
       const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
       for (const m of muscles) {
@@ -669,7 +654,7 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
     );
     if (orig.length === 0) return res.status(404).json({ error: 'Base exercise not found' });
     const src = orig[0];
-    const callerMemberId = await getCallerMembershipId(req);
+    const actor = resolveRequestActor(getTenantContext(req));
     const copyName = `${src.name} (Copy)`;
 
     const insertId = await db.transaction(async (tx) => {
@@ -684,7 +669,7 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
         // the copy owns the references from here on (§3's snapshot rule).
         [gymId, copyName, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
          src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
-         callerMemberId ?? null, id],
+         actor, id],
       );
       const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
       for (const m of muscles) {
@@ -771,7 +756,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
       });
     }
 
-    const callerMemberId = await getCallerMembershipId(req);
+    const actor = resolveRequestActor(getTenantContext(req));
     const { insertedIds, refreshed, skipped } = await db.transaction(async (tx) => {
       const insertedIds: number[] = [];
       const refreshed: RefreshedImport[] = [];
@@ -804,7 +789,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
             `UPDATE exercises SET ${columns.map((c) => `${c} = ?`).join(', ')},
                modified_at = UTC_TIMESTAMP(), modified_by = ?
               WHERE id = ? AND gym_id = ?`,
-            [...columns.map((c) => plan.changes[c] ?? null), callerMemberId ?? null, copy.id, gymId],
+            [...columns.map((c) => plan.changes[c] ?? null), actor, copy.id, gymId],
           );
           refreshed.push({
             id,
@@ -832,7 +817,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
           // #719 §2: references only — the System objects stay where they are.
           [gymId, src.name, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
            src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
-           callerMemberId ?? null, id, src.category ?? null],
+           actor, id, src.category ?? null],
         );
         const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
         await replaceMuscles(tx, gymId, insertId, muscles);
@@ -1156,7 +1141,7 @@ exercisesRouter.post(
       await db.query(
         `UPDATE exercises SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
           WHERE id = ? AND gym_id = ?`,
-        [imageUrl, thumbnailUrl, await getCallerMembershipId(req), exercise.id, gymId],
+        [imageUrl, thumbnailUrl, resolveRequestActor(getTenantContext(req)), exercise.id, gymId],
       );
 
       await deleteReplacedExerciseMedia(
@@ -1198,7 +1183,7 @@ exercisesRouter.delete('/:id/image', requireModuleWrite('TRAINING'), async (req,
     await db.query(
       `UPDATE exercises SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ?`,
-      [await getCallerMembershipId(req), exercise.id, gymId],
+      [resolveRequestActor(getTenantContext(req)), exercise.id, gymId],
     );
 
     await deleteReplacedExerciseMedia(
@@ -1324,7 +1309,7 @@ exercisesRouter.post(
       await db.query(
         `UPDATE exercises SET video_url = ?, video_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
           WHERE id = ? AND gym_id = ?`,
-        [videoUrl, posterUrl, await getCallerMembershipId(req), exercise.id, gymId],
+        [videoUrl, posterUrl, resolveRequestActor(getTenantContext(req)), exercise.id, gymId],
       );
 
       await deleteReplacedExerciseMedia(
@@ -1366,7 +1351,7 @@ exercisesRouter.delete('/:id/video', requireModuleWrite('TRAINING'), async (req,
     await db.query(
       `UPDATE exercises SET video_url = NULL, video_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ?`,
-      [await getCallerMembershipId(req), exercise.id, gymId],
+      [resolveRequestActor(getTenantContext(req)), exercise.id, gymId],
     );
 
     await deleteReplacedExerciseMedia(

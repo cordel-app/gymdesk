@@ -635,7 +635,7 @@ describe('GET /exercises/base', () => {
     // #965 / migration 208: a base exercise carries the Cordel administrator who
     // wrote it. The gym-facing router must not report that name — see below.
     await db.query(
-      `UPDATE exercises SET created_by_name = ?, created_by_type = 'superadmin' WHERE id = ?`,
+      `UPDATE exercises SET created_by = ? WHERE id = ?`,
       ['Cordel Operator', activeBaseId],
     );
   });
@@ -671,9 +671,8 @@ describe('GET /exercises/base', () => {
     const res = await get(`/exercises/${activeBaseId}`);
     expect(res.status).toBe(200);
     expect(res.body.gym_id).toBeNull();
-    expect(res.body.created_by_name).toBeNull();
-    expect(res.body.created_by_type).toBeNull();
-    expect(res.body.modified_by_name).toBeNull();
+    expect(res.body.created_by).toBeNull();
+    expect(res.body.modified_by).toBeNull();
   });
 
   it('lists active base exercises with their muscles', async () => {

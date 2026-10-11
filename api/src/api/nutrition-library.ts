@@ -7,8 +7,9 @@ import {
   loadQualitiesMap, replaceQualities, validateQualityIds,
   loadTranslationsMap, localizedNameSql,
   buildListWhere, pagingClause,
-  actorSnapshot, itemDetailColumnsSql, normalizeDescription,
+  itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
+import { resolveRequestActor } from '../domain/auditActor';
 import {
   buildGymNutritionImageKey,
   gymNutritionFolderKeys,
@@ -124,7 +125,8 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
 /* ── Create (gym-owned items only) ───────────────────────────────────────── */
 
 nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   const { name, category_ids, quality_ids, image_url } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   const catErr = await validateCategoryIds(category_ids);
@@ -135,7 +137,7 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
   }
   const description = normalizeDescription(req.body.description);
   if ('error' in description) return res.status(400).json({ error: description.error });
-  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
   try {
     const { rows: existing } = await db.query(
       "SELECT id FROM nutrition_library_items WHERE gym_id = ? AND name = ? AND status != 'deleted'",
@@ -145,9 +147,9 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
 
     const { insertId } = await db.query(
       `INSERT INTO nutrition_library_items
-         (gym_id, name, description, image_url, status, created_by_name, created_by_type)
-       VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-      [gymId, name.trim(), description.value ?? null, image_url ?? null, actor.name, actor.type],
+         (gym_id, name, description, image_url, status, created_by)
+       VALUES (?, ?, ?, ?, 'active', ?)`,
+      [gymId, name.trim(), description.value ?? null, image_url ?? null, actor],
     );
 
     await replaceCategories(insertId, category_ids);
@@ -202,7 +204,8 @@ nutritionLibraryRouter.post(
     limit: IMAGE_MAX_BYTES + 64 * 1024,
   }),
   async (req, res, next) => {
-    const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+    const ctx = getTenantContext(req);
+    const { gymId } = ctx;
     const { id } = req.params;
     try {
       const mime = req.headers['content-type']?.split(';')[0]?.trim();
@@ -293,12 +296,12 @@ nutritionLibraryRouter.post(
         }
       }
 
-      const actor = actorSnapshot({ name: actorName, isSuperadmin });
+      const actor = resolveRequestActor(ctx);
       await db.query(
         `UPDATE nutrition_library_items
-         SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by_name = ?, modified_by_type = ?
+         SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE id = ?`,
-        [url, actor.name, actor.type, food.id],
+        [url, actor, food.id],
       );
 
       const { rows } = await db.query(
@@ -330,7 +333,8 @@ nutritionLibraryRouter.post(
 /* ── Update (gym-owned items only — system items are read-only here) ─────── */
 
 nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   const { id } = req.params;
   const { name, category_ids, quality_ids, image_url } = req.body;
 
@@ -344,7 +348,7 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
   }
   const description = normalizeDescription(req.body.description);
   if ('error' in description) return res.status(400).json({ error: description.error });
-  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
   try {
     const { rows: existing } = await db.query(
       'SELECT id, gym_id, name, description, status FROM nutrition_library_items WHERE id = ?',
@@ -363,21 +367,17 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
       if (conflict.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
     }
 
-    // The actor pair moves with every edit, so `modified_by_name` always names
+    // The actor pair moves with every edit, so `modified_by` always names
     // whoever `modified_at` refers to (#799 §13).
-    const updates: string[] = [
-      'modified_at = UTC_TIMESTAMP()',
-      'modified_by_name = ?',
-      'modified_by_type = ?',
-    ];
-    const params: any[] = [actor.name, actor.type];
+    const updates: string[] = [];
+    const params: any[] = [actor];
     if (name?.trim())            { updates.push('name = ?');       params.push(name.trim()); }
     if ('image_url' in req.body) { updates.push('image_url = ?'); params.push(image_url ?? null); }
     // Absent from the body means "leave it alone"; an empty string means "clear it".
     if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
 
     params.push(id);
-    await db.query(`UPDATE nutrition_library_items SET ${updates.join(', ')} WHERE id = ?`, params);
+    await db.query(`UPDATE nutrition_library_items SET modified_at = UTC_TIMESTAMP(), modified_by = ?${updates.map((u) => `, ${u}`).join('')} WHERE id = ?`, params);
 
     if (Array.isArray(category_ids)) {
       await replaceCategories(Number(id), category_ids);
@@ -410,7 +410,8 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
 // filters on; `deleted_at` and the actor pair record when and by whom.
 
 nutritionLibraryRouter.delete('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   const { id } = req.params;
   try {
     const { rows: existing } = await db.query(
@@ -422,13 +423,13 @@ nutritionLibraryRouter.delete('/:id', requireModuleWrite('NUTRITION'), async (re
     if (existing[0].gym_id !== gymId) return res.status(404).json({ error: 'Item not found' });
     if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is already deleted' });
 
-    const actor = actorSnapshot({ name: actorName, isSuperadmin });
+    const actor = resolveRequestActor(ctx);
     await db.query(
       `UPDATE nutrition_library_items
-       SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_name = ?, deleted_by_type = ?,
+       SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
            modified_at = UTC_TIMESTAMP()
        WHERE id = ? AND gym_id = ?`,
-      [actor.name, actor.type, id, gymId],
+      [actor, id, gymId],
     );
     recordAudit(req, { action: 'delete', entityType: 'nutrition_library_item', entityId: id });
     res.status(204).send();

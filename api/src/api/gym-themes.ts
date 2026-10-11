@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import express from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
+import { resolveRequestActor } from '../domain/auditActor';
 import { recordAudit } from '../infra/audit';
 import { validateTokens } from '../domain/themeTokens';
 import { buildThemeLogoKey, themeLogoFolderKeys, themeLogoUrl } from '../domain/themeLogo';
@@ -71,6 +72,11 @@ function shapeTheme(row: any, gymThemeId: string | null = null, memberImages: Me
   const { logo_bytes: _lb, logo_object_key: _lk, ...rest } = row;
   return {
     ...rest,
+    // A Base Theme is the platform's, so the superadmin who created or edited
+    // it is not the reading gym's to see (#799's masking, #1182 stage 2).
+    ...(row.gym_id === null && 'created_by' in row
+      ? { created_by: null, modified_by: null, deleted_by: null }
+      : {}),
     // #725: always all six fields; `null` is "this slot is not configured", and
     // the Members App answers it with the theme's background colour.
     //
@@ -95,7 +101,7 @@ function shapeTheme(row: any, gymThemeId: string | null = null, memberImages: Me
   };
 }
 
-const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, logo_object_key, logo_contains_gym_name, tokens, created_at, created_by_name, created_by_type, modified_at, deleted_at';
+const SELECT_COLS = 'id, gym_id, name, description, status, logo_mime, logo_updated_at, logo_object_key, logo_contains_gym_name, tokens, created_at, created_by, modified_at, modified_by, deleted_at, deleted_by';
 
 /** The Members image rows of one theme, for the single-theme responses (#725). */
 async function loadThemeMemberImages(gymId: string, themeId: string): Promise<MemberImageRow[]> {
@@ -283,7 +289,8 @@ async function sweepClonedAssets(
 
 gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
   try {
-    const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+    const tenantCtx = getTenantContext(req);
+    const { gymId } = tenantCtx;
     await requireRole('admin')(req, res, async () => {
       const { rows: source } = await db.query(
         `SELECT ${SELECT_COLS} FROM themes
@@ -355,11 +362,11 @@ gymThemesRouter.post('/clone/:sourceId', async (req, res, next) => {
           // Cloning is the only way a customer theme comes into existence, so
           // this is where the creator snapshot is captured (#712).
           await tx.query(
-            `INSERT INTO themes (id, gym_id, name, status, logo_contains_gym_name, tokens, created_at, created_by_name, created_by_type,
+            `INSERT INTO themes (id, gym_id, name, status, logo_contains_gym_name, tokens, created_at, created_by,
                                  logo_object_key, logo_mime, logo_updated_at)
-             VALUES (?, ?, ?, 'draft', ?, ?, UTC_TIMESTAMP(), ?, ?, ?, ?, ${logo ? 'UTC_TIMESTAMP()' : 'NULL'})`,
+             VALUES (?, ?, ?, 'draft', ?, ?, UTC_TIMESTAMP(), ?, ?, ?, ${logo ? 'UTC_TIMESTAMP()' : 'NULL'})`,
             [
-              id, gymId, baseName, src.logo_contains_gym_name, tokens, actorName, isSuperadmin ? 'superadmin' : 'staff',
+              id, gymId, baseName, src.logo_contains_gym_name, tokens, resolveRequestActor(tenantCtx),
               logo?.objectKey ?? null, logo?.mime ?? null,
             ],
           );
@@ -454,9 +461,11 @@ gymThemesRouter.put('/:id', async (req, res, next) => {
            description            = CASE WHEN ? IS NOT NULL THEN ? ELSE description END,
            status                 = COALESCE(?, status),
            logo_contains_gym_name = COALESCE(?, logo_contains_gym_name),
-           tokens                 = ?
+           tokens                 = ?,
+           modified_at            = UTC_TIMESTAMP(),
+           modified_by            = ?
          WHERE id = ? AND gym_id = ?`,
-        [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, logo_contains_gym_name ?? null, JSON.stringify(tokensMerged), req.params.id, gymId],
+        [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, logo_contains_gym_name ?? null, JSON.stringify(tokensMerged), resolveRequestActor(getTenantContext(req)), req.params.id, gymId],
       );
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
       const gymThemeId = await getGymThemeId(gymId);
@@ -741,8 +750,8 @@ gymThemesRouter.post(
         // `logo_bytes = NULL`: R2 is now the source of the binary, and leaving
         // the old blob behind would be a second copy the readers could prefer.
         await db.query(
-          'UPDATE themes SET logo_bytes = NULL, logo_object_key = ?, logo_mime = ?, logo_updated_at = UTC_TIMESTAMP() WHERE id = ?',
-          [key, mime, theme.id],
+          'UPDATE themes SET logo_bytes = NULL, logo_object_key = ?, logo_mime = ?, logo_updated_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+          [key, mime, resolveRequestActor(getTenantContext(req)), theme.id],
         );
         const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
         res.json(shapeTheme(rows[0], await getGymThemeId(gymId), await loadThemeMemberImages(gymId, req.params.id)));
@@ -795,9 +804,10 @@ gymThemesRouter.delete('/:id/logo', async (req, res, next) => {
       // rows; the upload's hand-over kept that to one, so scoping the clear to
       // this row leaves no legacy row stranded either.)
       await db.query(
-        `UPDATE themes SET logo_bytes = NULL, logo_object_key = NULL, logo_mime = NULL, logo_updated_at = NULL
+        `UPDATE themes SET logo_bytes = NULL, logo_object_key = NULL, logo_mime = NULL, logo_updated_at = NULL,
+                          modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE id = ?`,
-        [req.params.id],
+        [resolveRequestActor(getTenantContext(req)), req.params.id],
       );
       const { rows } = await db.query(`SELECT ${SELECT_COLS} FROM themes WHERE id = ?`, [req.params.id]);
       res.json(shapeTheme(rows[0], await getGymThemeId(gymId), await loadThemeMemberImages(gymId, req.params.id)));
@@ -1008,7 +1018,8 @@ gymThemesRouter.delete('/:id/members-images/:slot', async (req, res, next) => {
 
 gymThemesRouter.delete('/:id', async (req, res, next) => {
   try {
-    const { gymId, actorName } = getTenantContext(req);
+    const tenantCtx = getTenantContext(req);
+    const { gymId } = tenantCtx;
     await requireRole('admin')(req, res, async () => {
       const { rows: existing } = await db.query(
         'SELECT id, deleted_at FROM themes WHERE id = ? AND gym_id = ?',
@@ -1026,8 +1037,8 @@ gymThemesRouter.delete('/:id', async (req, res, next) => {
       }
 
       await db.query(
-        "UPDATE themes SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_name = ? WHERE id = ?",
-        [actorName, req.params.id],
+        "UPDATE themes SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ?",
+        [resolveRequestActor(tenantCtx), req.params.id],
       );
       recordAudit(req, { action: 'delete', entityType: 'theme', entityId: req.params.id });
       res.status(204).send();
@@ -1097,7 +1108,10 @@ gymThemesRouter.put('/:id/set-default', async (req, res, next) => {
         return res.status(400).json({ error: 'Only Active themes can be set as the Gym Default Theme.' });
       }
 
-      await db.query('UPDATE gyms SET theme_id = ? WHERE id = ?', [req.params.id, gymId]);
+      await db.query(
+        'UPDATE gyms SET theme_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+        [req.params.id, resolveRequestActor(getTenantContext(req)), gymId],
+      );
       recordAudit(req, { action: 'update', entityType: 'gym', entityId: gymId, next: { default_theme_id: req.params.id } });
       res.json({ ok: true });
     });
@@ -1154,19 +1168,20 @@ gymThemesRouter.put('/:id/centers', async (req, res, next) => {
       const previous = assignedCenterIds(centers, req.params.id);
       if (planChangesNothing(plan)) return res.json({ ok: true, assigned: plan.assigned });
 
+      const actor = resolveRequestActor(getTenantContext(req));
       await db.transaction(async (tx) => {
         if (plan.clear.length > 0) {
           await tx.query(
-            `UPDATE centers SET theme_id = NULL
+            `UPDATE centers SET theme_id = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
              WHERE gym_id = ? AND id IN (${plan.clear.map(() => '?').join(', ')})`,
-            [gymId, ...plan.clear],
+            [actor, gymId, ...plan.clear],
           );
         }
         if (plan.assign.length > 0) {
           await tx.query(
-            `UPDATE centers SET theme_id = ?
+            `UPDATE centers SET theme_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
              WHERE gym_id = ? AND id IN (${plan.assign.map(() => '?').join(', ')})`,
-            [req.params.id, gymId, ...plan.assign],
+            [req.params.id, actor, gymId, ...plan.assign],
           );
         }
       });

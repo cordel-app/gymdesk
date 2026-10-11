@@ -68,9 +68,9 @@ interface Theme {
 }
 
 interface ThemeDetail extends Theme {
-  created_by_name: string | null;
-  modified_by_name: string | null;
-  deleted_by_name: string | null;
+  created_by: string | null;
+  modified_by: string | null;
+  deleted_by: string | null;
 }
 
 const STATUSES = ['draft', 'active', 'inactive', 'deleted'] as const;
@@ -925,13 +925,13 @@ export default function ThemesPage() {
           value={<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}><ColorSwatch color={c.headerBackground} size={18} /><span style={{ fontSize: 12, color: '#555' }}>{c.headerBackground}</span></div>}
         />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
-        <DetailRow label={t('details_created_by')} value={detailsTheme.created_by_name ?? '—'} />
+        <DetailRow label={t('details_created_by')} value={detailsTheme.created_by ?? '—'} />
         <DetailRow label={t('details_created_at')} value={formatDate(detailsTheme.created_at, locale)} />
-        <DetailRow label={t('details_modified_by')} value={detailsTheme.modified_by_name ?? '—'} />
+        <DetailRow label={t('details_modified_by')} value={detailsTheme.modified_by ?? '—'} />
         <DetailRow label={t('details_modified_at')} value={formatDate(detailsTheme.modified_at, locale)} />
         {detailsTheme.deleted_at && (
           <>
-            <DetailRow label={t('details_deleted_by')} value={detailsTheme.deleted_by_name ?? '—'} />
+            <DetailRow label={t('details_deleted_by')} value={detailsTheme.deleted_by ?? '—'} />
             <DetailRow label={t('details_deleted_at')} value={formatDate(detailsTheme.deleted_at, locale)} />
           </>
         )}

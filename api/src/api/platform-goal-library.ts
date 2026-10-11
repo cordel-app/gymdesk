@@ -40,8 +40,9 @@ import { logger } from '../lib/logger';
 // router and the assignment side (#1034 §1).
 import { normalizeTargetType, normalizeTargetUnit, normalizeTargetValue, targetPairError } from '../domain/goalTarget';
 import {
-  actorSnapshot, clampLimit, clampOffset, itemDetailColumnsSql, normalizeDescription,
+  clampLimit, clampOffset, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
+import { resolvePlatformActor } from '../domain/auditActor';
 
 /**
  * #947 — Cordel's view of one goal catalogue: the **System** rows (`gym_id IS
@@ -94,11 +95,11 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
   }
 
   /**
-   * Every write here is a superadmin's, by `requireSuperadmin` — so the actor
-   * snapshot's type is fixed and only the name comes from the request (#799 §13).
+   * Every write here is a superadmin's, by `requireSuperadmin` — the actor is
+   * the superadmin's own name (#1182).
    */
   function platformActor(req: { superadminName?: string | null }) {
-    return actorSnapshot({ name: req.superadminName, isSuperadmin: true });
+    return resolvePlatformActor(req.superadminName);
   }
 
   async function loadGoal(id: unknown) {
@@ -166,12 +167,12 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       const actor = platformActor(req);
       const { insertId } = await db.query(
         `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
-           status, created_by_name, created_by_type)
-         VALUES (NULL, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?, ?)`,
+           status, created_by)
+         VALUES (NULL, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?)`,
         [
           name.value, description.value ?? null,
           ...(measurable ? [target.value.value ?? null, target.value.unit ?? null, target.value.type ?? 'absolute'] : []),
-          actor.name, actor.type,
+          actor,
         ],
       );
       const goal = await loadGoal(insertId);
@@ -211,9 +212,9 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // `slug` is not writable: it is the handle the admin's locale key is built
       // from, so renaming one would silently move a seeded goal's label to the
       // key's verbatim text. The displayed name is `name`, which is editable.
-      const updates = ['modified_at = UTC_TIMESTAMP()', 'modified_by_name = ?', 'modified_by_type = ?'];
+      const updates = ['modified_at = UTC_TIMESTAMP()', 'modified_by = ?'];
       const actor = platformActor(req);
-      const params: unknown[] = [actor.name, actor.type];
+      const params: unknown[] = [actor];
       if (name.value !== undefined) { updates.push('name = ?'); params.push(name.value); }
       if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
       if (measurable) {
@@ -378,9 +379,9 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
           const actor = platformActor(req);
           await db.query(
             `UPDATE ${table}
-             SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by_name = ?, modified_by_type = ?
+             SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
              WHERE id = ? AND gym_id IS NULL`,
-            [url, actor.name, actor.type, goal.id],
+            [url, actor, goal.id],
           );
 
           // The key is deterministic, so a replacement normally overwrites its
@@ -407,9 +408,9 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
         const actor = platformActor(req);
         await db.query(
           `UPDATE ${table}
-           SET image_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by_name = ?, modified_by_type = ?
+           SET image_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
            WHERE id = ? AND gym_id IS NULL`,
-          [actor.name, actor.type, goal.id],
+          [actor, goal.id],
         );
 
         await sweepReplacedImage(goal.id, goal.image_url, null);
@@ -439,10 +440,10 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       const actor = platformActor(req);
       await db.query(
         `UPDATE ${table}
-         SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_name = ?, deleted_by_type = ?,
+         SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
              modified_at = UTC_TIMESTAMP()
          WHERE id = ?`,
-        [actor.name, actor.type, id],
+        [actor, id],
       );
       recordAudit(req, { action: 'delete', entityType, entityId: id, previous: existing[0] });
       res.status(204).send();

@@ -887,19 +887,17 @@ describe('description and audit snapshot (#799)', () => {
   it('snapshots the superadmin who created the food, and the one who edits it', async () => {
     const created = await createFood({ name: `Base actor ${Date.now()}` });
     expect(created.status).toBe(201);
-    expect(created.body.created_by_name).toBe('Super Admin');
+    expect(created.body.created_by).toBe('Super Admin');
     // A base food is administered outside any gym, so the actor is always a
     // superadmin — there is no gym_memberships row to join to (migration 196).
-    expect(created.body.created_by_type).toBe('superadmin');
-    expect(created.body.modified_by_name).toBeNull();
+    expect(created.body.modified_by).toBeNull();
 
     const updated = await request
       .put(`/platform/nutrition-library/${created.body.id}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .send({ description: 'Edited' });
     expect(updated.status).toBe(200);
-    expect(updated.body.modified_by_name).toBe('Super Admin');
-    expect(updated.body.modified_by_type).toBe('superadmin');
+    expect(updated.body.modified_by).toBe('Super Admin');
   });
 
   it('records when and by whom a food was deleted', async () => {
@@ -912,14 +910,13 @@ describe('description and audit snapshot (#799)', () => {
     expect(deleted.status).toBe(204);
 
     // `status` stays the flag every query filters on; `deleted_at` records when.
-    const { rows } = await db.query<{ status: string; deleted_at: string | null; deleted_by_name: string | null; deleted_by_type: string | null }>(
-      'SELECT status, deleted_at, deleted_by_name, deleted_by_type FROM nutrition_library_items WHERE id = ?',
+    const { rows } = await db.query<{ status: string; deleted_at: string | null; deleted_by: string | null }>(
+      'SELECT status, deleted_at, deleted_by FROM nutrition_library_items WHERE id = ?',
       [created.body.id],
     );
     expect(rows[0].status).toBe('deleted');
     expect(rows[0].deleted_at).not.toBeNull();
-    expect(rows[0].deleted_by_name).toBe('Super Admin');
-    expect(rows[0].deleted_by_type).toBe('superadmin');
+    expect(rows[0].deleted_by).toBe('Super Admin');
 
     const list = await request
       .get('/platform/nutrition-library?status=deleted&limit=100')
@@ -927,6 +924,6 @@ describe('description and audit snapshot (#799)', () => {
     expect(list.status).toBe(200);
     const row = list.body.items.find((i: any) => i.id === created.body.id);
     expect(row).toBeTruthy();
-    expect(row.deleted_by_name).toBe('Super Admin');
+    expect(row.deleted_by).toBe('Super Admin');
   });
 });

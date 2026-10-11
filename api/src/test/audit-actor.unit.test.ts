@@ -100,7 +100,42 @@ describe('gate: audited tables', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('registers no table before its migration exists', () => {
-    expect(AUDITED_TABLES).toEqual([]);
+  /**
+   * A statement that changes a row's business content records who did it. A
+   * purely technical write (a counter, a cache column, a re-ordering) is
+   * declared here with the reason, never skipped silently.
+   */
+  const TECHNICAL_UPDATES: Array<{ file: string; table: string; why: string }> = [
+    { file: 'api/me.ts', table: 'members', why: 'POST /me/link: the member linking their own Clerk account (clerk_user_id, invitation_id, enrolled_at), not a content edit' },
+    { file: 'api/member-image-storage.ts', table: 'members', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
+    { file: 'api/staff.ts', table: 'staff', why: 'gym_membership_id link/unlink bookkeeping when app access is granted or revoked' },
+    { file: 'api/themes.ts', table: 'themes', why: "clearing half of set-system-default; stamping it would touch every Base Theme's modified_at (the setting half records the actor)" },
+    { file: 'api/training-plan-creation.ts', table: 'members', why: 'member_training_plan_id pointer, written with the assigned plan (stage 3 table)' },
+    { file: 'infra/clerk-account-links.ts', table: 'members', why: 'clerk_user_id = NULL on a Clerk account unlink: a cleanup path with no request actor' },
+  ];
+
+  it('every business UPDATE of a registered table names modified_by or deleted_by', () => {
+    const offenders: string[] = [];
+    for (const file of sources(join(__dirname, '..'))) {
+      const text = readFileSync(file, 'utf-8');
+      for (const table of AUDITED_TABLES) {
+        const re = new RegExp(`\\bUPDATE\\s+${table}\\b([\\s\\S]*?)\\bWHERE\\b`, 'gi');
+        for (const m of text.matchAll(re)) {
+          if (/\bmodified_by\b|\bdeleted_by\b/.test(m[1])) continue;
+          const short = file.slice(join(__dirname, '..').length + 1);
+          if (TECHNICAL_UPDATES.some((e) => e.file === short && e.table === table)) continue;
+          offenders.push(`${short}: ${table}`);
+        }
+      }
+    }
+    expect([...new Set(offenders)]).toEqual([]);
+  });
+
+  it('every registered table has its three text columns in a migration', () => {
+    const migrations = readdirSync(join(__dirname, '..', 'infra', 'migrations'))
+      .filter((f) => /^26[45]_/.test(f))
+      .map((f) => readFileSync(join(__dirname, '..', 'infra', 'migrations', f), 'utf-8'))
+      .join('\n');
+    for (const table of AUDITED_TABLES) expect(migrations).toContain(`'${table}'`);
   });
 });

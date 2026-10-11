@@ -62,8 +62,8 @@ export interface AssignedPersonalGoalRow extends GoalReadingSummaryFields {
   notes: string | null;
   created_at: string;
   modified_at: string | null;
-  created_by_name: string | null;
-  modified_by_name: string | null;
+  created_by: string | null;
+  modified_by: string | null;
   member_name: string;
   /** The catalogue row's **stored** name — the fallback `goalDisplayName()` uses. */
   goal_name: string;

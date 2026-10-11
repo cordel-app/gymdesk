@@ -240,17 +240,15 @@ describe('POST /system/themes/clone/:sourceId — what a clone carries over', ()
   it('snapshots the creating actor on clone and returns it on the theme (#712)', async () => {
     const res = await clone(sourceThemeId, gymId, 'Creator Snapshot Clone');
     expect(res.status).toBe(201);
-    expect(res.body.created_by_name).toBe('Test User');
-    expect(res.body.created_by_type).toBe('staff');
+    expect(res.body.created_by).toBe('Test User');
     expect(typeof res.body.created_at).toBe('string');
     expect(res.body.status).toBe('draft');
 
-    const { rows } = await db.query<{ created_by_name: string | null; created_by_type: string | null }>(
-      'SELECT created_by_name, created_by_type FROM themes WHERE id = ?',
+    const { rows } = await db.query<{ created_by: string | null }>(
+      'SELECT created_by FROM themes WHERE id = ?',
       [res.body.id],
     );
-    expect(rows[0].created_by_name).toBe('Test User');
-    expect(rows[0].created_by_type).toBe('staff');
+    expect(rows[0].created_by).toBe('Test User');
   });
 
   it('inherits logo_contains_gym_name from the source theme', async () => {

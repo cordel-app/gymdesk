@@ -45,12 +45,12 @@ export interface WorkoutTemplate {
   status: 'active' | 'inactive';
   blocks_count: number;
   gym_id: string | null;
-  created_by_name: string | null;
+  created_by: string | null;
   created_at: string;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by_name: string | null;
+  deleted_by: string | null;
 }
 
 interface ListResponse {
@@ -60,7 +60,7 @@ interface ListResponse {
   offset: number;
 }
 
-interface CreatedByOption { membership_id: number; name: string }
+interface CreatedByOption { name: string }
 
 const STATUSES = ['active', 'inactive'] as const;
 
@@ -556,7 +556,7 @@ export default function WorkoutTemplatesPage() {
             {fmtDate(wt.created_at)}
           </div>
           <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {wt.created_by_name ?? '—'}
+            {wt.created_by ?? '—'}
           </div>
           <div className={CELL_CLASS.status}>
             <StatusBadge status={wt.status} label={tStatus(wt.status)} />
@@ -684,7 +684,7 @@ export default function WorkoutTemplatesPage() {
           />
           <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterControlStyle}>
             <option value="">{t('filter_created_by_all')}</option>
-            {createdByOptions.map((o) => <option key={o.membership_id} value={o.membership_id}>{o.name}</option>)}
+            {createdByOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
           </select>
           <StatusFilter
             value={statusFilter}
@@ -779,7 +779,7 @@ export default function WorkoutTemplatesPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.created_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.created_by ?? '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_at')}</span>
@@ -787,7 +787,7 @@ export default function WorkoutTemplatesPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_by ?? '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_deleted_at')}</span>
@@ -795,7 +795,7 @@ export default function WorkoutTemplatesPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_deleted_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_by ?? '—'}</p>
               </div>
             </div>
           </div>

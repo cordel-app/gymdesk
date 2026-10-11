@@ -1,3 +1,4 @@
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createClerkClient } from '@clerk/backend';
@@ -204,7 +205,7 @@ publicRegistrationsRouter.post('/', ipLimiter as any, requireWebsiteApiKey, regi
         ...(Object.keys(publicMetadata).length ? { publicMetadata } : {}),
       });
       if (member) {
-        await db.query('UPDATE members SET invitation_id = ?, invited_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?', [invitation.id, member.id, gymId]);
+        await db.query('UPDATE members SET invitation_id = ?, invited_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?', [invitation.id, SYSTEM_ACTOR, member.id, gymId]);
       }
       req.log.info({ gymId, invitationId: invitation.id }, 'Website registration: invitation sent');
     } catch (err: any) {

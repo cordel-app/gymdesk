@@ -34,11 +34,11 @@ interface PaymentProvider {
   status: ProviderStatus;
   gym_count: number;
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by_name: string | null;
+  deleted_by: string | null;
 }
 
 interface Deployment {
@@ -620,7 +620,7 @@ export default function CordelPaymentProvidersPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.created_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.created_by ?? '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_at')}</span>
@@ -628,7 +628,7 @@ export default function CordelPaymentProvidersPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_by ?? '—'}</p>
               </div>
             </div>
           </div>

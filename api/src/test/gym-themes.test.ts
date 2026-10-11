@@ -340,7 +340,7 @@ describe('Theme header metadata (#712)', () => {
     await db.query('UPDATE gyms SET theme_id = NULL WHERE id IN (?, ?)', [gymId, otherGymId]);
   });
 
-  it('exposes created_by_name and created_at on every theme in the list', async () => {
+  it('exposes created_by and created_at on every theme in the list', async () => {
     const res = await request
       .get('/system/themes')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -348,13 +348,13 @@ describe('Theme header metadata (#712)', () => {
     expect(res.status).toBe(200);
     expect(res.body.length).toBeGreaterThan(0);
     for (const theme of res.body) {
-      expect(theme).toHaveProperty('created_by_name');
+      expect(theme).toHaveProperty('created_by');
       expect(theme.created_at).toBeTruthy();
     }
     // Seeded directly in beforeAll, i.e. by no one — an unattributed theme
     // reports a null creator rather than being dropped from the list.
     const seeded = res.body.find((th: any) => th.id === customThemeId);
-    expect(seeded.created_by_name).toBeNull();
+    expect(seeded.created_by).toBeNull();
   });
 
   it('flags exactly the theme gyms.theme_id points at as is_gym_theme', async () => {

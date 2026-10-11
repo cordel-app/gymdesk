@@ -84,8 +84,8 @@ interface Exercise {
    * row to join a name from, so the name is snapshotted at write time — a row
    * written before that migration carries NULL and reads as the em dash.
    */
-  created_by_name: string | null;
-  modified_by_name: string | null;
+  created_by: string | null;
+  modified_by: string | null;
 }
 
 export default function CordelExercisesPage() {
@@ -409,7 +409,7 @@ export default function CordelExercisesPage() {
     { header: t('col_created_at'), width: 120, mobile: 'secondary', render: (row) => <span style={{ color: '#888' }}>{formatExerciseDate(row.created_at)}</span> },
     {
       header: t('col_created_by'), width: 150, mobile: 'secondary',
-      render: (row) => <span style={{ color: '#555' }}>{exerciseDisplayValue(row.created_by_name)}</span>,
+      render: (row) => <span style={{ color: '#555' }}>{exerciseDisplayValue(row.created_by)}</span>,
     },
     { header: t('col_status'), width: 100, mobile: 'keep', render: (row) => <StatusBadge status={row.status} label={tStatus(row.status)} /> },
     {

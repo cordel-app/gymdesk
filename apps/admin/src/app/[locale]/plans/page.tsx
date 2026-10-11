@@ -120,9 +120,9 @@ interface Plan extends PlanGeneralRow {
   centers: Center[];
   price_history: PriceRow[];
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
   // #635 stage 1: the three Product-keyed Benefit sections, served with
   // the plan so a card renders them without three extra round trips.
@@ -1035,7 +1035,7 @@ export default function PlansPage() {
                     {descText}
                   </div>
                   <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {plan.created_by_name ?? '—'}
+                    {plan.created_by ?? '—'}
                   </div>
                   <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>
                     {fmtDate(plan.created_at)}

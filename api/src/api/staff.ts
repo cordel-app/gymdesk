@@ -1,3 +1,4 @@
+import { resolveRequestActor } from '../domain/auditActor';
 import { Router, Request, Response, NextFunction } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
@@ -156,9 +157,10 @@ const STAFF_SELECT = `
   s.notes,
   s.deleted_at,
   s.created_at,
-  s.updated_at,
+  s.modified_at,
   s.created_by,
-  s.updated_by,
+  s.modified_by,
+  s.deleted_by,
   CASE
     WHEN s.contract_end_date IS NULL THEN NULL
     ELSE DATEDIFF(s.contract_end_date, UTC_DATE())
@@ -253,7 +255,9 @@ staffRouter.get('/:id/clerk-status', async (req, res, next) => {
 });
 
 staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId, gymMembershipId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId, gymMembershipId } = tenantCtx;
+  const actor = resolveRequestActor(tenantCtx);
   const {
     first_name, last_name, email, mobile_phone, profile_photo_url,
     date_of_birth, national_id, profile, employment_status, current_status,
@@ -287,7 +291,7 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
           direct_manager_id, employee_number,
           company_email, company_phone, personal_phone, emergency_contact, emergency_phone,
           working_days, work_start_time, work_end_time, break_duration_minutes, notes,
-          created_by, updated_by, created_at, updated_at
+          created_by, modified_by, created_at, modified_at
         ) VALUES (
           ?, ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
@@ -307,7 +311,7 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
           emergency_contact ?? null, emergency_phone ?? null,
           working_days ?? null, work_start_time ?? null, work_end_time ?? null,
           break_duration_minutes ?? null, notes ?? null,
-          userId ?? null, userId ?? null,
+          actor, actor,
         ],
       );
       for (const centerId of centers.ids) {
@@ -347,7 +351,8 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
 });
 
 staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
 
   const prev = await loadStaff(req.params.id, gymId);
   if (!prev) return res.status(404).json({ error: 'Staff member not found' });
@@ -406,7 +411,7 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         direct_manager_id = ?, employee_number = ?,
         company_email = ?, company_phone = ?, personal_phone = ?, emergency_contact = ?, emergency_phone = ?,
         working_days = ?, work_start_time = ?, work_end_time = ?, break_duration_minutes = ?, notes = ?,
-        updated_by = ?, updated_at = UTC_TIMESTAMP()
+        modified_by = ?, modified_at = UTC_TIMESTAMP()
       WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
         first_name ?? prev.first_name, last_name ?? prev.last_name,
@@ -420,7 +425,7 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         emergency_contact ?? null, emergency_phone ?? null,
         working_days ?? null, work_start_time ?? null, work_end_time ?? null,
         break_duration_minutes ?? null, notes ?? null,
-        userId ?? null,
+        resolveRequestActor(tenantCtx),
         req.params.id, gymId,
       ],
     );
@@ -468,7 +473,8 @@ staffRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 });
 
 staffRouter.patch('/:id/deactivate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
   const staffRow = await loadStaff(req.params.id, gymId);
   if (!staffRow) return res.status(404).json({ error: 'Staff member not found' });
 
@@ -483,9 +489,9 @@ staffRouter.patch('/:id/deactivate', requireRole('admin'), async (req, res, next
     }
 
     await db.query(
-      `UPDATE staff SET employment_status = 'inactive', gym_membership_id = NULL, updated_by = ?, updated_at = UTC_TIMESTAMP()
+      `UPDATE staff SET employment_status = 'inactive', gym_membership_id = NULL, modified_by = ?, modified_at = UTC_TIMESTAMP()
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [userId ?? null, req.params.id, gymId],
+      [resolveRequestActor(tenantCtx), req.params.id, gymId],
     );
 
     const { rows } = await db.query(
@@ -505,7 +511,9 @@ staffRouter.patch('/:id/deactivate', requireRole('admin'), async (req, res, next
 });
 
 staffRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId, gymMembershipId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId, gymMembershipId } = tenantCtx;
+  const actor = resolveRequestActor(tenantCtx);
 
   const { rows } = await db.query(
     'SELECT * FROM staff WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -524,7 +532,7 @@ staffRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) 
           direct_manager_id,
           company_email, company_phone, personal_phone, emergency_contact, emergency_phone,
           working_days, work_start_time, work_end_time, break_duration_minutes, notes,
-          created_by, updated_by, created_at, updated_at
+          created_by, modified_by, created_at, modified_at
         ) VALUES (
           ?, ?, ?, ?, ?,
           ?, ?, ?, ?, ?,
@@ -544,7 +552,7 @@ staffRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) 
           src.emergency_contact, src.emergency_phone,
           src.working_days, src.work_start_time, src.work_end_time,
           src.break_duration_minutes, src.notes,
-          userId ?? null, userId ?? null,
+          actor, actor,
         ],
       );
 
@@ -573,7 +581,9 @@ staffRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) 
 });
 
 staffRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, userId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
+  const actor = resolveRequestActor(tenantCtx);
   const staffRow = await loadStaff(req.params.id, gymId);
   if (!staffRow) return res.status(404).json({ error: 'Staff member not found' });
 
@@ -588,9 +598,9 @@ staffRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
     }
 
     await db.query(
-      `UPDATE staff SET deleted_at = UTC_TIMESTAMP(), gym_membership_id = NULL, updated_by = ?, updated_at = UTC_TIMESTAMP()
+      `UPDATE staff SET deleted_at = UTC_TIMESTAMP(), gym_membership_id = NULL, deleted_by = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [userId ?? null, req.params.id, gymId],
+      [actor, actor, req.params.id, gymId],
     );
 
     recordAudit(req, {

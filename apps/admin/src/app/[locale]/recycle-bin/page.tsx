@@ -45,8 +45,8 @@ interface RecycleBinItem {
   name: string;
   description: string | null;
   created_at: string;
-  created_by_name: string | null;
-  deleted_by_name: string | null;
+  created_by: string | null;
+  deleted_by: string | null;
   deleted_at: string;
 }
 
@@ -83,11 +83,11 @@ interface EntityDetail extends Record<string, unknown> {
   video_url?: string | null;
   image_url?: string | null;
   created_at: string;
-  created_by_name?: string | null;
+  created_by?: string | null;
   modified_at?: string | null;
-  modified_by_name?: string | null;
+  modified_by?: string | null;
   deleted_at: string;
-  deleted_by_name?: string | null;
+  deleted_by?: string | null;
 }
 
 type SortKey = 'entity_type' | 'name' | 'deleted_at';
@@ -137,7 +137,7 @@ export default function RecycleBinPage() {
       const params = new URLSearchParams();
       if (entityTypeFilter) params.set('entity_type', entityTypeFilter);
       if (q.trim()) params.set('q', q.trim());
-      if (deletedByFilter.trim()) params.set('deleted_by_name', deletedByFilter.trim());
+      if (deletedByFilter.trim()) params.set('deleted_by', deletedByFilter.trim());
       if (fromFilter) params.set('from', fromFilter);
       if (toFilter) params.set('to', toFilter);
       params.set('sort', sortKey);
@@ -301,13 +301,13 @@ export default function RecycleBinPage() {
                 <td style={{ ...tdStyle, maxWidth: 240 }}>
                   <div style={{ fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.name}</div>
                   <div style={{ fontSize: 11, color: '#aaa', marginTop: 2, whiteSpace: 'nowrap' }}>
-                    {t('details_created_by')}: {item.created_by_name ?? '—'} · {fmtDate(item.created_at)}
+                    {t('details_created_by')}: {item.created_by ?? '—'} · {fmtDate(item.created_at)}
                   </div>
                 </td>
                 <td style={{ ...tdStyle, color: '#888', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {item.description ?? '—'}
                 </td>
-                <td style={{ ...tdStyle, color: '#666' }}>{item.deleted_by_name ?? '—'}</td>
+                <td style={{ ...tdStyle, color: '#666' }}>{item.deleted_by ?? '—'}</td>
                 <td style={{ ...tdStyle, color: '#666', whiteSpace: 'nowrap' }}>{fmtDate(item.deleted_at)}</td>
                 <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                   {canWrite && (
@@ -474,11 +474,11 @@ function EntityDetailContent({
 
   rows.push({ label: '__divider__', value: null });
   rows.push({ label: t('details_created_at'), value: fmtDate(detail.created_at) });
-  if (detail.created_by_name !== undefined) rows.push({ label: t('details_created_by'), value: detail.created_by_name ?? '—' });
+  if (detail.created_by !== undefined) rows.push({ label: t('details_created_by'), value: detail.created_by ?? '—' });
   if (detail.modified_at) rows.push({ label: t('details_modified_at'), value: fmtDate(detail.modified_at) });
-  if (detail.modified_by_name) rows.push({ label: t('details_modified_by'), value: detail.modified_by_name as string });
+  if (detail.modified_by) rows.push({ label: t('details_modified_by'), value: detail.modified_by as string });
   rows.push({ label: t('details_deleted_at'), value: fmtDate(detail.deleted_at) });
-  if (detail.deleted_by_name !== undefined) rows.push({ label: t('details_deleted_by'), value: detail.deleted_by_name ?? '—' });
+  if (detail.deleted_by !== undefined) rows.push({ label: t('details_deleted_by'), value: detail.deleted_by ?? '—' });
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

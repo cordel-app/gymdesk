@@ -7,6 +7,7 @@ import { createNutritionPlanTx } from './nutrition-plan-creation';
 import { handleDupEntry } from '../infra/db-helpers';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
+import { resolveRequestActor } from '../domain/auditActor';
 import { MEMBER_PLAN_COMPONENT_TYPES, isComponentType } from '../domain/nutritionComponentTypes';
 
 export const memberNutritionPlansRouter = Router();
@@ -31,13 +32,9 @@ const VALID_WEEKDAYS = [0, 1, 2, 3, 4, 5, 6, 7];
 
 const PLAN_SELECT = `
   SELECT mnp.*, m.name AS member_name,
-         gm_c.name AS created_by_name,
-         gm_m.name AS modified_by_name,
          (SELECT COUNT(*) FROM member_nutrition_plan_days WHERE member_nutrition_plan_id = mnp.id) AS day_count
   FROM member_nutrition_plans mnp
   JOIN members m ON m.id = mnp.member_id
-  LEFT JOIN gym_memberships gm_c ON gm_c.id = mnp.created_by_membership_id
-  LEFT JOIN gym_memberships gm_m ON gm_m.id = mnp.modified_by_membership_id
 `;
 
 /* ── helpers ──────────────────────────────────────────────────────────────── */
@@ -123,7 +120,9 @@ memberNutritionPlansRouter.get('/component-types', (_req, res) => {
 });
 
 memberNutritionPlansRouter.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { member_id, template_id, name, description, start_date } = req.body;
 
   const memberId = Number(member_id);
@@ -147,7 +146,7 @@ memberNutritionPlansRouter.post('/', requireModuleWrite('NUTRITION'), async (req
     if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
 
     const created = await db.transaction((tx) => createNutritionPlanTx(tx, {
-      gymId, memberId, gymMembershipId,
+      gymId, memberId, actor,
       templateId,
       name: name?.trim() || null,
       description,
@@ -204,7 +203,9 @@ memberNutritionPlansRouter.get('/:id', async (req, res, next) => {
 /* ── Edit ─────────────────────────────────────────────────────────────────── */
 
 memberNutritionPlansRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   const { name, description, start_date } = req.body;
   if ('name' in req.body && !name?.trim()) return res.status(400).json({ error: 'name cannot be empty' });
@@ -214,13 +215,13 @@ memberNutritionPlansRouter.put('/:id', requireModuleWrite('NUTRITION'), async (r
     await db.query(
       `UPDATE member_nutrition_plans SET
         name = COALESCE(?, name), description = IF(?, ?, description), start_date = IF(?, ?, start_date),
-        modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+        modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ?`,
       [
         name?.trim() ?? null,
         'description' in req.body ? 1 : 0, description ?? null,
         'start_date' in req.body ? 1 : 0, start_date ?? null,
-        gymMembershipId, id, gymId,
+        actor, id, gymId,
       ],
     );
     const { rows } = await db.query(`${PLAN_SELECT} WHERE mnp.id = ? AND mnp.gym_id = ?`, [id, gymId]);
@@ -232,14 +233,16 @@ memberNutritionPlansRouter.put('/:id', requireModuleWrite('NUTRITION'), async (r
 /* ── Complete ─────────────────────────────────────────────────────────────── */
 
 memberNutritionPlansRouter.post('/:id/complete', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
     const plan = await loadActivePlan(res, id, gymId);
     if (!plan) return;
     await db.query(
-      "UPDATE member_nutrition_plans SET status = 'completed', modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ? WHERE id = ? AND gym_id = ?",
-      [gymMembershipId, id, gymId],
+      "UPDATE member_nutrition_plans SET status = 'completed', modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?",
+      [actor, id, gymId],
     );
     const { rows } = await db.query(`${PLAN_SELECT} WHERE mnp.id = ? AND mnp.gym_id = ?`, [id, gymId]);
     recordAudit(req, { action: 'update', entityType: 'member_nutrition_plan', entityId: id, next: rows[0] });
@@ -250,7 +253,9 @@ memberNutritionPlansRouter.post('/:id/complete', requireModuleWrite('NUTRITION')
 /* ── Duplicate ────────────────────────────────────────────────────────────── */
 
 memberNutritionPlansRouter.post('/:id/duplicate', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
     const { rows: srcRows } = await db.query(
@@ -269,8 +274,8 @@ memberNutritionPlansRouter.post('/:id/duplicate', requireModuleWrite('NUTRITION'
 
     const newId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO member_nutrition_plans (gym_id, member_id, template_id, name, description, start_date, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?, CURRENT_DATE(), ?, ?)',
-        [gymId, src.member_id, src.template_id, copyName, src.description ?? null, 'active', gymMembershipId],
+        'INSERT INTO member_nutrition_plans (gym_id, member_id, template_id, name, description, start_date, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, CURRENT_DATE(), ?, ?, UTC_TIMESTAMP(), ?)',
+        [gymId, src.member_id, src.template_id, copyName, src.description ?? null, 'active', actor, actor],
       );
 
       const { rows: days } = await tx.query(
@@ -393,11 +398,13 @@ memberNutritionPlansRouter.get('/:id/hierarchy', async (req, res, next) => {
 /* ── Soft delete ──────────────────────────────────────────────────────────── */
 
 memberNutritionPlansRouter.delete('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rowCount } = await db.query(
-      "UPDATE member_nutrition_plans SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
-      [gymMembershipId, req.params.id, gymId],
+      "UPDATE member_nutrition_plans SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+      [actor, req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Member nutrition plan not found' });
     recordAudit(req, { action: 'delete', entityType: 'member_nutrition_plan', entityId: req.params.id });
