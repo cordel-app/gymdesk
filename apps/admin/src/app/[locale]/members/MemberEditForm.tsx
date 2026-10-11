@@ -40,7 +40,7 @@ import { MemberImageField } from '@/components/MemberImageField';
 export type { MemberEditFormValues };
 
 export function MemberEditForm({
-  form, isNewMember, error, saving,
+  form, isNewMember, welcomed, error, saving,
   image,
   showCenters, centers, assignedCenterIds, defaultCenterId,
   onChange, onToggleCenter, onDefaultCenterChange,
@@ -67,6 +67,12 @@ export function MemberEditForm({
    * no value to change, so it is never submitted and the `PUT` is untouched.
    */
   isNewMember: boolean;
+  /**
+   * #1367 — the "Welcomed" checkbox. Not form state: it persists the moment it
+   * is ticked, through `PUT /members/:id/welcomed`, so Save neither carries nor
+   * can undo it.
+   */
+  welcomed: { checked: boolean; busy: boolean; error: string | null; onChange: (next: boolean) => void };
   error: string | null;
   saving: boolean;
   showCenters: boolean;
@@ -193,6 +199,17 @@ export function MemberEditForm({
               : null
           }
         />
+
+        <label style={{ ...formCheckboxLabelStyle, marginTop: 12 }}>
+          <input
+            type="checkbox"
+            checked={welcomed.checked}
+            disabled={welcomed.busy || saving}
+            onChange={(e) => welcomed.onChange(e.target.checked)}
+          />
+          {t('label_welcomed')}
+        </label>
+        {welcomed.error && <p style={formErrorStyle}>{welcomed.error}</p>}
 
         {error && <p style={formErrorStyle}>{error}</p>}
 

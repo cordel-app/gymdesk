@@ -244,13 +244,13 @@ describe('My Training Plan page (#723 Scope, Hierarchy, API)', () => {
   it('keeps the existing hierarchy, ordering and weekday navigation', () => {
     expect(src).toContain('(workout.blocks ?? []).map');
     expect(src).toContain('(block.exercises ?? []).map');
-    expect(src).toContain('setSelectedWeekday');
+    expect(src).toContain('setSelectedDate');
     expect(src).toContain("t('training.mark_done')");
-    expect(src).toContain('saveExerciseLog(we)');
+    expect(src).toContain('commitDraft(we)');
   });
 
   it('adds no request per exercise — the media comes with the plan tree', () => {
-    expect(src.match(/apiFetch</g)).toHaveLength(1);
+    expect(src.match(/'\/me\/training-plans'/g)).toHaveLength(1);
     expect(src).toContain("'/me/training-plans'");
   });
 

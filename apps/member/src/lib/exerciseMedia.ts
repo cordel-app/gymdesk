@@ -16,6 +16,9 @@
  * `apps/admin/src/components/exerciseMedia.ts` (#720).
  */
 
+import type { CSSProperties } from 'react';
+import { memberTheme } from './memberChrome';
+
 export interface ExerciseMedia {
   exercise_name?: string | null;
   exercise_image_url?: string | null;
@@ -104,4 +107,24 @@ export function youtubeVideoId(url: string | null | undefined): string | null {
 /** Whether an exercise has anything to render — no media means no container. */
 export function hasExerciseMedia(ex: ExerciseMedia): boolean {
   return Boolean(exerciseImageSrc(ex) || ex.exercise_video_url);
+}
+
+/**
+ * #1370 stage 3 — the background of an exercise row: the effective image the API
+ * already resolved (the exercise's own, else its primary muscle's, #1368) under a
+ * surface-coloured overlay so the text keeps its contrast. No image means the
+ * plain card surface; nothing is resolved or invented here.
+ */
+export function exerciseBackgroundStyle(ex: ExerciseMedia): CSSProperties {
+  const src = exerciseImageSrc(ex);
+  const base: CSSProperties = { borderRadius: 10, padding: 8, background: memberTheme.surface };
+  if (!src) return base;
+  const url = JSON.stringify(src);
+  const overlay = `color-mix(in srgb, ${memberTheme.surface} 82%, transparent)`;
+  return {
+    ...base,
+    backgroundImage: `linear-gradient(${overlay}, ${overlay}), url(${url})`,
+    backgroundSize: 'cover',
+    backgroundPosition: 'center',
+  };
 }

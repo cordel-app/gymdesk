@@ -9,6 +9,7 @@
  * beside the components. `nav-icons.test.ts` fails if the two disagree.
  */
 export const NAV_ICON_NAMES = [
+  'home',
   'users',
   'calendar',
   'building',

@@ -92,6 +92,7 @@ import { mePersonalGoalsRouter } from './api/me-personal-goals';
 import { meProfileImageRouter } from './api/me-profile-image';
 import { meMembershipPlansRouter } from './api/me-membership-plans';
 import { nutritionDashboardRouter } from './api/nutrition-dashboard';
+import { homeDashboardRouter } from './api/home-dashboard';
 import { calendarEventsRouter } from './api/calendar-events';
 import { sharedTrainingRequestsRouter } from './api/shared-training-requests';
 import { recycleBinRouter } from './api/recycle-bin';
@@ -388,6 +389,8 @@ app.use('/nutrition-goals', requireAuth(), tenantContext, requireFeatureAccess('
 // that hid Personal Goals hid the goals its members hold with them.
 app.use('/member-personal-goals', requireAuth(), tenantContext, requireFeatureAccess('nutrition.personal_goals', 'NUTRITION'), requireFeatureEnabled('nutrition.personal_goals'), memberPersonalGoalsRouter);
 // #809: mounted on the Nutrition group flag, so turning the Nutrition Plans page off leaves the Dashboard readable.
+// #1367: Home dashboard — any staff role; the router omits sections the role's modules do not allow.
+app.use('/dashboard', requireAuth(), tenantContext, homeDashboardRouter);
 app.use('/nutrition/dashboard', requireAuth(), tenantContext, requireModuleAccess('NUTRITION'), requireFeatureEnabled('nutrition'), nutritionDashboardRouter);
 
 // FINANCIALS module — admin=RW, front_desk/accountant=R, trainer*/nutritionist/member=NONE
