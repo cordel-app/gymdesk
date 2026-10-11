@@ -69,8 +69,9 @@ async function insertBaseExercise(
 
 async function link(gym: string | null, exerciseId: number, muscle: string, role: 'principal' | 'secondary') {
   await db.query(
-    'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (?, ?, ?, ?)',
-    [gym, exerciseId, muscle, role],
+    `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role)
+     SELECT ?, ?, m.slug, m.id, ? FROM muscles m WHERE m.slug = ?`,
+    [gym, exerciseId, role, muscle],
   );
 }
 

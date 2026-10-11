@@ -174,7 +174,7 @@ describe('POST /exercises/:id/clone', () => {
     baseExerciseIds.push(baseExerciseId);
 
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'chest', 'principal')`,
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'chest'`,
       [baseExerciseId],
     );
   });

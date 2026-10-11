@@ -20,7 +20,8 @@ import {
   getRequestLocale,
 } from '../infra/locale';
 import { logger } from '../lib/logger';
-import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
+import { normalizeMuscleKey } from '../domain/muscles';
+import { MUSCLE_SLUG_SQL, insertExerciseMuscle, listMuscles } from './exercise-muscles';
 import {
   exerciseFacetsQuery,
   exerciseListFilterSql,
@@ -93,7 +94,7 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
   SELECT e.*,
     ${localizedExerciseNameExpr('e', locale, 'display_name')},
     ${exerciseTranslationsExpr('e')},
-    (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
+    (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
      FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))
      FROM exercise_allowed_result_types eart
@@ -210,7 +211,7 @@ platformExercisesRouter.get('/lookups', requireSuperadmin, async (_req, res, nex
   try {
     const { rows } = await db.query('SELECT id, name, slug FROM result_types ORDER BY id ASC');
     res.json({
-      muscles: MUSCLE_KEYS.map((key) => ({ key })),
+      muscles: (await listMuscles()).map(({ key }) => ({ key })),
       result_types: rows,
       // #967 §3: the shared editor renders one Name input per translatable
       // locale, so the language list travels with the other two catalogues
@@ -277,10 +278,7 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
       );
       if (muscles) {
         for (const m of muscles) {
-          await tx.query(
-            'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, ?, ?)',
-            [insertId, m.key, m.role],
-          );
+          await insertExerciseMuscle(tx, null, insertId, m.key, m.role);
         }
       }
       if (allowedResultTypeIds) {
@@ -382,10 +380,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
       if (muscles) {
         await tx.query('DELETE FROM exercise_muscles WHERE exercise_id = ? AND gym_id IS NULL', [id]);
         for (const m of muscles) {
-          await tx.query(
-            'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, ?, ?)',
-            [id, m.key, m.role],
-          );
+          await insertExerciseMuscle(tx, null, id, m.key, m.role);
         }
       }
       if (allowedResultTypeIds) {

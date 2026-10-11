@@ -120,7 +120,7 @@ describe('the WHERE fragment', () => {
   it('muscle_match=any is one IN — the behaviour #964 already had', () => {
     const { sql, params } = build({ muscle: 'chest,triceps' });
     expect(sql.match(/EXISTS/g)).toHaveLength(1);
-    expect(sql).toContain('em.muscle IN (?, ?)');
+    expect(sql).toContain('m.slug IN (?, ?)');
     expect(sql).not.toContain('em.role');
     expect(params).toEqual(['chest', 'triceps']);
   });
