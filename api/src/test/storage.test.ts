@@ -126,7 +126,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gym_123-GymName');
 
-    expect(sendMock).toHaveBeenCalledTimes(8);
+    expect(sendMock).toHaveBeenCalledTimes(9);
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys).toEqual([
       'gym_123-GymName/',
@@ -140,6 +140,8 @@ describe('initializeGymBucket()', () => {
       'gym_123-GymName/goals/',
       // #1374, appended last for the same reason: a Member's profile image.
       'gym_123-GymName/members/',
+      // #1373, appended last for the same reason: an Activity Type's image.
+      'gym_123-GymName/activities/',
     ]);
     for (const call of sendMock.mock.calls) {
       expect(call[0].input.Bucket).toBe('test-bucket');
@@ -164,7 +166,7 @@ describe('initializeGymBucket()', () => {
     return [...new Set(segments)];
   }
 
-  it('creates nutrition/, exercises/, themes/, goals/ and members/ as the only first-level folders', async () => {
+  it('creates nutrition/, exercises/, themes/, goals/, members/ and activities/ as the only first-level folders', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
@@ -175,7 +177,7 @@ describe('initializeGymBucket()', () => {
     // #1374 appended `members/` the same way: a Member's profile image is its
     // writer from the day the folder appears.
     expect(firstLevelFolders('gyms/gym_123-GymName'))
-      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members']);
+      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members', 'activities']);
   });
 
   // #1035 §7: `goals/` is the fourth folder in the ticket's target tree, and
@@ -197,15 +199,27 @@ describe('initializeGymBucket()', () => {
 
   // #1374: `members/` holds a Member's profile image — `members/<member_id>-<name>.png`
   // directly under it — so it is appended last, with no leaf.
-  it('creates members/ last, and with no leaf below it', async () => {
+  it('creates members/ after goals/, and with no leaf below it', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-1)).toBe('members');
+    expect(firstLevelFolders('gyms/gym_123-GymName')[4]).toBe('members');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/members/')))
       .toEqual(['gyms/gym_123-GymName/members/']);
+  });
+
+  // #1373: `activities/` holds an Activity Type's image, appended last, no leaf.
+  it('creates activities/ last, and with no leaf below it', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-1)).toBe('activities');
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/activities/')))
+      .toEqual(['gyms/gym_123-GymName/activities/']);
   });
 
   // #1035 §2/§7: Gym Bucket Initialization writes a *gym's* tree and has never
