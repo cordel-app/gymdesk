@@ -24,7 +24,10 @@ describe('audit inventory (#1182)', () => {
     expect(unclassified).toEqual([]);
     expect(AUDITED_TABLES.filter((t) => t in AUDIT_INVENTORY)).toEqual([]);
     const all = await tables();
-    expect(Object.keys(AUDIT_INVENTORY).filter((t) => !all.includes(t))).toEqual([]);
+    // A legacy table may be absent on a database migrated from scratch (or present
+    // on one migrated from an older schema), so only live classes must exist.
+    expect(Object.keys(AUDIT_INVENTORY)
+      .filter((t) => AUDIT_INVENTORY[t][0] !== 'legacy' && !all.includes(t))).toEqual([]);
   });
 
   it('gives an audited table the text columns its lifecycle has', async () => {
