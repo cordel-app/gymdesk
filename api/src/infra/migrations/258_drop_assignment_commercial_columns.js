@@ -15,7 +15,9 @@
  *
  * Three things have to be true first, and the migration makes them so:
  *
- *  1. **The Billing frequency has a home.** A version's cadence lived only on
+ *  1. **The Billing frequency has a home.** (The pair is copied onto every
+ *     version linked to the assignment — the cadence has been frozen per
+ *     assignment, never per version.) A version's cadence lived only on
  *     the chain's schedule, which keeps the cadence of the chain's *first*
  *     version; what an assignment displays and prices a cycle from is the pair
  *     its Plan froze onto it at creation. So the pair becomes two nullable
@@ -31,8 +33,18 @@
  *     work that expires under the ProductSet rules anyway: the Draft is
  *     deleted, the pending row closed.
  *  3. **Nothing is dropped over a row that still needs them.** The guard
- *     refuses to run while a row has neither a version nor the status of one
- *     that does not need it.
+ *     refuses to run while the version an assignment's configuration will be
+ *     read from (its latest linked one) has no plan snapshot.
+ *
+ * Irreversible, and said here rather than found out: an uncommitted Draft with
+ * no version is deleted (with its child rows), a Pending Payment row with none
+ * is closed and its pending payment requests expired, and the superseded
+ * versions this creates stay on `down()`, which only puts the columns back and
+ * refills them from each assignment's latest version. A live (active/paused)
+ * assignment with no version becomes a closed record's shape — it has the
+ * superseded version but is not projected from an Active one; billing never
+ * ran for it after migration 252, so nothing is lost, but it is not editable
+ * until a staff action re-commits it.
  *
  * `down()` puts the columns back and fills them from each assignment's latest
  * version; a row's NULL cadence pair stays NULL.
@@ -65,55 +77,77 @@ exports.up = async function up(knex) {
       WHERE um.recurring_billing_interval IS NOT NULL AND um.recurring_billing_unit IS NOT NULL
         AND snap.recurring_billing_interval IS NULL`);
 
-  // 2 — a version for every assignment that has none.
+  // 2 — a version, with a snapshot, for every assignment that has none.
+  //
+  // An uncommitted Draft with no version expires under the ProductSet rules
+  // anyway, so it is deleted (its child rows cascade; `down()` cannot bring it
+  // back). A Pending Payment row with no version is closed, and its payment
+  // requests still `pending` are expired in the same step so a late webhook has
+  // no live request to settle it with.
+  await knex.raw(
+    `UPDATE payment_requests pr
+       JOIN user_memberships um ON um.id = pr.user_membership_id AND um.gym_id = pr.gym_id
+        SET pr.status = 'expired'
+      WHERE pr.status = 'pending' AND um.status IN ('draft', 'pending_payment')
+        AND NOT EXISTS (SELECT 1 FROM product_sets ps WHERE ps.gym_id = um.gym_id AND ps.user_membership_id = um.id)`);
   await knex.raw(
     `DELETE um FROM user_memberships um
       WHERE um.status = 'draft'
         AND NOT EXISTS (SELECT 1 FROM product_sets ps WHERE ps.gym_id = um.gym_id AND ps.user_membership_id = um.id)`);
   await knex.raw(
     `UPDATE user_memberships um
-        SET um.status = 'cancelled', um.closed_at = COALESCE(um.closed_at, UTC_TIMESTAMP())
+        SET um.status = 'cancelled', um.closed_at = COALESCE(um.closed_at, UTC_TIMESTAMP()),
+            um.ends_at = COALESCE(um.ends_at, CURDATE())
       WHERE um.status = 'pending_payment'
         AND NOT EXISTS (SELECT 1 FROM product_sets ps WHERE ps.gym_id = um.gym_id AND ps.user_membership_id = um.id)`);
 
-  const [orphans] = await knex.raw(
-    `SELECT um.id, um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at,
-            um.created_by_name, um.created_by_type,
-            um.membership_fee_price, um.free_periods, um.paid_periods, um.bonus_periods,
-            um.pay_beforehand_periods, um.recurring_billing_interval, um.recurring_billing_unit,
-            um.auto_renew, um.personal_fee_benefit_action, um.personal_fee_benefit_value,
-            um.discount_reason, um.discount_expires_at, um.base_price, um.plan_price_id
+  // One statement per step, set-based: each is atomic, so a failure between
+  // them leaves a state the next run finishes (the snapshot step below also
+  // repairs a version left without one).
+  await knex.raw(
+    `INSERT INTO product_sets
+       (gym_id, owner_member_id, version, status, membership_plan_id, starts_at, ends_at,
+        user_membership_id, superseded_at, created_by_name, created_by_type)
+     SELECT um.gym_id, um.member_id, 1, 'superseded', um.membership_plan_id, um.starts_at, um.ends_at,
+            um.id, UTC_TIMESTAMP(), um.created_by_name, um.created_by_type
        FROM user_memberships um
       WHERE NOT EXISTS (SELECT 1 FROM product_sets ps WHERE ps.gym_id = um.gym_id AND ps.user_membership_id = um.id)`);
-  for (const um of orphans) {
-    const [ins] = await knex.raw(
-      `INSERT INTO product_sets
-         (gym_id, owner_member_id, version, status, membership_plan_id, starts_at, ends_at,
-          user_membership_id, superseded_at, created_by_name, created_by_type)
-       VALUES (?, ?, 1, 'superseded', ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
-      [um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at, um.id,
-        um.created_by_name, um.created_by_type]);
-    const setId = ins.insertId;
-    await knex.raw('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [setId]);
-    await knex.raw(
-      `INSERT INTO product_set_plan_snapshots
-         (gym_id, product_set_id, plan_price_id, base_price, discount_reason, discount_expires_at,
-          membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-          personal_fee_benefit_action, personal_fee_benefit_value, auto_renew,
-          recurring_billing_interval, recurring_billing_unit)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [um.gym_id, setId, um.plan_price_id, um.base_price, um.discount_reason, um.discount_expires_at,
-        um.membership_fee_price, um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
-        um.personal_fee_benefit_action ?? 'no_benefit', um.personal_fee_benefit_value, um.auto_renew ?? 0,
-        um.recurring_billing_interval, um.recurring_billing_unit]);
-  }
+  await knex.raw(
+    `UPDATE product_sets SET root_product_set_id = id
+      WHERE root_product_set_id IS NULL AND user_membership_id IS NOT NULL`);
+  // The version an assignment's configuration is read from is its latest linked
+  // one; if that has no snapshot, write one from the row (this covers the
+  // versions just created and any left half-written).
+  await knex.raw(
+    `INSERT INTO product_set_plan_snapshots
+       (gym_id, product_set_id, plan_price_id, base_price, discount_reason, discount_expires_at,
+        membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
+        personal_fee_benefit_action, personal_fee_benefit_value, auto_renew,
+        recurring_billing_interval, recurring_billing_unit)
+     SELECT um.gym_id, ps.id, um.plan_price_id, um.base_price, um.discount_reason, um.discount_expires_at,
+            um.membership_fee_price, um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
+            COALESCE(um.personal_fee_benefit_action, 'no_benefit'), um.personal_fee_benefit_value,
+            COALESCE(um.auto_renew, 0), um.recurring_billing_interval, um.recurring_billing_unit
+       FROM user_memberships um
+       JOIN product_sets ps ON ps.id = (
+              SELECT p9.id FROM product_sets p9
+               WHERE p9.gym_id = um.gym_id AND p9.user_membership_id = um.id
+               ORDER BY p9.version DESC, p9.id DESC LIMIT 1)
+       LEFT JOIN product_set_plan_snapshots s ON s.product_set_id = ps.id
+      WHERE s.id IS NULL`);
 
-  // 3 — the guard.
+  // 3 — the guard: the version the readers will pick must have its snapshot.
   const [left] = await knex.raw(
     `SELECT COUNT(*) AS n FROM user_memberships um
-      WHERE NOT EXISTS (SELECT 1 FROM product_sets ps WHERE ps.gym_id = um.gym_id AND ps.user_membership_id = um.id)`);
+       LEFT JOIN product_sets ps ON ps.id = (
+              SELECT p9.id FROM product_sets p9
+               WHERE p9.gym_id = um.gym_id AND p9.user_membership_id = um.id
+               ORDER BY p9.version DESC, p9.id DESC LIMIT 1)
+       LEFT JOIN product_set_plan_snapshots s ON s.product_set_id = ps.id
+      WHERE s.id IS NULL`);
   if (Number(left[0].n) > 0) {
-    throw new Error(`Migration 258 refused: ${left[0].n} assignment(s) still have no ProductSet version.`);
+    throw new Error(
+      `Migration 258 refused: ${left[0].n} assignment(s) have no ProductSet version with a plan snapshot.`);
   }
 
   // The FK and its index go before the column.
