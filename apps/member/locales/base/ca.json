@@ -93,7 +93,13 @@
     "log_date": "Data",
     "new_entry": "Nova entrada",
     "add_log": "Afegeix registre",
-    "new_chip": "Nou"
+    "new_chip": "Nou",
+    "progress_day": "Dia",
+    "progress_week": "Setmana",
+    "progress_month": "Mes",
+    "future_workout": "Disponible el dia de l'entrenament.",
+    "today_marker": "Avui",
+    "week_nav_hint": "Llisca per canviar de setmana"
   },
   "profile": {
     "title": "El meu perfil",

@@ -5,6 +5,7 @@ import { memberInviteTarget } from '../domain/memberInviteTarget';
 import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import rateLimit from 'express-rate-limit';
+import { DateTime } from 'luxon';
 import { createClerkClient } from '@clerk/backend';
 import { parseBlockLogResult } from '../domain/blockResultUnits';
 import { FUTURE_WORKOUT_CODE, gymToday, isFutureLoggedDate, trainingProgress } from '../domain/workoutProgress';
@@ -1188,6 +1189,9 @@ meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled(
     const { rows: gym } = await db.query('SELECT time_zone, first_day_of_week FROM gyms WHERE id = ?', [gymId]);
     const tz: string = gym[0]?.time_zone ?? 'Europe/Madrid';
     const today = gymToday(new Date(), tz);
+    const q = typeof req.query.date === 'string' ? req.query.date : '';
+    if (q && !/^\d{4}-\d{2}-\d{2}$/.test(q)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const selected = q || today;
     const { rows: blocks } = await db.query(
       `SELECT w.id AS workout_id, w.scheduled_weekday, wb.id AS block_id
        FROM workouts w
@@ -1204,18 +1208,22 @@ meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled(
       if (r.block_id != null) w.blockIds.push(r.block_id);
       byWorkout.set(r.workout_id, w);
     }
-    const monthStart = today.slice(0, 8) + '01';
+    const monthStart = selected.slice(0, 8) + '01';
     const { rows: logs } = await db.query(
       `SELECT workout_block_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM workout_block_logs
        WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
-      [gymId, memberId, monthStart, today],
+      [gymId, memberId, DateTime.fromISO(monthStart).minus({ days: 7 }).toISODate(), DateTime.fromISO(monthStart).endOf('month').plus({ days: 7 }).toISODate()],
     );
-    res.json(trainingProgress(
-      [...byWorkout.values()],
-      (logs as any[]).map((l) => ({ blockId: l.workout_block_id, date: l.d })),
+    res.json({
+      ...trainingProgress(
+        [...byWorkout.values()],
+        (logs as any[]).map((l) => ({ blockId: l.workout_block_id, date: l.d })),
+        today,
+        Number(gym[0]?.first_day_of_week ?? 1),
+        selected,
+      ),
       today,
-      Number(gym[0]?.first_day_of_week ?? 1),
-    ));
+    });
   } catch (err) { next(err); }
 });
 
