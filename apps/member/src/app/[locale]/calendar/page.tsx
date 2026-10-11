@@ -128,7 +128,9 @@ export default function MemberCalendarPage() {
   useEffect(() => {
     if (appLoading) return;
     if (!isLinked) { router.replace(`/${locale}`); return; }
-    apiFetch<ActivityType[]>('/activity-types?status=active')
+    // #2 review: the staff `/activity-types` answers a member 403; the member-facing
+    // list is `/me/activity-types` (id, name, colour of the active ones).
+    apiFetch<ActivityType[]>('/me/activity-types')
       .then(setActivityTypes)
       .catch(() => {});
     apiFetch<Trainer[]>('/me/trainers')

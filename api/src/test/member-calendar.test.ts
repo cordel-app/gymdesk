@@ -690,3 +690,66 @@ describe('#503 stage 6: schedule filters and /me/trainers', () => {
     });
   });
 });
+
+// ─── GET /me/activity-types (the calendar's activity filter) ──────────────────
+
+describe('GET /me/activity-types', () => {
+  let inactiveName: string;
+  let deletedName: string;
+
+  beforeAll(async () => {
+    inactiveName = `Inactive-${Date.now()}`;
+    deletedName = `Deleted-${Date.now()}`;
+    await db.query(
+      "INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, ?, 5, 'inactive')",
+      [gymId, inactiveName],
+    );
+    await db.query(
+      "INSERT INTO activity_types (gym_id, name, max_capacity, status, deleted_at) VALUES (?, ?, 5, 'active', UTC_TIMESTAMP())",
+      [gymId, deletedName],
+    );
+  });
+
+  it('returns 401 without auth', async () => {
+    const res = await request.get('/me/activity-types').set('x-gym-id', gymId);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 403 for a non-member role', async () => {
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: 'admin-user-ats' } as any);
+    const roleGymId = await createTestGym('Activity Types Role Gym');
+    await createTestMembership(roleGymId, 'admin', 'admin-user-ats');
+    const res = await request
+      .get('/me/activity-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', roleGymId);
+    expect(res.status).toBe(403);
+  });
+
+  it('returns the gym\'s active activity types with id, name and colour only', async () => {
+    const res = await request
+      .get('/me/activity-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const rows = res.body as any[];
+    expect(rows.some((r) => r.id === shareableActivityTypeId)).toBe(true);
+    expect(rows.some((r) => r.name === inactiveName)).toBe(false);
+    expect(rows.some((r) => r.name === deletedName)).toBe(false);
+    expect(Object.keys(rows[0]).sort()).toEqual(['color', 'id', 'name']);
+  });
+
+  it('is scoped to the caller\'s gym', async () => {
+    const otherGym = await createTestGym('Other Activity Types Gym');
+    await db.query(
+      "INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Foreign AT', 5, 'active')",
+      [otherGym],
+    );
+    const res = await request
+      .get('/me/activity-types')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect((res.body as any[]).some((r) => r.name === 'Foreign AT')).toBe(false);
+  });
+});
+
