@@ -240,6 +240,14 @@ describe('the other assignment entry points snapshot too', () => {
     const memberId = await createMember(gymId);
     const created = await assign(gymId, { member_id: memberId, membership_plan_id: first.planId, starts_at: dayOffset(0) });
     expect(created.status).toBe(201);
+    // #1325 PR 3e: one in-flight version per owner — the first Draft is
+    // committed before its successor is configured.
+    const activated = await request
+      .post(`/user-memberships/${created.body.id}/activate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({});
+    expect(activated.status).toBe(200);
 
     const second = await createPlan(gymId, { freeMonths: 0, paidMonths: 6, bonusMonths: null });
     await setPlanPrice(gymId, second, 120);

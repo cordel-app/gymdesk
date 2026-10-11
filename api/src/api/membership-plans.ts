@@ -1,3 +1,5 @@
+import { createDraftSetForAssignment } from './assignment-draft-set';
+import { syncDraftAssignment } from './product-set-projection';
 import { Router, Request } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
@@ -819,6 +821,27 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
         membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
         declinedBenefits: declinedResult.declined,
       });
+      // #1325 PR 3e: a ProductSet Draft from birth, owned by the paying member
+      // and covering the rest through the chain.
+      const setId = await createDraftSetForAssignment(tx, {
+        gymId, userMembershipId: insertId, ownerMemberId: ownerId,
+        membershipPlanId: Number(req.params.id),
+        startsAt: String(starts_at).slice(0, 10), endsAt: null,
+        membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
+        basePrice: eff.base_price ?? null, planPriceId: eff.plan_price_id ?? null,
+        discountReason: null, discountExpiresAt: null,
+        declinedBenefits: declinedResult.declined,
+        actor: { name: actor.name, type: actor.type },
+      });
+      for (const memberId of uniqueMemberIds) {
+        if (memberId === ownerId) continue;
+        await tx.query(
+          `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner)
+           SELECT gym_id, root_product_set_id, ?, 0 FROM product_sets WHERE id = ?`,
+          [memberId, setId],
+        );
+      }
+      await syncDraftAssignment(tx, gymId, setId);
       return { kind: 'created' as const, insertId };
     });
     const insertId = outcome.insertId;
