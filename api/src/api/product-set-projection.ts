@@ -48,6 +48,8 @@ interface SetRow {
   personal_fee_benefit_value: string | number | null;
   cadence_interval: number | null;
   cadence_unit: string | null;
+  discount_reason: string | null;
+  discount_expires_at: Date | string | null;
 }
 
 const dateOnly = (v: unknown): string | null =>
@@ -79,85 +81,32 @@ async function copyBenefitRows(tx: Tx, gymId: string, setId: number, umId: numbe
   }
 }
 
-/** Projects the (just activated) version onto its operational assignment. */
-export async function projectActiveProductSet(tx: Tx, gymId: string, productSetId: number): Promise<number | null> {
-  const { rows } = await tx.query<SetRow>(
-    `SELECT ps.id, ps.gym_id, ps.owner_member_id, ps.root_product_set_id, ps.previous_product_set_id,
-            ps.membership_plan_id, ps.starts_at, ps.ends_at, ps.user_membership_id,
-            ps.created_by_name, ps.created_by_type,
-            snap.membership_fee_price, snap.free_periods, snap.paid_periods, snap.bonus_periods,
-            snap.pay_beforehand_periods, snap.auto_renew,
-            snap.personal_fee_benefit_action, snap.personal_fee_benefit_value,
-            sch.cadence_interval, sch.cadence_unit
-       FROM product_sets ps
-       LEFT JOIN product_set_plan_snapshots snap ON snap.product_set_id = ps.id
-       LEFT JOIN product_set_schedules sch ON sch.id = snap.schedule_id
-      WHERE ps.id = ? AND ps.gym_id = ?`,
-    [productSetId, gymId],
-  );
-  const set = rows[0];
-  if (!set) return null;
+const SET_SELECT = `
+  SELECT ps.id, ps.gym_id, ps.owner_member_id, ps.root_product_set_id, ps.previous_product_set_id,
+         ps.membership_plan_id, ps.starts_at, ps.ends_at, ps.user_membership_id,
+         ps.created_by_name, ps.created_by_type,
+         snap.membership_fee_price, snap.free_periods, snap.paid_periods, snap.bonus_periods,
+         snap.pay_beforehand_periods, snap.auto_renew,
+         snap.personal_fee_benefit_action, snap.personal_fee_benefit_value,
+         snap.discount_reason, snap.discount_expires_at,
+         sch.cadence_interval, sch.cadence_unit
+    FROM product_sets ps
+    LEFT JOIN product_set_plan_snapshots snap ON snap.product_set_id = ps.id
+    LEFT JOIN product_set_schedules sch ON sch.id = snap.schedule_id
+   WHERE ps.id = ? AND ps.gym_id = ?`;
 
-  // The assignment of the version this one replaced, if any.
-  let previousUmId: number | null = set.user_membership_id != null ? Number(set.user_membership_id) : null;
-  let previousPlanId: number | null = null;
-  if (previousUmId == null && set.previous_product_set_id != null) {
-    const { rows: prev } = await tx.query<{ user_membership_id: number | null }>(
-      'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?',
-      [set.previous_product_set_id, gymId]);
-    previousUmId = prev[0]?.user_membership_id != null ? Number(prev[0].user_membership_id) : null;
-  }
-  if (previousUmId != null) {
-    const { rows: um } = await tx.query<{ membership_plan_id: number | null }>(
-      'SELECT membership_plan_id FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE', [previousUmId, gymId]);
-    previousPlanId = um[0]?.membership_plan_id != null ? Number(um[0].membership_plan_id) : null;
-  }
-  const startsAt = dateOnly(set.starts_at) as string;
+async function loadSet(tx: Tx, gymId: string, productSetId: number): Promise<SetRow | null> {
+  const { rows } = await tx.query<SetRow>(SET_SELECT, [productSetId, gymId]);
+  return rows[0] ?? null;
+}
 
-  // A plan-less version has no assignment; a previous one is closed.
-  if (set.membership_plan_id == null) {
-    if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt);
-    await tx.query('UPDATE product_sets SET user_membership_id = NULL WHERE id = ?', [productSetId]);
-    return null;
-  }
-
-  const columns = [
-    set.membership_fee_price ?? null, set.free_periods ?? null, set.paid_periods ?? null,
-    set.bonus_periods ?? null, set.pay_beforehand_periods ?? null,
-    set.cadence_interval ?? null, set.cadence_unit ?? null,
-    set.auto_renew ?? 0,
-    set.personal_fee_benefit_action ?? 'no_benefit', set.personal_fee_benefit_value ?? null,
-  ];
-
-  let umId: number;
-  if (previousUmId != null && previousPlanId === Number(set.membership_plan_id)) {
-    // Same plan, new version: the row is updated in place.
-    umId = previousUmId;
-    await tx.query(
-      `UPDATE user_memberships
-          SET membership_fee_price = ?, free_periods = ?, paid_periods = ?, bonus_periods = ?,
-              pay_beforehand_periods = ?, recurring_billing_interval = ?, recurring_billing_unit = ?,
-              auto_renew = ?, personal_fee_benefit_action = ?, personal_fee_benefit_value = ?,
-              ends_at = ?, status = IF(status IN ('cancelled','expired'), status, 'active')
-        WHERE id = ? AND gym_id = ?`,
-      [...columns, dateOnly(set.ends_at), umId, gymId],
-    );
-  } else {
-    if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt);
-    const { insertId } = await tx.query(
-      `INSERT INTO user_memberships
-         (gym_id, member_id, membership_plan_id, starts_at, ends_at, status,
-          membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-          recurring_billing_interval, recurring_billing_unit, auto_renew,
-          personal_fee_benefit_action, personal_fee_benefit_value,
-          created_by_name, created_by_type)
-       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at), ...columns,
-        set.created_by_name, set.created_by_type],
-    );
-    umId = Number(insertId);
-  }
-
+/**
+ * The assignment-keyed copies the readers not yet moved price from: benefit rows,
+ * applied Promotions with the grants each froze, recurring services and coverage.
+ * Re-written whole from the version's own rows, so it is idempotent.
+ */
+async function copyAssignmentRows(tx: Tx, gymId: string, set: SetRow, umId: number): Promise<void> {
+  const productSetId = set.id;
   await copyBenefitRows(tx, gymId, productSetId, umId);
 
   // Applied Promotions, with the grants each one froze, for the readers that
@@ -222,6 +171,111 @@ export async function projectActiveProductSet(tx: Tx, gymId: string, productSetI
     [gymId, umId, set.owner_member_id],
   );
 
+}
+
+/** Projects the (just activated) version onto its operational assignment. */
+export async function projectActiveProductSet(tx: Tx, gymId: string, productSetId: number): Promise<number | null> {
+  const set = await loadSet(tx, gymId, productSetId);
+  if (!set) return null;
+
+  // The assignment of the version this one replaced, if any.
+  let previousUmId: number | null = set.user_membership_id != null ? Number(set.user_membership_id) : null;
+  let previousPlanId: number | null = null;
+  if (previousUmId == null && set.previous_product_set_id != null) {
+    const { rows: prev } = await tx.query<{ user_membership_id: number | null }>(
+      'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?',
+      [set.previous_product_set_id, gymId]);
+    previousUmId = prev[0]?.user_membership_id != null ? Number(prev[0].user_membership_id) : null;
+  }
+  if (previousUmId != null) {
+    const { rows: um } = await tx.query<{ membership_plan_id: number | null }>(
+      'SELECT membership_plan_id FROM user_memberships WHERE id = ? AND gym_id = ? FOR UPDATE', [previousUmId, gymId]);
+    previousPlanId = um[0]?.membership_plan_id != null ? Number(um[0].membership_plan_id) : null;
+  }
+  const startsAt = dateOnly(set.starts_at) as string;
+
+  // A plan-less version has no assignment; a previous one is closed.
+  if (set.membership_plan_id == null) {
+    if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt);
+    await tx.query('UPDATE product_sets SET user_membership_id = NULL WHERE id = ?', [productSetId]);
+    return null;
+  }
+
+  const columns = [
+    set.membership_fee_price ?? null, set.free_periods ?? null, set.paid_periods ?? null,
+    set.bonus_periods ?? null, set.pay_beforehand_periods ?? null,
+    set.cadence_interval ?? null, set.cadence_unit ?? null,
+    set.auto_renew ?? 0,
+    set.personal_fee_benefit_action ?? 'no_benefit', set.personal_fee_benefit_value ?? null,
+  ];
+
+  let umId: number;
+  if (previousUmId != null && previousPlanId === Number(set.membership_plan_id)) {
+    // Same plan, new version: the row is updated in place.
+    umId = previousUmId;
+    await tx.query(
+      `UPDATE user_memberships
+          SET membership_fee_price = ?, free_periods = ?, paid_periods = ?, bonus_periods = ?,
+              pay_beforehand_periods = ?, recurring_billing_interval = ?, recurring_billing_unit = ?,
+              auto_renew = ?, personal_fee_benefit_action = ?, personal_fee_benefit_value = ?,
+              ends_at = ?, status = IF(status IN ('cancelled','expired'), status, 'active')
+        WHERE id = ? AND gym_id = ?`,
+      [...columns, dateOnly(set.ends_at), umId, gymId],
+    );
+  } else {
+    if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt);
+    const { insertId } = await tx.query(
+      `INSERT INTO user_memberships
+         (gym_id, member_id, membership_plan_id, starts_at, ends_at, status,
+          membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
+          recurring_billing_interval, recurring_billing_unit, auto_renew,
+          personal_fee_benefit_action, personal_fee_benefit_value,
+          created_by_name, created_by_type)
+       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at), ...columns,
+        set.created_by_name, set.created_by_type],
+    );
+    umId = Number(insertId);
+  }
+
+  await copyAssignmentRows(tx, gymId, set, umId);
+
   await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, productSetId]);
   return umId;
+}
+
+/**
+ * #1325 PR 3e — keeps the assignment row of a **Draft** (or Pending Payment)
+ * version in step with it. The Admin's Draft assignment is created set-first and
+ * every edit of it goes through the Draft writers; the commercial columns and the
+ * assignment-keyed copies the readers still use are re-derived from the version
+ * here, so the row is a cache of the version and never written by anything else.
+ * Unlike `projectActiveProductSet()` it never closes, opens or re-statuses an
+ * assignment: the Draft's row already exists and its status is the commit's.
+ * The cadence is deliberately not copied: a Draft's Billing frequency is frozen
+ * from its Plan at creation and cannot be edited, while the chain's schedule may
+ * carry an earlier plan's cadence (a schedule keeps the chain's identity).
+ */
+export async function syncDraftAssignment(tx: Tx, gymId: string, productSetId: number): Promise<void> {
+  const set = await loadSet(tx, gymId, productSetId);
+  if (!set || set.user_membership_id == null) return;
+  const umId = Number(set.user_membership_id);
+  await tx.query(
+    `UPDATE user_memberships
+        SET membership_fee_price = ?, free_periods = ?, paid_periods = ?, bonus_periods = ?,
+            pay_beforehand_periods = ?,
+            auto_renew = ?, personal_fee_benefit_action = ?, personal_fee_benefit_value = ?,
+            discount_reason = ?, discount_expires_at = ?, starts_at = ?, ends_at = ?
+      WHERE id = ? AND gym_id = ?`,
+    [
+      set.membership_fee_price ?? null, set.free_periods ?? null, set.paid_periods ?? null,
+      set.bonus_periods ?? null, set.pay_beforehand_periods ?? null,
+      set.auto_renew ?? 0,
+      set.personal_fee_benefit_action ?? 'no_benefit', set.personal_fee_benefit_value ?? null,
+      set.discount_reason ?? null, dateOnly(set.discount_expires_at),
+      dateOnly(set.starts_at), dateOnly(set.ends_at),
+      umId, gymId,
+    ],
+  );
+  await copyAssignmentRows(tx, gymId, set, umId);
 }

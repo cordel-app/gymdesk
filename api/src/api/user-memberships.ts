@@ -1,6 +1,7 @@
 import { eventsOfAssignmentParams, eventsOfAssignmentSql } from '../domain/billingEventOwnership';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { redirectEditToProductSet, redirectRetireToProductSet } from './assignment-edit-redirect';
+import { createDraftSetForAssignment, deleteLinkedDraftSet, syncDraftSetFromAssignment } from './assignment-draft-set';
 import { cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
@@ -823,6 +824,18 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
         declinedBenefits: declinedResult.declined,
       });
+      // #1325 PR 3e: the Draft is a ProductSet Draft from birth; edits go to it.
+      await createDraftSetForAssignment(tx, {
+        gymId, userMembershipId: insertId, ownerMemberId: Number(member_id),
+        membershipPlanId: Number(membership_plan_id),
+        startsAt: String(starts_at).slice(0, 10), endsAt: ends_at ? String(ends_at).slice(0, 10) : null,
+        membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
+        basePrice: eff.base_price ?? null, planPriceId: eff.plan_price_id ?? null,
+        discountReason: feeOverride ? String(discount_reason).trim() : null,
+        discountExpiresAt: discount_expires_at || null,
+        declinedBenefits: declinedResult.declined,
+        actor: { name: actor.name, type: actor.type },
+      });
       return { kind: 'created' as const, insertId };
     });
     const created = await loadAssignmentRow(gymId, outcome.insertId, false);
@@ -931,6 +944,8 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           source: sourceForRole(role), actorUserId: userId,
         });
       }
+      // #1325 PR 3e: a Draft's dates and negotiated-fee reason live on its version too.
+      await syncDraftSetFromAssignment(tx, gymId, Number(req.params.id));
       return { kind: 'ok' } as const;
     });
     if (result.kind === 'not_found') return res.status(404).json({ error: 'Membership not found' });
@@ -963,6 +978,9 @@ userMembershipsRouter.delete('/:id/draft', requireModuleWrite('PAYMENTS'), async
       );
       if (rows.length === 0) return { kind: 'not_found' } as const;
       if (rows[0].status !== ASSIGNMENT_CREATION_STATUS) return { kind: 'not_draft', status: rows[0].status as string } as const;
+      // #1325 PR 3e: the Draft's version goes with it — left behind it would be
+      // the owner's one in-flight version and lock them out of another.
+      await deleteLinkedDraftSet(tx, gymId, Number(req.params.id));
       await tx.query('DELETE FROM user_memberships WHERE id = ? AND gym_id = ?', [req.params.id, gymId]);
       return { kind: 'deleted', previous: rows[0] } as const;
     });
@@ -1390,6 +1408,19 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
         // assignment's agreed regular price, and nothing else stores it (§15).
         membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
         declinedBenefits: declinedResult.declined,
+      });
+      // #1325 PR 3e: the successor is a ProductSet Draft from birth, beside the
+      // Active version it will replace.
+      await createDraftSetForAssignment(tx, {
+        gymId, userMembershipId: insertId, ownerMemberId: Number(prev.member_id),
+        membershipPlanId: Number(membership_plan_id),
+        startsAt: String(starts_at).slice(0, 10), endsAt: ends_at ? String(ends_at).slice(0, 10) : null,
+        membershipFeePrice: feeOverride ? parsedFee : (eff.plan_price_id != null ? eff.price : null),
+        basePrice: eff.base_price ?? null, planPriceId: eff.plan_price_id ?? null,
+        discountReason: feeOverride ? String(discount_reason).trim() : null,
+        discountExpiresAt: discount_expires_at || null,
+        declinedBenefits: declinedResult.declined,
+        actor: { name: actor.name, type: actor.type },
       });
       return { kind: 'created' as const, insertId };
     });
@@ -2134,6 +2165,7 @@ userMembershipsRouter.delete('/:id/members/:memberId', requireModuleWrite('PAYME
     userMembershipId: Number(req.params.id), action: 'update', detail: { remove_member: req.params.memberId },
     mutate: (tx, d) => psRemoveCoveredMember(tx, d, Number(req.params.memberId)),
     respond: async () => (await db.query(MEMBERS_SELECT, [req.params.id, gymId])).rows,
+    status: 204,
   })) return;
   const { rows } = await db.query(
     'SELECT is_owner FROM user_membership_members WHERE user_membership_id = ? AND member_id = ? AND gym_id = ?',
