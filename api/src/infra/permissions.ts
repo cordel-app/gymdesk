@@ -204,6 +204,9 @@ export function canWrite(role: AppRole, module: AppModule): boolean {
  */
 export const FEATURE_PERMISSION_OVERRIDES: Record<string, Partial<Record<AppRole, PermissionLevel>>> = {
   'nutrition.personal_goals': { trainer_performance: 'RW' },
+  // #1391: Admin, Trainers and Front Desk already write Calendar; a Nutritionist
+  // only reads it, and may still send a communication to an event's attendees.
+  'calendar.staff_communications': { nutritionist: 'RW' },
 };
 
 /** The level a feature key overrides for a role, or `null` when it inherits. */

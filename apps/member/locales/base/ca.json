@@ -269,7 +269,13 @@
     "type_waitlist_removed": "Fora de la llista d'espera",
     "detail_waitlist_removed": "Se t'ha retirat de la llista d'espera d'aquesta classe. La llista continua oberta, així que t'hi pots tornar a apuntar.",
     "type_booking_reminder_2h": "Recordatori d'entrenament",
-    "detail_booking_reminder_2h": "Tens aquest entrenament reservat en 2 hores."
+    "detail_booking_reminder_2h": "Tens aquest entrenament reservat en 2 hores.",
+    "type_staff_message": "Missatge del teu gimnàs",
+    "category_all": "Totes",
+    "category_staff": "Equip",
+    "category_auto": "Automàtiques",
+    "cancel_reason": "Motiu: {reason}",
+    "empty_category": "No hi ha alertes en aquesta categoria."
   },
   "membership": {
     "title": "Els Meus Productes",
