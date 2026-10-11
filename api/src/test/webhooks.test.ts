@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, ensureTestProductSet, request, billingEventsOfAssignment } from './helpers';
+import { cleanupTestGyms, createTestGym, ensureTestProductSet, request, billingEventsOfAssignment, legacyAssignmentQuery } from './helpers';
 
 const MONEI_WEBHOOK_SECRET = 'test-webhook-secret';
 
@@ -62,7 +62,7 @@ async function createMembershipPlan(gymId: string): Promise<number> {
 }
 
 async function createUserMembership(gymId: string, memberId: number, planId: number): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', CURDATE(), '5.00')`,
     [gymId, memberId, planId],
@@ -271,7 +271,7 @@ async function createMembershipStartingOn(
   planId: number,
   startsAt: string,
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', ?, '5.00')`,
     [gymId, memberId, planId, startsAt],

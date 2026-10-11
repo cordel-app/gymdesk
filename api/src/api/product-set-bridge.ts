@@ -45,10 +45,12 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
     `INSERT INTO product_set_plan_snapshots
        (gym_id, product_set_id, schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at,
         membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-        personal_fee_benefit_action, personal_fee_benefit_value, auto_renew)
+        personal_fee_benefit_action, personal_fee_benefit_value, auto_renew,
+        recurring_billing_interval, recurring_billing_unit)
      SELECT gym_id, ?, schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at,
             membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-            personal_fee_benefit_action, personal_fee_benefit_value, auto_renew
+            personal_fee_benefit_action, personal_fee_benefit_value, auto_renew,
+            recurring_billing_interval, recurring_billing_unit
        FROM product_set_plan_snapshots WHERE gym_id = ? AND product_set_id = ?`,
     [toSetId, gymId, fromSetId]);
 
@@ -135,8 +137,9 @@ async function writePendingInitialEvent(tx: Tx, gymId: string, setId: number): P
 /* ── Commit: an assignment becomes a ProductSet version ──────────────────── */
 
 /**
- * Imports an assignment as the owner's next ProductSet version. Two moments
- * call it, inside the assignment transaction:
+ * Moves the ProductSet version an assignment is linked to — created with it
+ * (#1325 PR 3e) — on the two moments that call it, inside the assignment
+ * transaction:
  *
  *  - **Save & Pay** (`submitForPayment()`, `pending: true`): the version is
  *    created `pending_payment` beside the Active one — nothing superseded, no
@@ -179,111 +182,13 @@ export async function importAssignmentAsProductSet(
     return Number(set.id);
   }
 
-  const { rows } = await tx.query<any>(
-    `SELECT um.id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at,
-            um.base_price, um.plan_price_id, um.discount_reason, um.discount_expires_at,
-            um.membership_fee_price, um.free_periods, um.paid_periods, um.bonus_periods,
-            um.pay_beforehand_periods, um.auto_renew, um.personal_fee_benefit_action,
-            um.personal_fee_benefit_value, um.created_by_name, um.created_by_type,
-            ${ASSIGNMENT_CADENCE.interval()} AS cadence_interval, ${ASSIGNMENT_CADENCE.unit()} AS cadence_unit
-       FROM user_memberships um
-       LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
-      WHERE um.id = ? AND um.gym_id = ? FOR UPDATE`, [userMembershipId, gymId]);
-  const um = rows[0];
-  if (!um || um.membership_plan_id == null) return null;
-  const startsAt = dateOnly(um.starts_at);
-
-  // One in-flight version per owner (the database's own rule): a pending set
-  // of this owner that is not this assignment's refuses the import.
-  const { rows: inFlight } = await tx.query<any>(
-    `SELECT id, status FROM product_sets
-      WHERE gym_id = ? AND owner_member_id = ? AND status IN ('draft','pending_payment') FOR UPDATE`, [gymId, um.member_id]);
-  if (inFlight[0]) {
-    throw Object.assign(new Error('This member already has a ProductSet version in flight'), { status: 409, code: 'in_flight', productSetId: Number(inFlight[0].id) });
-  }
-
-  // The chain: the owner's Active version is superseded by an active import; a
-  // pending one sits beside it until it is paid.
-  const { rows: prevRows } = await tx.query<any>(
-    `SELECT id, root_product_set_id, version FROM product_sets
-      WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' FOR UPDATE`, [gymId, um.member_id]);
-  const prev = prevRows[0] ?? null;
-  if (prev && !opts.pending) {
-    await tx.query(`UPDATE product_sets SET status = 'superseded', superseded_at = UTC_TIMESTAMP() WHERE id = ?`, [prev.id]);
-  }
-  const { insertId: setId } = await tx.query(
-    `INSERT INTO product_sets
-       (gym_id, owner_member_id, root_product_set_id, previous_product_set_id, version, status,
-        membership_plan_id, starts_at, ends_at, user_membership_id, activated_at, created_by_name, created_by_type)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${opts.pending ? 'NULL' : 'UTC_TIMESTAMP()'}, ?, ?)`,
-    [gymId, um.member_id, prev ? prev.root_product_set_id : null, prev ? prev.id : null,
-      prev ? Number(prev.version) + 1 : 1, opts.pending ? 'pending_payment' : 'active',
-      um.membership_plan_id, startsAt, um.ends_at ? dateOnly(um.ends_at) : null,
-      userMembershipId, um.created_by_name, um.created_by_type]);
-  if (!prev) await tx.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [setId]);
-  const rootId = prev ? Number(prev.root_product_set_id) : Number(setId);
-
-  let scheduleId: number | null = null;
-  if (um.cadence_interval != null && um.cadence_unit != null) {
-    scheduleId = await ensureSchedule(tx, {
-      gymId, rootProductSetId: rootId, key: PLAN_SCHEDULE_KEY, anchorDate: startsAt,
-      cadenceInterval: Number(um.cadence_interval), cadenceUnit: String(um.cadence_unit),
-    });
-  }
-  await tx.query(
-    `INSERT INTO product_set_plan_snapshots
-       (gym_id, product_set_id, schedule_id, plan_price_id, base_price, discount_reason, discount_expires_at,
-        membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-        personal_fee_benefit_action, personal_fee_benefit_value, auto_renew)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gymId, setId, scheduleId, um.plan_price_id, um.base_price, um.discount_reason, um.discount_expires_at,
-      um.membership_fee_price, um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
-      um.personal_fee_benefit_action ?? 'no_benefit', um.personal_fee_benefit_value, um.auto_renew ?? 0]);
-
-  for (const [table, extra] of [
-    ['user_membership_session', ', frequency'],
-    ['user_membership_oneoff', ''],
-    ['user_membership_periodical', ''],
-  ] as const) {
-    await tx.query(
-      `INSERT INTO ${table}
-         (gym_id, product_set_id, product_id, quantity, item_name, item_type, item_billing_frequency,
-          unit_price, currency, \`action\`, \`value\`, mandatory${extra})
-       SELECT gym_id, ?, product_id, quantity, item_name, item_type, item_billing_frequency,
-              unit_price, currency, \`action\`, \`value\`, mandatory${extra}
-         FROM ${table} WHERE gym_id = ? AND user_membership_id = ?`,
-      [setId, gymId, userMembershipId]);
-  }
-  await tx.query(
-    `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, product_set_id, product_id, quantity, starts_at, ends_at, item_name, item_type,
-        unit_price, item_billing_frequency, currency)
-     SELECT gym_id, ?, product_id, quantity, starts_at, ends_at, item_name, item_type,
-            unit_price, item_billing_frequency, currency
-       FROM member_products_recurrent_snapshot WHERE gym_id = ? AND user_membership_id = ?`,
-    [setId, gymId, userMembershipId]);
-  await copyApplications(tx, gymId, { userMembershipId }, { productSetId: Number(setId) });
-  await tx.query(
-    `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner)
-     SELECT gym_id, ?, member_id, is_owner FROM user_membership_members WHERE gym_id = ? AND user_membership_id = ?`,
-    [rootId, gymId, userMembershipId]);
-  await tx.query(
-    `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner) VALUES (?, ?, ?, 1)`,
-    [gymId, rootId, um.member_id]);
-  await allocateItemSchedules(tx, gymId, Number(setId));
-
-  if (opts.pending) {
-    await writePendingInitialEvent(tx, gymId, Number(setId));
-    return Number(setId);
-  }
-
-  await linkInitialPaymentToSet(tx, gymId, userMembershipId);
-
-  if (prev) {
-    await replaceFutureScheduledEvents(tx, { gymId, previousProductSetId: Number(prev.id), today: todayUtc() });
-  }
-  await materialiseScheduledEvents(tx, { gymId, productSetId: Number(setId), today: todayUtc() });
-  return Number(setId);
+  // #1325 PR 3e-3: an assignment is created with its version (Admin, Members App)
+  // or was given one by migration 258, so there is nothing to import from the
+  // row any more. A row with none is a defect, not a legacy state.
+  throw Object.assign(
+    new Error('This assignment has no ProductSet version to commit'),
+    { status: 409, code: 'no_product_set' },
+  );
 }
 
 /**

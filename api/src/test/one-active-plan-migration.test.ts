@@ -15,7 +15,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, legacyAssignmentQuery } from './helpers';
 import { buildMultiActiveReport } from '../scripts/report-multi-active-memberships';
 
 const require = createRequire(import.meta.url);
@@ -92,7 +92,7 @@ async function createMember(): Promise<number> {
 async function seedAssignment(
   memberId: number, planId: number, status: string, startsAt: string,
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, ?, ?, 30)`,
     [gymId, memberId, planId, status, startsAt],

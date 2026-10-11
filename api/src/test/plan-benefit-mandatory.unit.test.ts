@@ -42,10 +42,13 @@ describe('migration 237 and the writers', () => {
     ]);
   });
   it('is copied by the snapshot, the section edit and Duplicate', () => {
-    const snapshot = readFileSync(join(root, 'api', 'assigned-plan-snapshot.ts'), 'utf-8');
+    // #1325 PR 3e-3: the snapshot is the version's (`snapshotProductSetFromPlan`)
+    // and the section edit is the Draft writer's.
+    const snapshot = readFileSync(join(root, 'api', 'product-set-configuration.ts'), 'utf-8');
+    const draft = readFileSync(join(root, 'api', 'product-set-draft.ts'), 'utf-8');
     const plans = readFileSync(join(root, 'api', 'membership-plans.ts'), 'utf-8');
     expect(snapshot).toContain('b.mandatory');
-    expect(snapshot).toContain('previous.mandatory');
+    expect(draft).toContain('mandatory');
     expect(plans).toContain('parsePlanBenefitMandatoryInput');
     expect(plans).toContain('mandatory${sessionFrequency');
   });

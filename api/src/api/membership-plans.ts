@@ -10,7 +10,6 @@ import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { ASSIGNMENT_CREATION_STATUS, effectivePrice, snapshotFeeForAssignment, LIST_SELECT as MEMBERSHIP_LIST_SELECT, MEMBERS_SELECT as MEMBERSHIP_MEMBERS_SELECT } from './user-memberships';
 import { recordStatusChange, sourceForRole } from './billing-events';
 import { applyPromotionToMembership } from './membership-promotions';
-import { materialiseAssignedPlanSnapshot, snapshotAssignedPlan } from './assigned-plan-snapshot';
 import { resolveDeclinedBenefits, recordDeclinedBenefitsAudit } from './declined-plan-benefits';
 import { computePriceFields, validateTaxRateId } from './products';
 import { selectPlanTaxRates } from '../domain/planTaxRate';
@@ -792,11 +791,11 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
     const outcome = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO user_memberships
-         (member_id, gym_id, membership_plan_id, base_price, plan_price_id, starts_at, status,
+         (member_id, gym_id, membership_plan_id, starts_at, status,
           created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
         [
-          ownerId, gymId, req.params.id, eff.base_price, eff.plan_price_id, starts_at,
+          ownerId, gymId, req.params.id, starts_at,
           ASSIGNMENT_CREATION_STATUS,
           actor.name, actor.type,
         ],
@@ -817,12 +816,6 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
       // the assignment here, so every assignment entry point captures the same
       // set. Stage 4 removed the separate #376 charge-benefit snapshot this
       // used to sit next to: Charge Benefits no longer exist.
-      await snapshotAssignedPlan(tx, {
-        gymId, userMembershipId: insertId,
-        membershipPlanId: Number(req.params.id),
-        membershipFeePrice: eff.plan_price_id != null ? eff.price : null,
-        declinedBenefits: declinedResult.declined,
-      });
       // #1325 PR 3e: a ProductSet Draft from birth, owned by the paying member
       // and covering the rest through the chain.
       const setId = await createDraftSetForAssignment(tx, {
@@ -1463,30 +1456,13 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
           const umId = Number(row.id);
           if (negotiated) {
             await refreshPlanPriceReference(tx, { gymId, userMembershipId: umId, price, planPriceId: current.id });
-            await tx.query(
-              'UPDATE user_memberships SET base_price = ?, plan_price_id = ? WHERE id = ? AND gym_id = ?',
-              [price, current.id, umId, gymId]);
             keptDiscounted += 1;
             return;
           }
           const outcome = await repriceOnVersion(tx, {
             gymId, userMembershipId: umId, price, planPriceId: current.id, actor: { name: actor.name, type: actor.type },
           });
-          if (outcome === 'legacy') {
-            await materialiseAssignedPlanSnapshot(tx, {
-              gymId, userMembershipId: umId, membershipPlanId: Number(req.params.id),
-              membershipFeePrice: await snapshotFeeForAssignment(gymId, row),
-            });
-            await tx.query(
-              'UPDATE user_memberships SET base_price = ?, plan_price_id = ?, membership_fee_price = ? WHERE id = ? AND gym_id = ?',
-              [price, current.id, price, umId, gymId]);
-            updated += 1;
-          } else if (outcome === 'updated') {
-            await tx.query(
-              'UPDATE user_memberships SET base_price = ?, plan_price_id = ? WHERE id = ? AND gym_id = ?',
-              [price, current.id, umId, gymId]);
-            updated += 1;
-          }
+          if (outcome === 'updated') updated += 1;
         });
       } catch (err: any) {
         if (!err?.skipped) throw err;

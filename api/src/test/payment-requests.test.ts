@@ -7,7 +7,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 // Mock the payment provider so no real HTTP calls are made to Monei.
@@ -51,7 +51,7 @@ async function createUserMembership(
   planId: number,
   finalPrice = '29.99',
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', CURDATE(), ?)`,
     [gymId, memberId, planId, finalPrice],
@@ -346,7 +346,7 @@ describe('POST /payment-requests', () => {
     const memberId = await createMember(gymId);
     const planId = await createMembershipPlan(gymId);
     const umId = await createUserMembership(gymId, memberId, planId, '49.99');
-    await db.query('UPDATE user_memberships SET membership_fee_price = 61.50 WHERE id = ?', [umId]);
+    await legacyAssignmentQuery('UPDATE user_memberships SET membership_fee_price = 61.50 WHERE id = ?', [umId]);
 
     const res = await request
       .post('/payment-requests')
@@ -370,7 +370,7 @@ describe('POST /payment-requests', () => {
     const planId = await createMembershipPlan(gymId);
     const umId = await createUserMembership(gymId, memberId, planId, '49.99');
     // starts_at is today, so the current cycle is the first prepaid period.
-    await db.query(
+    await legacyAssignmentQuery(
       `UPDATE user_memberships
          SET membership_fee_price = 40, paid_periods = 12, pay_beforehand_periods = 3
        WHERE id = ?`,
@@ -396,7 +396,7 @@ describe('POST /payment-requests', () => {
     const umId = await createUserMembership(gymId, memberId, planId, '49.99');
     // A Free Period covering the assignment's first month: nothing is owed for
     // the cycle a request would be raised against.
-    await db.query(
+    await legacyAssignmentQuery(
       'UPDATE user_memberships SET membership_fee_price = 40, free_periods = 1, paid_periods = 12 WHERE id = ?',
       [umId],
     );

@@ -7,7 +7,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet, seedScheduledEvent } from './helpers';
+  request, ensureTestProductSet, seedScheduledEvent, legacyAssignmentQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -84,7 +84,7 @@ async function createUserMembership(
   planId: number,
   nextBillingDate: string | null = null,
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', '2000-01-01', '29.99')`,

@@ -26,7 +26,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 afterAll(async () => {
@@ -309,7 +309,7 @@ describe('Promotion item Requirement (#959)', () => {
       'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
       [gymId, 'PIR Member', `pir-${uniq()}@test.com`],
     );
-    const { insertId: umId } = await db.query(
+    const { insertId: umId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', CURDATE(), 100)`,

@@ -17,7 +17,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 afterAll(async () => {
@@ -396,7 +396,7 @@ describe('an assignment with no snapshot still reads back', () => {
     // Inserted the way a pre-migration-174 row looks: none of the snapshot
     // columns set, no benefit rows. The reader must not treat that as "this
     // assignment bills nothing" — stage 3 falls back to the live catalogue.
-    const { insertId } = await db.query(
+    const { insertId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, NULL, 'active', ?, 40)`,
       [gymId, await createMember(gymId), dayOffset(-10)],

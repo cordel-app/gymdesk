@@ -8,7 +8,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, seedScheduledEvent } from './helpers';
+  request, seedScheduledEvent, legacyAssignmentQuery } from './helpers';
 
 // #788: the card-replacement flow talks to the provider through
 // createCardVerificationRequest(), which takes no amount at all — the row's own
@@ -60,7 +60,7 @@ async function createUserMembership(
   nextBillingDate: string | null = null,
 ): Promise<number> {
   const planId = await createMembershipPlan(gymId);
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, ?, CURDATE(), '29.99')`,

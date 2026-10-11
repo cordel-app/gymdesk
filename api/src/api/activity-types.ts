@@ -17,6 +17,17 @@ import { parseTrainerMembershipId, validateTrainerMembershipId } from '../domain
 // #980 stage 2 made that vocabulary editable on the occurrence too, so it is
 // declared once in the domain module both writers read rather than twice.
 import { WAITLIST_MODES } from '../domain/waitlistMode';
+// #1373: an Activity Type's image — the storage half is `activity-image-storage.ts`.
+import {
+  ACTIVITY_STORAGE_NOT_INITIALIZED,
+  activityImageBodyParser,
+  clearActivityImage,
+  gymStorageFolderPrefix,
+  isActivityImageRefusal,
+  migrateActivityImageOnRename,
+  parseActivityImageRequest,
+  storeActivityImage,
+} from './activity-image-storage';
 
 const STATUSES = ['active', 'inactive'] as const;
 
@@ -445,6 +456,14 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
       }
     });
     const { rows } = await db.query(`${SELECT} WHERE at.id = ? AND at.gym_id = ?`, [req.params.id, gymId]);
+    // #1373: the image key carries the activity's name, so a rename moves it —
+    // after the row has committed, and never by deleting first.
+    if (rows[0]?.image_url && rows[0].name !== current.name) {
+      const migrated = await migrateActivityImageOnRename(gymId, {
+        id: rows[0].id, name: rows[0].name, image_url: rows[0].image_url,
+      });
+      if (migrated) rows[0].image_url = migrated;
+    }
     const { rows: rules } = await db.query(
       'SELECT * FROM activity_type_schedule_rules WHERE activity_type_id = ? ORDER BY created_at ASC',
       [req.params.id],
@@ -456,6 +475,68 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     if (e.statusCode === 404) return res.status(404).json({ error: e.message });
     handleDupEntry(e, res, next, 'An activity type with this name already exists.');
   }
+});
+
+/* ── Image (#1373) ──────────────────────────────────────────────────────────── */
+// `POST`/`DELETE /:id/image` are the only writers of `activity_types.image_url`.
+// A soft-deleted activity keeps both the column and the object (it can be restored).
+
+async function loadActivityForImage(req: any, res: any, requirePrefix: boolean) {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    'SELECT id, name, image_url FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    [req.params.id, gymId],
+  );
+  const row = rows[0];
+  if (!row) { res.status(404).json({ error: 'Activity type not found' }); return null; }
+  const folderPrefix = await gymStorageFolderPrefix(gymId);
+  if (!folderPrefix && requirePrefix) {
+    res.status(ACTIVITY_STORAGE_NOT_INITIALIZED.status).json(ACTIVITY_STORAGE_NOT_INITIALIZED.body);
+    return null;
+  }
+  return { gymId, folderPrefix, activity: { id: row.id, name: row.name, image_url: row.image_url } };
+}
+
+async function readActivityRow(gymId: string, id: number | string) {
+  const { rows } = await db.query(`${SELECT} WHERE at.id = ? AND at.gym_id = ?`, [id, gymId]);
+  return rows[0];
+}
+
+activityTypesRouter.post('/:id/image', requireRole('admin'), activityImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = parseActivityImageRequest(req);
+    if (isActivityImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const context = await loadActivityForImage(req, res, true);
+    if (!context) return;
+    const { gymId, activity } = context;
+    const { gymMembershipId } = getTenantContext(req);
+    const stored = await storeActivityImage({
+      gymId, folderPrefix: context.folderPrefix as string, activity, body: parsed, modifiedBy: gymMembershipId ?? null,
+    });
+    if (isActivityImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    const updated = await readActivityRow(gymId, activity.id);
+    recordAudit(req, {
+      action: 'update', entityType: 'activity_type', entityId: activity.id, entityName: activity.name,
+      previous: { image_url: activity.image_url }, next: { image_url: stored },
+    });
+    res.json(updated);
+  } catch (err) { next(err); }
+});
+
+activityTypesRouter.delete('/:id/image', requireRole('admin'), async (req, res, next) => {
+  try {
+    const context = await loadActivityForImage(req, res, false);
+    if (!context) return;
+    const { gymId, folderPrefix, activity } = context;
+    const { gymMembershipId } = getTenantContext(req);
+    await clearActivityImage({ gymId, folderPrefix, activity, modifiedBy: gymMembershipId ?? null });
+    const updated = await readActivityRow(gymId, activity.id);
+    recordAudit(req, {
+      action: 'update', entityType: 'activity_type', entityId: activity.id, entityName: activity.name,
+      previous: { image_url: activity.image_url }, next: { image_url: null },
+    });
+    res.json(updated);
+  } catch (err) { next(err); }
 });
 
 activityTypesRouter.delete('/:id', requireRole('admin'), async (req, res) => {

@@ -11,7 +11,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet } from './helpers';
+  request, ensureTestProductSet, legacyAssignmentQuery } from './helpers';
 
 // Mutable so each test picks the provider outcome it needs.
 let executeRecurring = vi.fn();
@@ -96,7 +96,7 @@ async function createFailedEvent(
   const planId = await createPlanWithPolicy(gym);
   const ct = await chargeTypeId();
 
-  const { insertId: membershipId } = await db.query(
+  const { insertId: membershipId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', '2000-01-01', '40.00')`,
