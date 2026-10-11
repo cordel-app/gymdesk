@@ -58,6 +58,8 @@ interface ScheduleSession {
   cancellation_block: CancellationBlock;
   professional_service: boolean;
   my_booking_status: 'booked' | 'waitlisted' | null;
+  /** #1382 — the member's own attendance, read-only; `pending` is unconfirmed and shows nothing. */
+  my_attendance_status?: 'pending' | 'present' | 'absent' | null;
   my_waitlist_position: number | null;
   my_shared_request_id: number | null;
   my_shared_request_status: 'pending' | 'approved' | null;
@@ -534,6 +536,12 @@ export default function MemberCalendarPage() {
                 </span>
               )}
             </div>
+
+            {(selected.my_attendance_status === 'present' || selected.my_attendance_status === 'absent') && (
+              <p style={{ fontSize: 13, color: memberTheme.textSecondary, margin: '0 0 12px' }}>
+                {t('my_attendance')}: <strong>{t(`my_attendance_${selected.my_attendance_status}`)}</strong>
+              </p>
+            )}
 
             {actionMsg && (
               <p style={{ color: memberTheme.statusError, fontSize: 13, marginBottom: 12 }}>{actionMsg}</p>

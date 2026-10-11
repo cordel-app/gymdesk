@@ -35,6 +35,12 @@ import { parseProfessionalServiceId, validateProfessionalServiceId } from '../do
 import { isAssignableTrainer } from '../domain/trainerAssignment';
 import { withEventExecutionStatus, type EventExecutionInput } from '../domain/eventExecutionStatus';
 import { diffAuditedFields, SESSION_AUDITED_FIELDS } from '../domain/calendarEventChanges';
+import { effectiveEventImageUrl } from '../domain/calendarEventImages';
+import {
+  ACTIVITY_STORAGE_NOT_INITIALIZED, activityImageBodyParser, gymStorageFolderPrefix,
+  isActivityImageRefusal, parseActivityImageRequest,
+} from './activity-image-storage';
+import { clearEventImage, storeEventImage } from './calendar-event-image-storage';
 import { parseWaitlistModeInput, waitlistModeClosesQueue, type WaitlistMode } from '../domain/waitlistMode';
 
 // ─── Shared helpers ──────────────────────────────────────────────────────────
@@ -121,8 +127,13 @@ function withEligibleServices<T extends Record<string, any>>(row: T): T {
   } as unknown as T;
 }
 
+/** #1382: an event's own image, else its Activity's — resolved here once so no client re-decides it. */
+function withEffectiveImage<T extends { image_url?: string | null; activity_image_url?: string | null }>(row: T) {
+  return { ...row, effective_image_url: effectiveEventImageUrl(row.image_url, row.activity_image_url) };
+}
+
 function shapeRow<T extends EventExecutionInput>(row: T) {
-  return withEligibleServices(withEventExecutionStatus([row])[0]);
+  return withEffectiveImage(withEligibleServices(withEventExecutionStatus([row])[0]) as any);
 }
 
 const shapeRows = <T extends EventExecutionInput>(rows: T[]) => withEventExecutionStatus(rows).map(withEligibleServices);
@@ -144,6 +155,7 @@ const SESSION_SELECT = `
          ce.capacity AS max_capacity_override,
          at.name AS class_type_name,
          at.color AS activity_type_color,
+         at.image_url AS activity_image_url,
          at.max_capacity AS class_type_capacity,
          at.duration_minutes AS class_type_duration,
          at.is_shareable,
@@ -1096,6 +1108,70 @@ classSessionsRouter.post('/:id/reactivate', requireModuleWrite('CALENDAR'), asyn
   }
 });
 
+// ─── Event image (#1382) ─────────────────────────────────────────────────────
+// `POST`/`DELETE /:id/image` are the only writers of `calendar_events.image_url`.
+// The override is the event's alone: the Activity's image and every other
+// event's object are never written or deleted (`calendar-event-image-storage.ts`).
+
+const EVENT_IMAGE_ROLES = ['admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'] as const;
+
+async function loadEventForImage(req: Request, res: any, requirePrefix: boolean) {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    `SELECT ce.id, ce.image_url, at.name AS activity_name
+       FROM calendar_events ce JOIN activity_types at ON at.id = ce.activity_type_id
+      WHERE ce.id = ? AND ce.gym_id = ? AND ce.deleted_at IS NULL`,
+    [req.params.id, gymId],
+  );
+  const row = rows[0];
+  if (!row) { res.status(404).json({ error: 'Session not found' }); return null; }
+  const folderPrefix = await gymStorageFolderPrefix(gymId);
+  if (!folderPrefix && requirePrefix) {
+    res.status(ACTIVITY_STORAGE_NOT_INITIALIZED.status).json(ACTIVITY_STORAGE_NOT_INITIALIZED.body);
+    return null;
+  }
+  return { gymId, folderPrefix, event: { id: row.id, activity_name: row.activity_name, image_url: row.image_url } };
+}
+
+async function readSessionRow(gymId: string, id: number | string) {
+  const { rows } = await db.query(`${SESSION_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`, [id, gymId]);
+  return shapeRow(rows[0]);
+}
+
+classSessionsRouter.post('/:id/image', requireRole(...EVENT_IMAGE_ROLES), activityImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = parseActivityImageRequest(req);
+    if (isActivityImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const context = await loadEventForImage(req, res, true);
+    if (!context) return;
+    const { gymId, event } = context;
+    const stored = await storeEventImage({
+      gymId, folderPrefix: context.folderPrefix as string, event, body: parsed,
+      modifiedBy: resolveRequestActor(getTenantContext(req)),
+    });
+    if (isActivityImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'class_session', entityId: event.id,
+      previous: { image_url: event.image_url }, next: { image_url: stored },
+    });
+    res.json(await readSessionRow(gymId, event.id));
+  } catch (err) { next(err); }
+});
+
+classSessionsRouter.delete('/:id/image', requireRole(...EVENT_IMAGE_ROLES), async (req, res, next) => {
+  try {
+    const context = await loadEventForImage(req, res, false);
+    if (!context) return;
+    const { gymId, folderPrefix, event } = context;
+    await clearEventImage({ gymId, folderPrefix, event, modifiedBy: resolveRequestActor(getTenantContext(req)) });
+    recordAudit(req, {
+      action: 'update', entityType: 'class_session', entityId: event.id,
+      previous: { image_url: event.image_url }, next: { image_url: null },
+    });
+    res.json(await readSessionRow(gymId, event.id));
+  } catch (err) { next(err); }
+});
+
 classSessionsRouter.post('/:id/bulk-present',
   requireRole('admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'),
   async (req, res) => {
@@ -1244,24 +1320,20 @@ classSessionsRouter.post('/:id/complete', requireModuleWrite('CALENDAR'), async 
   if (session.status === 'completed') return res.status(400).json({ error: 'Session is already completed' });
   if (session.status === 'cancelled') return res.status(400).json({ error: 'Cancelled sessions cannot be completed' });
 
-  const { rows: pendingRows } = await db.query(
-    `SELECT COUNT(*) AS pending_count
-     FROM calendar_event_bookings WHERE calendar_event_id = ? AND gym_id = ? AND status = 'booked' AND attendance_status = 'pending'`,
-    [req.params.id, gymId],
-  );
-  const pendingCount = Number(pendingRows[0].pending_count);
+  // #1382: unconfirmed attendance never blocks completion — the panel warns once
+  // and lets staff decide. The attendance rows are left exactly as they are
+  // (nobody is converted to present or absent). A missing trainer still blocks.
   const missingTrainer = session.trainer_membership_id == null && session.effective_trainer_membership_id == null;
 
-  if (pendingCount > 0 || missingTrainer) {
+  if (missingTrainer) {
     return res.status(400).json({
       error: 'Cannot complete session',
-      pending_count: pendingCount,
       missing_trainer: missingTrainer,
     });
   }
 
   await db.query(
-    "UPDATE calendar_events SET status = 'completed', modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL",
+    "UPDATE calendar_events SET status = 'completed', modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND status NOT IN ('completed', 'cancelled')",
     [actor, req.params.id, gymId],
   );
 

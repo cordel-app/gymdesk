@@ -44,6 +44,8 @@ import { ExerciseDetailModal } from '@/components/exercises/ExerciseDetailModal'
 import { EXERCISE_CATEGORIES } from '@/lib/exerciseCategories';
 import { ExerciseFilterBar, type ExerciseFacetOptions } from '@/components/exercises/ExerciseFilterBar';
 import { EMPTY_EXERCISE_FILTER, exerciseFilterQuery, type ExerciseFilterState } from '@/lib/exerciseFilters';
+import { ExerciseCard, ExerciseCardGrid } from '@/components/exercises/ExerciseCard';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { ImportExercisesModal } from './ImportExercisesModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -141,6 +143,9 @@ export default function ExercisesPage() {
   const [muscleKeys, setMuscleKeys] = useState<string[]>([]);
   const [resultTypes, setResultTypes] = useState<ResultType[]>([]);
   const [loading, setLoading] = useState(true);
+  // #1386: Cards by default, the saved choice afterwards. Presentation only — the
+  // rows, filters and actions are the same in both views.
+  const [viewMode, setViewMode] = useExerciseViewMode();
 
   // #969: every filter the toolbar offers, applied server-side (§16/§17) — the
   // list is never narrowed in the browser.
@@ -565,6 +570,42 @@ export default function ExercisesPage() {
     );
   }
 
+  /** The `⋮` actions of one exercise — shared by the list row and the card (#1386). */
+  function exerciseMenuItems(ex: Exercise): ContextMenuItem[] {
+    const isBase = ex.gym_id === null;
+    return isBase
+      ? [
+          { label: t('details'), onClick: () => setDetailFor(ex) },
+          { label: t('clone'), onClick: () => handleClone(ex), disabled: !canWrite, title: readOnlyTitle },
+        ]
+      : [
+          { label: t('details'), onClick: () => setDetailFor(ex) },
+          { label: t('edit'), onClick: () => guardedAction('edit', ex), disabled: !canWrite, title: readOnlyTitle },
+          { label: t('duplicate'), onClick: () => handleDuplicate(ex), disabled: !canWrite, title: readOnlyTitle },
+          ex.status === 'active'
+            ? { label: t('deactivate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle }
+            : { label: t('activate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle },
+          { label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true, disabled: !canWrite, title: readOnlyTitle },
+        ];
+  }
+
+  /** Cards view (#1386): an exercise being edited shows the one shared editor in place of its card. */
+  function renderCard(ex: Exercise) {
+    if (editingId === ex.id) {
+      return <div key={ex.id} style={{ ...cardSt, gridColumn: '1 / -1' }}>{renderEditSection(ex)}</div>;
+    }
+    return (
+      <ExerciseCard
+        key={ex.id}
+        exercise={ex}
+        muscleLabel={muscleLabel}
+        menuItems={exerciseMenuItems(ex)}
+        expanded={expandedId === ex.id}
+        onToggle={() => toggleExpand(ex.id)}
+      />
+    );
+  }
+
   function renderRow(ex: Exercise) {
     const isEditing = editingId === ex.id;
     const isExpanded = isEditing || expandedId === ex.id;
@@ -582,20 +623,7 @@ export default function ExercisesPage() {
     const isSystemSourced = isBase || ex.cloned_from_id != null;
     const principalMuscles = (ex.muscles ?? []).filter((m) => m.role === 'principal').map((m) => muscleLabel(m.key)).join(', ') || '—';
 
-    const menuItems: ContextMenuItem[] = isBase
-      ? [
-          { label: t('details'), onClick: () => setDetailFor(ex) },
-          { label: t('clone'), onClick: () => handleClone(ex), disabled: !canWrite, title: readOnlyTitle },
-        ]
-      : [
-          { label: t('details'), onClick: () => setDetailFor(ex) },
-          { label: t('edit'), onClick: () => guardedAction('edit', ex), disabled: !canWrite, title: readOnlyTitle },
-          { label: t('duplicate'), onClick: () => handleDuplicate(ex), disabled: !canWrite, title: readOnlyTitle },
-          ex.status === 'active'
-            ? { label: t('deactivate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle }
-            : { label: t('activate'), onClick: () => handleToggleStatus(ex), disabled: !canWrite, title: readOnlyTitle },
-          { label: t('delete'), onClick: () => guardedAction('delete', ex), danger: true, disabled: !canWrite, title: readOnlyTitle },
-        ];
+    const menuItems = exerciseMenuItems(ex);
 
     return (
       <div key={ex.id} style={cardSt}>
@@ -677,6 +705,7 @@ export default function ExercisesPage() {
         showStatus
         shown={rows.length}
         total={total}
+        trailing={<ExerciseViewToggle value={viewMode} onChange={setViewMode} />}
       />
 
       {renderInlineNewRow()}
@@ -686,7 +715,10 @@ export default function ExercisesPage() {
       ) : (
         <>
           {rows.length === 0 && !addOpen && <p style={{ color: '#888' }}>{t('empty')}</p>}
-          {rows.length > 0 && (
+          {rows.length > 0 && viewMode === 'cards' && (
+            <ExerciseCardGrid>{rows.map(renderCard)}</ExerciseCardGrid>
+          )}
+          {rows.length > 0 && viewMode === 'list' && (
             /* The header band and the cards share LIST_GRID_COLUMNS and scroll
                together, so they cannot fall out of line, and a narrow viewport
                scrolls the list instead of the page (#1011). */

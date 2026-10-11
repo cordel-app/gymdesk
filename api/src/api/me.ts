@@ -851,6 +851,13 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
                 WHERE ceb.calendar_event_id = ce.id AND ceb.member_id = ? AND ceb.status <> 'cancelled'
                 LIMIT 1
               ) AS seconds_since_booked,
+              -- #1382: the member's own attendance, read-only. pending is
+              -- unconfirmed and is reported as such, never as absent.
+              (
+                SELECT ceb.attendance_status FROM calendar_event_bookings ceb
+                WHERE ceb.calendar_event_id = ce.id AND ceb.member_id = ? AND ceb.status = 'booked'
+                LIMIT 1
+              ) AS my_attendance_status,
               ${secondsUntilStartSql('ce')} AS seconds_until_start,
               ${professionalServiceLinkedSql('ce')} AS professional_service,
               (
@@ -886,7 +893,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
        LEFT JOIN gym_memberships tm ON tm.id = ce.trainer_membership_id
        WHERE ${where.join(' AND ')}
        ORDER BY ce.starts_at ASC`,
-      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
+      [memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, memberId, ...params],
     );
     const now = new Date();
     const shaped = rows.map((r: any) => {
@@ -930,6 +937,7 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
         // event is 24 hours away or the booking is under 2 hours old; a
         // waiting-list place is leavable until the event starts.
         ...memberCancellation(r, r.my_booking_status ?? null),
+        my_attendance_status: r.my_attendance_status ?? null,
         professional_service: !!Number(r.professional_service),
         availability_state,
         // #503 stage 5: unified member read model — additive next to

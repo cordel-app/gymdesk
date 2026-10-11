@@ -107,9 +107,13 @@ describe('Mark as completed (#977 §4/§11)', () => {
     expect(sessionPanel).toContain('hasEnded');
   });
 
-  it('asks for confirmation before posting', () => {
+  it('completes in one step, warning only about unconfirmed attendance (#1382 §4)', () => {
+    // All confirmed: the first click posts. Unconfirmed: one warning whose
+    // Complete Event posts straight away — never the old second prompt.
     expect(sessionPanel).toContain('showCompleteConfirm');
-    expect(sessionPanel).toContain("mark_completed_confirm_title");
+    expect(sessionPanel).toContain('unconfirmedCount');
+    expect(sessionPanel).toContain('complete_unconfirmed_title');
+    expect(sessionPanel).not.toContain('mark_completed_confirm_title');
     expect(sessionPanel).toMatch(/\/complete`, \{ method: 'POST' \}/);
   });
 
@@ -117,7 +121,8 @@ describe('Mark as completed (#977 §4/§11)', () => {
     // The 400 names `pending_count` / `missing_trainer`; a generic toast would
     // leave the teacher with no idea what to do next.
     expect(sessionPanel).toContain('missing_trainer');
-    expect(sessionPanel).toContain('pending_count');
+    // #1382: unconfirmed attendance no longer refuses a completion.
+    expect(sessionPanel).not.toContain('pending_count');
   });
 
   it('writes no status of its own', () => {

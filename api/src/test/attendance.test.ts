@@ -341,10 +341,10 @@ describe('Attendance Management (#193)', () => {
   // ── POST /class-sessions/:id/complete ────────────────────────────────────
 
   describe('POST /class-sessions/:id/complete', () => {
-    it('blocks completion when pending attendance exists', async () => {
+    it('completes with unconfirmed attendance and leaves it unconfirmed (#1382)', async () => {
       const complSessionId = await createSession(gymId, activityTypeId, centerId, trainerMembershipId);
       const mid = await createMember(gymId, centerId);
-      await createBooking(gymId, centerId, mid, complSessionId, 'booked');
+      const bookingId = await createBooking(gymId, centerId, mid, complSessionId, 'booked');
       // attendance_status is 'pending' by default
 
       const res = await request
@@ -352,8 +352,19 @@ describe('Attendance Management (#193)', () => {
         .set('Authorization', TEST_AUTH_HEADER)
         .set('x-gym-id', gymId);
 
-      expect(res.status).toBe(400);
-      expect(res.body.pending_count).toBeGreaterThan(0);
+      expect(res.status).toBe(200);
+      expect(res.body.status).toBe('completed');
+      const { rows } = await db.query(
+        `SELECT attendance_status FROM calendar_event_bookings WHERE id = ?`, [bookingId],
+      );
+      expect(rows[0].attendance_status).toBe('pending');
+
+      // A repeated click is refused rather than completing twice.
+      const again = await request
+        .post(`/class-sessions/${complSessionId}/complete`)
+        .set('Authorization', TEST_AUTH_HEADER)
+        .set('x-gym-id', gymId);
+      expect(again.status).toBe(400);
     });
 
     it('blocks completion when no trainer is set', async () => {
@@ -413,6 +424,71 @@ describe('Attendance Management (#193)', () => {
         .set('x-gym-id', gymIdB);
 
       expect(res.status).toBe(404);
+    });
+  });
+
+  // ── POST /bookings/:id/refund-balance (#1382) ────────────────────────────
+
+  describe('POST /bookings/:id/refund-balance', () => {
+    async function absentBookingWithLedger(consumed = true) {
+      const sid = await createSession(gymId, activityTypeId, centerId, trainerMembershipId);
+      const mid = await createMember(gymId, centerId);
+      const bookingId = await createBooking(gymId, centerId, mid, sid, 'booked');
+      await db.query(`UPDATE calendar_event_bookings SET attendance_status = 'absent' WHERE id = ?`, [bookingId]);
+      if (consumed) {
+        await db.query(
+          `INSERT INTO professional_service_consumptions
+             (gym_id, member_id, calendar_event_booking_id, calendar_event_id, professional_service_id,
+              source_kind, source_reference_id, product_id, reason)
+           VALUES (?, ?, ?, ?, 1, 'plan_session', 1, 1, 'no_show')`,
+          [gymId, mid, bookingId, sid],
+        );
+      }
+      return bookingId;
+    }
+
+    const post = (id: number, gym = gymId) => request
+      .post(`/bookings/${id}/refund-balance`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gym);
+
+    it('returns the consumed session once and refuses a second refund', async () => {
+      const bookingId = await absentBookingWithLedger();
+      const first = await post(bookingId);
+      expect(first.status).toBe(200);
+      expect(Number(first.body.service_returned)).toBe(1);
+      expect(Number(first.body.service_consumed)).toBe(0);
+
+      const second = await post(bookingId);
+      expect(second.status).toBe(409);
+      expect(second.body.code).toBe('already_refunded');
+    });
+
+    it('refuses a booking that consumed nothing', async () => {
+      const bookingId = await absentBookingWithLedger(false);
+      const res = await post(bookingId);
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('nothing_consumed');
+    });
+
+    it('refuses an attendee who is not explicitly absent', async () => {
+      const bookingId = await absentBookingWithLedger();
+      await db.query(`UPDATE calendar_event_bookings SET attendance_status = 'pending' WHERE id = ?`, [bookingId]);
+      const res = await post(bookingId);
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('not_absent');
+    });
+
+    it('is a 404 for another gym\'s booking', async () => {
+      const bookingId = await absentBookingWithLedger();
+      const res = await post(bookingId, gymIdB);
+      expect(res.status).toBe(404);
+    });
+
+    it('is a 401 without credentials', async () => {
+      const bookingId = await absentBookingWithLedger();
+      const res = await request.post(`/bookings/${bookingId}/refund-balance`);
+      expect(res.status).toBe(401);
     });
   });
 
