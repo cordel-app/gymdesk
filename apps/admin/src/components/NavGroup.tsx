@@ -246,7 +246,7 @@ export function NavGroup({
                 : null),
           }}
         >
-        {!collapsed && !direct && (
+        {!collapsed && (
           <span
             style={{
               display: 'inline-flex',
