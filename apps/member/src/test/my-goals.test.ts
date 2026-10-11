@@ -194,6 +194,23 @@ describe('the form (§5, §9)', () => {
       });
   });
 
+  it('lets a relative target be negative and keeps the rule for an absolute one (#1229)', () => {
+    const loss = { id: 1, slug: 'weight_loss', name: 'Weight Loss', description: null, target_value: -3, target_unit: 'kg', target_type: 'relative' as const };
+    const picked = formForAssignableGoal(loss);
+    expect(picked).toMatchObject({ target_value: '-3', target_unit: 'kg', target_type: 'relative' });
+    expect(goalFormError(picked, { requireGoal: true })).toBeNull();
+    // Picking an absolute goal afterwards drops the permission.
+    const absolute = formForAssignableGoal(
+      { id: 4, slug: 'maintenance', name: 'Maintenance', description: null, target_value: 0, target_unit: 'kg' },
+      picked,
+    );
+    expect(absolute.target_type).toBeUndefined();
+    expect(goalFormError({ ...absolute, target_value: '-1' }, { requireGoal: true })).toBe('goals.error_target_negative');
+    // Editing an assigned relative goal starts from its own type.
+    expect(formForMemberGoal(goal({ target_value: -3, target_unit: 'kg', target_type: 'relative' })).target_type).toBe('relative');
+    expect(goalFormError(formForMemberGoal(goal({ target_value: -3, target_unit: 'kg', target_type: 'relative' })), { requireGoal: false })).toBeNull();
+  });
+
   it('asks for a goal only when one is being added', () => {
     expect(goalFormError(emptyGoalForm, { requireGoal: true })).toBe('goals.error_goal_required');
     expect(goalFormError(emptyGoalForm, { requireGoal: false })).toBeNull();
