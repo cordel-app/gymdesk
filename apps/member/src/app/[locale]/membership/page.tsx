@@ -908,6 +908,110 @@ export default function MembershipPage() {
     });
   }
 
+  /**
+   * The purchase confirmation and the payment consent. Rendered by *every*
+   * branch of the page that can raise them: a member with no live plan but a
+   * plan awaiting payment (#1288) takes the `!membership` branch, and a dialog
+   * kept only in the main return left its *Pay now* with nothing to open (#1081).
+   */
+  function renderDialogs() {
+    return (
+      <>
+          {/* #1121 stage 2 §5/§8 — the member sees the final price before paying, in
+              the app's own dialog (#1115: one dialog shell, not a second overlay).
+              It asks nothing: the price, the frequency and the package note are the
+              ones the card already showed, resolved once above. */}
+          {purchasing && (
+            <MemberDialog
+              labelledBy="product-purchase-title"
+              title={t('membership.product_purchase_title')}
+              onClose={purchaseSubmitting ? () => {} : closePurchase}
+              actions={(
+                <>
+                  <button
+                    type="button"
+                    style={styles.dialogSecondary}
+                    onClick={closePurchase}
+                    disabled={purchaseSubmitting}
+                  >
+                    {t('membership.product_purchase_cancel')}
+                  </button>
+                  <button
+                    type="button"
+                    style={{ ...styles.dialogPrimary, ...(purchaseSubmitting ? styles.busy : null) }}
+                    onClick={() => confirmPurchase(purchasing)}
+                    disabled={purchaseSubmitting}
+                  >
+                    {purchaseSubmitting
+                      ? t('membership.product_purchase_submitting')
+                      : t('membership.product_purchase_confirm')}
+                  </button>
+                </>
+              )}
+            >
+              <p style={styles.modalBody}>
+                {/* §8: the member must always see the **actual** final price before
+                    completing the purchase — so the dialog quotes the price with
+                    their applied Promotion, exactly as the card does. */}
+                {t('membership.product_purchase_body', {
+                  name: purchasing.name,
+                  price: productFinalPriceText(purchasing, appliedPromotionFor(purchasing), locale) ?? '—',
+                })}
+              </p>
+              <p style={styles.hintLeft}>{t('membership.product_purchase_once')}</p>
+              {purchaseError && <p style={styles.submitError}>{purchaseError}</p>}
+            </MemberDialog>
+          )}
+
+          {/* Consent modal */}
+          {consentOpen && (
+            <div style={styles.overlay} onClick={() => !submitting && setConsentOpen(false)}>
+              <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
+                <h2 style={styles.modalTitle}>{t('payment_consent.title')}</h2>
+                <p style={styles.modalBody}>
+                  {t('payment_consent.body', {
+                    gymName: gymName ?? '—',
+                    amount: consentAmount,
+                    currency: consentCurrency,
+                    interval: consentInterval && consentUnit
+                      ? formatInterval(consentInterval, consentUnit, (k) => t(k as any))
+                      : '—',
+                  })}
+                </p>
+                <label style={styles.checkLabel}>
+                  <input
+                    type="checkbox"
+                    checked={consentChecked}
+                    onChange={(e) => setConsentChecked(e.target.checked)}
+                    disabled={submitting}
+                    style={{ marginRight: 8 }}
+                  />
+                  {t('payment_consent.checkbox')}
+                </label>
+                {submitError && <p style={styles.submitError}>{submitError}</p>}
+                <div style={styles.modalActions}>
+                  <button
+                    style={styles.cancelBtn}
+                    onClick={() => setConsentOpen(false)}
+                    disabled={submitting}
+                  >
+                    {t('payment_consent.cancel')}
+                  </button>
+                  <button
+                    style={{ ...styles.confirmBtn, opacity: (!consentChecked || submitting) ? 0.5 : 1 }}
+                    onClick={handleConsentConfirm}
+                    disabled={!consentChecked || submitting}
+                  >
+                    {submitting ? t('payment_consent.submitting') : t('payment_consent.confirm')}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+      </>
+    );
+  }
+
   if (loading) {
     return (
       <main style={styles.container}>
@@ -939,6 +1043,7 @@ export default function MembershipPage() {
           </div>
         )}
         {renderProducts()}
+        {renderDialogs()}
       </main>
     );
   }
@@ -1145,97 +1250,7 @@ export default function MembershipPage() {
         </PaymentsSubcard>
       </PaymentsCard>
 
-      {/* #1121 stage 2 §5/§8 — the member sees the final price before paying, in
-          the app's own dialog (#1115: one dialog shell, not a second overlay).
-          It asks nothing: the price, the frequency and the package note are the
-          ones the card already showed, resolved once above. */}
-      {purchasing && (
-        <MemberDialog
-          labelledBy="product-purchase-title"
-          title={t('membership.product_purchase_title')}
-          onClose={purchaseSubmitting ? () => {} : closePurchase}
-          actions={(
-            <>
-              <button
-                type="button"
-                style={styles.dialogSecondary}
-                onClick={closePurchase}
-                disabled={purchaseSubmitting}
-              >
-                {t('membership.product_purchase_cancel')}
-              </button>
-              <button
-                type="button"
-                style={{ ...styles.dialogPrimary, ...(purchaseSubmitting ? styles.busy : null) }}
-                onClick={() => confirmPurchase(purchasing)}
-                disabled={purchaseSubmitting}
-              >
-                {purchaseSubmitting
-                  ? t('membership.product_purchase_submitting')
-                  : t('membership.product_purchase_confirm')}
-              </button>
-            </>
-          )}
-        >
-          <p style={styles.modalBody}>
-            {/* §8: the member must always see the **actual** final price before
-                completing the purchase — so the dialog quotes the price with
-                their applied Promotion, exactly as the card does. */}
-            {t('membership.product_purchase_body', {
-              name: purchasing.name,
-              price: productFinalPriceText(purchasing, appliedPromotionFor(purchasing), locale) ?? '—',
-            })}
-          </p>
-          <p style={styles.hintLeft}>{t('membership.product_purchase_once')}</p>
-          {purchaseError && <p style={styles.submitError}>{purchaseError}</p>}
-        </MemberDialog>
-      )}
-
-      {/* Consent modal */}
-      {consentOpen && (
-        <div style={styles.overlay} onClick={() => !submitting && setConsentOpen(false)}>
-          <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-            <h2 style={styles.modalTitle}>{t('payment_consent.title')}</h2>
-            <p style={styles.modalBody}>
-              {t('payment_consent.body', {
-                gymName: gymName ?? '—',
-                amount: consentAmount,
-                currency: consentCurrency,
-                interval: consentInterval && consentUnit
-                  ? formatInterval(consentInterval, consentUnit, (k) => t(k as any))
-                  : '—',
-              })}
-            </p>
-            <label style={styles.checkLabel}>
-              <input
-                type="checkbox"
-                checked={consentChecked}
-                onChange={(e) => setConsentChecked(e.target.checked)}
-                disabled={submitting}
-                style={{ marginRight: 8 }}
-              />
-              {t('payment_consent.checkbox')}
-            </label>
-            {submitError && <p style={styles.submitError}>{submitError}</p>}
-            <div style={styles.modalActions}>
-              <button
-                style={styles.cancelBtn}
-                onClick={() => setConsentOpen(false)}
-                disabled={submitting}
-              >
-                {t('payment_consent.cancel')}
-              </button>
-              <button
-                style={{ ...styles.confirmBtn, opacity: (!consentChecked || submitting) ? 0.5 : 1 }}
-                onClick={handleConsentConfirm}
-                disabled={!consentChecked || submitting}
-              >
-                {submitting ? t('payment_consent.submitting') : t('payment_consent.confirm')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {renderDialogs()}
     </main>
   );
 }
