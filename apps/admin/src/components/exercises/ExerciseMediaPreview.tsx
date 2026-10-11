@@ -70,9 +70,12 @@ function cacheKey(exercise: ExerciseMediaRow): string {
 function ImagePreview({ exercise }: { exercise: ExerciseMediaRow }) {
   const t = useTranslations('exercises');
   const version = cacheKey(exercise);
-  const thumbnail = exercise.image_thumbnail_url ?? exercise.image_url;
+  // #1368 stage 4: the effective image (own, else the primary muscle's) is what is shown;
+  // the raw fields stay the exercise's own media for the upload controls.
+  const thumbnail = exercise.effective_image_thumbnail_url ?? exercise.effective_image_url
+    ?? exercise.image_thumbnail_url ?? exercise.image_url;
   const drawable = thumbnail != null && SAFE_IMAGE_SRC.test(thumbnail);
-  const master = exercise.image_url;
+  const master = exercise.effective_image_url ?? exercise.image_url;
   const masterOpenable = master != null && SAFE_IMAGE_SRC.test(master);
 
   return (

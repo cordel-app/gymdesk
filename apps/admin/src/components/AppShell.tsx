@@ -90,6 +90,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
              squeezed by a wide page. */
           flex-shrink: 0;
         }
+        /* #1381: the sidebar's one scroll container (the panel's <nav>) keeps
+           scrolling by wheel, trackpad and touch; only its scrollbar is hidden.
+           Scoped to this selector, never a global rule. */
+        .sidebar-panel > nav {
+          scrollbar-width: none;
+        }
+        .sidebar-panel > nav::-webkit-scrollbar {
+          display: none;
+        }
         @media (max-width: 768px) {
           .sidebar-wrapper {
             position: fixed;

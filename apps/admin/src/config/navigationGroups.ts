@@ -366,6 +366,11 @@ export const navigationGroups: NavGroup[] = [
         separatorAbove: true,
       },
       {
+        // #1368 stage 3: the global muscle catalogue and its images.
+        href: '/{{locale}}/cordel/muscles',
+        labelKey: 'nav.base_muscles',
+      },
+      {
         href: '/{{locale}}/cordel/workout-templates',
         labelKey: 'nav.base_workout_templates',
       },

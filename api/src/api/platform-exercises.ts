@@ -1,4 +1,5 @@
 import { parseExerciseCategoryInput } from '../domain/exerciseCategories';
+import { assertRequestedResultTypesMatch, effectiveCategory, syncExerciseResultTypes } from './exercise-result-types';
 import express, { Request, Router } from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
@@ -20,7 +21,9 @@ import {
   getRequestLocale,
 } from '../infra/locale';
 import { logger } from '../lib/logger';
-import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
+import { normalizeMuscleKey } from '../domain/muscles';
+import { primaryMuscleImagesSql, withEffectiveImage } from '../domain/effectiveExerciseImage';
+import { MUSCLE_SLUG_SQL, insertExerciseMuscle, listMuscles } from './exercise-muscles';
 import {
   exerciseFacetsQuery,
   exerciseListFilterSql,
@@ -93,14 +96,18 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
   SELECT e.*,
     ${localizedExerciseNameExpr('e', locale, 'display_name')},
     ${exerciseTranslationsExpr('e')},
-    (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
+    (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
      FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
+    ${primaryMuscleImagesSql('e')},
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))
      FROM exercise_allowed_result_types eart
      JOIN result_types rt ON rt.id = eart.result_type_id
      WHERE eart.exercise_id = e.id ORDER BY rt.id) AS allowed_result_types
   FROM exercises e
 `;
+
+/** A read row as the caller gets it: translations map plus the effective image (#1368 stage 4). */
+const shapeExercise = (row: any) => withEffectiveImage(withExerciseTranslations(row));
 
 const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
 
@@ -157,7 +164,7 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
     + ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
   try {
     const { rows } = await db.query(sql, where.params);
-    res.json(rows.map(withExerciseTranslations));
+    res.json(rows.map(shapeExercise));
   } catch (err) { next(err); }
 });
 
@@ -210,7 +217,7 @@ platformExercisesRouter.get('/lookups', requireSuperadmin, async (_req, res, nex
   try {
     const { rows } = await db.query('SELECT id, name, slug FROM result_types ORDER BY id ASC');
     res.json({
-      muscles: MUSCLE_KEYS.map((key) => ({ key })),
+      muscles: (await listMuscles()).map(({ key }) => ({ key })),
       result_types: rows,
       // #967 §3: the shared editor renders one Name input per translatable
       // locale, so the language list travels with the other two catalogues
@@ -233,7 +240,7 @@ platformExercisesRouter.get('/:id', requireSuperadmin, async (req, res, next) =>
       [req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -277,25 +284,16 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
       );
       if (muscles) {
         for (const m of muscles) {
-          await tx.query(
-            'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, ?, ?)',
-            [insertId, m.key, m.role],
-          );
+          await insertExerciseMuscle(tx, null, insertId, m.key, m.role);
         }
       }
-      if (allowedResultTypeIds) {
-        for (const rtId of allowedResultTypeIds) {
-          await tx.query(
-            'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
-            [insertId, rtId],
-          );
-        }
-      }
+      await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
+      await syncExerciseResultTypes(tx, insertId, categoryInput.value);
       if (translations) await replaceExerciseTranslations(tx, insertId, translations);
       return insertId;
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [insertId]);
-    const created = withExerciseTranslations(rows[0]);
+    const created = shapeExercise(rows[0]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: created });
     res.status(201).json(created);
   } catch (err) { next(err); }
@@ -382,25 +380,16 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
       if (muscles) {
         await tx.query('DELETE FROM exercise_muscles WHERE exercise_id = ? AND gym_id IS NULL', [id]);
         for (const m of muscles) {
-          await tx.query(
-            'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, ?, ?)',
-            [id, m.key, m.role],
-          );
+          await insertExerciseMuscle(tx, null, id, m.key, m.role);
         }
       }
-      if (allowedResultTypeIds) {
-        await tx.query('DELETE FROM exercise_allowed_result_types WHERE exercise_id = ?', [id]);
-        for (const rtId of allowedResultTypeIds) {
-          await tx.query(
-            'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
-            [id, rtId],
-          );
-        }
-      }
+      const category = await effectiveCategory(tx, id, categoryInput);
+      await assertRequestedResultTypesMatch(tx, category, allowedResultTypeIds);
+      if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category);
       if (translations) await replaceExerciseTranslations(tx, id, translations);
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [id]);
-    const updated = withExerciseTranslations(rows[0]);
+    const updated = shapeExercise(rows[0]);
     recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: updated });
     res.json(updated);
   } catch (err) { next(err); }
@@ -644,7 +633,7 @@ platformExercisesRouter.post('/:id/image', requireSuperadmin, async (req, res, n
       next: { image_url: imageUrl, image_thumbnail_url: thumbnailUrl },
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -683,7 +672,7 @@ platformExercisesRouter.delete('/:id/image', requireSuperadmin, async (req, res,
       next: { image_url: null, image_thumbnail_url: null },
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -816,7 +805,7 @@ platformExercisesRouter.post('/:id/video', requireSuperadmin, async (req, res, n
       next: { video_url: videoUrl, video_thumbnail_url: posterUrl },
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -855,7 +844,7 @@ platformExercisesRouter.delete('/:id/video', requireSuperadmin, async (req, res,
       next: { video_url: null, video_thumbnail_url: null },
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 

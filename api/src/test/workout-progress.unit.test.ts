@@ -28,3 +28,24 @@ describe('workoutProgress (#1370)', () => {
     expect(p.day.completed).toBe(0);
   });
 });
+
+describe('trainingProgress for a selected date (#1370 stage 2)', () => {
+  // Mondays (weekday 1) in Oct 2026: 5, 12, 19, 26
+  const w = [{ id: 1, weekday: 1, blockIds: [1] }];
+  const logs = [{ blockId: 1, date: '2026-10-05' }, { blockId: 1, date: '2026-10-12' }];
+  it('uses the periods containing the selected date, capped at today', () => {
+    const p = trainingProgress(w, logs, '2026-10-14', 1, '2026-10-05');
+    expect(p.day).toEqual({ completed: 1, total: 1, percent: 100 });
+    expect(p.week).toEqual({ completed: 1, total: 1, percent: 100 });
+    expect(p.month.total).toBe(2); // 5 and 12; 19 and 26 have not happened
+  });
+  it('a future selected day has no day total, and a future week no total', () => {
+    const p = trainingProgress(w, logs, '2026-10-14', 1, '2026-10-19');
+    expect(p.day).toEqual({ completed: 0, total: 0, percent: 0 });
+    expect(p.week.total).toBe(0);
+    expect(p.month.total).toBe(2);
+  });
+  it('a past month counts all of its days', () => {
+    expect(trainingProgress(w, logs, '2026-11-20', 1, '2026-10-14').month.total).toBe(4);
+  });
+});

@@ -511,11 +511,11 @@ describe('POST /exercises/:id/duplicate', () => {
     exerciseId = insertId;
 
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (?, ?, 'chest', 'principal')`,
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT ?, ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'chest'`,
       [gymA, exerciseId],
     );
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (?, ?, 'triceps', 'secondary')`,
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT ?, ?, m.slug, m.id, 'secondary' FROM muscles m WHERE m.slug = 'triceps'`,
       [gymA, exerciseId],
     );
   });
@@ -617,17 +617,17 @@ describe('GET /exercises/base', () => {
 
     activeBaseId = await createBaseExercise('Zz718 Barbell Bench Press');
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'chest', 'principal')`,
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'chest'`,
       [activeBaseId],
     );
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'triceps', 'secondary')`,
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'secondary' FROM muscles m WHERE m.slug = 'triceps'`,
       [activeBaseId],
     );
 
     otherBaseId = await createBaseExercise('Zz718 Lat Pulldown');
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'back', 'principal')`,
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'back'`,
       [otherBaseId],
     );
 
@@ -809,11 +809,11 @@ describe('POST /exercises/import', () => {
     inactiveBaseId = await createBaseExercise('Zz718i Withdrawn Exercise', 'inactive');
 
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'chest', 'principal')`,
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'principal' FROM muscles m WHERE m.slug = 'chest'`,
       [benchId],
     );
     await db.query(
-      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, 'triceps', 'secondary')`,
+      `INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role) SELECT NULL, ?, m.slug, m.id, 'secondary' FROM muscles m WHERE m.slug = 'triceps'`,
       [benchId],
     );
     const { rows: rts } = await db.query<{ id: number }>('SELECT id FROM result_types ORDER BY id LIMIT 1');

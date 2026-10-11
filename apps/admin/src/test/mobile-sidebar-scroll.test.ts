@@ -158,8 +158,13 @@ describe('mobile sidebar: the panel and its one scroll container (#883)', () => 
     expect(sidebarSrc).toContain("WebkitOverflowScrolling: 'touch'");
     // A swipe that reaches either end must not chain to the page behind.
     expect(sidebarSrc).toContain("overscrollBehavior: 'contain'");
-    // No scrollbar or control is required to reach the bottom items.
+    // No scrollbar or control is required to reach the bottom items. The
+    // scrollbar is hidden in the shell's CSS (#1381), not by overflow.
     expect(sidebarSrc).not.toContain('scrollbar-width');
+    expect(sidebarSrc).not.toContain("overflowY: 'hidden'");
+    const css = shellCss();
+    expect(cssRule(css, '.sidebar-panel > nav')).toContain('scrollbar-width: none');
+    expect(cssRule(css, '.sidebar-panel > nav::-webkit-scrollbar')).toContain('display: none');
   });
 
   it('has exactly one scroll container', () => {

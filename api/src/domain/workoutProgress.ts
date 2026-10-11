@@ -18,7 +18,9 @@ export function isFutureLoggedDate(loggedDate: string, now: Date, timeZone: stri
 export interface WorkoutDef { id: number; weekday: number | null; blockIds: number[] }
 export interface Completed { blockId: number; date: string }
 export interface ProgressCounts { completed: number; total: number; percent: number }
-export interface TrainingProgress { day: ProgressCounts; week: ProgressCounts; month: ProgressCounts }
+export interface TrainingProgress {
+  /** The gym's today, so a client never derives it from the device clock. */
+  today?: string; day: ProgressCounts; week: ProgressCounts; month: ProgressCounts }
 
 function counts(completed: number, total: number): ProgressCounts {
   return { completed, total, percent: total === 0 ? 0 : Math.round((completed / total) * 100) };
@@ -34,6 +36,7 @@ export function trainingProgress(
   logs: Completed[],
   today: string,
   firstDayOfWeek = 1,
+  selected: string = today,
 ): TrainingProgress {
   const done = new Set(logs.map((l) => `${l.blockId}|${String(l.date).slice(0, 10)}`));
   const isDone = (w: WorkoutDef, date: string) =>
@@ -50,11 +53,15 @@ export function trainingProgress(
     }
     return counts(c, t);
   };
-  const t = DateTime.fromISO(today, { zone: 'UTC' });
+  // #1370 stage 2: the periods are the ones containing the selected date, and
+  // none of them counts a day after today.
+  const t = DateTime.fromISO(selected, { zone: 'UTC' });
+  const cap = (d: string) => (d > today ? today : d);
   const back = (((t.weekday % 7) - firstDayOfWeek) + 7) % 7;
+  const weekStart = t.minus({ days: back });
   return {
-    day: range(today, today),
-    week: range(t.minus({ days: back }).toISODate()!, today),
-    month: range(t.startOf('month').toISODate()!, today),
+    day: selected > today ? counts(0, 0) : range(selected, selected),
+    week: range(weekStart.toISODate()!, cap(weekStart.plus({ days: 6 }).toISODate()!)),
+    month: range(t.startOf('month').toISODate()!, cap(t.endOf('month').toISODate()!)),
   };
 }

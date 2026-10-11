@@ -69,7 +69,7 @@ export const MEMBERS_APP_CARD_SHAPES = ['rounded', 'square', 'none'];
 export const MEMBERS_APP_CARD_BORDER_EDGES = ['all', 'none', 'top', 'bottom', 'left', 'right'];
 export const MEMBERS_APP_CARD_SHADOWS = ['none', 'soft', 'medium', 'strong'];
 
-export type CardEffectType = 'card-shape' | 'card-edges' | 'card-shadow' | 'card-glow' | 'card-style';
+export type CardEffectType = 'card-shape' | 'card-edges' | 'card-shadow' | 'card-glow' | 'card-style' | 'card-touch';
 
 export const MEMBERS_APP_CARD_OPTIONS: Record<CardEffectType, string[]> = {
   'card-shape': MEMBERS_APP_CARD_SHAPES,
@@ -77,6 +77,7 @@ export const MEMBERS_APP_CARD_OPTIONS: Record<CardEffectType, string[]> = {
   'card-shadow': MEMBERS_APP_CARD_SHADOWS,
   'card-glow': ['none', 'subtle', 'strong'],
   'card-style': ['clean', 'outlined', 'glass'],
+  'card-touch': ['none', 'press', 'ripple', 'highlight', 'lift'],
 };
 
 const CARD_SHAPE_CSS: Record<string, string> = { rounded: '12px', square: '4px', none: '0px' };
@@ -113,6 +114,19 @@ const CARD_GLOW_CSS: Record<string, string> = {
  * The card's whole `box-shadow`: the drop shadow and the glow in one list.
  * `none` is not valid inside a list, so each part is dropped when it is off.
  */
+/**
+ * #1321 stage 3 — what each Touch Effect looks like while the card is pressed,
+ * mirroring the stylesheet in apps/member/src/lib/cardTouch.ts (a test asserts
+ * the two agree). The editor's preview draws the pressed state from it.
+ */
+export const CARD_TOUCH_PRESSED: Record<string, { transform?: string; filter?: string; ripple?: boolean }> = {
+  none: {},
+  press: { transform: 'scale(0.97)' },
+  ripple: { ripple: true },
+  highlight: { filter: 'brightness(1.08)' },
+  lift: { transform: 'translateY(-2px)', filter: 'drop-shadow(0 6px 8px rgba(0,0,0,0.2))' },
+};
+
 export function cardBoxShadow(shadowCss: string, glow: string, glowColor: string): string {
   const parts: string[] = [];
   if (shadowCss && shadowCss !== 'none') parts.push(shadowCss);
@@ -353,6 +367,18 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     source: null,
     default: 'clean',
     cssVar: '--gd-members-card-style',
+  },
+  {
+    // #1321 stage 3 — Touch Effect. Inherits from nothing (default none) and is
+    // never supplied by a Visual Style: how a card feels when pressed is
+    // independent of how it looks. It applies to interactive cards only.
+    key: 'sectionCardsTouchEffect',
+    section: 'group_members_section_cards',
+    labelKey: 'label_members_card_touch',
+    type: 'card-touch',
+    source: null,
+    default: 'none',
+    cssVar: '--gd-members-card-touch',
   },
   // #1152 §3 — the text inside a Section Card. Colour and font family have an
   // honest Admin source (the primary text colour and the body font, which is
@@ -757,6 +783,7 @@ export function membersAppVarValue(tokens: ThemeTokens, setting: MembersAppSetti
       return cardEffectCssValue(setting.type, value) ?? cardEffectCssValue(setting.type, inherited) ?? '';
     case 'card-glow':
     case 'card-style':
+    case 'card-touch':
       return cardEffectCssValue(setting.type, value) ?? cardEffectCssValue(setting.type, inherited) ?? '';
     case 'length':
     default:

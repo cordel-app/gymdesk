@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useApp } from '@/context/AppContext';
 import { DEFAULT_TOKENS, applyTokens, ThemeTokens } from '@/lib/themeTokens';
 import { applyMembersAppTokens } from '@/lib/membersAppTokens';
+import { CARD_TOUCH_CSS } from '@/lib/cardTouch';
 
 /**
  * Writes theme CSS variables to <html> whenever the active gym's theme
@@ -24,5 +25,10 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     applyMembersAppTokens(tokens);
   }, [theme?.id, theme?.tokens]);
 
-  return <>{children}</>;
+  return (
+    <>
+      <style>{CARD_TOUCH_CSS}</style>
+      {children}
+    </>
+  );
 }

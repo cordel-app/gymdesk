@@ -93,7 +93,13 @@
     "log_date": "Fecha",
     "new_entry": "Nueva entrada",
     "add_log": "Añadir registro",
-    "new_chip": "Nuevo"
+    "new_chip": "Nuevo",
+    "progress_day": "Día",
+    "progress_week": "Semana",
+    "progress_month": "Mes",
+    "future_workout": "Disponible el día del entrenamiento.",
+    "today_marker": "Hoy",
+    "week_nav_hint": "Desliza para cambiar de semana"
   },
   "profile": {
     "title": "Mi perfil",

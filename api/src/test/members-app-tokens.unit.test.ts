@@ -190,6 +190,8 @@ describe('Section Card glow and visual style (#1321 stage 2)', () => {
   it('accepts a word from each closed set and a hex glow colour, and rejects anything else', () => {
     expect(validateMembersApp({ sectionCardsGlow: 'subtle', sectionCardsVisualStyle: 'glass', sectionCardsGlowColor: '#112233' })).toBeNull();
     expect(validateMembersApp({ sectionCardsGlow: 'blazing' })).toMatch(/must be one of/);
+    for (const w of ['none', 'press', 'ripple', 'highlight', 'lift']) expect(validateMembersApp({ sectionCardsTouchEffect: w })).toBeNull();
+    expect(validateMembersApp({ sectionCardsTouchEffect: 'bounce' })).toMatch(/must be one of/);
     expect(validateMembersApp({ sectionCardsVisualStyle: 'neon' })).toMatch(/must be one of/);
     expect(validateMembersApp({ sectionCardsGlowColor: 'red' })).toMatch(/hex/);
   });

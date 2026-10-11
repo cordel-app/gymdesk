@@ -1,9 +1,12 @@
-import { parseExerciseCategoryInput } from '../domain/exerciseCategories';
+import { parseExerciseCategoryInput, resultTypeSlugsForCategory } from '../domain/exerciseCategories';
+import { assertRequestedResultTypesMatch, effectiveCategory, syncExerciseResultTypes } from './exercise-result-types';
 import express, { Request, Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
-import { MUSCLE_KEYS, normalizeMuscleKey } from '../domain/muscles';
+import { normalizeMuscleKey } from '../domain/muscles';
+import { primaryMuscleImagesSql, withEffectiveImage } from '../domain/effectiveExerciseImage';
+import { MUSCLE_SLUG_SQL, insertExerciseMuscle, listMuscles } from './exercise-muscles';
 import { getReferences } from '../domain/references';
 import { handleDupEntry } from '../infra/db-helpers';
 import {
@@ -105,8 +108,10 @@ export const musclesRouter = Router();
 export const exercisesRouter = Router();
 
 /* ---- Muscles: read-only static catalog ---- */
-musclesRouter.get('/', (_req, res) => {
-  res.json(MUSCLE_KEYS.map((key) => ({ key })));
+musclesRouter.get('/', async (_req, res, next) => {
+  try {
+    res.json((await listMuscles()).map(({ key }) => ({ key })));
+  } catch (err) { next(err); }
 });
 
 /* ---- Exercises ---- */
@@ -143,8 +148,9 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.created_by_type END   AS created_by_type,
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE gm_m.name END           AS modified_by_name,
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.modified_by_type END  AS modified_by_type,
-    (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
+    (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
      FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
+    ${primaryMuscleImagesSql('e')},
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))
      FROM exercise_allowed_result_types eart
      JOIN result_types rt ON rt.id = eart.result_type_id
@@ -159,6 +165,9 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
  * request's own locale so a write's response, a duplicate's and an import's
  * carry the same `display_name` a list read would.
  */
+/** A read row as the caller gets it: translations map plus the effective image (#1368 stage 4). */
+const shapeExercise = (row: any) => withEffectiveImage(withExerciseTranslations(row));
+
 const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
 
 async function getCallerMembershipId(req: Request): Promise<number | null> {
@@ -188,23 +197,10 @@ function parseMuscles(input: unknown): { key: string; role: 'principal' | 'secon
   return parsed;
 }
 
-async function replaceAllowedResultTypes(tx: Tx, exerciseId: number | string, ids: number[]) {
-  await tx.query('DELETE FROM exercise_allowed_result_types WHERE exercise_id = ?', [exerciseId]);
-  for (const rtId of ids) {
-    await tx.query(
-      'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
-      [exerciseId, rtId],
-    );
-  }
-}
-
 async function replaceMuscles(tx: Tx, gymId: string, exerciseId: number | string, muscles: { key: string; role: string }[]) {
   await tx.query('DELETE FROM exercise_muscles WHERE exercise_id = ? AND gym_id = ?', [exerciseId, gymId]);
   for (const m of muscles) {
-    await tx.query(
-      'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (?, ?, ?, ?)',
-      [gymId, exerciseId, m.key, m.role],
-    );
+    await insertExerciseMuscle(tx, gymId, exerciseId, m.key, m.role);
   }
 }
 
@@ -258,7 +254,7 @@ exercisesRouter.get('/', async (req, res, next) => {
     + ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
   try {
     const { rows } = await db.query(sql, [gymId, ...where.params]);
-    res.json(rows.map(withExerciseTranslations));
+    res.json(rows.map(shapeExercise));
   } catch (err) { next(err); }
 });
 
@@ -381,7 +377,8 @@ exercisesRouter.get('/base', async (req, res, next) => {
     SELECT e.id, e.name, ${localizedExerciseNameExpr('e', locale, 'display_name')},
       e.slug, e.description, e.image_url, e.image_thumbnail_url,
       e.video_url, e.video_thumbnail_url,
-      (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', em.muscle, 'role', em.role))
+      ${primaryMuscleImagesSql('e')},
+      (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
        FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
       ${IMPORTED_COPY_ID} AS imported_exercise_id,
       ${MEDIA_REFRESHABLE} AS media_refreshable
@@ -391,7 +388,7 @@ exercisesRouter.get('/base', async (req, res, next) => {
   try {
     const { rows } = await db.query(sql, [gymId, gymId, ...where.params]);
     // MySQL answers the CASE with 0/1; the contract is a boolean.
-    res.json(rows.map((row: any) => ({ ...row, media_refreshable: Number(row.media_refreshable) === 1 })));
+    res.json(rows.map((row: any) => ({ ...withEffectiveImage(row), media_refreshable: Number(row.media_refreshable) === 1 })));
   } catch (err) { next(err); }
 });
 
@@ -431,7 +428,7 @@ exercisesRouter.get('/:id', async (req, res, next) => {
       [req.params.id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -481,12 +478,13 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
          sets_default ?? null, notes_default ?? null, status ?? 'active', callerMemberId ?? null],
       );
       if (muscles) await replaceMuscles(tx, gymId, insertId, muscles);
-      if (allowedResultTypeIds) await replaceAllowedResultTypes(tx, insertId, allowedResultTypeIds);
+      await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
+      await syncExerciseResultTypes(tx, insertId, categoryInput.value);
       if (translations) await replaceExerciseTranslations(tx, insertId, translations);
       return insertId;
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [insertId]);
-    const created = withExerciseTranslations(rows[0]);
+    const created = shapeExercise(rows[0]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: created });
     res.status(201).json(created);
   } catch (e: any) {
@@ -577,11 +575,13 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
       );
       if (rowCount === 0) throw Object.assign(new Error('Exercise not found'), { status: 404 });
       if (muscles) await replaceMuscles(tx, gymId, id, muscles);
-      if (allowedResultTypeIds) await replaceAllowedResultTypes(tx, id, allowedResultTypeIds);
+      const category = await effectiveCategory(tx, id, categoryInput);
+      await assertRequestedResultTypesMatch(tx, category, allowedResultTypeIds);
+      if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category);
       if (translations) await replaceExerciseTranslations(tx, id, translations);
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
-    const updated = withExerciseTranslations(rows[0]);
+    const updated = shapeExercise(rows[0]);
     recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: updated });
     res.json(updated);
   } catch (e: any) {
@@ -637,10 +637,7 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
       );
       const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
       for (const m of muscles) {
-        await tx.query(
-          'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (?, ?, ?, ?)',
-          [gymId, insertId, m.key, m.role],
-        );
+        await insertExerciseMuscle(tx, gymId, insertId, m.key, m.role);
       }
       const rts: { id: number }[] = Array.isArray(src.allowed_result_types) ? src.allowed_result_types : [];
       for (const rt of rts) {
@@ -658,7 +655,7 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
 
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
-    res.status(201).json(withExerciseTranslations(rows[0]));
+    res.status(201).json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -692,10 +689,7 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
       );
       const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
       for (const m of muscles) {
-        await tx.query(
-          'INSERT INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (?, ?, ?, ?)',
-          [gymId, insertId, m.key, m.role],
-        );
+        await insertExerciseMuscle(tx, gymId, insertId, m.key, m.role);
       }
       const rts: { id: number }[] = Array.isArray(src.allowed_result_types) ? src.allowed_result_types : [];
       for (const rt of rts) {
@@ -713,7 +707,7 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
 
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
-    res.status(201).json(withExerciseTranslations(rows[0]));
+    res.status(201).json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -834,17 +828,22 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
           `INSERT INTO exercises
             (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
              min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
-             status, created_by, cloned_from_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+             status, created_by, cloned_from_id, category)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
           // #719 §2: references only — the System objects stay where they are.
           [gymId, src.name, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
            src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
-           callerMemberId ?? null, id],
+           callerMemberId ?? null, id, src.category ?? null],
         );
         const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
         await replaceMuscles(tx, gymId, insertId, muscles);
+        // #1360: the copy's Recorded Metrics follow the category it carries; a
+        // Base Exercise with no supported category keeps its stored rows.
         const rts: { id: number }[] = Array.isArray(src.allowed_result_types) ? src.allowed_result_types : [];
-        await replaceAllowedResultTypes(tx, insertId, rts.map((rt) => rt.id));
+        if (resultTypeSlugsForCategory(src.category)) await syncExerciseResultTypes(tx, insertId, src.category);
+        else for (const rt of rts) {
+          await tx.query('INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)', [insertId, rt.id]);
+        }
         // #967 §4: the import preserves the Base Exercise's per-locale names, so
         // the gym's copy reads in the member's own language from the first day.
         // Only on the **create** arm: a re-import refreshes media (#719 §12) and
@@ -864,7 +863,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         `${selectForReq(req)} WHERE e.id IN (${importedMarks}) AND e.gym_id = ? ORDER BY e.name ASC`,
         [...insertedIds, gymId],
       );
-      imported = rows.map(withExerciseTranslations);
+      imported = rows.map(shapeExercise);
       for (const row of rows) {
         recordAudit(req, { action: 'create', entityType: 'exercise', entityId: row.id, next: row });
       }
@@ -1077,7 +1076,7 @@ async function loadExerciseForMedia(
 /** The exercise as every other route returns it, after its media changed. */
 async function respondWithExercise(req: Request, res: express.Response, gymId: string, id: number | string) {
   const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
-  res.json(withExerciseTranslations(rows[0]));
+  res.json(shapeExercise(rows[0]));
 }
 
 /**
