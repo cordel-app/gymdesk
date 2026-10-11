@@ -8,13 +8,11 @@
 │   │
 │   ├── muscles/
 │   │   └── images/
-│   │       ├── {muscle_name}.png                              — 2048 × 2048 px
-│   │       └── {muscle_name}-thumbnail.png                    — 512 × 512 px
+│   │       └── {muscle_name}.png                                           — 1080 × 1080 px
 │   │
 │   ├── exercises/
 │   │   └── images/
-│   │       ├── {exercise_id}-{exercise_name}.png                          — 2048 × 2048 px
-│   │       └── {exercise_id}-{exercise_name}-thumbnail.png                — 512 × 512 px
+│   │       └── {exercise_id}-{exercise_name}-thumbnail.png                — 1080 × 1080 px
 │   │
 │   └── themes/
 │       └── {theme_id}-{theme_name}/
@@ -47,8 +45,7 @@
         │       
         ├── exercises/
         │   ├── images/
-        │   │   ├── {exercise_id}-{exercise_name}.png                         — 2048 × 2048 px
-        │   │   └── {exercise_id}-{exercise_name}-thumbnail.png               — 512 × 512 px
+        │   │   └── {exercise_id}-{exercise_name}-thumbnail.png               — 1080 × 1080 px
         │   │
         │   └── videos/
         │       └── {exercise_id}-{exercise_name}.mp4                       — vídeo
