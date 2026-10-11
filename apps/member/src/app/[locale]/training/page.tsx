@@ -8,6 +8,7 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
+import { exerciseBackgroundStyle } from '@/lib/exerciseMedia';
 import { ProgressDonut } from '@/components/ProgressDonut';
 import {
   EMPTY_PROGRESS, TrainingProgress, deviceToday, isFutureDate, shiftWeek, swipeWeekDelta, weekDates, weekdayOf,
@@ -274,7 +275,7 @@ export default function TrainingPage() {
 
                 {(block.exercises ?? []).map((we) => (
                   <div key={we.id} style={styles.exerciseCard}>
-                    <div style={styles.exerciseHead}>
+                    <div style={{ ...styles.exerciseHead, ...exerciseBackgroundStyle(we) }}>
                       <div style={styles.exerciseTitleLine}>
                         <span style={styles.exerciseName}>{we.exercise_name}</span>
                         <span style={styles.exerciseMeta}>
