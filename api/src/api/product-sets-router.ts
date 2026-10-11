@@ -212,7 +212,7 @@ productSetsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), asyn
   const { rows: m } = await db.query<{ email: string | null }>('SELECT email FROM members WHERE id = ? AND gym_id = ?', [set.owner_member_id, gymId]);
   const checkout = await createProductSetCheckout({
     gymId, productSetId: Number(set.id), memberId: Number(set.owner_member_id),
-    memberEmail: m[0]?.email ?? '', startsAt, charge,
+    memberEmail: m[0]?.email ?? '', startsAt, charge, actor: actorOf(req).name,
   });
   recordAudit(req, { action: 'save_and_pay', entityType: 'product_set', entityId: set.id, next: { status: 'pending_payment' } });
   res.status(201).json({
@@ -269,10 +269,10 @@ productSetsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), as
     await tx.query(
       `INSERT INTO payment_requests
          (gym_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
-          source, attempt, method, initiated_by, created_at, completed_at)
+          source, attempt, method, created_by, created_at, completed_at)
        VALUES (?, ?, ?, 'EUR', ?, ?, 'completed', 'monei', 'manual', ?, 'cash', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
       [gymId, Number(set.owner_member_id), ev[0].amount, ct[0]?.id ?? null, ev[0].id,
-        Number(prev[0]?.n ?? 0) + 1, getTenantContext(req).userId ?? null]);
+        Number(prev[0]?.n ?? 0) + 1, actorOf(req).name]);
     const activated = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor: actorOf(req).name });
     return { kind: activated.kind, billingEventId: Number(ev[0].id) };
   });

@@ -11,6 +11,8 @@ import { db, Tx } from '../infra/db';
  */
 
 /** `(SELECT slug …)` of a link — replaces every read of `em.muscle`. */
+import { SYSTEM_ACTOR } from '../domain/auditActor';
+
 export const MUSCLE_SLUG_SQL = '(SELECT m.slug FROM muscles m WHERE m.id = em.muscle_id)';
 
 const humanize = (slug: string) =>
@@ -28,7 +30,7 @@ export async function insertExerciseMuscle(
   role: string,
   opts: { ignoreDuplicate?: boolean } = {},
 ): Promise<void> {
-  await tx.query('INSERT IGNORE INTO muscles (slug, name) VALUES (?, ?)', [slug, humanize(slug)]);
+  await tx.query('INSERT IGNORE INTO muscles (slug, name, created_by) VALUES (?, ?, ?)', [slug, humanize(slug), SYSTEM_ACTOR]);
   await tx.query(
     `INSERT ${opts.ignoreDuplicate ? 'IGNORE ' : ''}INTO exercise_muscles (gym_id, exercise_id, muscle, muscle_id, role)
      SELECT ?, ?, m.slug, m.id, ? FROM muscles m WHERE m.slug = ?`,

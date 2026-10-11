@@ -1,4 +1,5 @@
 import { Tx } from '../infra/db';
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
 import {
   activateWithEvents, allocateItemSchedules, ensureSchedule, materialiseScheduledEvents,
@@ -118,7 +119,7 @@ async function copyApplications(tx: Tx, gymId: string, from: { productSetId: num
  * any money moves (#1288's rule, one table over): what it owes on its start
  * date, with its lines. Nothing is written for a first cycle that owes nothing.
  */
-async function writePendingInitialEvent(tx: Tx, gymId: string, setId: number): Promise<void> {
+async function writePendingInitialEvent(tx: Tx, gymId: string, setId: number, actor: string | null): Promise<void> {
   const { rows } = await tx.query<any>(
     'SELECT owner_member_id, starts_at FROM product_sets WHERE id = ? AND gym_id = ?', [setId, gymId]);
   if (!rows[0]) return;
@@ -127,7 +128,7 @@ async function writePendingInitialEvent(tx: Tx, gymId: string, setId: number): P
   if (charge && charge.amount > 0) {
     const { rows: ct } = await tx.query<{ id: number }>("SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1");
     await ensureInitialEvent(tx, {
-      gymId, productSetId: setId, memberId: Number(rows[0].owner_member_id), startsAt, charge, chargeTypeId: ct[0]?.id ?? null,
+      gymId, productSetId: setId, memberId: Number(rows[0].owner_member_id), startsAt, charge, chargeTypeId: ct[0]?.id ?? null, actor,
     });
   }
 }
@@ -169,7 +170,7 @@ export async function importAssignmentAsProductSet(
       if (moved.kind !== 'ok') {
         throw Object.assign(new Error(`ProductSet ${set.id} could not be submitted: ${moved.kind}`), { status: moved.kind === 'expired' ? 410 : 409 });
       }
-      await writePendingInitialEvent(tx, gymId, Number(set.id));
+      await writePendingInitialEvent(tx, gymId, Number(set.id), opts.actor === undefined ? SYSTEM_ACTOR : opts.actor);
       return Number(set.id);
     }
     if (!opts.pending && (set.status === 'pending_payment' || set.status === 'draft')) {

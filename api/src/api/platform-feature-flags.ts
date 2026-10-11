@@ -27,8 +27,8 @@ platformFeatureFlagsRouter.get(
   requireSuperadmin,
   async (_req: Request, res: Response, next: NextFunction) => {
     try {
-      const { rows } = await db.query<{ feature_key: string; enabled: number; updated_at: string; updated_by_name: string | null }>(
-        'SELECT feature_key, enabled, updated_at, updated_by_name FROM feature_flags ORDER BY feature_key',
+      const { rows } = await db.query<{ feature_key: string; enabled: number; modified_at: string; modified_by: string | null }>(
+        'SELECT feature_key, enabled, modified_at, modified_by FROM feature_flags ORDER BY feature_key',
       );
       res.json(rows.map(r => ({ ...r, enabled: r.enabled === 1 })));
     } catch (err) { next(err); }
@@ -110,7 +110,7 @@ platformFeatureFlagsRouter.put(
       const actorName = req.superadminName ?? null;
 
       await db.query(
-        'UPDATE feature_flags SET enabled = ?, updated_at = UTC_TIMESTAMP(), updated_by_name = ? WHERE feature_key = ?',
+        'UPDATE feature_flags SET enabled = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE feature_key = ?',
         [enabled ? 1 : 0, actorName, featureKey],
       );
 

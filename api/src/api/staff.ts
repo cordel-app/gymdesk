@@ -316,9 +316,9 @@ staffRouter.post('/', requireRole('admin'), async (req, res, next) => {
       );
       for (const centerId of centers.ids) {
         await tx.query(
-          `INSERT INTO staff_centers (gym_id, staff_id, center_id, is_default, assigned_at, assigned_by_membership_id)
+          `INSERT INTO staff_centers (gym_id, staff_id, center_id, is_default, assigned_at, created_by)
            VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
-          [gymId, insertId, centerId, centerId === centers.defaultId, gymMembershipId],
+          [gymId, insertId, centerId, centerId === centers.defaultId, actor],
         );
       }
       return insertId;
@@ -562,9 +562,9 @@ staffRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) 
       );
       for (const sc of srcCenters) {
         await tx.query(
-          `INSERT INTO staff_centers (gym_id, staff_id, center_id, is_default, assigned_at, assigned_by_membership_id)
+          `INSERT INTO staff_centers (gym_id, staff_id, center_id, is_default, assigned_at, created_by)
            VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
-          [gymId, insertId, sc.center_id, sc.is_default, gymMembershipId],
+          [gymId, insertId, sc.center_id, sc.is_default, actor],
         );
       }
       return insertId;

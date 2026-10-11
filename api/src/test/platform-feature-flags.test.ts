@@ -133,7 +133,7 @@ describe('platform feature flags CRUD', () => {
     expect(flag).toBeDefined();
     expect(typeof flag.feature_key).toBe('string');
     expect(typeof flag.enabled).toBe('boolean');
-    expect(flag).toHaveProperty('updated_at');
+    expect(flag).toHaveProperty('modified_at');
   });
 
   it('disables a flag and re-enables it', async () => {

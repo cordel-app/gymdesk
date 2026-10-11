@@ -287,7 +287,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       );
       checkout = await createProductSetCheckout({
         gymId, productSetId: setId, memberId, memberEmail: emailRows[0]?.email ?? '',
-        startsAt, charge: charge as NonNullable<typeof charge>,
+        startsAt, charge: charge as NonNullable<typeof charge>, actor: actor.name,
       });
     }
 

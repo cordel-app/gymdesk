@@ -25,7 +25,7 @@ interface BillingEvent {
   amount: string | null;
   notes: string | null;
   source: string;
-  actor_user_id: string | null;
+  created_by: string | null;
   created_at: string;
 }
 

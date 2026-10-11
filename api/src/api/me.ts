@@ -2119,6 +2119,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
         const checkout = await createProductSetCheckout({
           gymId, productSetId: Number(pendingSets[0].id), memberId,
           memberEmail: pendingSets[0].member_email ?? '', startsAt, charge,
+          actor: resolveRequestActor(ctx),
         });
         return res.status(201).json({ id: checkout.paymentRequestId, checkoutUrl: checkout.checkoutUrl });
       }
@@ -2178,9 +2179,9 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       `INSERT INTO payment_requests
          (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
-          consent_given_at, source)
-       VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer')`,
-      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires],
+          consent_given_at, source, created_by)
+       VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer', ?)`,
+      [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
     );
 
     const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;
@@ -2258,7 +2259,7 @@ meRouter.post('/payment-method/replace-requests', requireRole('member'), memberC
       memberId,
       memberEmail: memberRows[0]?.email ?? '',
       userMembershipId,
-      initiatedBy: null,
+      actor: resolveRequestActor(ctx),
       stampConsent: true,
     });
 

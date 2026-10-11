@@ -347,13 +347,13 @@ export async function startProductPurchase(
         `INSERT INTO payment_requests
            (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
             status, provider, provider_order, provider_ref, page_token, page_token_expires,
-            consent_given_at, source)
-         VALUES (?, NULL, ?, ?, ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
+            consent_given_at, source, created_by)
+         VALUES (?, NULL, ?, ?, ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
         [
           input.gymId, input.memberId, snapshot.amount.toFixed(2), snapshot.currency,
           row.charge_type_id ?? null,
           orderId, result.providerOrderId, pageToken, pageTokenExpires,
-          PRODUCT_PURCHASE_SOURCE,
+          PRODUCT_PURCHASE_SOURCE, input.memberName,
         ],
       );
 
@@ -365,9 +365,9 @@ export async function startProductPurchase(
       // outside the version chain — so both keys stay NULL.
       const { insertId: billingEventId } = await tx.query(
         `INSERT INTO billing_events
-           (gym_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
-         VALUES (?, ?, 'product_purchase', ?, ?, 'provider', NULL)`,
-        [input.gymId, input.memberId, snapshot.amount.toFixed(2), row.charge_type_id ?? null],
+           (gym_id, member_id, event_type, amount, charge_type_id, source, created_by)
+         VALUES (?, ?, 'product_purchase', ?, ?, 'provider', ?)`,
+        [input.gymId, input.memberId, snapshot.amount.toFixed(2), row.charge_type_id ?? null, input.memberName],
       );
       await tx.query(
         `UPDATE payment_requests SET billing_event_id = ? WHERE id = ? AND gym_id = ?`,

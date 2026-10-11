@@ -103,7 +103,7 @@ describe('Billing Events', () => {
       expect(res.body.event_type).toBe('payment_recorded');
       expect(res.body.member_id).toBe(memberId);
       expect(parseFloat(res.body.amount)).toBe(50.0);
-      expect(res.body.actor_user_id).toBe(TEST_USER_ID);
+      expect(res.body.created_by).toBe('Test User');
     });
 
     it('creates an adjustment event', async () => {

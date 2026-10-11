@@ -452,10 +452,10 @@ async function currentMembershipFeeInTx(tx: Tx, gymId: string, userMembershipId:
  * difference to record.
  */
 async function recordFeeAdjustment(tx: Tx, params: {
-  gymId: string; umId: number; memberId: number; source: string; userId: string;
+  gymId: string; umId: number; memberId: number; source: string; actor: string | null;
   before: number | null; after: number; note: string;
 }): Promise<void> {
-  const { gymId, umId, memberId, source, userId, before, after, note } = params;
+  const { gymId, umId, memberId, source, actor, before, after, note } = params;
   if (before === null || Math.abs(after - before) <= 0.001) return;
   // #1325 PR 3b: an adjustment belongs to the assignment's ProductSet — the one
   // linked to it, else the member's Active one. A Draft assignment of a member
@@ -466,9 +466,9 @@ async function recordFeeAdjustment(tx: Tx, params: {
   const chargeTypeId = ctRows[0]?.id ?? null;
   await tx.query(
     `INSERT INTO billing_events
-     (gym_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+     (gym_id, product_set_id, member_id, event_type, charge_type_id, source, created_by, amount, notes)
      VALUES (?, ?, ?, 'adjustment', ?, ?, ?, ?, ?)`,
-    [gymId, setId, memberId, chargeTypeId, source, userId, after - before, note],
+    [gymId, setId, memberId, chargeTypeId, source, actor, after - before, note],
   );
 }
 

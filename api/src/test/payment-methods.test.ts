@@ -453,13 +453,13 @@ describe('POST /payment-methods/replace-requests', () => {
       amount: string;
       charge_type_id: number | null;
       consent_given_at: Date | null;
-      initiated_by: string | null;
+      created_by: string | null;
       page_token: string | null;
       status: string;
       provider_ref: string | null;
     }>(
       `SELECT gym_id, member_id, user_membership_id, source, amount, charge_type_id,
-              consent_given_at, initiated_by, page_token, status, provider_ref
+              consent_given_at, created_by, page_token, status, provider_ref
          FROM payment_requests WHERE id = ?`,
       [res.body.id],
     );
@@ -475,7 +475,7 @@ describe('POST /payment-methods/replace-requests', () => {
     expect(row.charge_type_id).toBeNull();
     // The staff sending the link does not consent on the member's behalf.
     expect(row.consent_given_at).toBeNull();
-    expect(row.initiated_by).toBe(TEST_USER_ID);
+    expect(row.created_by).toBe('Test User');
     expect(row.page_token).toBeTruthy();
     expect(res.body.checkoutUrl).toContain(row.page_token!);
     expect(row.status).toBe('pending');

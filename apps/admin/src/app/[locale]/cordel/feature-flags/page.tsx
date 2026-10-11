@@ -16,8 +16,8 @@ import { alertTextColor } from '@/components/formChrome';
 interface FeatureFlag {
   feature_key: string;
   enabled: boolean;
-  updated_at: string | null;
-  updated_by_name: string | null;
+  modified_at: string | null;
+  modified_by: string | null;
 }
 
 type RoleAccessLevel = '-' | 'R' | 'RW';
@@ -252,7 +252,7 @@ export default function FeatureFlagsPage() {
             width: MODIFIED_BY_COL_WIDTH, flexShrink: 0, fontSize: 12,
             color: 'var(--gd-text-muted, #6b7280)',
           }}>
-            {flag?.updated_by_name || '—'}
+            {flag?.modified_by || '—'}
           </span>
         </div>
         {node.children.map(child => renderNode(child, depth + 1))}

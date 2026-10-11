@@ -1158,11 +1158,11 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
         await tx.query(
           `INSERT INTO payment_requests
              (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
-              source, attempt, method, initiated_by, notes, created_at, completed_at)
+              source, attempt, method, created_by, notes, created_at, completed_at)
            VALUES (?, ?, (SELECT member_id FROM user_memberships WHERE id = ?), ?, 'EUR', ?, ?, 'completed', 'monei',
                    'manual', ?, 'cash', ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
           [gymId, req.params.id, req.params.id, paid.toFixed(2), ctRows[0].id, open.eventId,
-            Number(prev[0]?.n ?? 0) + 1, userId,
+            Number(prev[0]?.n ?? 0) + 1, resolveRequestActor(getTenantContext(req)),
             typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null]);
       }
       const committed = await commitAssignment(tx, {
@@ -1178,9 +1178,9 @@ userMembershipsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS')
         }
         await tx.query(
           `INSERT INTO billing_events
-             (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id, notes)
+             (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source, created_by, notes)
            VALUES (?, ?, ?, 'payment_recorded', ?, ?, ?, ?, ?)`,
-          [gymId, setId, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), userId,
+          [gymId, setId, committed.memberId, paid.toFixed(2), ctRows[0].id, sourceForRole(role), resolveRequestActor(getTenantContext(req)),
            typeof notes === 'string' && notes.trim() ? notes.trim().slice(0, 500) : null],
         );
         await linkInitialPaymentToSet(tx, gymId, Number(req.params.id));

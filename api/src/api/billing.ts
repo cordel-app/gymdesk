@@ -1,3 +1,4 @@
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { abandonedRequestHours } from '../domain/paymentRequestExpiry';
@@ -198,10 +199,12 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
   try {
     const { rowCount: unopened } = await db.query(
       `UPDATE payment_requests
-       SET status = 'expired', page_token = NULL
+       SET status = 'expired', page_token = NULL,
+           modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE status = 'pending'
          AND page_token IS NOT NULL
          AND page_token_expires < UTC_TIMESTAMP()`,
+      [SYSTEM_ACTOR],
     );
 
     // The grace period is added in SQL so the comparison stays in the database's
@@ -209,11 +212,11 @@ billingRouter.post('/cleanup', async (req: Request, res: Response) => {
     const hours = abandonedRequestHours();
     const { rowCount: abandoned } = await db.query(
       `UPDATE payment_requests
-       SET status = 'expired'
+       SET status = 'expired', modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE status = 'pending'
          AND page_token IS NULL
          AND page_token_expires < DATE_SUB(UTC_TIMESTAMP(), INTERVAL ? HOUR)`,
-      [hours],
+      [SYSTEM_ACTOR, hours],
     );
 
     // #1121 stage 2: a product purchase whose payment is over has to stop being

@@ -103,7 +103,7 @@ userClassPackagesRouter.get('/:id/transactions', async (req, res) => {
  */
 userClassPackagesRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
   const ctx = getTenantContext(req);
-  const { gymId, userId, role } = ctx;
+  const { gymId, role } = ctx;
   const memberId = parseInt((req.params as any).memberId, 10);
   const { class_package_id } = req.body;
   if (!class_package_id) return res.status(400).json({ error: 'class_package_id is required' });
@@ -134,9 +134,9 @@ userClassPackagesRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, re
       if (ctRows.length > 0) {
         await tx.query(
           `INSERT INTO billing_events
-           (gym_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+           (gym_id, member_id, event_type, charge_type_id, source, created_by, amount, notes)
            VALUES (?, ?, 'product_purchase', ?, ?, ?, ?, 'Class package purchase')`,
-          [gymId, memberId, ctRows[0].id, role === 'admin' ? 'admin' : 'employee', userId, pkgRows[0].price],
+          [gymId, memberId, ctRows[0].id, role === 'admin' ? 'admin' : 'employee', resolveRequestActor(ctx), pkgRows[0].price],
         );
       }
       return insertId;

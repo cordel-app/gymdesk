@@ -136,7 +136,8 @@ export function auditActorField(stored: string | null | undefined): string | nul
  * `deleted_by`.
  *
  * Stage 2 (#1182): the primary business entities. Stage 3: assignments and
- * lifecycle tables.
+ * lifecycle tables. Stage 4: the remainder (see `AUDIT_INVENTORY` for the
+ * classification of every table).
  */
 export const AUDITED_TABLES: readonly string[] = [
   'activity_types',
@@ -181,4 +182,14 @@ export const AUDITED_TABLES: readonly string[] = [
   'user_class_packages',
   'user_membership_promotions',
   'user_memberships',
+  // Stage 4 (migration 268)
+  'billing_events',
+  'feature_flags',
+  'muscles',
+  'payment_requests',
+  'plan_allowance_renewals',
+  'professional_service_adjustments',
+  'professional_service_consumptions',
+  'staff_centers',
+  'trainer_availability',
 ];

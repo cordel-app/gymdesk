@@ -35,8 +35,8 @@ export interface CreateCardUpdateInput {
    * to any one assignment — `resolveCardUpdateMembership()` picks it.
    */
   userMembershipId: number;
-  /** Clerk user id of the staff member who raised it; null when the member did. */
-  initiatedBy: string | null;
+  /** #1182: plain-text actor snapshot (`resolveRequestActor()`) of whoever raised it — staff or the member. */
+  actor: string | null;
   /**
    * Stamped when the member themselves went through the consent checkbox on the
    * hosted page's flow, exactly as a customer-initiated payment does. A staff
@@ -115,25 +115,25 @@ export async function createCardUpdateRequest(
     const { insertId: billingEventId } = await tx.query(
       `INSERT INTO billing_events
          (gym_id, product_set_id, member_id, event_type, amount,
-          charge_type_id, source, actor_user_id)
+          charge_type_id, source, created_by)
        VALUES (?, ?, ?, 'card_verification', 0, NULL, 'provider', ?)`,
       [
         input.gymId, setRows[0]?.id ?? null, input.memberId,
-        input.initiatedBy,
+        input.actor,
       ],
     );
     const { insertId: requestId } = await tx.query(
       `INSERT INTO payment_requests
          (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
           status, provider, provider_order, provider_ref, page_token, page_token_expires,
-          consent_given_at, initiated_by, source, billing_event_id)
+          consent_given_at, created_by, source, billing_event_id)
        VALUES (?, ?, ?, '0.00', 'EUR', NULL, 'pending', 'monei', ?, ?, ?, ?, ${
          input.stampConsent ? 'UTC_TIMESTAMP()' : 'NULL'
        }, ?, '${CARD_UPDATE_SOURCE}', ?)`,
       [
         input.gymId, input.userMembershipId, input.memberId,
         orderId, result.providerOrderId, pageToken, pageTokenExpires,
-        input.initiatedBy, billingEventId,
+        input.actor, billingEventId,
       ],
     );
     return requestId;

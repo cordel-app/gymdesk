@@ -178,14 +178,15 @@ export async function executeDueScheduledEvents(opts: {
         const { insertId } = await tx.query(
           `INSERT INTO payment_requests
              (gym_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
-              provider_order, source, attempt, method, created_at, completed_at)
-           VALUES (?, ?, 0, 'EUR', ?, ?, 'completed', 'monei', ?, 'billing_run', ?, 'waive',
+              provider_order, source, attempt, method, created_by, created_at, completed_at)
+           VALUES (?, ?, 0, 'EUR', ?, ?, 'completed', 'monei', ?, 'billing_run', ?, 'waive', ?,
                    UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
-          [event.gym_id, event.member_id, feeTypeId, event.id, orderId, nextAttempt],
+          [event.gym_id, event.member_id, feeTypeId, event.id, orderId, nextAttempt, SYSTEM_ACTOR],
         );
         attemptId = insertId;
         await tx.query(
-          `UPDATE billing_events SET is_scheduled = 0, event_type = 'waived_billing' WHERE id = ?`, [event.id]);
+          `UPDATE billing_events SET is_scheduled = 0, event_type = 'waived_billing',
+                modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`, [SYSTEM_ACTOR, event.id]);
         return 'waived';
       }
 
@@ -194,14 +195,16 @@ export async function executeDueScheduledEvents(opts: {
       const { insertId } = await tx.query(
         `INSERT INTO payment_requests
            (gym_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
-            provider_order, source, attempt, method, created_at)
-         VALUES (?, ?, ?, 'EUR', ?, ?, 'pending', ?, ?, 'billing_run', ?, 'provider', UTC_TIMESTAMP())`,
-        [event.gym_id, event.member_id, amount, feeTypeId, event.id, event.provider ?? 'monei', orderId, nextAttempt],
+            provider_order, source, attempt, method, created_by, created_at)
+         VALUES (?, ?, ?, 'EUR', ?, ?, 'pending', ?, ?, 'billing_run', ?, 'provider', ?, UTC_TIMESTAMP())`,
+        [event.gym_id, event.member_id, amount, feeTypeId, event.id, event.provider ?? 'monei', orderId, nextAttempt, SYSTEM_ACTOR],
       );
       attemptId = insertId;
       // The event leaves "scheduled" the moment an attempt exists; its status is
       // now its latest attempt's. The type is settled below.
-      await tx.query('UPDATE billing_events SET is_scheduled = 0 WHERE id = ?', [event.id]);
+      await tx.query(
+        'UPDATE billing_events SET is_scheduled = 0, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+        [SYSTEM_ACTOR, event.id]);
       return 'go';
     });
 
@@ -228,15 +231,18 @@ export async function executeDueScheduledEvents(opts: {
         await tx.query(
           `UPDATE payment_requests
               SET status = ?, provider_ref = ?, provider_status = ?, failure_code = ?, failure_message = ?,
-                  completed_at = ${internal === 'completed' ? 'UTC_TIMESTAMP()' : 'NULL'}
+                  completed_at = ${internal === 'completed' ? 'UTC_TIMESTAMP()' : 'NULL'},
+                  modified_at = UTC_TIMESTAMP(), modified_by = ?
             WHERE id = ?`,
           [internal, result.providerRef ?? null, rawStatus, result.errorCode ?? null,
-            result.errorMessage?.slice(0, 500) ?? null, attemptId],
+            result.errorMessage?.slice(0, 500) ?? null, SYSTEM_ACTOR, attemptId],
         );
         if (internal === 'completed') {
-          await tx.query(`UPDATE billing_events SET event_type = 'recurring_payment' WHERE id = ?`, [event.id]);
+          await tx.query(`UPDATE billing_events SET event_type = 'recurring_payment',
+              modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`, [SYSTEM_ACTOR, event.id]);
         } else if (internal === 'failed') {
-          await tx.query(`UPDATE billing_events SET event_type = 'failed_billing' WHERE id = ?`, [event.id]);
+          await tx.query(`UPDATE billing_events SET event_type = 'failed_billing',
+              modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`, [SYSTEM_ACTOR, event.id]);
           if (await pauseAfterFailedDays(tx, event)) summary.paused += 1;
         }
       });
@@ -251,7 +257,7 @@ export async function executeDueScheduledEvents(opts: {
     if (outcome === 'succeeded') {
       summary.succeeded += 1;
       try {
-        const issued = await db.transaction((tx) => issueReceiptNumber(tx, event.gym_id, event.id));
+        const issued = await db.transaction((tx) => issueReceiptNumber(tx, event.gym_id, event.id, SYSTEM_ACTOR));
         summary.receiptsIssued += issued.allocated ? 1 : 0;
       } catch (receiptErr) {
         log?.error({ eventId: event.id, err: (receiptErr as Error).message },
