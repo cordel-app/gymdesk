@@ -6,7 +6,7 @@ The record of how each ticket landed is `docs/changelog.md` — one entry per sh
 
 ## Status (2026-10-09)
 
-Derived from the GitHub issue state on that date: **1,303 issues closed, 18 open** (5 of those 18 are work already merged whose issue stays open for a later stage or a deployment step — they are named under *Open work*).
+Derived from the GitHub issue state on that date: **1,304 issues closed, 17 open** (4 of those 17 are work already merged whose issue stays open for a later stage or a deployment step — they are named under *Open work*).
 
 | Area | State | Shipped | Open |
 |---|---|---|---|
@@ -45,7 +45,6 @@ Every open issue, with what has merged and what is left. An issue appears once, 
 - [#1229](https://github.com/cordel-app/gymdesk/issues/1229) Personal Goals: absolute vs relative targets. PR #1280 open (Maintenance relative, negative relative targets allowed, baseline fixed).
 
 **Platform**
-- [#1182](https://github.com/cordel-app/gymdesk/issues/1182) Standard audit metadata on every business entity. Stage 1 merged (#1203, the plain-text actor snapshot and its helpers). Stage 2 merged in one PR (migrations 264–265, 26 primary entities converted to the plain-text snapshot, frozen `*_by_membership_id` columns). Left: stage 3 (assignments and lifecycle tables: `user_memberships` and children, `promotions`, `training_plans`, `calendar_event_bookings`, `member_products`, `gym_professional_services`) and stage 4 (the remainder and the inventory matrix in `docs/architecture.md`).
 - [#1246](https://github.com/cordel-app/gymdesk/issues/1246) Gym Time & Localization settings. Stages 1 (#1271) and 2 (#1276, the Calendar) merged; stage 3's first pass (#1312, audit timestamps on three screens) merged. Left: date-only values, locale month names and the Members App.
 - [#1323](https://github.com/cordel-app/gymdesk/issues/1323) `docs/rules.md`: the business rules that today live only in `CLAUDE.md`, one plain entry per rule with its ticket and the module that enforces it. Opened 2026-10-09 as the second half of the status review's item 13 (#1322 was the first); the file is written (188 entries, 16 sections); PR #1324 open.
 - [#1081](https://github.com/cordel-app/gymdesk/issues/1081) Payment return pages follow the member's locale. Repository half merged (#1139) with a test gate; the acceptance check needs the deployed `PAYMENT_OK_URL`/`PAYMENT_KO_URL` to be set locale-less.
@@ -124,4 +123,4 @@ Everything since (September–October 2026: the Assigned Plan snapshot, Draft/Pe
 - **Billing lifecycle**: the owner's 2026-10-09 decision on #1288 (Save & Pay creates only the initial Billing Event; the webhook activates in one idempotent commit) is the one rule #1288's remaining stages and #1304 both implement. #1304 cannot start until that shared plan is confirmed; #1240's last question (Effective Price) and #1196 (End Date) sit behind it.
 - **Members App growth**: #1224 (training and progress tabs) needs its plan approved and carries a migration; #1231 (the admin Progress tab) reads the same exercise logs, so the two should land in that order.
 - **Mobile release**: #1075 and #1077 are blocked on accounts rather than code — the Apple Developer account, production Clerk/Google/Firebase credentials and the store listings. Nothing in the repository unblocks them.
-- **Independent**: #1227, #1229, #1191 (PRs open), #1182 stages 3–4, #1246 stage 3 and #1121's later stages have no dependency on the above.
+- **Independent**: #1227, #1229, #1191 (PRs open), #1246 stage 3 and #1121's later stages have no dependency on the above.

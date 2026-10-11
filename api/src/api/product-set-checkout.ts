@@ -90,6 +90,8 @@ async function writeLines(tx: Tx, gymId: string, eventId: number, lines: Billing
  */
 export async function ensureInitialEvent(tx: Tx, input: {
   gymId: string; productSetId: number; memberId: number; startsAt: string; charge: InitialCharge; chargeTypeId: number | null;
+  /** #1182: the plain-text actor snapshot written as `created_by`. */
+  actor: string | null;
 }): Promise<number> {
   const { rows: existing } = await tx.query<{ id: number }>(
     `SELECT be.id FROM billing_events be
@@ -111,10 +113,10 @@ export async function ensureInitialEvent(tx: Tx, input: {
   const { insertId } = await tx.query(
     `INSERT INTO billing_events
        (gym_id, member_id, event_type, source, amount, charge_type_id, product_set_id, schedule_id,
-        period_start, billing_date, is_scheduled)
-     VALUES (?, ?, 'payment_recorded', 'customer', ?, ?, ?, ?, ?, ?, 0)`,
+        period_start, billing_date, is_scheduled, created_by)
+     VALUES (?, ?, 'payment_recorded', 'customer', ?, ?, ?, ?, ?, ?, 0, ?)`,
     [input.gymId, input.memberId, input.charge.amount.toFixed(2), input.chargeTypeId, input.productSetId,
-      scheduleId, input.startsAt, input.startsAt],
+      scheduleId, input.startsAt, input.startsAt, input.actor],
   );
   await writeLines(tx, input.gymId, insertId, input.charge.lines);
   return insertId;
@@ -128,6 +130,8 @@ export async function ensureInitialEvent(tx: Tx, input: {
  */
 export async function createProductSetCheckout(input: {
   gymId: string; productSetId: number; memberId: number; memberEmail: string; startsAt: string; charge: InitialCharge;
+  /** #1182: who caused the checkout (staff request actor, or the member). */
+  actor: string | null;
 }): Promise<{ paymentRequestId: number; billingEventId: number; checkoutUrl: string }> {
   const { rows: ct } = await db.query<{ id: number }>("SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1");
   const chargeTypeId = ct[0]?.id ?? null;
@@ -149,17 +153,17 @@ export async function createProductSetCheckout(input: {
   const out = await db.transaction(async (tx) => {
     const billingEventId = await ensureInitialEvent(tx, {
       gymId: input.gymId, productSetId: input.productSetId, memberId: input.memberId,
-      startsAt: input.startsAt, charge: input.charge, chargeTypeId,
+      startsAt: input.startsAt, charge: input.charge, chargeTypeId, actor: input.actor,
     });
     const { rows: prev } = await tx.query<{ n: number }>(
       'SELECT COALESCE(MAX(attempt), 0) AS n FROM payment_requests WHERE billing_event_id = ?', [billingEventId]);
     const { insertId } = await tx.query(
       `INSERT INTO payment_requests
          (gym_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
-          provider_order, provider_ref, page_token, page_token_expires, consent_given_at, source, attempt, method)
-       VALUES (?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer', ?, 'provider')`,
+          provider_order, provider_ref, page_token, page_token_expires, consent_given_at, source, attempt, method, created_by)
+       VALUES (?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, UTC_TIMESTAMP(), 'customer', ?, 'provider', ?)`,
       [input.gymId, input.memberId, input.charge.amount.toFixed(2), chargeTypeId, billingEventId,
-        orderId, result.providerOrderId, pageToken, pageTokenExpires, Number(prev[0]?.n ?? 0) + 1],
+        orderId, result.providerOrderId, pageToken, pageTokenExpires, Number(prev[0]?.n ?? 0) + 1, input.actor],
     );
     await tx.query('UPDATE product_sets SET payment_request_id = ? WHERE id = ?', [insertId, input.productSetId]);
     return { paymentRequestId: Number(insertId), billingEventId };

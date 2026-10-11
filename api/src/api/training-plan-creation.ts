@@ -15,6 +15,8 @@ export type CreateTrainingPlanArgs = {
   gymId: string;
   memberId: string | number;
   gymMembershipId: number | null;
+  /** #1182: the plain-text actor snapshot written to `created_by` (`resolveRequestActor()`). */
+  actor: string | null;
   templateId: number | null;
   name: string | null; // required by callers when templateId is null
   description: string | null | undefined; // undefined/null -> inherit template's when cloning
@@ -25,7 +27,7 @@ export type CreateTrainingPlanArgs = {
 export type CreateTrainingPlanResult = { planId: number; mtpId: number; planName: string };
 
 export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs): Promise<CreateTrainingPlanResult> {
-  const { gymId, memberId, gymMembershipId, templateId, name, description, startDate, validTo } = args;
+  const { gymId, memberId, gymMembershipId, actor, templateId, name, description, startDate, validTo } = args;
   let planId: number;
   let planName: string;
   let planDescription: string | null;
@@ -44,9 +46,9 @@ export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs)
 
     const { insertId: newPlanId } = await tx.query(
       `INSERT INTO training_plans
-        (gym_id, member_id, template_id, name, description, status, start_date, assigned_by_membership_id)
+        (gym_id, member_id, template_id, name, description, status, start_date, created_by)
        VALUES (?, ?, ?, ?, ?, 'active', COALESCE(?, CURRENT_DATE()), ?)`,
-      [gymId, memberId, templateId, planName, planDescription, startDate, gymMembershipId],
+      [gymId, memberId, templateId, planName, planDescription, startDate, actor],
     );
     planId = newPlanId;
 
@@ -97,18 +99,18 @@ export async function createTrainingPlanTx(tx: Tx, args: CreateTrainingPlanArgs)
     planDescription = description ?? null;
     const { insertId: newPlanId } = await tx.query(
       `INSERT INTO training_plans
-        (gym_id, member_id, template_id, name, description, status, start_date, assigned_by_membership_id)
+        (gym_id, member_id, template_id, name, description, status, start_date, created_by)
        VALUES (?, ?, NULL, ?, ?, 'active', COALESCE(?, CURRENT_DATE()), ?)`,
-      [gymId, memberId, planName, planDescription, startDate, gymMembershipId],
+      [gymId, memberId, planName, planDescription, startDate, actor],
     );
     planId = newPlanId;
   }
 
   const { insertId: mtpId } = await tx.query(
     `INSERT INTO member_training_plans
-      (gym_id, member_id, training_plan_id, template_id, name, description, status, valid_from, valid_to, assigned_by_membership_id)
+      (gym_id, member_id, training_plan_id, template_id, name, description, status, valid_from, valid_to, created_by)
      VALUES (?, ?, ?, ?, ?, ?, 'active', COALESCE(?, CURRENT_DATE()), ?, ?)`,
-    [gymId, memberId, planId, templateId ?? null, planName, planDescription, startDate, validTo ?? null, gymMembershipId],
+    [gymId, memberId, planId, templateId ?? null, planName, planDescription, startDate, validTo ?? null, actor],
   );
 
   await tx.query('UPDATE members SET member_training_plan_id = ? WHERE id = ? AND gym_id = ?', [mtpId, memberId, gymId]);

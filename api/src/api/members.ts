@@ -311,7 +311,7 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
 
 membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const tenantCtx = getTenantContext(req);
-  const { gymId, gymMembershipId } = tenantCtx;
+  const { gymId } = tenantCtx;
   const { name, email, phone, fare_id, center_ids, default_center_id, nif_nie_passport } = req.body;
   if (!name || !email) return res.status(400).json({ error: 'name and email are required' });
 
@@ -332,9 +332,9 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
       );
       for (const centerId of centers.ids) {
         await tx.query(
-          `INSERT INTO member_centers (gym_id, member_id, center_id, is_default, assigned_at, assigned_by_membership_id)
+          `INSERT INTO member_centers (gym_id, member_id, center_id, is_default, assigned_at, created_by)
            VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
-          [gymId, insertId, centerId, centerId === centers.defaultId, gymMembershipId],
+          [gymId, insertId, centerId, centerId === centers.defaultId, resolveRequestActor(tenantCtx)],
         );
       }
       return insertId;

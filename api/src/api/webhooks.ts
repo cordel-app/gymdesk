@@ -1,3 +1,4 @@
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { activateWithEvents } from './product-set-configuration';
 import { Router, type Request, type Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -218,9 +219,10 @@ paymentWebhookRouter.post(
         await db.transaction(async (tx) => {
           await tx.query(
             `UPDATE payment_requests
-             SET status = 'completed', provider_ref = ?, completed_at = UTC_TIMESTAMP()
+             SET status = 'completed', provider_ref = ?, completed_at = UTC_TIMESTAMP(),
+                 modified_at = UTC_TIMESTAMP(), modified_by = ?
              WHERE id = ?`,
-            [payload.providerRef, pr.id],
+            [payload.providerRef, SYSTEM_ACTOR, pr.id],
           );
 
           if (payload.paymentToken && payload.sequenceId) {
@@ -270,9 +272,10 @@ paymentWebhookRouter.post(
         await db.transaction(async (tx) => {
           await tx.query(
             `UPDATE payment_requests
-             SET status = 'completed', provider_ref = ?, provider_status = ?, completed_at = UTC_TIMESTAMP()
+             SET status = 'completed', provider_ref = ?, provider_status = ?, completed_at = UTC_TIMESTAMP(),
+                 modified_at = UTC_TIMESTAMP(), modified_by = ?
              WHERE id = ?`,
-            [payload.providerRef, payload.providerStatus ?? 'SUCCEEDED', pr.id],
+            [payload.providerRef, payload.providerStatus ?? 'SUCCEEDED', SYSTEM_ACTOR, pr.id],
           );
 
           // The purchase's `product_purchase` Billing Event was written with the
@@ -283,13 +286,13 @@ paymentWebhookRouter.post(
           if (pr.billing_event_id == null) {
             const { insertId: billingEventId } = await tx.query(
               `INSERT INTO billing_events
-                 (gym_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
-               VALUES (?, ?, 'product_purchase', ?, ?, 'provider', NULL)`,
-              [pr.gym_id, pr.member_id, pr.amount, pr.charge_type_id],
+                 (gym_id, member_id, event_type, amount, charge_type_id, source, created_by)
+               VALUES (?, ?, 'product_purchase', ?, ?, 'provider', ?)`,
+              [pr.gym_id, pr.member_id, pr.amount, pr.charge_type_id, SYSTEM_ACTOR],
             );
             await tx.query(
-              `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
-              [billingEventId, pr.id],
+              `UPDATE payment_requests SET billing_event_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`,
+              [billingEventId, SYSTEM_ACTOR, pr.id],
             );
           }
 
@@ -319,9 +322,10 @@ paymentWebhookRouter.post(
         await db.transaction(async (tx) => {
           await tx.query(
             `UPDATE payment_requests
-             SET status = 'completed', provider_ref = ?, provider_status = ?, completed_at = UTC_TIMESTAMP()
+             SET status = 'completed', provider_ref = ?, provider_status = ?, completed_at = UTC_TIMESTAMP(),
+                 modified_at = UTC_TIMESTAMP(), modified_by = ?
              WHERE id = ?`,
-            [payload.providerRef, payload.providerStatus ?? 'SUCCEEDED', pr.id],
+            [payload.providerRef, payload.providerStatus ?? 'SUCCEEDED', SYSTEM_ACTOR, pr.id],
           );
 
           // db.query()'s wrapper puts insertId at the top level for an
@@ -360,7 +364,7 @@ paymentWebhookRouter.post(
             const committed = await commitAssignment(tx, {
               gymId: pr.gym_id, userMembershipId: pr.user_membership_id,
               fromStatuses: [PENDING_PAYMENT_STATUS], confirm: true,
-              source: 'provider', actorUserId: null,
+              source: 'provider', actorUserId: null, actor: SYSTEM_ACTOR,
             });
             // `not_committable` is the ordinary case — a renewal paid on an
             // already-active row. Anything else is a paid row left pending,
@@ -393,13 +397,13 @@ paymentWebhookRouter.post(
             } else {
               const { insertId: billingEventId } = await tx.query(
                 `INSERT INTO billing_events
-                   (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source, actor_user_id)
-                 VALUES (?, ?, ?, 'payment_recorded', ?, ?, 'provider', NULL)`,
-                [pr.gym_id, ownerSetId, pr.member_id, pr.amount, pr.charge_type_id],
+                   (gym_id, product_set_id, member_id, event_type, amount, charge_type_id, source, created_by)
+                 VALUES (?, ?, ?, 'payment_recorded', ?, ?, 'provider', ?)`,
+                [pr.gym_id, ownerSetId, pr.member_id, pr.amount, pr.charge_type_id, SYSTEM_ACTOR],
               );
               await tx.query(
-                `UPDATE payment_requests SET billing_event_id = ? WHERE id = ?`,
-                [billingEventId, pr.id],
+                `UPDATE payment_requests SET billing_event_id = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`,
+                [billingEventId, SYSTEM_ACTOR, pr.id],
               );
             }
           }
@@ -419,7 +423,7 @@ paymentWebhookRouter.post(
             if (owner[0]?.product_set_id != null) {
               const activated = await activateWithEvents(tx, {
                 gymId: pr.gym_id, productSetId: Number(owner[0].product_set_id),
-                today: new Date().toISOString().slice(0, 10),
+                today: new Date().toISOString().slice(0, 10), actor: SYSTEM_ACTOR,
               });
               if (activated.kind !== 'ok') {
                 req.log.error(
@@ -434,8 +438,11 @@ paymentWebhookRouter.post(
         req.log.info({ orderId: payload.orderId, paymentRequestId: pr.id }, 'Payment webhook: completed');
       } else if (payload.status === 'failed' || payload.status === 'expired') {
         await db.query(
-          `UPDATE payment_requests SET status = ?, provider_ref = ?, provider_status = ? WHERE id = ?`,
-          [payload.status, payload.providerRef, payload.providerStatus ?? null, pr.id],
+          `UPDATE payment_requests
+              SET status = ?, provider_ref = ?, provider_status = ?,
+                  modified_at = UTC_TIMESTAMP(), modified_by = ?
+            WHERE id = ?`,
+          [payload.status, payload.providerRef, payload.providerStatus ?? null, SYSTEM_ACTOR, pr.id],
         );
         // #1121 stage 2: a purchase nobody paid for is `cancelled` rather than
         // left pending — §6's "failed/cancelled payments do not create a

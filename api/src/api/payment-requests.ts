@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../infra/db';
+import { resolveRequestActor } from '../domain/auditActor';
 import { openInitialEventForAssignment } from './product-set-bridge';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { getPaymentProvider } from '../payments';
@@ -34,7 +35,8 @@ paymentRequestsRouter.get('/', async (req: Request, res: Response, next: NextFun
     const { rows } = await db.query(
       `SELECT pr.id, pr.user_membership_id, pr.member_id, pr.amount, pr.currency,
               pr.status, pr.provider, pr.provider_order, pr.provider_ref,
-              pr.source, pr.initiated_by, pr.created_at, pr.completed_at,
+              pr.source, pr.created_by, pr.created_at, pr.completed_at,
+              pr.modified_at, pr.modified_by,
               m.name AS member_name
        FROM payment_requests pr
        JOIN members m ON m.id = pr.member_id
@@ -144,12 +146,12 @@ paymentRequestsRouter.post(
         `INSERT INTO payment_requests
            (gym_id, user_membership_id, member_id, amount, currency, charge_type_id, billing_event_id,
             status, provider, provider_order, provider_ref, page_token, page_token_expires,
-            initiated_by, source, attempt)
+            created_by, source, attempt)
          VALUES (?, ?, ?, ?, 'EUR', ?, ?, 'pending', 'monei', ?, ?, ?, ?, ?, 'admin', ?)`,
         [
           gymId, user_membership_id, um.member_id, charged.toFixed(2), ctRows[0].id, open ? open.eventId : null,
           orderId, result.providerOrderId, pageToken, pageTokenExpires,
-          (req as any).auth.userId, Number(prevAttempt[0]?.n ?? 0) + 1,
+          resolveRequestActor(getTenantContext(req)), Number(prevAttempt[0]?.n ?? 0) + 1,
         ],
       );
 

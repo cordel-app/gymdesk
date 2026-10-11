@@ -1,5 +1,6 @@
 import { redirectEditToProductSet } from './assignment-edit-redirect';
 import { activeProductSetIdForMember, productSetIdForAssignment } from './product-set-bridge';
+import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionMutator, revokePromotionMutator } from './product-set-bridge';
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
@@ -42,11 +43,11 @@ import {
  * makes to the next cycle, priced either side of the write.
  */
 
-// #635 stage 7: `applied_by` stores the acting user's id (the same value
-// `gym_memberships.user_id` carries), so the card can name who applied the
-// Promotion — the "created by" of the expandable card the issue thread asks
-// for. Resolved as a subquery rather than a JOIN because a staff member whose
-// gym membership was since removed must still leave the application readable.
+// #635 stage 7 / #1182 stage 3: who applied the Promotion is `created_by`, the
+// plain-text snapshot of the actor written with the application (it rides along
+// on `ump.*`) — no join onto `gym_memberships`, so a staff member whose gym
+// membership was since removed still leaves the application readable. Who
+// revoked it is `modified_by`, with `modified_at` the moment of the revocation.
 //
 // #635 stage 9: the Promotion's *live* lifecycle and window come along under
 // their own aliases. `starts_at`/`ends_at` are overwritten by the snapshot's
@@ -59,9 +60,7 @@ const SELECT = `
   SELECT ump.*, p.name AS promotion_name, p.description AS promotion_description,
          p.stackable, p.starts_at, p.ends_at,
          p.lifecycle_status AS promotion_lifecycle_status,
-         p.starts_at AS promotion_live_starts_at, p.ends_at AS promotion_live_ends_at,
-         (SELECT gm.name FROM gym_memberships gm
-           WHERE gm.user_id = ump.applied_by AND gm.gym_id = ump.gym_id LIMIT 1) AS applied_by_name
+         p.starts_at AS promotion_live_starts_at, p.ends_at AS promotion_live_ends_at
   FROM user_membership_promotions ump
   JOIN promotions p ON p.id = ump.promotion_id
 `;
@@ -453,10 +452,10 @@ async function currentMembershipFeeInTx(tx: Tx, gymId: string, userMembershipId:
  * difference to record.
  */
 async function recordFeeAdjustment(tx: Tx, params: {
-  gymId: string; umId: number; memberId: number; source: string; userId: string;
+  gymId: string; umId: number; memberId: number; source: string; actor: string | null;
   before: number | null; after: number; note: string;
 }): Promise<void> {
-  const { gymId, umId, memberId, source, userId, before, after, note } = params;
+  const { gymId, umId, memberId, source, actor, before, after, note } = params;
   if (before === null || Math.abs(after - before) <= 0.001) return;
   // #1325 PR 3b: an adjustment belongs to the assignment's ProductSet — the one
   // linked to it, else the member's Active one. A Draft assignment of a member
@@ -467,9 +466,9 @@ async function recordFeeAdjustment(tx: Tx, params: {
   const chargeTypeId = ctRows[0]?.id ?? null;
   await tx.query(
     `INSERT INTO billing_events
-     (gym_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+     (gym_id, product_set_id, member_id, event_type, charge_type_id, source, created_by, amount, notes)
      VALUES (?, ?, ?, 'adjustment', ?, ?, ?, ?, ?)`,
-    [gymId, setId, memberId, chargeTypeId, source, userId, after - before, note],
+    [gymId, setId, memberId, chargeTypeId, source, actor, after - before, note],
   );
 }
 
@@ -556,6 +555,12 @@ export async function applyPromotionToMembership(
   source: string,
   umId: number,
   promotionId: number,
+  /**
+   * #1182: the plain-text actor snapshot (`resolveRequestActor()`), written as
+   * the application's `created_by`. A caller that has none gets the acting
+   * user's name resolved from their gym membership, or `null`.
+   */
+  actorArg?: string | null,
 ): Promise<{ user_membership_id: number; promotion_id: number; membership_fee: number }> {
   return db.transaction(async (tx) => {
     const { rows: umRows } = await tx.query(
@@ -579,11 +584,17 @@ export async function applyPromotionToMembership(
       if (isRefusal(locked)) {
         throw Object.assign(new Error('The Draft is no longer available'), { status: locked.kind === 'expired' ? 410 : 409 });
       }
-      const applied = await applyPromotionMutator(gymId, userId, promotionId)(tx, locked);
+      let actor = actorArg;
+      if (actor === undefined) {
+        const { rows: nameRows } = await tx.query<{ name: string | null }>(
+          'SELECT name FROM gym_memberships WHERE user_id = ? AND gym_id = ? LIMIT 1', [userId, gymId]);
+        actor = nameRows[0]?.name ?? null;
+      }
+      const applied = await applyPromotionMutator(gymId, actor, promotionId)(tx, locked);
       if ('kind' in applied) {
         throw Object.assign(new Error('message' in applied ? applied.message : 'Promotion could not be applied'), { status: 400 });
       }
-      await syncDraftAssignment(tx, gymId, locked.id);
+      await syncDraftAssignment(tx, gymId, locked.id, actor);
       const drafted = await currentMembershipFeeInTx(tx, gymId, umId);
       if (!drafted) throw Object.assign(new Error('Fee resolution failed'), { status: 500 });
       return { user_membership_id: umId, promotion_id: promotionId, membership_fee: drafted.price };
@@ -623,7 +634,8 @@ export async function assignmentBeingEdited(tx: Tx, productSetId: number): Promi
 export async function applyPromotionToProductSet(
   tx: Tx,
   gymId: string,
-  userId: string,
+  /** The plain-text actor snapshot, written as the application's `created_by`. */
+  actor: string | null,
   productSetId: number,
   promotionId: number,
 ): Promise<{ application_id: number }> {
@@ -680,9 +692,9 @@ export async function applyPromotionToProductSet(
   const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
   const { insertId } = await tx.query(
     `INSERT INTO user_membership_promotions
-       (gym_id, product_set_id, promotion_id, applied_by, status, snapshot)
+       (gym_id, product_set_id, promotion_id, created_by, status, snapshot)
      VALUES (?, ?, ?, ?, 'applied', ?)`,
-    [gymId, productSetId, promotionId, userId, snapshot != null ? JSON.stringify(snapshot) : null],
+    [gymId, productSetId, promotionId, actor, snapshot != null ? JSON.stringify(snapshot) : null],
   );
   await snapshotPromotionGrants(tx, gymId, insertId, promotionId);
   return { application_id: Number(insertId) };
@@ -943,7 +955,7 @@ membershipPromotionsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req,
   // #1325 PR 5: a plan a ProductSet projects takes the Promotion as a new version.
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: umId, action: 'update', detail: { apply_promotion: promotion_id },
-    mutate: applyPromotionMutator(gymId, userId ?? null, Number(promotion_id)),
+    mutate: applyPromotionMutator(gymId, resolveRequestActor(getTenantContext(req)), Number(promotion_id)),
     // The contract of the route since it existed: what the plan now costs.
     respond: async () => {
       const fee = await db.transaction((tx) => currentMembershipFeeInTx(tx, gymId, umId));
@@ -965,7 +977,7 @@ membershipPromotionsRouter.delete('/:promotionId', requireModuleWrite('PAYMENTS'
   const promotionId = parseInt(String(req.params.promotionId), 10);
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: umId, action: 'update', detail: { revoke_promotion: promotionId },
-    mutate: revokePromotionMutator(promotionId),
+    mutate: revokePromotionMutator(promotionId, resolveRequestActor(getTenantContext(req))),
     respond: async () => ({ ok: true }),
   })) return;
   const { rows: gate } = await db.query('SELECT status FROM user_memberships WHERE id = ? AND gym_id = ?', [umId, gymId]);

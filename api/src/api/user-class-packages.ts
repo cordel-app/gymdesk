@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 
 /**
  * P3.2: user class packages nested under members.
@@ -45,7 +46,8 @@ userClassPackagesRouter.get('/', async (req, res) => {
  * package-credits.ts).
  */
 userClassPackagesRouter.put('/:id/extend-expiration', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   const memberId = (req.params as any).memberId;
   const { expires_at } = req.body;
   if (!expires_at) return res.status(400).json({ error: 'expires_at is required' });
@@ -63,8 +65,8 @@ userClassPackagesRouter.put('/:id/extend-expiration', requireModuleWrite('PAYMEN
     }
 
     await db.query(
-      'UPDATE user_class_packages SET expires_at = ?, modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ? WHERE id = ?',
-      [expires_at, gymMembershipId, req.params.id],
+      'UPDATE user_class_packages SET expires_at = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+      [expires_at, resolveRequestActor(ctx), req.params.id],
     );
 
     const { rows } = await db.query(`${SELECT} WHERE ucp.id = ?`, [req.params.id]);
@@ -100,7 +102,8 @@ userClassPackagesRouter.get('/:id/transactions', async (req, res) => {
  *     so the ledger reflects the purchase — no separate payment step yet.
  */
 userClassPackagesRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
-  const { gymId, userId, role } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, role } = ctx;
   const memberId = parseInt((req.params as any).memberId, 10);
   const { class_package_id } = req.body;
   if (!class_package_id) return res.status(400).json({ error: 'class_package_id is required' });
@@ -122,18 +125,18 @@ userClassPackagesRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, re
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO user_class_packages
-         (gym_id, member_id, class_package_id, purchased_at, expires_at, sessions_remaining, status)
-         VALUES (?, ?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_DATE(), INTERVAL ? DAY), ?, 'active')`,
-        [gymId, memberId, class_package_id, pkgRows[0].validity_days, pkgRows[0].number_of_sessions],
+         (gym_id, member_id, class_package_id, purchased_at, expires_at, sessions_remaining, status, created_by)
+         VALUES (?, ?, ?, UTC_TIMESTAMP(), DATE_ADD(UTC_DATE(), INTERVAL ? DAY), ?, 'active', ?)`,
+        [gymId, memberId, class_package_id, pkgRows[0].validity_days, pkgRows[0].number_of_sessions, resolveRequestActor(ctx)],
       );
       // Ledger charge — use the class_package charge type (seeded in migration 008).
       const { rows: ctRows } = await tx.query("SELECT id FROM charge_types WHERE code = 'class_package'");
       if (ctRows.length > 0) {
         await tx.query(
           `INSERT INTO billing_events
-           (gym_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+           (gym_id, member_id, event_type, charge_type_id, source, created_by, amount, notes)
            VALUES (?, ?, 'product_purchase', ?, ?, ?, ?, 'Class package purchase')`,
-          [gymId, memberId, ctRows[0].id, role === 'admin' ? 'admin' : 'employee', userId, pkgRows[0].price],
+          [gymId, memberId, ctRows[0].id, role === 'admin' ? 'admin' : 'employee', resolveRequestActor(ctx), pkgRows[0].price],
         );
       }
       return insertId;

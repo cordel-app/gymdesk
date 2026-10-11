@@ -55,7 +55,7 @@ describe('Assigned Plan promotions: the card header', () => {
   it('shows created at, created by and the status badge', () => {
     expect(src).toContain('promo_created_at');
     expect(src).toContain('promo_created_by');
-    expect(src).toContain('applied_by_name');
+    expect(src).toContain('p.created_by');
     expect(src).toContain('<StatusBadge');
     expect(src, 'the badge must render the status the API computed').toContain('p.display_status');
   });

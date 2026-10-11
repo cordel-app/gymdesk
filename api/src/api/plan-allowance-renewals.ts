@@ -1,3 +1,4 @@
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { assignmentVersionId } from './assignment-config';
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
@@ -63,9 +64,9 @@ export async function runPlanAllowanceRenewals(today: string): Promise<{ lines: 
     for (const due of dueRenewals(line, today)) {
       const { rowCount } = await db.query(
         `INSERT IGNORE INTO plan_allowance_renewals
-           (gym_id, user_membership_session_id, renewal_date, quantity)
-         VALUES (?, ?, ?, ?)`,
-        [r.gym_id, due.line_id, due.renewal_date, due.quantity],
+           (gym_id, user_membership_session_id, renewal_date, quantity, created_by)
+         VALUES (?, ?, ?, ?, ?)`,
+        [r.gym_id, due.line_id, due.renewal_date, due.quantity, SYSTEM_ACTOR],
       );
       renewed += rowCount ?? 0;
     }

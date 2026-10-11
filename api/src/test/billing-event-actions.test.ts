@@ -331,10 +331,10 @@ describe('POST /payments/billing-events/:id/manual-payment', () => {
       .send({});
 
     const { rows } = await db.query<any>(
-      'SELECT modified_at, modified_by_user_id FROM billing_events WHERE id = ?', [f.billingEventId],
+      'SELECT modified_at, modified_by FROM billing_events WHERE id = ?', [f.billingEventId],
     );
     expect(rows[0].modified_at).not.toBeNull();
-    expect(rows[0].modified_by_user_id).toBe('test-user-id');
+    expect(rows[0].modified_by).toBe('Test User');
   });
 
   it('accepts an explicit amount and rejects a non-positive one', async () => {

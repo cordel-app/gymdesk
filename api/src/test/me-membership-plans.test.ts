@@ -178,9 +178,9 @@ describe('POST /me/membership-plans/:id/assign', () => {
     // #1325 PR 3a: the member's plan is a ProductSet version, with the plan frozen
     // beside it and the Promotion applied with its own snapshot.
     const { rows: ps } = await db.query<any>(
-      'SELECT owner_member_id, created_by_type, status, membership_plan_id FROM product_sets WHERE id = ?', [res.body.id]);
+      'SELECT owner_member_id, created_by, status, membership_plan_id FROM product_sets WHERE id = ?', [res.body.id]);
     expect(ps[0].owner_member_id).toBe(member.id);
-    expect(ps[0].created_by_type).toBe('member');
+    expect(ps[0].created_by).toBe('MMP Member');
     expect(ps[0].status).toBe('pending_payment');
     expect(ps[0].membership_plan_id).toBe(planId);
     const { rows: snap } = await db.query<any>(

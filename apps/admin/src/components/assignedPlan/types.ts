@@ -142,8 +142,8 @@ export interface AppliedPromotion {
   can_reapply: boolean;
   applied_at: string;
   revoked_at: string | null;
-  /** The staff member who applied it — the card's "created by". */
-  applied_by_name: string | null;
+  /** Who applied it (the plain-text actor snapshot) — the card's "created by". */
+  created_by: string | null;
   promotion_name: string;
   promotion_description: string | null;
   /** The agreed promotional window — the snapshot's dates, not the Promotion's current ones. */
@@ -277,8 +277,9 @@ export interface AssignedPlanDetail {
   closed_at: string | null;
   next_billing_date: string | null;
   created_at: string;
-  created_by_name: string | null;
-  modified_by_name: string | null;
+  /** #1182: the plain-text actor snapshots — a person, or `System` for a run / the payment webhook. */
+  created_by: string | null;
+  modified_by: string | null;
   modified_at: string | null;
   members: AssignedPlanMember[];
   billing_policy: BillingPolicy | null;

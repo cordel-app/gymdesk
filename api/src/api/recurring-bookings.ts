@@ -1,3 +1,4 @@
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { Router, Request, Response } from 'express';
 import { db } from '../infra/db';
 import { RunLogTable, claimRun, finishRun } from '../infra/run-log';
@@ -242,7 +243,7 @@ export async function runMemberRecurringBookings(
   if (selections.length === 0) return base;
 
   const projection = await loadProjection(gymId, memberId, selections);
-  const run = await bookSelectedSlots(gymId, memberId, selections, projection.days);
+  const run = await bookSelectedSlots(gymId, memberId, selections, projection.days, SYSTEM_ACTOR);
 
   const alreadySent = await loadSentNotificationKeys(gymId, memberId);
   const notifications = planSkipNotifications(run.slots, alreadySent);

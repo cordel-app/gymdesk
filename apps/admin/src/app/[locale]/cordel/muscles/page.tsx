@@ -28,8 +28,8 @@ interface Muscle {
   image_url: string | null;
   image_thumbnail_url: string | null;
   exercise_count: number;
-  created_by_name: string | null;
-  modified_by_name: string | null;
+  created_by: string | null;
+  modified_by: string | null;
   created_at?: string | null;
   modified_at?: string | null;
 }
@@ -210,9 +210,9 @@ export default function CordelMusclesPage() {
               [t('slug'), details.slug],
               [t('exercises'), String(details.exercise_count)],
               [t('col_created_at'), formatExerciseTimestamp(details.created_at)],
-              [t('created_by'), exerciseDisplayValue(details.created_by_name)],
+              [t('created_by'), exerciseDisplayValue(details.created_by)],
               [t('col_modified_at'), formatExerciseTimestamp(details.modified_at)],
-              [t('modified_by'), exerciseDisplayValue(details.modified_by_name)],
+              [t('modified_by'), exerciseDisplayValue(details.modified_by)],
             ] as [string, string][]).map(([label, value]) => (
               <div key={label} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--gd-card-border, #f5f5f5)' }}>
                 <span style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#888', fontWeight: 500 }}>{label}</span>

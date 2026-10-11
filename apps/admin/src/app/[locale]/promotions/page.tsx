@@ -110,7 +110,7 @@ interface Promo {
   applies_to: PromotionTarget;
   lifecycle_status: PromotionLifecycleStatus;
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   free_months: number | null;
   paid_months: number | null;
   bonus_months: number | null;
@@ -1790,7 +1790,7 @@ export default function PromotionsPage() {
             {truncate(promo.description)}
           </div>
           <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#555', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {promo.created_by_name ?? '—'}
+            {promo.created_by ?? '—'}
           </div>
           <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>{iso(promo.created_at)}</div>
           <div className={CELL_CLASS.starts} style={{ fontSize: 13, color: '#888' }}>{iso(promo.starts_at)}</div>

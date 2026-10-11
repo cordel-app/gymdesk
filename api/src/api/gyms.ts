@@ -286,9 +286,9 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
       [id, actorName],
     );
     await db.query(
-      `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at)
-       SELECT ?, id, 'active', UTC_TIMESTAMP() FROM professional_services WHERE is_system = 1`,
-      [id],
+      `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at, created_by)
+       SELECT ?, id, 'active', UTC_TIMESTAMP(), ? FROM professional_services WHERE is_system = 1`,
+      [id, actorName],
     );
     // #1181: every System Personal Goal starts available to the new gym — an
     // explicit `active` row per goal, `gym_professional_services`' pattern. A
@@ -461,9 +461,9 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
     [newId, actorName],
   );
   await db.query(
-    `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at)
-     SELECT ?, id, 'active', UTC_TIMESTAMP() FROM professional_services WHERE is_system = 1`,
-    [newId],
+    `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at, created_by)
+     SELECT ?, id, 'active', UTC_TIMESTAMP(), ? FROM professional_services WHERE is_system = 1`,
+    [newId, actorName],
   );
   await db.query(
     `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by)

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
+import { resolveRequestActor } from '../domain/auditActor';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
 import { gymFetchOne, insertAndFetch } from '../infra/db-helpers';
@@ -51,7 +52,9 @@ trainerAvailabilityRouter.get('/:id', async (req, res) => {
 });
 
 trainerAvailabilityRouter.post('/', requireModuleWrite('ORGANIZATION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { trainer_membership_id, is_recurring, weekday, specific_date, starts_time, ends_time, notes, status, center_id } = req.body;
 
   if (!trainer_membership_id) return res.status(400).json({ error: 'trainer_membership_id is required' });
@@ -72,10 +75,10 @@ trainerAvailabilityRouter.post('/', requireModuleWrite('ORGANIZATION'), async (r
     const resolvedCenterId = await resolveCenterId(gymId, req, center_id);
     const row = await insertAndFetch(
       `INSERT INTO trainer_availability
-       (gym_id, center_id, trainer_membership_id, is_recurring, weekday, specific_date, starts_time, ends_time, notes, status, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (gym_id, center_id, trainer_membership_id, is_recurring, weekday, specific_date, starts_time, ends_time, notes, status, created_by, modified_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, resolvedCenterId, trainerId, isRecurring, isRecurring ? weekday : null, isRecurring ? null : specific_date,
-       starts_time, ends_time, notes ?? null, status ?? 'active', gymMembershipId],
+       starts_time, ends_time, notes ?? null, status ?? 'active', actor, actor],
       'SELECT * FROM trainer_availability WHERE id = ?',
       (id) => [id],
     );
@@ -88,7 +91,9 @@ trainerAvailabilityRouter.post('/', requireModuleWrite('ORGANIZATION'), async (r
 });
 
 trainerAvailabilityRouter.put('/:id', requireModuleWrite('ORGANIZATION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { rows: existingRows } = await db.query(
     'SELECT * FROM trainer_availability WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [req.params.id, gymId],
@@ -112,14 +117,14 @@ trainerAvailabilityRouter.put('/:id', requireModuleWrite('ORGANIZATION'), async 
       notes          = IF(?, ?, notes),
       status         = COALESCE(?, status),
       modified_at    = UTC_TIMESTAMP(),
-      modified_by_membership_id = ?
+      modified_by    = ?
      WHERE id = ? AND gym_id = ?`,
     [
       isRecurring, isRecurring ? merged.weekday : null, isRecurring ? null : merged.specific_date,
       merged.starts_time, merged.ends_time,
       'notes' in req.body ? 1 : 0, req.body.notes ?? null,
       status ?? null,
-      gymMembershipId,
+      actor,
       req.params.id, gymId,
     ],
   );
@@ -129,11 +134,14 @@ trainerAvailabilityRouter.put('/:id', requireModuleWrite('ORGANIZATION'), async 
 });
 
 trainerAvailabilityRouter.delete('/:id', requireModuleWrite('ORGANIZATION'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { rowCount } = await db.query(
-    `UPDATE trainer_availability SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+    `UPDATE trainer_availability SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [gymMembershipId, req.params.id, gymId],
+    [actor, actor, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Availability window not found' });
   recordAudit(req, { action: 'soft_delete', entityType: 'trainer_availability', entityId: req.params.id });

@@ -7,6 +7,7 @@ import { parseQuery, z } from '../infra/validate';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
+import { auditActorField, resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToMembership } from './membership-promotions';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import {
@@ -167,11 +168,11 @@ paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) 
       }
       const { insertId } = await tx.query(
         `INSERT INTO billing_events
-         (gym_id, product_set_id, member_id, event_type, charge_type_id, source, actor_user_id, amount, notes)
+         (gym_id, product_set_id, member_id, event_type, charge_type_id, source, created_by, amount, notes)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId, setId, memberId, event_type, charge_type_id ?? null,
-          source ?? sourceForRole(role), userId, parsedAmount,
+          source ?? sourceForRole(role), resolveRequestActor(getTenantContext(req)), parsedAmount,
           notes && String(notes).trim() ? String(notes).trim() : null,
         ],
       );
@@ -179,6 +180,7 @@ paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) 
         const outcome = await commitAssignment(tx, {
           gymId, userMembershipId: user_membership_id, fromStatuses: [PENDING_PAYMENT_STATUS],
           confirm: true, source: sourceForRole(role), actorUserId: userId,
+          actor: resolveRequestActor(getTenantContext(req)),
         });
         if (outcome.kind !== 'committed' && outcome.kind !== 'not_committable' && outcome.kind !== 'not_found') {
           throw Object.assign(
@@ -471,10 +473,7 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
       `SELECT pr.id, pr.status, pr.amount, pr.currency, pr.provider, pr.provider_order,
               pr.provider_ref, pr.source, pr.created_at, pr.completed_at,
               pr.attempt, pr.failure_code, pr.failure_message, pr.notes,
-              pr.modified_at,
-              (SELECT gm.name FROM gym_memberships gm
-                WHERE gm.user_id = pr.modified_by_user_id AND gm.gym_id = pr.gym_id
-                LIMIT 1) AS modified_by_name,
+              pr.created_by, pr.modified_at, pr.modified_by,
               m.name AS member_name,
               mp.name AS plan_name,
               pm.card_brand, pm.card_last4
@@ -498,9 +497,8 @@ paymentsRouter.get('/billing-events/:id/transactions', async (req, res, next) =>
 /**
  * GET /payments/billing-events/:id — read-only Details view (§2).
  *
- * Created By / Modified By are Clerk user ids on the row, resolved to a display
- * name through `gym_memberships.name` (the same join the audit registry uses
- * for `gym_user`); a system-generated event has no actor at all.
+ * Created By / Modified By are the row's plain-text actor snapshots (#1182);
+ * `System` for a run or webhook, null when nobody can be named.
  */
 paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
@@ -510,18 +508,14 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
   try {
     const { rows } = await db.query<any>(
       `SELECT be.id, be.member_id, um.id AS user_membership_id, be.product_set_id, be.event_type, be.amount,
-              be.notes, be.source, be.actor_user_id, be.created_at,
+              be.notes, be.source, be.created_by, be.created_at,
               be.previous_status, be.new_status,
               be.receipt_number, be.receipt_issued_at,
-              be.modified_at, be.modified_by_user_id,
+              be.modified_at, be.modified_by,
               ct.code AS charge_type_code,
               m.name AS member_name,
               mp.name AS plan_name,
               um.status AS membership_status,
-              (SELECT gm.name FROM gym_memberships gm
-                WHERE gm.user_id = be.actor_user_id AND gm.gym_id = be.gym_id LIMIT 1) AS created_by_name,
-              (SELECT gm.name FROM gym_memberships gm
-                WHERE gm.user_id = be.modified_by_user_id AND gm.gym_id = be.gym_id LIMIT 1) AS modified_by_name,
               (SELECT pr.status FROM payment_requests pr
                 WHERE pr.billing_event_id = be.id
                 ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status,
@@ -566,9 +560,9 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
       receipt_number: ev.receipt_number,
       receipt_issued_at: ev.receipt_issued_at ? new Date(ev.receipt_issued_at).toISOString() : null,
       created_at: new Date(ev.created_at).toISOString(),
-      created_by: ev.created_by_name ?? (ev.actor_user_id ? ev.actor_user_id : null),
+      created_by: auditActorField(ev.created_by),
       modified_at: ev.modified_at ? new Date(ev.modified_at).toISOString() : null,
-      modified_by: ev.modified_by_name ?? (ev.modified_by_user_id ? ev.modified_by_user_id : null),
+      modified_by: auditActorField(ev.modified_by),
       next_payment_date: ev.membership_status === 'active' && ev.user_membership_id != null
         ? ((await loadDerivedBilling(gymId, [Number(ev.user_membership_id)])).get(Number(ev.user_membership_id))?.next_billing_date ?? null)
         : null,
@@ -598,7 +592,7 @@ paymentsRouter.post('/billing-events/:id/retry', requireModuleWrite('PAYMENTS'),
   if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
 
   try {
-    const outcome = await retryBillingEventPayment(gymId, billingEventId, userId, sourceForRole(role));
+    const outcome = await retryBillingEventPayment(gymId, billingEventId, userId, sourceForRole(role), resolveRequestActor(getTenantContext(req)));
     if ('failure' in outcome) {
       return res.status(outcome.failure.status).json({ error: outcome.failure.error });
     }
@@ -633,7 +627,7 @@ paymentsRouter.post('/billing-events/:id/manual-payment', requireModuleWrite('PA
   if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
 
   try {
-    const outcome = await recordManualPayment(gymId, billingEventId, userId, req.body ?? {});
+    const outcome = await recordManualPayment(gymId, billingEventId, userId, req.body ?? {}, resolveRequestActor(getTenantContext(req)));
     if ('failure' in outcome) {
       return res.status(outcome.failure.status).json({ error: outcome.failure.error });
     }
@@ -664,6 +658,7 @@ paymentsRouter.post('/apply-promotion', requireModuleWrite('PAYMENTS'), async (r
   try {
     const result = await applyPromotionToMembership(
       gymId, userId, sourceForRole(role), Number(user_membership_id), Number(promotion_id),
+      resolveRequestActor(getTenantContext(req)),
     );
     recordAudit(req, { action: 'apply_promotion', entityType: 'user_membership', entityId: result.user_membership_id, next: result });
     res.status(201).json(result);
@@ -723,7 +718,7 @@ paymentsRouter.post('/:id/receipt', requireModuleWrite('PAYMENTS'), async (req, 
     let issuedAt = ev.receipt_issued_at ? new Date(ev.receipt_issued_at) : null;
 
     if (!receiptNumber) {
-      const issued = await db.transaction((tx) => issueReceiptNumber(tx, gymId, eventId));
+      const issued = await db.transaction((tx) => issueReceiptNumber(tx, gymId, eventId, resolveRequestActor(getTenantContext(req))));
       receiptNumber = issued.receiptNumber;
       issuedAt = issued.issuedAt;
       // Only an allocation is an audited act. A concurrent caller that found

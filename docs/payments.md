@@ -121,7 +121,7 @@ Two routes, same shape:
 | Route | `POST /payment-requests` (`api/src/api/payment-requests.ts`) | `POST /me/payment-requests` (`api/src/api/me.ts:1599`) |
 | Gate | `requireModuleWrite('PAYMENTS')` | `requireRole('member')`, **3/hour** per Clerk user id |
 | `source` | `admin` | `customer` |
-| Records who | `initiated_by` = the staff Clerk user id | `consent_given_at = UTC_TIMESTAMP()` |
+| Records who | `created_by` = the staff member's name (#1182; `initiated_by` is frozen history) | `consent_given_at = UTC_TIMESTAMP()` |
 
 Both then do exactly the same thing:
 
@@ -271,7 +271,7 @@ Then, by branch:
 The `completed` transaction (`webhooks.ts`, the `completed` branch):
 
 1. `payment_requests` → `status = 'completed'`, `provider_ref`, `completed_at`;
-2. a `payment_recorded` Billing Event (`source = 'provider'`, `actor_user_id` NULL) carrying
+2. a `payment_recorded` Billing Event (`source = 'provider'`, `created_by` = `System`) carrying
    the request's own `amount` and `charge_type_id`;
 3. `payment_requests.billing_event_id` ← that insert's `insertId`
    (read off the query result, *not* off `rows` — the defect #635 stage 3 fixed, which
@@ -715,7 +715,7 @@ verification. Not a ledger: it is the transaction table.
   migration 256 (#1325 PR 3d): an event's assignment is its ProductSet chain's
   (`domain/billingEventOwnership.ts`).
 - `attempt` (default 1), `failure_code`, `failure_message`, `notes` — #640.
-- `consent_given_at` (member's MIT consent), `initiated_by` (staff Clerk user id).
+- `consent_given_at` (member's MIT consent), `created_by` / `modified_by` (plain-text actor, #1182; `initiated_by` and `modified_by_user_id` are frozen).
 
 **`payment_methods`** (migration 103) — the stored card, `UNIQUE (gym_id, member_id,
 provider)`. `payment_token` + `sequence_id` are the credentials that charge the member and

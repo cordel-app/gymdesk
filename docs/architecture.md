@@ -1552,14 +1552,14 @@ shape will raise it again; the answer is (2) or (3), not a rewrite.
 
 ## Audit metadata inventory (#1182)
 
-The plain-text actor snapshot (`created_by` / `modified_by` / `deleted_by`, `api/src/domain/auditActor.ts`) is rolled out in stages; this matrix is updated by each stage.
+The plain-text actor snapshot (`created_by` / `modified_by` / `deleted_by`, `api/src/domain/auditActor.ts`) is rolled out in stages; this matrix is complete since stage 4 (#1182). Every base table is either in `AUDITED_TABLES` or classified in `api/src/domain/auditInventory.ts` (`parent`, `ledger`, `lookup`, `technical`, `legacy`), and `audit-inventory.test.ts` enforces it against the live schema.
 
 | Stage | Tables | State |
 |---|---|---|
 | 1 | mechanism: `resolveRequestActor()`, `resolvePlatformActor()`, `resolveSystemActor()`, the audit SET helpers, the INSERT gate | merged (#1203) |
 | 2 | `activity_types`, `calendar_events`, `centers`, `class_packages`, `exercises`, `gym_holiday_hours`, `gym_operating_hours`, `gym_personal_goals`, `gyms`, `member_nutrition_plans`, `member_personal_goals`, `members`, `membership_plans`, `nutrition_goals`, `nutrition_library_items`, `nutrition_plan_templates`, `payment_providers`, `personal_goals`, `products`, `professional_services`, `spaces`, `staff`, `tax_rates`, `themes`, `training_plan_templates`, `workout_templates` | migrations 264–265; in `AUDITED_TABLES`; INSERT and business-UPDATE gates |
-| 3 | assignments and lifecycle: `user_memberships`, `user_membership_promotions`, `training_plans`, `member_training_plans`, `calendar_event_bookings`, `member_products`, `user_class_packages`, `gym_professional_services`, `promotions` and the other partials | pending |
-| 4 | remaining partials, final classification of every table | pending |
+| 3 | assignments and lifecycle: `user_memberships`, `user_membership_promotions`, `promotions`, `product_sets`, `member_products_oneoff_snapshot`, `training_plans`, `member_training_plans`, `calendar_event_bookings`, `calendar_event_series`, `user_class_packages`, `class_package_transactions`, `gym_professional_services`, `member_centers`, `member_recurring_slots`, `member_personal_goal_readings` | migrations 266–267; in `AUDITED_TABLES`; `loadAuditMetadata()` removed |
+| 4 | `staff_centers`, `trainer_availability`, `billing_events`, `payment_requests`, `plan_allowance_renewals`, `muscles`, `feature_flags`, plus the two professional-service ledgers (born conformant) | migration 268; in `AUDITED_TABLES`; every other table classified in `domain/auditInventory.ts` |
 
 Classification rules (Q2): a child or line table written only inside its parent's transaction with no lifecycle of its own gets no columns (the parent carries them); append-only and ledger tables carry `created_at` + `created_by` only; global lookup tables with no runtime writer are out. The pre-snapshot `*_by_membership_id` columns (and `staff.*_clerk_user_id`) are frozen history that nothing writes. Writes that are not a business modification (a Clerk link, a stored image URL after a rename, a pointer column) are declared in `TECHNICAL_UPDATES` of `audit-actor.unit.test.ts` with the reason.
 

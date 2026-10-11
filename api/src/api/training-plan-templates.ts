@@ -361,9 +361,11 @@ trainingPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), a
 
 /** Assign a training plan template (gym-owned or base) to a member. */
 trainingPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
-  const { id } = req.params as { id: string };
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { member_id, name, description, start_date, valid_to } = req.body;
+  const { id } = req.params as { id: string };
   if (!member_id) return res.status(400).json({ error: 'member_id is required' });
   try {
     const result = await db.transaction(async (tx) => {
@@ -371,6 +373,7 @@ trainingPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('TRAINING'), 
         gymId,
         memberId: member_id,
         gymMembershipId,
+        actor,
         templateId: Number(id),
         name: name ?? null,
         description: description ?? null,

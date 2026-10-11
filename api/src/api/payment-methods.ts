@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../infra/db';
+import { resolveRequestActor } from '../domain/auditActor';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { parseBody, parseQuery, z } from '../infra/validate';
 import {
@@ -57,7 +58,7 @@ paymentMethodsRouter.get('/', async (req: Request, res: Response, next: NextFunc
  * Raises a card-replacement link for a member. The member still enters the card
  * on the isolated payment page and still ticks the consent box there; what the
  * staff does is start the flow, which is why `consent_given_at` stays NULL on a
- * staff-raised row (`initiated_by` records who sent it).
+ * staff-raised row (`created_by` records who sent it).
  */
 paymentMethodsRouter.post(
   '/replace-requests',
@@ -87,7 +88,7 @@ paymentMethodsRouter.post(
         memberId,
         memberEmail: memberRows[0].email ?? '',
         userMembershipId,
-        initiatedBy: (req as any).auth?.userId ?? null,
+        actor: resolveRequestActor(getTenantContext(req)),
         stampConsent: false,
       });
 

@@ -3,6 +3,7 @@ import { db } from '../infra/db';
 import { soleActiveCenterId } from '../infra/centerContext';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 
 /** Mounted at /members/:memberId/centers (mergeParams: true), like training-plans.ts. */
 export const memberCentersRouter = Router({ mergeParams: true });
@@ -52,7 +53,9 @@ memberCentersRouter.get('/', async (req, res) => {
 });
 
 memberCentersRouter.put('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { memberId } = req.params as { memberId: string };
   const { center_ids, default_center_id } = req.body as { center_ids: unknown; default_center_id: unknown };
 
@@ -90,19 +93,19 @@ memberCentersRouter.put('/', requireModuleWrite('MEMBERS'), async (req, res, nex
 
       for (const centerId of toRemove) {
         await tx.query(
-          `UPDATE member_centers SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+          `UPDATE member_centers SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?
            WHERE member_id = ? AND center_id = ? AND gym_id = ?`,
-          [gymMembershipId, memberId, centerId, gymId],
+          [actor, memberId, centerId, gymId],
         );
       }
       for (const centerId of ids) {
         const isDefault = centerId === defaultId;
         await tx.query(
-          `INSERT INTO member_centers (gym_id, member_id, center_id, is_default, assigned_at, assigned_by_membership_id, modified_at, modified_by_membership_id)
+          `INSERT INTO member_centers (gym_id, member_id, center_id, is_default, assigned_at, created_by, modified_at, modified_by)
            VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?, UTC_TIMESTAMP(), ?)
-           ON DUPLICATE KEY UPDATE is_default = VALUES(is_default), deleted_at = NULL,
-             modified_at = UTC_TIMESTAMP(), modified_by_membership_id = VALUES(modified_by_membership_id)`,
-          [gymId, memberId, centerId, isDefault, gymMembershipId, gymMembershipId],
+           ON DUPLICATE KEY UPDATE is_default = VALUES(is_default), deleted_at = NULL, deleted_by = NULL,
+             modified_at = UTC_TIMESTAMP(), modified_by = VALUES(modified_by)`,
+          [gymId, memberId, centerId, isDefault, actor, actor],
         );
       }
     });

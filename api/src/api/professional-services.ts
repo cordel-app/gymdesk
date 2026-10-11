@@ -67,7 +67,7 @@ professionalServicesRouter.get('/:id', async (req, res, next) => {
 
 professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next) => {
   const ctx = getTenantContext(req);
-  const { gymId, gymMembershipId } = ctx;
+  const { gymId } = ctx;
   const actor = resolveRequestActor(ctx);
   const { name, description } = req.body;
 
@@ -82,9 +82,9 @@ professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next
         [gymId, name.trim(), description?.trim() || null, actor],
       );
       await tx.query(
-        `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by_membership_id)
+        `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by)
          VALUES (?, ?, 'active', ?)`,
-        [gymId, serviceId, gymMembershipId],
+        [gymId, serviceId, actor],
       );
       return { insertId: serviceId };
     });
@@ -150,16 +150,16 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
 
 professionalServicesRouter.post('/:id/activate', requireRole('admin'), async (req, res, next) => {
   const ctx = getTenantContext(req);
-  const { gymId, gymMembershipId } = ctx;
+  const { gymId } = ctx;
   const actor = resolveRequestActor(ctx);
   try {
     const { rowCount } = await db.query(
       `UPDATE gym_professional_services gps
        JOIN professional_services ps ON ps.id = gps.professional_service_id
-       SET gps.status = 'active', gps.updated_at = UTC_TIMESTAMP(), gps.updated_by_membership_id = ?
+       SET gps.status = 'active', gps.modified_at = UTC_TIMESTAMP(), gps.modified_by = ?
        WHERE gps.professional_service_id = ? AND gps.gym_id = ?
          AND (ps.gym_id IS NULL OR ps.gym_id = ?) AND ps.deleted_at IS NULL`,
-      [gymMembershipId, req.params.id, gymId, gymId],
+      [actor, req.params.id, gymId, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE ps.id = ?`, [gymId, req.params.id]);
@@ -172,16 +172,16 @@ professionalServicesRouter.post('/:id/activate', requireRole('admin'), async (re
 
 professionalServicesRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, next) => {
   const ctx = getTenantContext(req);
-  const { gymId, gymMembershipId } = ctx;
+  const { gymId } = ctx;
   const actor = resolveRequestActor(ctx);
   try {
     const { rowCount } = await db.query(
       `UPDATE gym_professional_services gps
        JOIN professional_services ps ON ps.id = gps.professional_service_id
-       SET gps.status = 'inactive', gps.updated_at = UTC_TIMESTAMP(), gps.updated_by_membership_id = ?
+       SET gps.status = 'inactive', gps.modified_at = UTC_TIMESTAMP(), gps.modified_by = ?
        WHERE gps.professional_service_id = ? AND gps.gym_id = ?
          AND (ps.gym_id IS NULL OR ps.gym_id = ?) AND ps.deleted_at IS NULL`,
-      [gymMembershipId, req.params.id, gymId, gymId],
+      [actor, req.params.id, gymId, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE ps.id = ?`, [gymId, req.params.id]);
@@ -194,7 +194,7 @@ professionalServicesRouter.post('/:id/deactivate', requireRole('admin'), async (
 
 professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
   const ctx = getTenantContext(req);
-  const { gymId, gymMembershipId } = ctx;
+  const { gymId } = ctx;
   const actor = resolveRequestActor(ctx);
   try {
     const { rows: source } = await db.query(
@@ -214,9 +214,9 @@ professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (r
         [gymId, newName, src.description, actor],
       );
       await tx.query(
-        `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by_membership_id)
+        `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by)
          VALUES (?, ?, 'active', ?)`,
-        [gymId, serviceId, gymMembershipId],
+        [gymId, serviceId, actor],
       );
       return { insertId: serviceId };
     });

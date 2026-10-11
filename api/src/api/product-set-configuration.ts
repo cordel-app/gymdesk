@@ -1,4 +1,5 @@
 import { db, Tx } from '../infra/db';
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { toPersonalFeeBenefit } from '../domain/personalFeeBenefit';
 import { toPlanDuration, toPlanDurationCadence, toPlanDurationRepeats } from '../domain/planDuration';
 import { toProductBenefit } from '../domain/productBenefitActions';
@@ -415,6 +416,8 @@ export async function planScheduledEvents(
  */
 export async function materialiseScheduledEvents(tx: Tx, input: {
   gymId: string; productSetId: number; today: string; cycles?: number;
+  /** #1182: who caused the obligations to exist; omitted means the system (`System`). */
+  actor?: string | null;
 }): Promise<{ created: number }> {
   const { gymId, productSetId, today } = input;
   const { rows: setRows } = await tx.query<{ owner_member_id: number; root_product_set_id: number }>(
@@ -429,6 +432,7 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
     'SELECT id, schedule_key FROM product_set_schedules WHERE root_product_set_id = ?', [rootId]);
   for (const s of schedules) scheduleIds.set(String(s.schedule_key), Number(s.id));
 
+  const actor = input.actor === undefined ? SYSTEM_ACTOR : input.actor;
   let created = 0;
   for (const event of planned) {
     const scheduleId = event.scheduleKey ? scheduleIds.get(event.scheduleKey) ?? null : null;
@@ -448,10 +452,10 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
     const { insertId } = await tx.query(
       `INSERT INTO billing_events
          (gym_id, member_id, event_type, source, amount, product_set_id, schedule_id,
-          period_start, period_end, billing_date, is_scheduled)
-       VALUES (?, ?, 'charge_created', 'system', ?, ?, ?, ?, ?, ?, 1)`,
+          period_start, period_end, billing_date, is_scheduled, created_by)
+       VALUES (?, ?, 'charge_created', 'system', ?, ?, ?, ?, ?, ?, 1, ?)`,
       [gymId, setRows[0].owner_member_id, amount, productSetId, scheduleId,
-        event.date, event.periodEnd, event.date],
+        event.date, event.periodEnd, event.date, actor],
     );
     for (const l of lines) {
       await tx.query(
@@ -497,6 +501,12 @@ export async function replaceFutureScheduledEvents(tx: Tx, input: {
  */
 export async function activateWithEvents(tx: Tx, input: {
   gymId: string; productSetId: number; today: string; cycles?: number;
+  /**
+   * #1182: who activated it, as the plain-text snapshot (`resolveRequestActor()`),
+   * written as `modified_by` of the assignment the activation projects. Omitted
+   * means the system acted (the payment webhook, a run) and records `System`.
+   */
+  actor?: string | null;
 }): Promise<MoveOutcome & { eventsCreated?: number; eventsReplaced?: number }> {
   const { rows } = await tx.query<{ previous_product_set_id: number | null }>(
     'SELECT previous_product_set_id FROM product_sets WHERE id = ? AND gym_id = ?',
@@ -512,11 +522,12 @@ export async function activateWithEvents(tx: Tx, input: {
   }
   const { created } = await materialiseScheduledEvents(tx, {
     gymId: input.gymId, productSetId: input.productSetId, today: input.today, cycles: input.cycles,
+    actor: input.actor,
   });
   // #1325 PR 3a: the operational assignment that access, eligibility and the
   // screens still read is a projection of this version, written here and only
   // here, in the same transaction as the activation.
-  await projectActiveProductSet(tx, input.gymId, input.productSetId);
+  await projectActiveProductSet(tx, input.gymId, input.productSetId, input.actor);
   return { ...moved, eventsCreated: created, eventsReplaced: replaced };
 }
 

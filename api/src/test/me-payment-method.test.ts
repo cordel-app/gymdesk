@@ -212,10 +212,10 @@ describe('POST /me/payment-method/replace-requests', () => {
 
     const { rows } = await db.query<{
       source: string; amount: string; charge_type_id: number | null;
-      consent_given_at: Date | null; initiated_by: string | null; status: string;
+      consent_given_at: Date | null; created_by: string | null; status: string;
       page_token: string | null; user_membership_id: number;
     }>(
-      'SELECT source, amount, charge_type_id, consent_given_at, initiated_by, status, page_token, user_membership_id FROM payment_requests WHERE id = ?',
+      'SELECT source, amount, charge_type_id, consent_given_at, created_by, status, page_token, user_membership_id FROM payment_requests WHERE id = ?',
       [res.body.id],
     );
     expect(rows[0].source).toBe('card_update');
@@ -225,7 +225,7 @@ describe('POST /me/payment-method/replace-requests', () => {
     expect(rows[0].page_token).not.toBeNull();
     // The member went through the consent themselves, and no staff member did.
     expect(rows[0].consent_given_at).not.toBeNull();
-    expect(rows[0].initiated_by).toBeNull();
+    expect(rows[0].created_by).toBe('Test User');
     expect(rows[0].user_membership_id).toBe(membershipId);
   });
 

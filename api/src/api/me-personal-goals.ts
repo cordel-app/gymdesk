@@ -302,8 +302,7 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
             startDate: startDate.value ?? null,
           }),
           isInitial: true,
-          actorName: readingActor(ctx, true).name,
-          actorType: readingActor(ctx, true).type,
+          actor: readingActor(ctx),
         });
       }
       return assignmentId;
@@ -441,8 +440,7 @@ mePersonalGoalsRouter.post('/:id/readings', async (req, res, next) => {
       value: value.value,
       recordedAt: recordedAt.value,
       isInitial: false,
-      actorName: readingActor(ctx, true).name,
-      actorType: readingActor(ctx, true).type,
+      actor: readingActor(ctx),
     });
     res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false, targetType: assignment.target_type }));
   } catch (err) { next(err); }
@@ -469,8 +467,7 @@ mePersonalGoalsRouter.post('/:id/initial-reading', async (req, res, next) => {
       value: value.value,
       recordedAt: recordedAt.value,
       isInitial: true,
-      actorName: readingActor(ctx, true).name,
-      actorType: readingActor(ctx, true).type,
+      actor: readingActor(ctx),
     });
     res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false, targetType: assignment.target_type }));
   } catch (err) { next(err); }

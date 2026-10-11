@@ -40,13 +40,12 @@ interface StoredReading {
   recorded_at: unknown;
   is_initial: unknown;
   created_at: unknown;
-  created_by_name: string | null;
-  created_by_type: string | null;
+  created_by: string | null;
 }
 
 const COLUMNS = `
   r.id, r.member_personal_goal_id, r.value, r.recorded_at, r.is_initial,
-  r.created_at, r.created_by_name, r.created_by_type
+  r.created_at, r.created_by
 `;
 
 /**
@@ -119,8 +118,7 @@ function shapeReading(
   return {
     ...base,
     created_at: row.created_at,
-    created_by_name: row.created_by_name,
-    created_by_type: row.created_by_type,
+    created_by: row.created_by,
   };
 }
 
@@ -209,19 +207,19 @@ export async function insertGoalReading(
     value: number;
     recordedAt: string | undefined;
     isInitial: boolean;
-    actorName: string | null;
-    actorType: string | null;
+    /** #1182 stage 3: the plain-text actor snapshot (`readingActor()`). */
+    actor: string | null;
   },
 ): Promise<number> {
   const { insertId } = await exec.query(
     `INSERT INTO ${TABLE}
        (gym_id, member_personal_goal_id, value, recorded_at, is_initial,
-        created_by_name, created_by_type)
-     VALUES (?, ?, ?, COALESCE(?, UTC_TIMESTAMP()), ?, ?, ?)`,
+        created_by)
+     VALUES (?, ?, ?, COALESCE(?, UTC_TIMESTAMP()), ?, ?)`,
     [
       input.gymId, input.assignmentId, input.value,
       input.recordedAt ?? null, input.isInitial ? 1 : 0,
-      input.actorName, input.actorType,
+      input.actor,
     ],
   );
   return insertId;

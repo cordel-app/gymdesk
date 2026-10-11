@@ -83,11 +83,8 @@ function branchFor(type: EntityType, gymId: string, locale: SupportedLocale): Un
     case 'promotion':
       return {
         sql: `SELECT 'promotion' AS entity_type, p.id, p.name, p.description,
-               CONVERT(COALESCE(p.deleted_by_name, gm_d.name) USING utf8mb4) AS deleted_by, p.deleted_at,
-               p.created_at, CONVERT(gm_c.name USING utf8mb4) AS created_by
+               ${actors('p')}
              FROM promotions p
-             LEFT JOIN gym_memberships gm_d ON gm_d.id = p.deleted_by_membership_id
-             LEFT JOIN gym_memberships gm_c ON gm_c.id = p.created_by_membership_id
              WHERE p.gym_id = ? AND p.lifecycle_status = 'deleted'`,
         params: [gymId],
       };
@@ -275,14 +272,10 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string, l
              WHERE mp.id = ? AND mp.gym_id = ? AND mp.deleted_at IS NOT NULL`;
       break;
     case 'promotion':
-      // Promotions are stage 3's: the old columns, reported under the new names.
       sql = `SELECT p.id, p.name, p.description, p.lifecycle_status, p.starts_at, p.ends_at,
-                    p.stackable, p.created_at, p.deleted_at,
-                    gm_c.name AS created_by,
-                    COALESCE(p.deleted_by_name, gm_d.name) AS deleted_by
+                    p.stackable, p.created_at, p.created_by, p.modified_at, p.modified_by,
+                    p.deleted_at, p.deleted_by
              FROM promotions p
-             LEFT JOIN gym_memberships gm_c ON gm_c.id = p.created_by_membership_id
-             LEFT JOIN gym_memberships gm_d ON gm_d.id = p.deleted_by_membership_id
              WHERE p.id = ? AND p.gym_id = ? AND p.lifecycle_status = 'deleted'`;
       break;
     case 'center':
@@ -368,7 +361,7 @@ recycleBinRouter.post('/:entityType/:id/recover', requireModuleWrite('SYSTEM'), 
   const type = entityType as EntityType;
 
   // #1182 stage 2: a restore is a modification, recorded as one, and clears the
-  // deleted pair. Promotions are stage 3's and keep their own columns.
+  // deleted pair.
   const actor = resolveRequestActor(getTenantContext(req));
   const restored = restoredAuditSet(actor);
 
@@ -382,8 +375,7 @@ recycleBinRouter.post('/:entityType/:id/recover', requireModuleWrite('SYSTEM'), 
       sql = `UPDATE membership_plans SET deleted_at = NULL, deleted_by = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?, lifecycle_status = 'active' WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;
       break;
     case 'promotion':
-      sql = `UPDATE promotions SET lifecycle_status = 'active', deleted_at = NULL, deleted_by_membership_id = NULL WHERE id = ? AND gym_id = ? AND lifecycle_status = 'deleted'`;
-      params = [id, gymId];
+      sql = `UPDATE promotions SET deleted_at = NULL, deleted_by = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?, lifecycle_status = 'active' WHERE id = ? AND gym_id = ? AND lifecycle_status = 'deleted'`;
       break;
     case 'center':
       sql = `UPDATE centers SET deleted_at = NULL, deleted_by = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL`;

@@ -260,7 +260,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
         gymId, rootProductSetId: Number(draft.productSet.root_product_set_id), memberId, isOwner: true,
       });
       for (const promotionId of promotionIds) {
-        await applyPromotionToProductSet(tx, gymId, userId, draft.productSet.id, promotionId);
+        await applyPromotionToProductSet(tx, gymId, actor.name, draft.productSet.id, promotionId);
       }
       return draft;
     });
@@ -276,7 +276,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
     let checkout: { paymentRequestId: number; checkoutUrl: string; billingEventId: number } | null = null;
     let status = 'active';
     if (owesNothing) {
-      const out = await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: setId, today }));
+      const out = await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: setId, today, actor: actor.name }));
       if (out.kind !== 'ok') return res.status(500).json({ error: 'Membership could not be saved' });
     } else {
       const moved = await db.transaction((tx) => submitSetForPayment(tx, gymId, setId));
@@ -287,7 +287,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       );
       checkout = await createProductSetCheckout({
         gymId, productSetId: setId, memberId, memberEmail: emailRows[0]?.email ?? '',
-        startsAt, charge: charge as NonNullable<typeof charge>,
+        startsAt, charge: charge as NonNullable<typeof charge>, actor: actor.name,
       });
     }
 
