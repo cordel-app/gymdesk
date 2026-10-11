@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 import { createTrainingPlanTx } from './training-plan-creation';
 
 /**
@@ -43,7 +44,9 @@ memberTrainingPlansRouter.get('/', requireModuleWrite('TRAINING'), async (req, r
 });
 
 memberTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { memberId } = req.params as { memberId: string };
   const { template_id, name, description, valid_to } = req.body;
 
@@ -56,7 +59,7 @@ memberTrainingPlansRouter.post('/', requireModuleWrite('TRAINING'), async (req, 
   try {
     const result = await db.transaction(async (tx) =>
       createTrainingPlanTx(tx, {
-        gymId, memberId, gymMembershipId,
+        gymId, memberId, gymMembershipId, actor,
         templateId: template_id ?? null,
         name: name?.trim() || null,
         description,

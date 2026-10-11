@@ -18,17 +18,19 @@ export async function refundPackageCredit(
   gymId: string,
   reason = 'Booking cancellation refund',
   actorUserId: string | null = null,
+  /** #1182 stage 3: plain-text actor recorded as the booking's `modified_by`. */
+  actor: string | null = null,
 ) {
   await tx.query(
-    "UPDATE user_class_packages SET sessions_remaining = sessions_remaining + 1, status = IF(status = 'consumed', 'active', status) WHERE id = ?",
-    [userClassPackageId],
+    "UPDATE user_class_packages SET sessions_remaining = sessions_remaining + 1, status = IF(status = 'consumed', 'active', status), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?",
+    [actor, userClassPackageId],
   );
   await tx.query(
-    'UPDATE calendar_event_bookings SET user_class_package_id = NULL WHERE id = ?',
-    [bookingId],
+    'UPDATE calendar_event_bookings SET user_class_package_id = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+    [actor, bookingId],
   );
   await tx.query(
-    'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, calendar_event_booking_id, amount, reason, actor_user_id) VALUES (?, ?, NULL, ?, 1, ?, ?)',
-    [gymId, userClassPackageId, bookingId, reason, actorUserId],
+    'INSERT INTO class_package_transactions (gym_id, user_class_package_id, booking_id, calendar_event_booking_id, amount, reason, actor_user_id, created_by) VALUES (?, ?, NULL, ?, 1, ?, ?, ?)',
+    [gymId, userClassPackageId, bookingId, reason, actorUserId, actor],
   );
 }

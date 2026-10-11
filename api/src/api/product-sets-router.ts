@@ -47,7 +47,6 @@ function actorOf(req: any): Actor {
       impersonatedUserId: ctx.impersonatedUserId,
       impersonatedActorName: ctx.impersonatedActorName,
     }),
-    type: ctx.impersonatedUserId ? 'superadmin' : 'staff',
   };
 }
 
@@ -238,7 +237,7 @@ productSetsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (r
   const blocking = await loadEditLock(gymId, Number(set.owner_member_id), todayUtc());
   if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
-  const out = await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc() }));
+  const out = await db.transaction((tx) => activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor: actorOf(req).name }));
   if (out.kind !== 'ok') return res.status(409).json({ error: out.kind });
   recordAudit(req, { action: 'activate', entityType: 'product_set', entityId: set.id, next: { status: 'active' } });
   res.json({ product_set_id: Number(set.id), status: 'active', events_created: (out as any).eventsCreated ?? 0 });
@@ -274,7 +273,7 @@ productSetsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), as
        VALUES (?, ?, ?, 'EUR', ?, ?, 'completed', 'monei', 'manual', ?, 'cash', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
       [gymId, Number(set.owner_member_id), ev[0].amount, ct[0]?.id ?? null, ev[0].id,
         Number(prev[0]?.n ?? 0) + 1, getTenantContext(req).userId ?? null]);
-    const activated = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc() });
+    const activated = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor: actorOf(req).name });
     return { kind: activated.kind, billingEventId: Number(ev[0].id) };
   });
   if (out.kind === 'no_open_event') return res.status(409).json({ error: 'no_open_event' });

@@ -83,16 +83,18 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
 /** Copies applied Promotions (and the grants each froze) between two versions. */
 async function copyApplications(tx: Tx, gymId: string, from: { productSetId: number }, to: { productSetId: number }) {
   const { rows } = await tx.query<any>(
-    `SELECT id, promotion_id, applied_by, applied_at, consumed_at, status, snapshot, revoked_at
+    `SELECT id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
+            modified_at, modified_by
        FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?`, [gymId, from.productSetId]);
   for (const app of rows) {
     const { insertId } = await tx.query(
       `INSERT INTO user_membership_promotions
-         (gym_id, product_set_id, promotion_id, applied_by, applied_at, consumed_at, status, snapshot, revoked_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, to.productSetId, app.promotion_id, app.applied_by, app.applied_at, app.consumed_at, app.status,
+         (gym_id, product_set_id, promotion_id, created_by, applied_at, consumed_at, status, snapshot, revoked_at,
+          modified_at, modified_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [gymId, to.productSetId, app.promotion_id, app.created_by, app.applied_at, app.consumed_at, app.status,
         app.snapshot == null ? null : (typeof app.snapshot === 'string' ? app.snapshot : JSON.stringify(app.snapshot)),
-        app.revoked_at]);
+        app.revoked_at, app.modified_at, app.modified_by]);
     for (const table of [
       'user_membership_promotion_session_snapshot',
       'user_membership_promotion_oneoff_snapshot',
@@ -152,7 +154,8 @@ async function writePendingInitialEvent(tx: Tx, gymId: string, setId: number): P
  * Idempotent: an assignment whose version is already active is left alone.
  */
 export async function importAssignmentAsProductSet(
-  tx: Tx, gymId: string, userMembershipId: number, opts: { pending?: boolean } = {},
+  tx: Tx, gymId: string, userMembershipId: number,
+  opts: { pending?: boolean; /** #1182: the plain-text actor of the commit; omitted = System. */ actor?: string | null } = {},
 ): Promise<number | null> {
   const { rows: linked } = await tx.query<any>(
     'SELECT id, status FROM product_sets WHERE gym_id = ? AND user_membership_id = ? FOR UPDATE', [gymId, userMembershipId]);
@@ -170,7 +173,7 @@ export async function importAssignmentAsProductSet(
       return Number(set.id);
     }
     if (!opts.pending && (set.status === 'pending_payment' || set.status === 'draft')) {
-      const out = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc() });
+      const out = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor: opts.actor });
       if (out.kind !== 'ok') {
         throw Object.assign(new Error(`ProductSet ${set.id} could not be activated: ${out.kind}`), { status: out.kind === 'expired' ? 410 : 409 });
       }
@@ -314,7 +317,7 @@ export async function projectedSetFor(tx: Tx, gymId: string, userMembershipId: n
  */
 export async function reconfigureProjected(
   tx: Tx,
-  input: { gymId: string; userMembershipId: number; actor: { name: string | null; type: string | null };
+  input: { gymId: string; userMembershipId: number; actor: { name: string | null; type?: string | null };
     mutate: (tx: Tx, draft: LockedDraft) => Promise<{ ok: true } | DraftRefusal> },
 ): Promise<ReconfigureOutcome> {
   // #1325 PR 3e: an assignment whose Draft version is linked to it is edited on
@@ -327,7 +330,7 @@ export async function reconfigureProjected(
     if (isRefusal(locked)) return locked;
     const edited = await input.mutate(tx, locked);
     if ('kind' in edited) return edited;
-    await syncDraftAssignment(tx, input.gymId, locked.id);
+    await syncDraftAssignment(tx, input.gymId, locked.id, input.actor.name);
     return { kind: 'ok', productSetId: locked.id };
   }
 
@@ -361,7 +364,7 @@ export async function reconfigureProjected(
   // The new version takes over the same assignment (it is the same contract).
   await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [input.userMembershipId, draftId]);
   await tx.query('UPDATE product_sets SET user_membership_id = NULL WHERE id = ?', [set.id]);
-  const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: draftId, today: todayUtc() });
+  const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: draftId, today: todayUtc(), actor: input.actor.name });
   if (out.kind !== 'ok') return { kind: 'not_a_draft', status: out.kind };
   return { kind: 'ok', productSetId: draftId };
 }
@@ -373,7 +376,7 @@ export async function reconfigureProjected(
  */
 export async function retireProjected(
   tx: Tx,
-  input: { gymId: string; userMembershipId: number; actor: { name: string | null; type: string | null } },
+  input: { gymId: string; userMembershipId: number; actor: { name: string | null; type?: string | null } },
 ): Promise<ReconfigureOutcome> {
   const set = await projectedSetFor(tx, input.gymId, input.userMembershipId);
   if (!set) return { kind: 'not_projected' };
@@ -382,7 +385,7 @@ export async function retireProjected(
     startsAt: todayUtc(), actor: input.actor,
   });
   if (created.kind === 'in_flight') return { kind: 'in_flight', productSetId: created.productSetId };
-  const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: created.productSet.id, today: todayUtc() });
+  const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: created.productSet.id, today: todayUtc(), actor: input.actor.name });
   if (out.kind !== 'ok') return { kind: 'not_a_draft', status: out.kind };
   return { kind: 'ok', productSetId: created.productSet.id };
 }
@@ -390,7 +393,7 @@ export async function retireProjected(
 /* ── Mutators for the edits that are not plain Draft writers ─────────────── */
 
 /** Applies a Promotion to the version being edited (the Draft writer's own rules). */
-export function applyPromotionMutator(gymId: string, userId: string | null, promotionId: number) {
+export function applyPromotionMutator(gymId: string, actor: string | null, promotionId: number) {
   return async (tx: Tx, draft: LockedDraft): Promise<{ ok: true } | DraftRefusal> => {
     if (draft.membership_plan_id == null) {
       return { kind: 'invalid', message: 'A ProductSet without a Membership Plan takes no Promotion' };
@@ -401,7 +404,7 @@ export function applyPromotionMutator(gymId: string, userId: string | null, prom
       await assignmentBeingEdited(tx, draft.id));
     if (refusal) return { kind: 'invalid', message: refusal.error };
     try {
-      await applyPromotionToProductSet(tx, gymId, userId ?? 'unknown', draft.id, promotionId);
+      await applyPromotionToProductSet(tx, gymId, actor, draft.id, promotionId);
     } catch (err: any) {
       if (err?.status === 409) return { kind: 'conflict', error: err.message, message: err.message };
       if (err?.status) return { kind: 'invalid', message: err.message };
@@ -417,12 +420,14 @@ export function applyPromotionMutator(gymId: string, userId: string | null, prom
  * charge by the window the application stood (#635 stage 9) — a committed
  * version's history is never a deletion.
  */
-export function revokePromotionMutator(promotionId: number) {
+export function revokePromotionMutator(promotionId: number, actor: string | null) {
   return async (tx: Tx, draft: LockedDraft): Promise<{ ok: true } | DraftRefusal> => {
     const { rowCount } = await tx.query(
-      `UPDATE user_membership_promotions SET status = 'revoked', revoked_at = UTC_TIMESTAMP()
+      `UPDATE user_membership_promotions
+          SET status = 'revoked', revoked_at = UTC_TIMESTAMP(),
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE gym_id = ? AND product_set_id = ? AND promotion_id = ? AND status = 'applied'`,
-      [draft.gym_id, draft.id, promotionId]);
+      [actor, draft.gym_id, draft.id, promotionId]);
     if (rowCount === 0) return { kind: 'not_found' };
     return { ok: true };
   };

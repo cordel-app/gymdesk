@@ -7,6 +7,7 @@ import { parseQuery, z } from '../infra/validate';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sourceForRole } from './billing-events';
+import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToMembership } from './membership-promotions';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
 import {
@@ -179,6 +180,7 @@ paymentsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res, next) 
         const outcome = await commitAssignment(tx, {
           gymId, userMembershipId: user_membership_id, fromStatuses: [PENDING_PAYMENT_STATUS],
           confirm: true, source: sourceForRole(role), actorUserId: userId,
+          actor: resolveRequestActor(getTenantContext(req)),
         });
         if (outcome.kind !== 'committed' && outcome.kind !== 'not_committable' && outcome.kind !== 'not_found') {
           throw Object.assign(
@@ -598,7 +600,7 @@ paymentsRouter.post('/billing-events/:id/retry', requireModuleWrite('PAYMENTS'),
   if (!billingEventId) return res.status(400).json({ error: 'Invalid id' });
 
   try {
-    const outcome = await retryBillingEventPayment(gymId, billingEventId, userId, sourceForRole(role));
+    const outcome = await retryBillingEventPayment(gymId, billingEventId, userId, sourceForRole(role), resolveRequestActor(getTenantContext(req)));
     if ('failure' in outcome) {
       return res.status(outcome.failure.status).json({ error: outcome.failure.error });
     }
@@ -664,6 +666,7 @@ paymentsRouter.post('/apply-promotion', requireModuleWrite('PAYMENTS'), async (r
   try {
     const result = await applyPromotionToMembership(
       gymId, userId, sourceForRole(role), Number(user_membership_id), Number(promotion_id),
+      resolveRequestActor(getTenantContext(req)),
     );
     recordAudit(req, { action: 'apply_promotion', entityType: 'user_membership', entityId: result.user_membership_id, next: result });
     res.status(201).json(result);

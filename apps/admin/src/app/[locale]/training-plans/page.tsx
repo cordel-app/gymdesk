@@ -55,15 +55,14 @@ interface TrainingPlanRow {
   member_name: string;
   template_id: number | null;
   template_name: string | null;
-  assigned_by_membership_id: number | null;
-  created_by_name: string | null;
+  created_by: string | null;
   created_at: string;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   workouts?: Workout[] | null;
 }
 interface ListResponse { items: TrainingPlanRow[]; total: number; limit: number; offset: number }
-interface CreatedByOption { membership_id: number; name: string }
+interface CreatedByOption { name: string }
 interface MemberOption { id: number; name: string }
 interface TemplateOption { id: number; name: string }
 
@@ -427,7 +426,7 @@ export default function TrainingPlansPage() {
         <FilterField label={t('training_plans.filter_label_author')} htmlFor="tp-filter-author">
           <select id="tp-filter-author" value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterControlStyle}>
             <option value="">{t('training_plans.filter_created_by_all')}</option>
-            {createdByOptions.map((o) => <option key={o.membership_id} value={o.membership_id}>{o.name}</option>)}
+            {createdByOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
           </select>
         </FilterField>
         <FilterField label={t('training_plans.filter_label_status')} htmlFor="tp-filter-status">
@@ -982,11 +981,11 @@ function DetailsDialog({ plan, locale, t, onClose }: {
         <DetailRow label={t('training_plans.label_start_date')} value={formatDate(plan.start_date, locale)} />
         {plan.end_date && <DetailRow label={t('training_plans.label_end_date')} value={formatDate(plan.end_date, locale)} />}
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
-        <DetailRow label={t('training_plans.label_created_by')} value={plan.created_by_name ?? '—'} />
+        <DetailRow label={t('training_plans.label_created_by')} value={plan.created_by ?? '—'} />
         <DetailRow label={t('training_plans.label_created_at')} value={formatDate(plan.created_at, locale)} />
         {plan.modified_at && (
           <>
-            <DetailRow label={t('training_plans.label_modified_by')} value={plan.modified_by_name ?? '—'} />
+            <DetailRow label={t('training_plans.label_modified_by')} value={plan.modified_by ?? '—'} />
             <DetailRow label={t('training_plans.label_modified_at')} value={formatDate(plan.modified_at, locale)} />
           </>
         )}

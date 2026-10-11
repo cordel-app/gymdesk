@@ -43,6 +43,11 @@ interface CommitInput {
   confirm: boolean;
   source: string;
   actorUserId: string | null;
+  /**
+   * #1182: the plain-text actor snapshot (`resolveRequestActor()`, or `System`
+   * for the payment webhook) written as the assignment's `modified_by`.
+   */
+  actor: string | null;
 }
 
 export type CommitOutcome =
@@ -118,15 +123,15 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
     if (dateError) return { kind: 'bad_date', message: dateError };
     await supersedeLiveAssignments(tx, {
       gymId: input.gymId, conflicts, newStartsAt: row.starts_at,
-      source: input.source, actorUserId: input.actorUserId,
+      source: input.source, actorUserId: input.actorUserId, actor: input.actor,
     });
   }
 
   const { rowCount } = await tx.query(
     `UPDATE user_memberships
-        SET status = 'active'
+        SET status = 'active', modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE id = ? AND gym_id = ? AND status = ?`,
-    [row.id, input.gymId, row.status],
+    [input.actor, row.id, input.gymId, row.status],
   );
   if (rowCount === 0) return { kind: 'not_committable', status: row.status };
   await recordStatusChange(tx, {
@@ -137,7 +142,7 @@ export async function commitAssignment(tx: Tx, input: CommitInput): Promise<Comm
   // #1325 PR 3: the committed assignment is handed over to a ProductSet version
   // in this same transaction — from here its obligations are the set's
   // persisted events, which the nightly run executes.
-  await importAssignmentAsProductSet(tx, input.gymId, Number(row.id));
+  await importAssignmentAsProductSet(tx, input.gymId, Number(row.id), { actor: input.actor });
   return { kind: 'committed', previousStatus: row.status, memberId: Number(row.member_id), superseded: conflicts.map((c) => c.id) };
 }
 
@@ -170,8 +175,10 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
   }
 
   const { rowCount } = await tx.query(
-    `UPDATE user_memberships SET status = ? WHERE id = ? AND gym_id = ? AND status = ?`,
-    [PENDING_PAYMENT_STATUS, row.id, input.gymId, DRAFT_STATUS],
+    `UPDATE user_memberships
+        SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+      WHERE id = ? AND gym_id = ? AND status = ?`,
+    [PENDING_PAYMENT_STATUS, input.actor, row.id, input.gymId, DRAFT_STATUS],
   );
   if (rowCount === 0) return { kind: 'not_committable', status: row.status };
   await recordStatusChange(tx, {
@@ -181,6 +188,6 @@ export async function submitForPayment(tx: Tx, input: Omit<CommitInput, 'fromSta
   });
   // #1325 PR 3b: the Pending Payment version exists from here, with its initial
   // Billing Event, so every payment raised for this row is an attempt on it.
-  await importAssignmentAsProductSet(tx, input.gymId, Number(row.id), { pending: true });
+  await importAssignmentAsProductSet(tx, input.gymId, Number(row.id), { pending: true, actor: input.actor });
   return { kind: 'submitted', memberId: Number(row.member_id) };
 }

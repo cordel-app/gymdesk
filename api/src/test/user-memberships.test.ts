@@ -2134,11 +2134,10 @@ describe('POST /user-memberships/:id/close', () => {
 });
 
 // ─── GET /user-memberships/:id — audit metadata (#511 stage 2) ───────────────
-// created_by_name/modified_by_name/modified_at are derived from audit_logs
-// (loadAuditMetadata) and only ever added on this single-resource GET, not on
-// the list endpoint. The mocked Clerk user resolves to actorName 'Test User'
-// (see setup.ts), which is what recordAudit stamps onto every audit_logs row
-// written by TEST_USER_ID.
+// #1182 stage 3: created_by / modified_by / modified_at are the row's own
+// plain-text snapshots, written by every path that creates or changes it and
+// reported on the list and the single-resource GET alike. The mocked Clerk user
+// resolves to actorName 'Test User' (see setup.ts).
 
 describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
   let gymId: string;
@@ -2148,7 +2147,7 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
     await createTestMembership(gymId, 'admin');
   });
 
-  it('sets created_by_name and leaves modified_by_name/modified_at null right after creation', async () => {
+  it('sets created_by and leaves modified_by/modified_at null right after creation', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const createRes = await request
@@ -2169,12 +2168,12 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.created_by_name).toBe('Test User');
-    expect(res.body.modified_by_name).toBeNull();
+    expect(res.body.created_by).toBe('Test User');
+    expect(res.body.modified_by).toBeNull();
     expect(res.body.modified_at).toBeNull();
   });
 
-  it('sets modified_by_name/modified_at after a mutation (pause), while created_by_name still reflects creation', async () => {
+  it('sets modified_by/modified_at after a mutation (pause), while created_by still reflects creation', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const createRes = await request
@@ -2203,12 +2202,12 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.created_by_name).toBe('Test User');
-    expect(res.body.modified_by_name).toBe('Test User');
+    expect(res.body.created_by).toBe('Test User');
+    expect(res.body.modified_by).toBe('Test User');
     expect(res.body.modified_at).not.toBeNull();
   });
 
-  it('sets modified_by_name/modified_at after a PUT edit as well', async () => {
+  it('sets modified_by/modified_at after a PUT edit as well', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
     const umId = await createUserMembershipDirect(gymId, memberId, planId, 'active');
@@ -2230,8 +2229,8 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
     // createUserMembershipDirect is a raw DB insert, so it snapshots no creation
     // actor (#958, migration 215) -- only the modified_* fields from the PUT are
     // exercised here.
-    expect(res.body.created_by_name).toBeNull();
-    expect(res.body.modified_by_name).toBe('Test User');
+    expect(res.body.created_by).toBeNull();
+    expect(res.body.modified_by).toBe('Test User');
     expect(res.body.modified_at).not.toBeNull();
   });
 
@@ -2252,13 +2251,9 @@ describe('GET /user-memberships/:id — audit metadata (#511 stage 2)', () => {
     const row = res.body.find((r: any) => r.id === umId);
     expect(row).toBeDefined();
     // A raw DB insert snapshots no actor, so the column is present and null.
-    expect(row.created_by_name).toBeNull();
-    expect(row.created_by_type).toBeNull();
-    // #1325 added the stored `modified_*` / `deleted_*` pairs (migration 246).
-    // No writer snapshots them yet, so they read NULL — and the *derived*
-    // modification metadata (an `audit_logs` subquery per row) is still not on
-    // the list.
-    expect(row.modified_by_name).toBeNull();
+    expect(row.created_by).toBeNull();
+    // The stored modified pair rides on the list too; a raw insert has none.
+    expect(row.modified_by).toBeNull();
     expect(row.modified_at).toBeNull();
     expect(row.last_modified_at).toBeUndefined();
   });

@@ -1,3 +1,4 @@
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 // #1121 stages 1 and 2 — the I/O half of the member's own Products: what
 // `GET /me/products` answers, and what `POST /me/products/:id/purchase` does.
 //
@@ -378,8 +379,8 @@ export async function startProductPurchase(
            (gym_id, member_id, product_id, status,
             product_name, product_type, billing_frequency, units,
             amount, currency, tax_rate_percent,
-            payment_request_id, created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'member')`,
+            payment_request_id, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.gymId, input.memberId, input.productId, PENDING_PURCHASE_STATUS,
           snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
@@ -442,9 +443,10 @@ export async function completeProductPurchase(
     // the webhook has the request's own `gym_id` in hand.
     `UPDATE member_products_oneoff_snapshot
         SET status = 'active', purchased_at = UTC_TIMESTAMP(),
-            modified_at = UTC_TIMESTAMP()
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE gym_id = ? AND payment_request_id = ? AND status = ?`,
-    [gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
+    // The provider's confirmation is the system's act, not the member's (#1182).
+    [SYSTEM_ACTOR, gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
   );
   return rowCount;
 }
@@ -464,9 +466,9 @@ export async function cancelProductPurchase(
 ): Promise<number> {
   const { rowCount } = await conn.query(
     `UPDATE member_products_oneoff_snapshot
-        SET status = 'cancelled', modified_at = UTC_TIMESTAMP()
+        SET status = 'cancelled', modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE gym_id = ? AND payment_request_id = ? AND status = ?`,
-    [gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
+    [SYSTEM_ACTOR, gymId, paymentRequestId, PENDING_PURCHASE_STATUS],
   );
   return rowCount;
 }
@@ -492,9 +494,9 @@ export async function cancelAbandonedPurchases(
   const { rowCount } = await conn.query(
     `UPDATE member_products_oneoff_snapshot mp
        JOIN payment_requests pr ON pr.id = mp.payment_request_id
-        SET mp.status = 'cancelled', mp.modified_at = UTC_TIMESTAMP()
+        SET mp.status = 'cancelled', mp.modified_at = UTC_TIMESTAMP(), mp.modified_by = ?
       WHERE mp.status = ? AND pr.status IN ('expired', 'failed')`,
-    [PENDING_PURCHASE_STATUS],
+    [SYSTEM_ACTOR, PENDING_PURCHASE_STATUS],
   );
   return rowCount;
 }

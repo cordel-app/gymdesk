@@ -998,7 +998,7 @@ meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calenda
   if (!class_session_id) return res.status(400).json({ error: 'class_session_id is required' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id));
+    const result = await bookMemberOnSession(gymId, memberId, Number(class_session_id), false, false, undefined, false, resolveRequestActor(ctx));
     // #1113 §1/§7: no alert. The member just performed this action and the
     // response is their confirmation, so a persistent `booking_confirmed` (or
     // `waitlist_joined`) row told them something they had just done — which is
@@ -1094,7 +1094,7 @@ meRouter.delete('/bookings/:id', requireRole('member'), requireFeatureEnabled('c
     }
     // #1189 stage 3: a member's cancellation that reaches here was allowed
     // free of charge (outside the notice window, or inside the grace period).
-    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { spendLateCancel: false });
+    const cancelResult = await cancelBooking(gymId, Number(req.params.id), gymMembershipId, { spendLateCancel: false, actor: resolveRequestActor(ctx) });
     if (cancelResult.promotedMemberId) {
       sendNotification(gymId, cancelResult.promotedMemberId, 'promoted_from_waitlist', 'session',
         rows[0].class_session_id, { title: rows[0].title, starts_at: rows[0].starts_at });

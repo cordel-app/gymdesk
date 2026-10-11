@@ -9,7 +9,7 @@ import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@
 interface Membership { id: number; member_name: string; plan_name: string | null; membership_fee: number | null }
 interface Applied {
   id: number; promotion_id: number; promotion_name: string;
-  applied_by: string; applied_at: string; status: 'applied' | 'consumed' | 'revoked';
+  created_by: string | null; applied_at: string; status: 'applied' | 'consumed' | 'revoked';
 }
 interface Promotion { id: number; name: string }
 
@@ -85,7 +85,7 @@ export function PromotionApplyModal({ membership, onClose }: { membership: Membe
                     <div style={{ flex: 1 }}>
                       <div style={{ fontWeight: 500 }}>{a.promotion_name}</div>
                       <div style={{ fontSize: 12, color: '#888' }}>
-                        {t('memberships.applied_by', { by: a.applied_by?.slice(0, 12) ?? '—', at: a.applied_at.slice(0, 10) })}
+                        {t('memberships.applied_by', { by: a.created_by ?? '—', at: a.applied_at.slice(0, 10) })}
                       </div>
                     </div>
                     <button onClick={() => revoke(a.promotion_id)} style={btnSmall('#c0392b')}>{t('memberships.revoke')}</button>

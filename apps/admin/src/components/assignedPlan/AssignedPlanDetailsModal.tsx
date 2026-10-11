@@ -56,9 +56,9 @@ export function AssignedPlanDetailsModal({ detail, onClose }: {
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid #f0f0f0' }}>
           <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Audit</p>
-          {field(t('detail_created_by'), detail.created_by_name)}
+          {field(t('detail_created_by'), detail.created_by)}
           {field(t('detail_created_at'), fmtDate(detail.created_at))}
-          {field(t('detail_modified_by'), detail.modified_by_name)}
+          {field(t('detail_modified_by'), detail.modified_by)}
           {field(t('detail_modified_at'), detail.modified_at ? fmtDate(detail.modified_at) : null)}
         </div>
 

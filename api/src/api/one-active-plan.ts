@@ -161,14 +161,17 @@ export async function supersedeLiveAssignments(
     newStartsAt: string;
     source: string;
     actorUserId: string | null;
+    /** #1182: the plain-text actor snapshot, written as `modified_by`. */
+    actor: string | null;
   },
 ): Promise<void> {
   for (const conflict of args.conflicts) {
     await tx.query(
       `UPDATE user_memberships
-       SET status = 'cancelled', closed_at = UTC_TIMESTAMP(), ends_at = ?
+       SET status = 'cancelled', closed_at = UTC_TIMESTAMP(), ends_at = ?,
+           modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ?`,
-      [args.newStartsAt, conflict.id, args.gymId],
+      [args.newStartsAt, args.actor, conflict.id, args.gymId],
     );
     await recordStatusChange(tx, {
       gymId: args.gymId,

@@ -34,7 +34,12 @@ const COLUMNS = `id, gym_id, owner_member_id, root_product_set_id, previous_prod
 
 const FRESH_DRAFT_SQL = `last_activity_at >= UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`;
 
-export interface Actor { name: string | null; type: string | null }
+/**
+ * Who is acting. Only `name` is written (#1182 stage 3: `created_by` is the
+ * plain-text snapshot `resolveRequestActor()` produced); `type` is no longer
+ * stored and is kept on the shape only so the existing callers still compile.
+ */
+export interface Actor { name: string | null; type?: string | null }
 
 export type CreateDraftOutcome =
   | { kind: 'created'; productSet: ProductSetRow }
@@ -89,11 +94,11 @@ export async function createDraft(tx: Tx, input: {
   const { insertId } = await tx.query(
     `INSERT INTO product_sets
        (gym_id, owner_member_id, root_product_set_id, previous_product_set_id, version, status,
-        membership_plan_id, starts_at, created_by_name, created_by_type)
-     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`,
+        membership_plan_id, starts_at, created_by)
+     VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?)`,
     [input.gymId, input.ownerMemberId, active ? active.root_product_set_id : null,
       active ? active.id : null, version, input.membershipPlanId, input.startsAt,
-      input.actor.name, input.actor.type],
+      input.actor.name],
   );
   if (!active) {
     await tx.query(`UPDATE product_sets SET root_product_set_id = id WHERE id = ?`, [insertId]);

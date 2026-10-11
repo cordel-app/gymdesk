@@ -25,7 +25,6 @@ function actorOf(req: Request) {
       impersonatedUserId: ctx.impersonatedUserId,
       impersonatedActorName: ctx.impersonatedActorName,
     }),
-    type: ctx.impersonatedUserId ? 'superadmin' : 'staff',
   };
 }
 

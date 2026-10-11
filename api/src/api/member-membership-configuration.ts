@@ -84,8 +84,9 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   const { rows: rawPlans } = await db.query(
     `SELECT um.id, um.membership_plan_id, um.status,
             um.starts_at, um.ends_at,
-            um.closed_at, um.created_at,
-            um.created_by_name, um.created_by_type, um.member_id AS owner_member_id,
+            um.closed_at, um.created_at, um.created_by,
+            um.modified_at, um.modified_by, um.deleted_at, um.deleted_by,
+            um.member_id AS owner_member_id,
             p.name AS plan_name,
             ${LIFECYCLE_STATUS_SQL} AS lifecycle_status,
             um.status IN (${LIVE_STATUSES.map(() => '?').join(',')}) AS is_live
@@ -124,7 +125,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
   // beside `plans` for the Member card to show and act on. A Draft idle past two
   // hours is reported `expired` and is never offered an action.
   const { rows: inFlight } = await db.query<any>(
-    `SELECT ps.id, ps.status, ps.version, ps.starts_at, ps.created_by_name,
+    `SELECT ps.id, ps.status, ps.version, ps.starts_at, ps.created_by,
             (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
             mp.name AS plan_name,
             (SELECT be.amount FROM billing_events be
@@ -146,7 +147,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       starts_at: toDateOnly(r.starts_at),
       amount_due: r.amount_due != null ? Number(r.amount_due) : null,
       expired: Number(r.expired) === 1,
-      created_by_name: r.created_by_name ?? null,
+      created_by: r.created_by ?? null,
     })),
     plans: plans.map((p: any) => ({
       id: p.id,
@@ -168,8 +169,15 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
       // `created_at` is a DATETIME, reported as a bare date like every other
       // date in this payload (see `toDateOnly` above).
       created_at: toDateOnly(p.created_at),
-      created_by_name: p.created_by_name ?? null,
-      created_by_type: p.created_by_type ?? null,
+      created_by: p.created_by ?? null,
+      // #1182 stage 3: the row's own plain-text snapshots — who last modified
+      // it (a person, `System` for a run or the payment webhook), with the
+      // moment, and the soft-delete pair (nothing soft-deletes an assignment
+      // today; a Draft is a hard delete).
+      modified_at: p.modified_at ?? null,
+      modified_by: p.modified_by ?? null,
+      deleted_at: p.deleted_at ?? null,
+      deleted_by: p.deleted_by ?? null,
       starts_at: toDateOnly(p.starts_at),
       ends_at: toDateOnly(p.ends_at),
       // Derived by `withDerivedBilling()` above (#1325).

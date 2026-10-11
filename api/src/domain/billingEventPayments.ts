@@ -1,3 +1,4 @@
+import { SYSTEM_ACTOR } from './auditActor';
 import { eventAssignmentSql } from './billingEventOwnership';
 import { chargeGuard } from './chargeGuard';
 import crypto from 'crypto';
@@ -232,7 +233,10 @@ export async function retryBillingEventPayment(
   billingEventId: number,
   actorUserId: string | null,
   actorSource: string,
+  /** #1182: the plain-text actor snapshot, written as `modified_by` of a plan the rejections pause. */
+  actorArg?: string | null,
 ): Promise<{ failure: ActionFailure } | { result: RetryResult }> {
+  const actor = actorArg === undefined ? (actorUserId ? null : SYSTEM_ACTOR) : actorArg;
   const ev = await loadEventContext(gymId, billingEventId);
   const guard = guardActionable(ev);
   if (guard) return { failure: guard };
@@ -334,7 +338,11 @@ export async function retryBillingEventPayment(
         [event.user_membership_id, gymId],
       );
       if (current.length === 0 || current[0].status !== 'active') return;
-      await tx.query('UPDATE user_memberships SET status = ? WHERE id = ? AND gym_id = ?', ['paused', current[0].id, gymId]);
+      await tx.query(
+        `UPDATE user_memberships
+            SET status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+          WHERE id = ? AND gym_id = ?`,
+        ['paused', actor, current[0].id, gymId]);
       await recordStatusChange(tx, {
         gymId, userMembershipId: current[0].id, memberId: current[0].member_id,
         previousStatus: current[0].status, newStatus: 'paused',

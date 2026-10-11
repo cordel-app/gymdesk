@@ -40,8 +40,10 @@ export interface MemberPlanRow {
    * it from, which the card renders as an em dash.
    */
   created_at: string | null;
-  created_by_name: string | null;
-  created_by_type: 'staff' | 'superadmin' | null;
+  created_by: string | null;
+  /** #1182: who last modified the assignment (a person or `System`), and when. */
+  modified_by: string | null;
+  modified_at: string | null;
   starts_at: string | null;
   ends_at: string | null;
   next_billing_date: string | null;
@@ -80,7 +82,7 @@ export interface ProductSetRow {
   /** The initial payment Save & Pay wrote, or `null` for a Draft. */
   amount_due: number | null;
   expired: boolean;
-  created_by_name: string | null;
+  created_by: string | null;
 }
 
 export interface MemberConfiguration {

@@ -39,7 +39,7 @@ async function writePrice(tx: Tx, gymId: string, setId: number, price: number, p
 
 export async function repriceOnVersion(tx: Tx, input: {
   gymId: string; userMembershipId: number; price: number; planPriceId: number | null;
-  actor: { name: string | null; type: string | null };
+  actor: { name: string | null; type?: string | null };
 }): Promise<RepriceOutcome> {
   const { gymId, userMembershipId, price, planPriceId } = input;
   const status = await latestLinkedStatus(tx, gymId, userMembershipId);
@@ -49,7 +49,7 @@ export async function repriceOnVersion(tx: Tx, input: {
     const draft = await linkedDraftSetFor(tx, gymId, userMembershipId);
     if (!draft) return 'skipped';
     await writePrice(tx, gymId, draft.id, price, planPriceId);
-    await syncDraftAssignment(tx, gymId, draft.id);
+    await syncDraftAssignment(tx, gymId, draft.id, input.actor.name);
     return 'updated';
   }
   if (status === 'active') {

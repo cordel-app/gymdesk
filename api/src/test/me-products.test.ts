@@ -369,7 +369,7 @@ describe('starting a purchase (#1121 stage 2 §5)', () => {
       product_name: 'Personal Training Session',
       source: 'product_purchase',
       request_status: 'pending',
-      created_by_type: 'member',
+      created_by: 'Catalogue Member',
     });
     // The payment belongs to the member, not to an assignment (migration 228).
     expect(row.user_membership_id).toBeNull();
@@ -933,7 +933,7 @@ describe('the Admin read of a member’s Products (#1118 §12, §13)', () => {
       status: 'pending_payment',
       amount: 50,
       regular_amount: 100,
-      created_by_type: 'member',
+      created_by: 'Catalogue Member',
     });
     expect(res.body.items[0].promotion).toMatchObject({
       promotion_name: 'Summer Promotion', benefit_action: 'percentage_discount',
