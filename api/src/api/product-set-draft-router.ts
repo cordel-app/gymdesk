@@ -5,6 +5,7 @@ import { recordAudit } from '../infra/audit';
 import { computeAssignmentBillingEventSimulation } from '../domain/assignmentBillingEventSimulation';
 import { emptyBillingEventSimulation } from '../domain/billingEventSimulation';
 import { ProductBenefitCategory } from '../domain/productClassification';
+import { resolveRequestActor } from '../domain/auditActor';
 import { applyPromotionToProductSet, validatePromotionSelection } from './membership-promotions';
 import { loadProductSetSimulationAssignment } from './product-set-configuration';
 import {
@@ -126,7 +127,7 @@ productSetDraftRouter.post('/promotions', requireModuleWrite('PAYMENTS'), (req, 
     const selectionError = await validatePromotionSelection(gymId, draft.membership_plan_id, [promotionId], draft.owner_member_id);
     if (selectionError) return { kind: 'invalid' as const, message: selectionError.error };
     try {
-      const applied = await applyPromotionToProductSet(tx, gymId, userId ?? 'unknown', draft.id, promotionId);
+      const applied = await applyPromotionToProductSet(tx, gymId, resolveRequestActor(getTenantContext(req)), draft.id, promotionId);
       await tx.query('UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ?', [draft.id]);
       return { ok: true as const, application_id: applied.application_id };
     } catch (err: any) {

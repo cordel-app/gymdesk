@@ -191,26 +191,21 @@ describe('buildAssignmentListWhere', () => {
 
 /* ── #1036: the member's own half ─────────────────────────────────────────── */
 
-describe('readingActor (#1036/#1037 readings ledger)', () => {
-  it('records a member acting on their own goals', () => {
-    expect(readingActor({ actorName: 'Ada Lovelace', isSuperadmin: false }, true))
-      .toEqual({ name: 'Ada Lovelace', type: 'member' });
+describe('readingActor (#1036/#1037 readings ledger, #1182 plain text)', () => {
+  it('records the person acting by name', () => {
+    expect(readingActor({ actorName: 'Ada Lovelace' })).toBe('Ada Lovelace');
+    expect(readingActor({ actorName: 'Coach' })).toBe('Coach');
   });
 
-  it('records staff for a staff-initiated write', () => {
-    expect(readingActor({ actorName: 'Coach', isSuperadmin: false }, false))
-      .toEqual({ name: 'Coach', type: 'staff' });
+  // `/me` is reachable while a superadmin impersonates: the real actor comes first.
+  it('records a superadmin acting as the member', () => {
+    expect(readingActor({ actorName: 'Root', impersonatedUserId: 'user_1', impersonatedActorName: 'Ada' }))
+      .toBe('Root (impersonating Ada)');
   });
 
-  // The person acting is whoever's login it is — and `/me` is reachable while impersonating.
-  it('records a superadmin as a superadmin, impersonating or not', () => {
-    expect(readingActor({ actorName: 'Root', isSuperadmin: true }, true))
-      .toEqual({ name: 'Root', type: 'superadmin' });
-  });
-
-  it('answers a null name rather than an empty string', () => {
-    expect(readingActor({ actorName: '   ', isSuperadmin: false }, true).name).toBeNull();
-    expect(readingActor({ actorName: null, isSuperadmin: false }, true).name).toBeNull();
+  it('answers null rather than an empty string', () => {
+    expect(readingActor({ actorName: '   ' })).toBeNull();
+    expect(readingActor({ actorName: null })).toBeNull();
   });
 });
 

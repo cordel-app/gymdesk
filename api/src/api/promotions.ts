@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 import { insertAndFetch } from '../infra/db-helpers';
 import { computePromotionTimeline, validatePayBeforehandMonths } from '../domain/promotionTimeline';
 import { PromotionBenefitAction } from '../domain/promotionBenefits';
@@ -36,11 +37,9 @@ promotionsRouter.get('/', async (req, res, next) => {
   const { active_on } = req.query as Record<string, string | undefined>;
   const lifecycleStatus = typeof req.query.lifecycle_status === 'string' ? req.query.lifecycle_status : null;
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
-  const createdBy = req.query.created_by == null || req.query.created_by === ''
-    ? null : Number(req.query.created_by);
-  if (createdBy !== null && !Number.isInteger(createdBy)) {
-    return res.status(400).json({ error: 'created_by must be a membership id' });
-  }
+  // #1182: created_by is the plain-text actor snapshot, so the filter is its exact text.
+  const createdBy = typeof req.query.created_by === 'string' && req.query.created_by !== ''
+    ? req.query.created_by : null;
   // #628: narrows the list to the Promotions targeting one Membership Plan, so
   // the inline Assign-Plan editor can offer exactly the Promotions the apply
   // path (`promotion_membership_plans` check in membership-promotions.ts) will
@@ -73,7 +72,7 @@ promotionsRouter.get('/', async (req, res, next) => {
     params.push(`%${q}%`, `%${q}%`);
   }
   if (createdBy !== null) {
-    where.push('p.created_by_membership_id = ?'); params.push(createdBy);
+    where.push('p.created_by = ?'); params.push(createdBy);
   }
   if (membershipPlanId !== null) {
     where.push(`EXISTS (
@@ -90,10 +89,8 @@ promotionsRouter.get('/', async (req, res, next) => {
               p.applies_to,
               p.lifecycle_status, p.created_at, p.deleted_at,
               p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
-              p.created_by_membership_id,
-              gm.name AS created_by_name
+              p.created_by, p.modified_at, p.modified_by
        FROM promotions p
-       LEFT JOIN gym_memberships gm ON gm.id = p.created_by_membership_id
        WHERE ${where.join(' AND ')}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir}`,
       params,
@@ -106,11 +103,10 @@ promotionsRouter.get('/created-by-options', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT DISTINCT gm.id AS membership_id, gm.name
+      `SELECT DISTINCT p.created_by AS name
        FROM promotions p
-       JOIN gym_memberships gm ON gm.id = p.created_by_membership_id
-       WHERE p.gym_id = ? AND gm.name IS NOT NULL AND p.lifecycle_status != 'deleted'
-       ORDER BY gm.name ASC`,
+       WHERE p.gym_id = ? AND p.created_by IS NOT NULL AND p.lifecycle_status != 'deleted'
+       ORDER BY p.created_by ASC`,
       [gymId],
     );
     res.json(rows);
@@ -179,30 +175,14 @@ promotionsRouter.get('/:id', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT p.*,
-              gm_c.name AS created_by_name,
-              gm_d.name AS deleted_by_name
+      `SELECT p.*
        FROM promotions p
-       LEFT JOIN gym_memberships gm_c ON gm_c.id = p.created_by_membership_id
-       LEFT JOIN gym_memberships gm_d ON gm_d.id = p.deleted_by_membership_id
        WHERE p.id = ? AND p.gym_id = ?`,
       [req.params.id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Promotion not found' });
 
-    const { rows: auditRows } = await db.query(
-      `SELECT actor_name, created_at AS modified_at
-       FROM audit_logs
-       WHERE gym_id = ? AND entity_type = 'promotion' AND entity_id = ? AND action = 'update'
-       ORDER BY created_at DESC LIMIT 1`,
-      [gymId, req.params.id],
-    );
-    const promo = {
-      ...rows[0],
-      modified_at: auditRows[0]?.modified_at ?? null,
-      modified_by_name: auditRows[0]?.actor_name ?? null,
-    };
-    res.json(promo);
+    res.json(rows[0]);
   } catch (err) { next(err); }
 });
 
@@ -223,7 +203,9 @@ function validateBody(body: any) {
 }
 
 promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, description, starts_at, ends_at, stackable, only_applicable_for_new_members,
           applies_to, lifecycle_status, free_months, paid_months, bonus_months, pay_beforehand_months } = req.body;
   if (!name?.trim() || !starts_at || !ends_at) {
@@ -236,7 +218,7 @@ promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
     const row = await insertAndFetch(
       `INSERT INTO promotions
          (gym_id, name, description, starts_at, ends_at, stackable, only_applicable_for_new_members,
-          applies_to, lifecycle_status, created_by_membership_id, free_months, paid_months, bonus_months,
+          applies_to, lifecycle_status, created_by, free_months, paid_months, bonus_months,
           pay_beforehand_months)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
@@ -251,7 +233,7 @@ promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
         // Promotion was before the column existed, and the column's own DEFAULT.
         applies_to ?? DEFAULT_PROMOTION_TARGET,
         lifecycle_status ?? 'active',
-        gymMembershipId ?? null,
+        actor,
         free_months ?? null,
         paid_months ?? null,
         bonus_months ?? null,
@@ -266,7 +248,9 @@ promotionsRouter.post('/', requireRole('admin'), async (req, res, next) => {
 });
 
 promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const err = validateBody(req.body); if (err) return res.status(400).json({ error: err });
   const { name, description, starts_at, ends_at, stackable, only_applicable_for_new_members,
           applies_to, lifecycle_status, free_months, paid_months, bonus_months, pay_beforehand_months } = req.body;
@@ -300,7 +284,9 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         free_months           = IF(?, ?, free_months),
         paid_months           = IF(?, ?, paid_months),
         bonus_months          = IF(?, ?, bonus_months),
-        pay_beforehand_months = IF(?, ?, pay_beforehand_months)
+        pay_beforehand_months = IF(?, ?, pay_beforehand_months),
+        modified_at           = UTC_TIMESTAMP(),
+        modified_by           = ?
        WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'`,
       [
         name?.trim() ?? null,
@@ -320,6 +306,7 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         'paid_months' in req.body ? 1 : 0, paid_months ?? null,
         'bonus_months' in req.body ? 1 : 0, bonus_months ?? null,
         'pay_beforehand_months' in req.body ? 1 : 0, pay_beforehand_months ?? 0,
+        actor,
         req.params.id, gymId,
       ],
     );
@@ -331,7 +318,9 @@ promotionsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 });
 
 promotionsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rows: existing } = await db.query(
       "SELECT name FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'",
@@ -340,9 +329,9 @@ promotionsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => 
     if (existing.length === 0) return res.status(404).json({ error: 'Promotion not found' });
     await db.query(
       `UPDATE promotions
-         SET lifecycle_status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ?
+         SET lifecycle_status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?
        WHERE id = ? AND gym_id = ?`,
-      [gymMembershipId ?? null, actorName, req.params.id, gymId],
+      [actor, req.params.id, gymId],
     );
     recordAudit(req, { action: 'delete', entityType: 'promotion', entityId: req.params.id, entityName: existing[0].name });
     res.status(204).send();
@@ -350,7 +339,9 @@ promotionsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => 
 });
 
 promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { rows: srcRows } = await db.query(
     "SELECT * FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'",
     [req.params.id, gymId],
@@ -371,7 +362,7 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
       const { insertId } = await tx.query(
         `INSERT INTO promotions
            (gym_id, name, description, starts_at, ends_at, stackable, only_applicable_for_new_members,
-            applies_to, lifecycle_status, created_by_membership_id, free_months, paid_months, bonus_months,
+            applies_to, lifecycle_status, created_by, free_months, paid_months, bonus_months,
             pay_beforehand_months)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
@@ -381,7 +372,7 @@ promotionsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, n
           // comes along with the Membership Fee Benefit and the Suitable
           // Membership Plans rows below it.
           src.applies_to,
-          src.lifecycle_status, gymMembershipId ?? null,
+          src.lifecycle_status, actor,
           src.free_months, src.paid_months, src.bonus_months, src.pay_beforehand_months,
         ],
       );

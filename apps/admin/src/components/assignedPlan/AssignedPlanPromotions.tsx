@@ -197,7 +197,7 @@ export function AssignedPlanPromotions({
                 <span style={{ fontWeight: 500, fontSize: 14 }}>{p.promotion_name}</span>
               </button>
               <span style={metaSt}>{t('promo_created_at', { at: fmtDate(p.applied_at) })}</span>
-              <span style={metaSt}>{t('promo_created_by', { by: p.applied_by_name ?? t('detail_unknown') })}</span>
+              <span style={metaSt}>{t('promo_created_by', { by: p.created_by ?? t('detail_unknown') })}</span>
               <StatusBadge status={p.display_status} label={tStatus(p.display_status as any)} />
             </div>
 

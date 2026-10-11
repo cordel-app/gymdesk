@@ -283,7 +283,7 @@ async function assertSlotAvailable(tx: Tx, opts: {
  * it and is refused by the mode the write has just stored.
  */
 async function emptyWaitlistQueue(
-  tx: Tx, gymId: string, sessionId: string | number, actorMembershipId: number | null,
+  tx: Tx, gymId: string, sessionId: string | number, actor: string | null,
 ): Promise<number[]> {
   const { rows } = await tx.query(
     `SELECT member_id FROM calendar_event_bookings
@@ -297,9 +297,9 @@ async function emptyWaitlistQueue(
   await tx.query(
     `UPDATE calendar_event_bookings
      SET status = 'cancelled', cancelled_at = UTC_TIMESTAMP(),
-         modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+         modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE calendar_event_id = ? AND gym_id = ? AND status = 'waitlisted'`,
-    [actorMembershipId ?? null, sessionId, gymId],
+    [actor, sessionId, gymId],
   );
   return rows.map((r: any) => Number(r.member_id));
 }
@@ -561,7 +561,7 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
            startsAtDate, endsAtDate, cap, serviceId, actor],
         );
         for (const memberId of memberIds) {
-          await bookMemberOnSession(gymId, memberId, insertId, true, false, tx);
+          await bookMemberOnSession(gymId, memberId, insertId, true, false, tx, false, actor);
         }
         const { rows } = await tx.query(
           `${SESSION_SELECT} WHERE ce.id = ?`,
@@ -585,7 +585,7 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
          startsAtDate, endsAtDate, cap, serviceId, actor],
       );
       for (const memberId of memberIds) {
-        await bookMemberOnSession(gymId, memberId, insertId, true, false, tx);
+        await bookMemberOnSession(gymId, memberId, insertId, true, false, tx, false, actor);
       }
       const { rows } = await tx.query(`${SESSION_SELECT} WHERE ce.id = ?`, [insertId]);
       return rows[0];
@@ -748,7 +748,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
         await writeEligibleServices(tx, gymId, String(req.params.id), eligibleIds);
 
         return waitlistModeClosesQueue(waitlistMode)
-          ? emptyWaitlistQueue(tx, gymId, String(req.params.id), gymMembershipId)
+          ? emptyWaitlistQueue(tx, gymId, String(req.params.id), actor)
           : [];
       });
 
@@ -794,7 +794,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
       if (rowCount === 0) return { rowCount, removed: [] as number[] };
       await writeEligibleServices(tx, gymId, String(req.params.id), eligibleIds);
       const removed = waitlistModeClosesQueue(waitlistMode)
-        ? await emptyWaitlistQueue(tx, gymId, String(req.params.id), gymMembershipId)
+        ? await emptyWaitlistQueue(tx, gymId, String(req.params.id), actor)
         : [];
       return { rowCount, removed };
     });
@@ -1060,9 +1060,9 @@ classSessionsRouter.post('/:id/bulk-present',
              attendance_recorded_at = UTC_TIMESTAMP(),
              attendance_recorded_by_membership_id = ?,
              modified_at = UTC_TIMESTAMP(),
-             modified_by_membership_id = ?
+             modified_by = ?
          WHERE calendar_event_id = ? AND gym_id = ? AND status = 'booked' AND attendance_status = 'pending'`,
-        [gymMembershipId, gymMembershipId, req.params.id, gymId],
+        [gymMembershipId, actor, req.params.id, gymId],
       );
       for (const b of pending) await spendSessionForBooking(tx, gymId, Number(b.id), 'attendance', actor);
       return updated;
@@ -1095,16 +1095,16 @@ classSessionsRouter.post('/:id/walk-in',
           throw Object.assign(new Error('Member already has an active booking for this session — use the attendance endpoint instead'), { status: 409 });
         }
 
-        const booking = await bookMemberOnSession(gymId, member_id, Number(req.params.id), true, false, tx);
+        const booking = await bookMemberOnSession(gymId, member_id, Number(req.params.id), true, false, tx, false, resolveRequestActor(ctx));
         await tx.query(
           `UPDATE calendar_event_bookings
            SET attendance_status = 'present',
                attendance_recorded_at = UTC_TIMESTAMP(),
                attendance_recorded_by_membership_id = ?,
                modified_at = UTC_TIMESTAMP(),
-               modified_by_membership_id = ?
+               modified_by = ?
            WHERE id = ?`,
-          [gymMembershipId, gymMembershipId, booking.id],
+          [gymMembershipId, resolveRequestActor(ctx), booking.id],
         );
         // #1189 stage 3: a walk-in is attendance, so it spends a session.
         await spendSessionForBooking(tx, gymId, booking.id, 'attendance', resolveRequestActor(ctx));

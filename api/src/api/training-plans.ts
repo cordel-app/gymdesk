@@ -4,6 +4,7 @@ import { db, Tx } from '../infra/db';
 import { parseBlockResultUnit } from '../domain/blockResultUnits';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 import { insertAndFetch } from '../infra/db-helpers';
 import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
 import { SupportedLocale, getRequestLocale } from '../infra/locale';
@@ -187,7 +188,9 @@ trainingPlansRouter.get('/:planId', async (req, res, next) => {
 });
 
 trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   const { name, description, status, start_date, end_date } = req.body;
   const EDITABLE_STATUSES = PLAN_STATUSES.filter((s) => s !== 'deleted' && s !== 'completed');
@@ -219,10 +222,10 @@ trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, 
       `UPDATE training_plans SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
         start_date = COALESCE(?, start_date), end_date = IF(?, ?, end_date),
-        modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+        modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'`,
       [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null,
-       start_date ?? null, 'end_date' in req.body ? 1 : 0, end_date ?? null, gymMembershipId,
+       start_date ?? null, 'end_date' in req.body ? 1 : 0, end_date ?? null, actor,
        planId, memberId, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Training plan not found' });
@@ -235,11 +238,12 @@ trainingPlansRouter.put('/:planId', requireModuleWrite('TRAINING'), async (req, 
 });
 
 trainingPlansRouter.delete('/:planId', requireModuleWrite('TRAINING'), async (req, res) => {
-  const { gymId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   const { rowCount } = await db.query(
-    "UPDATE training_plans SET status = 'deleted', deleted_at = UTC_TIMESTAMP() WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'",
-    [planId, memberId, gymId],
+    "UPDATE training_plans SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ? AND member_id = ? AND gym_id = ? AND status != 'deleted'",
+    [resolveRequestActor(ctx), planId, memberId, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Training plan not found' });
   recordAudit(req, { action: 'delete', entityType: 'training_plan', entityId: planId });
@@ -761,7 +765,9 @@ trainingPlansRouter.post('/:planId/workouts/:workoutId/blocks/:blockId/duplicate
 
 // #112: Complete a plan — sets status=completed and stamps end_date.
 trainingPlansRouter.post('/:planId/complete', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   const endDate = req.body.end_date ?? null;
   if (endDate != null && !(typeof endDate === 'string' && DATE_RE.test(endDate))) {
@@ -777,9 +783,9 @@ trainingPlansRouter.post('/:planId/complete', requireModuleWrite('TRAINING'), as
     const resolvedEndDate = endDate ?? new Date().toISOString().slice(0, 10);
     await db.query(
       `UPDATE training_plans SET status = 'completed', end_date = ?,
-              modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND member_id = ? AND gym_id = ?`,
-      [resolvedEndDate, gymMembershipId, planId, memberId, gymId],
+      [resolvedEndDate, actor, planId, memberId, gymId],
     );
     const { rows } = await db.query(`${planTreeSelect(getRequestLocale(req))} WHERE tp.id = ?`, [planId]);
     recordAudit(req, { action: 'status_change', entityType: 'training_plan', entityId: planId,
@@ -792,7 +798,9 @@ trainingPlansRouter.post('/:planId/complete', requireModuleWrite('TRAINING'), as
 
 // #112: Duplicate a training plan (all workouts, blocks, exercises) into a new draft plan.
 trainingPlansRouter.post('/:planId/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { memberId, planId } = req.params as { memberId: string; planId: string };
   try {
     const { rows: planRows } = await db.query(
@@ -804,9 +812,9 @@ trainingPlansRouter.post('/:planId/duplicate', requireModuleWrite('TRAINING'), a
 
     const newPlanId = await db.transaction(async (tx) => {
       const { insertId: newId } = await tx.query(
-        `INSERT INTO training_plans (gym_id, member_id, template_id, name, description, status, start_date, assigned_by_membership_id)
+        `INSERT INTO training_plans (gym_id, member_id, template_id, name, description, status, start_date, created_by)
          VALUES (?, ?, ?, ?, ?, 'draft', CURRENT_DATE(), ?)`,
-        [gymId, memberId, src.template_id, `${src.name} (copy)`, src.description, gymMembershipId],
+        [gymId, memberId, src.template_id, `${src.name} (copy)`, src.description, actor],
       );
       for (const w of src.workouts ?? []) {
         const { insertId: wId } = await tx.query(

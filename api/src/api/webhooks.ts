@@ -1,3 +1,4 @@
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { activateWithEvents } from './product-set-configuration';
 import { Router, type Request, type Response } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
@@ -360,7 +361,7 @@ paymentWebhookRouter.post(
             const committed = await commitAssignment(tx, {
               gymId: pr.gym_id, userMembershipId: pr.user_membership_id,
               fromStatuses: [PENDING_PAYMENT_STATUS], confirm: true,
-              source: 'provider', actorUserId: null,
+              source: 'provider', actorUserId: null, actor: SYSTEM_ACTOR,
             });
             // `not_committable` is the ordinary case — a renewal paid on an
             // already-active row. Anything else is a paid row left pending,
@@ -419,7 +420,7 @@ paymentWebhookRouter.post(
             if (owner[0]?.product_set_id != null) {
               const activated = await activateWithEvents(tx, {
                 gymId: pr.gym_id, productSetId: Number(owner[0].product_set_id),
-                today: new Date().toISOString().slice(0, 10),
+                today: new Date().toISOString().slice(0, 10), actor: SYSTEM_ACTOR,
               });
               if (activated.kind !== 'ok') {
                 req.log.error(

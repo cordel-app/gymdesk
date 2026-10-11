@@ -519,7 +519,7 @@ export async function materializeScheduleRule(
     );
   }
 
-  await bookAssignedMembersOnNewOccurrences(rule.id, rule.gym_id, newRows.map((r) => r.starts_at));
+  await bookAssignedMembersOnNewOccurrences(rule.id, rule.gym_id, newRows.map((r) => r.starts_at), actor);
 }
 
 /**
@@ -530,7 +530,7 @@ export async function materializeScheduleRule(
  * is called once per fresh occurrence, and each occurrence is a brand-new
  * calendar_events row with no existing bookings.
  */
-async function bookAssignedMembersOnNewOccurrences(ruleId: number, gymId: string, startsAtValues: string[]): Promise<void> {
+async function bookAssignedMembersOnNewOccurrences(ruleId: number, gymId: string, startsAtValues: string[], actor: string | null): Promise<void> {
   if (startsAtValues.length === 0) return;
 
   const { rows: memberRows } = await db.query(
@@ -548,7 +548,7 @@ async function bookAssignedMembersOnNewOccurrences(ruleId: number, gymId: string
   for (const ev of eventRows) {
     for (const m of memberRows) {
       try {
-        await bookMemberOnSession(gymId, m.member_id, ev.id, true);
+        await bookMemberOnSession(gymId, m.member_id, ev.id, true, false, undefined, false, actor);
       } catch {
         // Best-effort: a booking that can't be created for one member on one
         // occurrence (e.g. it was cancelled concurrently) must not block the

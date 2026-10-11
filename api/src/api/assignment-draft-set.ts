@@ -36,7 +36,7 @@ export interface DraftSetInput {
   discountReason: string | null;
   discountExpiresAt: string | null;
   declinedBenefits?: Array<{ section: string; product_id: number }>;
-  actor: { name: string | null; type: string | null };
+  actor: { name: string | null; type?: string | null };
 }
 
 /**

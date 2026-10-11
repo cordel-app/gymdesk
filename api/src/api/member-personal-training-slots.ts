@@ -3,6 +3,7 @@ import { DateTime } from 'luxon';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import { isActivityTypeEligibleForMember } from './activity-eligibility';
 import { bookMemberOnSession } from './bookings';
@@ -270,7 +271,7 @@ memberPersonalTrainingSlotsRouter.get('/', async (req, res, next) => {
  * normal cancellation rules.
  */
 memberPersonalTrainingSlotsRouter.put('/selections', requireModuleWrite('MEMBERS'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId } = getTenantContext(req);
   const memberId = parseMemberId(req);
   if (memberId === null) return res.status(400).json({ error: 'memberId must be a positive integer' });
 
@@ -294,7 +295,7 @@ memberPersonalTrainingSlotsRouter.put('/selections', requireModuleWrite('MEMBERS
       });
     }
 
-    await replaceSelections(gymId, memberId, parsed.slots, current, gymMembershipId);
+    await replaceSelections(gymId, memberId, parsed.slots, current, resolveRequestActor(getTenantContext(req)));
 
     const stored = await loadSelections(gymId, memberId);
     recordAudit(req, {
@@ -320,7 +321,7 @@ async function replaceSelections(
   memberId: number,
   wanted: SlotIdentity[],
   current: StoredSelection[],
-  gymMembershipId: number | null | undefined,
+  actor: string | null,
 ): Promise<void> {
   const wantedKeys = new Set(wanted.map(slotIdentityKey));
   const currentKeys = new Set(current.map(slotIdentityKey));
@@ -341,11 +342,11 @@ async function replaceSelections(
         await tx.query(
           `INSERT INTO member_recurring_slots
              (gym_id, member_id, iso_weekday, start_time, end_time, activity_type_id,
-              professional_service_id, center_id, created_by_membership_id)
+              professional_service_id, center_id, created_by)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             gymId, memberId, s.weekday, `${s.start_time}:00`, `${s.end_time}:00`,
-            s.activity_type_id, s.professional_service_id, s.center_id, gymMembershipId ?? null,
+            s.activity_type_id, s.professional_service_id, s.center_id, actor,
           ],
         );
       }
@@ -387,6 +388,7 @@ export async function bookSelectedSlots(
   memberId: number,
   selections: SlotIdentity[],
   days: WeeklySlotDay[],
+  actor: string | null = null,
 ): Promise<SlotBookingRun> {
   const plans = planSlotBookings(days, selections);
   const slots: SlotRunReport[] = [];
@@ -404,7 +406,7 @@ export async function bookSelectedSlots(
     skipped += plan.skip.length;
 
     for (const occurrence of plan.book) {
-      const result = await bookOccurrence(gymId, memberId, occurrence);
+      const result = await bookOccurrence(gymId, memberId, occurrence, actor);
       if (result.outcome === 'booked') created += 1;
       else if (result.outcome === 'skipped') skipped += 1;
       else failed += 1;
@@ -452,7 +454,7 @@ export function describeSlotRun(slots: SlotRunReport[]) {
  * waitlist the Member deliberately through `POST /bookings`.
  */
 memberPersonalTrainingSlotsRouter.post('/book', requireModuleWrite('MEMBERS'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId } = getTenantContext(req);
   const memberId = parseMemberId(req);
   if (memberId === null) return res.status(400).json({ error: 'memberId must be a positive integer' });
 
@@ -477,14 +479,14 @@ memberPersonalTrainingSlotsRouter.post('/book', requireModuleWrite('MEMBERS'), a
           slot: unknown,
         });
       }
-      await replaceSelections(gymId, memberId, parsed.slots, selections, gymMembershipId);
+      await replaceSelections(gymId, memberId, parsed.slots, selections, resolveRequestActor(getTenantContext(req)));
       selections = await loadSelections(gymId, memberId);
       // Re-project so `selected` and the plan reflect the set just stored.
       projection = await loadProjection(gymId, memberId, selections);
     }
 
     const { created, skipped, failed, slots: slotReports } =
-      await bookSelectedSlots(gymId, memberId, selections, projection.days);
+      await bookSelectedSlots(gymId, memberId, selections, projection.days, resolveRequestActor(getTenantContext(req)));
 
     recordAudit(req, {
       action: 'book_recurring_slots',
@@ -512,11 +514,12 @@ async function bookOccurrence(
   gymId: string,
   memberId: number,
   occurrence: { date: string; calendar_event_id: number },
+  actor: string | null,
 ): Promise<BookingResult> {
   try {
     const booking = await db.transaction(async (tx) => {
       const result = await bookMemberOnSession(
-        gymId, memberId, occurrence.calendar_event_id, false, false, tx,
+        gymId, memberId, occurrence.calendar_event_id, false, false, tx, false, actor,
       );
       if (result.status !== 'booked') {
         // Rolls the waitlist row back — see the route comment above.

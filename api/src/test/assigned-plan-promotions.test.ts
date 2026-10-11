@@ -170,10 +170,10 @@ describe('GET /user-memberships/:id/promotions — the expandable card (#635 §1
     const res = await listPromotions(gymId, umId);
     expect(res.status).toBe(200);
     const row = res.body.find((r: any) => r.promotion_id === promotionId);
-    // createTestMembership inserts the acting user's gym_memberships row with
-    // no name, so the column resolves but is null — what matters is that the
-    // applier is looked up at all, and that the card has an applied_at to show.
-    expect(row).toHaveProperty('applied_by_name');
+    // #1182: the applier is the application's own plain-text `created_by`
+    // (null when the acting user has no name), and the card has an applied_at.
+    expect(row).toHaveProperty('created_by');
+    expect(row).not.toHaveProperty('applied_by_name');
     expect(row.applied_at).toBeTruthy();
   });
 

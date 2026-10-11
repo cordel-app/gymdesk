@@ -158,7 +158,7 @@ async function adoptConfigHolder(setId: number, umId: number | null): Promise<vo
   // The Active version is the assignment's now: a holder only existed to carry
   // what the fixture wrote before one did.
   await db.query(
-    'DELETE FROM product_sets WHERE user_membership_id = ? AND id <> ? AND created_by_name = ?',
+    'DELETE FROM product_sets WHERE user_membership_id = ? AND id <> ? AND created_by = ?',
     [umId, setId, FIXTURE_HOLDER]);
 }
 
@@ -188,7 +188,7 @@ export async function setAssignmentConfig(umId: number, patch: AssignmentConfigP
           user_membership_id, superseded_at)
        VALUES (?, ?, 1, 'superseded', ?, ?, ?, ?, UTC_TIMESTAMP())`,
       [um.gym_id, um.member_id, um.membership_plan_id, um.starts_at, um.ends_at, umId]);
-    await db.query("UPDATE product_sets SET created_by_name = ? WHERE id = ?", [FIXTURE_HOLDER, insertId]);
+    await db.query("UPDATE product_sets SET created_by = ? WHERE id = ?", [FIXTURE_HOLDER, insertId]);
     await db.query('UPDATE product_sets SET root_product_set_id = id WHERE id = ?', [insertId]);
     setId = Number(insertId);
   }

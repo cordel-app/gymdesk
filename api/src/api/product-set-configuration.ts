@@ -497,6 +497,12 @@ export async function replaceFutureScheduledEvents(tx: Tx, input: {
  */
 export async function activateWithEvents(tx: Tx, input: {
   gymId: string; productSetId: number; today: string; cycles?: number;
+  /**
+   * #1182: who activated it, as the plain-text snapshot (`resolveRequestActor()`),
+   * written as `modified_by` of the assignment the activation projects. Omitted
+   * means the system acted (the payment webhook, a run) and records `System`.
+   */
+  actor?: string | null;
 }): Promise<MoveOutcome & { eventsCreated?: number; eventsReplaced?: number }> {
   const { rows } = await tx.query<{ previous_product_set_id: number | null }>(
     'SELECT previous_product_set_id FROM product_sets WHERE id = ? AND gym_id = ?',
@@ -516,7 +522,7 @@ export async function activateWithEvents(tx: Tx, input: {
   // #1325 PR 3a: the operational assignment that access, eligibility and the
   // screens still read is a projection of this version, written here and only
   // here, in the same transaction as the activation.
-  await projectActiveProductSet(tx, input.gymId, input.productSetId);
+  await projectActiveProductSet(tx, input.gymId, input.productSetId, input.actor);
   return { ...moved, eventsCreated: created, eventsReplaced: replaced };
 }
 

@@ -19,11 +19,11 @@ interface PromoDetail {
   applies_to: string | null;
   lifecycle_status: string;
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by_name: string | null;
+  deleted_by: string | null;
   free_months: number | null;
   paid_months: number | null;
   pay_beforehand_months: number | null;
@@ -88,11 +88,11 @@ export function PromotionDetailModal({ promotionId, promotionName, onClose }: {
 
             <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid #f0f0f0' }}>
               <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Audit</p>
-              {field(t('detail_created_by'), detail.created_by_name)}
+              {field(t('detail_created_by'), detail.created_by)}
               {field(t('detail_created_at'), detail.created_at?.slice(0, 10))}
-              {field(t('detail_modified_by'), detail.modified_by_name)}
+              {field(t('detail_modified_by'), detail.modified_by)}
               {field(t('detail_modified_at'), detail.modified_at?.slice(0, 10))}
-              {detail.deleted_at && field(t('detail_deleted_by'), detail.deleted_by_name)}
+              {detail.deleted_at && field(t('detail_deleted_by'), detail.deleted_by)}
               {detail.deleted_at && field(t('detail_deleted_at'), detail.deleted_at?.slice(0, 10))}
             </div>
           </>

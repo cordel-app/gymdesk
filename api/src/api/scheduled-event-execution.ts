@@ -1,3 +1,4 @@
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import crypto from 'crypto';
 import { db, Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
@@ -101,7 +102,12 @@ async function pauseAfterFailedDays(tx: Tx, event: DueEvent): Promise<boolean> {
   );
   const um = rows[0];
   if (!um || um.status !== 'active') return false;
-  await tx.query("UPDATE user_memberships SET status = 'paused' WHERE id = ? AND gym_id = ?", [um.id, event.gym_id]);
+  // A pause the nightly run decided is the system's act (#1182).
+  await tx.query(
+    `UPDATE user_memberships
+        SET status = 'paused', modified_at = UTC_TIMESTAMP(), modified_by = ?
+      WHERE id = ? AND gym_id = ?`,
+    [SYSTEM_ACTOR, um.id, event.gym_id]);
   await recordStatusChange(tx, {
     gymId: event.gym_id, userMembershipId: Number(um.id), memberId: Number(um.member_id),
     previousStatus: um.status, newStatus: 'paused', source: 'system', actorUserId: null,

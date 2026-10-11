@@ -112,6 +112,14 @@ describe('gate: audited tables', () => {
     { file: 'api/themes.ts', table: 'themes', why: "clearing half of set-system-default; stamping it would touch every Base Theme's modified_at (the setting half records the actor)" },
     { file: 'api/training-plan-creation.ts', table: 'members', why: 'member_training_plan_id pointer, written with the assigned plan (stage 3 table)' },
     { file: 'infra/clerk-account-links.ts', table: 'members', why: 'clerk_user_id = NULL on a Clerk account unlink: a cleanup path with no request actor' },
+    { file: 'api/product-sets.ts', table: 'product_sets', why: 'root_product_set_id, last_activity_at and status moves of a version; product_sets keeps only created_by (a version is replaced, never edited)' },
+    { file: 'api/product-set-bridge.ts', table: 'product_sets', why: 'user_membership_id pointer relink between the version and the assignment projection' },
+    { file: 'api/product-set-projection.ts', table: 'product_sets', why: 'user_membership_id link written by the projection' },
+    { file: 'api/product-set-checkout.ts', table: 'product_sets', why: 'payment_request_id link of the checkout' },
+    { file: 'api/product-set-draft-router.ts', table: 'product_sets', why: 'last_activity_at refresh of a Draft (its edits are recorded on the assignment projection)' },
+    { file: 'api/assignment-draft-set.ts', table: 'product_sets', why: 'mirrors starts_at/ends_at and the assignment link of a Draft from its assignment row' },
+    { file: 'api/gym-training-plans.ts', table: 'member_training_plans', why: 'status/valid_to when the new-plan flow expires existing plans; the actor is recorded on training_plans.modified_by in the same transaction' },
+    { file: 'api/member-training-plans.ts', table: 'member_training_plans', why: 'PATCH status/valid_from/valid_to transition; the status_change audit row records the actor' },
   ];
 
   it('every business UPDATE of a registered table names modified_by or deleted_by', () => {
@@ -133,7 +141,7 @@ describe('gate: audited tables', () => {
 
   it('every registered table has its three text columns in a migration', () => {
     const migrations = readdirSync(join(__dirname, '..', 'infra', 'migrations'))
-      .filter((f) => /^26[45]_/.test(f))
+      .filter((f) => /^26[4-7]_/.test(f))
       .map((f) => readFileSync(join(__dirname, '..', 'infra', 'migrations', f), 'utf-8'))
       .join('\n');
     for (const table of AUDITED_TABLES) expect(migrations).toContain(`'${table}'`);

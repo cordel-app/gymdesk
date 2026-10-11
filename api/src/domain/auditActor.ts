@@ -135,7 +135,8 @@ export function auditActorField(stored: string | null | undefined): string | nul
  * naming `created_by` and every business `UPDATE` to naming `modified_by` /
  * `deleted_by`.
  *
- * Stage 2 (#1182): the primary business entities.
+ * Stage 2 (#1182): the primary business entities. Stage 3: assignments and
+ * lifecycle tables.
  */
 export const AUDITED_TABLES: readonly string[] = [
   'activity_types',
@@ -164,4 +165,20 @@ export const AUDITED_TABLES: readonly string[] = [
   'themes',
   'training_plan_templates',
   'workout_templates',
+  // Stage 3 (migrations 266–267)
+  'calendar_event_bookings',
+  'calendar_event_series',
+  'class_package_transactions',
+  'gym_professional_services',
+  'member_centers',
+  'member_personal_goal_readings',
+  'member_products_oneoff_snapshot',
+  'member_recurring_slots',
+  'member_training_plans',
+  'product_sets',
+  'promotions',
+  'training_plans',
+  'user_class_packages',
+  'user_membership_promotions',
+  'user_memberships',
 ];

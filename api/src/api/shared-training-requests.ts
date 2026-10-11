@@ -10,6 +10,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { sendNotification } from '../infra/notifications';
+import { resolveRequestActor } from '../domain/auditActor';
 
 export const sharedTrainingRequestsRouter = Router();
 
@@ -180,9 +181,9 @@ sharedTrainingRequestsRouter.post('/:id/approve',
         );
 
         await tx.query(
-          `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at)
-           VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP())`,
-          [gymId, session.center_id, strReq.requesting_member_id, strReq.calendar_event_id],
+          `INSERT INTO calendar_event_bookings (gym_id, center_id, member_id, calendar_event_id, status, booked_at, created_by)
+           VALUES (?, ?, ?, ?, 'booked', UTC_TIMESTAMP(), ?)`,
+          [gymId, session.center_id, strReq.requesting_member_id, strReq.calendar_event_id, resolveRequestActor(getTenantContext(req))],
         );
 
         notifyMemberId = strReq.requesting_member_id;
