@@ -79,7 +79,7 @@ describe('Member Membership sections (#634)', () => {
     // #1450: "+ Add Membership Plan" is the Plans page's Assign Plan to Member
     // workflow, launched with this Member preselected — never a form or a
     // request of its own, and never the supersede action.
-    expect(plansSrc).toContain('<AssignPlanModal');
+    expect(plansSrc).toContain('<AssignPlanToMembersEditor');
     expect(plansSrc).toContain('initialMember=');
     expect(plansSrc).not.toContain('/product-sets');
     expect(plansSrc).not.toContain('assign-new-plan');
@@ -137,10 +137,10 @@ describe('Member Membership sections (#634)', () => {
   });
 
   it('introduces no modal anywhere in the four sections (§15)', () => {
-    // #1450: the one exception is the shared Assign Plan to Member modal.
+    // #1460: the shared Assign Plan to Member workflow is inline too.
     for (const src of [plansSrc, simulationSrc]) {
       expect(src).not.toContain('CrudModal');
-      expect(src.replace('<AssignPlanModal', '')).not.toMatch(/<\w*Modal[\s/>]/);
+      expect(src).not.toMatch(/<\w*Modal[\s/>]/);
     }
   });
 

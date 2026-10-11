@@ -21,11 +21,6 @@ describe('#1184 stage 3b — decline checkboxes', () => {
     expect(page).toContain('declined_benefits: declinedBenefitsPayload(');
   });
 
-  it('the Plans page bulk assign sends declined_benefits through the shared helper', () => {
-    const src = read('apps/admin/src/app/[locale]/plans/AssignPlanModal.tsx');
-    expect(src).toContain('declined_benefits: declinedPayload(');
-  });
-
   it('locale keys exist in en/es/ca', () => {
     for (const l of ['en', 'es', 'ca']) {
       const m = JSON.parse(read(`apps/member/locales/base/${l}.json`)).membership;

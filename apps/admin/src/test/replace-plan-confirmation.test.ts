@@ -55,8 +55,8 @@ const ENTRY_POINTS: Array<{ name: string; src: string; confirmSpelling: string }
     confirmSpelling: 'if (confirmReplacement) body.confirm = true;',
   },
   {
-    name: 'the Plans page\'s Assign modal',
-    src: read('app', '[locale]', 'plans', 'AssignPlanModal.tsx'),
+    name: 'the Plans page\'s inline Assign editor',
+    src: read('app', '[locale]', 'plans', 'AssignPlanToMembersEditor.tsx'),
     confirmSpelling: '...(confirmReplacement ? { confirm: true } : {})',
   },
 ];

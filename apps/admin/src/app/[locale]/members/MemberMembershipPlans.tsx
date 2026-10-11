@@ -13,9 +13,9 @@
 // from here. Superseding a specific plan is the explicit "Assign New Plan"
 // action on the plan itself, which stays on the assignment flow for now.
 //
-// #1450: "+ Add Membership Plan" opens the Plans page's own Assign Plan to
-// Member modal (`plans/AssignPlanModal`) with this Member preselected, so both
-// entry points are one workflow. It creates a Draft that is configured and paid
+// #1450/#1460: "+ Add Membership Plan" opens the Plans page's own Assign Plan
+// to Member editor (`plans/AssignPlanToMembersEditor`, inline, no modal) with
+// this Member preselected, so both entry points are one workflow. It creates a Draft that is configured and paid
 // from its card; this section keeps no assignment form of its own.
 //
 // #1051 replaced the presentation. The section used to draw one metadata card
@@ -49,7 +49,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
-import { AssignPlanModal, type AssignablePlan } from '../plans/AssignPlanModal';
+import { AssignPlanToMembersEditor, type AssignablePlan } from '../plans/AssignPlanToMembersEditor';
 import type { ContextMenuItem } from '@/components/ContextMenu';
 import { AssignedPlansTable } from '@/components/assignedPlan/AssignedPlansTable';
 import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPlanDetailsDialog';
@@ -174,14 +174,14 @@ export function MemberMembershipPlans({
         <button onClick={startAdding} style={addBtn}>{t('add_membership_plan')}</button>
       )}
 
-      {/* #1450: the one Assign Plan to Member workflow (the Plans page's
-          modal), launched with this Member selected. It creates a Draft, which
+      {/* #1450/#1460: the one Assign Plan to Member workflow (the Plans page's
+          inline editor), launched with this Member selected. It creates a Draft, which
           appears in the list above and is configured and paid from its card. */}
       {adding && (
-        <AssignPlanModal
+        <AssignPlanToMembersEditor
           planOptions={selectable}
           initialMember={{ id: memberId, name: memberName, email: memberEmail }}
-          onClose={() => setAdding(false)}
+          onCancel={() => setAdding(false)}
           onAssigned={() => { setAdding(false); onChanged(); }}
         />
       )}
