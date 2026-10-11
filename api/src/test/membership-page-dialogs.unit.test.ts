@@ -37,4 +37,26 @@ describe('My Products page dialogs (#1081)', () => {
     expect(src.slice(noPlan, mainReturn)).toContain('{renderDialogs()}');
     expect(src.slice(mainReturn)).toContain('{renderDialogs()}');
   });
+
+  // A consent that read "every —" told the member nothing about what they were
+  // authorising. The pending plan carries its own cadence, and without one the
+  // consent is a single payment and says so.
+  it('words the consent from the pending plan, and as a single payment without a cadence', () => {
+    expect(src).not.toMatch(/interval:\s*consentInterval\s*&&\s*consentUnit/);
+    expect(src).toContain('pendingMembership.billing_interval');
+    expect(src).toContain("'payment_consent.body_once'");
+    const api = readFileSync(
+      join(__dirname, '..', 'api', 'me.ts'), 'utf-8',
+    );
+    const pending = api.slice(api.indexOf("um.status = 'pending_payment'") - 600, api.indexOf("um.status = 'pending_payment'"));
+    expect(pending).toContain('AS billing_interval');
+    for (const l of ['en', 'es', 'ca']) {
+      const msgs = JSON.parse(readFileSync(
+        join(__dirname, '..', '..', '..', 'apps', 'member', 'locales', 'base', `${l}.json`), 'utf-8',
+      ));
+      for (const k of ['title_once', 'body_once', 'checkbox_once']) {
+        expect(typeof msgs.payment_consent[k], `${l}.payment_consent.${k}`).toBe('string');
+      }
+    }
+  });
 });

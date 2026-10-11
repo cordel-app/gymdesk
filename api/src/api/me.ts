@@ -1757,14 +1757,24 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
     // member's plan (it is filtered out above), but it is what *Pay now* is
     // for, so the page is told about it beside the current one.
     const { rows: pendingRows } = await db.query<any>(
-      `SELECT um.id, um.starts_at, mp.name AS plan_name
-         FROM user_memberships um LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
+      `SELECT um.id, um.starts_at, mp.name AS plan_name,
+              ${ASSIGNMENT_CADENCE.interval()} AS billing_interval,
+              ${ASSIGNMENT_CADENCE.unit()} AS billing_unit
+         FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
+         LEFT JOIN membership_plans mp ON mp.id = um.membership_plan_id
+         LEFT JOIN billing_policies bp ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
         WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'pending_payment'
         ORDER BY um.id DESC LIMIT 1`,
       [gymId, memberId],
     );
     let pending_membership = pendingRows[0]
-      ? { ...pendingRows[0], starts_at: toDateOnly(pendingRows[0].starts_at), membership_fee: await currentMembershipFee(gymId, Number(pendingRows[0].id)) }
+      ? {
+          ...pendingRows[0],
+          starts_at: toDateOnly(pendingRows[0].starts_at),
+          membership_fee: await currentMembershipFee(gymId, Number(pendingRows[0].id)),
+          billing_interval: pendingRows[0].billing_interval != null ? Number(pendingRows[0].billing_interval) : null,
+          billing_unit: pendingRows[0].billing_unit ?? null,
+        }
       : null;
     if (!pending_membership) {
       // #1325 PR 3a: a Pending Payment ProductSet is the same thing to the
@@ -1774,8 +1784,13 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
         `SELECT ps.id, ps.starts_at, mp.name AS plan_name,
                 (SELECT be.amount FROM billing_events be
                   WHERE be.product_set_id = ps.id AND be.event_type = 'payment_recorded'
-                  ORDER BY be.id DESC LIMIT 1) AS fee
-           FROM product_sets ps LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
+                  ORDER BY be.id DESC LIMIT 1) AS fee,
+                COALESCE(pss.recurring_billing_interval, bp.recurring_billing_interval) AS billing_interval,
+                COALESCE(pss.recurring_billing_unit, bp.recurring_billing_unit) AS billing_unit
+           FROM product_sets ps
+           LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
+           LEFT JOIN product_set_plan_snapshots pss ON pss.product_set_id = ps.id
+           LEFT JOIN billing_policies bp ON bp.membership_plan_id = ps.membership_plan_id AND bp.gym_id = ps.gym_id
           WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'pending_payment'
           ORDER BY ps.id DESC LIMIT 1`,
         [gymId, memberId],
@@ -1785,6 +1800,8 @@ meRouter.get('/membership', requireRole('member'), requireFeatureEnabled('member
           id: Number(setRows[0].id), starts_at: toDateOnly(setRows[0].starts_at),
           plan_name: setRows[0].plan_name ?? null,
           membership_fee: setRows[0].fee != null ? Number(setRows[0].fee) : null,
+          billing_interval: setRows[0].billing_interval != null ? Number(setRows[0].billing_interval) : null,
+          billing_unit: setRows[0].billing_unit ?? null,
         } as any;
       }
     }

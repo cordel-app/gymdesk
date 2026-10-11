@@ -415,6 +415,9 @@
     "start_payment": "Iniciar pago"
   },
   "payment_consent": {
+    "title_once": "Autorización de pago",
+    "body_once": "Al continuar, autorizas a {gymName} a cobrar {amount} {currency} una sola vez en la tarjeta que introduzcas.",
+    "checkbox_once": "He leído y acepto los términos del pago.",
     "title": "Autorización de cargo recurrente",
     "body": "Al continuar, autorizas a {gymName} a cargar {amount} {currency} cada {interval} a la tarjeta que introduzcas, hasta que canceles tu membresía.",
     "checkbox": "He leído y acepto los términos del cargo recurrente.",

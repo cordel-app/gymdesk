@@ -415,6 +415,9 @@
     "start_payment": "Iniciar pagament"
   },
   "payment_consent": {
+    "title_once": "Autorització de pagament",
+    "body_once": "En continuar, autoritzes {gymName} a carregar {amount} {currency} una sola vegada a la targeta que introdueixis.",
+    "checkbox_once": "He llegit i accepto els termes del pagament.",
     "title": "Autorització de càrrec recurrent",
     "body": "En continuar, autoritzes {gymName} a carregar {amount} {currency} cada {interval} a la targeta que introdueixis, fins que cancel·lis la teva membresía.",
     "checkbox": "He llegit i accepto els termes del càrrec recurrent.",

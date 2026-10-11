@@ -318,12 +318,16 @@ export default function MembershipPage() {
     : pendingMembership?.membership_fee != null ? pendingMembership.membership_fee.toFixed(2)
     : membership?.membership_fee != null ? membership.membership_fee.toFixed(2) : '';
   const consentCurrency = pendingRequest?.currency ?? 'EUR';
+  // The plan awaiting payment is what the POST charges while one exists, so its
+  // cadence is what the member is told — never the active plan's (#1081).
   const consentInterval = pendingRequest
-    ? (pendingRequest.billing_interval ?? membership?.billing_interval ?? null)
-    : membership?.billing_interval ?? null;
+    ? (pendingRequest.billing_interval ?? pendingMembership?.billing_interval ?? membership?.billing_interval ?? null)
+    : (pendingMembership ? pendingMembership.billing_interval ?? null : membership?.billing_interval ?? null);
   const consentUnit = pendingRequest
-    ? (pendingRequest.billing_unit ?? membership?.billing_unit ?? null)
-    : membership?.billing_unit ?? null;
+    ? (pendingRequest.billing_unit ?? pendingMembership?.billing_unit ?? membership?.billing_unit ?? null)
+    : (pendingMembership ? pendingMembership.billing_unit ?? null : membership?.billing_unit ?? null);
+  // No cadence means a single payment: say so, never "every —".
+  const consentRecurring = consentInterval != null && consentUnit != null;
 
   async function handleConsentConfirm() {
     setSubmitting(true);
@@ -967,16 +971,20 @@ export default function MembershipPage() {
           {consentOpen && (
             <div style={styles.overlay} onClick={() => !submitting && setConsentOpen(false)}>
               <div style={styles.modal} onClick={(e) => e.stopPropagation()}>
-                <h2 style={styles.modalTitle}>{t('payment_consent.title')}</h2>
+                <h2 style={styles.modalTitle}>{t(consentRecurring ? 'payment_consent.title' : 'payment_consent.title_once')}</h2>
                 <p style={styles.modalBody}>
-                  {t('payment_consent.body', {
-                    gymName: gymName ?? '—',
-                    amount: consentAmount,
-                    currency: consentCurrency,
-                    interval: consentInterval && consentUnit
-                      ? formatInterval(consentInterval, consentUnit, (k) => t(k as any))
-                      : '—',
-                  })}
+                  {consentRecurring
+                      ? t('payment_consent.body', {
+                          gymName: gymName ?? '—',
+                          amount: consentAmount,
+                          currency: consentCurrency,
+                          interval: formatInterval(consentInterval as number, consentUnit as string, (k) => t(k as any)),
+                        })
+                      : t('payment_consent.body_once', {
+                          gymName: gymName ?? '—',
+                          amount: consentAmount,
+                          currency: consentCurrency,
+                        })}
                 </p>
                 <label style={styles.checkLabel}>
                   <input
@@ -986,7 +994,7 @@ export default function MembershipPage() {
                     disabled={submitting}
                     style={{ marginRight: 8 }}
                   />
-                  {t('payment_consent.checkbox')}
+                  {t(consentRecurring ? 'payment_consent.checkbox' : 'payment_consent.checkbox_once')}
                 </label>
                 {submitError && <p style={styles.submitError}>{submitError}</p>}
                 <div style={styles.modalActions}>
