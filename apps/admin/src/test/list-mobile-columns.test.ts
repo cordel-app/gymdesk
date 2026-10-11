@@ -133,7 +133,7 @@ describe('the sheet is mounted once', () => {
 
   it('and the component declares no rules of its own', () => {
     const styles = read('ListResponsiveStyles.tsx');
-    expect(styles).toContain('<style>{LIST_RESPONSIVE_CSS}</style>');
+    expect(styles).toContain('<InlineStyle css={LIST_RESPONSIVE_CSS} />');
     expect(styles).not.toContain('@media');
     expect(styles).not.toMatch(/#[0-9a-fA-F]{3,6}/);
   });
