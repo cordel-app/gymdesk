@@ -55,6 +55,15 @@ export function GymProvider({ children }: { children: ReactNode }) {
   const { user } = useUser();
   const { toast } = useToast();
   const t = useTranslations('common');
+  // `getToken`'s identity is not stable across Clerk token refreshes. As a hook
+  // dependency it relaunches the load each time, and each load asks Clerk for
+  // a token again, which spends the API's request budget in a loop. Held in a
+  // ref, the load runs for what it depends on and nothing else.
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+  // `toast` and `t` are only used to report a failure, so they follow the same rule.
+  const reportRef = useRef({ toast, t });
+  reportRef.current = { toast, t };
   const isSuperadmin = user?.publicMetadata?.platform_role === 'superadmin';
   const { session: impersonationSession, ready: impersonationReady } = useImpersonation();
 
@@ -66,7 +75,7 @@ export function GymProvider({ children }: { children: ReactNode }) {
   const loadGyms = useCallback(async () => {
     if (!isSignedIn || !user) return;
     try {
-      const token = await getToken();
+      const token = await getTokenRef.current();
       const endpoint = isSuperadmin ? '/api/proxy/platform/gyms' : '/api/proxy/gyms';
       const fetchGyms = async () => {
         const res = await fetch(endpoint, {
@@ -109,11 +118,12 @@ export function GymProvider({ children }: { children: ReactNode }) {
         return (stored && gymsWithRole.find((g) => g.id === stored) ? stored : gymsWithRole[0]?.id) ?? null;
       });
     } catch (err: any) {
-      toast(err.message ?? t('error_load_gyms'));
+      const { toast: report, t: translate } = reportRef.current;
+      report(err.message ?? translate('error_load_gyms'));
     } finally {
       setLoading(false);
     }
-  }, [isSignedIn, user?.id, isSuperadmin, getToken, toast, t]);
+  }, [isSignedIn, user?.id, isSuperadmin]);
 
   useEffect(() => { loadGyms(); }, [loadGyms]);
 

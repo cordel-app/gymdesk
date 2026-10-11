@@ -631,6 +631,8 @@
     "offline_title": "We can't reach your gym",
     "offline_body": "Check your connection and try again.",
     "retry": "Try again",
+    "rate_limited_title": "Too many requests",
+    "rate_limited_body": "You've made a lot of requests in a short time. Wait a few minutes and try again.",
     "continue_with_google": "Continue with Google",
     "continue_with_apple": "Continue with Apple",
     "signing_in": "Signing in…",

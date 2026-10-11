@@ -631,6 +631,8 @@
     "offline_title": "No podemos conectar con tu gimnasio",
     "offline_body": "Comprueba tu conexión e inténtalo de nuevo.",
     "retry": "Reintentar",
+    "rate_limited_title": "Demasiadas peticiones",
+    "rate_limited_body": "Has hecho muchas peticiones en poco tiempo. Espera unos minutos e inténtalo de nuevo.",
     "continue_with_google": "Continuar con Google",
     "continue_with_apple": "Continuar con Apple",
     "signing_in": "Iniciando sesión…",

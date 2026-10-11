@@ -3,6 +3,22 @@ import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.CORDEL_FITNESS_API_URL!;
 
+// the API's global limit answers 429 with `RateLimit-*` / `Retry-After`;
+// the proxy used to drop them, so a browser could not tell how much of the
+// budget was spent or when it came back.
+const FORWARDED_RESPONSE_HEADERS = ['ratelimit', 'ratelimit-policy', 'retry-after'];
+
+function responseHeaders(res: Response): Record<string, string> {
+  const headers: Record<string, string> = {
+    'Content-Type': res.headers.get('Content-Type') ?? 'application/json',
+  };
+  for (const name of FORWARDED_RESPONSE_HEADERS) {
+    const value = res.headers.get(name);
+    if (value) headers[name] = value;
+  }
+  return headers;
+}
+
 async function handler(req: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
   const url = `${BACKEND_URL}/${path.join('/')}${req.nextUrl.search}`;
@@ -41,7 +57,7 @@ async function handler(req: NextRequest, { params }: { params: Promise<{ path: s
 
     return new NextResponse(resBody, {
       status: res.status,
-      headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'application/json' },
+      headers: responseHeaders(res),
     });
   } catch (err) {
     // Path and query are caller-controlled: strip line breaks so they can't forge log entries.

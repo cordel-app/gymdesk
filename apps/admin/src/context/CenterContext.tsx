@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useGym } from './GymContext';
 
@@ -31,6 +31,12 @@ const CenterContext = createContext<CenterContextValue>({
 export function CenterProvider({ children }: { children: ReactNode }) {
   const { getToken } = useAuth();
   const { activeGymId } = useGym();
+  // `getToken`'s identity is not stable across Clerk token refreshes. As a hook
+  // dependency it relaunches the load each time, and each load asks Clerk for
+  // a token again, which spends the API's request budget in a loop. Held in a
+  // ref, the load runs for what it depends on and nothing else.
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
 
   const [centers, setCenters] = useState<CenterOption[]>([]);
   const [activeCenterId, setActiveCenterIdState] = useState<number | null>(null);
@@ -40,7 +46,7 @@ export function CenterProvider({ children }: { children: ReactNode }) {
     if (!activeGymId) { setCenters([]); setLoading(false); return; }
     setLoading(true);
     try {
-      const token = await getToken();
+      const token = await getTokenRef.current();
       const res = await fetch('/api/proxy/centers?status=active', {
         headers: { Authorization: `Bearer ${token}`, 'x-gym-id': activeGymId },
       });
@@ -54,7 +60,7 @@ export function CenterProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, [activeGymId, getToken]);
+  }, [activeGymId]);
 
   useEffect(() => { loadCenters(); }, [loadCenters]);
 
