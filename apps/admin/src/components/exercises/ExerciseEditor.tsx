@@ -2,6 +2,7 @@
 
 import { EXERCISE_CATEGORIES, isExerciseCategory, exerciseCategoryLabelKey } from '@/lib/exerciseCategories';
 import React from 'react';
+import { RecordedMetrics } from './RecordedMetrics';
 import { useTranslations } from 'next-intl';
 import { primaryBtnSmall } from '@/components/ui';
 // #968: the form's own actions wear the platform's chrome — the left-aligned
@@ -205,24 +206,7 @@ export function ExerciseEditor({
       </div>
 
       <div style={subSectionSt}>
-        <p style={sectionLabelSt}>{t('label_result_types')}</p>
-        {/* #805 §7: a responsive column grid rather than a wrapping row, so
-            the checkboxes line up and each option keeps a comfortable
-            clickable area. The label is the translated one — never the
-            `exercises.result_type_*` key the flat list used to show. */}
-        <div style={resultTypeGridSt}>
-          {resultTypes.map((rt) => (
-            <label key={rt.id} style={checkboxRowSt}>
-              <input type="checkbox" checked={state.resultTypeIds.has(rt.id)}
-                onChange={(ev) => {
-                  const next = new Set(state.resultTypeIds);
-                  if (ev.target.checked) next.add(rt.id); else next.delete(rt.id);
-                  state.setResultTypeIds(next);
-                }} />
-              <span>{resultTypeLabel(rt, (key) => t(key as any))}</span>
-            </label>
-          ))}
-        </div>
+        <RecordedMetrics category={form.category} stored={null} />
       </div>
 
       <div style={subSectionSt}>
@@ -310,7 +294,5 @@ const inlineLabelSt = exerciseFieldLabelStyle;
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
 const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };
 const subSectionSt = exerciseSubSectionStyle;
-const resultTypeGridSt = exerciseResultTypeGridStyle;
-const checkboxRowSt: React.CSSProperties = { ...exerciseOptionRowStyle, cursor: 'pointer' };
 const mediaGridSt = exerciseMediaGridStyle;
 const sectionLabelSt = exerciseSectionLabelStyle;

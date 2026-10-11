@@ -247,7 +247,12 @@ userMembershipServicesRouter.post('/', requireModuleWrite('PAYMENTS'), async (re
   if (await redirectEditToProductSet(req, res, {
     userMembershipId: Number((req.params as any).id), action: 'update', detail: { add_service: req.body },
     mutate: async (tx, d) => { const r = await psAddService(tx, d, req.body); return 'kind' in r ? r : { ok: true as const }; },
-    respond: () => loadAssignedPlanServices(gymId, Number((req.params as any).id)),
+    // The route's own contract is the attachment it created, not the list.
+    respond: async () => {
+      const list = await loadAssignedPlanServices(gymId, Number((req.params as any).id));
+      const mine = list.filter((r: any) => Number(r.product_id) === Number(req.body?.product_id));
+      return mine[mine.length - 1] ?? list[list.length - 1];
+    },
     status: 201,
   })) return;
   const plan = await loadAssignedPlan(gymId, (req.params as any).id);

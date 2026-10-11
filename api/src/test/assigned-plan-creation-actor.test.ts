@@ -116,6 +116,14 @@ describe('#958 — the creation actor is snapshotted by every path that assigns 
       'UPDATE user_memberships SET created_by_name = ? WHERE id = ?',
       ['Earlier Admin', first.body.id],
     );
+    // #1325 PR 3e: one in-flight version per owner — the first Draft is
+    // committed before its successor is configured.
+    const activated = await request
+      .post(`/user-memberships/${first.body.id}/activate`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .send({});
+    expect(activated.status).toBe(200);
 
     const res = await request
       .post(`/user-memberships/${first.body.id}/assign-new-plan`)
