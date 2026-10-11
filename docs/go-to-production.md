@@ -319,7 +319,8 @@ Tick items off in the PR that completes them.
       the S3 API endpoint, which answers `400 Authorization`: every image renders broken, and every Members
       App background shows the theme colour instead. Connect a custom domain to the production bucket in the
       Cloudflare account that owns it (r2.dev is rate-limited and meant for development only), put that
-      origin in the `CLOUDFLARE_R2_PUBLIC_URL` repository variable with no trailing slash and no bucket name,
+      origin in the `CLOUDFLARE_R2_PUBLIC_URL` variable of the GitHub **environment** the deploy runs in
+      (`dev` today; a repository-level variable is not read) with no trailing slash and no bucket name,
       and redeploy. **Never point `CLOUDFLARE_R2_ENDPOINT` at the public origin**: the API uploads through
       that variable, and a public origin cannot accept an S3 write. `GET /themes/:id/logo` keeps working
       either way, because it reads the object with the deployment's credentials.
@@ -442,17 +443,22 @@ Tick items off in the PR that completes them.
       script renders a consistent stylized form per food, not a photograph of it — supply real
       artwork with `--from`, or replace individual foods later with **Upload Image** on the expanded
       card (512×512 transparent PNG).
-      **Real artwork exists for all 32 base foods and must be uploaded too.** A set of photographic
-      512×512 transparent PNGs was prepared in September 2026, one per base food, each already passing
-      the upload route's checks. Pass that folder as `--from` so the run uses it instead of the
-      generated placeholders. The files are named after the food (`Salmon.png`, `Brown-Rice.png`,
-      `Sweet-Potatoes.png`), which the script matches by sanitized name, so they still apply if the
-      production ids differ from the development ones. A food with no matching file falls back to the
-      generated form without any warning, so run it with `--dry-run` first, which lists each food as
-      `supplied` or `generated`, and check that the `supplied` count reads 32. The images are not in the repository; the set currently lives outside it as
-      `~/Downloads/base-nutrition-images/` on the machine it was prepared on, so move it somewhere
-      durable before this step. The development deployment (admin.vdicube.com) has not received them
-      either.
+      **Real artwork exists for all 32 base foods and must be uploaded too.** A set of 512×512
+      transparent PNGs was produced in October 2026, one per base food, each already passing the upload
+      route's checks (PNG signature, exactly 512×512, alpha channel). The pictures were generated with
+      Gemini on a flat `#FF00FF` backdrop and keyed to transparency afterwards — asking for a
+      "transparent" background paints a checkerboard into the picture instead. Pass that folder as
+      `--from` so the run uses it instead of the generated placeholders. The files are named after the
+      food (`Salmon.png`, `Brown-Rice.png`, `Sweet-Potatoes.png`), which the script matches by
+      sanitized name, so they still apply if the production ids differ from the development ones. A
+      food with no matching file falls back to the generated form without any warning, so run it with
+      `--dry-run` first, which lists each food as `supplied` or `generated`, and check that the
+      `supplied` count reads 32. The images are not in the repository; the set currently lives outside
+      it as `~/Downloads/base-nutrition-images-gemini/` on the machine it was prepared on, so move it
+      somewhere durable before this step. The development deployment (admin.vdicube.com) already has
+      all 32 (uploaded 11 October 2026 through **Upload Image** and checked against the published
+      objects); production does not, and has no public origin yet either — see the
+      `CLOUDFLARE_R2_PUBLIC_URL` item above, without which the stored URLs do not load in a browser.
 - [ ] **Upload the Base Exercise images** (#716). Unlike the base foods above there is deliberately
       no generator and no backfill script: the ticket's own answer put generating the artwork out of
       scope, so every Base Exercise has `image_url = NULL` and its expanded card reads "No image yet"
