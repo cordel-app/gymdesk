@@ -1,4 +1,9 @@
 /**
+ * #1368 stage 2: the `muscles` table is the runtime catalogue (routers, filters and
+ * the importer read and write it through `api/exercise-muscles.ts`). This list is
+ * what migration 253 seeded and what the pure importer uses to tell a known
+ * muscle from a new one; it is no longer authoritative for what is offered.
+ *
  * #62: muscles are a fixed catalog, not per-gym DB rows. Keys are stable
  * slugs stored on exercise_muscles.muscle; display names are an admin-app
  * i18n concern. Legacy keys migrated from the old muscles table may fall

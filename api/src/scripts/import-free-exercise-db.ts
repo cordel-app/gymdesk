@@ -65,6 +65,7 @@
 import { readFileSync } from 'node:fs';
 import 'dotenv/config';
 import { db } from '../infra/db';
+import { insertExerciseMuscle } from '../api/exercise-muscles';
 import {
   ExistingBaseExercise,
   FREE_EXERCISE_DB_DEFAULT_URL,
@@ -157,7 +158,7 @@ async function loadExistingBaseExercises(): Promise<ExistingBaseExercise[]> {
   const { rows } = await db.query(
     `SELECT e.id, e.name, e.slug, e.source, e.source_id, e.status, e.description,
             e.equipment, e.category, e.level, e.mechanic, e.force_type,
-            (SELECT GROUP_CONCAT(em.muscle) FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscle_keys
+            (SELECT GROUP_CONCAT(m.slug) FROM exercise_muscles em JOIN muscles m ON m.id = em.muscle_id WHERE em.exercise_id = e.id) AS muscle_keys
        FROM exercises e
       WHERE e.gym_id IS NULL`,
   );
@@ -204,10 +205,7 @@ async function applyPlan(plan: ImportPlan, src: SourceExercise, match: { row: Ex
       // A base exercise's links carry `gym_id = NULL` like the row itself
       // (migration 106). IGNORE keeps the pair's unique index from turning a
       // concurrent re-run into a failure.
-      await tx.query(
-        'INSERT IGNORE INTO exercise_muscles (gym_id, exercise_id, muscle, role) VALUES (NULL, ?, ?, ?)',
-        [exerciseId, link.key, link.role],
-      );
+      await insertExerciseMuscle(tx, null, exerciseId, link.key, link.role, { ignoreDuplicate: true });
     }
     return exerciseId;
   });
