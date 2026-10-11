@@ -1440,7 +1440,7 @@
     "section_period_benefits": "Periodical Promotion",
     "no_period_benefits": "No periodical promotion yet.",
     "add_period_benefit": "+ Add Periodical Promotion",
-    "section_membership_fee_benefits": "Membership Fee Promotion",
+    "section_membership_fee_benefits": "Membership Plan Promotion",
     "no_membership_fee_benefit": "No Membership Fee promotion configured.",
     "mf_duration_max_hint": "Cannot exceed the promotion duration ({max} months).",
     "edit_busy_hint": "Finish editing the open section first.",
