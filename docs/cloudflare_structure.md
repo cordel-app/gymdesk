@@ -8,10 +8,10 @@
 │   │
 │   ├── muscles/
 │   │   └── images/
-│   │       ├── {muscle_name}-male.png                              — 1080 × 1080 px
-│   │       ├── {muscle_name}-male-thumbnail.png                  — 256 × 256 px
-│   │       ├── {muscle_name}-female.png                            — 1080 × 1080 px
-│   │       └── {muscle_name}-female-thumbnail.png                  — 256 × 256 px
+│   │       ├── {muscle_name}-male.webp                              — 1080 × 1080 px
+│   │       ├── {muscle_name}-male-thumbnail.webp                  — 256 × 256 px
+│   │       ├── {muscle_name}-female.webp                            — 1080 × 1080 px
+│   │       └── {muscle_name}-female-thumbnail.webp                  — 256 × 256 px
 │   │
 │   ├── exercises/
 │   │   ├── images/
