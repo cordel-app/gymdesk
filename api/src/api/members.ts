@@ -97,6 +97,10 @@ membersRouter.get('/', async (req, res) => {
     where.push('m.nif_nie_passport LIKE ?');
     params.push(`%${nifNiePassportFilter}%`);
   }
+  // #1367: the Home dashboard's "Welcome new members" task links here with
+  // `welcomed=false`; it is the same predicate the task counts (welcomed_at IS NULL).
+  if (req.query.welcomed === 'false') where.push('m.welcomed_at IS NULL');
+  else if (req.query.welcomed === 'true') where.push('m.welcomed_at IS NOT NULL');
   // enrollment_status filter: applied as HAVING since it's a subquery alias
   const having: string[] = [];
   if (paymentStatusFilter) {
@@ -389,6 +393,45 @@ membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) 
     res.json(rows[0]);
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A member with this email already exists.');
+  }
+});
+
+/**
+ * PUT /members/:id/welcomed — #1367. The "Welcomed" checkbox on the Members page:
+ * `{ welcomed: true }` stamps `welcomed_at` with now, `{ welcomed: false }` clears
+ * it. A dedicated route (not `PUT /:id`, which overwrites every profile field
+ * from the body) so ticking the box cannot blank anything else.
+ */
+membersRouter.put('/:id/welcomed', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const { gymId, gymMembershipId } = getTenantContext(req);
+  const welcomed = req.body?.welcomed;
+  if (typeof welcomed !== 'boolean') return res.status(400).json({ error: 'welcomed must be a boolean' });
+  try {
+    const { rows: before } = await db.query(
+      'SELECT welcomed_at FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+      [req.params.id, gymId],
+    );
+    if (before.length === 0) return res.status(404).json({ error: 'Member not found' });
+    await db.query(
+      `UPDATE members SET welcomed_at = ${welcomed ? 'UTC_TIMESTAMP()' : 'NULL'},
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+      [gymMembershipId ?? null, req.params.id, gymId],
+    );
+    const { rows } = await db.query(
+      'SELECT welcomed_at FROM members WHERE id = ? AND gym_id = ?',
+      [req.params.id, gymId],
+    );
+    recordAudit(req, {
+      action: 'update',
+      entityType: 'member',
+      entityId: req.params.id,
+      previous: { welcomed_at: before[0].welcomed_at },
+      next: { welcomed_at: rows[0].welcomed_at },
+    });
+    res.json({ id: Number(req.params.id), welcomed_at: rows[0].welcomed_at });
+  } catch (err) {
+    next(err);
   }
 });
 

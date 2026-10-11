@@ -39,6 +39,20 @@ export interface NavGroup {
 }
 
 export const navigationGroups: NavGroup[] = [
+  // #1367: Home is the first entry of the sidebar. It belongs to no module — any
+  // staff role may open it; the page and its endpoint show only the sections the
+  // role's modules allow.
+  {
+    id: 'home',
+    labelKey: 'nav.groups.home',
+    icon: 'home',
+    items: [
+      {
+        href: '/{{locale}}/home',
+        labelKey: 'nav.home',
+      },
+    ],
+  },
   {
     id: 'membership',
     labelKey: 'nav.groups.membership',

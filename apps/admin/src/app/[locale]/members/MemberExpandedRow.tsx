@@ -392,6 +392,9 @@ export function MemberExpandedRow({
                     default: <p style={profileValueStyle}>{defaultCenter?.name ?? EMPTY_VALUE}</p>,
                   }}
                 />
+                <p style={{ ...profileValueStyle, marginTop: 12 }} data-testid="member-welcomed">
+                  {t('members.label_welcomed')}: {member.welcomed_at ? t('members.welcomed_yes') : t('members.welcomed_no')}
+                </p>
               </div>
             </Section>
           )}
