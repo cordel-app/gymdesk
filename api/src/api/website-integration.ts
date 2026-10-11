@@ -1,3 +1,4 @@
+import { resolveRequestActor } from '../domain/auditActor';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -58,14 +59,16 @@ websiteIntegrationRouter.get('/', async (req, res, next) => {
 
 // POST /key — generate, or rotate: the previous key stops working immediately.
 websiteIntegrationRouter.post('/key', requireModuleWrite('SYSTEM'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
   try {
     const before = await loadStatus(gymId);
     const { key, hash, prefix } = await generateWebsiteApiKey();
     await db.query(
-      `UPDATE gyms SET website_api_key_hash = ?, website_api_key_prefix = ?, website_api_key_created_at = UTC_TIMESTAMP()
+      `UPDATE gyms SET website_api_key_hash = ?, website_api_key_prefix = ?, website_api_key_created_at = UTC_TIMESTAMP(),
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ?`,
-      [hash, prefix, gymId],
+      [hash, prefix, resolveRequestActor(tenantCtx), gymId],
     );
     recordAudit(req, {
       action: before.configured ? 'rotate' : 'create',
@@ -81,14 +84,16 @@ websiteIntegrationRouter.post('/key', requireModuleWrite('SYSTEM'), async (req, 
 });
 
 websiteIntegrationRouter.delete('/key', requireModuleWrite('SYSTEM'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
   try {
     const before = await loadStatus(gymId);
     if (!before.configured) return res.status(404).json({ error: 'No website API key to revoke.' });
     await db.query(
-      `UPDATE gyms SET website_api_key_hash = NULL, website_api_key_prefix = NULL, website_api_key_created_at = NULL
+      `UPDATE gyms SET website_api_key_hash = NULL, website_api_key_prefix = NULL, website_api_key_created_at = NULL,
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ?`,
-      [gymId],
+      [resolveRequestActor(tenantCtx), gymId],
     );
     recordAudit(req, {
       action: 'revoke',

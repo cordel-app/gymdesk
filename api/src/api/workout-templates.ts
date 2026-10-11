@@ -8,6 +8,7 @@ import { getReferences } from '../domain/references';
 import { insertAndFetch } from '../infra/db-helpers';
 import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
+import { resolveRequestActor } from '../domain/auditActor';
 
 /**
  * #55: WorkoutTemplate -> WorkoutTemplateBlock -> WorkoutTemplateExercise.
@@ -140,11 +141,9 @@ workoutTemplatesRouter.get('/', async (req, res, next) => {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
   }
   const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
-  const createdBy = req.query.created_by == null || req.query.created_by === ''
-    ? null : Number(req.query.created_by);
-  if (createdBy !== null && !Number.isInteger(createdBy)) {
-    return res.status(400).json({ error: 'created_by must be a membership id' });
-  }
+  // #1182: created_by is the plain-text actor snapshot, so the filter is its exact text.
+  const createdBy = typeof req.query.created_by === 'string' && req.query.created_by !== ''
+    ? req.query.created_by : null;
   const paginated = req.query.limit !== undefined || req.query.offset !== undefined;
   const sortKey = typeof req.query.sort === 'string' && req.query.sort in SORT_COLUMNS ? req.query.sort : 'name';
   const dir = req.query.dir === 'desc' ? 'DESC' : 'ASC';
@@ -157,7 +156,7 @@ workoutTemplatesRouter.get('/', async (req, res, next) => {
     const params: (string | number)[] = [gymId];
     if (status) { where.push('wt.status = ?'); params.push(status); }
     if (name) { where.push('wt.name LIKE ?'); params.push(`%${name}%`); }
-    if (createdBy !== null) { where.push('wt.created_by_membership_id = ?'); params.push(createdBy); }
+    if (createdBy !== null) { where.push('wt.created_by = ?'); params.push(createdBy); }
     const whereSql = where.join(' AND ');
 
     if (!paginated) {
@@ -174,15 +173,9 @@ workoutTemplatesRouter.get('/', async (req, res, next) => {
     );
     const { rows } = await db.query(
       `SELECT wt.*,
-              gm_c.name AS created_by_name,
-              gm_m.name AS modified_by_name,
-              gm_d.name AS deleted_by_name,
               (SELECT COUNT(*) FROM workout_template_blocks wtb
                WHERE wtb.workout_template_id = wt.id AND wtb.deleted_at IS NULL) AS blocks_count
        FROM workout_templates wt
-       LEFT JOIN gym_memberships gm_c ON gm_c.id = wt.created_by_membership_id
-       LEFT JOIN gym_memberships gm_m ON gm_m.id = wt.modified_by_membership_id
-       LEFT JOIN gym_memberships gm_d ON gm_d.id = wt.deleted_by_membership_id
        WHERE ${whereSql}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,
       params,
@@ -198,11 +191,10 @@ workoutTemplatesRouter.get('/created-by-options', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT DISTINCT gm.id AS membership_id, gm.name
+      `SELECT DISTINCT wt.created_by AS name
        FROM workout_templates wt
-       JOIN gym_memberships gm ON gm.id = wt.created_by_membership_id
-       WHERE wt.gym_id = ? AND wt.deleted_at IS NULL AND gm.name IS NOT NULL
-       ORDER BY gm.name ASC`,
+       WHERE wt.gym_id = ? AND wt.deleted_at IS NULL AND wt.created_by IS NOT NULL
+       ORDER BY wt.created_by ASC`,
       [gymId],
     );
     res.json(rows);
@@ -227,9 +219,6 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
     // derived table pre-sorted by position instead.
     const { rows } = await db.query(
       `SELECT wt.*,
-              gm_c.name AS created_by_name,
-              gm_m.name AS modified_by_name,
-              gm_d.name AS deleted_by_name,
         (SELECT JSON_ARRAYAGG(item) FROM (
           SELECT JSON_OBJECT(
               'id', b.id, 'position', b.position, 'name', b.name, 'description', b.description,
@@ -257,9 +246,6 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
           ORDER BY b.position
         ) t1) AS blocks
        FROM workout_templates wt
-       LEFT JOIN gym_memberships gm_c ON gm_c.id = wt.created_by_membership_id
-       LEFT JOIN gym_memberships gm_m ON gm_m.id = wt.modified_by_membership_id
-       LEFT JOIN gym_memberships gm_d ON gm_d.id = wt.deleted_by_membership_id
        WHERE wt.id = ? AND (wt.gym_id = ? OR wt.gym_id IS NULL) AND wt.deleted_at IS NULL`,
       [id, gymId],
     );
@@ -271,7 +257,9 @@ workoutTemplatesRouter.get('/:id', async (req, res, next) => {
 });
 
 workoutTemplatesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, description, status, notes } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !SETTABLE_STATUSES.includes(status)) {
@@ -280,11 +268,11 @@ workoutTemplatesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res
   try {
     const row = await insertAndFetch(
       `INSERT INTO workout_templates
-        (gym_id, name, description, status, notes, created_by_membership_id,
-         modified_at, modified_by_membership_id)
+        (gym_id, name, description, status, notes, created_by,
+         modified_at, modified_by)
        VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
       [gymId, name.trim(), description ?? null, status ?? 'active', notes ?? null,
-       gymMembershipId, gymMembershipId],
+       actor, actor],
       'SELECT * FROM workout_templates WHERE id = ?',
       (id) => [id],
     );
@@ -296,7 +284,9 @@ workoutTemplatesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res
 });
 
 workoutTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   if (await isBaseTemplate(id)) {
     return res.status(403).json({ error: 'Base workout templates can only be modified by Cordel administrators.' });
@@ -313,13 +303,13 @@ workoutTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, r
               status = COALESCE(?, status),
               notes = IF(?, ?, notes),
               modified_at = UTC_TIMESTAMP(),
-              modified_by_membership_id = ?
+              modified_by = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [name?.trim() ?? null,
        'description' in req.body ? 1 : 0, description ?? null,
        status ?? null,
        'notes' in req.body ? 1 : 0, notes ?? null,
-       gymMembershipId,
+       actor,
        id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Workout template not found' });
@@ -332,7 +322,9 @@ workoutTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, r
 });
 
 workoutTemplatesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
-  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   if (await isBaseTemplate(id)) {
     return res.status(403).json({ error: 'Base workout templates can only be modified by Cordel administrators.' });
@@ -340,9 +332,9 @@ workoutTemplatesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req
   const { rowCount } = await db.query(
     `UPDATE workout_templates
         SET deleted_at = UTC_TIMESTAMP(), status = 'deleted',
-            deleted_by_membership_id = ?, deleted_by_name = ?
+            deleted_by = ?
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [gymMembershipId, actorName, id, gymId],
+    [actor, id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Workout template not found' });
   recordAudit(req, { action: 'delete', entityType: 'workout_template', entityId: id });
@@ -350,7 +342,9 @@ workoutTemplatesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req
 });
 
 workoutTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
     const { rows: srcRows } = await db.query(
@@ -373,11 +367,11 @@ workoutTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), as
     await db.transaction(async (tx) => {
       const { insertId: newId } = await tx.query(
         `INSERT INTO workout_templates
-          (gym_id, name, description, status, notes, created_by_membership_id,
-           modified_at, modified_by_membership_id)
+          (gym_id, name, description, status, notes, created_by,
+           modified_at, modified_by)
          VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
         [gymId, copyName, src.description ?? null, src.status, src.notes ?? null,
-         gymMembershipId, gymMembershipId],
+         actor, actor],
       );
       createdId = newId;
 
@@ -421,7 +415,9 @@ workoutTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), as
 });
 
 workoutTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
     const { rows: srcRows } = await db.query(
@@ -436,11 +432,11 @@ workoutTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async 
     await db.transaction(async (tx) => {
       const { insertId: newId } = await tx.query(
         `INSERT INTO workout_templates
-          (gym_id, name, description, status, notes, created_by_membership_id,
-           modified_at, modified_by_membership_id, cloned_from_id)
+          (gym_id, name, description, status, notes, created_by,
+           modified_at, modified_by, cloned_from_id)
          VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
         [gymId, copyName, src.description ?? null, 'active', src.notes ?? null,
-         gymMembershipId, gymMembershipId, id],
+         actor, actor, id],
       );
       createdId = newId;
 

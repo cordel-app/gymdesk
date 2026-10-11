@@ -1,3 +1,4 @@
+import { resolvePlatformActor } from '../domain/auditActor';
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { db } from '../infra/db';
@@ -261,11 +262,11 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
 
   const slug = rawSlug?.trim() ? rawSlug.trim() : await uniqueSlug(name);
   const id = randomUUID();
-  const actorName = req.superadminName ?? null;
+  const actorName = resolvePlatformActor(req.superadminName);
 
   try {
     await db.query(
-      `INSERT INTO gyms (id, name, slug, plan, theme_id, payment_provider_id, description, status, created_by_name)
+      `INSERT INTO gyms (id, name, slug, plan, theme_id, payment_provider_id, description, status, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [id, name, slug, plan ?? 'free', theme_id ?? null, providerId, description?.trim() || null, 'active', actorName],
     );
@@ -273,16 +274,16 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
     // backfill for pre-existing gyms, so resolveCenterId()'s "sole active
     // center" fallback works from day one for gyms created after this ships.
     await db.query(
-      "INSERT INTO centers (gym_id, name, status) VALUES (?, ?, 'active')",
-      [id, name],
+      "INSERT INTO centers (gym_id, name, status, created_by) VALUES (?, ?, 'active', ?)",
+      [id, name, actorName],
     );
     // #1149: the tax rate is seeded **before** the Products, because their
     // prices are stored VAT-inclusive of it — a seed that ran the other way
     // round would leave every default Product un-rated.
     await db.query(
-      `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at)
-       VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP())`,
-      [id],
+      `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at, created_by)
+       VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP(), ?)`,
+      [id, actorName],
     );
     await db.query(
       `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at)
@@ -293,9 +294,9 @@ platformRouter.post('/gyms', requireSuperadmin, async (req, res) => {
     // explicit `active` row per goal, `gym_professional_services`' pattern. A
     // goal Cordel adds later reads as active with no row (`gymGoalStatusSql()`).
     await db.query(
-      `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status)
-       SELECT ?, id, 'active' FROM personal_goals WHERE gym_id IS NULL AND status <> 'deleted'`,
-      [id],
+      `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by)
+       SELECT ?, id, 'active', ? FROM personal_goals WHERE gym_id IS NULL AND status <> 'deleted'`,
+      [id, actorName],
     );
     // #1149: the gym's default Products — one writer for both creation paths,
     // configured from `domain/defaultGymProducts.ts` (#543's rule unchanged:
@@ -346,7 +347,7 @@ platformRouter.put('/gyms/:id', requireSuperadmin, async (req, res) => {
   if (existing.length === 0) return res.status(404).json({ error: 'Gym not found' });
 
   const themeIdValue = 'theme_id' in req.body ? (theme_id ?? null) : undefined;
-  const actorName = req.superadminName ?? null;
+  const actorName = resolvePlatformActor(req.superadminName);
 
   await db.query(
     `UPDATE gyms SET
@@ -356,7 +357,7 @@ platformRouter.put('/gyms/:id', requireSuperadmin, async (req, res) => {
        theme_id            = IF(?, ?, theme_id),
        payment_provider_id = COALESCE(?, payment_provider_id),
        modified_at         = UTC_TIMESTAMP(),
-       modified_by_name    = ?
+       modified_by         = ?
      WHERE id = ? AND deleted_at IS NULL`,
     [
       name ?? null,
@@ -395,13 +396,13 @@ platformRouter.patch('/gyms/:id', requireSuperadmin, async (req, res) => {
   const { rows: existing } = await db.query('SELECT * FROM gyms WHERE id = ? AND deleted_at IS NULL', [req.params.id]);
   if (existing.length === 0) return res.status(404).json({ error: 'Gym not found' });
   const themeIdValue = 'theme_id' in req.body ? (theme_id ?? null) : undefined;
-  const actorName = req.superadminName ?? null;
+  const actorName = resolvePlatformActor(req.superadminName);
   await db.query(
     `UPDATE gyms SET
        name             = COALESCE(?, name),
        theme_id         = IF(?, ?, theme_id),
        modified_at      = UTC_TIMESTAMP(),
-       modified_by_name = ?
+       modified_by      = ?
      WHERE id = ? AND deleted_at IS NULL`,
     [name ?? null, themeIdValue !== undefined ? 1 : 0, themeIdValue ?? null, actorName, req.params.id],
   );
@@ -419,9 +420,9 @@ platformRouter.delete('/gyms/:id', requireSuperadmin, async (req, res) => {
     [req.params.id],
   );
   if (existing.length === 0) return res.status(404).json({ error: 'Gym not found' });
-  const actorName = req.superadminName ?? null;
+  const actorName = resolvePlatformActor(req.superadminName);
   await db.query(
-    `UPDATE gyms SET deleted_at = UTC_TIMESTAMP(), deleted_by_name = ?, status = 'deleted'
+    `UPDATE gyms SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, status = 'deleted'
      WHERE id = ? AND deleted_at IS NULL`,
     [actorName, req.params.id],
   );
@@ -439,25 +440,25 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
   const newName = `Copy of ${src.name}`;
   const newSlug = await uniqueSlug(newName);
   const newId = randomUUID();
-  const actorName = req.superadminName ?? null;
+  const actorName = resolvePlatformActor(req.superadminName);
   // #636: the copy keeps the source gym's Payment Provider — the column is NOT
   // NULL, and a duplicate that silently switched providers would be a surprise.
   await db.query(
-    `INSERT INTO gyms (id, name, slug, plan, theme_id, payment_provider_id, description, status, created_by_name)
+    `INSERT INTO gyms (id, name, slug, plan, theme_id, payment_provider_id, description, status, created_by)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [newId, newName, newSlug, src.plan, src.theme_id ?? null, src.payment_provider_id, src.description ?? null, 'active', actorName],
   );
   await db.query(
-    "INSERT INTO centers (gym_id, name, status) VALUES (?, ?, 'active')",
-    [newId, newName],
+    "INSERT INTO centers (gym_id, name, status, created_by) VALUES (?, ?, 'active', ?)",
+    [newId, newName, actorName],
   );
   // #1149: the tax rate first, then the same default Products a gym created
   // from scratch receives — the duplicate is a new gym, and its own insert had
   // drifted (it wrote no `is_system`, so every seeded Product read as Custom).
   await db.query(
-    `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at)
-     VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP())`,
-    [newId],
+    `INSERT IGNORE INTO tax_rates (gym_id, name, rate_percent, is_system, status, created_at, created_by)
+     VALUES (?, 'Standard VAT', 21.00, 1, 'active', UTC_TIMESTAMP(), ?)`,
+    [newId, actorName],
   );
   await db.query(
     `INSERT IGNORE INTO gym_professional_services (gym_id, professional_service_id, status, created_at)
@@ -465,9 +466,9 @@ platformRouter.post('/gyms/:id/duplicate', requireSuperadmin, async (req, res) =
     [newId],
   );
   await db.query(
-    `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status)
-     SELECT ?, id, 'active' FROM personal_goals WHERE gym_id IS NULL AND status <> 'deleted'`,
-    [newId],
+    `INSERT IGNORE INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by)
+     SELECT ?, id, 'active', ? FROM personal_goals WHERE gym_id IS NULL AND status <> 'deleted'`,
+    [newId, actorName],
   );
   await seedDefaultGymProducts(newId);
   const { rows } = await db.query(
@@ -520,13 +521,13 @@ platformRouter.post('/gyms/:id/storage/initialize', requireSuperadmin, async (re
     });
   }
 
-  const actorName = req.superadminName ?? null;
+  const actorName = resolvePlatformActor(req.superadminName);
   await db.query(
     `UPDATE gyms SET
        storage_folder_prefix   = ?,
        storage_initialized_at  = UTC_TIMESTAMP(),
        modified_at             = UTC_TIMESTAMP(),
-       modified_by_name        = ?
+       modified_by             = ?
      WHERE id = ? AND deleted_at IS NULL`,
     [folderPrefix, actorName, req.params.id],
   );

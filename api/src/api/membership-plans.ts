@@ -17,6 +17,7 @@ import { activePlanConflictBody, supersedeStartsAtError } from '../domain/oneAct
 import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-active-plan';
 import { computePlanExampleTimeline } from '../domain/planExampleTimeline';
 import { actorSnapshot } from '../domain/nutritionLibrary';
+import { resolveRequestActor } from '../domain/auditActor';
 import {
   PlanSimulationItem,
   computePlanBillingEventSimulation,
@@ -80,13 +81,11 @@ interface PlanRow {
   // #635 stage 13 — Pre-paid Duration: how many of `paid_periods` are already
   // paid up front (the Promotion's own `pay_beforehand_periods`, migration 189).
   pay_beforehand_periods: number | null;
-  created_by: number | null;
-  created_by_name?: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by: number | null;
-  modified_by_name?: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by: number | null;
+  deleted_by: string | null;
   created_at: string;
 }
 
@@ -517,12 +516,8 @@ membershipPlansRouter.get('/', async (req, res) => {
   // user-memberships.ts) — this filter only keeps the picker from offering what
   // the API would refuse.
   const enrollment = req.query.enrollment_status as string | undefined;
-  let sql = `SELECT mp.*,
-                    gm_c.name AS created_by_name,
-                    gm_m.name AS modified_by_name
+  let sql = `SELECT mp.*
              FROM membership_plans mp
-             LEFT JOIN gym_memberships gm_c ON gm_c.id = mp.created_by
-             LEFT JOIN gym_memberships gm_m ON gm_m.id = mp.modified_by
              WHERE mp.gym_id = ? AND mp.deleted_at IS NULL`;
   const params: (string | number)[] = [gymId];
   if (status) { sql += ' AND mp.lifecycle_status = ?'; params.push(status); }
@@ -536,12 +531,8 @@ membershipPlansRouter.get('/', async (req, res) => {
 membershipPlansRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query<PlanRow>(
-    `SELECT mp.*,
-            gm_c.name AS created_by_name,
-            gm_m.name AS modified_by_name
+    `SELECT mp.*
      FROM membership_plans mp
-     LEFT JOIN gym_memberships gm_c ON gm_c.id = mp.created_by
-     LEFT JOIN gym_memberships gm_m ON gm_m.id = mp.modified_by
      WHERE mp.id = ? AND mp.gym_id = ? AND mp.deleted_at IS NULL`,
     [req.params.id, gymId],
   );
@@ -571,7 +562,7 @@ membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => 
   if (taxRateErr) return res.status(400).json({ error: taxRateErr });
   const resolvedTaxRateId = tax_rate_id != null ? Number(tax_rate_id) : await getSystemTaxRateId(gymId);
 
-  const callerMemberId = await getCallerMembershipId(req);
+  const callerActor = resolveRequestActor(getTenantContext(req));
   try {
     const row = await insertAndFetch(
       `INSERT INTO membership_plans
@@ -579,7 +570,7 @@ membershipPlansRouter.post('/', requireRole('admin'), async (req, res, next) => 
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, name.trim(), description ?? null,
        lifecycle_status ?? 'draft', enrollment_status ?? 'staff_only', member_limit ?? '1',
-       resolvedTaxRateId, tax_behavior || 'inclusive', callerMemberId],
+       resolvedTaxRateId, tax_behavior || 'inclusive', callerActor],
       'SELECT * FROM membership_plans WHERE id = ?',
       (id) => [id],
     );
@@ -661,7 +652,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
     }
   }
 
-  const callerMemberId = await getCallerMembershipId(req);
+  const callerActor = resolveRequestActor(getTenantContext(req));
   try {
     const { rowCount } = await db.query(
       `UPDATE membership_plans SET
@@ -676,7 +667,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         paid_periods       = IF(?, ?, paid_periods),
         bonus_periods      = IF(?, ?, bonus_periods),
         pay_beforehand_periods = IF(?, ?, pay_beforehand_periods),
-        modified_at       = NOW(),
+        modified_at       = UTC_TIMESTAMP(),
         modified_by       = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
@@ -694,7 +685,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
         'paid_periods' in req.body ? 1 : 0, durations.paid_periods,
         'bonus_periods' in req.body ? 1 : 0, durations.bonus_periods,
         'pay_beforehand_periods' in req.body ? 1 : 0, durations.pay_beforehand_periods,
-        callerMemberId,
+        callerActor,
         req.params.id, gymId,
       ],
     );
@@ -708,7 +699,7 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
 });
 
 membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
-  const { gymId, actorName } = getTenantContext(req);
+  const { gymId } = getTenantContext(req);
   const { rows: active } = await db.query(
     `SELECT COUNT(*) AS n FROM user_memberships
      WHERE membership_plan_id = ? AND gym_id = ? AND status = 'active'`,
@@ -717,11 +708,11 @@ membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   if (Number(active[0].n) > 0) {
     return res.status(400).json({ error: 'Cannot delete a plan with active memberships.' });
   }
-  const callerMemberId = await getCallerMembershipId(req);
+  const callerActor = resolveRequestActor(getTenantContext(req));
   const { rowCount } = await db.query(
-    `UPDATE membership_plans SET deleted_at = NOW(), deleted_by = ?, deleted_by_name = ?, enrollment_status = 'staff_only'
+    `UPDATE membership_plans SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, enrollment_status = 'staff_only'
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [callerMemberId, actorName, req.params.id, gymId],
+    [callerActor, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Plan not found' });
   recordAudit(req, { action: 'delete', entityType: 'membership_plan', entityId: req.params.id });
@@ -880,6 +871,7 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
   if (origRows.length === 0) return res.status(404).json({ error: 'Plan not found' });
   const orig = origRows[0];
   const callerMemberId = await getCallerMembershipId(req);
+  const callerActor = resolveRequestActor(getTenantContext(req));
 
   try {
     const newPlanId = await db.transaction(async (tx) => {
@@ -892,7 +884,7 @@ membershipPlansRouter.post('/:id/duplicate', requireRole('admin'), async (req, r
          // #635: Billing & Duration is part of the plan's commercial config, so
          // a copy that dropped it would quietly differ from its original.
          orig.free_periods ?? null, orig.paid_periods ?? null, orig.bonus_periods ?? null,
-         orig.pay_beforehand_periods ?? null, callerMemberId],
+         orig.pay_beforehand_periods ?? null, callerActor],
       );
 
       // Copy billing policy
@@ -997,12 +989,12 @@ membershipPlansRouter.post('/:id/archive', requireRole('admin'), async (req, res
   if (Number(active[0].n) > 0) {
     return res.status(400).json({ error: 'Cannot deactivate a plan with active memberships.' });
   }
-  const callerMemberId = await getCallerMembershipId(req);
+  const callerActor = resolveRequestActor(getTenantContext(req));
   const { rowCount } = await db.query(
     `UPDATE membership_plans
-     SET lifecycle_status = 'inactive', enrollment_status = 'staff_only', modified_at = NOW(), modified_by = ?
+     SET lifecycle_status = 'inactive', enrollment_status = 'staff_only', modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ? AND lifecycle_status = 'active' AND deleted_at IS NULL`,
-    [callerMemberId, req.params.id, gymId],
+    [callerActor, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Plan not found or not active' });
   const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [req.params.id]);
@@ -1025,10 +1017,10 @@ membershipPlansRouter.put('/:id/enrollment', requireRole('admin'), async (req, r
   if (['public', 'staff_only'].includes(enrollment_status) && plan[0].lifecycle_status !== 'active') {
     return res.status(400).json({ error: 'Cannot open enrollment on a non-active plan' });
   }
-  const callerMemberId = await getCallerMembershipId(req);
+  const callerActor = resolveRequestActor(getTenantContext(req));
   await db.query(
-    'UPDATE membership_plans SET enrollment_status = ?, modified_at = NOW(), modified_by = ? WHERE id = ? AND gym_id = ?',
-    [enrollment_status, callerMemberId, req.params.id, gymId],
+    'UPDATE membership_plans SET enrollment_status = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+    [enrollment_status, callerActor, req.params.id, gymId],
   );
   const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [req.params.id]);
   res.json(await enrichPlan(rows[0], gymId));
@@ -1344,7 +1336,7 @@ membershipPlansRouter.put('/:id/pricing', requireRole('admin'), async (req, res,
       : (plan.tax_rate_id ?? await getSystemTaxRateId(gymId));
 
   const value = round2(price);
-  const callerMemberId = await getCallerMembershipId(req);
+  const callerActor = resolveRequestActor(getTenantContext(req));
   const { rows: nextTaxRows } = nextTaxRateId == null
     ? { rows: [] as { rate_percent: string }[] }
     : await db.query<{ rate_percent: string }>(
@@ -1388,7 +1380,7 @@ membershipPlansRouter.put('/:id/pricing', requireRole('admin'), async (req, res,
         `UPDATE membership_plans
             SET tax_rate_id = ?, tax_behavior = 'inclusive', modified_at = UTC_TIMESTAMP(), modified_by = ?
           WHERE id = ? AND gym_id = ?`,
-        [nextTaxRateId, callerMemberId, plan.id, gymId],
+        [nextTaxRateId, callerActor, plan.id, gymId],
       );
       await recomputePriceStatuses(tx, plan.id, gymId);
     });

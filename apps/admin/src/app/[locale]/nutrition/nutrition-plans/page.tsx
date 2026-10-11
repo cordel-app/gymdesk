@@ -31,9 +31,9 @@ interface MemberNutritionPlan {
   start_date: string | null;
   day_count: number;
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
 }
 
 interface MemberOption { id: number; name: string }
@@ -472,7 +472,7 @@ function PlanCard({
             {formatDate(plan.created_at, locale)}
           </span>
           <span className={CELL_CLASS.created_by} style={{ ...metaCellStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {plan.created_by_name ?? '—'}
+            {plan.created_by ?? '—'}
           </span>
           <span className={CELL_CLASS.status}>
             <StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />
@@ -546,11 +546,11 @@ function DetailsDialog({
         <DetailRow label={t('nutrition_plans.label_start_date')} value={plan.start_date ? formatDate(plan.start_date, locale) : '—'} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('nutrition_plans.label_created_at')} value={formatDate(plan.created_at, locale)} />
-        <DetailRow label={t('nutrition_plans.label_created_by')} value={plan.created_by_name ?? '—'} />
+        <DetailRow label={t('nutrition_plans.label_created_by')} value={plan.created_by ?? '—'} />
         {plan.modified_at && (
           <>
             <DetailRow label={t('nutrition_plans.label_modified_at')} value={formatDate(plan.modified_at, locale)} />
-            <DetailRow label={t('nutrition_plans.label_modified_by')} value={plan.modified_by_name ?? '—'} />
+            <DetailRow label={t('nutrition_plans.label_modified_by')} value={plan.modified_by ?? '—'} />
           </>
         )}
       </div>

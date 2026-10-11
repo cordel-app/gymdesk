@@ -3,20 +3,15 @@ import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 import { gymFetchOne, handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 
 const STATUSES = ['active', 'inactive', 'under_maintenance'] as const;
 
 const SELECT = `
-  SELECT s.*, c.name AS center_name,
-         gm_c.name AS created_by_name,
-         gm_m.name AS modified_by_name,
-         gm_d.name AS deleted_by_name
+  SELECT s.*, c.name AS center_name
   FROM spaces s
   LEFT JOIN centers c ON c.id = s.center_id
-  LEFT JOIN gym_memberships gm_c ON gm_c.id = s.created_by_membership_id
-  LEFT JOIN gym_memberships gm_m ON gm_m.id = s.modified_by_membership_id
-  LEFT JOIN gym_memberships gm_d ON gm_d.id = s.deleted_by_membership_id
 `;
 
 // #801: a Space carries no Activity Types. `GET`/`PUT /spaces/:id/activity-types`
@@ -71,7 +66,9 @@ spacesRouter.get('/:id', async (req, res) => {
 });
 
 spacesRouter.post('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, description, capacity, status, center_id, notes, opening_time, closing_time, max_concurrent_groups } = req.body;
   if (!name || capacity == null) return res.status(400).json({ error: 'name and capacity are required' });
   const cap = parseInt(capacity, 10);
@@ -84,12 +81,12 @@ spacesRouter.post('/', requireRole('admin'), async (req, res, next) => {
     const row = await insertAndFetch(
       `INSERT INTO spaces
         (name, description, capacity, status, gym_id, center_id, notes, opening_time, closing_time,
-         max_concurrent_groups, created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         max_concurrent_groups, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name.trim(), description ?? null, cap, status ?? 'active', gymId, resolvedCenterId,
         notes ?? null, opening_time ?? null, closing_time ?? null,
-        maxGroups, gymMembershipId, gymMembershipId,
+        maxGroups, actor,
       ],
       `${SELECT} WHERE s.id = ?`,
       (id) => [id],
@@ -103,7 +100,9 @@ spacesRouter.post('/', requireRole('admin'), async (req, res, next) => {
 });
 
 spacesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, description, capacity, status, center_id, notes, opening_time, closing_time, max_concurrent_groups } = req.body;
   const cap = capacity != null ? parseInt(capacity, 10) : null;
   if (cap !== null && (isNaN(cap) || cap <= 0)) return res.status(400).json({ error: 'capacity must be a positive integer' });
@@ -123,7 +122,7 @@ spacesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         closing_time         = IF(?, ?, closing_time),
         max_concurrent_groups = COALESCE(?, max_concurrent_groups),
         modified_at          = UTC_TIMESTAMP(),
-        modified_by_membership_id = ?
+        modified_by          = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
         name?.trim() ?? null,
@@ -135,7 +134,7 @@ spacesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         'opening_time' in req.body ? 1 : 0, opening_time ?? null,
         'closing_time' in req.body ? 1 : 0, closing_time ?? null,
         maxGroups,
-        gymMembershipId,
+        actor,
         req.params.id, gymId,
       ],
     );
@@ -149,7 +148,9 @@ spacesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 });
 
 spacesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const spaceId = String(req.params.id);
   const original = await gymFetchOne('spaces', spaceId, gymId, { softDelete: true });
   if (!original) return res.status(404).json({ error: 'Space not found' });
@@ -158,13 +159,13 @@ spacesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next)
     const row = await insertAndFetch(
       `INSERT INTO spaces
         (name, description, capacity, status, gym_id, center_id, notes, opening_time, closing_time,
-         created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         `${original.name} (Copy)`, original.description, original.capacity,
         'active', gymId, original.center_id,
         original.notes, original.opening_time, original.closing_time,
-        gymMembershipId, gymMembershipId,
+        actor,
       ],
       `${SELECT} WHERE s.id = ?`,
       (id) => [id],
@@ -178,17 +179,18 @@ spacesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next)
 });
 
 spacesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
-  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { rowCount } = await db.query(
     `UPDATE spaces SET
        status = 'deleted',
        deleted_at = UTC_TIMESTAMP(),
+       deleted_by = ?,
        modified_at = UTC_TIMESTAMP(),
-       modified_by_membership_id = ?,
-       deleted_by_membership_id = ?,
-       deleted_by_name = ?
+       modified_by = ?
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [gymMembershipId, gymMembershipId, actorName, req.params.id, gymId],
+    [actor, actor, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Space not found' });
   recordAudit(req, { action: 'soft_delete', entityType: 'space', entityId: req.params.id });

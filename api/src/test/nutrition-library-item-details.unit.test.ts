@@ -8,7 +8,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   DESCRIPTION_MAX_LENGTH,
-  actorSnapshot,
   itemDetailColumnsSql,
   normalizeDescription,
 } from '../domain/nutritionLibrary';
@@ -51,42 +50,13 @@ describe('normalizeDescription', () => {
   });
 });
 
-describe('actorSnapshot', () => {
-  it('records a staff actor by name', () => {
-    expect(actorSnapshot({ name: 'Test User', isSuperadmin: false }))
-      .toEqual({ name: 'Test User', type: 'staff' });
-  });
-
-  it('records a superadmin, who has no gym_memberships row to join to', () => {
-    expect(actorSnapshot({ name: 'Super Admin', isSuperadmin: true }))
-      .toEqual({ name: 'Super Admin', type: 'superadmin' });
-  });
-
-  it('stores a missing or blank name as NULL rather than an empty string', () => {
-    for (const name of [null, undefined, '', '   ']) {
-      expect(actorSnapshot({ name, isSuperadmin: false }).name).toBeNull();
-    }
-  });
-
-  it('trims the name it snapshots', () => {
-    expect(actorSnapshot({ name: '  Test User  ', isSuperadmin: false }).name).toBe('Test User');
-  });
-
-  it('only ever produces a type the CHECK allows', () => {
-    for (const isSuperadmin of [true, false]) {
-      expect(['staff', 'superadmin']).toContain(actorSnapshot({ name: 'x', isSuperadmin }).type);
-    }
-  });
-});
-
 describe('itemDetailColumnsSql', () => {
   it('qualifies every column with the caller\'s alias', () => {
     const sql = itemDetailColumnsSql('nli');
     for (const column of [
       'description',
-      'created_by_name', 'created_by_type',
-      'modified_by_name', 'modified_by_type',
-      'deleted_at', 'deleted_by_name', 'deleted_by_type',
+      'created_by', 'modified_by',
+      'deleted_at', 'deleted_by',
     ]) {
       expect(sql).toContain(`nli.${column}`);
     }
@@ -99,7 +69,7 @@ describe('itemDetailColumnsSql', () => {
 
   it('masks only the actor names on the shared system rows, and keeps the keys', () => {
     const masked = itemDetailColumnsSql('nli', { maskPlatformActors: true });
-    for (const column of ['created_by_name', 'created_by_type', 'modified_by_name', 'modified_by_type', 'deleted_by_name', 'deleted_by_type']) {
+    for (const column of ['created_by', 'modified_by', 'deleted_by']) {
       // Still projected under the same key, so a reader needs no rule of its own.
       expect(masked).toContain(`END AS ${column}`);
       expect(masked).toContain(`CASE WHEN nli.gym_id IS NULL THEN NULL ELSE nli.${column} END`);

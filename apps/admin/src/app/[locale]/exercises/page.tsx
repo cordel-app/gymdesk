@@ -67,8 +67,8 @@ interface Exercise {
   gym_id: string | null;
   /** #718: set when the row was imported from a Base Exercise — the "System sourced" half of the source label. */
   cloned_from_id: number | null;
-  created_at: string; created_by_name: string | null;
-  modified_at: string | null; modified_by_name: string | null;
+  created_at: string; created_by: string | null;
+  modified_at: string | null; modified_by: string | null;
   muscles: ExerciseMuscle[] | null;
   allowed_result_types: ResultType[] | null;
 }
@@ -615,7 +615,7 @@ export default function ExercisesPage() {
             {ex.created_at?.slice(0, 10) ?? '—'}
           </div>
           <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#555', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {ex.created_by_name ?? '—'}
+            {ex.created_by ?? '—'}
           </div>
           <div className={CELL_CLASS.type}>
             {isSystemSourced

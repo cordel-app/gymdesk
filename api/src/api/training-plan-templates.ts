@@ -7,6 +7,7 @@ import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { createTrainingPlanTx } from './training-plan-creation';
 import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
 import { getRequestLocale } from '../infra/locale';
+import { resolveRequestActor } from '../domain/auditActor';
 
 /**
  * #55: TrainingPlanTemplate (reusable multi-day program) + the ordered
@@ -51,11 +52,9 @@ trainingPlanTemplatesRouter.get('/', async (req, res, next) => {
     return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   }
   const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
-  const createdBy = req.query.created_by == null || req.query.created_by === ''
-    ? null : Number(req.query.created_by);
-  if (createdBy !== null && !Number.isInteger(createdBy)) {
-    return res.status(400).json({ error: 'created_by must be a membership id' });
-  }
+  // #1182: created_by is the plain-text actor snapshot, so the filter is its exact text.
+  const createdBy = typeof req.query.created_by === 'string' && req.query.created_by !== ''
+    ? req.query.created_by : null;
   const sortKey = typeof req.query.sort === 'string' && req.query.sort in SORT_COLUMNS ? req.query.sort : 'name';
   const dir = req.query.dir === 'desc' ? 'DESC' : 'ASC';
   // limit/offset are validated integers — interpolated because mysql2 prepared
@@ -67,7 +66,7 @@ trainingPlanTemplatesRouter.get('/', async (req, res, next) => {
     const params: any[] = [gymId];
     if (status) { where.push('tpt.status = ?'); params.push(status); }
     if (name) { where.push('tpt.name LIKE ?'); params.push(`%${name}%`); }
-    if (createdBy !== null) { where.push('tpt.created_by_membership_id = ?'); params.push(createdBy); }
+    if (createdBy !== null) { where.push('tpt.created_by = ?'); params.push(createdBy); }
     const whereSql = where.join(' AND ');
 
     const { rows: countRows } = await db.query(
@@ -76,14 +75,8 @@ trainingPlanTemplatesRouter.get('/', async (req, res, next) => {
     );
     const { rows } = await db.query(
       `SELECT tpt.*,
-              gm_c.name AS created_by_name,
-              gm_m.name AS modified_by_name,
-              gm_d.name AS deleted_by_name,
               (SELECT COUNT(*) FROM training_plan_template_workouts WHERE training_plan_template_id = tpt.id) AS workout_count
        FROM training_plan_templates tpt
-       LEFT JOIN gym_memberships gm_c ON gm_c.id = tpt.created_by_membership_id
-       LEFT JOIN gym_memberships gm_m ON gm_m.id = tpt.modified_by_membership_id
-       LEFT JOIN gym_memberships gm_d ON gm_d.id = tpt.deleted_by_membership_id
        WHERE ${whereSql}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,
       params,
@@ -99,11 +92,10 @@ trainingPlanTemplatesRouter.get('/created-by-options', async (req, res, next) =>
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT DISTINCT gm.id AS membership_id, gm.name
+      `SELECT DISTINCT tpt.created_by AS name
        FROM training_plan_templates tpt
-       JOIN gym_memberships gm ON gm.id = tpt.created_by_membership_id
-       WHERE tpt.gym_id = ? AND tpt.status != 'deleted' AND gm.name IS NOT NULL
-       ORDER BY gm.name ASC`,
+       WHERE tpt.gym_id = ? AND tpt.status != 'deleted' AND tpt.created_by IS NOT NULL
+       ORDER BY tpt.created_by ASC`,
       [gymId],
     );
     res.json(rows);
@@ -119,7 +111,7 @@ trainingPlanTemplatesRouter.get('/:id', async (req, res, next) => {
     // MySQL's JSON_ARRAYAGG has no ORDER BY of its own — aggregate over a
     // derived table pre-sorted by position instead.
     const { rows } = await db.query(
-      `SELECT tpt.*, gm.name AS created_by_name,
+      `SELECT tpt.*,
         (SELECT JSON_ARRAYAGG(item) FROM (
           SELECT JSON_OBJECT(
               'id', j.id, 'position', j.position, 'scheduled_weekday', j.scheduled_weekday,
@@ -129,7 +121,6 @@ trainingPlanTemplatesRouter.get('/:id', async (req, res, next) => {
           ORDER BY j.position
         ) t1) AS workouts
        FROM training_plan_templates tpt
-       LEFT JOIN gym_memberships gm ON gm.id = tpt.created_by_membership_id
        WHERE tpt.id = ? AND (tpt.gym_id = ? OR tpt.gym_id IS NULL) AND tpt.status != 'deleted'`,
       [id, gymId],
     );
@@ -205,14 +196,16 @@ trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
 });
 
 trainingPlanTemplatesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
     const row = await insertAndFetch(
-      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?)',
-      [gymId, name.trim(), description ?? null, status ?? 'active', gymMembershipId],
+      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [gymId, name.trim(), description ?? null, status ?? 'active', actor, actor],
       'SELECT * FROM training_plan_templates WHERE id = ?',
       (id) => [id],
     );
@@ -224,7 +217,9 @@ trainingPlanTemplatesRouter.post('/', requireModuleWrite('TRAINING'), async (req
 });
 
 trainingPlanTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   const { rows: ownerCheck } = await db.query('SELECT gym_id FROM training_plan_templates WHERE id = ?', [id]);
   if (ownerCheck.length > 0 && ownerCheck[0].gym_id === null) {
@@ -236,9 +231,9 @@ trainingPlanTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (r
     const { rowCount } = await db.query(
       `UPDATE training_plan_templates SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
-        modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+        modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, gymMembershipId, id, gymId],
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, actor, id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Training plan template not found' });
     const { rows } = await db.query('SELECT * FROM training_plan_templates WHERE id = ? AND gym_id = ?', [id, gymId]);
@@ -250,15 +245,17 @@ trainingPlanTemplatesRouter.put('/:id', requireModuleWrite('TRAINING'), async (r
 });
 
 trainingPlanTemplatesRouter.delete('/:id', requireModuleWrite('TRAINING'), async (req, res) => {
-  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   const { rows: ownerCheck } = await db.query('SELECT gym_id FROM training_plan_templates WHERE id = ?', [id]);
   if (ownerCheck.length > 0 && ownerCheck[0].gym_id === null) {
     return res.status(403).json({ error: 'Base training plan templates can only be modified by Cordel administrators.' });
   }
   const { rowCount } = await db.query(
-    "UPDATE training_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
-    [gymMembershipId, actorName, id, gymId],
+    "UPDATE training_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+    [actor, id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Training plan template not found' });
   recordAudit(req, { action: 'delete', entityType: 'training_plan_template', entityId: id });
@@ -266,7 +263,9 @@ trainingPlanTemplatesRouter.delete('/:id', requireModuleWrite('TRAINING'), async
 });
 
 trainingPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
     const { rows: srcRows } = await db.query(
@@ -287,8 +286,8 @@ trainingPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'
     }
 
     const { insertId: newId } = await db.query(
-      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?)',
-      [gymId, copyName, src.description ?? null, 'draft', gymMembershipId],
+      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [gymId, copyName, src.description ?? null, 'draft', actor, actor],
     );
 
     const { rows: workouts } = await db.query(
@@ -304,14 +303,8 @@ trainingPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'
 
     const { rows: newRows } = await db.query(
       `SELECT tpt.*,
-              gm_c.name AS created_by_name,
-              gm_m.name AS modified_by_name,
-              gm_d.name AS deleted_by_name,
               (SELECT COUNT(*) FROM training_plan_template_workouts WHERE training_plan_template_id = tpt.id) AS workout_count
        FROM training_plan_templates tpt
-       LEFT JOIN gym_memberships gm_c ON gm_c.id = tpt.created_by_membership_id
-       LEFT JOIN gym_memberships gm_m ON gm_m.id = tpt.modified_by_membership_id
-       LEFT JOIN gym_memberships gm_d ON gm_d.id = tpt.deleted_by_membership_id
        WHERE tpt.id = ?`,
       [newId],
     );
@@ -324,7 +317,9 @@ trainingPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'
 
 /** Clone a base training plan template into the gym's own catalog. */
 trainingPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
     const { rows: srcRows } = await db.query(
@@ -337,8 +332,8 @@ trainingPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), a
     const copyName = `${src.name} (Copy)`;
 
     const { insertId: newId } = await db.query(
-      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by_membership_id, cloned_from_id) VALUES (?, ?, ?, ?, ?, ?)',
-      [gymId, copyName, src.description ?? null, 'draft', gymMembershipId, id],
+      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by, cloned_from_id) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)',
+      [gymId, copyName, src.description ?? null, 'draft', actor, actor, id],
     );
 
     const { rows: workouts } = await db.query(
@@ -354,10 +349,8 @@ trainingPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), a
 
     const { rows: newRows } = await db.query(
       `SELECT tpt.*,
-              gm_c.name AS created_by_name,
               (SELECT COUNT(*) FROM training_plan_template_workouts WHERE training_plan_template_id = tpt.id) AS workout_count
        FROM training_plan_templates tpt
-       LEFT JOIN gym_memberships gm_c ON gm_c.id = tpt.created_by_membership_id
        WHERE tpt.id = ?`,
       [newId],
     );

@@ -219,7 +219,7 @@ describe('POST /nutrition-library/:id/image — the stored key', () => {
     expect(res.body).toMatchObject({ id: foodId, name: FOOD_NAME });
     expect(res.body).toHaveProperty('categories');
     expect(res.body).toHaveProperty('translations');
-    expect(res.body.modified_by_name).toBeTruthy();
+    expect(res.body.modified_by).toBeTruthy();
   });
 });
 

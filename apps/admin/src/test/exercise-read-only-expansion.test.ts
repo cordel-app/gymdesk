@@ -188,8 +188,8 @@ describe('the collapsed header is the concise summary (§1)', () => {
   });
 
   it('reads Created By from the column the API returns (migration 208)', () => {
-    expect(basePage).toContain('created_by_name: string | null;');
-    expect(basePage).toContain('exerciseDisplayValue(row.created_by_name)');
+    expect(basePage).toContain('created_by: string | null;');
+    expect(basePage).toContain('exerciseDisplayValue(row.created_by)');
   });
 });
 

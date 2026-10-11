@@ -60,7 +60,7 @@ async function insertMember(gymId: string, email: string, clerkUserId: string | 
 
 async function insertStaff(gymId: string, email: string, membershipId: number | null = null): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO staff (gym_id, gym_membership_id, first_name, last_name, email, profile, hire_date, created_at, updated_at)
+    `INSERT INTO staff (gym_id, gym_membership_id, first_name, last_name, email, profile, hire_date, created_at, modified_at)
      VALUES (?, ?, 'Work', 'Account', ?, 'Front Desk', '2026-01-01', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
     [gymId, membershipId, email],
   );

@@ -186,7 +186,7 @@ describe('assigned personal goals — assign', () => {
     // A DECIMAL comes back from mysql2 as a string; the router reports a number.
     expect(res.body.target_value).toBe(5);
     expect(typeof res.body.target_value).toBe('number');
-    expect(res.body.created_by_type).toBe('staff');
+    expect(res.body.created_by).toBe('Test User');
     expect(String(res.body.start_date)).toContain('2026-01-01');
     await del(res.body.id);
   });
@@ -325,7 +325,7 @@ describe('assigned personal goals — edit', () => {
     expect(res.body).toMatchObject({ status: 'achieved', target_unit: 'kg', notes: 'Original' });
     expect(res.body.target_value).toBe(5);
     expect(String(res.body.start_date)).toContain('2026-01-01');
-    expect(res.body.modified_by_type).toBe('staff');
+    expect(res.body.modified_by).toBe('Test User');
     await del(created.id);
   });
 
@@ -365,13 +365,13 @@ describe('assigned personal goals — unassign', () => {
     expect(after.body.items.some((r: any) => r.id === created.id)).toBe(false);
     expect((await get(created.id)).status).toBe(404);
 
-    const { rows } = await db.query<{ status: string; deleted_at: string | null; deleted_by_type: string | null }>(
-      'SELECT status, deleted_at, deleted_by_type FROM member_personal_goals WHERE id = ?',
+    const { rows } = await db.query<{ status: string; deleted_at: string | null; deleted_by: string | null }>(
+      'SELECT status, deleted_at, deleted_by FROM member_personal_goals WHERE id = ?',
       [created.id],
     );
     expect(rows[0].status).toBe('achieved');
     expect(rows[0].deleted_at).not.toBeNull();
-    expect(rows[0].deleted_by_type).toBe('staff');
+    expect(rows[0].deleted_by).toBe('Test User');
   });
 
   it('returns 409 when it is already deleted', async () => {

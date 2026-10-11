@@ -24,7 +24,6 @@ import { inlineActionsRowStyle } from '@/components/formChrome';
 
 const STATUSES = ['active', 'inactive'] as const;
 type TaxStatus = typeof STATUSES[number];
-type ActorType = 'staff' | 'superadmin';
 
 interface TaxImpact {
   products: number;
@@ -42,12 +41,8 @@ interface TaxRate {
   deleted_at: string | null;
   created_at: string;
   modified_at: string | null;
-  created_by_membership_id: number | null;
-  created_by_name: string | null;
-  created_by_type: ActorType | null;
-  modified_by_membership_id: number | null;
-  modified_by_name: string | null;
-  modified_by_type: ActorType | null;
+  created_by: string | null;
+  modified_by: string | null;
 }
 
 type EditForm = {
@@ -311,12 +306,6 @@ export default function TaxesPage() {
 
   // ─── Render helpers ──────────────────────────────────────────────────────────
 
-  function actorLabel(name: string | null, type: ActorType | null) {
-    if (!name) return '—';
-    if (!type) return name;
-    return `${name} · ${type === 'superadmin' ? t('actor_superadmin') : t('actor_staff')}`;
-  }
-
   function renderInlineNewRow() {
     if (!inlineNew) return null;
     return (
@@ -537,9 +526,9 @@ export default function TaxesPage() {
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <ModalField label={t('audit_created_at')} value={fmtDate(details.created_at)} />
-              <ModalField label={t('audit_created_by')} value={actorLabel(details.created_by_name, details.created_by_type)} />
+              <ModalField label={t('audit_created_by')} value={details.created_by ?? '—'} />
               <ModalField label={t('audit_modified_at')} value={fmtDate(details.modified_at)} />
-              <ModalField label={t('audit_modified_by')} value={actorLabel(details.modified_by_name, details.modified_by_type)} />
+              <ModalField label={t('audit_modified_by')} value={details.modified_by ?? '—'} />
             </div>
           </div>
         )}

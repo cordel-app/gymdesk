@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { resolvePlatformActor } from '../domain/auditActor';
 import { db, Tx } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -39,11 +40,11 @@ interface ProviderRow {
   is_default: number;
   status: string;
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by_name: string | null;
+  deleted_by: string | null;
   gym_count: number;
 }
 
@@ -177,16 +178,16 @@ paymentProvidersRouter.post('/', requireSuperadmin, async (req, res) => {
     return res.status(400).json({ error: 'Only an active payment provider can be the default' });
   }
 
-  const actorName = req.superadminName ?? null;
+  const actor = resolvePlatformActor(req.superadminName);
 
   try {
     const id = await db.transaction(async (tx) => {
-      if (wantsDefault) await clearDefault(tx);
+      if (wantsDefault) await clearDefault(tx, actor);
       const { insertId } = await tx.query(
         `INSERT INTO payment_providers
-           (name, provider_key, description, is_default, status, created_at, created_by_name)
+           (name, provider_key, description, is_default, status, created_at, created_by)
          VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
-        [nameResult.value, provider_key, descriptionResult.value, wantsDefault ? 1 : 0, nextStatus, actorName],
+        [nameResult.value, provider_key, descriptionResult.value, wantsDefault ? 1 : 0, nextStatus, actor],
       );
       return insertId;
     });
@@ -274,11 +275,11 @@ paymentProvidersRouter.put('/:id', requireSuperadmin, async (req, res) => {
     }
   }
 
-  const actorName = req.superadminName ?? null;
+  const actor = resolvePlatformActor(req.superadminName);
 
   try {
     await db.transaction(async (tx) => {
-      if (nextIsDefault && !existing.is_default) await clearDefault(tx);
+      if (nextIsDefault && !existing.is_default) await clearDefault(tx, actor);
       await tx.query(
         `UPDATE payment_providers SET
            name             = ?,
@@ -287,9 +288,9 @@ paymentProvidersRouter.put('/:id', requireSuperadmin, async (req, res) => {
            is_default       = ?,
            status           = ?,
            modified_at      = UTC_TIMESTAMP(),
-           modified_by_name = ?
+           modified_by      = ?
          WHERE id = ? AND deleted_at IS NULL`,
-        [nextName, nextProviderKey, nextDescription, nextIsDefault ? 1 : 0, nextStatus, actorName, existing.id],
+        [nextName, nextProviderKey, nextDescription, nextIsDefault ? 1 : 0, nextStatus, actor, existing.id],
       );
     });
   } catch (err: any) {
@@ -336,12 +337,13 @@ paymentProvidersRouter.delete('/:id', requireSuperadmin, async (req, res) => {
     });
   }
 
-  const actorName = req.superadminName ?? null;
+  const actor = resolvePlatformActor(req.superadminName);
   await db.query(
     `UPDATE payment_providers
-     SET deleted_at = UTC_TIMESTAMP(), deleted_by_name = ?, status = 'inactive'
+     SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, status = 'inactive',
+         modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND deleted_at IS NULL`,
-    [actorName, existing.id],
+    [actor, actor, existing.id],
   );
   recordAudit(req, {
     action: 'soft_delete', entityType: 'payment_provider', entityId: existing.id, previous: existing,
@@ -357,9 +359,11 @@ paymentProvidersRouter.delete('/:id', requireSuperadmin, async (req, res) => {
  * so this has to run before the row that takes over is written — and in the
  * same transaction, or a failure would leave the platform with none.
  */
-async function clearDefault(tx: Tx) {
+async function clearDefault(tx: Tx, actor: string | null) {
   await tx.query(
-    'UPDATE payment_providers SET is_default = 0 WHERE is_default = 1 AND deleted_at IS NULL',
+    `UPDATE payment_providers SET is_default = 0, modified_at = UTC_TIMESTAMP(), modified_by = ?
+     WHERE is_default = 1 AND deleted_at IS NULL`,
+    [actor],
   );
 }
 

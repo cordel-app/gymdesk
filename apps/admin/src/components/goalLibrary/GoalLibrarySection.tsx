@@ -450,7 +450,7 @@ export function GoalLibrarySection({
       header: label('created_by'),
       width: 150,
       mobile: 'secondary',
-      render: (goal) => <span style={{ fontSize: 13 }}>{displayValue(goal.created_by_name)}</span>,
+      render: (goal) => <span style={{ fontSize: 13 }}>{displayValue(goal.created_by)}</span>,
     },
     {
       // This gym's availability state for a configurable kind (#1181), the

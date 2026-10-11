@@ -152,7 +152,7 @@ describe('audit columns — PUT and DELETE', () => {
     membershipId = rows[0].id;
   });
 
-  it('PUT /:id stamps modified_at and modified_by_membership_id', async () => {
+  it('PUT /:id stamps modified_at and the plain-text modified_by', async () => {
     await request
       .put(`/workout-templates/${templateId}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -160,15 +160,15 @@ describe('audit columns — PUT and DELETE', () => {
       .send({ name: 'Upper Body (Edited)' })
       .expect(200);
 
-    const { rows } = await db.query<{ modified_at: Date | null; modified_by_membership_id: number | null }>(
-      'SELECT modified_at, modified_by_membership_id FROM workout_templates WHERE id = ?',
+    const { rows } = await db.query<{ modified_at: Date | null; modified_by: string | null }>(
+      'SELECT modified_at, modified_by FROM workout_templates WHERE id = ?',
       [templateId],
     );
     expect(rows[0].modified_at).not.toBeNull();
-    expect(rows[0].modified_by_membership_id).toBe(membershipId);
+    expect(typeof rows[0].modified_by).toBe('string');
   });
 
-  it('DELETE /:id stamps deleted_by_membership_id', async () => {
+  it('DELETE /:id stamps the plain-text deleted_by', async () => {
     const createRes = await request
       .post('/workout-templates')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -184,11 +184,11 @@ describe('audit columns — PUT and DELETE', () => {
       .expect(204);
 
     // Query without deleted_at IS NULL so the soft-deleted row is visible.
-    const { rows } = await db.query<{ deleted_by_membership_id: number | null }>(
-      'SELECT deleted_by_membership_id FROM workout_templates WHERE id = ?',
+    const { rows } = await db.query<{ deleted_by: string | null }>(
+      'SELECT deleted_by FROM workout_templates WHERE id = ?',
       [deleteId],
     );
-    expect(rows[0].deleted_by_membership_id).toBe(membershipId);
+    expect(typeof rows[0].deleted_by).toBe('string');
   });
 });
 
@@ -210,7 +210,7 @@ describe('paginated GET / — new list fields', () => {
     expect(Number(item.blocks_count)).toBe(1);
   });
 
-  it('includes modified_by_name key in each paginated item', async () => {
+  it('includes the modified_by text in each paginated item', async () => {
     const res = await request
       .get('/workout-templates')
       .query({ limit: 20 })
@@ -220,8 +220,9 @@ describe('paginated GET / — new list fields', () => {
 
     const item = res.body.items.find((t: any) => t.id === templateId);
     expect(item).toBeDefined();
-    // The field must be present; it is null when the membership has no name set.
-    expect('modified_by_name' in item).toBe(true);
+    // The field must be present; it is null when the actor is unknown.
+    expect('modified_by' in item).toBe(true);
+    expect('modified_by_name' in item).toBe(false);
   });
 
   it('includes notes in the paginated list when set on the template', async () => {

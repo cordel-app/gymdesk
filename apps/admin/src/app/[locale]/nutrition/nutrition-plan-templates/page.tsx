@@ -27,12 +27,12 @@ export interface NutritionPlanTemplate {
   description: string | null;
   status: 'active' | 'inactive' | 'draft';
   day_count: number;
-  created_by_name: string | null;
+  created_by: string | null;
   created_at: string;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by_name: string | null;
+  deleted_by: string | null;
 }
 
 interface ListResponse {
@@ -42,7 +42,7 @@ interface ListResponse {
   offset: number;
 }
 
-interface CreatedByOption { membership_id: number; name: string }
+interface CreatedByOption { name: string }
 
 type SortKey = 'name' | 'created_at' | 'status';
 
@@ -340,7 +340,7 @@ export default function NutritionPlanTemplatesPage() {
           />
           <select value={createdByFilter} onChange={(e) => setCreatedByFilter(e.target.value)} style={filterInputStyle}>
             <option value="">{t('nutrition_plan_templates.filter_created_by_all')}</option>
-            {createdByOptions.map((o) => <option key={o.membership_id} value={o.membership_id}>{o.name}</option>)}
+            {createdByOptions.map((o) => <option key={o.name} value={o.name}>{o.name}</option>)}
           </select>
           <StatusFilter
             value={statusFilter}
@@ -567,7 +567,7 @@ function TemplateCard({
             <StatusBadge status={template.status} label={t(`status.${template.status}`)} />
           </span>
           <span className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {template.created_by_name ?? '—'}
+            {template.created_by ?? '—'}
           </span>
           <span className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
             {formatDate(template.created_at, locale)}
@@ -701,11 +701,11 @@ function DetailsDialog({
         <DetailRow label={t('nutrition_plan_templates.label_status')} value={<StatusBadge status={template.status} label={t(`status.${template.status}`)} />} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('nutrition_plan_templates.label_created_at')} value={formatDate(template.created_at, locale)} />
-        <DetailRow label={t('nutrition_plan_templates.label_created_by')} value={template.created_by_name ?? '—'} />
+        <DetailRow label={t('nutrition_plan_templates.label_created_by')} value={template.created_by ?? '—'} />
         {template.modified_at && (
           <>
             <DetailRow label={t('nutrition_plan_templates.label_modified_at')} value={formatDate(template.modified_at, locale)} />
-            <DetailRow label={t('nutrition_plan_templates.label_modified_by')} value={template.modified_by_name ?? '—'} />
+            <DetailRow label={t('nutrition_plan_templates.label_modified_by')} value={template.modified_by ?? '—'} />
           </>
         )}
       </div>

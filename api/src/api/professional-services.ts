@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -16,9 +17,10 @@ const SELECT = `
     ps.system_key,
     ps.deleted_at,
     ps.created_at,
-    ps.created_by_membership_id,
-    ps.updated_at,
-    ps.updated_by_membership_id,
+    ps.created_by,
+    ps.modified_at,
+    ps.modified_by,
+    ps.deleted_by,
     gps.status
   FROM professional_services ps
   JOIN gym_professional_services gps ON gps.professional_service_id = ps.id AND gps.gym_id = ?
@@ -64,7 +66,9 @@ professionalServicesRouter.get('/:id', async (req, res, next) => {
 // ─── POST / — create a custom Professional Service ───────────────────────────
 
 professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, description } = req.body;
 
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -73,9 +77,9 @@ professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next
     const { insertId } = await db.transaction(async (tx) => {
       const { insertId: serviceId } = await tx.query(
         `INSERT INTO professional_services
-           (gym_id, name, description, is_system, system_key, created_by_membership_id)
+           (gym_id, name, description, is_system, system_key, created_by)
          VALUES (?, ?, ?, 0, NULL, ?)`,
-        [gymId, name.trim(), description?.trim() || null, gymMembershipId],
+        [gymId, name.trim(), description?.trim() || null, actor],
       );
       await tx.query(
         `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by_membership_id)
@@ -102,7 +106,9 @@ professionalServicesRouter.post('/', requireRole('admin'), async (req, res, next
 // ─── PUT /:id — edit a custom Professional Service ───────────────────────────
 
 professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, description } = req.body;
 
   if (name !== undefined && !name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -120,10 +126,10 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
       `UPDATE professional_services SET
          name                    = COALESCE(?, name),
          description             = COALESCE(?, description),
-         updated_at              = UTC_TIMESTAMP(),
-         updated_by_membership_id = ?
+         modified_at             = UTC_TIMESTAMP(),
+         modified_by             = ?
        WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NULL`,
-      [name?.trim() ?? null, description ?? null, gymMembershipId, req.params.id, gymId],
+      [name?.trim() ?? null, description ?? null, actor, req.params.id, gymId],
     );
 
     const { rows } = await db.query(`${SELECT} WHERE ps.id = ? AND ps.gym_id = ?`, [gymId, req.params.id, gymId]);
@@ -143,7 +149,9 @@ professionalServicesRouter.put('/:id', requireRole('admin'), async (req, res, ne
 // ─── POST /:id/activate ───────────────────────────────────────────────────────
 
 professionalServicesRouter.post('/:id/activate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rowCount } = await db.query(
       `UPDATE gym_professional_services gps
@@ -163,7 +171,9 @@ professionalServicesRouter.post('/:id/activate', requireRole('admin'), async (re
 // ─── POST /:id/deactivate ─────────────────────────────────────────────────────
 
 professionalServicesRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rowCount } = await db.query(
       `UPDATE gym_professional_services gps
@@ -183,7 +193,9 @@ professionalServicesRouter.post('/:id/deactivate', requireRole('admin'), async (
 // ─── POST /:id/duplicate ──────────────────────────────────────────────────────
 
 professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rows: source } = await db.query(
       `SELECT id, name, description FROM professional_services
@@ -197,9 +209,9 @@ professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (r
     const { insertId } = await db.transaction(async (tx) => {
       const { insertId: serviceId } = await tx.query(
         `INSERT INTO professional_services
-           (gym_id, name, description, is_system, system_key, created_by_membership_id)
+           (gym_id, name, description, is_system, system_key, created_by)
          VALUES (?, ?, ?, 0, NULL, ?)`,
-        [gymId, newName, src.description, gymMembershipId],
+        [gymId, newName, src.description, actor],
       );
       await tx.query(
         `INSERT INTO gym_professional_services (gym_id, professional_service_id, status, created_by_membership_id)
@@ -220,7 +232,9 @@ professionalServicesRouter.post('/:id/duplicate', requireRole('admin'), async (r
 // ─── DELETE /:id — soft-delete custom Professional Services only ─────────────
 
 professionalServicesRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rows: existing } = await db.query(
       'SELECT id, is_system, gym_id, name FROM professional_services WHERE id = ? AND deleted_at IS NULL',
@@ -231,9 +245,10 @@ professionalServicesRouter.delete('/:id', requireRole('admin'), async (req, res,
     if (existing[0].gym_id !== gymId) return res.status(404).json({ error: 'Not found' });
 
     await db.query(
-      `UPDATE professional_services SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?
+      `UPDATE professional_services SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
+         modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND is_system = 0 AND deleted_at IS NULL`,
-      [gymMembershipId, req.params.id, gymId],
+      [actor, actor, req.params.id, gymId],
     );
     recordAudit(req, {
       action: 'delete',

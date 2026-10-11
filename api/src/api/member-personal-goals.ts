@@ -3,7 +3,9 @@ import { db } from '../infra/db';
 import { getTenantContext, requireFeatureWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { handleDupEntry } from '../infra/db-helpers';
-import { actorSnapshot, clampLimit, clampOffset } from '../domain/nutritionLibrary';
+import { clampLimit, clampOffset } from '../domain/nutritionLibrary';
+import { resolveRequestActor } from '../domain/auditActor';
+import { readingActor } from '../domain/personalGoalAssignment';
 // The catalogue's own feature key, so this router and `/personal-goals` are
 // gated by one declaration (#1070 — a feature-level permission override applies
 // to the key, so the two halves of Personal Goals cannot be granted apart).
@@ -92,9 +94,7 @@ const COLUMNS = `
   mpg.end_date,
   mpg.status, mpg.notes,
   mpg.created_at, mpg.modified_at, mpg.deleted_at,
-  mpg.created_by_name, mpg.created_by_type,
-  mpg.modified_by_name, mpg.modified_by_type,
-  mpg.deleted_by_name, mpg.deleted_by_type,
+  mpg.created_by, mpg.modified_by, mpg.deleted_by,
   m.name AS member_name,
   COALESCE(mpg.goal_name, pg.name) AS goal_name,
   pg.slug AS goal_slug, pg.gym_id AS goal_gym_id,
@@ -228,7 +228,8 @@ memberPersonalGoalsRouter.get('/:id', async (req, res, next) => {
 /* ── Assign ───────────────────────────────────────────────────────────────── */
 
 memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
-  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
 
   const memberId = Number(req.body?.member_id);
   if (!Number.isInteger(memberId) || memberId <= 0) {
@@ -272,7 +273,7 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
   // well would refuse a date order twice and a target pair against the wrong
   // values. The one check sits beside the INSERT, over the effective row.
 
-  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
 
   try {
     const { rows: memberRows } = await db.query(
@@ -334,14 +335,14 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
       const { insertId: assignmentId } = await tx.query(
         `INSERT INTO member_personal_goals
            (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit, target_type,
-            start_date, target_date, status, notes, created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?, ?)`,
+            start_date, target_date, status, notes, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, COALESCE(?, 'in_progress'), ?, ?)`,
         [
           gymId, memberId, goalId, catalogue.name,
           effectiveValue, effectiveUnit, effectiveType,
           startDate.value ?? null, targetDate.value ?? null,
           status.value ?? null, notes.value ?? null,
-          actor.name, actor.type,
+          actor,
         ],
       );
       if (initialReading && 'value' in initialReading) {
@@ -358,8 +359,8 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
             startDate: startDate.value ?? null,
           }),
           isInitial: true,
-          actorName: actor.name,
-          actorType: actor.type,
+          actorName: readingActor(ctx, false).name,
+          actorType: readingActor(ctx, false).type,
         });
       }
       return assignmentId;
@@ -379,7 +380,8 @@ memberPersonalGoalsRouter.post('/', requireWrite, async (req, res, next) => {
 /* ── Edit ─────────────────────────────────────────────────────────────────── */
 
 memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
-  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   const { id } = req.params;
 
   const targetType = normalizeTargetType(req.body?.target_type);
@@ -397,7 +399,7 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
   const status = normalizeStatus(req.body?.status, { required: false });
   if ('error' in status) return res.status(400).json({ error: status.error });
 
-  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
 
   try {
     // The audit pair is the **stored** row, without the computed reading
@@ -435,10 +437,10 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
       today: utcToday(),
     });
 
-    // The actor pair moves with every edit, so `modified_by_name` always names
+    // The actor pair moves with every edit, so `modified_by` always names
     // whoever `modified_at` refers to (#799 §13).
-    const updates = ['modified_at = UTC_TIMESTAMP()', 'modified_by_name = ?', 'modified_by_type = ?'];
-    const params: unknown[] = [actor.name, actor.type];
+    const updates: string[] = [];
+    const params: unknown[] = [actor];
     // `undefined` is "the body did not mention it"; `null` is an explicit clear.
     if (targetValue.value !== undefined) { updates.push('target_value = ?'); params.push(targetValue.value); }
     if (targetUnit.value !== undefined) { updates.push('target_unit = ?'); params.push(targetUnit.value); }
@@ -451,7 +453,7 @@ memberPersonalGoalsRouter.put('/:id', requireWrite, async (req, res, next) => {
     params.push(id, gymId);
 
     await db.query(
-      `UPDATE member_personal_goals SET ${updates.join(', ')} WHERE id = ? AND gym_id = ?`,
+      `UPDATE member_personal_goals SET modified_at = UTC_TIMESTAMP(), modified_by = ?${updates.map((u) => `, ${u}`).join('')} WHERE id = ? AND gym_id = ?`,
       params,
     );
 
@@ -498,12 +500,13 @@ memberPersonalGoalsRouter.get('/:id/readings', async (req, res, next) => {
 });
 
 memberPersonalGoalsRouter.post('/:id/readings', requireWrite, async (req, res, next) => {
-  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   const value = normalizeReadingValue(req.body?.value);
   if ('error' in value) return res.status(400).json({ error: value.error });
   const recordedAt = normalizeRecordedAt(req.body?.recorded_at);
   if ('error' in recordedAt) return res.status(400).json({ error: recordedAt.error });
-  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
 
   try {
     const assignment = await requireAssignment(req.params.id, gymId, res);
@@ -515,8 +518,8 @@ memberPersonalGoalsRouter.post('/:id/readings', requireWrite, async (req, res, n
       value: value.value,
       recordedAt: recordedAt.value,
       isInitial: false,
-      actorName: actor.name,
-      actorType: actor.type,
+      actorName: readingActor(ctx, false).name,
+      actorType: readingActor(ctx, false).type,
     });
 
     // Audited against the **assignment**, which is the entity the Audit Log
@@ -540,12 +543,13 @@ memberPersonalGoalsRouter.post('/:id/readings', requireWrite, async (req, res, n
  * (§23).
  */
 memberPersonalGoalsRouter.post('/:id/initial-reading', requireWrite, async (req, res, next) => {
-  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   const value = normalizeReadingValue(req.body?.value);
   if ('error' in value) return res.status(400).json({ error: value.error });
   const recordedAt = normalizeRecordedAt(req.body?.recorded_at);
   if ('error' in recordedAt) return res.status(400).json({ error: recordedAt.error });
-  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
 
   try {
     const assignment = await requireAssignment(req.params.id, gymId, res);
@@ -557,8 +561,8 @@ memberPersonalGoalsRouter.post('/:id/initial-reading', requireWrite, async (req,
       value: value.value,
       recordedAt: recordedAt.value,
       isInitial: true,
-      actorName: actor.name,
-      actorType: actor.type,
+      actorName: readingActor(ctx, false).name,
+      actorType: readingActor(ctx, false).type,
     });
 
     recordAudit(req, {
@@ -573,9 +577,10 @@ memberPersonalGoalsRouter.post('/:id/initial-reading', requireWrite, async (req,
 /* ── Unassign (soft delete) ───────────────────────────────────────────────── */
 
 memberPersonalGoalsRouter.delete('/:id', requireWrite, async (req, res, next) => {
-  const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
   const { id } = req.params;
-  const actor = actorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
 
   try {
     const previous = await loadAssignmentRow(id, gymId);
@@ -593,17 +598,13 @@ memberPersonalGoalsRouter.delete('/:id', requireWrite, async (req, res, next) =>
       storedEndDate: toDateOnly(previous.end_date),
       today: utcToday(),
     });
-    const updates = [
-      'deleted_at = UTC_TIMESTAMP()',
-      'deleted_by_name = ?', 'deleted_by_type = ?',
-      'modified_at = UTC_TIMESTAMP()',
-    ];
-    const params: unknown[] = [actor.name, actor.type];
+    const updates: string[] = [];
+    const params: unknown[] = [actor];
     if (endDate !== undefined) { updates.push('end_date = ?'); params.push(endDate); }
     params.push(id, gymId);
 
     await db.query(
-      `UPDATE member_personal_goals SET ${updates.join(', ')} WHERE id = ? AND gym_id = ?`,
+      `UPDATE member_personal_goals SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, modified_at = UTC_TIMESTAMP()${updates.map((u) => `, ${u}`).join('')} WHERE id = ? AND gym_id = ?`,
       params,
     );
     recordAudit(req, { action: 'delete', entityType: 'member_personal_goal', entityId: id, previous });

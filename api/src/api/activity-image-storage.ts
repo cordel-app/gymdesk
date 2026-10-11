@@ -118,7 +118,7 @@ export async function storeActivityImage(args: {
   folderPrefix: string;
   activity: ActivityImageRow;
   body: Buffer;
-  modifiedBy: number | null;
+  modifiedBy: string | null;
 }): Promise<string | ActivityImageRefusal> {
   const { gymId, folderPrefix, activity, body, modifiedBy } = args;
   const key = buildActivityImageKey(folderPrefix, activity.id, activity.name);
@@ -139,7 +139,7 @@ export async function storeActivityImage(args: {
   }
 
   await db.query(
-    `UPDATE activity_types SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+    `UPDATE activity_types SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ?`,
     [url, modifiedBy, activity.id, gymId],
   );
@@ -152,11 +152,11 @@ export async function clearActivityImage(args: {
   gymId: string;
   folderPrefix: string | null;
   activity: ActivityImageRow;
-  modifiedBy: number | null;
+  modifiedBy: string | null;
 }): Promise<void> {
   const { gymId, folderPrefix, activity, modifiedBy } = args;
   await db.query(
-    `UPDATE activity_types SET image_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+    `UPDATE activity_types SET image_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ?`,
     [modifiedBy, activity.id, gymId],
   );
@@ -173,6 +173,7 @@ export async function clearActivityImage(args: {
 export async function migrateActivityImageOnRename(
   gymId: string,
   activity: ActivityImageRow,
+  modifiedBy: string | null = null,
 ): Promise<string | null> {
   if (!activity.image_url || !isStorageConfigured()) return null;
   const folderPrefix = await gymStorageFolderPrefix(gymId);
@@ -190,7 +191,10 @@ export async function migrateActivityImageOnRename(
     logger.warn({ err, details, activityId: activity.id }, 'Renamed activity kept its image on the previous key: copy failed');
     return null;
   }
-  await db.query('UPDATE activity_types SET image_url = ? WHERE id = ? AND gym_id = ?', [newUrl, activity.id, gymId]);
+  await db.query(
+    'UPDATE activity_types SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+    [newUrl, modifiedBy, activity.id, gymId],
+  );
   await sweepReplacedActivityImage(folderPrefix, activity.id, activity.image_url, newUrl);
   return newUrl;
 }

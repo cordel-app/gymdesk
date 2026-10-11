@@ -1312,6 +1312,35 @@ when a gym asks for its own app. Tick items off in the PR that completes them.
       Apple, associated domains (universal links), TestFlight and the App Store.
 - [ ] **Google Play Console**, organization account (25 USD, one time). Check Google's current
       testing requirement for new accounts before planning the first release.
+- [ ] **Decide which account publishes what, before the first store upload.** The organization
+      accounts above need a legal entity and a D-U-N-S, which can take weeks; a personal
+      (individual) account needs only identity verification and unblocks #1075 and the iOS/Android
+      testing of #1077 sooner. The two are not interchangeable afterwards, so the plan is:
+      - **Personal account, only for the development app.** Publish `cordel-fitness-dev`
+        (`com.cordel.fitness.dev`, `apps/mobile/profiles/cordel-fitness-dev.json`) there: Sign in
+        with Apple, Associated Domains, TestFlight and Play internal testing can all be verified
+        with it. The store listing shows the holder's own name (Apple's seller name, and on Google
+        Play possibly the contact address), so it is never the production listing.
+      - **Never register `com.cordel.fitness` (the production id) on a personal account.** A
+        Google Play package name is reserved to the first account that uses it for ever, even if
+        the app is deleted afterwards; an Apple Bundle ID belongs to one Team and can only move
+        by deleting the App ID, which is normally not possible once the app has been published.
+        Check both portals' current rules before relying on this. Creating `com.cordel.fitness`
+        first under the organization accounts is what makes a migration unnecessary.
+      - **Production lives in the organization accounts**, created from scratch with the
+        production profile, its own Firebase/Google clients and its own Clerk Apple connection.
+      - If the production id ever *is* published from a personal account, the options are a
+        store app transfer (Apple and Google both offer one) or a new id. A transfer changes the
+        Apple **Team ID** (so `MOBILE_APP_ASSOCIATIONS`, Clerk's Apple connection with its Team
+        ID/Key ID/private key, the APNs key and the Associated Domains capability are all redone,
+        and Sign in with Apple users need Apple's transfer-identifier process or they lose their
+        link). A new id means a new `appId` in the profile, `MOBILE_APP_SCHEME`,
+        `MOBILE_DEFAULT_APP_ID`, a new key in `FCM_SERVICE_ACCOUNTS` and
+        `MOBILE_APP_ASSOCIATIONS`, new Google OAuth clients and new Firebase apps. Nothing in the
+        repository names a Team ID, fingerprint or account: all of it is configuration.
+      - Closing the personal account afterwards: Apple, a deletion request at
+        `privacy.apple.com`; Google Play, close the developer account. The identifiers it used
+        stay burnt, which is why only the `.dev` id belongs there.
 - [ ] **Firebase project** for push (FCM delivers to iOS through APNs): upload the APNs key,
       create the Android app, and set the FCM credentials as API environment variables.
 - [ ] *(stage 2)* Read the **current text of App Store guideline 4.2.6** (template apps) before

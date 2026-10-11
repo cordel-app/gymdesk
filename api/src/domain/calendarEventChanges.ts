@@ -19,7 +19,7 @@
  * The occurrence columns `PUT /class-sessions/:id` can write. A field added to
  * that route is added here too, or it changes silently.
  *
- * `modified_by_membership_id` is deliberately absent: it is who made the
+ * `modified_by` is deliberately absent: it is who made the
  * change, which the audit row already records as its actor, and it moves on
  * every write so including it would make every diff non-empty.
  */

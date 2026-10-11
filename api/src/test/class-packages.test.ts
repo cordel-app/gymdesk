@@ -126,7 +126,7 @@ describe('GET /class-packages', () => {
 // ---------------------------------------------------------------------------
 
 describe('GET /class-packages/:id', () => {
-  it('returns package shape including created_by_name', async () => {
+  it('returns package shape including the audit actors', async () => {
     const create = await request
       .post('/class-packages')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -142,8 +142,9 @@ describe('GET /class-packages/:id', () => {
     expect(res.body.id).toBe(id);
     expect(res.body.name).toBe('Get By Id Package');
     expect(res.body.description).toBe('A description');
-    expect('created_by_name' in res.body).toBe(true);
-    expect('modified_by_name' in res.body).toBe(true);
+    expect(res.body.created_by).toBe('Test User');
+    expect('modified_by' in res.body).toBe(true);
+    expect('deleted_by' in res.body).toBe(true);
   });
 
   it('also returns soft-deleted packages by id', async () => {

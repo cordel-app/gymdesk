@@ -15,7 +15,7 @@
  * Two of the fields are `editable: false`. `code` is persisted and shown in the
  * expanded card, but no control has ever edited it — the old modal carried it
  * through its payload untouched and `toCenterUpdatePayload()` still does, which
- * is why it is part of the form *values* and not of the form. `created_by_name`
+ * is why it is part of the form *values* and not of the form. `created_by`
  * is an audit column the card has always shown. Neither may grow a control here
  * without the API side being decided first.
  */
@@ -37,7 +37,7 @@ export interface CenterDisplayRow extends CenterProfile {
   theme_name: string | null;
   /** The gym-level theme a Center with no `theme_id` of its own inherits. */
   gym_theme_name: string | null;
-  created_by_name: string | null;
+  created_by: string | null;
 }
 
 export type CenterFieldKey = keyof CenterDisplayRow;
@@ -71,7 +71,7 @@ export const CENTER_PROFILE_SECTIONS: CenterProfileSection[] = [
     fields: [
       { key: 'name', labelKey: 'col_name', format: 'text', editable: true },
       { key: 'code', labelKey: 'label_code', format: 'text', editable: false },
-      { key: 'created_by_name', labelKey: 'col_created_by', format: 'text', editable: false },
+      { key: 'created_by', labelKey: 'col_created_by', format: 'text', editable: false },
     ],
   },
   {

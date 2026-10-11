@@ -179,11 +179,9 @@ interface Product {
   professional_services: LinkedProfessionalService[];
   deleted_at: string | null;
   created_at: string;
-  created_by_membership_id: number | null;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_membership_id: number | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
 }
 
 // #974: the form's values and the row → values mapping are declared beside the
@@ -986,7 +984,7 @@ export default function ProductsPage() {
             {billingFrequencyLabel(item.billing_frequency, tFreq) ?? '—'}
           </div>
           <div className={CELL_CLASS.created_by} style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
-            {item.created_by_name ?? '—'}
+            {item.created_by ?? '—'}
           </div>
           <div className={CELL_CLASS.created_at} style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
             {fmtDate(item.created_at)}
@@ -1184,9 +1182,9 @@ export default function ProductsPage() {
             <ModalSection title={t('section_audit')} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <ModalField label={t('audit_created_at')} value={fmtDate(details.created_at)} />
-              <ModalField label={t('audit_created_by')} value={details.created_by_name ?? '—'} />
+              <ModalField label={t('audit_created_by')} value={details.created_by ?? '—'} />
               <ModalField label={t('audit_modified_at')} value={fmtDate(details.modified_at)} />
-              <ModalField label={t('audit_modified_by')} value={details.modified_by_name ?? '—'} />
+              <ModalField label={t('audit_modified_by')} value={details.modified_by ?? '—'} />
               <ModalField label={t('audit_deleted_at')} value="—" />
               <ModalField label={t('audit_deleted_by')} value="—" />
             </div>

@@ -1,3 +1,4 @@
+import { resolveRequestActor } from '../domain/auditActor';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { createProductSetCheckout, initialCharge } from './product-set-checkout';
 import { openInitialEventForAssignment } from './product-set-bridge';
@@ -403,8 +404,10 @@ async function createSelfRegisteredMember(
   try {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO members (name, email, gym_id, clerk_user_id, enrolled_at) VALUES (?, ?, ?, ?, UTC_TIMESTAMP())',
-        [name, email, gymId, userId],
+        // #1182: a self-registration is the new member's own act, so the
+        // creator recorded is their own name.
+        'INSERT INTO members (name, email, gym_id, clerk_user_id, enrolled_at, created_by) VALUES (?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+        [name, email, gymId, userId, name],
       );
       await tx.query(
         `INSERT IGNORE INTO gym_memberships (user_id, gym_id, role) VALUES (?, ?, 'member')`,
@@ -597,12 +600,14 @@ meRouter.patch('/profile', requireRole('member'), async (req: Request, res: Resp
       // unpersistable — the one way a nullable column of this shape goes wrong
       // (CLAUDE.md, `products.mandatory`).
       `UPDATE members SET phone = COALESCE(?, phone),
-              preferred_locale = IF(?, ?, preferred_locale)
+              preferred_locale = IF(?, ?, preferred_locale),
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE gym_id = ? AND id = ? AND deleted_at IS NULL`,
       [
         phone ?? null,
         localeInput.keep ? 0 : 1,
         localeInput.locale ?? null,
+        resolveRequestActor(ctx),
         gymId,
         memberId,
       ],

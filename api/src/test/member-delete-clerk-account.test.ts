@@ -133,7 +133,7 @@ describe('DELETE /members/:id — Clerk login (#709)', () => {
     const memberId = await linkedMember(cid);
     await remove(memberId);
     // Simulate a Recycle Bin restore (that route is behind a feature flag).
-    await db.query('UPDATE members SET deleted_at = NULL, deleted_by_name = NULL WHERE id = ?', [memberId]);
+    await db.query('UPDATE members SET deleted_at = NULL, deleted_by = NULL WHERE id = ?', [memberId]);
 
     const res = await request.post(`/members/${memberId}/invite`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
 

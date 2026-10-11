@@ -48,13 +48,13 @@ export function NutritionItemDetailsModal({ item, scope = 'gym', onClose }: {
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid var(--card-border, #f0f0f0)' }}>
           <p style={sectionLabelStyle}>{t('section_audit')}</p>
           <Field label={t('created_at')} value={formatTimestamp(item.created_at)} />
-          <Field label={t('created_by')} value={displayValue(item.created_by_name)} />
+          <Field label={t('created_by')} value={displayValue(item.created_by)} />
           <Field label={t('modified_at')} value={formatTimestamp(item.modified_at)} />
-          <Field label={t('modified_by')} value={displayValue(item.modified_by_name)} />
+          <Field label={t('modified_by')} value={displayValue(item.modified_by)} />
           {/* An item that was never deleted still shows both rows, with the same
               empty-value convention every other Details modal uses (§13). */}
           <Field label={t('deleted_at')} value={formatTimestamp(item.deleted_at)} />
-          <Field label={t('deleted_by')} value={displayValue(item.deleted_by_name)} />
+          <Field label={t('deleted_by')} value={displayValue(item.deleted_by)} />
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>

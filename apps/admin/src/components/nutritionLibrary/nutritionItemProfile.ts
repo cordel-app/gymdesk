@@ -39,11 +39,11 @@ export interface NutritionLibraryItemRow {
   categories: NutritionItemTaxonomy[];
   qualities: NutritionItemTaxonomy[];
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by_name: string | null;
+  deleted_by: string | null;
 }
 
 /** The editable fields, in the shape both pages' inline forms hold them. */

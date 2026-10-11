@@ -39,7 +39,7 @@ interface SeededProvider {
   status: string;
   is_default: number;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
 }
 
 let seeded: SeededProvider;
@@ -81,7 +81,7 @@ vi.mock('@clerk/backend', async (importOriginal) => {
 
 beforeAll(async () => {
   const { rows } = await db.query<SeededProvider>(
-    `SELECT id, name, provider_key, status, is_default, modified_at, modified_by_name
+    `SELECT id, name, provider_key, status, is_default, modified_at, modified_by
      FROM payment_providers
      WHERE is_default = 1 AND deleted_at IS NULL LIMIT 1`,
   );
@@ -124,9 +124,9 @@ afterAll(async () => {
   // helpers.createTestGym depends on one existing.
   await db.query(
     `UPDATE payment_providers
-     SET is_default = ?, status = ?, name = ?, modified_at = ?, modified_by_name = ?
+     SET is_default = ?, status = ?, name = ?, modified_at = ?, modified_by = ?
      WHERE id = ?`,
-    [seeded.is_default, seeded.status, seeded.name, seeded.modified_at, seeded.modified_by_name, seeded.id],
+    [seeded.is_default, seeded.status, seeded.name, seeded.modified_at, seeded.modified_by, seeded.id],
   );
 
   await db.end();
