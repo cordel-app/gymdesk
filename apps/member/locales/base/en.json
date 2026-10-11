@@ -415,6 +415,9 @@
     "start_payment": "Make a payment"
   },
   "payment_consent": {
+    "title_once": "Payment authorisation",
+    "body_once": "By continuing, you authorise {gymName} to charge {amount} {currency} once to the card you enter.",
+    "checkbox_once": "I have read and accept the payment terms.",
     "title": "Recurring billing authorisation",
     "body": "By continuing, you authorise {gymName} to charge {amount} {currency} every {interval} to the card you enter, until you cancel your membership.",
     "checkbox": "I have read and accept the recurring billing terms.",

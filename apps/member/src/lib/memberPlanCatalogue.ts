@@ -66,6 +66,9 @@ export interface MemberPendingPlan {
   plan_name: string | null;
   starts_at: string | null;
   membership_fee: number | null;
+  /** The plan's own cadence (#1081): what the consent says it will charge "every". */
+  billing_interval?: number | null;
+  billing_unit?: string | null;
 }
 
 /**
