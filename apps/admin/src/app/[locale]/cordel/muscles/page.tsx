@@ -6,7 +6,7 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { ExerciseImageField } from '@/components/ExerciseImageField';
+import { MuscleImageField } from '@/components/MuscleImageField';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { cardSurfaceStyle, primaryBtnStyle, primaryBtnSmall, overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import { formControlStyle, formFieldLabelStyle, inlineActionsRowStyle, secondaryBtnSmall, formErrorStyle } from '@/components/formChrome';
@@ -25,8 +25,10 @@ interface Muscle {
   id: number;
   slug: string;
   name: string;
-  image_url: string | null;
-  image_thumbnail_url: string | null;
+  image_male_url: string | null;
+  image_male_url_thumbnail: string | null;
+  image_female_url: string | null;
+  image_female_url_thumbnail: string | null;
   exercise_count: number;
   created_by: string | null;
   modified_by: string | null;
@@ -142,7 +144,7 @@ export default function CordelMusclesPage() {
       {loading ? null : rows.length === 0 ? (
         <p style={{ color: '#888' }}>{t('empty')}</p>
       ) : rows.map((row) => {
-        const thumb = row.image_thumbnail_url ?? row.image_url;
+        const thumb = row.image_male_url_thumbnail ?? row.image_male_url ?? row.image_female_url_thumbnail ?? row.image_female_url;
         const editing = editingId === row.id;
         return (
           <div key={row.id} style={{ ...cardSurfaceStyle, padding: 12, marginBottom: 8 }}>
@@ -178,16 +180,21 @@ export default function CordelMusclesPage() {
               <div style={{ marginTop: 12 }}>
                 <label style={formFieldLabelStyle}>{t('name')}</label>
                 <input value={editName} onChange={(e) => setEditName(e.target.value)} style={formControlStyle} aria-label={t('name')} />
-                <div style={{ marginTop: 12, maxWidth: 240 }}>
-                  <label style={formFieldLabelStyle}>{t('image')}</label>
-                  <ExerciseImageField
-                    exerciseId={row.id}
-                    imageUrl={row.image_url}
-                    thumbnailUrl={row.image_thumbnail_url}
-                    basePath={API_BASE}
-                    requiresGymStorage={false}
-                    onChanged={(updated) => replaceRow(updated as Muscle)}
-                  />
+                <p style={{ margin: '12px 0 0', fontSize: 12, color: '#888' }}>{t('image_requirements')}</p>
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 8 }}>
+                  {(['male', 'female'] as const).map((sex) => (
+                    <div key={sex} style={{ width: 240 }}>
+                      <label style={formFieldLabelStyle}>{t(sex === 'male' ? 'image_male' : 'image_female')}</label>
+                      <MuscleImageField
+                        muscleId={row.id}
+                        sex={sex}
+                        imageUrl={row[sex === 'male' ? 'image_male_url' : 'image_female_url']}
+                        thumbnailUrl={row[sex === 'male' ? 'image_male_url_thumbnail' : 'image_female_url_thumbnail']}
+                        basePath={API_BASE}
+                        onChanged={(updated) => replaceRow(updated as Muscle)}
+                      />
+                    </div>
+                  ))}
                 </div>
                 {error && <p style={formErrorStyle}>{error}</p>}
                 <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>

@@ -9,6 +9,8 @@ import {
   formControlStyle, formErrorStyle, formFieldLabelStyle, formHelpTextStyle, inlineActionsRowStyle,
   secondaryBtnSmall,
 } from '@/components/formChrome';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
+import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymTime, formatGymDateTime, type GymFormatSettings } from '@/lib/gymFormat';
 import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
@@ -164,6 +166,15 @@ export function ClassSessionDetailPanel({
   const gymFormat = useGymFormatSettings();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
+  const { flags } = useFeatureFlags();
+  // #1391: its own feature key and write level (a Nutritionist can send though
+  // the Calendar is read-only for them); the API enforces both again.
+  const { canWrite: roleCanCommunicate } = useModuleAccess('CALENDAR', 'calendar.staff_communications');
+  const [showCommunication, setShowCommunication] = useState(false);
+  const [commTitle, setCommTitle] = useState('');
+  const [commMessage, setCommMessage] = useState('');
+  const [sendingComm, setSendingComm] = useState(false);
+  const [commError, setCommError] = useState<string | null>(null);
 
   const [session, setSession] = useState<ClassSession | null>(null);
   const [enrolled, setEnrolled] = useState<Booking[]>([]);
@@ -529,6 +540,29 @@ export function ClassSessionDetailPanel({
     }
   }
 
+  async function handleSendCommunication() {
+    if (!commTitle.trim() || !commMessage.trim()) {
+      setCommError(t('communication_required'));
+      return;
+    }
+    setSendingComm(true);
+    setCommError(null);
+    try {
+      const res = await apiFetch<{ recipients: number }>(`/class-sessions/${sessionId}/communications`, {
+        method: 'POST',
+        body: JSON.stringify({ title: commTitle, message: commMessage }),
+      });
+      toast(res.recipients > 0 ? t('communication_sent', { count: res.recipients }) : t('communication_none'));
+      setShowCommunication(false);
+      setCommTitle('');
+      setCommMessage('');
+    } catch (err: any) {
+      setCommError(err?.message ?? t('communication_error'));
+    } finally {
+      setSendingComm(false);
+    }
+  }
+
   async function handleSaveTime() {
     setSavingTime(true);
     try {
@@ -563,6 +597,64 @@ export function ClassSessionDetailPanel({
   // `Completed · 0 attendees` is reached (§5).
   const executionStatus = session.execution_status ?? session.status;
   const hasEnded = new Date(session.ends_at).getTime() <= Date.now();
+  const canSendCommunication = roleCanCommunicate && flags['calendar.staff_communications'] !== false && flags['calendar'] !== false;
+  // #1391 — Send communication to the attendees. Offered only when the feature
+  // flag is on and the role may send; the API enforces both again, so hiding
+  // this is convenience and not security.
+  const communicationControl = (
+    canSendCommunication && !isCancelled && (
+              !showCommunication ? (
+                <button
+                  onClick={() => { setShowCommunication(true); setCommError(null); }}
+                  style={{ ...btnBase, background: '#f3f4f6', color: '#374151', textAlign: 'left' }}
+                >
+                  {t('send_communication')}
+                </button>
+              ) : (
+                <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t('communication_title')}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>{t('communication_hint')}</div>
+                  <label style={formFieldLabelStyle} htmlFor="comm-title">{t('communication_title_label')}</label>
+                  <input
+                    id="comm-title"
+                    value={commTitle}
+                    maxLength={120}
+                    onChange={(e) => setCommTitle(e.target.value)}
+                    style={formControlStyle}
+                  />
+                  <label style={formFieldLabelStyle} htmlFor="comm-message">{t('communication_message_label')}</label>
+                  <textarea
+                    id="comm-message"
+                    value={commMessage}
+                    maxLength={2000}
+                    rows={4}
+                    onChange={(e) => setCommMessage(e.target.value)}
+                    style={{ ...formControlStyle, resize: 'vertical' }}
+                  />
+                  {commError && (
+                    <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{commError}</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={handleSendCommunication}
+                      disabled={sendingComm}
+                      style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: sendingComm ? 0.6 : 1 }}
+                    >
+                      {sendingComm ? t('communication_sending') : t('communication_send')}
+                    </button>
+                    <button
+                      onClick={() => { setShowCommunication(false); setCommError(null); }}
+                      disabled={sendingComm}
+                      style={{ ...btnBase, background: '#f3f4f6', color: '#374151' }}
+                    >
+                      {t('cancel')}
+                    </button>
+                  </div>
+                </div>
+              )
+            )
+  );
+
   const canMarkCompleted = canWrite && hasEnded
     && (executionStatus === 'scheduled' || executionStatus === 'not_used');
   const statusLabel = EXECUTION_STATUS_KEYS.includes(executionStatus)
@@ -974,6 +1066,15 @@ export function ClassSessionDetailPanel({
         )}
       </div>
 
+      {/* #1391 — a role that cannot edit the Calendar (a Nutritionist) can
+          still be allowed to send; it gets just that action. */}
+      {!canWrite && canSendCommunication && (
+        <div>
+          <div style={sectionLabel}>Actions</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>{communicationControl}</div>
+        </div>
+      )}
+
       {/* Actions */}
       {canWrite && (
         <div>
@@ -1035,45 +1136,6 @@ export function ClassSessionDetailPanel({
               </button>
             )}
 
-            {/* #977 §4/§11 — Mark as completed. Offered only once the event
-                has ended and only while it is awaiting confirmation: a future
-                event needs no action from the teacher (§2), and an empty slot
-                that passed is already `Not used` without one (§3). */}
-            {canMarkCompleted && (
-              !showCompleteConfirm ? (
-                <button
-                  onClick={() => { setShowCompleteConfirm(true); setCompleteError(null); }}
-                  style={{ ...btnBase, ...primaryActionColors, textAlign: 'left' }}
-                >
-                  {t('mark_completed')}
-                </button>
-              ) : (
-                <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t('mark_completed_confirm_title')}</div>
-                  <div style={{ fontSize: 12, color: '#6b7280' }}>{t('mark_completed_confirm_message')}</div>
-                  {completeError && (
-                    <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{completeError}</div>
-                  )}
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      onClick={handleMarkCompleted}
-                      disabled={completing}
-                      style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: completing ? 0.6 : 1 }}
-                    >
-                      {completing ? t('marking_completed') : t('mark_completed')}
-                    </button>
-                    <button
-                      onClick={() => { setShowCompleteConfirm(false); setCompleteError(null); }}
-                      disabled={completing}
-                      style={{ ...btnBase, background: '#f3f4f6', color: '#374151' }}
-                    >
-                      {t('cancel')}
-                    </button>
-                  </div>
-                </div>
-              )
-            )}
-
             {/* Change time */}
             {!showChangeTime ? (
               <button
@@ -1121,6 +1183,8 @@ export function ClassSessionDetailPanel({
               </div>
             )}
 
+            {communicationControl}
+
             {/* Cancel event */}
             {!showCancelConfirm ? (
               <button
@@ -1135,6 +1199,7 @@ export function ClassSessionDetailPanel({
                 <div style={{ fontSize: 12, color: '#6b7280' }}>
                   This will cancel this event only. Future events in the series will not be affected.
                 </div>
+                <div style={{ fontSize: 12, color: '#6b7280' }}>{t('cancel_reason_note')}</div>
                 <textarea
                   value={cancelReason}
                   onChange={(e) => setCancelReason(e.target.value)}
@@ -1162,6 +1227,46 @@ export function ClassSessionDetailPanel({
                 </div>
               </div>
             )}
+
+            {/* #977 §4/§11 — Mark as completed. Offered only once the event
+                has ended and only while it is awaiting confirmation: a future
+                event needs no action from the teacher (§2), and an empty slot
+                that passed is already `Not used` without one (§3). */}
+            {canMarkCompleted && (
+              !showCompleteConfirm ? (
+                <button
+                  onClick={() => { setShowCompleteConfirm(true); setCompleteError(null); }}
+                  style={{ ...btnBase, ...primaryActionColors, textAlign: 'left' }}
+                >
+                  {t('mark_completed')}
+                </button>
+              ) : (
+                <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t('mark_completed_confirm_title')}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>{t('mark_completed_confirm_message')}</div>
+                  {completeError && (
+                    <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{completeError}</div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={handleMarkCompleted}
+                      disabled={completing}
+                      style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: completing ? 0.6 : 1 }}
+                    >
+                      {completing ? t('marking_completed') : t('mark_completed')}
+                    </button>
+                    <button
+                      onClick={() => { setShowCompleteConfirm(false); setCompleteError(null); }}
+                      disabled={completing}
+                      style={{ ...btnBase, background: '#f3f4f6', color: '#374151' }}
+                    >
+                      {t('cancel')}
+                    </button>
+                  </div>
+                </div>
+              )
+            )}
+
             </>
             )}
           </div>

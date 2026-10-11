@@ -20,7 +20,7 @@ import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
-import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
+import { AssignPlanToMembersEditor } from './AssignPlanToMembersEditor';
 import { PlanDetailModal } from './PlanDetailModal';
 import { computeVatPreview } from '@/lib/priceVat';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
@@ -1057,7 +1057,7 @@ export default function PlansPage() {
 
                 {/* #1460: Assign Plan to Member(s), inline in the plan's own card. */}
                 {assigningPlan?.id === plan.id && (
-                  <AssignPlanInlineEditor
+                  <AssignPlanToMembersEditor
                     plan={plan}
                     onCancel={() => setAssigningPlan(null)}
                     onAssigned={() => {

@@ -56,7 +56,7 @@ const ENTRY_POINTS: Array<{ name: string; src: string; confirmSpelling: string }
   },
   {
     name: 'the Plans page\'s inline Assign editor',
-    src: read('app', '[locale]', 'plans', 'AssignPlanInlineEditor.tsx'),
+    src: read('app', '[locale]', 'plans', 'AssignPlanToMembersEditor.tsx'),
     confirmSpelling: '...(confirmReplacement ? { confirm: true } : {})',
   },
 ];

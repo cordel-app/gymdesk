@@ -13,8 +13,10 @@
 // from here. Superseding a specific plan is the explicit "Assign New Plan"
 // action on the plan itself, which stays on the assignment flow for now.
 //
-// Inline throughout (§15): "+ Add Membership Plan" opens a draft below the
-// list, saved or discarded in place. No modal, no wizard, no separate page.
+// #1450/#1460: "+ Add Membership Plan" opens the Plans page's own Assign Plan
+// to Member editor (`plans/AssignPlanToMembersEditor`, inline, no modal) with
+// this Member preselected, so both entry points are one workflow. It creates a Draft that is configured and paid
+// from its card; this section keeps no assignment form of its own.
 //
 // #1051 replaced the presentation. The section used to draw one metadata card
 // per assignment — plan name and price in a header, six `CardDetailRow`s under
@@ -44,35 +46,24 @@
 // expanded body's PRICING section, and Created by / Created at are in
 // `⋮ → Details` with the audit link — which is where #799 puts an actor.
 
-import React, { useEffect, useRef, useState, type CSSProperties } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { apiErrorMessage, useApiClient } from '@/lib/apiClient';
-import { commitProductSetVersion } from '@/lib/productSetCommit';
+import { useApiClient } from '@/lib/apiClient';
+import { AssignPlanToMembersEditor, type AssignablePlan } from '../plans/AssignPlanToMembersEditor';
 import type { ContextMenuItem } from '@/components/ContextMenu';
 import { AssignedPlansTable } from '@/components/assignedPlan/AssignedPlansTable';
 import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPlanDetailsDialog';
-import {
-  cardHintStyle,
-  cardSubLabelStyle,
-  formControlStyle,
-  formErrorStyle,
-  formFieldLabelStyle,
-  inlineActionsRowStyle,
-  inlineEditorStyle,
-  inlineEditorTitleStyle,
-  secondaryBtnSmall,
-} from '@/components/formChrome';
+import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
 import { ProductSetsInFlight } from './ProductSetsInFlight';
 
-interface AssignablePlan {
-  id: number;
-  name: string;
-}
 
 interface Props {
   memberId: number;
+  /** The Member the add workflow is launched from — preselected in it (#1450). */
+  memberName: string;
+  memberEmail: string;
   plans: MemberPlanRow[];
   /** #1325 PR 3b: the member's in-flight ProductSet versions. */
   productSets?: ProductSetRow[];
@@ -86,12 +77,8 @@ interface Props {
   assignBusy: boolean;
 }
 
-function todayISO() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 export function MemberMembershipPlans({
-  memberId, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, renderAssignEditor, assignBusy,
+  memberId, memberName, memberEmail, plans, productSets = [], canWrite, onChanged, onAssignNewPlan, onCancelPlan, renderAssignEditor, assignBusy,
 }: Props) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
@@ -99,11 +86,6 @@ export function MemberMembershipPlans({
 
   const [adding, setAdding] = useState(false);
   const [options, setOptions] = useState<AssignablePlan[]>([]);
-  const [optionsLoading, setOptionsLoading] = useState(false);
-  const [draftPlanId, setDraftPlanId] = useState<number | null>(null);
-  const [draftStartsAt, setDraftStartsAt] = useState(todayISO());
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   // #958: the Assigned Plan whose Details are open, if any — one dialog for the
   // whole section rather than one mounted per row.
   const [detailsPlanId, setDetailsPlanId] = useState<number | null>(null);
@@ -116,11 +98,9 @@ export function MemberMembershipPlans({
   useEffect(() => {
     if (!adding || optionsLoadedRef.current) return;
     optionsLoadedRef.current = true;
-    setOptionsLoading(true);
     apiFetch<AssignablePlan[]>('/membership-plans?lifecycle_status=active&enrollment_status=public')
       .then(setOptions)
-      .catch(() => setOptions([]))
-      .finally(() => setOptionsLoading(false));
+      .catch(() => setOptions([]));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adding]);
 
@@ -135,49 +115,6 @@ export function MemberMembershipPlans({
 
   function startAdding() {
     setAdding(true);
-    setDraftPlanId(null);
-    setDraftStartsAt(todayISO());
-    setError(null);
-  }
-
-  function cancelAdding() {
-    setAdding(false);
-    setDraftPlanId(null);
-    setError(null);
-  }
-
-  /**
-   * #1325 PR 3b: the plan is added as a ProductSet version and committed in one
-   * go. There is no confirmation to send — the server refuses a Member who is
-   * already on a plan (#956) with `409 active_plan_exists`, and replacing a plan
-   * is the explicit `Assign New Plan` action on the plan itself.
-   */
-  async function save() {
-    if (draftPlanId == null) { setError(t('add_membership_plan_error_no_plan')); return; }
-    if (!draftStartsAt) { setError(t('assign_new_plan_error_no_start')); return; }
-    setSaving(true);
-    setError(null);
-    try {
-      // #1325 PR 3b: the plan is a ProductSet version. The server decides what
-      // happens next — nothing owed activates it; a payment owed makes it
-      // Pending Payment — and the editing lock, the one-in-flight rule and the
-      // one-plan rule are all the server's, so this never sends `confirm`.
-      const created = await apiFetch<{ id: number }>('/product-sets', {
-        method: 'POST',
-        body: JSON.stringify({ member_id: memberId, membership_plan_id: draftPlanId, starts_at: draftStartsAt }),
-      });
-      await commitProductSetVersion(apiFetch, created.id);
-      setAdding(false);
-      setDraftPlanId(null);
-      onChanged();
-    } catch (err: any) {
-      // A conflict (`active_plan_exists`, `edit_locked`, `in_flight`) is the
-      // server's answer and is shown as its sentence: there is nothing here to
-      // confirm — replacing a plan is a new version, never an overwrite.
-      setError(apiErrorMessage(err) ?? t('error_generic'));
-    } finally {
-      setSaving(false);
-    }
   }
 
   /**
@@ -237,52 +174,16 @@ export function MemberMembershipPlans({
         <button onClick={startAdding} style={addBtn}>{t('add_membership_plan')}</button>
       )}
 
+      {/* #1450/#1460: the one Assign Plan to Member workflow (the Plans page's
+          inline editor), launched with this Member selected. It creates a Draft, which
+          appears in the list above and is configured and paid from its card. */}
       {adding && (
-        <div style={editorStyle}>
-          <div style={editorTitle}>{t('add_membership_plan_title')}</div>
-
-          <div style={labelStyle}>{t('assign_new_plan_label_plan')}</div>
-          {optionsLoading ? (
-            <p style={hint}>{t('add_membership_plan_loading')}</p>
-          ) : selectable.length === 0 ? (
-            <p style={hint}>{t('add_membership_plan_none')}</p>
-          ) : (
-            // §2: one Membership Plan per assignment, picked with radio buttons.
-            <div role="radiogroup" aria-label={t('assign_new_plan_label_plan')} style={{ display: 'flex', flexDirection: 'column', gap: 6, margin: '6px 0 12px' }}>
-              {selectable.map((o) => (
-                <label key={o.id} style={optionRow(draftPlanId === o.id)}>
-                  <input
-                    type="radio"
-                    name={`add-plan-${memberId}`}
-                    checked={draftPlanId === o.id}
-                    disabled={saving}
-                    onChange={() => setDraftPlanId(o.id)}
-                    style={{ marginRight: 8 }}
-                  />
-                  <span>{o.name}</span>
-                </label>
-              ))}
-            </div>
-          )}
-
-          <div style={labelStyle}>{t('assign_new_plan_label_starts')}</div>
-          <input
-            type="date"
-            value={draftStartsAt}
-            onChange={(e) => setDraftStartsAt(e.target.value)}
-            disabled={saving}
-            style={inputStyle}
-          />
-
-          {error && <p style={errorStyle}>{error}</p>}
-
-          <div style={actionsRow}>
-            <button onClick={() => save()} disabled={saving || selectable.length === 0} style={saveBtn}>
-              {saving ? t('saving') : t('add_membership_plan_submit')}
-            </button>
-            <button onClick={cancelAdding} disabled={saving} style={cancelBtn}>{t('cancel')}</button>
-          </div>
-        </div>
+        <AssignPlanToMembersEditor
+          planOptions={selectable}
+          initialMember={{ id: memberId, name: memberName, email: memberEmail }}
+          onCancel={() => setAdding(false)}
+          onAssigned={() => { setAdding(false); onChanged(); }}
+        />
       )}
 
       {/* PAST — the same table, so a terminated assignment reads exactly as a
@@ -328,26 +229,6 @@ export function MemberMembershipPlans({
 }
 
 // #929: the look is `components/formChrome.ts` — this section aliases the shared
-// objects rather than restating them, so its labels, inputs and its Save/Cancel
-// pair are the same ones the Member card's other sections wear.
-const hint = cardHintStyle;
+// objects rather than restating them.
 const subLabel = cardSubLabelStyle;
 const addBtn = primaryBtnSmall();
-const editorStyle = inlineEditorStyle;
-const editorTitle = inlineEditorTitleStyle;
-const labelStyle = formFieldLabelStyle;
-const inputStyle: CSSProperties = { ...formControlStyle, margin: '6px 0 12px' };
-const errorStyle: CSSProperties = { ...formErrorStyle, margin: '0 0 10px' };
-const saveBtn = primaryBtnSmall();
-const cancelBtn = secondaryBtnSmall;
-const actionsRow = inlineActionsRowStyle;
-
-function optionRow(checked: boolean): CSSProperties {
-  return {
-    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6,
-    border: `1px solid ${checked ? '#bfdbfe' : '#e5e7eb'}`,
-    background: checked ? '#eff6ff' : '#fff',
-    color: checked ? '#1d4ed8' : 'inherit',
-    cursor: 'pointer', fontSize: 13, userSelect: 'none',
-  };
-}

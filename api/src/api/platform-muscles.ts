@@ -4,16 +4,18 @@ import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolvePlatformActor } from '../domain/auditActor';
 import {
-  EXERCISE_IMAGE_MASTER_MAX_BYTES,
-  EXERCISE_IMAGE_MIME,
-  EXERCISE_IMAGE_THUMBNAIL_MAX_BYTES,
-  validateExerciseImagePair,
-} from '../domain/exerciseImages';
-import {
+  MUSCLE_IMAGE_COLUMNS,
+  MUSCLE_IMAGE_MASTER_MAX_BYTES,
+  MUSCLE_IMAGE_MIME,
+  MUSCLE_IMAGE_THUMBNAIL_MAX_BYTES,
+  MUSCLE_SEXES,
+  MuscleSex,
   buildMuscleImageKey,
   buildMuscleImageThumbnailKey,
   isPlatformOwnedMuscleImageUrl,
   muscleImageFolderKeys,
+  parseMuscleSex,
+  validateMuscleImagePair,
 } from '../domain/muscleImages';
 import { logger } from '../lib/logger';
 import {
@@ -40,10 +42,12 @@ import {
  *    break a link or an Admin label key.
  *  - Delete is a hard delete, refused with a 409 and the referencing count while
  *    any exercise link uses the muscle (ticket thread).
- *  - The image is the Base Exercise pair (2048 master + 512 thumbnail, validated
- *    from the bytes) at `cordel/muscles/images/<name>.png`. The key follows the
- *    name, so a rename moves the objects: copy, re-point the row, then delete the
- *    old ones — a failed copy leaves the row on the old, still-valid URLs.
+ *  - Since #1412 a muscle has a male and a female image, each a WebP pair (1080
+ *    master + 256 thumbnail, validated from the bytes) at
+ *    `cordel/muscles/images/<name>-<sex>[-thumbnail].webp`. The sexes are
+ *    uploaded, replaced and removed independently. The key follows the name, so a
+ *    rename moves the objects: copy, re-point the row, then delete the old ones —
+ *    a failed copy leaves the row on the old, still-valid URLs.
  */
 export const platformMusclesRouter = Router();
 
@@ -51,10 +55,10 @@ function platformActor(req: { superadminName?: string | null }) {
   return resolvePlatformActor(req.superadminName);
 }
 
-export const PLATFORM_MUSCLE_IMAGE_UPLOAD_PATH = /^\/platform\/muscles\/[^/]+\/image\/?$/;
+export const PLATFORM_MUSCLE_IMAGE_UPLOAD_PATH = /^\/platform\/muscles\/[^/]+\/image\/[^/]+\/?$/;
 
 export const platformMuscleImageBodyParser = express.json({
-  limit: Math.ceil((EXERCISE_IMAGE_MASTER_MAX_BYTES + EXERCISE_IMAGE_THUMBNAIL_MAX_BYTES) * 1.4),
+  limit: Math.ceil((MUSCLE_IMAGE_MASTER_MAX_BYTES + MUSCLE_IMAGE_THUMBNAIL_MAX_BYTES) * 1.4),
 });
 
 function decodeBase64File(value: unknown): Buffer | null {
@@ -79,8 +83,14 @@ interface MuscleRow {
   id: number;
   slug: string;
   name: string;
-  image_url: string | null;
-  image_thumbnail_url: string | null;
+  image_male_url: string | null;
+  image_male_url_thumbnail: string | null;
+  image_female_url: string | null;
+  image_female_url_thumbnail: string | null;
+}
+
+function allImageUrls(m: MuscleRow): (string | null)[] {
+  return [m.image_male_url, m.image_male_url_thumbnail, m.image_female_url, m.image_female_url_thumbnail];
 }
 
 const SELECT_MUSCLE = `
@@ -169,19 +179,27 @@ platformMusclesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
     const dup = await db.query('SELECT id FROM muscles WHERE LOWER(name) = LOWER(?) AND id != ? LIMIT 1', [name, muscle.id]);
     if (dup.rows.length > 0) return res.status(409).json({ error: 'A muscle with this name already exists' });
 
-    let imageUrl = muscle.image_url;
-    let thumbnailUrl = muscle.image_thumbnail_url;
+    const urls: Record<string, string | null> = {
+      image_male_url: muscle.image_male_url,
+      image_male_url_thumbnail: muscle.image_male_url_thumbnail,
+      image_female_url: muscle.image_female_url,
+      image_female_url_thumbnail: muscle.image_female_url_thumbnail,
+    };
     const moves: { from: string; to: string }[] = [];
     if (name !== muscle.name) {
-      // The key follows the name: move whichever of the pair is ours to the new
-      // key before the row is re-pointed. A failed copy aborts the rename with
-      // the row untouched.
-      const newImageKey = buildMuscleImageKey(name);
-      const newThumbKey = buildMuscleImageThumbnailKey(name);
-      const pairs: [string | null, string][] = [[muscle.image_url, newImageKey], [muscle.image_thumbnail_url, newThumbKey]];
-      for (const [url, newKey] of pairs) {
+      // The key follows the name: move whichever of the images are ours to the
+      // new keys before the row is re-pointed. A failed copy aborts the rename
+      // with the row untouched.
+      const targets: { column: string; newKey: string }[] = [];
+      for (const sex of MUSCLE_SEXES) {
+        targets.push({ column: MUSCLE_IMAGE_COLUMNS[sex].image, newKey: buildMuscleImageKey(name, sex) });
+        targets.push({ column: MUSCLE_IMAGE_COLUMNS[sex].thumbnail, newKey: buildMuscleImageThumbnailKey(name, sex) });
+      }
+      const planned: { column: string; newKey: string }[] = [];
+      for (const { column, newKey } of targets) {
+        const url = urls[column];
         const oldKey = url && isPlatformOwnedMuscleImageUrl(url) ? storageKeyFromObjectUrl(url) : null;
-        if (oldKey && oldKey !== newKey) moves.push({ from: oldKey, to: newKey });
+        if (oldKey && oldKey !== newKey) { moves.push({ from: oldKey, to: newKey }); planned.push({ column, newKey }); }
       }
       try {
         if (moves.length) await ensureStorageFolders(muscleImageFolderKeys());
@@ -193,19 +211,17 @@ platformMusclesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
         logger.error({ err, details, muscleId: muscle.id }, 'Cloudflare R2 muscle image move failed');
         return res.status(502).json({ error: `Failed to move image: ${details.message}`, details });
       }
-      for (const m of moves) {
-        if (m.to === newImageKey) imageUrl = buildStorageObjectUrl(newImageKey);
-        if (m.to === newThumbKey) thumbnailUrl = buildStorageObjectUrl(newThumbKey);
-      }
+      for (const { column, newKey } of planned) urls[column] = buildStorageObjectUrl(newKey);
     }
 
     const actor = platformActor(req);
     await db.query(
-      `UPDATE muscles SET name = ?, image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(),
+      `UPDATE muscles SET name = ?, image_male_url = ?, image_male_url_thumbnail = ?,
+              image_female_url = ?, image_female_url_thumbnail = ?, modified_at = UTC_TIMESTAMP(),
               modified_by = ? WHERE id = ?`,
-      [name, imageUrl, thumbnailUrl, actor, muscle.id],
+      [name, urls.image_male_url, urls.image_male_url_thumbnail, urls.image_female_url, urls.image_female_url_thumbnail, actor, muscle.id],
     );
-    if (moves.length) await sweepMuscleObjects([muscle.image_url, muscle.image_thumbnail_url], [imageUrl, thumbnailUrl]);
+    if (moves.length) await sweepMuscleObjects(allImageUrls(muscle), Object.values(urls));
 
     recordAudit(req, {
       action: 'update', entityType: 'muscle', entityId: muscle.id,
@@ -232,7 +248,7 @@ platformMusclesRouter.delete('/:id', requireSuperadmin, async (req, res, next) =
       });
     }
     await db.query('DELETE FROM muscles WHERE id = ?', [muscle.id]);
-    await sweepMuscleObjects([muscle.image_url, muscle.image_thumbnail_url], []);
+    await sweepMuscleObjects(allImageUrls(muscle), []);
     recordAudit(req, {
       action: 'delete', entityType: 'muscle', entityId: muscle.id,
       previous: { slug: muscle.slug, name: muscle.name },
@@ -241,16 +257,18 @@ platformMusclesRouter.delete('/:id', requireSuperadmin, async (req, res, next) =
   } catch (err) { next(err); }
 });
 
-platformMusclesRouter.post('/:id/image', requireSuperadmin, async (req, res, next) => {
+platformMusclesRouter.post('/:id/image/:sex', requireSuperadmin, async (req, res, next) => {
   try {
+    const sex = parseMuscleSex(req.params.sex);
+    if (!sex) return res.status(400).json({ error: 'sex must be "male" or "female"' });
     const image = decodeBase64File(req.body?.image);
     const thumbnail = decodeBase64File(req.body?.thumbnail);
     if (!image || !thumbnail) {
       return res.status(400).json({
-        error: 'Both `image` (the 2048×2048 master) and `thumbnail` (the 512×512 thumbnail) are required, base64-encoded.',
+        error: 'Both `image` (the 1080×1080 WebP master) and `thumbnail` (the 256×256 WebP thumbnail) are required, base64-encoded.',
       });
     }
-    const problem = validateExerciseImagePair(image, thumbnail);
+    const problem = validateMuscleImagePair(image, thumbnail);
     if (problem) {
       return res.status(problem.rejection === 'too_large' ? 413 : 400).json({
         error: problem.message, reason: problem.rejection, file: problem.kind,
@@ -266,14 +284,16 @@ platformMusclesRouter.post('/:id/image', requireSuperadmin, async (req, res, nex
     const muscle = await loadMuscle(String(req.params.id));
     if (!muscle) return res.status(404).json({ error: 'Muscle not found' });
 
-    const imageKey = buildMuscleImageKey(muscle.name);
-    const thumbnailKey = buildMuscleImageThumbnailKey(muscle.name);
+    const cols = MUSCLE_IMAGE_COLUMNS[sex];
+    const previous = [(muscle as any)[cols.image] as string | null, (muscle as any)[cols.thumbnail] as string | null];
+    const imageKey = buildMuscleImageKey(muscle.name, sex);
+    const thumbnailKey = buildMuscleImageThumbnailKey(muscle.name, sex);
     const imageUrl = buildStorageObjectUrl(imageKey);
     const thumbnailUrl = buildStorageObjectUrl(thumbnailKey);
     try {
       await ensureStorageFolders(muscleImageFolderKeys());
-      await uploadStorageObject(imageKey, EXERCISE_IMAGE_MIME, image);
-      await uploadStorageObject(thumbnailKey, EXERCISE_IMAGE_MIME, thumbnail);
+      await uploadStorageObject(imageKey, MUSCLE_IMAGE_MIME, image);
+      await uploadStorageObject(thumbnailKey, MUSCLE_IMAGE_MIME, thumbnail);
     } catch (err: any) {
       const details = err instanceof StorageOperationError
         ? err.details
@@ -284,34 +304,38 @@ platformMusclesRouter.post('/:id/image', requireSuperadmin, async (req, res, nex
 
     const actor = platformActor(req);
     await db.query(
-      `UPDATE muscles SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(),
+      `UPDATE muscles SET ${cols.image} = ?, ${cols.thumbnail} = ?, modified_at = UTC_TIMESTAMP(),
               modified_by = ? WHERE id = ?`,
       [imageUrl, thumbnailUrl, actor, muscle.id],
     );
-    await sweepMuscleObjects([muscle.image_url, muscle.image_thumbnail_url], [imageUrl, thumbnailUrl]);
+    await sweepMuscleObjects(previous, [imageUrl, thumbnailUrl]);
     recordAudit(req, {
       action: 'update', entityType: 'muscle', entityId: muscle.id,
-      previous: { image_url: muscle.image_url }, next: { image_url: imageUrl },
+      previous: { [cols.image]: previous[0] }, next: { [cols.image]: imageUrl },
     });
     const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [muscle.id]);
     res.json(rows[0]);
   } catch (err) { next(err); }
 });
 
-platformMusclesRouter.delete('/:id/image', requireSuperadmin, async (req, res, next) => {
+platformMusclesRouter.delete('/:id/image/:sex', requireSuperadmin, async (req, res, next) => {
   try {
+    const sex = parseMuscleSex(req.params.sex);
+    if (!sex) return res.status(400).json({ error: 'sex must be "male" or "female"' });
     const muscle = await loadMuscle(String(req.params.id));
     if (!muscle) return res.status(404).json({ error: 'Muscle not found' });
+    const cols = MUSCLE_IMAGE_COLUMNS[sex];
+    const previous = [(muscle as any)[cols.image] as string | null, (muscle as any)[cols.thumbnail] as string | null];
     const actor = platformActor(req);
     await db.query(
-      `UPDATE muscles SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(),
+      `UPDATE muscles SET ${cols.image} = NULL, ${cols.thumbnail} = NULL, modified_at = UTC_TIMESTAMP(),
               modified_by = ? WHERE id = ?`,
       [actor, muscle.id],
     );
-    await sweepMuscleObjects([muscle.image_url, muscle.image_thumbnail_url], []);
+    await sweepMuscleObjects(previous, []);
     recordAudit(req, {
       action: 'update', entityType: 'muscle', entityId: muscle.id,
-      previous: { image_url: muscle.image_url }, next: { image_url: null },
+      previous: { [cols.image]: previous[0] }, next: { [cols.image]: null },
     });
     const { rows } = await db.query(`${SELECT_MUSCLE} WHERE m.id = ?`, [muscle.id]);
     res.json(rows[0]);

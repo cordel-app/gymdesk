@@ -269,7 +269,13 @@
     "type_waitlist_removed": "Removed from waiting list",
     "detail_waitlist_removed": "You have been taken off the waiting list for this class. The list is still open, so you can join it again.",
     "type_booking_reminder_2h": "Training reminder",
-    "detail_booking_reminder_2h": "You have this training booked in 2 hours."
+    "detail_booking_reminder_2h": "You have this training booked in 2 hours.",
+    "type_staff_message": "Message from your gym",
+    "category_all": "All",
+    "category_staff": "Staff",
+    "category_auto": "Auto",
+    "cancel_reason": "Reason: {reason}",
+    "empty_category": "No alerts in this category."
   },
   "membership": {
     "title": "My Products",
