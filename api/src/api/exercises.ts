@@ -243,9 +243,8 @@ const GYM_SCOPE_SQL = "e.gym_id = ? AND e.status != 'deleted'";
  * The search still matches the base name or any stored translation (#967 §7),
  * because that rule now lives in that builder rather than in this route.
  *
- * The same reasoning as the slug (never searched, #1356) is why the Equipment
- * and Category dropdowns are absent there: the facets come back empty (`GET /exercises/facets`) and §9
- * says a control with no values is not rendered at all.
+ * The slug is never searched here (#1356). The Equipment and Category dropdowns
+ * are always rendered by the page (#1384), whatever `GET /exercises/facets` returns.
  */
 exercisesRouter.get('/', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
