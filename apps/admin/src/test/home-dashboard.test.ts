@@ -39,6 +39,9 @@ describe('navigation', () => {
   it('Home is the first sidebar entry for every role and flags do not hide it', () => {
     expect(navigationGroups[0].id).toBe('home');
     expect(navigationGroups[0].items[0].href).toBe('/{{locale}}/home');
+    // #1453: Home is one page — its header links to it, no submenu.
+    expect(navigationGroups[0].directLink).toBe(true);
+    expect(navigationGroups[0].items).toHaveLength(1);
     for (const role of ['admin', 'front_desk', 'accountant', 'trainer_performance', 'nutritionist'] as const) {
       expect(filterNavGroups(navigationGroups, role, {})[0].id).toBe('home');
     }
