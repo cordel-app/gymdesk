@@ -559,6 +559,31 @@ export async function applyPromotionToMembership(
     );
     if (umRows.length === 0) throw Object.assign(new Error('Membership not found'), { status: 404 });
     const um = umRows[0];
+
+    // #1325 PR 3e: a Draft assignment's ProductSet Draft owns its Promotions.
+    // The application is written on the version by the Draft writer (the same
+    // validations, its own snapshot) and the assignment's copy is re-derived;
+    // a Draft assignment with no version (a legacy row) takes the path below.
+    const { linkedDraftSetFor } = await import('./assignment-draft-set');
+    const draftSet = await linkedDraftSetFor(tx, gymId, umId);
+    if (draftSet) {
+      const { lockDraft, isRefusal } = await import('./product-set-draft');
+      const { applyPromotionMutator } = await import('./product-set-bridge');
+      const { syncDraftAssignment } = await import('./product-set-projection');
+      const locked = await lockDraft(tx, gymId, draftSet.id);
+      if (isRefusal(locked)) {
+        throw Object.assign(new Error('The Draft is no longer available'), { status: locked.kind === 'expired' ? 410 : 409 });
+      }
+      const applied = await applyPromotionMutator(gymId, userId, promotionId)(tx, locked);
+      if ('kind' in applied) {
+        throw Object.assign(new Error('message' in applied ? applied.message : 'Promotion could not be applied'), { status: 400 });
+      }
+      await syncDraftAssignment(tx, gymId, locked.id);
+      const drafted = await currentMembershipFeeInTx(tx, gymId, umId);
+      if (!drafted) throw Object.assign(new Error('Fee resolution failed'), { status: 500 });
+      return { user_membership_id: umId, promotion_id: promotionId, membership_fee: drafted.price };
+    }
+
     // Priced before anything is written, so the adjustment below is the
     // difference this application makes (#635 stage 15 — nothing is stored, so
     // "the previous price" has to be resolved rather than read).

@@ -97,6 +97,7 @@ export async function redirectEditToProductSet(req: Request, res: Response, inpu
     action: input.action, entityType: 'product_set', entityId: (outcome as { productSetId: number }).productSetId,
     next: input.detail,
   });
+  if (input.status === 204) { res.status(204).end(); return true; }
   res.status(input.status ?? 200).json(await input.respond());
   return true;
 }

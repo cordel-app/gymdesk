@@ -74,6 +74,10 @@ export async function createDraft(tx: Tx, input: {
   const inFlight = await lockInFlight(tx, input.gymId, input.ownerMemberId);
   if (inFlight) {
     if (inFlight.status === 'draft' && Number(inFlight.expired) === 1) {
+      // The Admin's Draft assignment (#1325 PR 3e) expires with its version.
+      await tx.query(
+        `DELETE um FROM user_memberships um JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
+          WHERE ps.id = ? AND um.status = 'draft'`, [inFlight.id]);
       await tx.query(`DELETE FROM product_sets WHERE id = ? AND status = 'draft'`, [inFlight.id]);
     } else {
       return { kind: 'in_flight', productSetId: Number(inFlight.id), status: inFlight.status };
@@ -210,6 +214,14 @@ export async function cancelInFlight(tx: Tx, gymId: string, id: number): Promise
  * set that moved to `pending_payment` between a read and this call survives.
  */
 export async function expireDrafts(): Promise<number> {
+  // #1325 PR 3e: an Admin Draft assignment expires with its version, so no
+  // Draft row is left behind with nothing to edit it.
+  await db.query(
+    `DELETE um FROM user_memberships um
+       JOIN product_sets ps ON ps.user_membership_id = um.id AND ps.gym_id = um.gym_id
+      WHERE ps.status = 'draft' AND um.status = 'draft'
+        AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL ${DRAFT_TTL_MINUTES} MINUTE`,
+  );
   const { rowCount } = await db.query(
     `DELETE FROM product_sets
       WHERE status = 'draft'
