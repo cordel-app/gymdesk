@@ -44,6 +44,7 @@ describe('exercise view mode (#1386)', () => {
   it('the card filters nothing and spells no colour literal of its own', () => {
     const card = read('components/exercises/ExerciseCard.tsx');
     expect(card).not.toMatch(/\.filter\(\(\w+\) => \w+\.(status|name)/);
-    expect(card).not.toMatch(/#[0-9a-fA-F]{6}\b(?!.*var\()/);
+    // A hex inside `var(--token, #fallback)` is the theme variable's own fallback, not a literal.
+    expect(card.replace(/var\([^)]*\)/g, '')).not.toMatch(/#[0-9a-fA-F]{6}\b/);
   });
 });
