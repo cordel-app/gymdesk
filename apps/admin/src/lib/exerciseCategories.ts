@@ -23,3 +23,25 @@ export function exerciseCategoryLabelKey(value: string | null | undefined): stri
   if (!value || !isExerciseCategory(value)) return null;
   return `category_${value.trim().toLowerCase().replace(/\s+/g, '_')}`;
 }
+
+/**
+ * #1360 stage 2: mirror of `CATEGORY_RESULT_TYPE_SLUGS`
+ * (`api/src/domain/exerciseCategories.ts`) — display only. The API derives and
+ * persists the real set; this decides which chips the editor shows before the
+ * category is saved.
+ */
+export const CATEGORY_RESULT_TYPE_SLUGS: Record<string, readonly string[]> = {
+  cardio: ['distance', 'duration', 'pace', 'speed', 'calories'],
+  'olympic weightlifting': ['repetitions', 'weight'],
+  plyometrics: ['repetitions'],
+  powerlifting: ['repetitions', 'weight'],
+  strength: ['repetitions', 'weight'],
+  stretching: ['duration'],
+  strongman: ['repetitions', 'weight', 'distance', 'duration'],
+};
+
+/** Recorded Metrics slugs for a category, or `null` when it is missing/unsupported (no guess). */
+export function recordedMetricSlugs(category: string | null | undefined): readonly string[] | null {
+  if (!category || !isExerciseCategory(category)) return null;
+  return CATEGORY_RESULT_TYPE_SLUGS[category.trim().toLowerCase()] ?? null;
+}

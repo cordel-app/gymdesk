@@ -1,4 +1,5 @@
-import { parseExerciseCategoryInput } from '../domain/exerciseCategories';
+import { parseExerciseCategoryInput, resultTypeSlugsForCategory } from '../domain/exerciseCategories';
+import { assertRequestedResultTypesMatch, effectiveCategory, syncExerciseResultTypes } from './exercise-result-types';
 import express, { Request, Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -186,16 +187,6 @@ function parseMuscles(input: unknown): { key: string; role: 'principal' | 'secon
     parsed.push({ key, role: m.role === 'secondary' ? 'secondary' : 'principal' });
   }
   return parsed;
-}
-
-async function replaceAllowedResultTypes(tx: Tx, exerciseId: number | string, ids: number[]) {
-  await tx.query('DELETE FROM exercise_allowed_result_types WHERE exercise_id = ?', [exerciseId]);
-  for (const rtId of ids) {
-    await tx.query(
-      'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
-      [exerciseId, rtId],
-    );
-  }
 }
 
 async function replaceMuscles(tx: Tx, gymId: string, exerciseId: number | string, muscles: { key: string; role: string }[]) {
@@ -481,7 +472,8 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
          sets_default ?? null, notes_default ?? null, status ?? 'active', callerMemberId ?? null],
       );
       if (muscles) await replaceMuscles(tx, gymId, insertId, muscles);
-      if (allowedResultTypeIds) await replaceAllowedResultTypes(tx, insertId, allowedResultTypeIds);
+      await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
+      await syncExerciseResultTypes(tx, insertId, categoryInput.value);
       if (translations) await replaceExerciseTranslations(tx, insertId, translations);
       return insertId;
     });
@@ -577,7 +569,9 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
       );
       if (rowCount === 0) throw Object.assign(new Error('Exercise not found'), { status: 404 });
       if (muscles) await replaceMuscles(tx, gymId, id, muscles);
-      if (allowedResultTypeIds) await replaceAllowedResultTypes(tx, id, allowedResultTypeIds);
+      const category = await effectiveCategory(tx, id, categoryInput);
+      await assertRequestedResultTypesMatch(tx, category, allowedResultTypeIds);
+      if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category);
       if (translations) await replaceExerciseTranslations(tx, id, translations);
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
@@ -834,17 +828,22 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
           `INSERT INTO exercises
             (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
              min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
-             status, created_by, cloned_from_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+             status, created_by, cloned_from_id, category)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
           // #719 §2: references only — the System objects stay where they are.
           [gymId, src.name, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
            src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
-           callerMemberId ?? null, id],
+           callerMemberId ?? null, id, src.category ?? null],
         );
         const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
         await replaceMuscles(tx, gymId, insertId, muscles);
+        // #1360: the copy's Recorded Metrics follow the category it carries; a
+        // Base Exercise with no supported category keeps its stored rows.
         const rts: { id: number }[] = Array.isArray(src.allowed_result_types) ? src.allowed_result_types : [];
-        await replaceAllowedResultTypes(tx, insertId, rts.map((rt) => rt.id));
+        if (resultTypeSlugsForCategory(src.category)) await syncExerciseResultTypes(tx, insertId, src.category);
+        else for (const rt of rts) {
+          await tx.query('INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)', [insertId, rt.id]);
+        }
         // #967 §4: the import preserves the Base Exercise's per-locale names, so
         // the gym's copy reads in the member's own language from the first day.
         // Only on the **create** arm: a re-import refreshes media (#719 §12) and

@@ -1,4 +1,5 @@
 import { parseExerciseCategoryInput } from '../domain/exerciseCategories';
+import { assertRequestedResultTypesMatch, effectiveCategory, syncExerciseResultTypes } from './exercise-result-types';
 import express, { Request, Router } from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
@@ -283,14 +284,8 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
           );
         }
       }
-      if (allowedResultTypeIds) {
-        for (const rtId of allowedResultTypeIds) {
-          await tx.query(
-            'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
-            [insertId, rtId],
-          );
-        }
-      }
+      await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
+      await syncExerciseResultTypes(tx, insertId, categoryInput.value);
       if (translations) await replaceExerciseTranslations(tx, insertId, translations);
       return insertId;
     });
@@ -388,15 +383,9 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           );
         }
       }
-      if (allowedResultTypeIds) {
-        await tx.query('DELETE FROM exercise_allowed_result_types WHERE exercise_id = ?', [id]);
-        for (const rtId of allowedResultTypeIds) {
-          await tx.query(
-            'INSERT IGNORE INTO exercise_allowed_result_types (exercise_id, result_type_id) VALUES (?, ?)',
-            [id, rtId],
-          );
-        }
-      }
+      const category = await effectiveCategory(tx, id, categoryInput);
+      await assertRequestedResultTypesMatch(tx, category, allowedResultTypeIds);
+      if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category);
       if (translations) await replaceExerciseTranslations(tx, id, translations);
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [id]);

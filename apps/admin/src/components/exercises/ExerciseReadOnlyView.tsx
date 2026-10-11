@@ -2,6 +2,7 @@
 
 import { exerciseCategoryLabelKey } from '@/lib/exerciseCategories';
 import React from 'react';
+import { RecordedMetrics } from './RecordedMetrics';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/StatusBadge';
 import { localeLabel } from '@/lib/localeLabels';
@@ -84,9 +85,6 @@ export function ExerciseReadOnlyView({
     .filter((key) => roleOf.get(key) === 'principal');
   const secondary = [...muscleKeys, ...Array.from(roleOf.keys()).filter((k) => !muscleKeys.includes(k))]
     .filter((key) => roleOf.get(key) === 'secondary');
-  const allowedIds = new Set((exercise.allowed_result_types ?? []).map((rt) => rt.id));
-  // A result type the catalogue no longer offers but the exercise still allows.
-  const offered = resultTypes.length > 0 ? resultTypes : (exercise.allowed_result_types ?? []);
 
   return (
     <>
@@ -135,24 +133,7 @@ export function ExerciseReadOnlyView({
       </div>
 
       <div style={exerciseSubSectionStyle}>
-        <p style={exerciseSectionLabelStyle}>{t('label_result_types')}</p>
-        {offered.length === 0 ? (
-          <p style={{ margin: 0, fontSize: 13, color: '#888' }}>{EXERCISE_EMPTY_VALUE}</p>
-        ) : (
-          <div style={exerciseResultTypeGridStyle}>
-            {offered.map((rt) => {
-              const allowed = allowedIds.has(rt.id);
-              return (
-                <span key={rt.id} style={exerciseOptionRowStyle}>
-                  <span aria-hidden="true" style={markStyle(allowed)}>{allowed ? '✓' : ''}</span>
-                  <span style={allowed ? { color: '#222', fontWeight: 600 } : { color: '#9ca3af' }}>
-                    {resultTypeLabel(rt, (key) => t(key as any))}
-                  </span>
-                </span>
-              );
-            })}
-          </div>
-        )}
+        <RecordedMetrics category={exercise.category} stored={exercise.allowed_result_types} />
       </div>
 
       <div style={exerciseSubSectionStyle}>

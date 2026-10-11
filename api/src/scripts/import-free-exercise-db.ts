@@ -64,6 +64,7 @@
 
 import { readFileSync } from 'node:fs';
 import 'dotenv/config';
+import { syncExerciseResultTypes } from '../api/exercise-result-types';
 import { db } from '../infra/db';
 import {
   ExistingBaseExercise,
@@ -209,6 +210,11 @@ async function applyPlan(plan: ImportPlan, src: SourceExercise, match: { row: Ex
         [exerciseId, link.key, link.role],
       );
     }
+    // #1360: the exercise's Recorded Metrics follow its category. A category the
+    // dataset gives that is not one of the seven leaves the rows alone (reported
+    // by `exercises:audit-categories`), never a guessed set.
+    const finalCategory = (plan.fields as Record<string, unknown>).category ?? match?.row.category ?? null;
+    await syncExerciseResultTypes(tx, exerciseId, finalCategory);
     return exerciseId;
   });
 }
