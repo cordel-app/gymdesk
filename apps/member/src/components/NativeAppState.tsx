@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 import { useIsNative } from '@/lib/useIsNative';
 import { memberTheme, primaryButtonStyle, safeArea } from '@/lib/memberChrome';
+import { InlineStyle } from './InlineStyle';
 
 /**
  * #1073 (mobile app WP2) — what the app shows while it has nothing to show, and
@@ -98,7 +99,7 @@ export function NativeAppState() {
           {/* The spinner needs a keyframe, which an inline style cannot declare —
               `CalendarThemeStyles` sets the same precedent for a rule this app
               cannot express inline. The colours stay the Theme's. */}
-          <style>{'@keyframes gd-native-spin { to { transform: rotate(360deg); } }'}</style>
+          <InlineStyle css={'@keyframes gd-native-spin { to { transform: rotate(360deg); } }'} />
           <div
             aria-hidden
             style={{
