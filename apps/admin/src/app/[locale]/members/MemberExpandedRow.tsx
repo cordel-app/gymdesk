@@ -119,7 +119,7 @@ export function MemberExpandedRow({
    * PROFILE section renders it read-only; it is deliberately the same row the
    * `⋮ → Edit` form is seeded from, so the two can never show different data.
    */
-  member: MemberProfile;
+  member: MemberProfile & { email?: string | null };
   /**
    * #961: the work area on screen. Only this tab's sections are rendered —
    * which ones those are is `MEMBER_TABS` in `memberTabs.ts`, so a section is
@@ -459,6 +459,8 @@ export function MemberExpandedRow({
           <Section label={t('members.section_membership_plans')} divider={false}>
             <MemberMembershipPlans
               memberId={memberId}
+              memberName={member.name}
+              memberEmail={member.email ?? ''}
               plans={configuration.plans}
               productSets={configuration.product_sets}
               canWrite={isAdmin}
