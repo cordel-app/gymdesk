@@ -1,16 +1,31 @@
+import { useCallback, useRef } from 'react';
 import { useAuth } from '@clerk/nextjs';
 import { useLocale } from 'next-intl';
 import { useApp } from '@/context/AppContext';
 
 const IMPERSONATION_KEY = 'impersonation_session';
 
+/**
+ * `apiFetch` and `uploadFetch` are **referentially stable**: their identity
+ * changes only when the tenant headers they send change (gym, center, locale).
+ *
+ * Pages hand `apiFetch` to hook dependency lists and to FullCalendar's `events`
+ * source. A function recreated on every render made each of those re-run on every
+ * render: the Calendar re-requested `/me/schedule` on any re-render (168 requests
+ * in two seconds were seen against the API), and the Goals page re-ran its load
+ * effect the same way. The token function is read through a ref for the same
+ * reason — Clerk does not promise its identity.
+ */
 export function useApiClient() {
   const { getToken } = useAuth();
   const locale = useLocale();
   const { gymId, activeCenterId } = useApp();
 
-  async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const token = await getToken();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+
+  const apiFetch = useCallback(async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+    const token = await getTokenRef.current();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string>),
@@ -47,7 +62,7 @@ export function useApiClient() {
 
     if (res.status === 204) return undefined as T;
     return res.json();
-  }
+  }, [gymId, activeCenterId, locale]);
 
   /**
    * #1375: a raw-bytes upload — the file's own `Content-Type`, the same tenant,
@@ -55,8 +70,8 @@ export function useApiClient() {
    * type. The admin's `uploadFetch` one app over; a hand-rolled `fetch` here
    * would reach the API with no gym and answer a bare 401 (#824's lesson).
    */
-  async function uploadFetch<T>(path: string, file: Blob): Promise<T> {
-    const token = await getToken();
+  const uploadFetch = useCallback(async function uploadFetch<T>(path: string, file: Blob): Promise<T> {
+    const token = await getTokenRef.current();
     const headers: Record<string, string> = { 'Content-Type': file.type };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (gymId) headers['x-gym-id'] = gymId;
@@ -77,7 +92,7 @@ export function useApiClient() {
     }
     if (res.status === 204) return undefined as T;
     return res.json();
-  }
+  }, [gymId, activeCenterId, locale]);
 
   return { apiFetch, uploadFetch };
 }
