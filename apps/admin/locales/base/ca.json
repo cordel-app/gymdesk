@@ -4513,7 +4513,21 @@
     "col_created_at": "Creat el",
     "col_modified_at": "Modificat el",
     "close": "Tanca",
-    "detail_title": "Detalls del múscul"
+    "detail_title": "Detalls del múscul",
+    "image_male": "Imatge masculina",
+    "image_female": "Imatge femenina",
+    "image_requirements": "Qualsevol imatge s'ajusta a un WebP de 1080 × 1080 amb fons transparent; a partir d'ella es genera una miniatura de 256 × 256. Masculina i femenina es gestionen per separat.",
+    "image_none": "Sense imatge",
+    "image_upload": "Puja la imatge",
+    "image_replace": "Substitueix la imatge",
+    "image_remove": "Treu",
+    "image_confirm_remove": "Voleu treure aquesta imatge? L'altra imatge es conserva.",
+    "image_uploading": "Pujant…",
+    "image_removing": "Treient…",
+    "image_error_unreadable": "No s'ha pogut llegir aquest fitxer com a imatge.",
+    "image_error_encode_failed": "No s'ha pogut convertir la imatge a WebP, així que no s'ha pujat res.",
+    "image_error_upload_failed": "No s'ha pogut pujar la imatge.",
+    "image_error_remove_failed": "No s'ha pogut treure la imatge."
   },
   "mobile_builds": {
     "title": "Builds mòbils",

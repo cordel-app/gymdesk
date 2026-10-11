@@ -27,11 +27,11 @@ export interface EffectiveImage {
 /** The principal muscles of exercise alias `alias` that have an image. */
 export const primaryMuscleImagesSql = (alias = 'e') => `
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', pm.id, 'name', pm.name,
-                                      'image_url', pm.image_url,
-                                      'image_thumbnail_url', pm.image_thumbnail_url))
+                                      'image_url', COALESCE(pm.image_male_url, pm.image_female_url),
+                                      'image_thumbnail_url', IF(pm.image_male_url IS NOT NULL, pm.image_male_url_thumbnail, pm.image_female_url_thumbnail)))
      FROM exercise_muscles pem
      JOIN muscles pm ON pm.id = pem.muscle_id
-     WHERE pem.exercise_id = ${alias}.id AND pem.role = 'principal' AND pm.image_url IS NOT NULL) AS primary_muscle_images`;
+     WHERE pem.exercise_id = ${alias}.id AND pem.role = 'principal' AND COALESCE(pm.image_male_url, pm.image_female_url) IS NOT NULL) AS primary_muscle_images`;
 
 function asCandidates(value: unknown): MuscleImageCandidate[] {
   let v = value;
@@ -71,9 +71,12 @@ export function withEffectiveImage<T extends Record<string, any>>(row: T): Omit<
  * the resolver's: case-folded name, then id. `resolveEffectiveImage()` is the
  * reference; `effective-exercise-image.unit.test.ts` pins both.
  */
+// #1412: with no sex context the male image stands in, then the female one.
 const primaryMuscleImageSql = (alias: string, column: 'image_url' | 'image_thumbnail_url') =>
-  `(SELECT pm.${column} FROM exercise_muscles pem JOIN muscles pm ON pm.id = pem.muscle_id
-     WHERE pem.exercise_id = ${alias}.id AND pem.role = 'principal' AND pm.image_url IS NOT NULL
+  `(SELECT ${column === 'image_url'
+      ? 'COALESCE(pm.image_male_url, pm.image_female_url)'
+      : 'IF(pm.image_male_url IS NOT NULL, pm.image_male_url_thumbnail, pm.image_female_url_thumbnail)'} FROM exercise_muscles pem JOIN muscles pm ON pm.id = pem.muscle_id
+     WHERE pem.exercise_id = ${alias}.id AND pem.role = 'principal' AND COALESCE(pm.image_male_url, pm.image_female_url) IS NOT NULL
      ORDER BY LOWER(pm.name), pm.id LIMIT 1)`;
 
 export const effectiveImageUrlSql = (alias = 'e') =>

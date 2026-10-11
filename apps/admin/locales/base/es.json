@@ -4486,7 +4486,21 @@
     "col_created_at": "Creado el",
     "col_modified_at": "Modificado el",
     "close": "Cerrar",
-    "detail_title": "Detalles del músculo"
+    "detail_title": "Detalles del músculo",
+    "image_male": "Imagen masculina",
+    "image_female": "Imagen femenina",
+    "image_requirements": "Cualquier imagen se ajusta a un WebP de 1080 × 1080 con fondo transparente; a partir de ella se genera una miniatura de 256 × 256. Masculina y femenina se gestionan por separado.",
+    "image_none": "Sin imagen",
+    "image_upload": "Subir imagen",
+    "image_replace": "Reemplazar imagen",
+    "image_remove": "Quitar",
+    "image_confirm_remove": "¿Quitar esta imagen? La otra imagen se conserva.",
+    "image_uploading": "Subiendo…",
+    "image_removing": "Quitando…",
+    "image_error_unreadable": "No se pudo leer ese archivo como imagen.",
+    "image_error_encode_failed": "No se pudo convertir la imagen a WebP, así que no se subió nada.",
+    "image_error_upload_failed": "No se pudo subir la imagen.",
+    "image_error_remove_failed": "No se pudo quitar la imagen."
   },
   "mobile_builds": {
     "title": "Builds móviles",
