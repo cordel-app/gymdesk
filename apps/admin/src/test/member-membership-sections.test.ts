@@ -76,12 +76,12 @@ describe('Member Membership sections (#634)', () => {
   });
 
   it('adds a Membership Plan additively, never superseding another (§14)', () => {
-    // #1325 PR 3b: "+ Add Membership Plan" creates a ProductSet version through
-    // `POST /product-sets` and commits it (activate, or save-and-pay when a
-    // payment is owed); assign-new-plan (the supersede action) is deliberately
-    // not what it calls, and neither is the legacy `/user-memberships` create.
-    expect(plansSrc).toMatch(/apiFetch<\{ id: number \}>\('\/product-sets',\s*\{\s*method: 'POST'/);
-    expect(plansSrc).toContain('commitProductSetVersion(apiFetch, created.id)');
+    // #1450: "+ Add Membership Plan" is the Plans page's Assign Plan to Member
+    // workflow, launched with this Member preselected — never a form or a
+    // request of its own, and never the supersede action.
+    expect(plansSrc).toContain('<AssignPlanModal');
+    expect(plansSrc).toContain('initialMember=');
+    expect(plansSrc).not.toContain('/product-sets');
     expect(plansSrc).not.toContain('assign-new-plan');
     expect(plansSrc).not.toMatch(/apiFetch\('\/user-memberships',\s*\{\s*method: 'POST'/);
   });
@@ -112,9 +112,9 @@ describe('Member Membership sections (#634)', () => {
     expect(lib).not.toContain('confirm');
   });
 
-  it('offers only Active + Public plans, selected with radio buttons (§2)', () => {
+  it('offers only Active + Public plans, picked inside the shared modal (§2)', () => {
     expect(plansSrc).toContain("'/membership-plans?lifecycle_status=active&enrollment_status=public'");
-    expect(plansSrc).toContain('type="radio"');
+    expect(plansSrc).toContain('planOptions={selectable}');
     // A plan already active for this Member can't be assigned twice.
     expect(plansSrc).toContain('activePlanIds');
   });
@@ -137,9 +137,10 @@ describe('Member Membership sections (#634)', () => {
   });
 
   it('introduces no modal anywhere in the four sections (§15)', () => {
+    // #1450: the one exception is the shared Assign Plan to Member modal.
     for (const src of [plansSrc, simulationSrc]) {
       expect(src).not.toContain('CrudModal');
-      expect(src).not.toMatch(/<\w*Modal[\s/>]/);
+      expect(src.replace('<AssignPlanModal', '')).not.toMatch(/<\w*Modal[\s/>]/);
     }
   });
 
