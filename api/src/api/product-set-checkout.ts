@@ -1,3 +1,4 @@
+import { AttemptMethod } from '../domain/paymentAttemptMethod';
 import crypto from 'crypto';
 import { db, Tx } from '../infra/db';
 
@@ -47,7 +48,7 @@ export async function loadEditLock(gymId: string, ownerMemberId: number, today: 
     billingDate: r.billing_date instanceof Date ? r.billing_date.toISOString().slice(0, 10) : String(r.billing_date ?? '').slice(0, 10) || null,
     isScheduled: Number(r.is_scheduled) === 1,
     latestAttempt: Number(r.attempts) > 0
-      ? { method: (r.method ?? 'provider') as 'provider' | 'cash' | 'waive', providerStatus: normaliseProviderStatus(r.provider_status), status: String(r.attempt_status) }
+      ? { method: (r.method ?? 'provider') as AttemptMethod, providerStatus: normaliseProviderStatus(r.provider_status), status: String(r.attempt_status) }
       : null,
   }));
   return blockingEvents(events, today);

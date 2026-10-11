@@ -15,11 +15,12 @@
  * both pass it, and logs a refusal for reconciliation.
  */
 
+import { AttemptMethod } from './paymentAttemptMethod';
 import { classifyProviderStatus, normaliseProviderStatus } from './providerPaymentStatus';
 
 export interface EarlierAttempt {
   id: number;
-  method: 'provider' | 'cash' | 'waive';
+  method: AttemptMethod;
   providerStatus: string | null;
   providerRef: string | null;
   /** The internal outcome the row carries. */

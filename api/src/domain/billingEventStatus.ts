@@ -70,6 +70,59 @@ export function isPaymentActionable(status: BillingEventStatus): boolean {
 }
 
 /**
+ * #1459: which payment actions the Billing Events view offers for one event.
+ * The one place the answer is decided — the list and the Details view both ask
+ * it and the frontend renders flags, so a button can never be offered for an
+ * action the route would refuse. The routes still re-check under the event's
+ * lock; this only decides what is *offered*.
+ *
+ * - `payCash` / `payCard`  record money received outside Gymdesk (manual
+ *   settlement). Offered on an actionable event, and on a membership's first
+ *   payment while it is `pending_payment`.
+ * - `firstPayment`  the settlement goes through the membership's own
+ *   `record-payment` (it activates the plan), not the failed-event route.
+ * - `retry` / `waive`  only on an actionable event: a charge the provider
+ *   rejected, or a persisted obligation that is due and uncollected.
+ *
+ * Closing a modal is not an action and appears nowhere here: there is no
+ * "cancel" — an unresolved obligation simply stays unresolved.
+ */
+export interface PaymentActionInput {
+  status: BillingEventStatus;
+  eventType: string;
+  /** A persisted obligation that is due today or earlier and nothing has collected. */
+  scheduledAndDue: boolean;
+  /** The event hangs off a membership or a ProductSet (a transaction needs one). */
+  linked: boolean;
+  membershipStatus: string | null;
+  hasMembership: boolean;
+  amount: number;
+}
+
+export interface PaymentActions {
+  retry: boolean;
+  payCash: boolean;
+  payCard: boolean;
+  waive: boolean;
+  firstPayment: boolean;
+}
+
+export function paymentActionsFor(i: PaymentActionInput): PaymentActions {
+  const priced = i.amount > 0;
+  const actionable = (isPaymentActionable(i.status) || i.scheduledAndDue)
+    && i.linked && priced && !isNonObligationEvent(i.eventType);
+  const firstPayment = i.status === 'pending' && i.eventType === 'payment_recorded'
+    && i.membershipStatus === 'pending_payment' && i.hasMembership && priced;
+  return {
+    retry: actionable,
+    waive: actionable,
+    payCash: actionable || firstPayment,
+    payCard: actionable || firstPayment,
+    firstPayment: firstPayment && !actionable,
+  };
+}
+
+/**
  * #779: a Billing Event is **awaiting action** when its derived status is
  * `failed` — the charge was rejected (or expired) and neither a successful
  * Retry Payment nor a Manual payment has settled it since. Both resolutions
