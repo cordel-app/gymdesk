@@ -22,6 +22,7 @@ import {
   noticeStyle,
 } from '@/lib/memberChrome';
 import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
+import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import {
   EVENT_STATUS_CHIP_STYLE,
   eventBackgroundColor,
@@ -119,6 +120,7 @@ export default function MemberCalendarPage() {
 
   const [selected, setSelected] = useState<ScheduleSession | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   // #1189 stage 4 — the services a refused booking said would unlock it.
   const [unlockServiceIds, setUnlockServiceIds] = useState<number[]>([]);
@@ -557,7 +559,7 @@ export default function MemberCalendarPage() {
                 </button>
               )}
               {selected.availability_state === 'BOOKED_BY_MEMBER' && selected.can_cancel && (
-                <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn(memberTheme.statusError)}>
+                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={actionBtn(memberTheme.statusError)}>
                   {t('action_cancel_booking')}
                 </button>
               )}
@@ -598,6 +600,16 @@ export default function MemberCalendarPage() {
             </div>
           </div>
         </div>
+      )}
+      {confirmCancelOpen && (
+        <CancelBookingConfirmDialog
+          busy={actionLoading}
+          onClose={() => setConfirmCancelOpen(false)}
+          onConfirm={async () => {
+            await cancelBooking();
+            setConfirmCancelOpen(false);
+          }}
+        />
       )}
     </div>
   );

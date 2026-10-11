@@ -16,6 +16,9 @@ import {
   statusPillStyle,
 } from '@/lib/memberChrome';
 import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
+import { formatGymDate, formatGymTime } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 
 interface Session {
   id: number;
@@ -52,9 +55,6 @@ interface PastBooking {
   cancelled_at: string | null;
 }
 
-function dayKey(iso: string) { return iso.slice(0, 10); }
-function timeOnly(iso: string) { return iso.slice(11, 16); }
-
 export default function MemberSchedulePage() {
   const t = useTranslations();
   const locale = useLocale();
@@ -63,6 +63,14 @@ export default function MemberSchedulePage() {
   const { isLinked, loading: appLoading, isSuperadmin } = useApp();
   const { isImpersonating } = useImpersonation();
   const { flags: featureFlags } = useFeatureFlags();
+  // The API sends UTC instants. Slicing the ISO string showed UTC wall-clock time
+  // under a raw `2026-10-13`; the gym's own zone and date format (#1246) are what
+  // the Calendar and Alerts already use, so this screen says the same hour.
+  const gymFormat = useGymFormatSettings();
+  const dayKey = (iso: string) => formatGymDate(iso, { ...gymFormat, date_format: 'YYYY-MM-DD' });
+  const dayLabel = (iso: string) => formatGymDate(iso, gymFormat);
+  const timeOnly = (iso: string) => formatGymTime(iso, gymFormat);
+  const [confirmCancel, setConfirmCancel] = useState<{ bookingId: number; sessionId: number } | null>(null);
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,8 +150,8 @@ export default function MemberSchedulePage() {
       g.set(k, arr);
     }
     for (const [, arr] of g) arr.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-    return Array.from(g.entries()).sort((a, b) => a[0].localeCompare(b[0]));
-  }, [sessions]);
+    return Array.from(g.entries()).sort((a, b) => a[1][0].starts_at.localeCompare(b[1][0].starts_at));
+  }, [sessions, gymFormat]);
 
   function pastStatusLabel(item: PastBooking): string {
     if (item.booking_status === 'cancelled') return t('member_schedule.past_status_cancelled');
@@ -169,7 +177,7 @@ export default function MemberSchedulePage() {
       ) : (
         grouped.map(([day, list]) => (
           <section key={day} style={{ marginTop: 20 }}>
-            <h3 style={styles.dayHead}>{day}</h3>
+            <h3 style={styles.dayHead}>{dayLabel(list[0].starts_at)}</h3>
             {list.map((s) => {
               const isBusy = pendingSession === s.id;
               const myStatus = s.my_booking_status;
@@ -208,13 +216,13 @@ export default function MemberSchedulePage() {
                         {t('member_schedule.capacity_detail', { booked: s.booked_count, capacity: s.effective_capacity })}
                       </div>
                       {s.my_booking_id && s.booked_on && (
-                        <div style={styles.sub}>{t(BOOKED_ON_KEY, { date: `${dayKey(s.booked_on)} · ${timeOnly(s.booked_on)}` })}</div>
+                        <div style={styles.sub}>{t(BOOKED_ON_KEY, { date: `${dayLabel(s.booked_on)} · ${timeOnly(s.booked_on)}` })}</div>
                       )}
                     </div>
                   )}
                   <div style={{ marginTop: 10, display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
                     {s.access_locked ? null : myStatus && s.my_booking_id && s.can_cancel ? (
-                      <button style={styles.btnCancel} disabled={isBusy} onClick={() => cancelSession(s.my_booking_id!, s.id)}>
+                      <button style={styles.btnCancel} disabled={isBusy} onClick={() => setConfirmCancel({ bookingId: s.my_booking_id!, sessionId: s.id })}>
                         {isBusy ? '…' : t('member_schedule.cancel_booking')}
                       </button>
                     ) : myStatus && s.my_booking_id && cancellationNoticeKey(s) ? (
@@ -261,7 +269,7 @@ export default function MemberSchedulePage() {
                 tabIndex={0}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                  <span style={styles.time}>{dayKey(item.starts_at)} · {timeOnly(item.starts_at)}</span>
+                  <span style={styles.time}>{dayLabel(item.starts_at)} · {timeOnly(item.starts_at)}</span>
                   <span style={item.booking_status === 'cancelled' ? styles.pillFull : styles.pillBooked}>
                     {pastStatusLabel(item)}
                   </span>
@@ -271,7 +279,7 @@ export default function MemberSchedulePage() {
                   <div style={styles.details}>
                     <div style={styles.sub}>{timeOnly(item.starts_at)} – {timeOnly(item.ends_at)}</div>
                     {item.cancelled_at && (
-                      <div style={styles.sub}>{t('member_schedule.cancelled_at_detail', { date: dayKey(item.cancelled_at) })}</div>
+                      <div style={styles.sub}>{t('member_schedule.cancelled_at_detail', { date: dayLabel(item.cancelled_at) })}</div>
                     )}
                   </div>
                 )}
@@ -279,6 +287,17 @@ export default function MemberSchedulePage() {
             );
           })}
         </section>
+      )}
+      {confirmCancel && (
+        <CancelBookingConfirmDialog
+          busy={pendingSession === confirmCancel.sessionId}
+          onClose={() => setConfirmCancel(null)}
+          onConfirm={async () => {
+            const target = confirmCancel;
+            await cancelSession(target.bookingId, target.sessionId);
+            setConfirmCancel(null);
+          }}
+        />
       )}
     </main>
   );
