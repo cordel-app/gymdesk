@@ -8,12 +8,14 @@
 │   │
 │   ├── muscles/
 │   │   └── images/
-│   │       ├── {muscle_name}.png                              — 2048 × 2048 px
-│   │       └── {muscle_name}-thumbnail.png                    — 512 × 512 px
+│   │       ├── {muscle_name}-male.png                              — 1080 × 1080 px
+│   │       ├── {muscle_name}-male-thumbnail.png                  — 512 × 512 px
+│   │       ├── {muscle_name}-female.png                            — 1080 × 1080 px
+│   │       └── {muscle_name}-female-thumbnail.png                  — 512 × 512 px
 │   │
 │   ├── exercises/
 │   │   └── images/
-│   │       ├── {exercise_id}-{exercise_name}.png                          — 2048 × 2048 px
+│   │       ├── {exercise_id}-{exercise_name}.png                          — 1080 × 1080 px
 │   │       └── {exercise_id}-{exercise_name}-thumbnail.png                — 512 × 512 px
 │   │
 │   └── themes/
@@ -43,11 +45,12 @@
         │   └── {activity_id}-{activity_name}.png                             — 1080 × 1080 px
         │        
         ├── members
-        │   └── {member_id}-{member_name}.png                                 — 1080 × 1080 px
+        │   ├── {member_id}-{member_name}.png                                 — 1080 × 1080 px
+        │   └── {member_id}-{member_name}-thumbnail.png                       — 1080 × 1080 px
         │       
         ├── exercises/
         │   ├── images/
-        │   │   ├── {exercise_id}-{exercise_name}.png                         — 2048 × 2048 px
+        │   │   ├── {exercise_id}-{exercise_name}.png                         — 1080 × 1080 px
         │   │   └── {exercise_id}-{exercise_name}-thumbnail.png               — 512 × 512 px
         │   │
         │   └── videos/

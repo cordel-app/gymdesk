@@ -268,6 +268,9 @@ export interface ExerciseMediaRow {
   display_name?: string | null;
   image_url: string | null;
   image_thumbnail_url: string | null;
+  /** #1368 stage 4: the exercise's own image, else its primary muscle's. Read-only. */
+  effective_image_url?: string | null;
+  effective_image_thumbnail_url?: string | null;
   video_url: string | null;
   video_thumbnail_url: string | null;
   created_at: string;
