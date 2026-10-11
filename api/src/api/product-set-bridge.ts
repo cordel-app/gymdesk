@@ -7,7 +7,9 @@ import {
 import { PLAN_SCHEDULE_KEY } from '../domain/scheduleAllocation';
 import { DraftRefusal, LockedDraft, isRefusal, lockDraft } from './product-set-draft';
 import { ensureInitialEvent, initialCharge, loadEditLock } from './product-set-checkout';
-import { cancelInFlight, createDraft } from './product-sets';
+import { cancelInFlight, createDraft, submitForPayment as submitSetForPayment } from './product-sets';
+import { linkedDraftSetFor } from './assignment-draft-set';
+import { syncDraftAssignment } from './product-set-projection';
 import type { BlockingEvent } from '../domain/billingEventEditLock';
 
 /**
@@ -110,6 +112,26 @@ async function copyApplications(tx: Tx, gymId: string, from: Owner, to: Owner) {
   }
 }
 
+
+/**
+ * The first obligation of a version moving to Pending Payment, written before
+ * any money moves (#1288's rule, one table over): what it owes on its start
+ * date, with its lines. Nothing is written for a first cycle that owes nothing.
+ */
+async function writePendingInitialEvent(tx: Tx, gymId: string, setId: number): Promise<void> {
+  const { rows } = await tx.query<any>(
+    'SELECT owner_member_id, starts_at FROM product_sets WHERE id = ? AND gym_id = ?', [setId, gymId]);
+  if (!rows[0]) return;
+  const startsAt = dateOnly(rows[0].starts_at);
+  const charge = await initialCharge(gymId, setId, startsAt, tx);
+  if (charge && charge.amount > 0) {
+    const { rows: ct } = await tx.query<{ id: number }>("SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1");
+    await ensureInitialEvent(tx, {
+      gymId, productSetId: setId, memberId: Number(rows[0].owner_member_id), startsAt, charge, chargeTypeId: ct[0]?.id ?? null,
+    });
+  }
+}
+
 /* ── Commit: an assignment becomes a ProductSet version ──────────────────── */
 
 /**
@@ -137,9 +159,22 @@ export async function importAssignmentAsProductSet(
     'SELECT id, status FROM product_sets WHERE gym_id = ? AND user_membership_id = ? FOR UPDATE', [gymId, userMembershipId]);
   if (linked.length > 0) {
     const set = linked[0];
-    if (!opts.pending && set.status === 'pending_payment') {
+    // #1325 PR 3e: a Draft assignment is created set-first, so its version is
+    // already the Draft here — Save & Pay moves it to Pending Payment with its
+    // initial event, and a commit with nothing to pay activates it.
+    if (set.status === 'draft' && opts.pending) {
+      const moved = await submitSetForPayment(tx, gymId, Number(set.id));
+      if (moved.kind !== 'ok') {
+        throw Object.assign(new Error(`ProductSet ${set.id} could not be submitted: ${moved.kind}`), { status: moved.kind === 'expired' ? 410 : 409 });
+      }
+      await writePendingInitialEvent(tx, gymId, Number(set.id));
+      return Number(set.id);
+    }
+    if (!opts.pending && (set.status === 'pending_payment' || set.status === 'draft')) {
       const out = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc() });
-      if (out.kind !== 'ok') throw Object.assign(new Error(`ProductSet ${set.id} could not be activated: ${out.kind}`), { status: 409 });
+      if (out.kind !== 'ok') {
+        throw Object.assign(new Error(`ProductSet ${set.id} could not be activated: ${out.kind}`), { status: out.kind === 'expired' ? 410 : 409 });
+      }
     }
     return Number(set.id);
   }
@@ -238,15 +273,7 @@ export async function importAssignmentAsProductSet(
   await allocateItemSchedules(tx, gymId, Number(setId));
 
   if (opts.pending) {
-    // The first obligation, written before any money moves (#1288's rule, one
-    // table over): what the version owes on its start date, with its lines.
-    const charge = await initialCharge(gymId, Number(setId), startsAt, tx);
-    if (charge && charge.amount > 0) {
-      const { rows: ct } = await tx.query<{ id: number }>("SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1");
-      await ensureInitialEvent(tx, {
-        gymId, productSetId: Number(setId), memberId: Number(um.member_id), startsAt, charge, chargeTypeId: ct[0]?.id ?? null,
-      });
-    }
+    await writePendingInitialEvent(tx, gymId, Number(setId));
     return Number(setId);
   }
 
@@ -290,7 +317,7 @@ export async function openInitialEventForAssignment(
  */
 export async function cancelPendingSetForAssignment(tx: Tx, gymId: string, userMembershipId: number): Promise<boolean> {
   const { rows } = await tx.query<any>(
-    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status = 'pending_payment' FOR UPDATE`,
+    `SELECT id FROM product_sets WHERE gym_id = ? AND user_membership_id = ? AND status IN ('draft','pending_payment') FOR UPDATE`,
     [gymId, userMembershipId]);
   if (!rows[0]) return true;
   const setId = Number(rows[0].id);
@@ -389,6 +416,20 @@ export async function reconfigureProjected(
   input: { gymId: string; userMembershipId: number; actor: { name: string | null; type: string | null };
     mutate: (tx: Tx, draft: LockedDraft) => Promise<{ ok: true } | DraftRefusal> },
 ): Promise<ReconfigureOutcome> {
+  // #1325 PR 3e: an assignment whose Draft version is linked to it is edited on
+  // that Draft, in place — the Draft writers' own locks and two-hour expiry —
+  // and the row is re-derived from it. A Draft with no version (a legacy row)
+  // falls through as `not_projected` and the route writes its own tables.
+  const draft = await linkedDraftSetFor(tx, input.gymId, input.userMembershipId);
+  if (draft) {
+    const locked = await lockDraft(tx, input.gymId, draft.id);
+    if (isRefusal(locked)) return locked;
+    const edited = await input.mutate(tx, locked);
+    if ('kind' in edited) return edited;
+    await syncDraftAssignment(tx, input.gymId, locked.id);
+    return { kind: 'ok', productSetId: locked.id };
+  }
+
   const set = await projectedSetFor(tx, input.gymId, input.userMembershipId);
   if (!set) return { kind: 'not_projected' };
   // A closed assignment is not a live projection whatever its set says: the

@@ -63,8 +63,32 @@ export async function lockDraft(tx: Tx, gymId: string, id: number): Promise<Lock
 
 export const isRefusal = (v: LockedDraft | DraftRefusal): v is DraftRefusal => 'kind' in v;
 
+/**
+ * #1187, on a version's own rows: a catalogue-mandatory line's quantity is the
+ * number of Members the version covers — owner included, never below one —
+ * and it *replaces* the configured quantity. Re-derived on every Draft write
+ * (a section save, a coverage change), so no writer can leave it stale.
+ */
+export async function syncMandatoryQuantities(
+  tx: Tx, gymId: string, productSetId: number, rootProductSetId: number,
+): Promise<void> {
+  const { rows } = await tx.query<{ n: number }>(
+    'SELECT COUNT(*) AS n FROM product_set_members WHERE gym_id = ? AND root_product_set_id = ?',
+    [gymId, rootProductSetId]);
+  const count = Math.max(1, Number(rows[0]?.n ?? 0));
+  for (const table of ['user_membership_session', 'user_membership_oneoff', 'user_membership_periodical']) {
+    await tx.query(
+      `UPDATE ${table} b
+         JOIN products gc ON gc.id = b.product_id AND gc.gym_id = b.gym_id
+          SET b.quantity = ?
+        WHERE b.product_set_id = ? AND b.gym_id = ? AND gc.mandatory = 1 AND b.quantity <> ?`,
+      [count, productSetId, gymId, count]);
+  }
+}
+
 async function touch(tx: Tx, draft: LockedDraft) {
   await touchDraft(tx, draft.gym_id, draft.id);
+  await syncMandatoryQuantities(tx, draft.gym_id, draft.id, draft.root_product_set_id);
 }
 
 const ITEM_NAME_EXPR = "COALESCE(gc.name, ct.name, CONCAT('Product #', gc.id))";
