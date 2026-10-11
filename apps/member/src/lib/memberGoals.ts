@@ -63,6 +63,8 @@ export interface AssignableGoal {
   description: string | null;
   target_value: number | null;
   target_unit: string | null;
+  /** #1229 — `relative` when the target is a change (`-3 kg`), absent/`absolute` otherwise. */
+  target_type?: 'absolute' | 'relative';
 }
 
 /**
@@ -118,6 +120,15 @@ export interface GoalFormValues {
   start_date: string;
   target_date: string;
   notes: string;
+  /**
+   * #1229 — set to `relative` only, and only from the goal being added or edited;
+   * it is never a field and is never sent (the API takes the type from the
+   * catalogue row on create and from the stored assignment on update). It exists
+   * so the form asks the same question the API does: a relative target is a
+   * change from the baseline and may be negative (`-3 kg`), an absolute one may
+   * not. Left out for an absolute goal, which is every goal written before #1229.
+   */
+  target_type?: 'relative';
 }
 
 export const emptyGoalForm: GoalFormValues = {
@@ -152,11 +163,15 @@ export function formForAssignableGoal(
   goal: AssignableGoal,
   current: GoalFormValues = emptyGoalForm,
 ): GoalFormValues {
+  // The draft's own `target_type` is dropped first, so switching from a relative
+  // goal to an absolute one does not leave the permission to go negative behind.
+  const { target_type: _previousType, ...draft } = current;
   return {
-    ...current,
+    ...draft,
     personal_goal_id: String(goal.id),
     target_value: goal.target_value === null || goal.target_value === undefined ? '' : String(goal.target_value),
     target_unit: goal.target_unit ?? '',
+    ...(goal.target_type === 'relative' ? { target_type: 'relative' as const } : {}),
   };
 }
 
@@ -169,6 +184,7 @@ export function formForMemberGoal(goal: MemberGoal): GoalFormValues {
     start_date: goal.start_date ?? '',
     target_date: goal.target_date ?? '',
     notes: goal.notes ?? '',
+    ...(goal.target_type === 'relative' ? { target_type: 'relative' as const } : {}),
   };
 }
 
@@ -204,7 +220,9 @@ export function goalFormError(values: GoalFormValues, { requireGoal }: { require
   if (rawValue !== '') {
     const value = Number(rawValue);
     if (!Number.isFinite(value)) return 'goals.error_target_number';
-    if (value < 0) return 'goals.error_target_negative';
+    // #1229: only a relative target may be negative — the API's own rule
+    // (`targetPairError()`), so the form cannot refuse the `-3 kg` it pre-filled.
+    if (value < 0 && values.target_type !== 'relative') return 'goals.error_target_negative';
     if (value > TARGET_VALUE_MAX) return 'goals.error_target_max';
   }
   const unit = values.target_unit.trim();

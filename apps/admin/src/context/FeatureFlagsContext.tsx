@@ -18,6 +18,12 @@ const FeatureFlagsContext = createContext<FeatureFlagsContextValue>({
 // without a full page reload (#439).
 const POLL_INTERVAL_MS = 30_000;
 
+function sameFlags(a: Record<string, boolean>, b: Record<string, boolean>): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((k) => Object.prototype.hasOwnProperty.call(b, k) && a[k] === b[k]);
+}
+
 export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const [flags, setFlags] = useState<Record<string, boolean>>({});
@@ -52,7 +58,10 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
           return;
         }
         const data = await res.json();
-        if (!cancelled) setFlags(data ?? {});
+        // Same content keeps the same object: pages list `flags` in the dependency
+        // lists of their load effects, so a new object every 30 s reloaded each of
+        // them (the My Bookings list went back to "loading" on every poll).
+        if (!cancelled) setFlags((prev) => (sameFlags(prev, data ?? {}) ? prev : (data ?? {})));
       } catch {
         if (!cancelled && isInitial) setFlags({});
       } finally {

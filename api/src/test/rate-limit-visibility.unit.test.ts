@@ -51,4 +51,12 @@ describe(' 429 visibility', () => {
       expect(src, f).not.toMatch(/\[[^\]]*\bgetToken\b[^\]]*\]\)/);
     }
   });
+
+  for (const app of ['member', 'admin']) {
+    it(`${app}: an unchanged flags poll keeps the same object`, () => {
+      const src = read(`${app}/src/context/FeatureFlagsContext.tsx`);
+      expect(src).toContain('function sameFlags(');
+      expect(src).toMatch(/setFlags\(\(prev\) => \(sameFlags\(prev, data \?\? \{\}\) \? prev : \(data \?\? \{\}\)\)\)/);
+    });
+  }
 });

@@ -425,7 +425,7 @@ export default function GoalsPage() {
               type="number"
               inputMode="decimal"
               step="0.01"
-              min="0"
+              min={form.target_type === 'relative' ? undefined : '0'}
               value={form.target_value}
               onChange={(e) => setForm({ ...form, target_value: e.target.value })}
             />
