@@ -4444,7 +4444,11 @@
     "deleted": "Músculo eliminado",
     "saved": "Músculo guardado",
     "name_required": "El nombre es obligatorio",
-    "image_after_create": "Guarda primero el músculo y sube su imagen desde Editar."
+    "image_after_create": "Guarda primero el músculo y sube su imagen desde Editar.",
+    "col_created_at": "Creado el",
+    "col_modified_at": "Modificado el",
+    "close": "Cerrar",
+    "detail_title": "Detalles del músculo"
   },
   "mobile_builds": {
       "title": "Builds móviles",
