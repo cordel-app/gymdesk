@@ -1,6 +1,7 @@
 'use client';
 
 import { LIST_RESPONSIVE_CSS } from './listChrome';
+import { InlineStyle } from './InlineStyle';
 
 /**
  * #1011 — the one place a list's mobile rules reach the document.
@@ -12,5 +13,5 @@ import { LIST_RESPONSIVE_CSS } from './listChrome';
  * phone shows.
  */
 export function ListResponsiveStyles() {
-  return <style>{LIST_RESPONSIVE_CSS}</style>;
+  return <InlineStyle css={LIST_RESPONSIVE_CSS} />;
 }

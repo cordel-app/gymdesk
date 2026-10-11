@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { InlineStyle } from './InlineStyle';
 
 export type ToastType = 'error' | 'success' | 'info';
 
@@ -94,7 +95,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           );
         })}
       </div>
-      <style>{`
+      <InlineStyle css={`
         .toast-item {
           animation: toast-in 0.22s cubic-bezier(0.16,1,0.3,1);
         }
@@ -102,7 +103,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           from { opacity: 0; transform: translateX(24px); }
           to   { opacity: 1; transform: translateX(0); }
         }
-      `}</style>
+      `} />
     </ToastContext.Provider>
   );
 }
