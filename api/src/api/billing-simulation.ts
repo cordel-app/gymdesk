@@ -22,6 +22,7 @@ import {
   loadPlanBenefitsForSimulation,
   loadPromotionGrantSnapshots,
 } from './assigned-plan-snapshot';
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
 
 /**
  * #629 (stage 1) — Billing Simulation.
@@ -221,9 +222,9 @@ export async function loadSimulationAssignments(
     : { sql: 'um.id = ?', param: scope.userMembershipId };
   const { rows } = await db.query<AssignmentRow>(
     `SELECT um.id, um.membership_plan_id, um.status, um.starts_at, um.ends_at,
-            um.membership_fee_price, um.base_price,
-            um.free_periods, um.paid_periods, um.bonus_periods, um.pay_beforehand_periods,
-            um.personal_fee_benefit_action, um.personal_fee_benefit_value,
+            ${assignmentConfig('membership_fee_price')} AS membership_fee_price, ${assignmentConfig('base_price')} AS base_price,
+            ${assignmentConfig('free_periods')} AS free_periods, ${assignmentConfig('paid_periods')} AS paid_periods, ${assignmentConfig('bonus_periods')} AS bonus_periods, ${assignmentConfig('pay_beforehand_periods')} AS pay_beforehand_periods,
+            ${assignmentConfig('personal_fee_benefit_action')} AS personal_fee_benefit_action, ${assignmentConfig('personal_fee_benefit_value')} AS personal_fee_benefit_value,
             p.name AS plan_name,
             p.free_periods AS plan_free_periods,
             p.paid_periods AS plan_paid_periods,
@@ -232,11 +233,11 @@ export async function loadSimulationAssignments(
             ${ASSIGNMENT_CADENCE.interval()} AS recurring_billing_interval,
             ${ASSIGNMENT_CADENCE.unit()} AS recurring_billing_unit,
             ${ASSIGNMENT_AUTO_RENEW()} AS duration_repeats,
-            (um.free_periods IS NOT NULL OR um.paid_periods IS NOT NULL OR um.pay_beforehand_periods IS NOT NULL
-             OR um.bonus_periods IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
-             OR um.recurring_billing_unit IS NOT NULL OR um.membership_fee_price IS NOT NULL
+            (${assignmentConfig('free_periods')} IS NOT NULL OR ${assignmentConfig('paid_periods')} IS NOT NULL OR ${assignmentConfig('pay_beforehand_periods')} IS NOT NULL
+             OR ${assignmentConfig('bonus_periods')} IS NOT NULL OR um.recurring_billing_interval IS NOT NULL
+             OR um.recurring_billing_unit IS NOT NULL OR ${assignmentConfig('membership_fee_price')} IS NOT NULL
             ) AS has_billing_snapshot
-     FROM user_memberships um
+     FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
      LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
      LEFT JOIN billing_policies bp
             ON bp.membership_plan_id = um.membership_plan_id AND bp.gym_id = um.gym_id
