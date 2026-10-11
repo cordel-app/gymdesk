@@ -85,10 +85,31 @@ export interface ProductSetRow {
   created_by: string | null;
 }
 
+/**
+ * #1463 — the ProductSet the Products tab is organised around, and its history.
+ * `current_product_set` is the in-flight version, else the Active one; the Past
+ * Product Sets card lists the Superseded ones. Read-only metadata.
+ */
+export interface ProductSetSummary {
+  id: number;
+  status: 'draft' | 'pending_payment' | 'active' | 'superseded' | string;
+  version: number;
+  plan_name: string | null;
+  starts_at: string | null;
+  ends_at: string | null;
+  created_at: string | null;
+  created_by: string | null;
+  expired: boolean;
+}
+
 export interface MemberConfiguration {
   plans: MemberPlanRow[];
   services: MemberServiceRow[];
   product_sets: ProductSetRow[];
+  current_product_set: ProductSetSummary | null;
+  past_product_sets: ProductSetSummary[];
 }
 
-export const EMPTY_CONFIGURATION: MemberConfiguration = { plans: [], services: [], product_sets: [] };
+export const EMPTY_CONFIGURATION: MemberConfiguration = {
+  plans: [], services: [], product_sets: [], current_product_set: null, past_product_sets: [],
+};

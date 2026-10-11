@@ -33,6 +33,13 @@ import {
 } from './MemberPurchasedProducts';
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
+import {
+  CurrentProductSetHeader,
+  PastProductSets,
+  ProductSetForecast,
+  ProductSetProducts,
+  useProductSetDetail,
+} from './MemberProductSet';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
@@ -160,6 +167,8 @@ export function MemberExpandedRow({
   // #634 — the Member's Membership configuration: the Member's plans and their
   // additional services in one read, feeding two of the sections below.
   const [configuration, setConfiguration] = useState<MemberConfiguration>(EMPTY_CONFIGURATION);
+  // #1463 — the current ProductSet's frozen products and forecast (read-only).
+  const productSetDetail = useProductSetDetail(tab === 'products_services' ? configuration.current_product_set : null, configuration);
   const [cancelling, setCancelling] = useState<MemberPlanRow | null>(null);
   const [assigningFor, setAssigningFor] = useState<MemberPlanRow | null>(null);
   // #629/#634 §12: the simulation must always reflect the current configuration,
@@ -456,7 +465,12 @@ export function MemberExpandedRow({
 
           {/* 1. MEMBERSHIP PLANS — the Member's assigned plans, Active and Past,
               drawn with the Assigned Plans page's own table (#1051). */}
-          <Section label={t('members.section_membership_plans')} divider={false}>
+          {/* #1463 — the current ProductSet's metadata, directly in the layout. */}
+          <Section label={t('members.section_product_set')} divider={false}>
+            <CurrentProductSetHeader set={configuration.current_product_set} />
+          </Section>
+
+          <Section label={t('members.section_membership_plans')}>
             <MemberMembershipPlans
               memberId={memberId}
               memberName={member.name}
@@ -492,6 +506,15 @@ export function MemberExpandedRow({
               independent from plans and promotions (#634 §4). #957: the section
               reads in both modes; the services editor's `+ Add Product` button
               is Edit mode's alone. */}
+          {/* #1463 — the current ProductSet's Products, grouped; read-only. Changes
+              go through the ProductSet workflow (Save & Pay), never as purchases. */}
+          <Section label={t('members.section_one_off_products')}>
+            <ProductSetProducts lines={productSetDetail.products.oneOff} loading={productSetDetail.loading} error={productSetDetail.error} />
+          </Section>
+          <Section label={t('members.section_recurring_products')}>
+            <ProductSetProducts lines={productSetDetail.products.recurring} loading={productSetDetail.loading} error={productSetDetail.error} />
+          </Section>
+
           <Section label={t('members.section_additional_services')}>
             <div>
               <div style={subLabelStyle}>{t('members.purchased_products_label')}</div>
@@ -503,6 +526,12 @@ export function MemberExpandedRow({
               a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
           <Section label={t('members.section_billing_simulation')}>
             <MemberBillingSimulation key={simulationKey} memberId={memberId} />
+          </Section>
+
+          {/* #1463 — the current ProductSet's Billing Events Forecast: computed on
+              read, persisted nowhere, creates no Billing Event. */}
+          <Section label={t('members.section_billing_events_forecast')}>
+            <ProductSetForecast forecast={productSetDetail.forecast} loading={productSetDetail.loading} error={productSetDetail.error} />
           </Section>
 
           {/* Personal Training Class Slots (#647 stages 2–3) — the Mon–Sun weekly
@@ -640,6 +669,11 @@ export function MemberExpandedRow({
                 })}
               </div>
             )}
+          </Section>
+
+          {/* #1463 — previous ProductSet versions, clearly history, at the bottom. */}
+          <Section label={t('members.section_past_product_sets')}>
+            <PastProductSets sets={configuration.past_product_sets} />
           </Section>
         </>
       )}
