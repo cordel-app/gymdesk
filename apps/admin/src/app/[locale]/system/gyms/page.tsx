@@ -56,11 +56,11 @@ interface Gym {
   payment_provider_id: number;
   payment_provider: GymPaymentProvider | null;
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by_name: string | null;
+  deleted_by: string | null;
   storage_configured: boolean;
   storage_folder_prefix: string | null;
   storage_initialized_at: string | null;
@@ -505,7 +505,7 @@ export default function SystemGymsPage() {
             {fmtDate(gym.created_at)}
           </div>
           <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {gym.created_by_name ?? '—'}
+            {gym.created_by ?? '—'}
           </div>
           <div className={CELL_CLASS.status}>
             <StatusBadge status={gym.status} label={tStatus(gym.status)} />
@@ -757,7 +757,7 @@ export default function SystemGymsPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.created_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.created_by ?? '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_at')}</span>
@@ -765,7 +765,7 @@ export default function SystemGymsPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_by ?? '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_deleted_at')}</span>
@@ -773,7 +773,7 @@ export default function SystemGymsPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_deleted_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_by ?? '—'}</p>
               </div>
             </div>
           </div>

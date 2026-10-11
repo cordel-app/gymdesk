@@ -7,6 +7,7 @@ import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 import { createNutritionPlanTx } from './nutrition-plan-creation';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
+import { resolveRequestActor } from '../domain/auditActor';
 import { TEMPLATE_COMPONENT_TYPES, isComponentType } from '../domain/nutritionComponentTypes';
 
 export const nutritionPlanTemplatesRouter = Router();
@@ -120,11 +121,9 @@ nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
     return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   }
   const name = typeof req.query.name === 'string' ? req.query.name.trim() : '';
-  const createdBy = req.query.created_by == null || req.query.created_by === ''
-    ? null : Number(req.query.created_by);
-  if (createdBy !== null && !Number.isInteger(createdBy)) {
-    return res.status(400).json({ error: 'created_by must be a membership id' });
-  }
+  // #1182: created_by is the plain-text actor snapshot, so the filter is its exact text.
+  const createdBy = typeof req.query.created_by === 'string' && req.query.created_by !== ''
+    ? req.query.created_by : null;
   const sortKey = typeof req.query.sort === 'string' && req.query.sort in SORT_COLUMNS ? req.query.sort : 'name';
   const dir = req.query.dir === 'desc' ? 'DESC' : 'ASC';
   const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? DEFAULT_LIMIT), 10) || DEFAULT_LIMIT, 1), MAX_LIMIT);
@@ -142,7 +141,7 @@ nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
     const params: any[] = [...scopeParams];
     if (status) { where.push('npt.status = ?'); params.push(status); }
     if (name) { where.push('npt.name LIKE ?'); params.push(`%${name}%`); }
-    if (createdBy !== null) { where.push('npt.created_by_membership_id = ?'); params.push(createdBy); }
+    if (createdBy !== null) { where.push('npt.created_by = ?'); params.push(createdBy); }
     const whereSql = where.join(' AND ');
 
     const { rows: countRows } = await db.query(
@@ -152,14 +151,8 @@ nutritionPlanTemplatesRouter.get('/', async (req, res, next) => {
     const { rows } = await db.query(
       `SELECT npt.*,
               IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type,
-              gm_c.name AS created_by_name,
-              gm_m.name AS modified_by_name,
-              gm_d.name AS deleted_by_name,
               (SELECT COUNT(*) FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = npt.id) AS day_count
        FROM nutrition_plan_templates npt
-       LEFT JOIN gym_memberships gm_c ON gm_c.id = npt.created_by_membership_id
-       LEFT JOIN gym_memberships gm_m ON gm_m.id = npt.modified_by_membership_id
-       LEFT JOIN gym_memberships gm_d ON gm_d.id = npt.deleted_by_membership_id
        WHERE ${whereSql}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir} LIMIT ${limit} OFFSET ${offset}`,
       params,
@@ -172,11 +165,10 @@ nutritionPlanTemplatesRouter.get('/created-by-options', async (req, res, next) =
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT DISTINCT gm.id AS membership_id, gm.name
+      `SELECT DISTINCT npt.created_by AS name
        FROM nutrition_plan_templates npt
-       JOIN gym_memberships gm ON gm.id = npt.created_by_membership_id
-       WHERE npt.gym_id = ? AND npt.status != 'deleted' AND gm.name IS NOT NULL
-       ORDER BY gm.name ASC`,
+       WHERE npt.gym_id = ? AND npt.status != 'deleted' AND npt.created_by IS NOT NULL
+       ORDER BY npt.created_by ASC`,
       [gymId],
     );
     res.json(rows);
@@ -187,9 +179,8 @@ nutritionPlanTemplatesRouter.get('/:id', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   try {
     const { rows } = await db.query(
-      `SELECT npt.*, IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type, gm.name AS created_by_name
+      `SELECT npt.*, IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type
        FROM nutrition_plan_templates npt
-       LEFT JOIN gym_memberships gm ON gm.id = npt.created_by_membership_id
        WHERE npt.id = ? AND (npt.gym_id = ? OR npt.gym_id IS NULL) AND npt.status != 'deleted'`,
       [req.params.id, gymId],
     );
@@ -265,14 +256,16 @@ nutritionPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
 });
 
 nutritionPlanTemplatesRouter.post('/', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
     const row = await insertAndFetch(
-      'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?)',
-      [gymId, name.trim(), description ?? null, status ?? 'active', gymMembershipId],
+      'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [gymId, name.trim(), description ?? null, status ?? 'active', actor, actor],
       'SELECT * FROM nutrition_plan_templates WHERE id = ?',
       (id) => [id],
     );
@@ -284,7 +277,9 @@ nutritionPlanTemplatesRouter.post('/', requireModuleWrite('NUTRITION'), async (r
 });
 
 nutritionPlanTemplatesRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   const { name, description, status } = req.body;
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
@@ -292,16 +287,14 @@ nutritionPlanTemplatesRouter.put('/:id', requireModuleWrite('NUTRITION'), async 
     const { rowCount } = await db.query(
       `UPDATE nutrition_plan_templates SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
-        modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+        modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, gymMembershipId, id, gymId],
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, actor, id, gymId],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
     const { rows } = await db.query(
-      `SELECT npt.*, gm_c.name AS created_by_name, gm_m.name AS modified_by_name
+      `SELECT npt.*
        FROM nutrition_plan_templates npt
-       LEFT JOIN gym_memberships gm_c ON gm_c.id = npt.created_by_membership_id
-       LEFT JOIN gym_memberships gm_m ON gm_m.id = npt.modified_by_membership_id
        WHERE npt.id = ? AND npt.gym_id = ?`,
       [id, gymId],
     );
@@ -313,12 +306,14 @@ nutritionPlanTemplatesRouter.put('/:id', requireModuleWrite('NUTRITION'), async 
 });
 
 nutritionPlanTemplatesRouter.delete('/:id', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
     const { rowCount } = await db.query(
-      "UPDATE nutrition_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
-      [gymMembershipId, actorName, id, gymId],
+      "UPDATE nutrition_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ? AND gym_id = ? AND status != 'deleted'",
+      [actor, id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Nutrition plan template not found' });
     recordAudit(req, { action: 'delete', entityType: 'nutrition_plan_template', entityId: id });
@@ -327,7 +322,9 @@ nutritionPlanTemplatesRouter.delete('/:id', requireModuleWrite('NUTRITION'), asy
 });
 
 nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
     const { rows: srcRows } = await db.query(
@@ -346,8 +343,8 @@ nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITIO
 
     const newId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by_membership_id) VALUES (?, ?, ?, ?, ?)',
-        [gymId, copyName, src.description ?? null, 'draft', gymMembershipId],
+        'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+        [gymId, copyName, src.description ?? null, 'draft', actor, actor],
       );
 
       // Clone days → meals → meal_items
@@ -411,14 +408,8 @@ nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITIO
 
     const { rows: newRows } = await db.query(
       `SELECT npt.*,
-              gm_c.name AS created_by_name,
-              gm_m.name AS modified_by_name,
-              gm_d.name AS deleted_by_name,
               (SELECT COUNT(*) FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = npt.id) AS day_count
        FROM nutrition_plan_templates npt
-       LEFT JOIN gym_memberships gm_c ON gm_c.id = npt.created_by_membership_id
-       LEFT JOIN gym_memberships gm_m ON gm_m.id = npt.modified_by_membership_id
-       LEFT JOIN gym_memberships gm_d ON gm_d.id = npt.deleted_by_membership_id
        WHERE npt.id = ?`,
       [newId],
     );
@@ -431,7 +422,9 @@ nutritionPlanTemplatesRouter.post('/:id/duplicate', requireModuleWrite('NUTRITIO
 
 /* Clone a base or gym-owned template → new gym-owned copy (with cloned_from_id tracking). */
 nutritionPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { id } = req.params as { id: string };
   try {
     // Source may be a base template (gym_id IS NULL) or this gym's own template
@@ -451,8 +444,8 @@ nutritionPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('NUTRITION'),
 
     const newId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
-        'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by_membership_id, cloned_from_id) VALUES (?, ?, ?, ?, ?, ?)',
-        [gymId, baseName, src.description ?? null, 'draft', gymMembershipId, src.id],
+        'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by, cloned_from_id) VALUES (?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)',
+        [gymId, baseName, src.description ?? null, 'draft', actor, actor, src.id],
       );
 
       const { rows: days } = await tx.query(
@@ -512,10 +505,8 @@ nutritionPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('NUTRITION'),
     });
 
     const { rows: newRows } = await db.query(
-      `SELECT npt.*, IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type,
-              gm_c.name AS created_by_name
+      `SELECT npt.*, IF(npt.gym_id IS NULL, 'base', 'gym') AS owner_type
        FROM nutrition_plan_templates npt
-       LEFT JOIN gym_memberships gm_c ON gm_c.id = npt.created_by_membership_id
        WHERE npt.id = ?`,
       [newId],
     );
@@ -528,7 +519,7 @@ nutritionPlanTemplatesRouter.post('/:id/clone', requireModuleWrite('NUTRITION'),
 
 /* Assign template to a member — deep-clones into member_nutrition_plans (independent copy). */
 nutritionPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('NUTRITION'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const { gymId } = getTenantContext(req);
   const { id } = req.params as { id: string };
   const { member_id, name, start_date } = req.body;
   if (!member_id) return res.status(400).json({ error: 'member_id is required' });
@@ -552,7 +543,7 @@ nutritionPlanTemplatesRouter.post('/:id/assign', requireModuleWrite('NUTRITION')
     const { planId: newPlanId } = await db.transaction((tx) => createNutritionPlanTx(tx, {
       gymId,
       memberId: Number(member_id),
-      gymMembershipId,
+      actor: resolveRequestActor(getTenantContext(req)),
       templateId: src.id,
       name: name ?? null,
       startDate: start_date ?? null,

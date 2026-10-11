@@ -71,7 +71,7 @@ describe('Activities: colour in the card header (#676)', () => {
   it('renders the colour as its own cell, between description and created by', () => {
     const descriptionAt = collapsedRowSrc.indexOf('{row.description');
     const colourAt = collapsedRowSrc.indexOf('row.color');
-    const createdByAt = collapsedRowSrc.indexOf('{row.created_by_name');
+    const createdByAt = collapsedRowSrc.indexOf('{row.created_by');
     expect(descriptionAt, 'the description cell is missing').toBeGreaterThan(-1);
     expect(colourAt, 'the colour cell is missing').toBeGreaterThan(-1);
     expect(createdByAt, 'the created-by cell is missing').toBeGreaterThan(-1);

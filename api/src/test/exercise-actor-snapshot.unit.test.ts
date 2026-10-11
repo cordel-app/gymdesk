@@ -1,84 +1,45 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { actorSnapshot } from '../domain/nutritionLibrary';
+import { resolvePlatformActor } from '../domain/auditActor';
 
 /**
- * #965 / migration 208 — who created and last changed an Exercise.
+ * #965 / #1182 stage 2 — who created, last changed and deleted an Exercise.
  *
- * `exercises` has carried `created_by` / `modified_by` since migration 096, both
- * FKs to `gym_memberships`, and that can never answer for a **Base** Exercise: it
- * is a `gym_id IS NULL` row administered from Cordel by a superadmin, who has no
- * membership row to point at. So the platform router snapshots the actor's name
- * and type at write time, exactly as `tax_rates` (126), `themes` (178) and
- * `nutrition_library_items` (196) do.
+ * `exercises` carries three plain-text snapshot columns, `created_by`,
+ * `modified_by` and `deleted_by` (migrations 264–265). A Base Exercise's actor is
+ * a superadmin, who has no `gym_memberships` row, which is why the name is
+ * snapshotted rather than joined. Two rules are pinned by scanning the source:
  *
- * Two rules here are the ticket's and are easy to break later, so they are pinned
- * by scanning the source rather than left to review:
- *
- *  1. **Every** write that moves `modified_at` moves the pair with it. A media
- *     upload that bumped the timestamp alone would attribute itself to whoever
- *     last ran `PUT /:id`, which is worse than the em dash.
+ *  1. **Every** write that moves `modified_at` moves `modified_by` with it, and
+ *     the soft delete records `deleted_by`.
  *  2. The gym-facing read **masks** the platform actor. That router serves base
  *     rows too (`GET /exercises/:id`), and a shared catalogue's rows are not the
- *     reading gym's to attribute — the same rule `maskPlatformActors` already
- *     applies to the Nutrition Library.
+ *     reading gym's to attribute.
  */
 
 const API = join(__dirname, '..');
-const migration = readFileSync(
-  join(API, 'infra', 'migrations', '208_exercises_actor_snapshot.js'), 'utf-8');
 const platformRouter = readFileSync(join(API, 'api', 'platform-exercises.ts'), 'utf-8');
 const gymRouter = readFileSync(join(API, 'api', 'exercises.ts'), 'utf-8');
 
-const ACTOR_COLUMNS = ['created_by_name', 'created_by_type', 'modified_by_name', 'modified_by_type'];
+const ACTOR_COLUMNS = ['created_by', 'modified_by', 'deleted_by'];
 
-describe('migration 208', () => {
-  it('adds both actor pairs, each column under its own guard', () => {
-    for (const column of ACTOR_COLUMNS) {
-      expect(migration, `${column} is missing`).toContain(column.replace(/^(created|modified)_/, ''));
-    }
-    expect(migration).toContain("const ACTOR_PREFIXES = ['created', 'modified'];");
-    expect(migration).toMatch(/hasColumn\(TABLE, column\)/);
-    // Per column, not per pair — knex batches ADDs into one ALTER but emits one
-    // ALTER per DROP, so a pair-level guard strands a half-dropped pair.
-    expect(migration).toMatch(/for \(const \{ column, length \} of ACTOR_COLUMNS\)/);
-  });
-
-  it('mirrors the ActorType vocabulary in a CHECK beside each column', () => {
-    expect(migration).toContain("IN ('staff','superadmin')");
-    expect(migration).toContain('chk_exercises_${prefix}_by_type');
-    // Both CHECKs go in one ALTER: `ADD CONSTRAINT` rebuilds the table under
-    // ALGORITHM=COPY, so two statements would be two rebuilds.
-    expect(migration).toMatch(/if \(missingChecks\.length > 0\) \{\s*\n\s*await knex\.raw\(`ALTER TABLE \$\{TABLE\} \$\{missingChecks\.join\(', '\)\}`\);/);
-  });
-
-  it('is re-runnable from a partial state, and reversible', () => {
-    expect(migration).toContain('exports.down');
-    // Down drops the CHECKs before the columns, and the columns in reverse.
-    expect(migration.indexOf('DROP CHECK')).toBeLessThan(migration.indexOf('[...ACTOR_COLUMNS].reverse()'));
-    expect(migration).toMatch(/constraintExists\(knex, name\)/);
-  });
-
-  it('backfills nothing, and says why', () => {
-    expect(migration).not.toMatch(/\bUPDATE exercises\b/);
-    expect(migration).toContain('requireSuperadmin');
-  });
-});
-
-describe('the platform router stamps the pair on every write', () => {
+describe('the platform router stamps the actor on every write', () => {
   it('on create', () => {
-    expect(platformRouter).toContain('created_by_name, created_by_type');
-    expect(platformRouter).toContain('actor.name, actor.type');
-    expect(platformRouter).toContain("function platformActor(req: { superadminName?: string | null })");
+    expect(platformRouter).toMatch(/created_by\)\s*\n\s*VALUES \(NULL/);
+    expect(platformRouter).toContain('function platformActor(req: { superadminName?: string | null })');
   });
 
   it('and on every statement that moves modified_at — all five of them', () => {
     const bumps = platformRouter.match(/modified_at\s+=\s+UTC_TIMESTAMP\(\)/g) ?? [];
     // PUT /:id, plus the image upload/delete and the video upload/delete.
     expect(bumps).toHaveLength(5);
-    const stamps = platformRouter.match(/modified_by_name\s+=\s+\?,\s*\n?\s*modified_by_type\s+=\s+\?/g) ?? [];
-    expect(stamps, 'every modified_at bump carries the actor pair').toHaveLength(bumps.length);
+    const stamps = platformRouter.match(/modified_by\s+=\s+\?/g) ?? [];
+    expect(stamps, 'every modified_at bump carries the actor').toHaveLength(bumps.length);
+  });
+
+  it('and the soft delete records who deleted it', () => {
+    expect(platformRouter).toMatch(/deleted_at = UTC_TIMESTAMP\(\), deleted_by = \?/);
   });
 
   it('resolving the actor inside the handler, after requireSuperadmin has run', () => {
@@ -88,7 +49,7 @@ describe('the platform router stamps the pair on every write', () => {
 });
 
 describe('the gym-facing read masks the platform actor', () => {
-  it('reports no name and no type for a gym_id IS NULL row', () => {
+  it('reports no actor for a gym_id IS NULL row', () => {
     for (const column of ACTOR_COLUMNS) {
       expect(
         gymRouter,
@@ -97,38 +58,29 @@ describe('the gym-facing read masks the platform actor', () => {
     }
   });
 
-  it('keeps the membership join as a gym exercise\'s own actor', () => {
-    expect(gymRouter).toContain('LEFT JOIN gym_memberships gm_c ON gm_c.id = e.created_by');
-    expect(gymRouter).toContain('LEFT JOIN gym_memberships gm_m ON gm_m.id = e.modified_by');
-  });
-
-  it('and never writes the snapshot itself — the FK columns stay its record', () => {
+  it('writes the plain-text actor and no longer joins memberships or writes FK columns', () => {
+    expect(gymRouter).not.toContain('LEFT JOIN gym_memberships gm_c');
+    expect(gymRouter).not.toMatch(/_by_membership_id|_by_name|_by_type/);
     const writes = gymRouter.match(/INSERT INTO exercises[\s\S]{0,400}?\)`/g) ?? [];
     expect(writes.length).toBeGreaterThan(0);
-    for (const write of writes) {
-      expect(write, 'a gym write must not set the platform snapshot').not.toContain('created_by_name');
-    }
+    for (const write of writes) expect(write).toContain('created_by');
   });
 
   it('keeps the shadowing alias after `e.*`, which is what makes it win', () => {
-    // #967 made the projection a function of the caller's locale (`selectFor`),
-    // so the anchor is the builder rather than a constant — the rule it asserts
-    // is unchanged: every alias shadowing a column of `e.*` comes after it.
     const select = gymRouter.slice(gymRouter.indexOf('const selectFor ='), gymRouter.indexOf('FROM exercises e'));
     expect(select).toContain('SELECT e.*');
-    expect(select.indexOf('SELECT e.*')).toBeLessThan(select.indexOf('AS created_by_name'));
+    expect(select.indexOf('SELECT e.*')).toBeLessThan(select.indexOf('AS created_by'));
   });
 });
 
-describe('actorSnapshot (pure)', () => {
-  it('fixes the type to superadmin for a platform write', () => {
-    expect(actorSnapshot({ name: 'Ada Lovelace', isSuperadmin: true }))
-      .toEqual({ name: 'Ada Lovelace', type: 'superadmin' });
+describe('resolvePlatformActor (pure)', () => {
+  it('is the superadmin\'s own name', () => {
+    expect(resolvePlatformActor('Ada Lovelace')).toBe('Ada Lovelace');
   });
 
   it('stores a blank name as NULL, so a read renders the em dash rather than an empty string', () => {
-    expect(actorSnapshot({ name: '   ', isSuperadmin: true })).toEqual({ name: null, type: 'superadmin' });
-    expect(actorSnapshot({ name: null, isSuperadmin: true })).toEqual({ name: null, type: 'superadmin' });
-    expect(actorSnapshot({ name: undefined, isSuperadmin: true })).toEqual({ name: null, type: 'superadmin' });
+    expect(resolvePlatformActor('   ')).toBeNull();
+    expect(resolvePlatformActor(null)).toBeNull();
+    expect(resolvePlatformActor(undefined)).toBeNull();
   });
 });

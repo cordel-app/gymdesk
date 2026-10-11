@@ -282,12 +282,8 @@ export function buildListWhere(
 
 /* ── Description + actor snapshot (#799) ─────────────────────────────────── */
 
-/** The actor pairs migration 196 added, in the order responses carry them. */
-const ACTOR_COLUMNS = [
-  'created_by_name', 'created_by_type',
-  'modified_by_name', 'modified_by_type',
-  'deleted_by_name', 'deleted_by_type',
-];
+/** The plain-text actor columns (#1182), in the order responses carry them. */
+const ACTOR_COLUMNS = ['created_by', 'modified_by', 'deleted_by'];
 
 /**
  * The columns every item-shaped response carries beyond `id/name/status/
@@ -313,7 +309,7 @@ export function itemDetailColumnsSql(
       ? `CASE WHEN ${alias}.gym_id IS NULL THEN NULL ELSE ${alias}.${column} END AS ${column}`
       : `${alias}.${column}`
   ));
-  return [`${alias}.description`, ...actors.slice(0, 4), `${alias}.deleted_at`, ...actors.slice(4)].join(', ');
+  return [`${alias}.description`, actors[0], actors[1], `${alias}.deleted_at`, actors[2]].join(', ');
 }
 
 /** `nutrition_library_items.description` is VARCHAR(1000) (migration 196). */
@@ -341,22 +337,15 @@ export function normalizeDescription(
   return { value: trimmed };
 }
 
-/** What `*_by_type` may hold — the CHECKs migration 196 adds. */
-export type ActorType = 'staff' | 'superadmin';
-
-export interface ActorSnapshot {
-  name: string | null;
-  type: ActorType;
-}
-
 /**
- * The actor pair to write on a create / update / delete.
- *
- * The name is snapshotted rather than joined because the actor who administers a
- * base food is a superadmin, who has no `gym_memberships` row to point at — the
- * same reason `tax_rates.created_by_name` (migration 126) exists. An empty name
- * is stored as NULL so a read renders the em dash rather than `''`.
+ * @deprecated #1182 stage 2 — the `{name, type}` pair is gone from the stage-2
+ * tables; use `resolveRequestActor()` / `resolvePlatformActor()`
+ * (`domain/auditActor.ts`). Kept only until the stage-3 tables that still carry
+ * a `*_by_type` column (`membership_plans`/`user_memberships` callers) are
+ * converted; delete with the last caller.
  */
+export type ActorType = 'staff' | 'superadmin';
+export interface ActorSnapshot { name: string | null; type: ActorType }
 export function actorSnapshot(actor: { name?: string | null; isSuperadmin: boolean }): ActorSnapshot {
   const name = actor.name?.trim();
   return { name: name ? name : null, type: actor.isSuperadmin ? 'superadmin' : 'staff' };

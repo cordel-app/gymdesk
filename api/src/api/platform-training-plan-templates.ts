@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
+import { resolvePlatformActor } from '../domain/auditActor';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 
@@ -80,13 +81,14 @@ platformTrainingPlanTemplatesRouter.get('/:id', requireSuperadmin, async (req, r
 });
 
 platformTrainingPlanTemplatesRouter.post('/', requireSuperadmin, async (req, res, next) => {
+  const actor = resolvePlatformActor((req as any).superadminName);
   const { name, description, status } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
     const row = await insertAndFetch(
-      'INSERT INTO training_plan_templates (gym_id, name, description, status) VALUES (NULL, ?, ?, ?)',
-      [name.trim(), description ?? null, status ?? 'active'],
+      'INSERT INTO training_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (NULL, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [name.trim(), description ?? null, status ?? 'active', actor, actor],
       'SELECT * FROM training_plan_templates WHERE id = ?',
       (id) => [id],
     );
@@ -96,6 +98,7 @@ platformTrainingPlanTemplatesRouter.post('/', requireSuperadmin, async (req, res
 });
 
 platformTrainingPlanTemplatesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
+  const actor = resolvePlatformActor((req as any).superadminName);
   const { id } = req.params as { id: string };
   const { name, description, status } = req.body;
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
@@ -103,9 +106,9 @@ platformTrainingPlanTemplatesRouter.put('/:id', requireSuperadmin, async (req, r
     const { rowCount } = await db.query(
       `UPDATE training_plan_templates SET
         name = COALESCE(?, name), description = IF(?, ?, description), status = COALESCE(?, status),
-        modified_at = UTC_TIMESTAMP()
+        modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id IS NULL AND status != 'deleted'`,
-      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, id],
+      [name?.trim() ?? null, 'description' in req.body ? 1 : 0, description ?? null, status ?? null, actor, id],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Training plan template not found' });
     const { rows } = await db.query('SELECT * FROM training_plan_templates WHERE id = ?', [id]);
@@ -116,10 +119,11 @@ platformTrainingPlanTemplatesRouter.put('/:id', requireSuperadmin, async (req, r
 
 platformTrainingPlanTemplatesRouter.delete('/:id', requireSuperadmin, async (req, res, next) => {
   const { id } = req.params as { id: string };
+  const actor = resolvePlatformActor((req as any).superadminName);
   try {
     const { rowCount } = await db.query(
-      "UPDATE training_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
-      [id],
+      "UPDATE training_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
+      [actor, id],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Training plan template not found' });
     recordAudit(req, { action: 'delete', entityType: 'training_plan_template', entityId: id });

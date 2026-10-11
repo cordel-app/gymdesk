@@ -48,11 +48,11 @@ interface Center extends CenterProfile {
   gym_theme_name: string | null;
   active_member_count: number;
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by_name: string | null;
+  deleted_by: string | null;
 }
 
 interface Theme { id: string; name: string }
@@ -484,7 +484,7 @@ export default function CentersPage() {
 
           {/* Created By */}
           <div className={CELL_CLASS.created_by} style={{ minWidth: 0, fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {center.created_by_name ?? EMPTY_VALUE}
+            {center.created_by ?? EMPTY_VALUE}
           </div>
 
           {/* Created At */}
@@ -568,13 +568,13 @@ export default function CentersPage() {
           <DetailRow label={t('col_status')} value={tStatus(detailsCenter.status)} />
           <div style={{ marginTop: 16, borderTop: '1px solid #eee', paddingTop: 16 }} />
           <DetailRow label={t('created_at')} value={formatDate(locale, detailsCenter.created_at)} />
-          <DetailRow label={t('created_by')} value={detailsCenter.created_by_name} />
+          <DetailRow label={t('created_by')} value={detailsCenter.created_by} />
           <DetailRow label={t('modified_at')} value={formatDate(locale, detailsCenter.modified_at)} />
-          <DetailRow label={t('modified_by')} value={detailsCenter.modified_by_name} />
+          <DetailRow label={t('modified_by')} value={detailsCenter.modified_by} />
           {detailsCenter.deleted_at && (
             <>
               <DetailRow label={t('deleted_at')} value={formatDate(locale, detailsCenter.deleted_at)} />
-              <DetailRow label={t('deleted_by')} value={detailsCenter.deleted_by_name} />
+              <DetailRow label={t('deleted_by')} value={detailsCenter.deleted_by} />
             </>
           )}
         </CrudModal>

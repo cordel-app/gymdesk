@@ -92,8 +92,8 @@ beforeAll(async () => {
   systemGoalId = rows[0].id;
 
   const { insertId } = await db.query(
-    `INSERT INTO personal_goals (gym_id, name, description, target_value, target_unit, status, created_by_name, created_by_type)
-     VALUES (?, 'Run a 10k', 'Finish a 10 km race', 10, 'km', 'active', 'Coach A', 'staff')`,
+    `INSERT INTO personal_goals (gym_id, name, description, target_value, target_unit, status, created_by)
+     VALUES (?, 'Run a 10k', 'Finish a 10 km race', 10, 'km', 'active', 'Coach A')`,
     [gymA],
   );
   ownGoalId = insertId;
@@ -222,7 +222,7 @@ describe('Duplicate (#1181 §1)', () => {
     expect(res.body.target_value).toBe(Number(before.rows[0].target_value));
     expect(res.body.target_unit).toBe(before.rows[0].target_unit);
     expect(res.body.description).toBe(before.rows[0].description);
-    expect(res.body.created_by_name).toBe('Super Admin');
+    expect(res.body.created_by).toBe('Super Admin');
     const after = await db.query('SELECT * FROM personal_goals WHERE id = ?', [systemGoalId]);
     expect(after.rows[0]).toEqual(before.rows[0]);
     expect(await gymStatus(gymA, res.body.id)).toBe('active');

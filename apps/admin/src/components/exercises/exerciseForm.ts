@@ -301,7 +301,7 @@ export interface ExerciseAuditRow {
   /** #967: the resolved name, which is what the modal's subtitle reads. */
   display_name?: string | null;
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
 }

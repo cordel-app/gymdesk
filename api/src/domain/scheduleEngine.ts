@@ -1,4 +1,5 @@
 import { DateTime } from 'luxon';
+import { SYSTEM_ACTOR } from './auditActor';
 import { db } from '../infra/db';
 import { bookMemberOnSession } from '../api/bookings';
 
@@ -309,11 +310,13 @@ export async function partitionOutOfRangeOccurrences(
  * occurrence of the rule is touched. Used instead of `cancelFutureOccurrences`
  * for the end-date-only path, where in-range occurrences (booked or not) must
  * survive an edit untouched rather than being cancelled-and-regenerated. */
-export async function cancelOccurrencesByIds(ids: number[]): Promise<void> {
+export async function cancelOccurrencesByIds(ids: number[], actor: string | null = SYSTEM_ACTOR): Promise<void> {
   if (ids.length === 0) return;
   await db.query(
-    `UPDATE calendar_events SET status = 'cancelled', deleted_at = UTC_TIMESTAMP() WHERE id IN (${ids.map(() => '?').join(',')})`,
-    ids,
+    `UPDATE calendar_events SET status = 'cancelled', deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
+     WHERE id IN (${ids.map(() => '?').join(',')})`,
+    [actor, actor, ...ids],
   );
 }
 
@@ -412,7 +415,11 @@ export async function findOverlappingRules(
   }));
 }
 
-export async function materializeScheduleRule(ruleId: number, gymTimezone: string): Promise<void> {
+export async function materializeScheduleRule(
+  ruleId: number,
+  gymTimezone: string,
+  actor: string | null = SYSTEM_ACTOR,
+): Promise<void> {
   const { rows: ruleRows } = await db.query(
     `SELECT r.*, at.name AS activity_type_name,
             at.default_space_id, at.default_trainer_membership_id, at.color, at.max_capacity,
@@ -477,7 +484,7 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
       status: 'scheduled',
       schedule_rule_id: rule.id,
       created_at: nowStr,
-      updated_at: nowStr,
+      modified_at: nowStr,
     }));
   });
   if (rows.length === 0) return;
@@ -502,12 +509,12 @@ export async function materializeScheduleRule(ruleId: number, gymTimezone: strin
       `INSERT INTO calendar_events
          (gym_id, center_id, title, activity_type_id, space_id, trainer_membership_id, color,
           capacity, professional_service_id, starts_at, ends_at, all_day, status, schedule_rule_id,
-          created_at, updated_at)
-       VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')}`,
+          created_at, modified_at, created_by)
+       VALUES ${chunk.map(() => '(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').join(',')}`,
       chunk.flatMap((r) => [
         r.gym_id, r.center_id, r.title, r.activity_type_id, r.space_id,
         r.trainer_membership_id, r.color, r.capacity, r.professional_service_id,
-        r.starts_at, r.ends_at, r.all_day, r.status, r.schedule_rule_id, r.created_at, r.updated_at,
+        r.starts_at, r.ends_at, r.all_day, r.status, r.schedule_rule_id, r.created_at, r.modified_at, actor,
       ]),
     );
   }
@@ -554,6 +561,7 @@ async function bookAssignedMembersOnNewOccurrences(ruleId: number, gymId: string
 export async function cancelFutureOccurrences(
   ruleId: number,
   options?: { preserveIds?: number[] },
+  actor: string | null = SYSTEM_ACTOR,
 ): Promise<void> {
   const preserveIds = options?.preserveIds ?? [];
   const preserveClause = preserveIds.length > 0
@@ -561,18 +569,23 @@ export async function cancelFutureOccurrences(
     : '';
   await db.query(
     `UPDATE calendar_events
-     SET status = 'cancelled', deleted_at = UTC_TIMESTAMP()
+     SET status = 'cancelled', deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
+         modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE schedule_rule_id = ? AND starts_at > UTC_TIMESTAMP() AND deleted_at IS NULL${preserveClause}`,
-    [ruleId, ...preserveIds],
+    [actor, actor, ruleId, ...preserveIds],
   );
 }
 
-export async function cancelFutureOccurrencesByActivityType(activityTypeId: number): Promise<void> {
+export async function cancelFutureOccurrencesByActivityType(
+  activityTypeId: number,
+  actor: string | null = SYSTEM_ACTOR,
+): Promise<void> {
   await db.query(
     `UPDATE calendar_events ce
      JOIN activity_type_schedule_rules r ON r.id = ce.schedule_rule_id
-     SET ce.status = 'cancelled', ce.deleted_at = UTC_TIMESTAMP()
+     SET ce.status = 'cancelled', ce.deleted_at = UTC_TIMESTAMP(), ce.deleted_by = ?,
+         ce.modified_at = UTC_TIMESTAMP(), ce.modified_by = ?
      WHERE r.activity_type_id = ? AND ce.starts_at > UTC_TIMESTAMP() AND ce.deleted_at IS NULL`,
-    [activityTypeId],
+    [actor, actor, activityTypeId],
   );
 }

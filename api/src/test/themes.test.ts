@@ -159,13 +159,15 @@ describe('GET /platform/themes/:id', () => {
     expect(res.status).toBe(404);
   });
 
-  it('includes deleted_by_name field', async () => {
+  it('includes the plain-text audit fields', async () => {
     if (!baseThemeId) return;
     const res = await request
       .get(`/platform/themes/${baseThemeId}`)
       .set('Authorization', TEST_AUTH_HEADER);
     expect(res.status).toBe(200);
-    expect('deleted_by_name' in res.body).toBe(true);
+    expect('deleted_by' in res.body).toBe(true);
+    expect('created_by' in res.body).toBe(true);
+    expect('modified_by' in res.body).toBe(true);
   });
 
   it('returns 404 for a non-existent id', async () => {

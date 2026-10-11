@@ -504,44 +504,35 @@ describe('soft-delete and restore', () => {
 
 describe('audit metadata', () => {
   let auditGymId: string;
-  let testMembershipId: number;
-  let otherMembershipId: number;
 
   beforeAll(async () => {
     auditGymId = await createTestGym('AT Audit Gym');
-    // Primary test user membership
     await createTestMembership(auditGymId, 'admin');
-    const { rows: tm } = await db.query<{ id: number }>(
-      'SELECT id FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
-      ['test-user-id', auditGymId],
-    );
-    testMembershipId = tm[0].id;
-
-    // Secondary membership for the "different user" scenarios
-    await createTestMembership(auditGymId, 'admin', 'other-user-id');
-    const { rows: om } = await db.query<{ id: number }>(
-      'SELECT id FROM gym_memberships WHERE user_id = ? AND gym_id = ?',
-      ['other-user-id', auditGymId],
-    );
-    otherMembershipId = om[0].id;
   });
 
-  it('create sets created_by and modified_by to the authenticated user', async () => {
+  const readAudit = async (id: number) => {
+    const { rows } = await db.query<{ created_by: string | null; modified_by: string | null }>(
+      'SELECT created_by, modified_by FROM activity_types WHERE id = ?',
+      [id],
+    );
+    return rows[0];
+  };
+
+  it('create sets created_by to the authenticated user and leaves modified_by empty', async () => {
     const res = await request
       .post(BASE)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', auditGymId)
       .send({ name: 'Audit Create', duration_minutes: 30, max_capacity: 10 });
     expect(res.status).toBe(201);
-    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
-      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
-      [res.body.id],
-    );
-    expect(rows[0].created_by_membership_id).toBe(testMembershipId);
-    expect(rows[0].modified_by_membership_id).toBe(testMembershipId);
+    expect(res.body.created_by).toBe('Test User');
+    expect(res.body.modified_by).toBeNull();
+    const row = await readAudit(res.body.id);
+    expect(row.created_by).toBe('Test User');
+    expect(row.modified_by).toBeNull();
   });
 
-  it('update by same user keeps created_by and updates modified_by', async () => {
+  it('update keeps created_by and records modified_by', async () => {
     const createRes = await request
       .post(BASE)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -556,26 +547,21 @@ describe('audit metadata', () => {
       .set('x-gym-id', auditGymId)
       .send({ name: 'Audit Same User Updated' });
     expect(putRes.status).toBe(200);
+    expect(putRes.body.modified_by).toBe('Test User');
 
-    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
-      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
-      [id],
-    );
-    expect(rows[0].created_by_membership_id).toBe(testMembershipId);
-    expect(rows[0].modified_by_membership_id).toBe(testMembershipId);
+    const row = await readAudit(id);
+    expect(row.created_by).toBe('Test User');
+    expect(row.modified_by).toBe('Test User');
   });
 
-  it('update by different user preserves created_by and sets modified_by to the new user', async () => {
-    // Insert activity directly with the other user as creator
+  it('update preserves a different stored creator', async () => {
     const { insertId } = await db.query(
       `INSERT INTO activity_types
-       (gym_id, name, duration_minutes, max_capacity, status,
-        created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,'active',?,UTC_TIMESTAMP(),?)`,
-      [auditGymId, 'Audit Diff User', 30, 10, otherMembershipId, otherMembershipId],
+       (gym_id, name, duration_minutes, max_capacity, status, created_by)
+       VALUES (?,?,?,?,'active',?)`,
+      [auditGymId, 'Audit Diff User', 30, 10, 'Someone Else'],
     );
 
-    // Update as the primary test user
     const putRes = await request
       .put(`${BASE}/${insertId}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -583,53 +569,19 @@ describe('audit metadata', () => {
       .send({ name: 'Audit Diff User Updated' });
     expect(putRes.status).toBe(200);
 
-    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
-      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
-      [insertId],
-    );
-    expect(rows[0].created_by_membership_id).toBe(otherMembershipId);
-    expect(rows[0].modified_by_membership_id).toBe(testMembershipId);
-  });
-
-  it('multiple updates keep created_by stable', async () => {
-    // Insert activity with the other user as creator
-    const { insertId } = await db.query(
-      `INSERT INTO activity_types
-       (gym_id, name, duration_minutes, max_capacity, status,
-        created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,'active',?,UTC_TIMESTAMP(),?)`,
-      [auditGymId, 'Audit Multi Update', 30, 10, otherMembershipId, otherMembershipId],
-    );
-
-    // Two sequential updates as the test user
-    for (const name of ['Round 1', 'Round 2']) {
-      const res = await request
-        .put(`${BASE}/${insertId}`)
-        .set('Authorization', TEST_AUTH_HEADER)
-        .set('x-gym-id', auditGymId)
-        .send({ name: `Audit Multi ${name}` });
-      expect(res.status).toBe(200);
-    }
-
-    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
-      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
-      [insertId],
-    );
-    expect(rows[0].created_by_membership_id).toBe(otherMembershipId);
-    expect(rows[0].modified_by_membership_id).toBe(testMembershipId);
+    const row = await readAudit(insertId);
+    expect(row.created_by).toBe('Someone Else');
+    expect(row.modified_by).toBe('Test User');
   });
 
   it('failed update does not change modified_by', async () => {
-    // Insert activity with the other user as creator+modifier
     const { insertId } = await db.query(
       `INSERT INTO activity_types
-       (gym_id, name, duration_minutes, max_capacity, status,
-        created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,'active',?,UTC_TIMESTAMP(),?)`,
-      [auditGymId, 'Audit Failed Update', 30, 10, otherMembershipId, otherMembershipId],
+       (gym_id, name, duration_minutes, max_capacity, status, created_by, modified_by)
+       VALUES (?,?,?,?,'active',?,?)`,
+      [auditGymId, 'Audit Failed Update', 30, 10, 'Someone Else', 'Someone Else'],
     );
 
-    // Attempt invalid update (bad intensity_level)
     const putRes = await request
       .put(`${BASE}/${insertId}`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -637,12 +589,9 @@ describe('audit metadata', () => {
       .send({ intensity_level: 99 });
     expect(putRes.status).toBe(400);
 
-    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
-      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
-      [insertId],
-    );
-    expect(rows[0].created_by_membership_id).toBe(otherMembershipId);
-    expect(rows[0].modified_by_membership_id).toBe(otherMembershipId);
+    const row = await readAudit(insertId);
+    expect(row.created_by).toBe('Someone Else');
+    expect(row.modified_by).toBe('Someone Else');
   });
 
   it('client-supplied audit fields in request body are ignored', async () => {
@@ -654,18 +603,32 @@ describe('audit metadata', () => {
         name: 'Audit Client Fields',
         duration_minutes: 30,
         max_capacity: 10,
-        created_by_membership_id: otherMembershipId,
-        modified_by_membership_id: otherMembershipId,
+        created_by: 'Mallory',
+        modified_by: 'Mallory',
       });
     expect(res.status).toBe(201);
 
-    const { rows } = await db.query<{ created_by_membership_id: number; modified_by_membership_id: number }>(
-      'SELECT created_by_membership_id, modified_by_membership_id FROM activity_types WHERE id = ?',
-      [res.body.id],
+    const row = await readAudit(res.body.id);
+    expect(row.created_by).toBe('Test User');
+    expect(row.modified_by).toBeNull();
+  });
+
+  it('delete records deleted_by', async () => {
+    const createRes = await request
+      .post(BASE)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', auditGymId)
+      .send({ name: 'Audit Delete', duration_minutes: 30, max_capacity: 10 });
+    const del = await request
+      .delete(`${BASE}/${createRes.body.id}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', auditGymId);
+    expect(del.status).toBe(204);
+    const { rows } = await db.query<{ deleted_by: string | null }>(
+      'SELECT deleted_by FROM activity_types WHERE id = ?',
+      [createRes.body.id],
     );
-    // Backend must use the authenticated user's membership, not the client-supplied value
-    expect(rows[0].created_by_membership_id).toBe(testMembershipId);
-    expect(rows[0].modified_by_membership_id).toBe(testMembershipId);
+    expect(rows[0].deleted_by).toBe('Test User');
   });
 });
 

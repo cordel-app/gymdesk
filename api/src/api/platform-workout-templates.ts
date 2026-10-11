@@ -3,6 +3,7 @@ import { effectiveImageUrlSql, effectiveImageThumbnailUrlSql } from '../domain/e
 import { db, Tx } from '../infra/db';
 import { parseBlockResultUnit } from '../domain/blockResultUnits';
 import { requireSuperadmin } from '../infra/tenantContext';
+import { resolvePlatformActor } from '../domain/auditActor';
 import { recordAudit } from '../infra/audit';
 import { insertAndFetch } from '../infra/db-helpers';
 import { localizedExerciseNameSql } from '../domain/exerciseTranslations';
@@ -169,6 +170,7 @@ platformWorkoutTemplatesRouter.get('/:id', requireSuperadmin, async (req, res, n
 });
 
 platformWorkoutTemplatesRouter.post('/', requireSuperadmin, async (req, res, next) => {
+  const actor = resolvePlatformActor((req as any).superadminName);
   const { name, description, status, notes } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !SETTABLE_STATUSES.includes(status)) {
@@ -177,9 +179,9 @@ platformWorkoutTemplatesRouter.post('/', requireSuperadmin, async (req, res, nex
   try {
     const row = await insertAndFetch(
       `INSERT INTO workout_templates
-        (gym_id, name, description, status, notes, modified_at)
-       VALUES (NULL, ?, ?, ?, ?, UTC_TIMESTAMP())`,
-      [name.trim(), description ?? null, status ?? 'active', notes ?? null],
+        (gym_id, name, description, status, notes, created_by, modified_at, modified_by)
+       VALUES (NULL, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
+      [name.trim(), description ?? null, status ?? 'active', notes ?? null, actor, actor],
       'SELECT * FROM workout_templates WHERE id = ?',
       (id) => [id],
     );
@@ -189,6 +191,7 @@ platformWorkoutTemplatesRouter.post('/', requireSuperadmin, async (req, res, nex
 });
 
 platformWorkoutTemplatesRouter.put('/:id', requireSuperadmin, async (req, res, next) => {
+  const actor = resolvePlatformActor((req as any).superadminName);
   const { id } = req.params as { id: string };
   const { name, description, status, notes } = req.body;
   if (status && !SETTABLE_STATUSES.includes(status)) {
@@ -201,13 +204,14 @@ platformWorkoutTemplatesRouter.put('/:id', requireSuperadmin, async (req, res, n
               description = IF(?, ?, description),
               status = COALESCE(?, status),
               notes = IF(?, ?, notes),
-              modified_at = UTC_TIMESTAMP()
+              modified_at = UTC_TIMESTAMP(),
+              modified_by = ?
        WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL`,
       [name?.trim() ?? null,
        'description' in req.body ? 1 : 0, description ?? null,
        status ?? null,
        'notes' in req.body ? 1 : 0, notes ?? null,
-       id],
+       actor, id],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Workout template not found' });
     const { rows } = await db.query('SELECT * FROM workout_templates WHERE id = ?', [id]);
@@ -218,10 +222,11 @@ platformWorkoutTemplatesRouter.put('/:id', requireSuperadmin, async (req, res, n
 
 platformWorkoutTemplatesRouter.delete('/:id', requireSuperadmin, async (req, res, next) => {
   const { id } = req.params as { id: string };
+  const actor = resolvePlatformActor((req as any).superadminName);
   try {
     const { rowCount } = await db.query(
-      "UPDATE workout_templates SET deleted_at = UTC_TIMESTAMP(), status = 'deleted' WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL",
-      [id],
+      "UPDATE workout_templates SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, status = 'deleted' WHERE id = ? AND gym_id IS NULL AND deleted_at IS NULL",
+      [actor, id],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Workout template not found' });
     recordAudit(req, { action: 'delete', entityType: 'workout_template', entityId: id });

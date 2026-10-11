@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
@@ -57,8 +58,6 @@ centersRouter.get('/', async (req, res) => {
   }
   const { rows } = await db.query(
     `SELECT c.*,
-            cbm.name AS created_by_name,
-            mbm.name AS modified_by_name,
             ct.name   AS theme_name,
             ct.tokens AS theme_tokens,
             gt.name  AS gym_theme_name,
@@ -68,8 +67,6 @@ centersRouter.get('/', async (req, res) => {
               WHERE mc.center_id = c.id AND mc.gym_id = c.gym_id AND mc.deleted_at IS NULL
             ) AS active_member_count
        FROM centers c
-       LEFT JOIN gym_memberships cbm ON cbm.id = c.created_by_membership_id
-       LEFT JOIN gym_memberships mbm ON mbm.id = c.modified_by_membership_id
        LEFT JOIN themes ct ON ct.id = c.theme_id
        LEFT JOIN gyms g ON g.id = c.gym_id
        LEFT JOIN themes gt ON gt.id = g.theme_id
@@ -91,9 +88,6 @@ centersRouter.get('/:id', async (req, res) => {
   }
   const { rows } = await db.query(
     `SELECT c.*,
-            cbm.name  AS created_by_name,
-            mbm.name  AS modified_by_name,
-            dbm.name  AS deleted_by_name,
             ct.name   AS theme_name,
             ct.tokens AS theme_tokens,
             gt.name   AS gym_theme_name,
@@ -103,9 +97,6 @@ centersRouter.get('/:id', async (req, res) => {
               WHERE mc.center_id = c.id AND mc.gym_id = c.gym_id AND mc.deleted_at IS NULL
             ) AS active_member_count
        FROM centers c
-       LEFT JOIN gym_memberships cbm ON cbm.id = c.created_by_membership_id
-       LEFT JOIN gym_memberships mbm ON mbm.id = c.modified_by_membership_id
-       LEFT JOIN gym_memberships dbm ON dbm.id = c.deleted_by_membership_id
        LEFT JOIN themes ct ON ct.id = c.theme_id
        LEFT JOIN gyms g ON g.id = c.gym_id
        LEFT JOIN themes gt ON gt.id = g.theme_id
@@ -117,15 +108,17 @@ centersRouter.get('/:id', async (req, res) => {
 });
 
 centersRouter.post('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, code, address, phone, email, status } = req.body;
   if (!name) return res.status(400).json({ error: 'name is required' });
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
     const row = await insertAndFetch(
-      `INSERT INTO centers (name, code, address, phone, email, status, gym_id, created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [name.trim(), code ?? null, address ?? null, phone ?? null, email ?? null, status ?? 'active', gymId, gymMembershipId, gymMembershipId],
+      `INSERT INTO centers (name, code, address, phone, email, status, gym_id, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [name.trim(), code ?? null, address ?? null, phone ?? null, email ?? null, status ?? 'active', gymId, actor],
       'SELECT * FROM centers WHERE id = ?',
       (id) => [id],
     );
@@ -137,7 +130,9 @@ centersRouter.post('/', requireRole('admin'), async (req, res, next) => {
 });
 
 centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, code, address, phone, email, status, theme_id } = req.body;
   if (status && !STATUSES.includes(status)) return res.status(400).json({ error: `status must be one of: ${STATUSES.join(', ')}` });
   try {
@@ -160,7 +155,7 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         status     = COALESCE(?, status),
         theme_id   = IF(?, ?, theme_id),
         modified_at = UTC_TIMESTAMP(),
-        modified_by_membership_id = ?
+        modified_by = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
         name?.trim() ?? null,
@@ -170,7 +165,7 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         'email' in req.body ? 1 : 0, email ?? null,
         status ?? null,
         'theme_id' in req.body ? 1 : 0, theme_id ?? null,
-        gymMembershipId,
+        actor,
         req.params.id, gymId,
       ],
     );
@@ -184,16 +179,18 @@ centersRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 });
 
 centersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const dependent = await firstDependentTable(Number(req.params.id), gymId);
     if (dependent) {
       return res.status(409).json({ error: `Cannot delete center: it still has ${dependent}.` });
     }
     const { rowCount } = await db.query(
-      `UPDATE centers SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?, deleted_by_membership_id = ?, deleted_by_name = ?
+      `UPDATE centers SET deleted_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ?, deleted_by = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, gymMembershipId, actorName, req.params.id, gymId],
+      [actor, actor, req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Center not found' });
     recordAudit(req, { action: 'soft_delete', entityType: 'center', entityId: req.params.id });

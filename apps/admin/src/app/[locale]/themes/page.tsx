@@ -76,7 +76,7 @@ interface Theme {
   tokens: ThemeTokens;
   created_at: string;
   /** Actor snapshot captured when the theme was cloned into this gym (#712). */
-  created_by_name: string | null;
+  created_by: string | null;
   /** True when this is the theme `gyms.theme_id` currently points at (#712). */
   is_gym_theme: boolean;
   modified_at: string | null;
@@ -989,7 +989,7 @@ export default function GymThemesPage() {
                 Base Themes are platform-seeded, so they carry no gym-side creator. */}
             {!theme.is_base && (
               <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
-                {t('meta_created_by')}: {theme.created_by_name ?? '—'} · {t('meta_created_at')}: {formatDate(theme.created_at)}
+                {t('meta_created_by')}: {theme.created_by ?? '—'} · {t('meta_created_at')}: {formatDate(theme.created_at)}
               </div>
             )}
           </div>
@@ -1073,7 +1073,7 @@ export default function GymThemesPage() {
             <DetailRow label={t('details_type')} value={details.is_base ? t('badge_system') : t('badge_mine')} />
             <DetailRow label={t('col_status')} value={<StatusBadge status={details.status} label={tStatus(details.status)} />} />
             <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
-            <DetailRow label={t('details_created_by')} value={details.is_base ? '—' : (details.created_by_name ?? '—')} />
+            <DetailRow label={t('details_created_by')} value={details.is_base ? '—' : (details.created_by ?? '—')} />
             <DetailRow label={t('details_created_at')} value={formatDate(details.created_at)} />
             {details.modified_at && <DetailRow label={t('details_modified_at')} value={formatDate(details.modified_at)} />}
           </div>

@@ -29,7 +29,7 @@ import {
 /* Shape returned by GET /workout-templates/:id */
 export interface WtHierarchy {
   id: number; name: string; description: string | null; status: string;
-  created_by_name: string | null; created_at: string;
+  created_by: string | null; created_at: string;
   blocks: HierBlock[] | null;
 }
 

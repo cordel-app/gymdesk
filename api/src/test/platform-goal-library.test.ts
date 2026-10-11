@@ -83,8 +83,8 @@ beforeAll(async () => {
   gymId = await createTestGym('PGL Test Gym');
   for (const kind of KINDS) {
     const { insertId } = await db.query(
-      `INSERT INTO ${kind.table} (gym_id, name, status, created_by_name, created_by_type)
-       VALUES (?, ?, 'active', 'Gym Staffer', 'staff')`,
+      `INSERT INTO ${kind.table} (gym_id, name, status, created_by)
+       VALUES (?, ?, 'active', 'Gym Staffer')`,
       [gymId, GYM_ONLY_NAME],
     );
     gymGoalIds[kind.table] = insertId;
@@ -188,8 +188,7 @@ for (const kind of KINDS) {
       expect(seeded.gym_id).toBeNull();
       expect(seeded.status).toBe('active');
       // Not masked here: Cordel's own screen shows Cordel's actors.
-      expect(seeded.created_by_name).toBe('Cordel');
-      expect(seeded.created_by_type).toBe('superadmin');
+      expect(seeded.created_by).toBe('Cordel');
     });
 
     it('honours ?limit= and ?offset=', async () => {
@@ -212,9 +211,8 @@ for (const kind of KINDS) {
       expect(res.body.slug).toBeNull();
       expect(res.body.status).toBe('active');
       expect(res.body.description).toBe('Platform goal');
-      expect(res.body.created_by_name).toBe('Super Admin');
-      expect(res.body.created_by_type).toBe('superadmin');
-      expect(res.body.modified_by_name).toBeNull();
+      expect(res.body.created_by).toBe('Super Admin');
+      expect(res.body.modified_by).toBeNull();
       expect(res.body.deleted_at).toBeNull();
 
       const list = await listGoals(path, '?limit=200');
@@ -232,8 +230,7 @@ for (const kind of KINDS) {
       expect(renamed.status).toBe(200);
       expect(renamed.body.name).toBe(`PGL Rename After ${RUN}`);
       expect(renamed.body.slug).toBeNull();
-      expect(renamed.body.modified_by_name).toBe('Super Admin');
-      expect(renamed.body.modified_by_type).toBe('superadmin');
+      expect(renamed.body.modified_by).toBe('Super Admin');
       expect(renamed.body.modified_at).not.toBeNull();
 
       const { rows } = await db.query<{ slug: string | null }>(`SELECT slug FROM ${table} WHERE id = ?`, [created.body.id]);
@@ -258,8 +255,7 @@ for (const kind of KINDS) {
       expect(found).toBeDefined();
       expect(found.status).toBe('deleted');
       expect(found.deleted_at).not.toBeNull();
-      expect(found.deleted_by_name).toBe('Super Admin');
-      expect(found.deleted_by_type).toBe('superadmin');
+      expect(found.deleted_by).toBe('Super Admin');
 
       // Deleting or updating an already-deleted goal is a 409, not a second delete.
       expect((await request.delete(`${path}/${id}`).set('Authorization', TEST_AUTH_HEADER)).status).toBe(409);

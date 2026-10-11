@@ -1,3 +1,4 @@
+import { resolveRequestActor } from '../domain/auditActor';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
@@ -69,8 +70,8 @@ meProfileImageRouter.post('/', ...guard, memberImageBodyParser, async (req, res,
     const folderPrefix = await gymStorageFolderPrefix(gymId);
     if (!folderPrefix) return res.status(STORAGE_NOT_INITIALIZED.status).json(STORAGE_NOT_INITIALIZED.body);
 
-    const { gymMembershipId } = getTenantContext(req);
-    const stored = await storeMemberImage({ gymId, folderPrefix, member, body: parsed, modifiedBy: gymMembershipId ?? null });
+    const tenantCtx = getTenantContext(req);
+    const stored = await storeMemberImage({ gymId, folderPrefix, member, body: parsed, modifiedBy: resolveRequestActor(tenantCtx) });
     if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
 
     recordAudit(req, {
@@ -87,9 +88,9 @@ meProfileImageRouter.delete('/', ...guard, async (req, res, next) => {
     if (!own) return;
     const { gymId, member } = own;
     const folderPrefix = await gymStorageFolderPrefix(gymId);
-    const { gymMembershipId } = getTenantContext(req);
+    const tenantCtx = getTenantContext(req);
 
-    await clearMemberImage({ gymId, folderPrefix, member, modifiedBy: gymMembershipId ?? null });
+    await clearMemberImage({ gymId, folderPrefix, member, modifiedBy: resolveRequestActor(tenantCtx) });
 
     recordAudit(req, {
       action: 'update', entityType: 'member', entityId: member.id,

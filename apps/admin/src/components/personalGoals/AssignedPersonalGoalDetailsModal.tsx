@@ -46,9 +46,9 @@ export function AssignedPersonalGoalDetailsModal({ row, goalName, label, onClose
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid var(--card-border, #f0f0f0)' }}>
           <p style={sectionLabelStyle}>{label('section_audit')}</p>
           <Field label={label('created_at')} value={formatTimestamp(row.created_at)} />
-          <Field label={label('created_by')} value={displayValue(row.created_by_name)} />
+          <Field label={label('created_by')} value={displayValue(row.created_by)} />
           <Field label={label('modified_at')} value={formatTimestamp(row.modified_at)} />
-          <Field label={label('modified_by')} value={displayValue(row.modified_by_name)} />
+          <Field label={label('modified_by')} value={displayValue(row.modified_by)} />
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>

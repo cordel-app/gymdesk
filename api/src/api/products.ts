@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -44,18 +45,12 @@ const SELECT = `
     gc.class_package_id,
     gc.created_at,
     gc.modified_at,
-    cb.id   AS created_by_membership_id,
-    cb.name AS created_by_name,
-    mb.id   AS modified_by_membership_id,
-    mb.name AS modified_by_name,
-    db.id   AS deleted_by_membership_id,
-    db.name AS deleted_by_name
+    gc.created_by,
+    gc.modified_by,
+    gc.deleted_by
   FROM products gc
   LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
   LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
-  LEFT JOIN gym_memberships cb ON cb.id = gc.created_by_membership_id
-  LEFT JOIN gym_memberships mb ON mb.id = gc.modified_by_membership_id
-  LEFT JOIN gym_memberships db ON db.id = gc.deleted_by_membership_id
 `;
 
 const VALID_TYPES = ['fee', 'service', 'sessions', 'merchandise', 'other'] as const;
@@ -190,7 +185,9 @@ productsRouter.get('/:id', async (req, res, next) => {
 // ─── POST / — create custom product ─────────────────────────────────────
 
 productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const {
     name, type, units, description, amount, billing_frequency, status, enrollment_status, notes,
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
@@ -231,8 +228,8 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
         `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
             is_system, mandatory, notes, package_information, validity_days, tax_rate_id, tax_behavior,
-            created_by_membership_id, modified_by_membership_id)
-         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            created_by)
+         VALUES (?, ?, ?, ?, ?, ?, 'EUR', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name.trim(),
@@ -251,8 +248,7 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
           validity_days != null ? parseInt(validity_days, 10) : null,
           tax_rate_id != null ? Number(tax_rate_id) : null,
           tax_behavior || 'inclusive',
-          gymMembershipId,
-          gymMembershipId,
+          actor,
         ],
       );
       await replaceProfessionalServices(
@@ -280,7 +276,9 @@ productsRouter.post('/', requireRole('admin'), async (req, res, next) => {
 // ─── POST /:id/duplicate — duplicate an existing product ────────────────
 
 productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rows: origRows } = await db.query(
       'SELECT * FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -307,8 +305,8 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
         `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
             is_system, mandatory, one_time_purchase, notes, package_information, validity_days, tax_rate_id, tax_behavior,
-            created_by_membership_id, modified_by_membership_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name,
@@ -334,8 +332,7 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
           orig.validity_days,
           orig.tax_rate_id,
           orig.tax_behavior,
-          gymMembershipId,
-          gymMembershipId,
+          actor,
         ],
       );
       if (linkedServiceIds.length > 0) {
@@ -361,7 +358,9 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
 // ─── PUT /:id ─────────────────────────────────────────────────────────────────
 
 productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const {
     description, amount, billing_frequency, notes, name, type, units, status, enrollment_status,
     package_information, validity_days, tax_rate_id, tax_behavior, professional_service_ids,
@@ -460,7 +459,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
          tax_rate_id               = COALESCE(?, tax_rate_id),
          tax_behavior              = COALESCE(?, tax_behavior),
          modified_at               = UTC_TIMESTAMP(),
-         modified_by_membership_id = ?
+         modified_by               = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
         description ?? null,
@@ -478,7 +477,7 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
         isSystem, validity_days != null ? parseInt(validity_days, 10) : null, validity_days != null ? parseInt(validity_days, 10) : null,
         tax_rate_id != null ? Number(tax_rate_id) : null,
         tax_behavior ?? null,
-          gymMembershipId,
+          actor,
           req.params.id,
           gymId,
         ],
@@ -508,14 +507,16 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
 // ─── POST /:id/activate ───────────────────────────────────────────────────────
 
 productsRouter.post('/:id/activate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rowCount } = await db.query(
       `UPDATE products
        SET status = 'active', availability = 'available',
-           modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+           modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, req.params.id, gymId],
+      [actor, req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
@@ -528,14 +529,16 @@ productsRouter.post('/:id/activate', requireRole('admin'), async (req, res, next
 // ─── POST /:id/deactivate ─────────────────────────────────────────────────────
 
 productsRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rowCount } = await db.query(
       `UPDATE products
        SET status = 'inactive', availability = 'unavailable',
-           modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+           modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, req.params.id, gymId],
+      [actor, req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
@@ -548,7 +551,9 @@ productsRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, ne
 // ─── DELETE /:id — soft-delete custom items only ──────────────────────────────
 
 productsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rows: existing } = await db.query(
       'SELECT id, is_system, name FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -559,9 +564,10 @@ productsRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
 
     await db.query(
       `UPDATE products
-       SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ?
+       SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
+           modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, actorName, req.params.id, gymId],
+      [actor, actor, req.params.id, gymId],
     );
     recordAudit(req, {
       action: 'delete',

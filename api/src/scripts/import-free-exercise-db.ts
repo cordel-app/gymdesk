@@ -64,6 +64,7 @@
 
 import { readFileSync } from 'node:fs';
 import 'dotenv/config';
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { syncExerciseResultTypes } from '../api/exercise-result-types';
 import { db } from '../infra/db';
 import { insertExerciseMuscle } from '../api/exercise-muscles';
@@ -187,8 +188,8 @@ async function applyPlan(plan: ImportPlan, src: SourceExercise, match: { row: Ex
     if (plan.action === 'create') {
       const columns = Object.keys(plan.fields);
       const { insertId } = await tx.query(
-        `INSERT INTO exercises (gym_id, ${columns.join(', ')}) VALUES (NULL, ${columns.map(() => '?').join(', ')})`,
-        columns.map((column) => (plan.fields as Record<string, unknown>)[column]),
+        `INSERT INTO exercises (gym_id, ${columns.join(', ')}, created_by) VALUES (NULL, ${columns.map(() => '?').join(', ')}, ?)`,
+        [...columns.map((column) => (plan.fields as Record<string, unknown>)[column]), SYSTEM_ACTOR],
       );
       exerciseId = Number(insertId);
     } else {
@@ -196,9 +197,9 @@ async function applyPlan(plan: ImportPlan, src: SourceExercise, match: { row: Ex
       const columns = Object.keys(plan.fields);
       if (columns.length > 0) {
         await tx.query(
-          `UPDATE exercises SET ${columns.map((c) => `${c} = ?`).join(', ')}, modified_at = UTC_TIMESTAMP()
+          `UPDATE exercises SET ${columns.map((c) => `${c} = ?`).join(', ')}, modified_at = UTC_TIMESTAMP(), modified_by = ?
             WHERE id = ? AND gym_id IS NULL`,
-          [...columns.map((column) => (plan.fields as Record<string, unknown>)[column]), exerciseId],
+          [...columns.map((column) => (plan.fields as Record<string, unknown>)[column]), SYSTEM_ACTOR, exerciseId],
         );
       }
     }

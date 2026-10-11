@@ -490,7 +490,9 @@ async function validateMemberIds(gymId: string, memberIds: number[]): Promise<st
 }
 
 classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { activity_type_id, trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, center_id,
           professional_service_id } = req.body;
   if (!activity_type_id || !starts_at || !ends_at) {
@@ -553,10 +555,10 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
           `INSERT INTO calendar_events
            (gym_id, center_id, title, activity_type_id, trainer_membership_id, space_id,
             starts_at, ends_at, capacity, professional_service_id,
-            created_by_membership_id, modified_by_membership_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            created_by)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
-           startsAtDate, endsAtDate, cap, serviceId, gymMembershipId, gymMembershipId],
+           startsAtDate, endsAtDate, cap, serviceId, actor],
         );
         for (const memberId of memberIds) {
           await bookMemberOnSession(gymId, memberId, insertId, true, false, tx);
@@ -577,10 +579,10 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
         `INSERT INTO calendar_events
          (gym_id, center_id, title, activity_type_id, trainer_membership_id, space_id,
           starts_at, ends_at, capacity, professional_service_id,
-          created_by_membership_id, modified_by_membership_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, resolvedCenterId, activityTitle, activity_type_id, trainerId, spaceIdVal,
-         startsAtDate, endsAtDate, cap, serviceId, gymMembershipId, gymMembershipId],
+         startsAtDate, endsAtDate, cap, serviceId, actor],
       );
       for (const memberId of memberIds) {
         await bookMemberOnSession(gymId, memberId, insertId, true, false, tx);
@@ -597,7 +599,9 @@ classSessionsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, n
 });
 
 classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId, gymMembershipId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { trainer_membership_id, space_id, starts_at, ends_at, max_capacity_override, activity_type_id, allows_shared_booking,
           professional_service_id, waitlist_mode, eligible_professional_service_ids } = req.body;
   if (starts_at && ends_at && new Date(starts_at) >= new Date(ends_at)) {
@@ -723,7 +727,8 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
             professional_service_id = IF(?, ?, professional_service_id),
             waitlist_mode         = IF(?, ?, waitlist_mode),
             eligible_services_override = IF(?, ?, eligible_services_override),
-            modified_by_membership_id = ?
+            modified_at = UTC_TIMESTAMP(),
+            modified_by = ?
            WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
           [
             activity_type_id ?? null,
@@ -736,7 +741,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
             serviceId !== undefined ? 1 : 0, serviceId ?? null,
             waitlistMode !== undefined ? 1 : 0, waitlistMode ?? null,
             eligibleIds !== undefined ? 1 : 0, Array.isArray(eligibleIds) ? 1 : 0,
-            gymMembershipId,
+            actor,
             req.params.id, gymId,
           ],
         );
@@ -767,7 +772,8 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
           professional_service_id = IF(?, ?, professional_service_id),
           waitlist_mode          = IF(?, ?, waitlist_mode),
           eligible_services_override = IF(?, ?, eligible_services_override),
-          modified_by_membership_id = ?
+          modified_at = UTC_TIMESTAMP(),
+          modified_by = ?
          WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
         [
           activity_type_id ?? null,
@@ -781,7 +787,7 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
           serviceId !== undefined ? 1 : 0, serviceId ?? null,
           waitlistMode !== undefined ? 1 : 0, waitlistMode ?? null,
           eligibleIds !== undefined ? 1 : 0, Array.isArray(eligibleIds) ? 1 : 0,
-          gymMembershipId,
+          actor,
           req.params.id, gymId,
         ],
       );
@@ -802,7 +808,9 @@ classSessionsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res,
 });
 
 classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('CALENDAR'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { authorized } = req.body;
   if (typeof authorized !== 'boolean') return res.status(400).json({ error: 'authorized (boolean) is required' });
 
@@ -833,9 +841,9 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('CALENDAR'
     }
 
     await db.query(
-      `UPDATE calendar_events SET allows_shared_booking = ?, modified_by_membership_id = ?
+      `UPDATE calendar_events SET allows_shared_booking = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
-      [authorized ? 1 : 0, gymMembershipId, req.params.id, gymId],
+      [authorized ? 1 : 0, actor, req.params.id, gymId],
     );
 
     recordAudit(req, { action: 'update', entityType: 'class_session', entityId: req.params.id, next: { allows_shared_booking: authorized } });
@@ -848,7 +856,9 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('CALENDAR'
 });
 
 classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (req, res) => {
-  const { gymId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const reason = String(req.body?.cancellation_reason ?? '').trim();
   if (!reason) return res.status(400).json({ error: 'cancellation_reason is required' });
 
@@ -863,8 +873,10 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (r
 
   const session = sessionRows[0];
   const { rowCount } = await db.query(
-    "UPDATE calendar_events SET status = 'cancelled', cancellation_reason = ? WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL",
-    [reason, req.params.id, gymId],
+    `UPDATE calendar_events SET status = 'cancelled', cancellation_reason = ?,
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
+     WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
+    [reason, actor, req.params.id, gymId],
   );
   if (rowCount === 0) return res.status(404).json({ error: 'Session not found or already cancelled' });
 
@@ -923,7 +935,9 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (r
  * past event does — #977's rule, not this route's.
  */
 classSessionsRouter.post('/:id/reactivate', requireModuleWrite('CALENDAR'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rows: sessionRows } = await db.query(
       `SELECT ce.id, ce.status, ce.cancellation_reason, ce.starts_at, ce.ends_at,
@@ -958,9 +972,10 @@ classSessionsRouter.post('/:id/reactivate', requireModuleWrite('CALENDAR'), asyn
 
       const { rowCount } = await tx.query(
         `UPDATE calendar_events
-         SET status = 'scheduled', cancellation_reason = NULL, modified_by_membership_id = ?
+         SET status = 'scheduled', cancellation_reason = NULL,
+             modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND status = 'cancelled'`,
-        [gymMembershipId, session.id, gymId],
+        [actor, session.id, gymId],
       );
       // Lost a race with another reactivation (or a status write in between):
       // the row is no longer cancelled, so there is nothing to undo.
@@ -1109,7 +1124,9 @@ classSessionsRouter.post('/:id/walk-in',
 );
 
 classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('CALENDAR'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { trainer_membership_id } = req.body;
 
   // #986: whoever is covering the session is an active staff member of this
@@ -1130,9 +1147,10 @@ classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('CALENDAR')
     `UPDATE calendar_events
      SET effective_trainer_membership_id = ?,
          effective_trainer_confirmed_at  = IF(? IS NOT NULL, UTC_TIMESTAMP(), effective_trainer_confirmed_at),
-         modified_by_membership_id = ?
+         modified_at = UTC_TIMESTAMP(),
+         modified_by = ?
      WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
-    [trainer_membership_id ?? null, trainer_membership_id ?? null, gymMembershipId, req.params.id, gymId],
+    [trainer_membership_id ?? null, trainer_membership_id ?? null, actor, req.params.id, gymId],
   );
 
   recordAudit(req, {
@@ -1151,7 +1169,9 @@ classSessionsRouter.put('/:id/effective-trainer', requireModuleWrite('CALENDAR')
 });
 
 classSessionsRouter.post('/:id/complete', requireModuleWrite('CALENDAR'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
 
   const { rows: sessionRows } = await db.query(
     "SELECT id, status, trainer_membership_id, effective_trainer_membership_id FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND deleted_at IS NULL",
@@ -1180,12 +1200,12 @@ classSessionsRouter.post('/:id/complete', requireModuleWrite('CALENDAR'), async 
   }
 
   await db.query(
-    "UPDATE calendar_events SET status = 'completed', modified_by_membership_id = ? WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL",
-    [gymMembershipId, req.params.id, gymId],
+    "UPDATE calendar_events SET status = 'completed', modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL",
+    [actor, req.params.id, gymId],
   );
 
   // #977 §11/§14: who confirmed the session and when are the audit row's
-  // (plus `modified_by_membership_id` above) — there is no second
+  // (plus `modified_by` above) — there is no second
   // `completed_by` column, and `previous` is what makes the transition
   // readable rather than only its destination.
   recordAudit(req, {
@@ -1213,9 +1233,6 @@ const EVENT_SELECT = `
     sp.name   AS space_name,
     c.name    AS center_name,
     gm.name   AS trainer_name,
-    gm2.name  AS created_by_name,
-    gm3.name  AS modified_by_name,
-    gm4.name  AS deleted_by_name,
     -- #977: a manual calendar entry is as bookable as a session (#503 stage 1
     -- dropped the kind discriminator), so it has the same two booking
     -- aggregates -- which is what lets execution_status classify an empty past
@@ -1228,9 +1245,6 @@ const EVENT_SELECT = `
   LEFT JOIN spaces           sp  ON sp.id   = ce.space_id
   LEFT JOIN centers          c   ON c.id    = ce.center_id
   LEFT JOIN gym_memberships gm   ON gm.id   = ce.trainer_membership_id
-  LEFT JOIN gym_memberships gm2  ON gm2.id  = ce.created_by_membership_id
-  LEFT JOIN gym_memberships gm3  ON gm3.id  = ce.modified_by_membership_id
-  LEFT JOIN gym_memberships gm4  ON gm4.id  = ce.deleted_by_membership_id
 `;
 
 /** Validates that a center_id (when provided) belongs to the current gym and isn't soft-deleted. */
@@ -1283,7 +1297,9 @@ calendarEventsRouter.get('/:id', async (req, res) => {
 });
 
 calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const {
     title, activity_type_id, space_id, center_id, trainer_membership_id, color,
     starts_at, ends_at, all_day, description, status, professional_service_id,
@@ -1323,13 +1339,13 @@ calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, 
       `INSERT INTO calendar_events
        (gym_id, title, activity_type_id, space_id, center_id, trainer_membership_id, color,
         starts_at, ends_at, all_day, description, status, professional_service_id,
-        created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [gymId, title.trim(), activity_type_id ?? null, space_id ?? null, center_id ?? null,
        trainer_membership_id ?? null, color ?? null,
        starts_at, ends_at, all_day ? 1 : 0,
        description ?? null, status ?? 'scheduled', parsedService.id,
-       gymMembershipId ?? null, gymMembershipId ?? null],
+       actor],
     );
     const { rows } = await db.query(`${EVENT_SELECT} WHERE ce.id = ?`, [insertId]);
     recordAudit(req, { action: 'create', entityType: 'calendar_event', entityId: String(insertId), entityName: title.trim(), next: rows[0] });
@@ -1340,7 +1356,9 @@ calendarEventsRouter.post('/', requireModuleWrite('CALENDAR'), async (req, res, 
 });
 
 calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { rows: existing } = await db.query(
     "SELECT * FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL AND deleted_at IS NULL",
     [req.params.id, gymId],
@@ -1402,7 +1420,8 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
         description            = IF(?, ?, description),
         status                 = COALESCE(?, status),
         professional_service_id = IF(?, ?, professional_service_id),
-        modified_by_membership_id = ?
+        modified_at = UTC_TIMESTAMP(),
+        modified_by = ?
        WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL AND deleted_at IS NULL`,
       [
         title?.trim() ?? null,
@@ -1417,7 +1436,7 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
         'description' in req.body ? 1 : 0, description ?? null,
         status ?? null,
         serviceId !== undefined ? 1 : 0, serviceId ?? null,
-        gymMembershipId ?? null,
+        actor,
         req.params.id, gymId,
       ],
     );
@@ -1430,7 +1449,9 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
 });
 
 calendarEventsRouter.delete('/:id', requireModuleWrite('CALENDAR'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { rows: existing } = await db.query(
     "SELECT title FROM calendar_events WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL AND deleted_at IS NULL",
     [req.params.id, gymId],
@@ -1438,9 +1459,10 @@ calendarEventsRouter.delete('/:id', requireModuleWrite('CALENDAR'), async (req, 
   if (existing.length === 0) return res.status(404).json({ error: 'Calendar event not found' });
 
   await db.query(
-    `UPDATE calendar_events SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?
+    `UPDATE calendar_events SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ? AND activity_type_id IS NULL`,
-    [gymMembershipId ?? null, req.params.id, gymId],
+    [actor, actor, req.params.id, gymId],
   );
   recordAudit(req, { action: 'delete', entityType: 'calendar_event', entityId: req.params.id, entityName: existing[0].title });
   res.status(204).send();

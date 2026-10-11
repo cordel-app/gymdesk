@@ -247,11 +247,11 @@ export default function CalendarPage() {
     setSessionPanelId(null);
     setEditingId(e.id);
     setEditingMeta({
-      created_by_name:  e.created_by_name  ?? null,
+      created_by:  e.created_by  ?? null,
       created_at:       e.created_at       ?? null,
-      modified_by_name: e.modified_by_name ?? null,
-      updated_at:       e.updated_at       ?? null,
-      deleted_by_name:  e.deleted_by_name  ?? null,
+      modified_by: e.modified_by ?? null,
+      modified_at:       e.modified_at       ?? null,
+      deleted_by:  e.deleted_by  ?? null,
       deleted_at:       e.deleted_at       ?? null,
     });
     setInitialForm({

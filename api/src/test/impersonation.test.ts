@@ -252,13 +252,13 @@ describe('GET /platform/impersonation/targets', () => {
       [gymId],
     );
     await db.query(
-      `INSERT INTO staff (gym_id, gym_membership_id, first_name, last_name, email, profile, hire_date, created_at, updated_at)
+      `INSERT INTO staff (gym_id, gym_membership_id, first_name, last_name, email, profile, hire_date, created_at, modified_at)
        VALUES (?, ?, 'Javier', 'Dominguez', 'javier@impersonation.test', 'Front Desk', '2026-01-01', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
       [gymId, gmId],
     );
     // HR record with no login — nothing to impersonate.
     await db.query(
-      `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, created_at, updated_at)
+      `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, created_at, modified_at)
        VALUES (?, 'No', 'Login', 'nologin@impersonation.test', 'Accountant', '2026-01-01', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
       [gymId],
     );

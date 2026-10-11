@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 import { parseGymLocalizationInput, GymLocalization } from '../domain/gymLocalization';
 
 /** #1246: GET/PUT /system/localization — the gym's Time & Localization settings. */
@@ -24,7 +25,8 @@ gymLocalizationRouter.get('/', async (req, res, next) => {
 });
 
 gymLocalizationRouter.put('/', requireModuleWrite('SYSTEM'), async (req, res, next) => {
-  const { gymId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
   try {
     const parsed = parseGymLocalizationInput(req.body);
     if (!parsed.ok) return res.status(400).json({ error: parsed.error });
@@ -32,8 +34,8 @@ gymLocalizationRouter.put('/', requireModuleWrite('SYSTEM'), async (req, res, ne
     const before = await load(gymId);
     if (keys.length > 0) {
       await db.query(
-        `UPDATE gyms SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`,
-        [...keys.map((k) => parsed.changes[k]), gymId],
+        `UPDATE gyms SET ${keys.map((k) => `${k} = ?`).join(', ')}, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?`,
+        [...keys.map((k) => parsed.changes[k]), resolveRequestActor(tenantCtx), gymId],
       );
     }
     const after = await load(gymId);

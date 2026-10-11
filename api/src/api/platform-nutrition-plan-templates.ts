@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db, Tx } from '../infra/db';
 import { goalRowsSql, parseGoalIllustrationInput, validateGoalIllustration } from './nutrition-goal-illustration';
 import { requireSuperadmin } from '../infra/tenantContext';
+import { resolvePlatformActor } from '../domain/auditActor';
 import { recordAudit } from '../infra/audit';
 import { localizedNameExpr } from '../domain/nutritionLibrary';
 import { getRequestLocale, SupportedLocale } from '../infra/locale';
@@ -110,7 +111,7 @@ platformNutritionPlanTemplatesRouter.get('/', requireSuperadmin, async (req, res
     else        { where.push("npt.status != 'deleted'"); }
 
     const { rows } = await db.query(
-      `SELECT npt.id, npt.name, npt.description, npt.status, npt.created_at, npt.modified_at,
+      `SELECT npt.id, npt.name, npt.description, npt.status, npt.created_at, npt.created_by, npt.modified_at, npt.modified_by,
               (SELECT COUNT(*) FROM nutrition_plan_template_days WHERE nutrition_plan_template_id = npt.id) AS day_count
        FROM nutrition_plan_templates npt
        WHERE ${where.join(' AND ')}
@@ -196,9 +197,10 @@ platformNutritionPlanTemplatesRouter.post('/', requireSuperadmin, async (req, re
     );
     if (existing.length > 0) return res.status(409).json({ error: 'A base template with this name already exists' });
 
+    const actor = resolvePlatformActor((req as any).superadminName);
     const { insertId } = await db.query(
-      'INSERT INTO nutrition_plan_templates (gym_id, name, description, status) VALUES (NULL, ?, ?, ?)',
-      [name.trim(), description ?? null, status ?? 'draft'],
+      'INSERT INTO nutrition_plan_templates (gym_id, name, description, status, created_by, modified_at, modified_by) VALUES (NULL, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+      [name.trim(), description ?? null, status ?? 'draft', actor, actor],
     );
     const { rows } = await db.query('SELECT * FROM nutrition_plan_templates WHERE id = ?', [insertId]);
     recordAudit(req, { action: 'create', entityType: 'nutrition_plan_template', entityId: insertId, next: rows[0] });
@@ -232,9 +234,11 @@ platformNutritionPlanTemplatesRouter.put('/:id', requireSuperadmin, async (req, 
          name = COALESCE(?, name),
          description = IF(? IS NOT NULL, ?, description),
          status = COALESCE(?, status),
-         modified_at = UTC_TIMESTAMP()
+         modified_at = UTC_TIMESTAMP(),
+         modified_by = ?
        WHERE id = ?`,
-      [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, id],
+      [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null,
+       resolvePlatformActor((req as any).superadminName), id],
     );
     const { rows } = await db.query('SELECT * FROM nutrition_plan_templates WHERE id = ?', [id]);
     recordAudit(req, { action: 'update', entityType: 'nutrition_plan_template', entityId: id, next: rows[0] });
@@ -246,8 +250,8 @@ platformNutritionPlanTemplatesRouter.delete('/:id', requireSuperadmin, async (re
   const { id } = req.params as { id: string };
   try {
     const { rowCount } = await db.query(
-      "UPDATE nutrition_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
-      [id],
+      "UPDATE nutrition_plan_templates SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
+      [resolvePlatformActor((req as any).superadminName), id],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Template not found' });
     recordAudit(req, { action: 'delete', entityType: 'nutrition_plan_template', entityId: id });

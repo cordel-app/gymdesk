@@ -570,11 +570,10 @@ describe('description and audit snapshot (#799)', () => {
     expect(created.status).toBe(201);
     // The name is snapshotted, not joined: a superadmin acting directly has no
     // gym_memberships row to point at (migration 196).
-    expect(created.body.created_by_name).toBe('Test User');
-    expect(created.body.created_by_type).toBe('staff');
-    expect(created.body.modified_by_name).toBeNull();
+    expect(created.body.created_by).toBe('Test User');
+    expect(created.body.modified_by).toBeNull();
     expect(created.body.deleted_at).toBeNull();
-    expect(created.body.deleted_by_name).toBeNull();
+    expect(created.body.deleted_by).toBeNull();
 
     const updated = await request
       .put(`/nutrition-library/${created.body.id}`)
@@ -582,9 +581,8 @@ describe('description and audit snapshot (#799)', () => {
       .set('x-gym-id', gymId)
       .send({ description: 'Edited' });
     expect(updated.status).toBe(200);
-    expect(updated.body.created_by_name).toBe('Test User');
-    expect(updated.body.modified_by_name).toBe('Test User');
-    expect(updated.body.modified_by_type).toBe('staff');
+    expect(updated.body.created_by).toBe('Test User');
+    expect(updated.body.modified_by).toBe('Test User');
     expect(updated.body.modified_at).not.toBeNull();
   });
 
@@ -596,7 +594,7 @@ describe('description and audit snapshot (#799)', () => {
     expect(res.status).toBe(200);
     const row = res.body.items.find((i: any) => i.name === 'NL Test Chicken');
     expect(row).toBeTruthy();
-    for (const key of ['description', 'created_by_name', 'created_by_type', 'modified_by_name', 'modified_by_type', 'deleted_at', 'deleted_by_name', 'deleted_by_type']) {
+    for (const key of ['description', 'created_by', 'modified_by', 'deleted_at', 'deleted_by']) {
       expect(row, `the list row must carry ${key}`).toHaveProperty(key);
     }
   });
@@ -606,8 +604,7 @@ describe('description and audit snapshot (#799)', () => {
     // employee: the catalogue is shared, the name is not.
     await db.query(
       `UPDATE nutrition_library_items
-       SET created_by_name = 'Cordel Staffer', created_by_type = 'superadmin',
-           modified_by_name = 'Cordel Staffer', modified_by_type = 'superadmin'
+       SET created_by = 'Cordel Staffer', modified_by = 'Cordel Staffer'
        WHERE id = ?`,
       [libraryItemId],
     );
@@ -618,9 +615,8 @@ describe('description and audit snapshot (#799)', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
     const row = res.body.items.find((i: any) => i.id === libraryItemId);
-    expect(row.created_by_name).toBeNull();
-    expect(row.created_by_type).toBeNull();
-    expect(row.modified_by_name).toBeNull();
+    expect(row.created_by).toBeNull();
+    expect(row.modified_by).toBeNull();
     // The dates are not masked — they name nobody.
     expect(row.created_at).toBeTruthy();
 
@@ -631,7 +627,7 @@ describe('description and audit snapshot (#799)', () => {
       .set('x-gym-id', gymId)
       .send({ name: `Own actor ${Date.now()}`, category_ids: [sideId] });
     expect(own.status).toBe(201);
-    expect(own.body.created_by_name).toBe('Test User');
+    expect(own.body.created_by).toBe('Test User');
   });
 });
 

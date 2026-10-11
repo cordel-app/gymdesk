@@ -30,7 +30,7 @@ import {
   groupExerciseFacets,
   parseExerciseListFilter,
 } from '../domain/exerciseListFilters';
-import { actorSnapshot } from '../domain/nutritionLibrary';
+import { resolvePlatformActor } from '../domain/auditActor';
 import {
   EXERCISE_IMAGE_MASTER_MAX_BYTES,
   EXERCISE_IMAGE_MIME,
@@ -74,16 +74,13 @@ export const platformExercisesRouter = Router();
 const SETTABLE_STATUSES = ['active', 'inactive'];
 
 /**
- * The actor pair to stamp on a write (#965, migration 208).
+ * The actor text to stamp on a write (#965, #1182).
  *
- * Every write on this router is a superadmin's, by `requireSuperadmin`, so the
- * type is fixed and only the name comes from the request. A base exercise has no
- * `gym_memberships` row to point `created_by` at — which is why the name is
- * snapshotted rather than joined, exactly as `platform-nutrition-library.ts` does
- * for a base food.
+ * Every write on this router is a superadmin's, by `requireSuperadmin`; the
+ * actor is their own name, snapshotted as plain text.
  */
 function platformActor(req: { superadminName?: string | null }) {
-  return actorSnapshot({ name: req.superadminName, isSuperadmin: true });
+  return resolvePlatformActor(req.superadminName);
 }
 
 /**
@@ -275,12 +272,12 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
         `INSERT INTO exercises
           (gym_id, name, description, video_url, image_url, category,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status,
-           created_by_name, created_by_type)
-         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           created_by)
+         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [name.trim(), description ?? null, video_url ?? null, image_url ?? null, categoryInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, notes_default ?? null, status ?? 'active',
-         actor.name, actor.type],
+         actor],
       );
       if (muscles) {
         for (const m of muscles) {
@@ -355,9 +352,8 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           category              = IF(?, ?, category),
           status                = COALESCE(?, status),
           modified_at           = UTC_TIMESTAMP(),
-          -- #965: who last changed it, snapshotted beside when (migration 208).
-          modified_by_name      = ?,
-          modified_by_type      = ?
+          -- #1182: who last changed it, snapshotted beside when.
+          modified_by           = ?
          WHERE id = ? AND gym_id IS NULL AND status != 'deleted'`,
         [
           name?.trim() ?? null,
@@ -373,7 +369,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           'notes_default' in req.body ? 1 : 0, notes_default ?? null,
           categoryInput.provided ? 1 : 0, categoryInput.value,
           status ?? null,
-          actor.name, actor.type,
+          actor,
           id,
         ],
       );
@@ -607,9 +603,9 @@ platformExercisesRouter.post('/:id/image', requireSuperadmin, async (req, res, n
     // last ran `PUT /:id`, which is worse than the em dash.
     await db.query(
       `UPDATE exercises SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(),
-              modified_by_name = ?, modified_by_type = ?
+              modified_by = ?
         WHERE id = ? AND gym_id IS NULL`,
-      [imageUrl, thumbnailUrl, actor.name, actor.type, exercise.id],
+      [imageUrl, thumbnailUrl, actor, exercise.id],
     );
 
     // The keys are deterministic, so a replacement normally overwrites the
@@ -653,9 +649,9 @@ platformExercisesRouter.delete('/:id/image', requireSuperadmin, async (req, res,
     // #965: removing media is a modification too — same pair, same reason.
     await db.query(
       `UPDATE exercises SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(),
-              modified_by_name = ?, modified_by_type = ?
+              modified_by = ?
         WHERE id = ? AND gym_id IS NULL`,
-      [actor.name, actor.type, exercise.id],
+      [actor, exercise.id],
     );
 
     await deleteReplacedBaseExerciseMedia(
@@ -782,9 +778,9 @@ platformExercisesRouter.post('/:id/video', requireSuperadmin, async (req, res, n
     // last ran `PUT /:id`, which is worse than the em dash.
     await db.query(
       `UPDATE exercises SET video_url = ?, video_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(),
-              modified_by_name = ?, modified_by_type = ?
+              modified_by = ?
         WHERE id = ? AND gym_id IS NULL`,
-      [videoUrl, posterUrl, actor.name, actor.type, exercise.id],
+      [videoUrl, posterUrl, actor, exercise.id],
     );
 
     // The keys are deterministic, so a replacement normally overwrites the
@@ -825,9 +821,9 @@ platformExercisesRouter.delete('/:id/video', requireSuperadmin, async (req, res,
     // #965: removing media is a modification too — same pair, same reason.
     await db.query(
       `UPDATE exercises SET video_url = NULL, video_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(),
-              modified_by_name = ?, modified_by_type = ?
+              modified_by = ?
         WHERE id = ? AND gym_id IS NULL`,
-      [actor.name, actor.type, exercise.id],
+      [actor, exercise.id],
     );
 
     await deleteReplacedBaseExerciseMedia(
@@ -853,8 +849,8 @@ platformExercisesRouter.delete('/:id/video', requireSuperadmin, async (req, res,
 platformExercisesRouter.delete('/:id', requireSuperadmin, async (req, res, next) => {
   try {
     const { rowCount } = await db.query(
-      "UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
-      [req.params.id],
+      "UPDATE exercises SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ? AND gym_id IS NULL AND status != 'deleted'",
+      [platformActor(req), req.params.id],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Exercise not found' });
     recordAudit(req, { action: 'delete', entityType: 'exercise', entityId: req.params.id });

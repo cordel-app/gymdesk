@@ -151,33 +151,21 @@ export function buildAssignmentListWhere(
 /* ── #1036: the member's own half ─────────────────────────────────────────── */
 
 /**
- * Who an assignment's actor pair may say acted (#799's snapshot columns),
- * mirrored by `chk_mpgoal_{created,modified,deleted}_by_type` — migration 222
- * widened all three, so a new actor kind goes in **two** places: this list and
- * the three CHECKs beside it.
- *
- * `member` is #1036's: a member assigning a goal to themselves is a third kind
- * of actor, and leaving the pair NULL for them would make a member-created row
- * indistinguishable from one written before the columns existed.
+ * The actor pair a **reading** records. `member_personal_goal_readings` is an
+ * append-only ledger outside #1182 stage 2's entity set and keeps its own
+ * `created_by_name` + `created_by_type` shape (migration 224), so the pair is
+ * still decided here: a member's own write is `member`, a superadmin
+ * `superadmin` (impersonating or not — whoever's login it is), staff `staff`.
  */
-export const ASSIGNMENT_ACTOR_TYPES = ['staff', 'superadmin', 'member'] as const;
-export type AssignmentActorType = (typeof ASSIGNMENT_ACTOR_TYPES)[number];
-
-/**
- * The actor pair a **member-initiated** write records, the counterpart of
- * `actorSnapshot()` (`domain/nutritionLibrary.ts`) for the staff routers.
- *
- * A superadmin impersonating a member still records `superadmin`: the person
- * acting is whoever's login it is, which is the rule `actorSnapshot()` already
- * applies one router over — and `/me` is reachable by an impersonating
- * superadmin, so this is not a hypothetical.
- */
-export function memberActorSnapshot(actor: { name?: string | null; isSuperadmin: boolean }): {
-  name: string | null;
-  type: AssignmentActorType;
-} {
-  const name = actor.name?.trim();
-  return { name: name ? name : null, type: actor.isSuperadmin ? 'superadmin' : 'member' };
+export function readingActor(
+  actor: { actorName?: string | null; isSuperadmin: boolean },
+  memberInitiated: boolean,
+): { name: string | null; type: 'staff' | 'superadmin' | 'member' } {
+  const name = actor.actorName?.trim();
+  return {
+    name: name ? name : null,
+    type: actor.isSuperadmin ? 'superadmin' : memberInitiated ? 'member' : 'staff',
+  };
 }
 
 /**

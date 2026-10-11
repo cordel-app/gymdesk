@@ -37,8 +37,8 @@ function headerSource(): string {
 
 describe('Custom Themes header metadata (#712)', () => {
   it('reads the creator from the API response, not from a second source', () => {
-    expect(page).toContain('created_by_name: string | null;');
-    expect(headerSource()).toContain('theme.created_by_name');
+    expect(page).toContain('created_by: string | null;');
+    expect(headerSource()).toContain('theme.created_by');
     // No client-side reconstruction of the creator from audit logs or actors.
     expect(page).not.toMatch(/audit-logs\?[^'"`]*action=/);
   });
@@ -51,7 +51,7 @@ describe('Custom Themes header metadata (#712)', () => {
   });
 
   it('falls back to an em dash for a theme with no recorded creator', () => {
-    expect(headerSource()).toContain("theme.created_by_name ?? '—'");
+    expect(headerSource()).toContain("theme.created_by ?? '—'");
   });
 
   it('derives the gym-theme badge from the API flag (gyms.theme_id), never from the name', () => {

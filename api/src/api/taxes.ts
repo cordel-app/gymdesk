@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -18,13 +19,10 @@ const SELECT = `
     tr.status,
     tr.deleted_at,
     tr.created_at,
-    tr.created_by_membership_id,
-    tr.created_by_name,
-    tr.created_by_type,
+    tr.created_by,
     tr.modified_at,
-    tr.modified_by_membership_id,
-    tr.modified_by_name,
-    tr.modified_by_type
+    tr.modified_by,
+    tr.deleted_by
   FROM tax_rates tr
 `;
 
@@ -65,7 +63,9 @@ taxesRouter.get('/:id', async (req, res, next) => {
 // ─── POST / — create custom tax rate ─────────────────────────────────────────
 
 taxesRouter.post('/', requireRole('admin'), requireFeatureEnabled('financials.taxes'), async (req, res, next) => {
-  const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, rate_percent, status, description } = req.body;
 
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -77,18 +77,15 @@ taxesRouter.post('/', requireRole('admin'), requireFeatureEnabled('financials.ta
     return res.status(400).json({ error: `status must be one of: ${VALID_STATUSES.join(', ')}` });
   }
 
-  const actorType = isSuperadmin ? 'superadmin' : 'staff';
   try {
     const { insertId } = await db.query(
       `INSERT INTO tax_rates
          (gym_id, name, description, rate_percent, is_system, status,
-          created_by_membership_id, created_by_name, created_by_type,
-          modified_by_membership_id, modified_by_name, modified_by_type)
-       VALUES (?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+          created_by)
+       VALUES (?, ?, ?, ?, 0, ?, ?)`,
       [
         gymId, name.trim(), description?.trim() || null, rate, status || 'active',
-        gymMembershipId, actorName, actorType,
-        gymMembershipId, actorName, actorType,
+        actor,
       ],
     );
     const { rows } = await db.query(`${SELECT} WHERE tr.id = ?`, [insertId]);
@@ -124,7 +121,9 @@ async function getTaxImpact(gymId: string, taxRateId: string) {
 }
 
 taxesRouter.put('/:id', requireRole('admin'), requireFeatureEnabled('financials.taxes'), async (req, res, next) => {
-  const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, rate_percent, status, description, confirmImpact } = req.body;
 
   if (rate_percent !== undefined) {
@@ -154,7 +153,6 @@ taxesRouter.put('/:id', requireRole('admin'), requireFeatureEnabled('financials.
       }
     }
 
-    const actorType = isSuperadmin ? 'superadmin' : 'staff';
     const { rowCount } = await db.query(
       `UPDATE tax_rates SET
          name                      = COALESCE(?, name),
@@ -162,18 +160,14 @@ taxesRouter.put('/:id', requireRole('admin'), requireFeatureEnabled('financials.
          rate_percent              = COALESCE(?, rate_percent),
          status                    = COALESCE(?, status),
          modified_at               = UTC_TIMESTAMP(),
-         modified_by_membership_id = ?,
-         modified_by_name          = ?,
-         modified_by_type          = ?
+         modified_by               = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
         name?.trim() ?? null,
         description ?? null,
         rate_percent != null ? parseFloat(rate_percent) : null,
         status ?? null,
-        gymMembershipId,
-        actorName,
-        actorType,
+        actor,
         req.params.id,
         gymId,
       ],
@@ -197,13 +191,15 @@ taxesRouter.put('/:id', requireRole('admin'), requireFeatureEnabled('financials.
 // ─── POST /:id/activate ───────────────────────────────────────────────────────
 
 taxesRouter.post('/:id/activate', requireRole('admin'), requireFeatureEnabled('financials.taxes'), async (req, res, next) => {
-  const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rowCount } = await db.query(
       `UPDATE tax_rates SET status = 'active', modified_at = UTC_TIMESTAMP(),
-         modified_by_membership_id = ?, modified_by_name = ?, modified_by_type = ?
+         modified_by = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, actorName, isSuperadmin ? 'superadmin' : 'staff', req.params.id, gymId],
+      [actor, req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE tr.id = ? AND tr.gym_id = ?`, [req.params.id, gymId]);
@@ -215,13 +211,15 @@ taxesRouter.post('/:id/activate', requireRole('admin'), requireFeatureEnabled('f
 // ─── POST /:id/deactivate ─────────────────────────────────────────────────────
 
 taxesRouter.post('/:id/deactivate', requireRole('admin'), requireFeatureEnabled('financials.taxes'), async (req, res, next) => {
-  const { gymId, gymMembershipId, actorName, isSuperadmin } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rowCount } = await db.query(
       `UPDATE tax_rates SET status = 'inactive', modified_at = UTC_TIMESTAMP(),
-         modified_by_membership_id = ?, modified_by_name = ?, modified_by_type = ?
+         modified_by = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, actorName, isSuperadmin ? 'superadmin' : 'staff', req.params.id, gymId],
+      [actor, req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
     const { rows } = await db.query(`${SELECT} WHERE tr.id = ? AND tr.gym_id = ?`, [req.params.id, gymId]);
@@ -233,7 +231,9 @@ taxesRouter.post('/:id/deactivate', requireRole('admin'), requireFeatureEnabled(
 // ─── DELETE /:id — soft-delete custom tax rates only ─────────────────────────
 
 taxesRouter.delete('/:id', requireRole('admin'), requireFeatureEnabled('financials.taxes'), async (req, res, next) => {
-  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   try {
     const { rows: existing } = await db.query(
       'SELECT id, is_system, name FROM tax_rates WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -243,9 +243,10 @@ taxesRouter.delete('/:id', requireRole('admin'), requireFeatureEnabled('financia
     if (existing[0].is_system) return res.status(403).json({ error: 'System tax rates cannot be deleted.' });
 
     await db.query(
-      `UPDATE tax_rates SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ?
+      `UPDATE tax_rates SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
+         modified_at = UTC_TIMESTAMP(), modified_by = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, actorName, req.params.id, gymId],
+      [actor, actor, req.params.id, gymId],
     );
     recordAudit(req, {
       action: 'delete',

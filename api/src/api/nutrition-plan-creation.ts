@@ -12,7 +12,8 @@ import { Tx } from '../infra/db';
 export type CreateNutritionPlanArgs = {
   gymId: string;
   memberId: number;
-  gymMembershipId: number | null;
+  /** #1182: the plain-text actor snapshot (resolveRequestActor), written to created_by. */
+  actor: string | null;
   templateId: number | null;
   name: string | null; // required by callers when templateId is null
   description?: string | null; // undefined -> inherit template's when cloning
@@ -22,7 +23,7 @@ export type CreateNutritionPlanArgs = {
 export type CreateNutritionPlanResult = { planId: number; planName: string };
 
 export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArgs): Promise<CreateNutritionPlanResult> {
-  const { gymId, memberId, gymMembershipId, templateId, name, description, startDate } = args;
+  const { gymId, memberId, actor, templateId, name, description, startDate } = args;
   let planId: number;
   let planName: string;
   let planDescription: string | null;
@@ -41,9 +42,9 @@ export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArg
 
     const { insertId: newPlanId } = await tx.query(
       `INSERT INTO member_nutrition_plans
-        (gym_id, member_id, template_id, name, description, start_date, status, created_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`,
-      [gymId, memberId, templateId, planName, planDescription, startDate, gymMembershipId],
+        (gym_id, member_id, template_id, name, description, start_date, status, created_by, modified_at, modified_by)
+       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?)`,
+      [gymId, memberId, templateId, planName, planDescription, startDate, actor, actor],
     );
     planId = newPlanId;
 
@@ -104,9 +105,9 @@ export async function createNutritionPlanTx(tx: Tx, args: CreateNutritionPlanArg
     planDescription = description ?? null;
     const { insertId: newPlanId } = await tx.query(
       `INSERT INTO member_nutrition_plans
-        (gym_id, member_id, template_id, name, description, start_date, status, created_by_membership_id)
-       VALUES (?, ?, NULL, ?, ?, ?, 'active', ?)`,
-      [gymId, memberId, planName, planDescription, startDate, gymMembershipId],
+        (gym_id, member_id, template_id, name, description, start_date, status, created_by, modified_at, modified_by)
+       VALUES (?, ?, NULL, ?, ?, ?, 'active', ?, UTC_TIMESTAMP(), ?)`,
+      [gymId, memberId, planName, planDescription, startDate, actor, actor],
     );
     planId = newPlanId;
   }

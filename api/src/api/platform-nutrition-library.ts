@@ -8,8 +8,9 @@ import {
   loadQualitiesMap, replaceQualities, validateQualityIds,
   loadTranslationsMap, replaceTranslations, validateTranslations, localizedNameSql,
   buildListWhere, pagingClause,
-  actorSnapshot, itemDetailColumnsSql, normalizeDescription,
+  itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
+import { resolvePlatformActor } from '../domain/auditActor';
 import {
   BASE_NUTRITION_IMAGE_MAX_BYTES,
   BASE_NUTRITION_IMAGE_MIME,
@@ -46,12 +47,11 @@ const ITEM_COLUMNS = `nli.id, nli.name, nli.status, nli.image_url, nli.created_a
   ${itemDetailColumnsSql('nli')}`;
 
 /**
- * Every write on this router is a superadmin's, by `requireSuperadmin` — so the
- * actor snapshot's type is fixed and only the name comes from the request
- * (#799 §13, migration 196).
+ * Every write on this router is a superadmin's, by `requireSuperadmin` — the
+ * actor is the superadmin's own name (#799 §13, #1182).
  */
 function platformActor(req: { superadminName?: string | null }) {
-  return actorSnapshot({ name: req.superadminName, isSuperadmin: true });
+  return resolvePlatformActor(req.superadminName);
 }
 
 /* ── Categories catalogue (read-only for now) ────────────────────────────── */
@@ -161,9 +161,9 @@ platformNutritionLibraryRouter.post('/', requireSuperadmin, async (req, res, nex
     const actor = platformActor(req);
     const { insertId } = await db.query(
       `INSERT INTO nutrition_library_items
-         (gym_id, name, description, status, created_by_name, created_by_type)
-       VALUES (NULL, ?, ?, 'active', ?, ?)`,
-      [name.trim(), description.value ?? null, actor.name, actor.type],
+         (gym_id, name, description, status, created_by)
+       VALUES (NULL, ?, ?, 'active', ?)`,
+      [name.trim(), description.value ?? null, actor],
     );
 
     await replaceCategories(insertId, category_ids);
@@ -229,21 +229,17 @@ platformNutritionLibraryRouter.put('/:id', requireSuperadmin, async (req, res, n
       if (conflict.length > 0) return res.status(409).json({ error: 'An item with this name already exists' });
     }
 
-    // The actor pair moves with every edit, so `modified_by_name` always names
+    // The actor pair moves with every edit, so `modified_by` always names
     // whoever `modified_at` refers to (#799 §13).
     const actor = platformActor(req);
-    const updates: string[] = [
-      'modified_at = UTC_TIMESTAMP()',
-      'modified_by_name = ?',
-      'modified_by_type = ?',
-    ];
-    const params: any[] = [actor.name, actor.type];
+    const updates: string[] = [];
+    const params: any[] = [actor];
     if (name?.trim())  { updates.push('name = ?');     params.push(name.trim()); }
     // Absent from the body means "leave it alone"; an empty string means "clear it".
     if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
 
     params.push(id);
-    await db.query(`UPDATE nutrition_library_items SET ${updates.join(', ')} WHERE id = ?`, params);
+    await db.query(`UPDATE nutrition_library_items SET modified_at = UTC_TIMESTAMP(), modified_by = ?${updates.map((u) => `, ${u}`).join('')} WHERE id = ?`, params);
 
     if (Array.isArray(category_ids)) {
       await replaceCategories(Number(id), category_ids);
@@ -461,9 +457,9 @@ platformNutritionLibraryRouter.post(
       const actor = platformActor(req);
       await db.query(
         `UPDATE nutrition_library_items
-         SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by_name = ?, modified_by_type = ?
+         SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE id = ?`,
-        [url, actor.name, actor.type, food.id],
+        [url, actor, food.id],
       );
 
       const { rows } = await db.query(
@@ -510,10 +506,10 @@ platformNutritionLibraryRouter.delete('/:id', requireSuperadmin, async (req, res
     const actor = platformActor(req);
     await db.query(
       `UPDATE nutrition_library_items
-       SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_name = ?, deleted_by_type = ?,
+       SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
            modified_at = UTC_TIMESTAMP()
        WHERE id = ?`,
-      [actor.name, actor.type, id],
+      [actor, id],
     );
     recordAudit(req, { action: 'delete', entityType: 'nutrition_library_item', entityId: id });
     res.status(204).send();

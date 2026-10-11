@@ -410,15 +410,13 @@ describe('DELETE /centers/:id', () => {
 
     const { rows } = await db.query<{
       deleted_at: string | null;
-      deleted_by_membership_id: number | null;
-      deleted_by_name: string | null;
+      deleted_by: string | null;
     }>(
-      'SELECT deleted_at, deleted_by_membership_id, deleted_by_name FROM centers WHERE id = ?',
+      'SELECT deleted_at, deleted_by FROM centers WHERE id = ?',
       [centerId],
     );
     expect(rows[0].deleted_at).not.toBeNull();
-    expect(rows[0].deleted_by_membership_id).not.toBeNull();
-    expect(rows[0]).toHaveProperty('deleted_by_name');
+    expect(rows[0].deleted_by).toBe('Test User');
   });
 
   it('records a soft_delete audit_logs row', async () => {

@@ -59,11 +59,11 @@ export function ExerciseDetailModal({ exercise, scope = 'gym', onClose }: {
             number a support request or an Audit Log filter is quoted by. */}
         <Field label={t('detail_exercise_id')} value={String(exercise.id)} />
         <Field label={t('col_created_at')} value={formatExerciseTimestamp(exercise.created_at)} />
-        <Field label={t('col_created_by')} value={exerciseDisplayValue(exercise.created_by_name)} />
+        <Field label={t('col_created_by')} value={exerciseDisplayValue(exercise.created_by)} />
         {/* An exercise never modified since creation still shows both rows, with
             the same empty-value convention every other Details modal uses. */}
         <Field label={t('detail_modified_at')} value={formatExerciseTimestamp(exercise.modified_at)} />
-        <Field label={t('detail_modified_by')} value={exerciseDisplayValue(exercise.modified_by_name)} />
+        <Field label={t('detail_modified_by')} value={exerciseDisplayValue(exercise.modified_by)} />
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
           {/* #675: the shared deep link, filtered to this exercise — never a hand-rolled one. */}

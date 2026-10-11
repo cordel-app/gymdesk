@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -53,18 +54,12 @@ const SELECT = `
     sp.name   AS default_space_name,
     ctr.name  AS default_center_name,
     gm.name   AS default_trainer_name,
-    ps.name   AS professional_service_name,
-    cb.name   AS created_by_name,
-    mb.name   AS modified_by_name,
-    db2.name  AS deleted_by_name
+    ps.name   AS professional_service_name
   FROM activity_types at
   LEFT JOIN professional_services ps ON ps.id = at.professional_service_id
   LEFT JOIN spaces          sp   ON sp.id  = at.default_space_id
   LEFT JOIN centers         ctr  ON ctr.id = at.default_center_id
   LEFT JOIN gym_memberships gm   ON gm.id  = at.default_trainer_membership_id
-  LEFT JOIN gym_memberships cb   ON cb.id  = at.created_by_membership_id
-  LEFT JOIN gym_memberships mb   ON mb.id  = at.modified_by_membership_id
-  LEFT JOIN gym_memberships db2  ON db2.id = at.deleted_by_membership_id
 `;
 
 export const activityTypesRouter = Router();
@@ -231,7 +226,10 @@ async function validateSpace(gymId: string, spaceId: number | null, centerId: nu
 }
 
 activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
           default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
           waitlist_mode, professional_service_id } = req.body;
@@ -270,8 +268,8 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
       `INSERT INTO activity_types
        (gym_id, name, description, duration_minutes, intensity_level, max_capacity, status,
         default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
-        waitlist_mode, professional_service_id, created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
+        waitlist_mode, professional_service_id, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [gymId, name.trim(), description ?? null,
        parseInt(duration_minutes, 10),
        intensity_level != null && intensity_level !== '' ? parseInt(intensity_level, 10) : null,
@@ -282,7 +280,7 @@ activityTypesRouter.post('/', requireRole('admin'), async (req, res, next) => {
        publicEvent,
        waitlist_mode ?? 'disabled',
        parsedService.id,
-       gymMembershipId ?? null, gymMembershipId ?? null],
+       actor],
     );
     const { rows } = await db.query(`${SELECT} WHERE at.id = ?`, [insertId]);
     const row = { ...rows[0], schedule_rules: [] };
@@ -311,7 +309,10 @@ const PROPAGATABLE_FIELDS: Array<{ atField: string; ceField: string; label: stri
 ];
 
 activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+
   const err = validate(req.body); if (err) return res.status(400).json({ error: err });
   const { name, description, duration_minutes, intensity_level, max_capacity, status,
           default_space_id, default_trainer_membership_id, default_center_id, color, is_shareable, public_event,
@@ -423,7 +424,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
           waitlist_mode                  = COALESCE(?, waitlist_mode),
           professional_service_id        = IF(?, ?, professional_service_id),
           modified_at                    = UTC_TIMESTAMP(),
-          modified_by_membership_id      = ?
+          modified_by                    = ?
          WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
         [
           name?.trim() ?? null,
@@ -440,7 +441,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
           'public_event' in req.body ? 1 : 0, public_event ? 1 : 0,
           waitlist_mode ?? null,
           serviceId !== undefined ? 1 : 0, serviceId ?? null,
-          gymMembershipId ?? null,
+          actor,
           req.params.id, gymId,
         ],
       );
@@ -449,9 +450,9 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
       if (propagations.length > 0) {
         const setSql = propagations.map((p) => `${p.ceField} = ?`).join(', ');
         await tx.query(
-          `UPDATE calendar_events SET ${setSql}
+          `UPDATE calendar_events SET ${setSql}, modified_at = UTC_TIMESTAMP(), modified_by = ?
            WHERE activity_type_id = ? AND starts_at > UTC_TIMESTAMP() AND deleted_at IS NULL`,
-          [...propagations.map((p) => p.value), req.params.id],
+          [...propagations.map((p) => p.value), actor, req.params.id],
         );
       }
     });
@@ -461,7 +462,7 @@ activityTypesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
     if (rows[0]?.image_url && rows[0].name !== current.name) {
       const migrated = await migrateActivityImageOnRename(gymId, {
         id: rows[0].id, name: rows[0].name, image_url: rows[0].image_url,
-      });
+      }, actor);
       if (migrated) rows[0].image_url = migrated;
     }
     const { rows: rules } = await db.query(
@@ -509,9 +510,9 @@ activityTypesRouter.post('/:id/image', requireRole('admin'), activityImageBodyPa
     const context = await loadActivityForImage(req, res, true);
     if (!context) return;
     const { gymId, activity } = context;
-    const { gymMembershipId } = getTenantContext(req);
     const stored = await storeActivityImage({
-      gymId, folderPrefix: context.folderPrefix as string, activity, body: parsed, modifiedBy: gymMembershipId ?? null,
+      gymId, folderPrefix: context.folderPrefix as string, activity, body: parsed,
+      modifiedBy: resolveRequestActor(getTenantContext(req)),
     });
     if (isActivityImageRefusal(stored)) return res.status(stored.status).json(stored.body);
     const updated = await readActivityRow(gymId, activity.id);
@@ -528,8 +529,9 @@ activityTypesRouter.delete('/:id/image', requireRole('admin'), async (req, res, 
     const context = await loadActivityForImage(req, res, false);
     if (!context) return;
     const { gymId, folderPrefix, activity } = context;
-    const { gymMembershipId } = getTenantContext(req);
-    await clearActivityImage({ gymId, folderPrefix, activity, modifiedBy: gymMembershipId ?? null });
+    await clearActivityImage({
+      gymId, folderPrefix, activity, modifiedBy: resolveRequestActor(getTenantContext(req)),
+    });
     const updated = await readActivityRow(gymId, activity.id);
     recordAudit(req, {
       action: 'update', entityType: 'activity_type', entityId: activity.id, entityName: activity.name,
@@ -540,7 +542,10 @@ activityTypesRouter.delete('/:id/image', requireRole('admin'), async (req, res, 
 });
 
 activityTypesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+
   const { rows: existing } = await db.query(
     'SELECT name FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
     [req.params.id, gymId],
@@ -548,18 +553,21 @@ activityTypesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
   if (existing.length === 0) return res.status(404).json({ error: 'Activity type not found' });
 
   // Cancel future calendar events from schedule rules (preserve past ones)
-  await cancelFutureOccurrencesByActivityType(parseInt(req.params.id as string, 10));
+  await cancelFutureOccurrencesByActivityType(parseInt(req.params.id as string, 10), actor);
 
   await db.query(
-    'UPDATE activity_types SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ? WHERE id = ? AND gym_id = ?',
-    [gymMembershipId ?? null, req.params.id, gymId],
+    'UPDATE activity_types SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+    [actor, actor, req.params.id, gymId],
   );
   recordAudit(req, { action: 'delete', entityType: 'activity_type', entityId: req.params.id, entityName: existing[0].name });
   res.status(204).send();
 });
 
 activityTypesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+
   const { rows: existing } = await db.query(`${SELECT} WHERE at.id = ? AND at.gym_id = ? AND at.deleted_at IS NULL`, [req.params.id, gymId]);
   if (existing.length === 0) return res.status(404).json({ error: 'Activity type not found' });
   const src = existing[0];
@@ -572,8 +580,8 @@ activityTypesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
       `INSERT INTO activity_types
        (gym_id, name, description, duration_minutes, intensity_level, max_capacity, status,
         default_space_id, default_trainer_membership_id, default_center_id, color, waitlist_mode,
-        professional_service_id, created_by_membership_id, modified_at, modified_by_membership_id)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,UTC_TIMESTAMP(),?)`,
+        professional_service_id, created_by)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [gymId, `${src.name} (copy)`, src.description, src.duration_minutes,
        src.intensity_level, src.max_capacity, 'active',
        src.default_space_id, src.default_trainer_membership_id, src.default_center_id, src.color,
@@ -581,7 +589,7 @@ activityTypesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
        // #647: the copy is delivered by the same Professional Service — the
        // duplicate stays inside the gym the value was already validated against.
        src.professional_service_id,
-       gymMembershipId ?? null, gymMembershipId ?? null],
+       actor],
     );
 
     // #973 stage 1: a copy is a copy — the services that may book the original
@@ -619,7 +627,7 @@ activityTypesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
     [newId],
   );
   for (const rule of newRules) {
-    await materializeScheduleRule(rule.id, gymTimezone);
+    await materializeScheduleRule(rule.id, gymTimezone, actor);
   }
 
   const { rows } = await db.query(`${SELECT} WHERE at.id = ?`, [newId]);
@@ -632,7 +640,10 @@ activityTypesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
 });
 
 activityTypesRouter.post('/:id/restore', requireRole('admin'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+
   const { rows: existing } = await db.query(
     'SELECT name FROM activity_types WHERE id = ? AND gym_id = ? AND deleted_at IS NOT NULL',
     [req.params.id, gymId],
@@ -640,10 +651,10 @@ activityTypesRouter.post('/:id/restore', requireRole('admin'), async (req, res) 
   if (existing.length === 0) return res.status(404).json({ error: 'Deleted activity type not found' });
   await db.query(
     `UPDATE activity_types
-     SET deleted_at = NULL, deleted_by_membership_id = NULL,
-         status = 'active', modified_at = UTC_TIMESTAMP(), modified_by_membership_id = ?
+     SET deleted_at = NULL, deleted_by = NULL,
+         status = 'active', modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ?`,
-    [gymMembershipId ?? null, req.params.id, gymId],
+    [actor, req.params.id, gymId],
   );
   recordAudit(req, { action: 'restore', entityType: 'activity_type', entityId: req.params.id, entityName: existing[0].name });
   res.status(204).send();

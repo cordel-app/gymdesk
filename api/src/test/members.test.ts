@@ -507,19 +507,19 @@ describe('DELETE /members/:id', () => {
     expect(rows[0].deleted_at).not.toBeNull();
   });
 
-  it('sets deleted_by_name on the member row', async () => {
+  it('sets deleted_by on the member row', async () => {
     const memberId = await createMember(gymId);
     await request
       .delete(`/members/${memberId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
 
-    const { rows } = await db.query<{ deleted_by_name: string | null }>(
-      'SELECT deleted_by_name FROM members WHERE id = ?',
+    const { rows } = await db.query<{ deleted_by: string | null }>(
+      'SELECT deleted_by FROM members WHERE id = ?',
       [memberId],
     );
     // actorName may be null in test (no real Clerk user), so we just verify the column exists
-    expect(rows[0]).toHaveProperty('deleted_by_name');
+    expect(rows[0]).toHaveProperty('deleted_by');
   });
 
   it('deleted member no longer appears in GET /members', async () => {
@@ -737,14 +737,15 @@ describe('GET /members/:id — audit fields (#346)', () => {
     expect(res.body.id).toBe(memberId);
   });
 
-  it('includes created_by_name and modified_by_name fields', async () => {
+  it('includes the plain-text created_by and modified_by fields', async () => {
     const res = await request
       .get(`/members/${memberId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('created_by_name');
-    expect(res.body).toHaveProperty('modified_by_name');
+    expect(res.body).toHaveProperty('created_by');
+    expect(res.body).toHaveProperty('modified_by');
+    expect(res.body).not.toHaveProperty('created_by_name');
   });
 
   it('returns 404 for a member from another gym', async () => {
