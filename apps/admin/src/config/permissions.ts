@@ -49,6 +49,9 @@ export const PERMISSION_MATRIX: Record<AppModule, Record<AppRole, PermissionLeve
 export const FEATURE_PERMISSION_OVERRIDES: Record<string, Partial<Record<AppRole, PermissionLevel>>> = {
   'nutrition.personal_goals': { trainer_performance: 'RW' },
   'calendar.staff_communications': { nutritionist: 'RW' },
+  // #1390: Send Communication to one Member. Admin and Front Desk already write
+  // Members; Trainers and the Nutritionist are R_ASSIGNED/read there and may still send.
+  'membership.staff_communications': { trainer_performance: 'RW', trainer_perf_nutrition: 'RW', nutritionist: 'RW' },
 };
 
 /** The level a feature key overrides for a role, or `null` when it inherits. */

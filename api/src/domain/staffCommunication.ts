@@ -8,6 +8,9 @@ export const COMMUNICATION_MESSAGE_MAX = 2000;
 
 export const STAFF_COMMUNICATIONS_FEATURE = 'calendar.staff_communications';
 
+/** #1390: the same alert sent to one Member from the Members page. */
+export const MEMBER_COMMUNICATIONS_FEATURE = 'membership.staff_communications';
+
 export type CommunicationParse =
   | { ok: true; title: string; message: string }
   | { ok: false; error: string };
