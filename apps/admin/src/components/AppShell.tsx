@@ -8,6 +8,7 @@ import { TopHeader } from './TopHeader';
 import { ImpersonationBanner } from './ImpersonationBanner';
 import { ListResponsiveStyles } from './ListResponsiveStyles';
 import { SIDEBAR_EXPANDED_WIDTH } from '@/lib/sidebarCollapse';
+import { InlineStyle } from './InlineStyle';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -77,7 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
 
-      <style>{`
+      <InlineStyle css={`
         /* #883: the wrapper is what bounds the navigation. It lays its panel out
            in a column so the panel is exactly the wrapper's height on both
            breakpoints, which is what gives the nav inside it something finite to
@@ -145,7 +146,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             height: calc(100dvh - var(--gd-top-bar-h, 52px));
           }
         }
-      `}</style>
+      `} />
     </>
   );
 }

@@ -9,7 +9,8 @@ import { join } from 'path';
 // through `InlineStyle`, which sets the text untouched. In the API suite for
 // #1009's reason: CI runs `npm test` in `api/` only.
 
-const root = join(__dirname, '..', '..', '..', 'apps', 'member', 'src');
+const roots = ['member', 'admin'].map((app) => join(__dirname, '..', '..', '..', 'apps', app, 'src'));
+const root = roots[0];
 
 function sources(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
@@ -19,18 +20,22 @@ function sources(dir: string): string[] {
   });
 }
 
-describe('Members App inline stylesheets', () => {
-  it('renders no <style> with a text child', () => {
-    const offenders = sources(root).filter((file) => {
-      if (file.endsWith('InlineStyle.tsx')) return false;
-      const code = readFileSync(file, 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-      return /<style[^>]*>\s*\{/.test(code);
-    });
-    expect(offenders.map((f) => f.slice(root.length))).toEqual([]);
-  });
+describe('Members App and Admin inline stylesheets', () => {
+  for (const dir of roots) {
+    const app = dir.split('/').slice(-2)[0];
 
-  it('InlineStyle hands the text over unescaped', () => {
-    const src = readFileSync(join(root, 'components', 'InlineStyle.tsx'), 'utf-8');
-    expect(src).toContain('dangerouslySetInnerHTML={{ __html: css }}');
-  });
+    it(`${app}: renders no <style> with a text child`, () => {
+      const offenders = sources(dir).filter((file) => {
+        if (file.endsWith('InlineStyle.tsx')) return false;
+        const code = readFileSync(file, 'utf-8').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+        return /<style[^>]*>\s*\{/.test(code);
+      });
+      expect(offenders.map((f) => f.slice(dir.length))).toEqual([]);
+    });
+
+    it(`${app}: InlineStyle hands the text over unescaped`, () => {
+      const src = readFileSync(join(dir, 'components', 'InlineStyle.tsx'), 'utf-8');
+      expect(src).toContain('dangerouslySetInnerHTML={{ __html: css }}');
+    });
+  }
 });
