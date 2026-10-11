@@ -80,7 +80,7 @@ async function setNotificationCheck(knex, types) {
 exports.up = async (knex) => {
   await setNotificationCheck(knex, NOTIFICATION_TYPES);
   await knex.raw(
-    `INSERT IGNORE INTO feature_flags (feature_key, enabled, updated_at)
+    `INSERT IGNORE INTO feature_flags (feature_key, enabled, modified_at)
      VALUES (?, 1, UTC_TIMESTAMP())`,
     [FLAG_KEY],
   );

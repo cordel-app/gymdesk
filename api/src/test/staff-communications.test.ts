@@ -132,7 +132,7 @@ describe('POST /class-sessions/:id/communications', () => {
 
   it('is rejected when the feature flag is off', async () => {
     await db.query(
-      `INSERT INTO feature_flags (feature_key, enabled, updated_at) VALUES (?, 0, UTC_TIMESTAMP())
+      `INSERT INTO feature_flags (feature_key, enabled, modified_at) VALUES (?, 0, UTC_TIMESTAMP())
        ON DUPLICATE KEY UPDATE enabled = 0`, [FLAG],
     );
     try {
