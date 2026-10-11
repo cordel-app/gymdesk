@@ -19,9 +19,13 @@ describe('Home hydration', () => {
     expect(src).toMatch(/const authKnown = hydrated && isLoaded;/);
   });
 
-  it('never branches the landing card on isLoaded directly', () => {
-    expect(src).toMatch(/if \(!authKnown \|\| \(!isSignedIn && !appLoading\)\)/);
+  it('never branches on isLoaded directly, and shows no brand while auth is unknown', () => {
+    // A bare placeholder first, then the signed-out landing only once Clerk has
+    // answered that nobody is signed in.
+    expect(src).toMatch(/if \(!authKnown\) \{\s*return <main style=\{styles\.container\}><p style=\{styles\.hint\}>…<\/p><\/main>;/);
+    expect(src).toMatch(/if \(!isSignedIn && !appLoading\) \{/);
     expect(src).not.toMatch(/if \(!isLoaded \|\|/);
     expect(src).not.toMatch(/\{!isLoaded \?/);
+    expect(src.indexOf('if (!authKnown)')).toBeLessThan(src.indexOf("t('home.title')"));
   });
 });

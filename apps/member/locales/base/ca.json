@@ -162,6 +162,10 @@
     "status_cancelled": "Cancel·lat"
   },
   "member_schedule": {
+    "cancel_confirm_title": "Cancel·lar aquesta reserva?",
+    "cancel_confirm_body": "La teva plaça quedarà lliure i una altra persona podrà ocupar-la.",
+    "cancel_confirm_yes": "Sí, cancel·la la reserva",
+    "cancel_confirm_keep": "Mantén la reserva",
     "title": "Les Meves Reserves",
     "loading": "Carregant…",
     "empty": "No hi ha properes sessions.",

@@ -21,6 +21,7 @@ import {
   statusTone,
 } from '@/lib/memberChrome';
 import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
+import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
 import { goalDetail, goalLabel, mealTitle, type NutritionGoalItem } from '@/lib/nutritionFood';
 
@@ -94,6 +95,7 @@ export default function HomePage() {
   const [alert, setAlert] = useState<NotificationItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelPending, setCancelPending] = useState(false);
+  const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   // The server renders this page with Clerk not loaded (`isLoaded` false), but by
   // the time the client hydrates Clerk's script may already have loaded, so the
@@ -164,23 +166,25 @@ export default function HomePage() {
     }
   }
 
+  // Clerk's state is not known yet (always the case on the server and on the
+  // first client render): a bare placeholder, never the signed-out landing. The
+  // landing carries the brand and a sign-in prompt, and a member who is signed in
+  // used to see it flash on every load before their own screen arrived.
+  if (!authKnown) {
+    return <main style={styles.container}><p style={styles.hint}>…</p></main>;
+  }
+
   // Not signed in — show landing
-  if (!authKnown || (!isSignedIn && !appLoading)) {
+  if (!isSignedIn && !appLoading) {
     return (
       <main style={styles.center}>
         <div style={styles.landingCard}>
           <h1 style={styles.landingTitle}>{t('home.title')}</h1>
           <p style={styles.landingSubtitle}>{t('home.subtitle')}</p>
-          {!authKnown ? (
-            <p style={styles.hint}>…</p>
-          ) : (
-            <>
-              <button style={styles.btnPrimary} onClick={() => router.push(`/${locale}/sign-in`)}>
-                {t('home.sign_in')}
-              </button>
-              <p style={styles.hint}>{t('home.hint')}</p>
-            </>
-          )}
+          <button style={styles.btnPrimary} onClick={() => router.push(`/${locale}/sign-in`)}>
+            {t('home.sign_in')}
+          </button>
+          <p style={styles.hint}>{t('home.hint')}</p>
         </div>
       </main>
     );
@@ -277,7 +281,7 @@ export default function HomePage() {
                 <button
                   style={styles.btnCancel}
                   disabled={cancelPending}
-                  onClick={(e) => { e.stopPropagation(); cancelBooking(nextBooking.my_booking_id!); }}
+                  onClick={(e) => { e.stopPropagation(); setConfirmCancelId(nextBooking.my_booking_id!); }}
                 >
                   {cancelPending ? '…' : t('member_schedule.cancel_booking')}
                 </button>
@@ -377,6 +381,17 @@ export default function HomePage() {
           </MembersSectionCard>
         )}
       </section>
+      {confirmCancelId !== null && (
+        <CancelBookingConfirmDialog
+          busy={cancelPending}
+          onClose={() => setConfirmCancelId(null)}
+          onConfirm={async () => {
+            const id = confirmCancelId;
+            await cancelBooking(id);
+            setConfirmCancelId(null);
+          }}
+        />
+      )}
     </main>
   );
 }

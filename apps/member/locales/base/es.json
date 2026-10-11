@@ -162,6 +162,10 @@
     "status_cancelled": "Cancelado"
   },
   "member_schedule": {
+    "cancel_confirm_title": "¿Cancelar esta reserva?",
+    "cancel_confirm_body": "Tu plaza quedará libre y otra persona podrá ocuparla.",
+    "cancel_confirm_yes": "Sí, cancelar reserva",
+    "cancel_confirm_keep": "Mantener reserva",
     "title": "Mis Reservas",
     "loading": "Cargando…",
     "empty": "No hay próximas sesiones.",

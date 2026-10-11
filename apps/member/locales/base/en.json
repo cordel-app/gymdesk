@@ -162,6 +162,10 @@
     "status_cancelled": "Cancelled"
   },
   "member_schedule": {
+    "cancel_confirm_title": "Cancel this booking?",
+    "cancel_confirm_body": "Your place will be released and someone else may take it.",
+    "cancel_confirm_yes": "Yes, cancel booking",
+    "cancel_confirm_keep": "Keep booking",
     "title": "My Bookings",
     "loading": "Loading…",
     "empty": "No upcoming sessions.",
