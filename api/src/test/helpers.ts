@@ -254,6 +254,30 @@ async function versionOfAssignment(userMembershipId: number): Promise<number> {
 
 export async function legacyChildQuery(sql: string, params: unknown[] = []): Promise<any> {
   const queue = [...params];
+  // Coverage is the chain's (`product_set_members`): an INSERT naming an
+  // assignment's covered Members is written on that assignment's chain.
+  const cover = sql.match(/^\s*INSERT INTO user_membership_members\s*\(([^)]*)\)\s*VALUES\s*([\s\S]*)$/i);
+  if (cover) {
+    const columns = cover[1].split(',').map((c) => c.trim());
+    const tuples = [...cover[2].matchAll(/\(([^()]*)\)/g)].map((m) => splitTopLevel(m[1]));
+    let last: any = { rows: [], insertId: 0 };
+    for (const tokens of tuples) {
+      const value = (name: string) => {
+        const token = tokens[columns.indexOf(name)].trim();
+        return token === '?' ? queue.shift() : token;
+      };
+      // Placeholders are consumed in column order.
+      const resolved: Record<string, any> = {};
+      for (const c of columns) resolved[c] = value(c);
+      const versionId = await versionOfAssignment(Number(resolved.user_membership_id));
+      const { rows } = await db.query<{ root_product_set_id: number }>(
+        'SELECT root_product_set_id FROM product_sets WHERE id = ?', [versionId]);
+      last = await db.query(
+        `INSERT IGNORE INTO product_set_members (gym_id, root_product_set_id, member_id, is_owner) VALUES (?, ?, ?, ?)`,
+        [resolved.gym_id, rows[0].root_product_set_id, Number(resolved.member_id), Number(resolved.is_owner)]);
+    }
+    return last;
+  }
   const insert = sql.match(/^(\s*INSERT INTO \w+\s*\()([^)]*)(\)\s*VALUES\s*\()([\s\S]*)(\)\s*)$/i);
   if (insert && /\buser_membership_id\b/.test(insert[2])) {
     const columns = insert[2].split(',').map((c) => c.trim());

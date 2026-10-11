@@ -80,21 +80,17 @@ export async function cloneConfiguration(tx: Tx, gymId: string, fromSetId: numbe
   await copyApplications(tx, gymId, { productSetId: fromSetId }, { productSetId: toSetId });
 }
 
-type Owner = { productSetId: number } | { userMembershipId: number };
-
-/** Copies applied Promotions (and the grants each froze) between two owners. */
-async function copyApplications(tx: Tx, gymId: string, from: Owner, to: Owner) {
-  const col = (o: Owner) => ('productSetId' in o ? 'product_set_id' : 'user_membership_id');
-  const val = (o: Owner) => ('productSetId' in o ? o.productSetId : o.userMembershipId);
+/** Copies applied Promotions (and the grants each froze) between two versions. */
+async function copyApplications(tx: Tx, gymId: string, from: { productSetId: number }, to: { productSetId: number }) {
   const { rows } = await tx.query<any>(
     `SELECT id, promotion_id, applied_by, applied_at, consumed_at, status, snapshot, revoked_at
-       FROM user_membership_promotions WHERE gym_id = ? AND ${col(from)} = ?`, [gymId, val(from)]);
+       FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?`, [gymId, from.productSetId]);
   for (const app of rows) {
     const { insertId } = await tx.query(
       `INSERT INTO user_membership_promotions
-         (gym_id, ${col(to)}, promotion_id, applied_by, applied_at, consumed_at, status, snapshot, revoked_at)
+         (gym_id, product_set_id, promotion_id, applied_by, applied_at, consumed_at, status, snapshot, revoked_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, val(to), app.promotion_id, app.applied_by, app.applied_at, app.consumed_at, app.status,
+      [gymId, to.productSetId, app.promotion_id, app.applied_by, app.applied_at, app.consumed_at, app.status,
         app.snapshot == null ? null : (typeof app.snapshot === 'string' ? app.snapshot : JSON.stringify(app.snapshot)),
         app.revoked_at]);
     for (const table of [

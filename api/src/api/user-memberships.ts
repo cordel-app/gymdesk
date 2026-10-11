@@ -813,11 +813,8 @@ userMembershipsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res,
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
         source: sourceForRole(role), actorUserId: userId,
       });
-      // The paying Member is always the Membership's owner and its first covered Member (#374).
-      await tx.query(
-        'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
-        [gymId, insertId, member_id],
-      );
+      // The paying Member is the owner and the first covered Member of the version's chain (#374),
+      // written with the version below (`createDraftSetForAssignment()`).
       // #635 stage 2 — freeze the Plan's commercial configuration onto the
       // assignment, in the same transaction so it can never commit without one.
       // #1325 PR 3e: the Draft is a ProductSet Draft from birth; edits go to it.
@@ -1379,10 +1376,6 @@ userMembershipsRouter.post('/:id/assign-new-plan', requireRole('admin'), async (
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
         source: sourceForRole(role), actorUserId: userId,
       });
-      await tx.query(
-        'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
-        [gymId, insertId, prev.member_id],
-      );
       // #635 stage 2 — the superseding assignment gets its own snapshot; the
       // superseded row keeps the one it was created with, untouched.
       //

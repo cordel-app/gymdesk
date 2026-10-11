@@ -40,7 +40,6 @@ export const RESET_STEPS: readonly ResetStep[] = [
   { table: 'user_membership_oneoff', reason: 'assignment benefit rows' },
   { table: 'user_membership_periodical', reason: 'assignment benefit rows' },
   { table: 'member_products_recurrent_snapshot', reason: 'assignment service rows' },
-  { table: 'user_membership_members', reason: 'family coverage of the assignments' },
   { table: 'user_memberships', reason: 'the assigned Membership Plans' },
   { table: 'product_set_members', reason: 'ProductSet rows created since PR 1', optional: true },
   { table: 'product_set_plan_snapshots', reason: 'ProductSet rows created since PR 1', optional: true },

@@ -7,7 +7,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet, legacyAssignmentQuery, getAssignmentConfig } from './helpers';
+  request, ensureTestProductSet, legacyAssignmentQuery, getAssignmentConfig, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -65,7 +65,7 @@ async function addCoveredMember(
   memberId: number,
   isOwner = false,
 ): Promise<void> {
-  await db.query(
+  await legacyChildQuery(
     'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, ?)',
     [gymId, userMembershipId, memberId, isOwner ? 1 : 0],
   );

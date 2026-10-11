@@ -31,8 +31,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
-} from './helpers';
+  request, legacyChildQuery } from './helpers';
 import { ACTIVE_PLAN_EXISTS } from '../domain/oneActivePlan';
 
 let gymId: string;
@@ -116,7 +115,7 @@ async function legacyDraft(memberId: number, planId: number, startsAt: string, g
      VALUES (?, ?, ?, ?, 'draft')`,
     [gym, memberId, planId, startsAt],
   );
-  await db.query(
+  await legacyChildQuery(
     'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
     [gym, insertId, memberId],
   );

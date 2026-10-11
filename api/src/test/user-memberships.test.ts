@@ -64,7 +64,7 @@ async function createUserMembershipDirect(
      VALUES (?, ?, ?, ?, CURDATE(), 29.99)`,
     [gymId, memberId, planId, status],
   );
-  await db.query(
+  await legacyChildQuery(
     'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
     [gymId, insertId, memberId],
   );
@@ -224,7 +224,7 @@ async function createUserMembershipWithPrice(
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [gymId, memberId, planId, status, startsAt, endsAt, basePrice],
   );
-  await db.query(
+  await legacyChildQuery(
     'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
     [gymId, insertId, memberId],
   );
@@ -1657,7 +1657,7 @@ describe('DELETE /user-memberships/:id/members/:memberId', () => {
     const partner = await createMember(gymRO);
     const planId = await createPlan(gymRO, '2');
     const umId = await createUserMembershipDirect(gymRO, owner, planId);
-    await db.query(
+    await legacyChildQuery(
       'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 0)',
       [gymRO, umId, partner],
     );

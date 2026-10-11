@@ -15,7 +15,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, legacyAssignmentQuery } from './helpers';
+import { cleanupTestGyms, createTestGym, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 import { buildMultiActiveReport } from '../scripts/report-multi-active-memberships';
 
 const require = createRequire(import.meta.url);
@@ -97,7 +97,7 @@ async function seedAssignment(
      VALUES (?, ?, ?, ?, ?, 30)`,
     [gymId, memberId, planId, status, startsAt],
   );
-  await db.query(
+  await legacyChildQuery(
     'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
     [gymId, insertId, memberId],
   );
@@ -341,7 +341,7 @@ describe('buildMultiActiveReport', () => {
     const owner = await createMember();
     const coMember = await createMember();
     const family = await seedAssignment(owner, await createPlan('Report Family'), 'active', '2026-01-01');
-    await db.query(
+    await legacyChildQuery(
       'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 0)',
       [gymId, family, coMember],
     );

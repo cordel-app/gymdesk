@@ -11,7 +11,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet, legacyAssignmentQuery } from './helpers';
+  request, ensureTestProductSet, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 // Mutable so each test picks the provider outcome it needs.
 let executeRecurring = vi.fn();
@@ -102,7 +102,7 @@ async function createFailedEvent(
      VALUES (?, ?, ?, 'active', '2000-01-01', '40.00')`,
     [gym, memberId, planId],
   );
-  await db.query(
+  await legacyChildQuery(
     `INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner)
      VALUES (?, ?, ?, 1)`,
     [gym, membershipId, memberId],
@@ -419,7 +419,7 @@ describe('payment actions and the derived statuses', () => {
     // covered member must follow that transaction, not only their own.
     const f = await createFailedEvent(gymId);
     const partnerId = await createMember(gymId);
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner)
        VALUES (?, ?, ?, 0)`,
       [gymId, f.membershipId, partnerId],
