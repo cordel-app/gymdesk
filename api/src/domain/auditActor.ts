@@ -11,8 +11,10 @@
  *
  * Pure: no DB, no Express. Later stages call these helpers from every mutation
  * path of an in-scope table; none of them hand-builds the string or the column
- * list for itself. Tables that already carry #799's `_by_name`/`_by_type` pair
- * are untouched here and migrate in stage 2.
+ * list for itself. Stage 2 (migrations 264–265) converted the primary business
+ * entities to it: #799's `_by_name`/`_by_type` pair became the plain-text
+ * columns, the FK-shaped tables gained them and the `*_by_membership_id`
+ * columns stay as the frozen record of who acted before.
  */
 
 /** The audit actions a table can carry, and the columns each one writes. */
@@ -127,9 +129,39 @@ export function auditActorField(stored: string | null | undefined): string | nul
 }
 
 /**
- * Tables that carry the standard audit columns under this mechanism. Stage 1
- * migrates none: each later stage appends its tables here together with its
- * migration, and `audit-actor.unit.test.ts` then holds every `INSERT INTO` one
- * of them to naming `created_by`.
+ * Tables that carry the standard audit columns under this mechanism. Each stage
+ * appends its tables here together with its migration, and
+ * `audit-actor.unit.test.ts` then holds every `INSERT INTO` one of them to
+ * naming `created_by` and every business `UPDATE` to naming `modified_by` /
+ * `deleted_by`.
+ *
+ * Stage 2 (#1182): the primary business entities.
  */
-export const AUDITED_TABLES: readonly string[] = [];
+export const AUDITED_TABLES: readonly string[] = [
+  'activity_types',
+  'calendar_events',
+  'centers',
+  'class_packages',
+  'exercises',
+  'gym_holiday_hours',
+  'gym_operating_hours',
+  'gym_personal_goals',
+  'gyms',
+  'member_nutrition_plans',
+  'member_personal_goals',
+  'members',
+  'membership_plans',
+  'nutrition_goals',
+  'nutrition_library_items',
+  'nutrition_plan_templates',
+  'payment_providers',
+  'personal_goals',
+  'products',
+  'professional_services',
+  'spaces',
+  'staff',
+  'tax_rates',
+  'themes',
+  'training_plan_templates',
+  'workout_templates',
+];

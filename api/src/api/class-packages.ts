@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
@@ -6,14 +7,8 @@ import { handleDupEntry, insertAndFetch } from '../infra/db-helpers';
 const STATUSES = ['active', 'inactive'] as const;
 
 const SELECT = `
-  SELECT cp.*,
-         gm_c.name AS created_by_name,
-         gm_m.name AS modified_by_name,
-         gm_d.name AS deleted_by_name
+  SELECT cp.*
   FROM class_packages cp
-  LEFT JOIN gym_memberships gm_c ON gm_c.id = cp.created_by_membership_id
-  LEFT JOIN gym_memberships gm_m ON gm_m.id = cp.modified_by_membership_id
-  LEFT JOIN gym_memberships gm_d ON gm_d.id = cp.deleted_by_membership_id
 `;
 
 export const classPackagesRouter = Router();
@@ -56,7 +51,9 @@ function validate(body: any) {
 }
 
 classPackagesRouter.post('/', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { name, description, number_of_sessions, price, validity_days, status, notes } = req.body;
   if (!name?.trim() || number_of_sessions == null) {
     return res.status(400).json({ error: 'name and number_of_sessions are required' });
@@ -67,8 +64,8 @@ classPackagesRouter.post('/', requireRole('admin'), async (req, res, next) => {
     const row = await insertAndFetch(
       `INSERT INTO class_packages
         (gym_id, name, description, number_of_sessions, price, validity_days, status, notes,
-         created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         gymId,
         name.trim(),
@@ -78,8 +75,7 @@ classPackagesRouter.post('/', requireRole('admin'), async (req, res, next) => {
         validity_days != null ? parseInt(validity_days, 10) : 0,
         status ?? 'active',
         notes?.trim() || null,
-        gymMembershipId,
-        gymMembershipId,
+        actor,
       ],
       `${SELECT} WHERE cp.id = ?`,
       (id) => [id],
@@ -91,7 +87,9 @@ classPackagesRouter.post('/', requireRole('admin'), async (req, res, next) => {
 });
 
 classPackagesRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const err = validate(req.body);
   if (err) return res.status(400).json({ error: err });
   const { name, description, number_of_sessions, price, validity_days, status, notes } = req.body;
@@ -106,7 +104,7 @@ classPackagesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         status             = COALESCE(?, status),
         notes              = IF(?, ?, notes),
         modified_at        = UTC_TIMESTAMP(),
-        modified_by_membership_id = ?
+        modified_by        = ?
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
       [
         name?.trim() ?? null,
@@ -116,7 +114,7 @@ classPackagesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
         validity_days != null ? parseInt(validity_days, 10) : null,
         status ?? null,
         'notes' in req.body ? 1 : 0, notes?.trim() ?? null,
-        gymMembershipId,
+        actor,
         req.params.id, gymId,
       ],
     );
@@ -129,7 +127,9 @@ classPackagesRouter.put('/:id', requireRole('admin'), async (req, res, next) => 
 });
 
 classPackagesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { rows: origRows } = await db.query(
     `${SELECT} WHERE cp.id = ? AND cp.gym_id = ? AND cp.deleted_at IS NULL`,
     [req.params.id, gymId],
@@ -140,8 +140,8 @@ classPackagesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
     const row = await insertAndFetch(
       `INSERT INTO class_packages
         (gym_id, name, description, number_of_sessions, price, validity_days, status,
-         created_by_membership_id, modified_by_membership_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         gymId,
         `${original.name} (Copy)`,
@@ -150,8 +150,7 @@ classPackagesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
         original.price,
         original.validity_days,
         'active',
-        gymMembershipId,
-        gymMembershipId,
+        actor,
       ],
       `${SELECT} WHERE cp.id = ?`,
       (id) => [id],
@@ -163,12 +162,14 @@ classPackagesRouter.post('/:id/duplicate', requireRole('admin'), async (req, res
 });
 
 classPackagesRouter.delete('/:id', requireRole('admin'), async (req, res) => {
-  const { gymId, gymMembershipId, actorName } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const { rowCount } = await db.query(
     `UPDATE class_packages
-     SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?, deleted_by_name = ?
+     SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [gymMembershipId, actorName, req.params.id, gymId],
+    [actor, actor, req.params.id, gymId],
   );
   if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Class package not found' });
   res.status(204).send();

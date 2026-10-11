@@ -23,7 +23,7 @@ const BASE = {
 
 async function createStaff(gymId: string, overrides: Record<string, unknown> = {}) {
   const { insertId } = await db.query(
-    `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, employment_status, current_status, created_at, updated_at)
+    `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, employment_status, current_status, created_at, modified_at)
      VALUES (?, ?, ?, ?, ?, ?, 'active', 'available', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
     [gymId, overrides.first_name ?? BASE.first_name, overrides.last_name ?? BASE.last_name,
      overrides.email ?? BASE.email, overrides.profile ?? BASE.profile, overrides.hire_date ?? BASE.hire_date],
@@ -173,7 +173,7 @@ describe('staff', () => {
 
     it('returns computed contract_days_remaining', async () => {
       await db.query(
-        `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, contract_end_date, employment_status, current_status, created_at, updated_at)
+        `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, contract_end_date, employment_status, current_status, created_at, modified_at)
          VALUES (?, 'Contractual', 'Tester', 'contract@gym.test', 'Front Desk', '2025-01-01', DATE_ADD(UTC_DATE(), INTERVAL 20 DAY), 'active', 'available', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
         [gymId],
       );
@@ -273,7 +273,7 @@ describe('staff', () => {
   describe('POST /staff/:id/duplicate', () => {
     it('creates a copy without employee_number or profile_photo_url', async () => {
       const { insertId } = await db.query(
-        `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, employment_status, current_status, employee_number, notes, created_at, updated_at)
+        `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, employment_status, current_status, employee_number, notes, created_at, modified_at)
          VALUES (?, 'Source', 'Member', 'source@gym.test', 'Accountant', '2025-01-01', 'active', 'available', 'EMP-001', 'some notes', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
         [gymId],
       );

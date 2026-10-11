@@ -122,7 +122,7 @@ describe('Mark as completed (#977 §4/§11)', () => {
 
   it('writes no status of its own', () => {
     // The panel posts to the action route; it never PUTs a status, so the
-    // audit row and `modified_by_membership_id` are always written.
+    // audit row and `modified_by` are always written.
     expect(sessionPanel).not.toMatch(/status:\s*'completed'/);
   });
 });

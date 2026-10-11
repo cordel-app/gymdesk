@@ -5,10 +5,11 @@ import { requireFeatureEnabled } from '../infra/featureFlags';
 import { handleDupEntry } from '../infra/db-helpers';
 import { GOAL_LIBRARY_FEATURE_KEYS, gymGoalStatusSql } from '../domain/goalLibrary';
 import { resolveMemberId } from './me';
+import { resolveRequestActor } from '../domain/auditActor';
+import { readingActor } from '../domain/personalGoalAssignment';
 import {
   endDateTransition,
   goalAssignmentFieldError,
-  memberActorSnapshot,
   normalizeGoalDate,
   normalizeNotes,
   normalizeTargetUnit,
@@ -202,7 +203,7 @@ mePersonalGoalsRouter.get('/available', async (req, res, next) => {
 
 mePersonalGoalsRouter.post('/', async (req, res, next) => {
   const ctx = getTenantContext(req);
-  const { gymId, actorName, isSuperadmin } = ctx;
+  const { gymId } = ctx;
 
   const goalId = Number(req.body?.personal_goal_id);
   if (!Number.isInteger(goalId) || goalId <= 0) {
@@ -232,7 +233,7 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
   const initialReadingAt = normalizeRecordedAt(req.body?.initial_reading_at);
   if ('error' in initialReadingAt) return res.status(400).json({ error: initialReadingAt.error });
 
-  const actor = memberActorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
 
   try {
     const memberId = await resolveMemberId(gymId, ctx);
@@ -282,13 +283,13 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
       const { insertId: assignmentId } = await tx.query(
         `INSERT INTO member_personal_goals
            (gym_id, member_id, personal_goal_id, goal_name, target_value, target_unit, target_type,
-            start_date, target_date, notes, created_by_name, created_by_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            start_date, target_date, notes, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId, memberId, goalId, catalogue.name,
           effectiveValue, effectiveUnit, effectiveType,
           startDate.value ?? null, targetDate.value ?? null,
-          notes.value ?? null, actor.name, actor.type,
+          notes.value ?? null, actor,
         ],
       );
       if (initialReading && 'value' in initialReading) {
@@ -301,8 +302,8 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
             startDate: startDate.value ?? null,
           }),
           isInitial: true,
-          actorName: actor.name,
-          actorType: actor.type,
+          actorName: readingActor(ctx, true).name,
+          actorType: readingActor(ctx, true).type,
         });
       }
       return assignmentId;
@@ -331,7 +332,7 @@ mePersonalGoalsRouter.post('/', async (req, res, next) => {
  */
 mePersonalGoalsRouter.put('/:id', async (req, res, next) => {
   const ctx = getTenantContext(req);
-  const { gymId, actorName, isSuperadmin } = ctx;
+  const { gymId } = ctx;
   const { id } = req.params;
 
   const targetType = normalizeTargetType(req.body?.target_type);
@@ -347,7 +348,7 @@ mePersonalGoalsRouter.put('/:id', async (req, res, next) => {
   const notes = normalizeNotes(req.body?.notes);
   if ('error' in notes) return res.status(400).json({ error: notes.error });
 
-  const actor = memberActorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
 
   try {
     const memberId = await resolveMemberId(gymId, ctx);
@@ -369,8 +370,8 @@ mePersonalGoalsRouter.put('/:id', async (req, res, next) => {
     });
     if (fieldError) return res.status(400).json({ error: fieldError });
 
-    const updates = ['modified_at = UTC_TIMESTAMP()', 'modified_by_name = ?', 'modified_by_type = ?'];
-    const params: unknown[] = [actor.name, actor.type];
+    const updates: string[] = [];
+    const params: unknown[] = [actor];
     if (targetValue.value !== undefined) { updates.push('target_value = ?'); params.push(targetValue.value); }
     if (targetUnit.value !== undefined) { updates.push('target_unit = ?'); params.push(targetUnit.value); }
     if (targetType.value !== undefined) { updates.push('target_type = ?'); params.push(targetType.value); }
@@ -380,7 +381,7 @@ mePersonalGoalsRouter.put('/:id', async (req, res, next) => {
     params.push(id, gymId, memberId);
 
     await db.query(
-      `UPDATE member_personal_goals SET ${updates.join(', ')}
+      `UPDATE member_personal_goals SET modified_at = UTC_TIMESTAMP(), modified_by = ?${updates.map((u) => `, ${u}`).join('')}
        WHERE id = ? AND gym_id = ? AND member_id = ?`,
       params,
     );
@@ -422,12 +423,12 @@ mePersonalGoalsRouter.get('/:id/readings', async (req, res, next) => {
 
 mePersonalGoalsRouter.post('/:id/readings', async (req, res, next) => {
   const ctx = getTenantContext(req);
-  const { gymId, actorName, isSuperadmin } = ctx;
+  const { gymId } = ctx;
   const value = normalizeReadingValue(req.body?.value);
   if ('error' in value) return res.status(400).json({ error: value.error });
   const recordedAt = normalizeRecordedAt(req.body?.recorded_at);
   if ('error' in recordedAt) return res.status(400).json({ error: recordedAt.error });
-  const actor = memberActorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
 
   try {
     const memberId = await resolveMemberId(gymId, ctx);
@@ -440,8 +441,8 @@ mePersonalGoalsRouter.post('/:id/readings', async (req, res, next) => {
       value: value.value,
       recordedAt: recordedAt.value,
       isInitial: false,
-      actorName: actor.name,
-      actorType: actor.type,
+      actorName: readingActor(ctx, true).name,
+      actorType: readingActor(ctx, true).type,
     });
     res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false, targetType: assignment.target_type }));
   } catch (err) { next(err); }
@@ -450,12 +451,12 @@ mePersonalGoalsRouter.post('/:id/readings', async (req, res, next) => {
 /** §21 — the member's own re-baseline: an added period boundary, nothing overwritten. */
 mePersonalGoalsRouter.post('/:id/initial-reading', async (req, res, next) => {
   const ctx = getTenantContext(req);
-  const { gymId, actorName, isSuperadmin } = ctx;
+  const { gymId } = ctx;
   const value = normalizeReadingValue(req.body?.value);
   if ('error' in value) return res.status(400).json({ error: value.error });
   const recordedAt = normalizeRecordedAt(req.body?.recorded_at);
   if ('error' in recordedAt) return res.status(400).json({ error: recordedAt.error });
-  const actor = memberActorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
 
   try {
     const memberId = await resolveMemberId(gymId, ctx);
@@ -468,8 +469,8 @@ mePersonalGoalsRouter.post('/:id/initial-reading', async (req, res, next) => {
       value: value.value,
       recordedAt: recordedAt.value,
       isInitial: true,
-      actorName: actor.name,
-      actorType: actor.type,
+      actorName: readingActor(ctx, true).name,
+      actorType: readingActor(ctx, true).type,
     });
     res.status(201).json(await loadGoalReadings(assignment.id, gymId, assignment.target_value, { includeActor: false, targetType: assignment.target_type }));
   } catch (err) { next(err); }
@@ -490,9 +491,9 @@ mePersonalGoalsRouter.post('/:id/initial-reading', async (req, res, next) => {
  */
 mePersonalGoalsRouter.delete('/:id', async (req, res, next) => {
   const ctx = getTenantContext(req);
-  const { gymId, actorName, isSuperadmin } = ctx;
+  const { gymId } = ctx;
   const { id } = req.params;
-  const actor = memberActorSnapshot({ name: actorName, isSuperadmin });
+  const actor = resolveRequestActor(ctx);
 
   try {
     const memberId = await resolveMemberId(gymId, ctx);
@@ -506,17 +507,13 @@ mePersonalGoalsRouter.delete('/:id', async (req, res, next) => {
       today: utcToday(),
     });
 
-    const updates = [
-      'deleted_at = UTC_TIMESTAMP()',
-      'deleted_by_name = ?', 'deleted_by_type = ?',
-      'modified_at = UTC_TIMESTAMP()',
-    ];
-    const params: unknown[] = [actor.name, actor.type];
+    const updates: string[] = [];
+    const params: unknown[] = [actor];
     if (endDate !== undefined) { updates.push('end_date = ?'); params.push(endDate); }
     params.push(id, gymId, memberId);
 
     await db.query(
-      `UPDATE member_personal_goals SET ${updates.join(', ')}
+      `UPDATE member_personal_goals SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?, modified_at = UTC_TIMESTAMP()${updates.map((u) => `, ${u}`).join('')}
        WHERE id = ? AND gym_id = ? AND member_id = ?`,
       params,
     );

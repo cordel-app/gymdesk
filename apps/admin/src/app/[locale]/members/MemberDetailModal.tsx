@@ -18,9 +18,9 @@ interface MemberDetail {
   notes: string | null;
   nif_nie_passport: string | null;
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
 }
 
 export function MemberDetailModal({ memberId, memberName, onClose }: {
@@ -68,9 +68,9 @@ export function MemberDetailModal({ memberId, memberName, onClose }: {
 
             <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid #f0f0f0' }}>
               <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('col_audit')}</p>
-              {field(t('col_created_by'), detail.created_by_name)}
+              {field(t('col_created_by'), detail.created_by)}
               {field(t('col_created_at'), detail.created_at?.slice(0, 10))}
-              {field(t('col_modified_by'), detail.modified_by_name)}
+              {field(t('col_modified_by'), detail.modified_by)}
               {field(t('col_modified_at'), detail.modified_at?.slice(0, 10) ?? null)}
             </div>
           </>

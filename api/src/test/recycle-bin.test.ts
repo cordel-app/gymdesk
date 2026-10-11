@@ -295,7 +295,7 @@ async function createMember(gymId: string): Promise<number> {
 
 async function softDeleteMember(id: number, gymId: string): Promise<void> {
   await db.query(
-    'UPDATE members SET deleted_at = NOW(), deleted_by_name = ? WHERE id = ? AND gym_id = ?',
+    'UPDATE members SET deleted_at = NOW(), deleted_by = ? WHERE id = ? AND gym_id = ?',
     ['Test Admin', id, gymId],
   );
 }
@@ -344,7 +344,7 @@ describe('Member in GET /recycle-bin', () => {
     expect(ids).not.toContain(activeMemberId);
   });
 
-  it('exposes deleted_by_name on the member list item', async () => {
+  it('exposes deleted_by on the member list item', async () => {
     const res = await request
       .get('/recycle-bin?entity_type=member')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -352,7 +352,7 @@ describe('Member in GET /recycle-bin', () => {
     expect(res.status).toBe(200);
     const item = res.body.items.find((i: any) => Number(i.id) === deletedMemberId);
     expect(item).toBeDefined();
-    expect(item.deleted_by_name).toBe('Test Admin');
+    expect(item.deleted_by).toBe('Test Admin');
   });
 });
 
@@ -380,7 +380,7 @@ describe('Member in GET /recycle-bin/:entityType/:id', () => {
     expect(res.body).toHaveProperty('email');
     expect(res.body).toHaveProperty('deleted_at');
     expect(res.body.deleted_at).not.toBeNull();
-    expect(res.body.deleted_by_name).toBe('Test Admin');
+    expect(res.body.deleted_by).toBe('Test Admin');
   });
 
   it('returns 404 for an active (non-deleted) member', async () => {
@@ -410,11 +410,14 @@ describe('Member in POST /recycle-bin/member/:id/recover', () => {
       .set('x-gym-id', gymId);
     expect(res.status).toBe(204);
 
-    const { rows } = await db.query<{ deleted_at: string | null }>(
-      'SELECT deleted_at FROM members WHERE id = ?',
+    const { rows } = await db.query<{ deleted_at: string | null; deleted_by: string | null; modified_at: string | null }>(
+      'SELECT deleted_at, deleted_by, modified_at FROM members WHERE id = ?',
       [deletedMemberId],
     );
     expect(rows[0].deleted_at).toBeNull();
+    // #1182: the restore clears the deleted pair and is recorded as a modification.
+    expect(rows[0].deleted_by).toBeNull();
+    expect(rows[0].modified_at).not.toBeNull();
   });
 
   it('recovered member no longer appears in the recycle bin', async () => {
@@ -461,7 +464,7 @@ async function createDeletedProduct(gymId: string, name: string): Promise<number
   const { insertId } = await db.query(
     `INSERT INTO products
        (gym_id, name, type, units, amount, currency, billing_frequency, status, availability,
-        is_system, validity_days, notes, deleted_at, deleted_by_name)
+        is_system, validity_days, notes, deleted_at, deleted_by)
      VALUES (?, ?, 'sessions', 5, 50.00, 'EUR', 'once', 'inactive', 'available', 0, 182, 'Kept for the record', NOW(), 'Test Admin')`,
     [gymId, name],
   );
@@ -517,7 +520,7 @@ describe('Product in the recycle bin', () => {
     expect(Number(res.body.units)).toBe(5);
     expect(Number(res.body.amount)).toBe(50);
     expect(Number(res.body.validity_days)).toBe(182);
-    expect(res.body.deleted_by_name).toBe('Test Admin');
+    expect(res.body.deleted_by).toBe('Test Admin');
   });
 
   it('recovers it, which clears deleted_at and reactivates the row', async () => {

@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import {
@@ -310,7 +311,7 @@ activityTypeScheduleRulesRouter.post('/', requireRole('admin'), async (req, res)
   }
 
   const gymTimezone = await getGymTimezone(gymId);
-  await materializeScheduleRule(insertId, gymTimezone);
+  await materializeScheduleRule(insertId, gymTimezone, resolveRequestActor(getTenantContext(req)));
 
   const { rows } = await db.query('SELECT * FROM activity_type_schedule_rules WHERE id = ?', [insertId]);
   const slot_warning = computeSlotWarning(type, start_time, end_time, activityType.duration_minutes);
@@ -470,15 +471,19 @@ activityTypeScheduleRulesRouter.put('/:ruleId', requireRole('admin'), async (req
     // untouched. Re-materialization then only inserts the additional occurrences
     // a later end_date newly makes room for; it already skips any date that
     // still exists as a non-cancelled row, so nothing in range is recreated.
-    await cancelOccurrencesByIds(outOfRangeIds);
+    await cancelOccurrencesByIds(outOfRangeIds, resolveRequestActor(getTenantContext(req)));
   } else {
     // Cancel future events for this rule — preserving booked occurrences that still
     // fit the new window — then regenerate. Re-materialization re-books the
     // (possibly updated) assigned Members on the new occurrences and skips slots
     // that already exist as preserved rows.
-    await cancelFutureOccurrences(Number(ruleId), { preserveIds: preserved.map((o) => o.id) });
+    await cancelFutureOccurrences(
+      Number(ruleId),
+      { preserveIds: preserved.map((o) => o.id) },
+      resolveRequestActor(getTenantContext(req)),
+    );
   }
-  await materializeScheduleRule(Number(ruleId), gymTimezone);
+  await materializeScheduleRule(Number(ruleId), gymTimezone, resolveRequestActor(getTenantContext(req)));
 
   if (impacted.length > 0) {
     notifyImpactedOccurrences(
@@ -525,7 +530,7 @@ activityTypeScheduleRulesRouter.delete('/:ruleId', requireRole('admin'), async (
   }
 
   // Cancel future calendar events first (preserve past)
-  await cancelFutureOccurrences(Number(ruleId));
+  await cancelFutureOccurrences(Number(ruleId), undefined, resolveRequestActor(getTenantContext(req)));
 
   await db.query('DELETE FROM activity_type_schedule_rules WHERE id = ?', [ruleId]);
 

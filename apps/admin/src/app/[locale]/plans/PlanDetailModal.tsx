@@ -38,9 +38,9 @@ interface PlanSummary {
   periodical_benefits: unknown[];
   promotion_count: number;
   created_at: string;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
 }
 
 // #512: read-only Details modal, following the Promotion Details modal pattern
@@ -119,9 +119,9 @@ export function PlanDetailModal({ plan, onClose }: {
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid #f0f0f0' }}>
           <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('details_section_audit')}</p>
-          {field(t('details_created_by'), plan.created_by_name)}
+          {field(t('details_created_by'), plan.created_by)}
           {field(t('details_created_at'), plan.created_at?.slice(0, 10))}
-          {field(t('details_modified_by'), plan.modified_by_name)}
+          {field(t('details_modified_by'), plan.modified_by)}
           {field(t('details_modified_at'), plan.modified_at?.slice(0, 10))}
         </div>
 

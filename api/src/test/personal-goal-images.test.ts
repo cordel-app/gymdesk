@@ -398,11 +398,11 @@ describe('POST /personal-goals/:id/image', () => {
 
   it('records who uploaded it', async () => {
     await upload(`/personal-goals/${goalId}/image`, gymId, validPng());
-    const { rows } = await db.query<{ modified_by_name: string | null; modified_at: string | null }>(
-      'SELECT modified_by_name, modified_at FROM personal_goals WHERE id = ?',
+    const { rows } = await db.query<{ modified_by: string | null; modified_at: string | null }>(
+      'SELECT modified_by, modified_at FROM personal_goals WHERE id = ?',
       [goalId],
     );
-    expect(rows[0].modified_by_name).toBeTruthy();
+    expect(rows[0].modified_by).toBeTruthy();
     expect(rows[0].modified_at).toBeTruthy();
   });
 });

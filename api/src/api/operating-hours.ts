@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -47,22 +48,24 @@ operatingHoursRouter.get('/weekly', async (req, res) => {
 });
 
 operatingHoursRouter.put('/weekly', requireModuleWrite('ORGANIZATION'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
   const shifts: WeeklyShiftInput[] = Array.isArray(req.body.shifts) ? req.body.shifts : [];
   const err = validateWeeklyShifts(shifts);
   if (err) return res.status(400).json({ error: err });
 
   await db.transaction(async (tx) => {
     await tx.query(
-      `UPDATE gym_operating_hours SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?
+      `UPDATE gym_operating_hours SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?
        WHERE gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId, gymId],
+      [actor, gymId],
     );
     if (shifts.length > 0) {
       const values = shifts.map(() => '(?, ?, ?, ?, ?)').join(', ');
-      const params = shifts.flatMap((s) => [gymId, s.weekday, s.start_time, s.end_time, gymMembershipId]);
+      const params = shifts.flatMap((s) => [gymId, s.weekday, s.start_time, s.end_time, actor]);
       await tx.query(
-        `INSERT INTO gym_operating_hours (gym_id, weekday, start_time, end_time, created_by_membership_id)
+        `INSERT INTO gym_operating_hours (gym_id, weekday, start_time, end_time, created_by)
          VALUES ${values}`,
         params,
       );
@@ -86,10 +89,8 @@ operatingHoursRouter.put('/weekly', requireModuleWrite('ORGANIZATION'), async (r
 // ---------------------------------------------------------------------------
 
 const HOLIDAY_SELECT = `
-  SELECT h.*, gm_c.name AS created_by_name, gm_m.name AS modified_by_name
+  SELECT h.*
   FROM gym_holiday_hours h
-  LEFT JOIN gym_memberships gm_c ON gm_c.id = h.created_by_membership_id
-  LEFT JOIN gym_memberships gm_m ON gm_m.id = h.modified_by_membership_id
 `;
 
 function validateHoliday(body: any): string | null {
@@ -119,7 +120,10 @@ operatingHoursRouter.get('/holidays', async (req, res) => {
 });
 
 operatingHoursRouter.post('/holidays', requireModuleWrite('ORGANIZATION'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+
   const err = validateHoliday(req.body);
   if (err) return res.status(400).json({ error: err });
 
@@ -129,9 +133,9 @@ operatingHoursRouter.post('/holidays', requireModuleWrite('ORGANIZATION'), async
 
   const row = await insertAndFetch(
     `INSERT INTO gym_holiday_hours
-      (gym_id, date_start, date_end, start_time, end_time, is_closed, annual_renewal, label, created_by_membership_id)
+      (gym_id, date_start, date_end, start_time, end_time, is_closed, annual_renewal, label, created_by)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [gymId, date_start, date_end, closed ? null : start_time, closed ? null : end_time, closed ? 1 : 0, renewal ? 1 : 0, label?.trim() || null, gymMembershipId],
+    [gymId, date_start, date_end, closed ? null : start_time, closed ? null : end_time, closed ? 1 : 0, renewal ? 1 : 0, label?.trim() || null, actor],
     `${HOLIDAY_SELECT} WHERE h.id = ?`,
     (id) => [id],
   );
@@ -140,7 +144,10 @@ operatingHoursRouter.post('/holidays', requireModuleWrite('ORGANIZATION'), async
 });
 
 operatingHoursRouter.put('/holidays/:id', requireModuleWrite('ORGANIZATION'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+
   const err = validateHoliday(req.body);
   if (err) return res.status(400).json({ error: err });
 
@@ -158,14 +165,14 @@ operatingHoursRouter.put('/holidays/:id', requireModuleWrite('ORGANIZATION'), as
        annual_renewal = ?,
        label          = ?,
        modified_at    = UTC_TIMESTAMP(),
-       modified_by_membership_id = ?
+       modified_by = ?
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
     [
       date_start, date_end,
       closed ? null : start_time, closed ? null : end_time,
       closed ? 1 : 0, renewal ? 1 : 0,
       label?.trim() || null,
-      gymMembershipId,
+      actor,
       req.params.id, gymId,
     ],
   );
@@ -177,11 +184,14 @@ operatingHoursRouter.put('/holidays/:id', requireModuleWrite('ORGANIZATION'), as
 });
 
 operatingHoursRouter.delete('/holidays/:id', requireModuleWrite('ORGANIZATION'), async (req, res) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const actor = resolveRequestActor(ctx);
+
   const { rowCount } = await db.query(
-    `UPDATE gym_holiday_hours SET deleted_at = UTC_TIMESTAMP(), deleted_by_membership_id = ?
+    `UPDATE gym_holiday_hours SET deleted_at = UTC_TIMESTAMP(), deleted_by = ?
      WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-    [gymMembershipId, req.params.id, gymId],
+    [actor, req.params.id, gymId],
   );
   if (rowCount === 0) return res.status(404).json({ error: 'Holiday not found' });
   recordAudit(req, { action: 'soft_delete', entityType: 'gym_holiday_hours', entityId: req.params.id });

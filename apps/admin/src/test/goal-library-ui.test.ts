@@ -232,11 +232,11 @@ describe('row shape and payloads', () => {
     description: '  the season  ',
     status: 'active',
     created_at: '2026-10-01 10:00:00',
-    created_by_name: 'Staff',
+    created_by: 'Staff',
     modified_at: null,
-    modified_by_name: null,
+    modified_by: null,
     deleted_at: null,
-    deleted_by_name: null,
+    deleted_by: null,
   };
 
   it('tells a System row from a gym\'s own', () => {
@@ -457,7 +457,7 @@ describe('read-only expanded row, editing behind the context menu (#797–#800)'
       expect(truncateDescription(null)).toBe('');
       // Created At is the standard formatter; Created By the masked snapshot.
       expect(columns).toContain('formatTimestamp(goal.created_at)');
-      expect(columns).toContain('displayValue(goal.created_by_name)');
+      expect(columns).toContain('displayValue(goal.created_by)');
       expect(columns).not.toContain("label('col_type')");
     });
 
@@ -750,8 +750,8 @@ describe('a Personal Goal has an image, a Nutrition Goal does not (#1035 stage 2
     const goal: GoalRow = {
       id: 1, gym_id: 'gym_1', slug: null, name: 'Marathon', description: null,
       image_url: 'https://cdn.example.com/gyms/gym_1-X/goals/1-Marathon.png',
-      status: 'active', created_at: '2026-10-05T00:00:00Z', created_by_name: null,
-      modified_at: null, modified_by_name: null, deleted_at: null, deleted_by_name: null,
+      status: 'active', created_at: '2026-10-05T00:00:00Z', created_by: null,
+      modified_at: null, modified_by: null, deleted_at: null, deleted_by: null,
     };
     expect(goal.image_url).toContain('/goals/1-Marathon.png');
     // A goal with none reads as `null`, never as a placeholder asset (#716's

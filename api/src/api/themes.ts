@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import express from 'express';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
+import { resolvePlatformActor } from '../domain/auditActor';
 import { recordAudit } from '../infra/audit';
 import { defaultTokens, validateTokens } from '../domain/themeTokens';
 import {
@@ -53,7 +54,7 @@ const LOGO_MAX_BYTES = 512 * 1024; // 512 KB
  * so a list or a write that forgot the column would report a logo-less theme.
  */
 const THEME_SELECT_COLS = 'id, gym_id, is_system_default, name, description, status, logo_mime, '
-  + 'logo_updated_at, logo_object_key, logo_contains_gym_name, tokens, created_at, modified_at';
+  + 'logo_updated_at, logo_object_key, logo_contains_gym_name, tokens, created_at, created_by, modified_at, modified_by';
 
 /**
  * `memberImages` are this theme's `theme_member_images` rows (#732), passed in
@@ -121,7 +122,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
   const sql = `
     SELECT
       t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-      t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.modified_at, t.deleted_at,
+      t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.created_by, t.modified_at, t.modified_by, t.deleted_at, t.deleted_by,
       (
         SELECT COUNT(DISTINCT gg.id)
         FROM gyms gg
@@ -145,7 +146,7 @@ themesRouter.get('/', requireSuperadmin, async (req, res) => {
 themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
   const { rows } = await db.query(
     `SELECT t.id, t.gym_id, t.is_system_default, t.name, t.description, t.status,
-            t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.modified_at, t.deleted_at,
+            t.logo_mime, t.logo_updated_at, t.logo_object_key, t.logo_contains_gym_name, t.tokens, t.created_at, t.created_by, t.modified_at, t.modified_by, t.deleted_at, t.deleted_by,
             (
               SELECT COUNT(DISTINCT gg.id) FROM gyms gg
               LEFT JOIN centers cc ON cc.gym_id = gg.id AND cc.deleted_at IS NULL
@@ -157,25 +158,10 @@ themesRouter.get('/:id', requireSuperadmin, async (req, res) => {
   );
   if (rows.length === 0) return res.status(404).json({ error: 'Theme not found', cause: 'not_found' });
 
-  const [{ rows: auditRows }] = await Promise.all([
-    db.query(
-      `SELECT action, actor_name, created_at FROM audit_logs
-       WHERE entity_type = 'theme' AND entity_id = ?
-       ORDER BY created_at ASC`,
-      [req.params.id],
-    ),
-  ]);
-  const createEntry = auditRows.find((r: any) => r.action === 'create');
-  const updateEntry = [...auditRows].reverse().find((r: any) => r.action === 'update');
-  const deleteEntry = [...auditRows].reverse().find((r: any) => r.action === 'delete');
-
   const row = rows[0];
   res.json({
     ...shapeTheme(row, await loadThemeMemberImages(row.id)),
     usage_count: Number(row.usage_count),
-    created_by_name: createEntry?.actor_name ?? null,
-    modified_by_name: updateEntry?.actor_name ?? null,
-    deleted_by_name: deleteEntry?.actor_name ?? null,
   });
 });
 
@@ -208,8 +194,8 @@ themesRouter.post('/', requireSuperadmin, async (req, res) => {
 
   const id = randomUUID();
   await db.query(
-    'INSERT INTO themes (id, gym_id, is_system_default, name, description, status, logo_contains_gym_name, tokens, created_at) VALUES (?, NULL, 0, ?, ?, ?, ?, ?, UTC_TIMESTAMP())',
-    [id, name.trim(), description?.trim() ?? null, resolvedStatus, logo_contains_gym_name ?? false, JSON.stringify(mergedTokens)],
+    'INSERT INTO themes (id, gym_id, is_system_default, name, description, status, logo_contains_gym_name, tokens, created_at, created_by) VALUES (?, NULL, 0, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)',
+    [id, name.trim(), description?.trim() ?? null, resolvedStatus, logo_contains_gym_name ?? false, JSON.stringify(mergedTokens), resolvePlatformActor(req.superadminName)],
   );
   const { rows } = await db.query(
     `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
@@ -275,9 +261,11 @@ themesRouter.put('/:id', requireSuperadmin, async (req, res) => {
        description            = CASE WHEN ? IS NOT NULL THEN ? ELSE description END,
        status                 = COALESCE(?, status),
        logo_contains_gym_name = COALESCE(?, logo_contains_gym_name),
-       tokens                 = ?
+       tokens                 = ?,
+       modified_at            = UTC_TIMESTAMP(),
+       modified_by            = ?
      WHERE id = ?`,
-    [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, logo_contains_gym_name ?? null, JSON.stringify(tokensMerged), req.params.id],
+    [name?.trim() ?? null, description !== undefined ? description : null, description ?? null, status ?? null, logo_contains_gym_name ?? null, JSON.stringify(tokensMerged), resolvePlatformActor(req.superadminName), req.params.id],
   );
   const { rows } = await db.query(
     `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
@@ -438,8 +426,8 @@ themesRouter.post(
     // `logo_bytes = NULL`: R2 is the source of the binary now, and leaving the
     // old blob behind would be a second copy the readers could prefer.
     await db.query(
-      'UPDATE themes SET logo_bytes = NULL, logo_object_key = ?, logo_mime = ?, logo_updated_at = UTC_TIMESTAMP() WHERE id = ?',
-      [key, mime, theme.id],
+      'UPDATE themes SET logo_bytes = NULL, logo_object_key = ?, logo_mime = ?, logo_updated_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+      [key, mime, resolvePlatformActor(req.superadminName), theme.id],
     );
     const { rows } = await db.query(
       `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
@@ -486,8 +474,8 @@ themesRouter.delete('/:id/logo', requireSuperadmin, async (req, res) => {
   }
 
   await db.query(
-    'UPDATE themes SET logo_bytes = NULL, logo_object_key = NULL, logo_mime = NULL, logo_updated_at = NULL WHERE id = ?',
-    [req.params.id],
+    'UPDATE themes SET logo_bytes = NULL, logo_object_key = NULL, logo_mime = NULL, logo_updated_at = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+    [resolvePlatformActor(req.superadminName), req.params.id],
   );
   const { rows } = await db.query(
     `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
@@ -776,8 +764,8 @@ themesRouter.post('/clone/:sourceId', requireSuperadmin, async (req, res) => {
   const id = randomUUID();
   const tokens = typeof src.tokens === 'string' ? src.tokens : JSON.stringify(src.tokens);
   await db.query(
-    "INSERT INTO themes (id, gym_id, is_system_default, name, status, logo_contains_gym_name, tokens, created_at) VALUES (?, NULL, 0, ?, 'draft', ?, ?, UTC_TIMESTAMP())",
-    [id, baseName, src.logo_contains_gym_name, tokens],
+    "INSERT INTO themes (id, gym_id, is_system_default, name, status, logo_contains_gym_name, tokens, created_at, created_by) VALUES (?, NULL, 0, ?, 'draft', ?, ?, UTC_TIMESTAMP(), ?)",
+    [id, baseName, src.logo_contains_gym_name, tokens, resolvePlatformActor(req.superadminName)],
   );
   const { rows } = await db.query(
     `SELECT ${THEME_SELECT_COLS} FROM themes WHERE id = ?`,
@@ -797,7 +785,10 @@ themesRouter.put('/:id/set-system-default', requireSuperadmin, async (req, res) 
   if (existing.length === 0) return res.status(404).json({ error: 'Theme not found', cause: 'not_found' });
 
   await db.query('UPDATE themes SET is_system_default = 0 WHERE gym_id IS NULL');
-  await db.query('UPDATE themes SET is_system_default = 1 WHERE id = ?', [req.params.id]);
+  await db.query(
+    'UPDATE themes SET is_system_default = 1, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+    [resolvePlatformActor(req.superadminName), req.params.id],
+  );
   recordAudit(req, { action: 'update', entityType: 'theme', entityId: req.params.id, next: { is_system_default: true } });
   res.json({ ok: true });
 });
@@ -818,8 +809,8 @@ themesRouter.delete('/:id', requireSuperadmin, async (req, res) => {
   }
 
   await db.query(
-    "UPDATE themes SET status = 'deleted', deleted_at = UTC_TIMESTAMP() WHERE id = ?",
-    [req.params.id],
+    "UPDATE themes SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ? WHERE id = ?",
+    [resolvePlatformActor(req.superadminName), req.params.id],
   );
   recordAudit(req, { action: 'delete', entityType: 'theme', entityId: req.params.id });
   res.status(204).send();

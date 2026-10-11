@@ -15,7 +15,7 @@ import {
 async function createStaff(gymId: string, overrides: Record<string, unknown> = {}): Promise<number> {
   const email = (overrides.email as string) ?? `staff-${Date.now()}-${Math.random().toString(36).slice(2, 7)}@gym.test`;
   const { insertId } = await db.query(
-    `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, employment_status, current_status, created_at, updated_at)
+    `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, employment_status, current_status, created_at, modified_at)
      VALUES (?, ?, ?, ?, ?, ?, 'active', 'available', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
     [
       gymId,

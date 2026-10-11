@@ -1266,7 +1266,7 @@ describe('POST /products/:id/duplicate', () => {
     expect(dup.body.name).toBe('Copy of Original Custom Item');
     // Current gym/tenant, current user as creator.
     expect(dup.body.gym_id).toBe(gymId);
-    expect(dup.body.created_by_membership_id).toBeTruthy();
+    expect(dup.body.created_by).toBe('Test User');
     // Always created as a custom item.
     expect(dup.body.is_system).toBe(0);
     // Copied configuration fields, including status/enrollment visibility.

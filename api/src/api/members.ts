@@ -5,6 +5,7 @@ import { db } from '../infra/db';
 import { soleActiveCenterId } from '../infra/centerContext';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
+import { resolveRequestActor } from '../domain/auditActor';
 import { deriveAccessRights } from '../domain/memberAccessRights';
 import { handleDupEntry } from '../infra/db-helpers';
 import { validateDocumentId, maskDocumentId } from '../domain/documentId';
@@ -176,12 +177,8 @@ membersRouter.get('/count', async (req, res) => {
  */
 async function loadMemberDetail(gymId: string, id: number | string): Promise<Record<string, any> | null> {
   const { rows } = await db.query(
-    `SELECT m.*,
-            cb.name AS created_by_name,
-            mb.name AS modified_by_name
+    `SELECT m.*
      FROM members m
-     LEFT JOIN gym_memberships cb ON cb.id = m.created_by
-     LEFT JOIN gym_memberships mb ON mb.id = m.modified_by
      WHERE m.id = ? AND m.gym_id = ? AND m.deleted_at IS NULL`,
     [id, gymId],
   );
@@ -216,7 +213,8 @@ membersRouter.get('/:id', async (req, res) => {
  */
 for (const [action, value] of [['grant', 'granted'], ['revoke', 'revoked']] as const) {
   membersRouter.post(`/:id/access/${action}`, requireModuleWrite('MEMBERS'), async (req, res, next) => {
-    const { gymId } = getTenantContext(req);
+    const tenantCtx = getTenantContext(req);
+    const { gymId } = tenantCtx;
     try {
       const { rows } = await db.query(
         'SELECT id, access_rights FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -225,7 +223,10 @@ for (const [action, value] of [['grant', 'granted'], ['revoke', 'revoked']] as c
       if (!rows[0]) return res.status(404).json({ error: 'Member not found' });
       const previous = rows[0].access_rights;
       if (previous !== value) {
-        await db.query('UPDATE members SET access_rights = ? WHERE id = ? AND gym_id = ?', [value, rows[0].id, gymId]);
+        await db.query(
+          'UPDATE members SET access_rights = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+          [value, resolveRequestActor(tenantCtx), rows[0].id, gymId],
+        );
         recordAudit(req, {
           action: `access_${action}`, entityType: 'member', entityId: rows[0].id,
           previous: { access_rights: previous }, next: { access_rights: value },
@@ -309,7 +310,8 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
 });
 
 membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId, gymMembershipId } = tenantCtx;
   const { name, email, phone, fare_id, center_ids, default_center_id, nif_nie_passport } = req.body;
   if (!name || !email) return res.status(400).json({ error: 'name and email are required' });
 
@@ -326,7 +328,7 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         'INSERT INTO members (name, email, phone, membership_plan_id, gym_id, created_by, nif_nie_passport) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [name, email, phone ?? null, fare_id ?? null, gymId, gymMembershipId ?? null, docCheck.normalized],
+        [name, email, phone ?? null, fare_id ?? null, gymId, resolveRequestActor(tenantCtx), docCheck.normalized],
       );
       for (const centerId of centers.ids) {
         await tx.query(
@@ -346,7 +348,8 @@ membersRouter.post('/', requireModuleWrite('MEMBERS'), async (req, res, next) =>
 });
 
 membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
   // email is intentionally excluded — Clerk sync is out of scope (#346 §5.1)
   const { name, phone, date_of_birth, gender, address, emergency_contact, notes, nif_nie_passport } = req.body;
 
@@ -376,7 +379,7 @@ membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) 
         emergency_contact ?? null,
         notes ?? null,
         docCheck.normalized,
-        gymMembershipId ?? null,
+        resolveRequestActor(tenantCtx),
         req.params.id, gymId,
       ],
     );
@@ -403,7 +406,8 @@ membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) 
  * from the body) so ticking the box cannot blank anything else.
  */
 membersRouter.put('/:id/welcomed', requireModuleWrite('MEMBERS'), async (req, res, next) => {
-  const { gymId, gymMembershipId } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
   const welcomed = req.body?.welcomed;
   if (typeof welcomed !== 'boolean') return res.status(400).json({ error: 'welcomed must be a boolean' });
   try {
@@ -416,7 +420,7 @@ membersRouter.put('/:id/welcomed', requireModuleWrite('MEMBERS'), async (req, re
       `UPDATE members SET welcomed_at = ${welcomed ? 'UTC_TIMESTAMP()' : 'NULL'},
               modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [gymMembershipId ?? null, req.params.id, gymId],
+      [resolveRequestActor(tenantCtx), req.params.id, gymId],
     );
     const { rows } = await db.query(
       'SELECT welcomed_at FROM members WHERE id = ? AND gym_id = ?',
@@ -483,10 +487,10 @@ membersRouter.post('/:id/image', requireModuleWrite('MEMBERS'), memberImageBodyP
     const context = await loadMemberForImage(req, res, { requireStoragePrefix: true });
     if (!context) return;
     const { gymId, member } = context;
-    const { gymMembershipId } = getTenantContext(req);
+    const tenantCtx = getTenantContext(req);
 
     const stored = await storeMemberImage({
-      gymId, folderPrefix: context.folderPrefix as string, member, body: parsed, modifiedBy: gymMembershipId ?? null,
+      gymId, folderPrefix: context.folderPrefix as string, member, body: parsed, modifiedBy: resolveRequestActor(tenantCtx),
     });
     if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
 
@@ -504,9 +508,9 @@ membersRouter.delete('/:id/image', requireModuleWrite('MEMBERS'), async (req, re
     const context = await loadMemberForImage(req, res, { requireStoragePrefix: false });
     if (!context) return;
     const { gymId, folderPrefix, member } = context;
-    const { gymMembershipId } = getTenantContext(req);
+    const tenantCtx = getTenantContext(req);
 
-    await clearMemberImage({ gymId, folderPrefix, member, modifiedBy: gymMembershipId ?? null });
+    await clearMemberImage({ gymId, folderPrefix, member, modifiedBy: resolveRequestActor(tenantCtx) });
 
     const updated = await loadMemberDetail(gymId, member.id);
     recordAudit(req, {
@@ -535,7 +539,10 @@ membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res
       redirectUrl: `${memberAppUrl}/en/link?gym_id=${gymId}`,
       publicMetadata: memberInviteMetadata(gymId, String(req.params.id)),
     });
-    await db.query('UPDATE members SET invitation_id = ?, invited_at = UTC_TIMESTAMP() WHERE id = ?', [invitation.id, req.params.id]);
+    await db.query(
+      'UPDATE members SET invitation_id = ?, invited_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+      [invitation.id, resolveRequestActor(getTenantContext(req)), req.params.id],
+    );
     recordAudit(req, { action: 'invite', entityType: 'member', entityId: req.params.id, next: { email: rows[0].email } });
     res.json({ ok: true });
   } catch (err: any) {
@@ -563,7 +570,10 @@ membersRouter.post('/:id/reinvite', requireModuleWrite('MEMBERS'), async (req, r
       redirectUrl: `${memberAppUrl}/en/link?gym_id=${gymId}`,
       publicMetadata: memberInviteMetadata(gymId, String(req.params.id)),
     });
-    await db.query('UPDATE members SET invitation_id = ?, invited_at = UTC_TIMESTAMP() WHERE id = ?', [invitation.id, req.params.id]);
+    await db.query(
+      'UPDATE members SET invitation_id = ?, invited_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+      [invitation.id, resolveRequestActor(getTenantContext(req)), req.params.id],
+    );
     recordAudit(req, { action: 'reinvite', entityType: 'member', entityId: req.params.id, next: { email: rows[0].email } });
     res.json({ ok: true });
   } catch (err: any) {
@@ -591,14 +601,18 @@ membersRouter.post('/:id/revoke-invite', requireModuleWrite('MEMBERS'), async (r
       return res.status(502).json({ error: 'Failed to revoke invitation in Clerk.' });
     }
 
-    await db.query('UPDATE members SET invitation_id = NULL WHERE id = ?', [req.params.id]);
+    await db.query(
+      'UPDATE members SET invitation_id = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+      [resolveRequestActor(getTenantContext(req)), req.params.id],
+    );
     recordAudit(req, { action: 'revoke_invite', entityType: 'member', entityId: req.params.id });
     res.status(204).send();
   } catch (err) { next(err); }
 });
 
 membersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
-  const { gymId, actorName } = getTenantContext(req);
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
   try {
     const { rows } = await db.query(
       'SELECT id, clerk_user_id, invitation_id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
@@ -658,9 +672,9 @@ membersRouter.delete('/:id', requireRole('admin'), async (req, res, next) => {
     }
 
     const { rowCount } = await db.query(
-      `UPDATE members SET deleted_at = UTC_TIMESTAMP(), invitation_id = NULL, deleted_by_name = ?${unlinkLogin ? ', clerk_user_id = NULL' : ''}
+      `UPDATE members SET deleted_at = UTC_TIMESTAMP(), invitation_id = NULL, deleted_by = ?${unlinkLogin ? ', clerk_user_id = NULL' : ''}
        WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
-      [actorName, req.params.id, gymId],
+      [resolveRequestActor(tenantCtx), req.params.id, gymId],
     );
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Member not found' });
     recordAudit(req, {

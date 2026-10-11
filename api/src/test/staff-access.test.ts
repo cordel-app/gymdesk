@@ -121,7 +121,7 @@ describe('staff access (#592)', () => {
 
     it('returns 404 when granting access to a gym B staff row with gym A credentials', async () => {
       const { insertId } = await db.query(
-        `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, created_at, updated_at)
+        `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, created_at, modified_at)
          VALUES (?, 'Other', 'Gym', ?, 'Front Desk', '2026-01-01', UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
         [gymBId, uniqueEmail('other-gym')],
       );
@@ -308,7 +308,7 @@ describe('staff access (#592)', () => {
     async function insertLegacyStaff(email: string, status: 'active' | 'inactive' = 'active') {
       // A record created before #592: no gym_membership_id.
       const { insertId } = await db.query(
-        `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, employment_status, created_at, updated_at)
+        `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date, employment_status, created_at, modified_at)
          VALUES (?, 'Legacy', 'Record', ?, 'Personal Trainer', '2026-01-01', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
         [gymId, email, status],
       );

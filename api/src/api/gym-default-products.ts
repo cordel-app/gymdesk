@@ -22,18 +22,13 @@
 // stays deleted rather than being resurrected by the next run.
 
 import { db } from '../infra/db';
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import {
   defaultProductForChargeType,
   defaultProductsWithoutChargeType,
   type DefaultGymProduct,
 } from '../domain/defaultGymProducts';
 
-/** Columns every seeded row writes, in one place so the two inserts agree. */
-const COLUMNS = `
-  (gym_id, charge_type_id, name, type, units, amount, currency, billing_frequency,
-   status, availability, enrollment_status, is_system, mandatory, validity_days,
-   one_time_purchase, tax_rate_id, tax_behavior, created_at, modified_at)
-`;
 
 /**
  * The gym's own system tax rate — the `Standard VAT` 21% row seeded beside the
@@ -48,7 +43,7 @@ const SYSTEM_TAX_RATE = `
 `;
 
 /**
- * The values a declared default contributes, in COLUMNS' order from `units`
+ * The values a declared default contributes, in the INSERT's column order from `units`
  * onwards. `amount` stays `null` for a Product the gym must price itself
  * (§5's Premium Fitness App), which reads as `—` and never as €0.00.
  */
@@ -87,7 +82,7 @@ const UNDECLARED: ReturnType<typeof configurationValues> = [
  * are quoted inclusive of, and a seed that ran first would leave every row
  * un-rated.
  */
-export async function seedDefaultGymProducts(gymId: string): Promise<void> {
+export async function seedDefaultGymProducts(gymId: string, actor: string | null = SYSTEM_ACTOR): Promise<void> {
   // #543: a System Product's name and type come from `charge_types` rather
   // than from this module — the catalogue is where they are spelled.
   const { rows: chargeTypes } = await db.query<{ id: number; code: string }>(
@@ -97,25 +92,31 @@ export async function seedDefaultGymProducts(gymId: string): Promise<void> {
   for (const chargeType of chargeTypes) {
     const declared = defaultProductForChargeType(chargeType.code);
     await db.query(
-      `INSERT IGNORE INTO products ${COLUMNS}
+      `INSERT IGNORE INTO products
+(gym_id, charge_type_id, name, type, units, amount, currency, billing_frequency,
+   status, availability, enrollment_status, is_system, mandatory, validity_days,
+   one_time_purchase, tax_rate_id, tax_behavior, created_at, modified_at, created_by)
        SELECT ?, ct.id, ct.name, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ${SYSTEM_TAX_RATE},
-         'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP()
+         'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
        FROM charge_types ct WHERE ct.id = ?`,
-      [gymId, declared?.type ?? 'fee', ...(declared ? configurationValues(declared) : UNDECLARED), gymId, chargeType.id],
+      [gymId, declared?.type ?? 'fee', ...(declared ? configurationValues(declared) : UNDECLARED), gymId, actor, chargeType.id],
     );
   }
 
   for (const product of defaultProductsWithoutChargeType()) {
     await db.query(
-      `INSERT INTO products ${COLUMNS}
+      `INSERT INTO products
+(gym_id, charge_type_id, name, type, units, amount, currency, billing_frequency,
+   status, availability, enrollment_status, is_system, mandatory, validity_days,
+   one_time_purchase, tax_rate_id, tax_behavior, created_at, modified_at, created_by)
        SELECT ?, NULL, ?, ?, ?, ?, 'EUR', ?, ?, ?, ?, 1, ?, ?, ?, ${SYSTEM_TAX_RATE},
-         'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP()
+         'inclusive', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?
        FROM DUAL
        WHERE NOT EXISTS (
          SELECT 1 FROM products p
          WHERE p.gym_id = ? AND p.is_system = 1 AND p.name = ?
        )`,
-      [gymId, product.name, product.type, ...configurationValues(product), gymId, gymId, product.name],
+      [gymId, product.name, product.type, ...configurationValues(product), gymId, actor, gymId, product.name],
     );
   }
 }

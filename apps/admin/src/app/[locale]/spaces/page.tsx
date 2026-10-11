@@ -45,14 +45,11 @@ interface Space {
   opening_time: string | null;
   closing_time: string | null;
   created_at: string;
-  created_by_membership_id: number | null;
-  created_by_name: string | null;
+  created_by: string | null;
   modified_at: string | null;
-  modified_by_membership_id: number | null;
-  modified_by_name: string | null;
+  modified_by: string | null;
   deleted_at: string | null;
-  deleted_by_membership_id: number | null;
-  deleted_by_name: string | null;
+  deleted_by: string | null;
 }
 
 interface Center { id: number; name: string }
@@ -444,7 +441,7 @@ export default function SpacesPage() {
             <StatusBadge status={space.status} label={tStatus(space.status)} />
           </div>
           <div className={CELL_CLASS.created_by} style={{ fontSize: 13, color: '#888', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {space.created_by_name ?? '—'}
+            {space.created_by ?? '—'}
           </div>
           <div className={CELL_CLASS.created} style={{ fontSize: 13, color: '#888' }}>
             {fmtDate(space.created_at)}
@@ -718,7 +715,7 @@ export default function SpacesPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.created_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.created_by ?? '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_at')}</span>
@@ -726,7 +723,7 @@ export default function SpacesPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_by ?? '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_deleted_at')}</span>
@@ -734,7 +731,7 @@ export default function SpacesPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_deleted_by')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_by_name ?? '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_by ?? '—'}</p>
               </div>
             </div>
           </div>

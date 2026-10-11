@@ -43,13 +43,14 @@ import { logger } from '../lib/logger';
 // What a goal **target** is lives in one module, shared with the assignment side
 // (#1034 §1 — "do not introduce a second, incompatible unit system").
 import { normalizeTargetType, normalizeTargetUnit, normalizeTargetValue, targetPairError } from '../domain/goalTarget';
-// The description rules and the actor snapshot are the Foods library's, reused
-// rather than restated: a goal row carries the same `description` + three actor
-// pairs migration 196 put on `nutrition_library_items`, for the same #799 reasons,
-// and `itemDetailColumnsSql` only ever names the alias it is given.
+// The description rules and the actor columns are the Foods library's, reused
+// rather than restated: a goal row carries the same `description` + the three
+// plain-text `created_by`/`modified_by`/`deleted_by` columns (#1182), and
+// `itemDetailColumnsSql` only ever names the alias it is given.
 import {
-  actorSnapshot, clampLimit, clampOffset, itemDetailColumnsSql, normalizeDescription,
+  clampLimit, clampOffset, itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
+import { resolveRequestActor } from '../domain/auditActor';
 
 /**
  * #947 — a gym's view of one goal catalogue (Personal Goals or Nutrition Goals).
@@ -194,7 +195,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   /* ── Create (gym-owned goals only) ──────────────────────────────────────── */
 
   router.post('/', requireWrite, async (req, res, next) => {
-    const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+    const { gymId } = getTenantContext(req);
     const name = normalizeGoalName(req.body?.name, { required: true });
     if ('error' in name) return res.status(400).json({ error: name.error });
     const description = normalizeDescription(req.body?.description);
@@ -209,7 +210,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       targetType: target.value.type ?? 'absolute',
     });
     if (pairError) return res.status(400).json({ error: pairError });
-    const actor = actorSnapshot({ name: actorName, isSuperadmin });
+    const actor = resolveRequestActor(getTenantContext(req));
 
     try {
       // Scoped to this gym's own rows: a System goal called "Water" must not stop
@@ -226,12 +227,12 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       const insertId = await db.transaction(async (tx) => {
         const { insertId: goalId } = await tx.query(
           `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
-             status, created_by_name, created_by_type)
-           VALUES (?, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?, ?)`,
+             status, created_by)
+           VALUES (?, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?)`,
           [
             gymId, name.value, description.value ?? null,
             ...(measurable ? [target.value.value ?? null, target.value.unit ?? null, target.value.type ?? 'absolute'] : []),
-            actor.name, actor.type,
+            actor,
           ],
         );
         // #1181 — a gym's own goal starts available to that gym, explicitly.
@@ -247,7 +248,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   /* ── Update (gym-owned goals only — System goals are read-only here) ────── */
 
   router.put('/:id', requireWrite, async (req, res, next) => {
-    const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+    const { gymId } = getTenantContext(req);
     const { id } = req.params;
     const name = normalizeGoalName(req.body?.name, { required: false });
     if ('error' in name) return res.status(400).json({ error: name.error });
@@ -255,7 +256,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     if ('error' in description) return res.status(400).json({ error: description.error });
     const target = readTarget(req.body);
     if ('error' in target) return res.status(400).json({ error: target.error });
-    const actor = actorSnapshot({ name: actorName, isSuperadmin });
+    const actor = resolveRequestActor(getTenantContext(req));
 
     try {
       const { rows: existing } = await db.query(
@@ -276,10 +277,10 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         if (conflict.length > 0) return res.status(409).json({ error: 'A goal with this name already exists' });
       }
 
-      // The actor pair moves with every edit, so `modified_by_name` always names
+      // The actor moves with every edit, so `modified_by` always names
       // whoever `modified_at` refers to (#799 §13).
-      const updates = ['modified_at = UTC_TIMESTAMP()', 'modified_by_name = ?', 'modified_by_type = ?'];
-      const params: unknown[] = [actor.name, actor.type];
+      const updates = ['modified_at = UTC_TIMESTAMP()', 'modified_by = ?'];
+      const params: unknown[] = [actor];
       if (name.value !== undefined) { updates.push('name = ?'); params.push(name.value); }
       // Absent from the body means "leave it alone"; an empty string means "clear it".
       if (description.value !== undefined) { updates.push('description = ?'); params.push(description.value); }
@@ -475,13 +476,12 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
             return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
           }
 
-          const { actorName, isSuperadmin } = getTenantContext(req);
-          const imageActor = actorSnapshot({ name: actorName, isSuperadmin });
+          const imageActor = resolveRequestActor(getTenantContext(req));
           await db.query(
             `UPDATE ${table}
-             SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by_name = ?, modified_by_type = ?
+             SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
              WHERE id = ? AND gym_id = ?`,
-            [url, imageActor.name, imageActor.type, goal.id, gymId],
+            [url, imageActor, goal.id, gymId],
           );
 
           // The key is deterministic, so a replacement normally overwrites its
@@ -513,13 +513,12 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         if (!context) return;
         const { gymId, folderPrefix, goal } = context;
 
-        const { actorName, isSuperadmin } = getTenantContext(req);
-        const imageActor = actorSnapshot({ name: actorName, isSuperadmin });
+        const imageActor = resolveRequestActor(getTenantContext(req));
         await db.query(
           `UPDATE ${table}
-           SET image_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by_name = ?, modified_by_type = ?
+           SET image_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
            WHERE id = ? AND gym_id = ?`,
-          [imageActor.name, imageActor.type, goal.id, gymId],
+          [imageActor, goal.id, gymId],
         );
 
         await sweepReplacedImage(folderPrefix, goal.id, goal.image_url, null);
@@ -552,17 +551,16 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     gymId: string,
     goalId: number | string,
     status: 'active' | 'inactive',
-    actor: { name: string | null; type: string | null },
+    actor: string | null,
   ): Promise<void> {
     await q.query(
-      `INSERT INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by_name, created_by_type)
-       VALUES (?, ?, ?, ?, ?) AS incoming
+      `INSERT INTO gym_personal_goals (gym_id, personal_goal_id, status, created_by)
+       VALUES (?, ?, ?, ?) AS incoming
        ON DUPLICATE KEY UPDATE
          status = incoming.status,
          modified_at = UTC_TIMESTAMP(),
-         modified_by_name = incoming.created_by_name,
-         modified_by_type = incoming.created_by_type`,
-      [gymId, goalId, status, actor.name, actor.type],
+         modified_by = incoming.created_by`,
+      [gymId, goalId, status, actor],
     );
   }
 
@@ -582,8 +580,8 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   if (configurable) {
     for (const [action, status] of [['activate', 'active'], ['deactivate', 'inactive']] as const) {
       router.post(`/:id/${action}`, requireWrite, async (req, res, next) => {
-        const { gymId, actorName, isSuperadmin } = getTenantContext(req);
-        const actor = actorSnapshot({ name: actorName, isSuperadmin });
+        const { gymId } = getTenantContext(req);
+        const actor = resolveRequestActor(getTenantContext(req));
         try {
           const source = await loadVisibleGoal(req, res);
           if (!source) return;
@@ -637,8 +635,8 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     }
 
     router.post('/:id/duplicate', requireWrite, async (req, res, next) => {
-      const { gymId, actorName, isSuperadmin } = getTenantContext(req);
-      const actor = actorSnapshot({ name: actorName, isSuperadmin });
+      const { gymId } = getTenantContext(req);
+      const actor = resolveRequestActor(getTenantContext(req));
       try {
         const source = await loadVisibleGoal(req, res);
         if (!source) return;
@@ -657,12 +655,12 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         const insertId = await db.transaction(async (tx) => {
           const { insertId: goalId } = await tx.query(
             `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
-               status, created_by_name, created_by_type)
-             VALUES (?, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?, ?)`,
+               status, created_by)
+             VALUES (?, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?)`,
             [
               gymId, newName, source.description ?? null,
               ...(measurable ? [source.target_value ?? null, source.target_unit ?? null, source.target_type ?? 'absolute'] : []),
-              actor.name, actor.type,
+              actor,
             ],
           );
           await writeGymGoalStatus(tx, gymId, goalId, 'active', actor);
@@ -689,9 +687,9 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   /* ── Soft delete (gym-owned goals only) ─────────────────────────────────── */
 
   router.delete('/:id', requireWrite, async (req, res, next) => {
-    const { gymId, actorName, isSuperadmin } = getTenantContext(req);
+    const { gymId } = getTenantContext(req);
     const { id } = req.params;
-    const actor = actorSnapshot({ name: actorName, isSuperadmin });
+    const actor = resolveRequestActor(getTenantContext(req));
 
     try {
       const { rows: existing } = await db.query(
@@ -708,10 +706,10 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // releases the name: `<prefix>_live_name_key` is NULL for a deleted row.
       await db.query(
         `UPDATE ${table}
-         SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by_name = ?, deleted_by_type = ?,
+         SET status = 'deleted', deleted_at = UTC_TIMESTAMP(), deleted_by = ?,
              modified_at = UTC_TIMESTAMP()
          WHERE id = ?`,
-        [actor.name, actor.type, id],
+        [actor, id],
       );
       recordAudit(req, { action: 'delete', entityType, entityId: id, previous: existing[0] });
       res.status(204).send();

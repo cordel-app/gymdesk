@@ -255,10 +255,10 @@ describe('POST / — assigning a goal to myself (§4, §8)', () => {
     expect(res.body.end_date).toBeNull();
 
     // The row records the member as its actor (migration 222).
-    const { rows } = await db.query<{ created_by_type: string }>(
-      'SELECT created_by_type FROM member_personal_goals WHERE id = ?', [res.body.id],
+    const { rows } = await db.query<{ created_by: string | null }>(
+      'SELECT created_by FROM member_personal_goals WHERE id = ?', [res.body.id],
     );
-    expect(rows[0].created_by_type).toBe('member');
+    expect(rows[0].created_by).toBe('Test User');
   });
 
   it('refuses a second live assignment of the same goal (§7)', async () => {
@@ -458,14 +458,14 @@ describe('DELETE /:id — removing my own goal (§11, §12, Q4)', () => {
     const res = await asMember('delete', `${ROOT}/${id}`);
     expect(res.status).toBe(204);
 
-    const { rows } = await db.query<{ deleted_at: Date | null; end_date: Date | null; status: string; deleted_by_type: string }>(
-      'SELECT deleted_at, end_date, status, deleted_by_type FROM member_personal_goals WHERE id = ?', [id],
+    const { rows } = await db.query<{ deleted_at: Date | null; end_date: Date | null; status: string; deleted_by: string | null }>(
+      'SELECT deleted_at, end_date, status, deleted_by FROM member_personal_goals WHERE id = ?', [id],
     );
     expect(rows[0].deleted_at).not.toBeNull();
     expect(rows[0].end_date).not.toBeNull();
     // The progress status is left exactly where it was (migration 212).
     expect(rows[0].status).toBe('in_progress');
-    expect(rows[0].deleted_by_type).toBe('member');
+    expect(rows[0].deleted_by).toBe('Test User');
 
     const { rows: goalRows } = await db.query('SELECT id FROM personal_goals WHERE id = ?', [gymGoalId]);
     expect(goalRows).toHaveLength(1);

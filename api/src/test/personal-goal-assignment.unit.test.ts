@@ -8,12 +8,11 @@ import {
   PERSONAL_GOAL_ASSIGNMENT_STATUSES,
   TARGET_UNIT_MAX_LENGTH,
   TARGET_VALUE_MAX,
-  ASSIGNMENT_ACTOR_TYPES,
   buildAssignmentListWhere,
   endDateTransition,
   goalAssignmentFieldError,
   isLiveAssignment,
-  memberActorSnapshot,
+  readingActor,
   toDateOnly,
   utcToday,
   isPersonalGoalAssignmentStatus,
@@ -192,41 +191,26 @@ describe('buildAssignmentListWhere', () => {
 
 /* ── #1036: the member's own half ─────────────────────────────────────────── */
 
-describe('memberActorSnapshot (#1036)', () => {
+describe('readingActor (#1036/#1037 readings ledger)', () => {
   it('records a member acting on their own goals', () => {
-    expect(memberActorSnapshot({ name: 'Ada Lovelace', isSuperadmin: false }))
+    expect(readingActor({ actorName: 'Ada Lovelace', isSuperadmin: false }, true))
       .toEqual({ name: 'Ada Lovelace', type: 'member' });
   });
 
-  // The person acting is whoever's login it is, which is `actorSnapshot()`'s
-  // own rule one router over — and `/me` is reachable while impersonating.
-  it('records a superadmin impersonating a member as a superadmin', () => {
-    expect(memberActorSnapshot({ name: 'Root', isSuperadmin: true }))
+  it('records staff for a staff-initiated write', () => {
+    expect(readingActor({ actorName: 'Coach', isSuperadmin: false }, false))
+      .toEqual({ name: 'Coach', type: 'staff' });
+  });
+
+  // The person acting is whoever's login it is — and `/me` is reachable while impersonating.
+  it('records a superadmin as a superadmin, impersonating or not', () => {
+    expect(readingActor({ actorName: 'Root', isSuperadmin: true }, true))
       .toEqual({ name: 'Root', type: 'superadmin' });
   });
 
   it('answers a null name rather than an empty string', () => {
-    expect(memberActorSnapshot({ name: '   ', isSuperadmin: false }).name).toBeNull();
-    expect(memberActorSnapshot({ name: null, isSuperadmin: false }).name).toBeNull();
-  });
-
-  it('only ever answers a type the CHECK admits', () => {
-    for (const actor of [{ name: 'x', isSuperadmin: false }, { name: 'x', isSuperadmin: true }]) {
-      expect(ASSIGNMENT_ACTOR_TYPES).toContain(memberActorSnapshot(actor).type);
-    }
-  });
-
-  it('declares the three kinds migration 222 widened the CHECKs to', () => {
-    expect([...ASSIGNMENT_ACTOR_TYPES]).toEqual(['staff', 'superadmin', 'member']);
-  });
-
-  // The migration mirrors this list in SQL, so the two are compared rather
-  // than trusted: adding a kind here without widening the CHECK makes every
-  // write of it fail (CLAUDE.md's "goes in two places").
-  it('agrees with the migration that writes the CHECK', () => {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const migration = require('../infra/migrations/222_member_personal_goal_end_date.js');
-    expect(migration.ACTOR_TYPES).toEqual([...ASSIGNMENT_ACTOR_TYPES]);
+    expect(readingActor({ actorName: '   ', isSuperadmin: false }, true).name).toBeNull();
+    expect(readingActor({ actorName: null, isSuperadmin: false }, true).name).toBeNull();
   });
 });
 

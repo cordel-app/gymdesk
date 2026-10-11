@@ -30,7 +30,7 @@ interface Holiday {
   is_closed: number;
   annual_renewal: number;
   label: string | null;
-  created_by_name: string | null;
+  created_by: string | null;
 }
 
 const WEEKDAYS = [0, 1, 2, 3, 4, 5, 6];

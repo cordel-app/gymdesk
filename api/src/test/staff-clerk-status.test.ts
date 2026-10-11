@@ -22,7 +22,7 @@ async function createStaff(
   const email = `clerk-status-staff-${Date.now()}-${Math.random().toString(36).slice(2, 6)}@test.com`;
   const { insertId } = await db.query(
     `INSERT INTO staff (gym_id, first_name, last_name, email, profile, hire_date,
-       employment_status, current_status, gym_membership_id, created_at, updated_at)
+       employment_status, current_status, gym_membership_id, created_at, modified_at)
      VALUES (?, 'Clerk', 'Status', ?, 'Trainer', '2025-01-01',
        'active', 'available', ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
     [gymId, email, overrides.gym_membership_id ?? null],

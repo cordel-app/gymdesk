@@ -35,7 +35,7 @@ interface ProfessionalService {
   system_key: string | null;
   status: ServiceStatus;
   created_at: string;
-  updated_at: string | null;
+  modified_at: string | null;
 }
 
 type EditForm = {
@@ -465,7 +465,7 @@ export default function ProfessionalServicesPage() {
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <ModalField label={t('audit_created_at')} value={fmtDate(details.created_at)} />
-              <ModalField label={t('audit_updated_at')} value={fmtDate(details.updated_at)} />
+              <ModalField label={t('audit_updated_at')} value={fmtDate(details.modified_at)} />
             </div>
           </div>
         )}

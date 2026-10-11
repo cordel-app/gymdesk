@@ -33,6 +33,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { basename, extname, join } from 'node:path';
 import 'dotenv/config';
+import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { db } from '../infra/db';
 import {
   buildBaseNutritionImageKey,
@@ -240,8 +241,8 @@ export async function backfillBaseNutritionImages(
 
       await uploadStorageObject(key, BASE_NUTRITION_IMAGE_MIME, png);
       await db.query(
-        'UPDATE nutrition_library_items SET image_url = ?, modified_at = UTC_TIMESTAMP() WHERE id = ?',
-        [buildStorageObjectUrl(key), food.id],
+        'UPDATE nutrition_library_items SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+        [buildStorageObjectUrl(key), SYSTEM_ACTOR, food.id],
       );
       counters.uploaded += 1;
       log(`uploaded ${food.id} ${food.name} → ${key}`);

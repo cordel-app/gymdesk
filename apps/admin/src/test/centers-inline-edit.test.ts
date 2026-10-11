@@ -246,7 +246,7 @@ describe('Centers: inline editing (#800)', () => {
 
     it('marks Code and Created By read-only — no control has ever edited them', () => {
       expect(CENTER_PROFILE_FIELDS.filter((f) => !f.editable).map((f) => f.key).sort())
-        .toEqual(['code', 'created_by_name']);
+        .toEqual(['code', 'created_by']);
     });
 
     it('has an en/es/ca label for every field and section', () => {

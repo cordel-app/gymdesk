@@ -20,11 +20,11 @@ interface Center { id: number; name: string }
 interface Trainer { gym_membership_id: number; name: string }
 
 export interface EventMeta {
-  created_by_name: string | null;
+  created_by: string | null;
   created_at: string | null;
-  modified_by_name: string | null;
-  updated_at: string | null;
-  deleted_by_name: string | null;
+  modified_by: string | null;
+  modified_at: string | null;
+  deleted_by: string | null;
   deleted_at: string | null;
 }
 
@@ -274,11 +274,11 @@ export function EventDetailsPanel({
             <div style={{ fontSize: 11, fontWeight: 700, color: '#9ca3af', textTransform: 'uppercase', letterSpacing: 0.8, marginBottom: 12 }}>
               {t('metadata_section')}
             </div>
-            <MetaRow label={t('metadata_created_by')} value={meta.created_by_name} />
+            <MetaRow label={t('metadata_created_by')} value={meta.created_by} />
             <MetaRow label={t('metadata_created_at')} value={formatDateTime(meta.created_at, gymFormat)} />
-            <MetaRow label={t('metadata_updated_by')} value={meta.modified_by_name} />
-            <MetaRow label={t('metadata_updated_at')} value={formatDateTime(meta.updated_at, gymFormat)} />
-            <MetaRow label={t('metadata_deleted_by')} value={meta.deleted_by_name} />
+            <MetaRow label={t('metadata_updated_by')} value={meta.modified_by} />
+            <MetaRow label={t('metadata_updated_at')} value={formatDateTime(meta.modified_at, gymFormat)} />
+            <MetaRow label={t('metadata_deleted_by')} value={meta.deleted_by} />
             <MetaRow label={t('metadata_deleted_at')} value={formatDateTime(meta.deleted_at, gymFormat)} />
           </div>
         )}

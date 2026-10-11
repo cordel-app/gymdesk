@@ -11,7 +11,7 @@
  *
  * The field set is deliberately *exactly* what the Edit form manages — the
  * ticket's "do not invent a new field list". `direct_manager_id` and the
- * `created_at`/`updated_at` audit columns are persisted and returned by
+ * `created_at`/`modified_at` audit columns are persisted and returned by
  * `GET /staff` but no control edits them, so they are not part of this set
  * (the Details modal is where the audit columns are shown).
  *

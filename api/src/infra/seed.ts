@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { createClerkClient } from '@clerk/backend';
 import { db } from './db';
+import { resolveSystemActor } from '../domain/auditActor';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY });
 
@@ -25,9 +26,9 @@ async function seed() {
 
   // Create a default gym
   await db.query(
-    `INSERT INTO gyms (name, slug, plan, payment_provider_id) VALUES ('My Gym', 'my-gym', 'free', ?) AS new
+    `INSERT INTO gyms (name, slug, plan, payment_provider_id, created_by) VALUES ('My Gym', 'my-gym', 'free', ?, ?) AS new
      ON DUPLICATE KEY UPDATE name = new.name`,
-    [defaultProvider.id],
+    [defaultProvider.id, resolveSystemActor()],
   );
   const { rows: [gym] } = await db.query(`SELECT * FROM gyms WHERE slug = 'my-gym'`);
   console.log(`✓ Gym ready: ${gym.name} (${gym.id})`);

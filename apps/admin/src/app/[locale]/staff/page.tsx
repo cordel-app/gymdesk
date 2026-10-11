@@ -46,9 +46,9 @@ export interface StaffMember extends StaffProfile {
   direct_manager_name: string | null;
   contract_days_remaining: number | null;
   created_at: string;
-  updated_at: string;
+  modified_at: string;
   created_by: string | null;
-  updated_by: string | null;
+  modified_by: string | null;
 }
 
 const PROFILES = [
@@ -1083,7 +1083,7 @@ export default function StaffPage() {
           {field(t('label_personal_phone'), member.personal_phone)}
           <hr style={{ border: 'none', borderTop: '1px solid #e8e8ed', margin: '20px 0' }} />
           {field(t('label_created_at'), member.created_at ? formatGymDateTime(member.created_at, gymFmt) : null)}
-          {field(t('label_updated_at'), member.updated_at ? formatGymDateTime(member.updated_at, gymFmt) : null)}
+          {field(t('label_updated_at'), member.modified_at ? formatGymDateTime(member.modified_at, gymFmt) : null)}
           <div style={{ marginTop: 24, display: 'flex', gap: 8 }}>
             <ViewAuditLogButton entityType="staff" entityId={member.id} onNavigate={() => setDetailsMember(null)} />
             <button onClick={() => setDetailsMember(null)} style={btnStyle('#888')}>{t('close')}</button>

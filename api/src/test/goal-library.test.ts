@@ -251,13 +251,13 @@ for (const kind of KINDS) {
       expect(list.body.items.some((g: any) => g.id === created.body.id)).toBe(false);
 
       // Soft, not hard: the row is still there, flagged and stamped.
-      const { rows } = await db.query<{ status: string; deleted_at: string | null; deleted_by_name: string | null }>(
-        `SELECT status, deleted_at, deleted_by_name FROM ${table} WHERE id = ?`,
+      const { rows } = await db.query<{ status: string; deleted_at: string | null; deleted_by: string | null }>(
+        `SELECT status, deleted_at, deleted_by FROM ${table} WHERE id = ?`,
         [created.body.id],
       );
       expect(rows[0].status).toBe('deleted');
       expect(rows[0].deleted_at).not.toBeNull();
-      expect(rows[0].deleted_by_name).toBe('Test User');
+      expect(rows[0].deleted_by).toBe('Test User');
     });
 
     it('returns 409 on update or delete of an already-deleted goal, and 404 for an unknown id', async () => {
@@ -675,10 +675,9 @@ for (const kind of KINDS) {
     it('snapshots the creating actor, then the modifying one', async () => {
       const created = await createGoal(path, { name: `GL Actor ${RUN}` });
       expect(created.status).toBe(201);
-      expect(created.body.created_by_name).toBe('Test User');
-      expect(created.body.created_by_type).toBe('staff');
-      expect(created.body.modified_by_name).toBeNull();
-      expect(created.body.deleted_by_name).toBeNull();
+      expect(created.body.created_by).toBe('Test User');
+      expect(created.body.modified_by).toBeNull();
+      expect(created.body.deleted_by).toBeNull();
 
       const updated = await request
         .put(`${path}/${created.body.id}`)
@@ -686,9 +685,8 @@ for (const kind of KINDS) {
         .set('x-gym-id', gymId)
         .send({ description: 'Edited' });
       expect(updated.status).toBe(200);
-      expect(updated.body.created_by_name).toBe('Test User');
-      expect(updated.body.modified_by_name).toBe('Test User');
-      expect(updated.body.modified_by_type).toBe('staff');
+      expect(updated.body.created_by).toBe('Test User');
+      expect(updated.body.modified_by).toBe('Test User');
     });
 
     it('masks a System row\'s actor names while keeping the gym\'s own', async () => {
@@ -701,22 +699,20 @@ for (const kind of KINDS) {
       // The seeded System rows are administered from Cordel: the catalogue is
       // shared, the actor names are not.
       const seeded = list.body.items.find((g: any) => g.slug === kind.systemSlug);
-      expect(seeded.created_by_name).toBeNull();
-      expect(seeded.created_by_type).toBeNull();
-      expect(seeded.modified_by_name).toBeNull();
-      expect(seeded.deleted_by_name).toBeNull();
+      expect(seeded.created_by).toBeNull();
+      expect(seeded.modified_by).toBeNull();
+      expect(seeded.deleted_by).toBeNull();
       // The dates are not masked — they name nobody.
       expect(seeded.created_at).toBeTruthy();
       // The row really does carry a Cordel actor underneath.
-      const { rows } = await db.query<{ created_by_name: string | null }>(
-        `SELECT created_by_name FROM ${table} WHERE gym_id IS NULL AND slug = ?`,
+      const { rows } = await db.query<{ created_by: string | null }>(
+        `SELECT created_by FROM ${table} WHERE gym_id IS NULL AND slug = ?`,
         [kind.systemSlug],
       );
-      expect(rows[0].created_by_name).toBe('Cordel');
+      expect(rows[0].created_by).toBe('Cordel');
 
       const mine = list.body.items.find((g: any) => g.id === own.body.id);
-      expect(mine.created_by_name).toBe('Test User');
-      expect(mine.created_by_type).toBe('staff');
+      expect(mine.created_by).toBe('Test User');
     });
 
     it('returns every detail column on both a System and a gym row', async () => {
@@ -729,8 +725,8 @@ for (const kind of KINDS) {
       for (const row of rows) {
         for (const key of [
           'id', 'gym_id', 'slug', 'name', 'status', 'created_at', 'modified_at', 'description',
-          'created_by_name', 'created_by_type', 'modified_by_name', 'modified_by_type',
-          'deleted_at', 'deleted_by_name', 'deleted_by_type',
+          'created_by', 'modified_by',
+          'deleted_at', 'deleted_by',
         ]) {
           expect(row, `the list row must carry ${key}`).toHaveProperty(key);
         }

@@ -65,11 +65,11 @@ function row(overrides: Partial<NutritionLibraryItemRow> = {}): NutritionLibrary
     categories: [{ id: 1, slug: 'main_dish' }],
     qualities: [{ id: 3, slug: 'protein' }, { id: 5, slug: 'fat' }],
     created_at: '2026-07-27 15:54:07',
-    created_by_name: 'John Smith',
+    created_by: 'John Smith',
     modified_at: null,
-    modified_by_name: null,
+    modified_by: null,
     deleted_at: null,
-    deleted_by_name: null,
+    deleted_by: null,
     ...overrides,
   };
 }

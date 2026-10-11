@@ -161,15 +161,15 @@ export async function sweepReplacedMemberImage(
  * new URL, or the 502 the route sends when R2 refused the upload — in which
  * case the row still points at whatever it pointed at before.
  *
- * `modifiedBy` is the acting login's `gym_memberships.id`, or null when the
- * caller has none to stamp.
+ * `modifiedBy` is the resolved actor text (#1182 stage 2), or null when the
+ * actor cannot be named.
  */
 export async function storeMemberImage(args: {
   gymId: string;
   folderPrefix: string;
   member: MemberImageRow;
   body: Buffer;
-  modifiedBy: number | null;
+  modifiedBy: string | null;
 }): Promise<string | MemberImageRefusal> {
   const { gymId, folderPrefix, member, body, modifiedBy } = args;
   const key = buildMemberImageKey(folderPrefix, member.id, member.name);
@@ -212,7 +212,7 @@ export async function clearMemberImage(args: {
   gymId: string;
   folderPrefix: string | null;
   member: MemberImageRow;
-  modifiedBy: number | null;
+  modifiedBy: string | null;
 }): Promise<void> {
   const { gymId, folderPrefix, member, modifiedBy } = args;
   await db.query(

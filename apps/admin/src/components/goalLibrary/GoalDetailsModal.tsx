@@ -48,11 +48,11 @@ export function GoalDetailsModal({ goal, kind, scope = 'gym', name, label, onClo
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid var(--card-border, #f0f0f0)' }}>
           <p style={sectionLabelStyle}>{label('section_audit')}</p>
           <Field label={label('created_at')} value={formatTimestamp(goal.created_at)} />
-          <Field label={label('created_by')} value={displayValue(goal.created_by_name)} />
+          <Field label={label('created_by')} value={displayValue(goal.created_by)} />
           <Field label={label('modified_at')} value={formatTimestamp(goal.modified_at)} />
-          <Field label={label('modified_by')} value={displayValue(goal.modified_by_name)} />
+          <Field label={label('modified_by')} value={displayValue(goal.modified_by)} />
           <Field label={label('deleted_at')} value={formatTimestamp(goal.deleted_at)} />
-          <Field label={label('deleted_by')} value={displayValue(goal.deleted_by_name)} />
+          <Field label={label('deleted_by')} value={displayValue(goal.deleted_by)} />
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
