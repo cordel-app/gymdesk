@@ -16,6 +16,7 @@ import { formatGymDate, formatGymTime, formatGymDateTime, type GymFormatSettings
 import { CalendarStatusBadge } from '@/components/CalendarStatusBadge';
 import { WAITLIST_MODES, waitlistModeClosesQueue, type WaitlistMode } from '@/lib/waitlistModes';
 import { MemberSearchInput, type MemberResult } from './MemberSearchInput';
+import { EventImageControl } from './EventImageControl';
 
 interface ClassSession {
   id: number;
@@ -65,6 +66,11 @@ interface ClassSession {
    * that the calendar beside it calls scheduled.
    */
   execution_status: 'scheduled' | 'not_used' | 'completed' | 'cancelled' | null;
+  /** #1382 — the event's own image override, its Activity's, and the one the API says to show. */
+  image_url: string | null;
+  activity_image_url: string | null;
+  effective_image_url: string | null;
+  modified_at: string | null;
 }
 
 interface Booking {
@@ -76,6 +82,11 @@ interface Booking {
   waitlist_position: number | null;
   /** #1162 — when the booking was created (`calendar_event_bookings.booked_at`), the value the cancellation rule is decided from. */
   booked_on: string | null;
+  /** #1382 — `pending` is unconfirmed and stays distinct from an explicit `absent`. */
+  attendance_status: 'pending' | 'present' | 'absent';
+  /** #1382 — from the ledger (#1189): a session was spent for this booking and not yet given back / already given back. */
+  service_consumed: number | boolean;
+  service_returned: number | boolean;
 }
 
 interface Space { id: number; name: string; status?: string; center_id?: number | null }
@@ -201,6 +212,12 @@ export function ClassSessionDetailPanel({
   const [completing, setCompleting] = useState(false);
   const [completeError, setCompleteError] = useState<string | null>(null);
 
+  // #1382 — per-attendee attendance and the Professional Service refund. One
+  // row at a time: the busy id keeps one attendee's request from touching
+  // another's controls, and the server applies each update to its own booking.
+  const [attendanceBusyId, setAttendanceBusyId] = useState<number | null>(null);
+  const [refundBusyId, setRefundBusyId] = useState<number | null>(null);
+
   // #979 — Reactivate flow (§1/§2): the one action a cancelled event offers.
   const [showReactivateConfirm, setShowReactivateConfirm] = useState(false);
   const [reactivating, setReactivating] = useState(false);
@@ -264,6 +281,42 @@ export function ClassSessionDetailPanel({
       toast(err.message ?? 'Failed to remove member');
     } finally {
       setRemoving(false);
+    }
+  }
+
+  // ── Attendance (#1382) ─────────────────────────────────────────────────────
+  async function setAttendance(b: Booking, status: 'present' | 'absent') {
+    if (attendanceBusyId !== null) return;
+    setAttendanceBusyId(b.id);
+    try {
+      const updated = await apiFetch<Booking>(`/bookings/${b.id}/attendance`, {
+        method: 'POST',
+        body: JSON.stringify({ status }),
+      });
+      setEnrolled((rows) => rows.map((r) => (r.id === b.id ? { ...r, ...updated } : r)));
+    } catch (err: any) {
+      toast(err?.message ?? t('attendance_error'));
+    } finally {
+      setAttendanceBusyId(null);
+    }
+  }
+
+  // ── Refund Professional Services balance (#1382) ──────────────────────────
+  // Eligibility is the server's (explicitly absent, a ledger row not yet
+  // returned); the button is offered from the same fields. After an error the
+  // list is reloaded, so a request that timed out but landed shows as refunded
+  // instead of inviting a second attempt.
+  async function refundBalance(b: Booking) {
+    if (refundBusyId !== null) return;
+    setRefundBusyId(b.id);
+    try {
+      const updated = await apiFetch<Booking>(`/bookings/${b.id}/refund-balance`, { method: 'POST' });
+      setEnrolled((rows) => rows.map((r) => (r.id === b.id ? { ...r, ...updated } : r)));
+    } catch (err: any) {
+      toast(err?.message ?? t('refund_balance_error'));
+      await load();
+    } finally {
+      setRefundBusyId(null);
     }
   }
 
@@ -521,6 +574,7 @@ export function ClassSessionDetailPanel({
   // audit row's. The 400 it can answer is actionable rather than generic:
   // attendance still pending, or no trainer on the event.
   async function handleMarkCompleted() {
+    if (completing) return;
     setCompleting(true);
     setCompleteError(null);
     try {
@@ -529,11 +583,8 @@ export function ClassSessionDetailPanel({
       onMutated();
       await load();
     } catch (err: any) {
-      const pending = Number(err?.body?.pending_count ?? 0);
       setCompleteError(
-        err?.body?.missing_trainer ? t('complete_blocked_trainer')
-        : pending > 0 ? t('complete_blocked_attendance', { count: pending })
-        : err.message ?? t('error_generic'),
+        err?.body?.missing_trainer ? t('complete_blocked_trainer') : err.message ?? t('error_generic'),
       );
     } finally {
       setCompleting(false);
@@ -597,6 +648,11 @@ export function ClassSessionDetailPanel({
   // `Completed · 0 attendees` is reached (§5).
   const executionStatus = session.execution_status ?? session.status;
   const hasEnded = new Date(session.ends_at).getTime() <= Date.now();
+  // #1382 — Remove is offered only while the event is still ahead of us. The
+  // comparison is on instants, so it does not depend on any timezone.
+  const hasStarted = new Date(session.starts_at).getTime() <= Date.now();
+  // #1382 — completion warns once, and only when somebody's attendance is unconfirmed.
+  const unconfirmedCount = enrolled.filter((b) => b.attendance_status === 'pending').length;
   const canSendCommunication = roleCanCommunicate && flags['calendar.staff_communications'] !== false && flags['calendar'] !== false;
   // #1391 — Send communication to the attendees. Offered only when the feature
   // flag is on and the role may send; the API enforces both again, so hiding
@@ -705,6 +761,17 @@ export function ClassSessionDetailPanel({
           ×
         </button>
       </div>
+
+      {/* #1382 §3 — the image directly under the title: the event's own, else the Activity's. */}
+      <EventImageControl
+        sessionId={session.id}
+        effectiveUrl={session.effective_image_url}
+        ownUrl={session.image_url}
+        stamp={session.modified_at}
+        canEdit={canWrite && !isCancelled}
+        onChanged={() => { onMutated(); void load(); }}
+        label={(key) => t(key as any)}
+      />
 
       {/* Info */}
       <div style={cardStyle}>
@@ -902,14 +969,64 @@ export function ClassSessionDetailPanel({
                     <div style={{ fontSize: 11, color: '#6b7280' }}>Booked on: {fmtBookedOn(b.booked_on, gymFormat)}</div>
                   )}
                 </div>
-                {canWrite && !isCancelled && (
-                  <button
-                    onClick={() => setRemovingBooking(b)}
-                    style={{ ...btnBase, background: '#fef2f2', color: '#dc2626', padding: '4px 10px', fontSize: 12 }}
-                  >
-                    Remove
-                  </button>
-                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
+                  {/* #1382 — the saved state sits beside the attendee. Unconfirmed
+                      (`pending`) is a state of its own, never shown as absent. */}
+                  {!isCancelled && (
+                    <span
+                      data-testid={`attendance-${b.id}`}
+                      style={{ fontSize: 11, fontWeight: 700, color: b.attendance_status === 'absent' ? '#b45309' : b.attendance_status === 'present' ? '#047857' : '#6b7280' }}
+                    >
+                      {attendanceBusyId === b.id
+                        ? t('attendance_saving')
+                        : t(`attendance_${b.attendance_status === 'pending' ? 'unconfirmed' : b.attendance_status}` as any)}
+                    </span>
+                  )}
+                  {canWrite && !isCancelled && (
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {b.attendance_status !== 'present' && (
+                        <button
+                          onClick={() => setAttendance(b, 'present')}
+                          disabled={attendanceBusyId !== null}
+                          style={{ ...btnBase, background: '#ecfdf5', color: '#047857', padding: '4px 10px', fontSize: 12, opacity: attendanceBusyId !== null ? 0.6 : 1 }}
+                        >
+                          {t('attendance_mark_present')}
+                        </button>
+                      )}
+                      {b.attendance_status !== 'absent' && (
+                        <button
+                          onClick={() => setAttendance(b, 'absent')}
+                          disabled={attendanceBusyId !== null}
+                          style={{ ...btnBase, background: '#fffbeb', color: '#b45309', padding: '4px 10px', fontSize: 12, opacity: attendanceBusyId !== null ? 0.6 : 1 }}
+                        >
+                          {t('attendance_mark_absent')}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {/* #1382 §5 — only for an explicitly absent attendee whose booking
+                      spent a session that has not been given back. */}
+                  {canWrite && !isCancelled && b.attendance_status === 'absent' && !!b.service_consumed && !b.service_returned && (
+                    <button
+                      onClick={() => refundBalance(b)}
+                      disabled={refundBusyId !== null}
+                      style={{ ...btnBase, ...primaryActionColors, padding: '4px 10px', fontSize: 12, opacity: refundBusyId !== null ? 0.6 : 1 }}
+                    >
+                      {refundBusyId === b.id ? t('refunding_balance') : t('refund_balance')}
+                    </button>
+                  )}
+                  {!!b.service_returned && (
+                    <span style={{ fontSize: 11, color: '#047857', fontWeight: 600 }}>{t('balance_refunded')}</span>
+                  )}
+                  {canWrite && !isCancelled && !hasStarted && (
+                    <button
+                      onClick={() => setRemovingBooking(b)}
+                      style={{ ...btnBase, background: '#fef2f2', color: '#dc2626', padding: '4px 10px', fontSize: 12 }}
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -990,7 +1107,7 @@ export function ClassSessionDetailPanel({
                   <div style={{ fontSize: 13, fontWeight: 600 }}>{i + 1}. {b.member_name}</div>
                   <div style={{ fontSize: 11, color: '#6b7280' }}>{b.member_email}</div>
                 </div>
-                {canWrite && !isCancelled && (
+                {canWrite && !isCancelled && !hasStarted && (
                   <button
                     onClick={() => setRemovingBooking(b)}
                     style={{ ...btnBase, background: '#fef2f2', color: '#dc2626', padding: '4px 10px', fontSize: 12 }}
@@ -1234,16 +1351,29 @@ export function ClassSessionDetailPanel({
                 that passed is already `Not used` without one (§3). */}
             {canMarkCompleted && (
               !showCompleteConfirm ? (
-                <button
-                  onClick={() => { setShowCompleteConfirm(true); setCompleteError(null); }}
-                  style={{ ...btnBase, ...primaryActionColors, textAlign: 'left' }}
-                >
-                  {t('mark_completed')}
-                </button>
+                <>
+                  {/* #1382 §4 — one step. With every attendee confirmed this
+                      completes at once; only unconfirmed attendance asks, and
+                      that question is the warning below, not a second prompt. */}
+                  <button
+                    onClick={() => {
+                      setCompleteError(null);
+                      if (unconfirmedCount > 0) setShowCompleteConfirm(true);
+                      else void handleMarkCompleted();
+                    }}
+                    disabled={completing}
+                    style={{ ...btnBase, ...primaryActionColors, textAlign: 'left', opacity: completing ? 0.6 : 1 }}
+                  >
+                    {completing ? t('marking_completed') : t('mark_completed')}
+                  </button>
+                  {completeError && (
+                    <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{completeError}</div>
+                  )}
+                </>
               ) : (
                 <div style={{ ...cardStyle, display: 'flex', flexDirection: 'column', gap: 10 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t('mark_completed_confirm_title')}</div>
-                  <div style={{ fontSize: 12, color: '#6b7280' }}>{t('mark_completed_confirm_message')}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{t('complete_unconfirmed_title')}</div>
+                  <div style={{ fontSize: 12, color: '#6b7280' }}>{t('complete_unconfirmed_message')}</div>
                   {completeError && (
                     <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>{completeError}</div>
                   )}
@@ -1253,7 +1383,7 @@ export function ClassSessionDetailPanel({
                       disabled={completing}
                       style={{ ...btnBase, ...primaryActionColors, flex: 1, opacity: completing ? 0.6 : 1 }}
                     >
-                      {completing ? t('marking_completed') : t('mark_completed')}
+                      {completing ? t('marking_completed') : t('complete_event')}
                     </button>
                     <button
                       onClick={() => { setShowCompleteConfirm(false); setCompleteError(null); }}

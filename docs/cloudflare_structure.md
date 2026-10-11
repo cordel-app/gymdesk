@@ -52,7 +52,8 @@
         │   └── {personal_goal_id}-{personnal_goal_name}.png                  — 1080 × 1080 px
         │        
         ├── activities
-        │   └── {activity_id}-{activity_name}.png                             — 1080 × 1080 px
+        │   ├── {activity_id}-{activity_name}.png                             — 1080 × 1080 px
+        │   └── event-{event_id}-{activity_name}.png                          — 1080 × 1080 px (a single Calendar Event's own image, #1382)
         │        
         ├── members
         │   ├── {member_id}-{member_name}.png                                 — 1080 × 1080 px
