@@ -21,6 +21,7 @@ import {
 } from '../infra/locale';
 import { logger } from '../lib/logger';
 import { normalizeMuscleKey } from '../domain/muscles';
+import { primaryMuscleImagesSql, withEffectiveImage } from '../domain/effectiveExerciseImage';
 import { MUSCLE_SLUG_SQL, insertExerciseMuscle, listMuscles } from './exercise-muscles';
 import {
   exerciseFacetsQuery,
@@ -96,12 +97,16 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
     ${exerciseTranslationsExpr('e')},
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
      FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
+    ${primaryMuscleImagesSql('e')},
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))
      FROM exercise_allowed_result_types eart
      JOIN result_types rt ON rt.id = eart.result_type_id
      WHERE eart.exercise_id = e.id ORDER BY rt.id) AS allowed_result_types
   FROM exercises e
 `;
+
+/** A read row as the caller gets it: translations map plus the effective image (#1368 stage 4). */
+const shapeExercise = (row: any) => withEffectiveImage(withExerciseTranslations(row));
 
 const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
 
@@ -158,7 +163,7 @@ platformExercisesRouter.get('/', requireSuperadmin, async (req, res, next) => {
     + ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
   try {
     const { rows } = await db.query(sql, where.params);
-    res.json(rows.map(withExerciseTranslations));
+    res.json(rows.map(shapeExercise));
   } catch (err) { next(err); }
 });
 
@@ -234,7 +239,7 @@ platformExercisesRouter.get('/:id', requireSuperadmin, async (req, res, next) =>
       [req.params.id],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -293,7 +298,7 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
       return insertId;
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [insertId]);
-    const created = withExerciseTranslations(rows[0]);
+    const created = shapeExercise(rows[0]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: created });
     res.status(201).json(created);
   } catch (err) { next(err); }
@@ -395,7 +400,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
       if (translations) await replaceExerciseTranslations(tx, id, translations);
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [id]);
-    const updated = withExerciseTranslations(rows[0]);
+    const updated = shapeExercise(rows[0]);
     recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: updated });
     res.json(updated);
   } catch (err) { next(err); }
@@ -639,7 +644,7 @@ platformExercisesRouter.post('/:id/image', requireSuperadmin, async (req, res, n
       next: { image_url: imageUrl, image_thumbnail_url: thumbnailUrl },
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -678,7 +683,7 @@ platformExercisesRouter.delete('/:id/image', requireSuperadmin, async (req, res,
       next: { image_url: null, image_thumbnail_url: null },
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -811,7 +816,7 @@ platformExercisesRouter.post('/:id/video', requireSuperadmin, async (req, res, n
       next: { video_url: videoUrl, video_thumbnail_url: posterUrl },
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -850,7 +855,7 @@ platformExercisesRouter.delete('/:id/video', requireSuperadmin, async (req, res,
       next: { video_url: null, video_thumbnail_url: null },
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [exercise.id]);
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 

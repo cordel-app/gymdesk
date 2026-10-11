@@ -4,6 +4,7 @@ import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { normalizeMuscleKey } from '../domain/muscles';
+import { primaryMuscleImagesSql, withEffectiveImage } from '../domain/effectiveExerciseImage';
 import { MUSCLE_SLUG_SQL, insertExerciseMuscle, listMuscles } from './exercise-muscles';
 import { getReferences } from '../domain/references';
 import { handleDupEntry } from '../infra/db-helpers';
@@ -148,6 +149,7 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.modified_by_type END  AS modified_by_type,
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
      FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
+    ${primaryMuscleImagesSql('e')},
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'name', rt.name, 'slug', rt.slug))
      FROM exercise_allowed_result_types eart
      JOIN result_types rt ON rt.id = eart.result_type_id
@@ -162,6 +164,9 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
  * request's own locale so a write's response, a duplicate's and an import's
  * carry the same `display_name` a list read would.
  */
+/** A read row as the caller gets it: translations map plus the effective image (#1368 stage 4). */
+const shapeExercise = (row: any) => withEffectiveImage(withExerciseTranslations(row));
+
 const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
 
 async function getCallerMembershipId(req: Request): Promise<number | null> {
@@ -258,7 +263,7 @@ exercisesRouter.get('/', async (req, res, next) => {
     + ` ORDER BY ${localizedExerciseNameSql('e', locale)} ASC`;
   try {
     const { rows } = await db.query(sql, [gymId, ...where.params]);
-    res.json(rows.map(withExerciseTranslations));
+    res.json(rows.map(shapeExercise));
   } catch (err) { next(err); }
 });
 
@@ -381,6 +386,7 @@ exercisesRouter.get('/base', async (req, res, next) => {
     SELECT e.id, e.name, ${localizedExerciseNameExpr('e', locale, 'display_name')},
       e.slug, e.description, e.image_url, e.image_thumbnail_url,
       e.video_url, e.video_thumbnail_url,
+      ${primaryMuscleImagesSql('e')},
       (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
        FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
       ${IMPORTED_COPY_ID} AS imported_exercise_id,
@@ -391,7 +397,7 @@ exercisesRouter.get('/base', async (req, res, next) => {
   try {
     const { rows } = await db.query(sql, [gymId, gymId, ...where.params]);
     // MySQL answers the CASE with 0/1; the contract is a boolean.
-    res.json(rows.map((row: any) => ({ ...row, media_refreshable: Number(row.media_refreshable) === 1 })));
+    res.json(rows.map((row: any) => ({ ...withEffectiveImage(row), media_refreshable: Number(row.media_refreshable) === 1 })));
   } catch (err) { next(err); }
 });
 
@@ -431,7 +437,7 @@ exercisesRouter.get('/:id', async (req, res, next) => {
       [req.params.id, gymId],
     );
     if (rows.length === 0) return res.status(404).json({ error: 'Exercise not found' });
-    res.json(withExerciseTranslations(rows[0]));
+    res.json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -486,7 +492,7 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
       return insertId;
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [insertId]);
-    const created = withExerciseTranslations(rows[0]);
+    const created = shapeExercise(rows[0]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: created });
     res.status(201).json(created);
   } catch (e: any) {
@@ -581,7 +587,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
       if (translations) await replaceExerciseTranslations(tx, id, translations);
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
-    const updated = withExerciseTranslations(rows[0]);
+    const updated = shapeExercise(rows[0]);
     recordAudit(req, { action: 'update', entityType: 'exercise', entityId: id, next: updated });
     res.json(updated);
   } catch (e: any) {
@@ -655,7 +661,7 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
 
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
-    res.status(201).json(withExerciseTranslations(rows[0]));
+    res.status(201).json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -707,7 +713,7 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
 
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [insertId, gymId]);
     recordAudit(req, { action: 'create', entityType: 'exercise', entityId: insertId, next: rows[0] });
-    res.status(201).json(withExerciseTranslations(rows[0]));
+    res.status(201).json(shapeExercise(rows[0]));
   } catch (err) { next(err); }
 });
 
@@ -858,7 +864,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         `${selectForReq(req)} WHERE e.id IN (${importedMarks}) AND e.gym_id = ? ORDER BY e.name ASC`,
         [...insertedIds, gymId],
       );
-      imported = rows.map(withExerciseTranslations);
+      imported = rows.map(shapeExercise);
       for (const row of rows) {
         recordAudit(req, { action: 'create', entityType: 'exercise', entityId: row.id, next: row });
       }
@@ -1071,7 +1077,7 @@ async function loadExerciseForMedia(
 /** The exercise as every other route returns it, after its media changed. */
 async function respondWithExercise(req: Request, res: express.Response, gymId: string, id: number | string) {
   const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
-  res.json(withExerciseTranslations(rows[0]));
+  res.json(shapeExercise(rows[0]));
 }
 
 /**
