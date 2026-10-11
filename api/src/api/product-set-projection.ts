@@ -252,6 +252,9 @@ export async function projectActiveProductSet(tx: Tx, gymId: string, productSetI
  * here, so the row is a cache of the version and never written by anything else.
  * Unlike `projectActiveProductSet()` it never closes, opens or re-statuses an
  * assignment: the Draft's row already exists and its status is the commit's.
+ * The cadence is deliberately not copied: a Draft's Billing frequency is frozen
+ * from its Plan at creation and cannot be edited, while the chain's schedule may
+ * carry an earlier plan's cadence (a schedule keeps the chain's identity).
  */
 export async function syncDraftAssignment(tx: Tx, gymId: string, productSetId: number): Promise<void> {
   const set = await loadSet(tx, gymId, productSetId);
@@ -260,14 +263,13 @@ export async function syncDraftAssignment(tx: Tx, gymId: string, productSetId: n
   await tx.query(
     `UPDATE user_memberships
         SET membership_fee_price = ?, free_periods = ?, paid_periods = ?, bonus_periods = ?,
-            pay_beforehand_periods = ?, recurring_billing_interval = ?, recurring_billing_unit = ?,
+            pay_beforehand_periods = ?,
             auto_renew = ?, personal_fee_benefit_action = ?, personal_fee_benefit_value = ?,
             discount_reason = ?, discount_expires_at = ?, starts_at = ?, ends_at = ?
       WHERE id = ? AND gym_id = ?`,
     [
       set.membership_fee_price ?? null, set.free_periods ?? null, set.paid_periods ?? null,
       set.bonus_periods ?? null, set.pay_beforehand_periods ?? null,
-      set.cadence_interval ?? null, set.cadence_unit ?? null,
       set.auto_renew ?? 0,
       set.personal_fee_benefit_action ?? 'no_benefit', set.personal_fee_benefit_value ?? null,
       set.discount_reason ?? null, dateOnly(set.discount_expires_at),

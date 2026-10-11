@@ -104,6 +104,25 @@ async function assignDraft(
   return created.body.id as number;
 }
 
+/**
+ * A Draft row written the way assignments were before #1325 PR 3e — no version
+ * behind it. The API refuses a second in-flight Draft for a member (one version
+ * in flight per owner), so a race between two Drafts of one member can only be
+ * staged with a legacy row, which is exactly what the commit lock still guards.
+ */
+async function legacyDraft(memberId: number, planId: number, startsAt: string, gym = gymId): Promise<number> {
+  const { insertId } = await db.query(
+    `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, starts_at, status)
+     VALUES (?, ?, ?, ?, 'draft')`,
+    [gym, memberId, planId, startsAt],
+  );
+  await db.query(
+    'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
+    [gym, insertId, memberId],
+  );
+  return insertId;
+}
+
 async function assignmentsOf(memberId: number) {
   const { rows } = await db.query(
     `SELECT id, membership_plan_id, status, closed_at,
@@ -279,12 +298,13 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     const first = await createPlan(gymId, 'Premium');
     const second = await createPlan(gymId, 'Basic');
     const a = await assignDraft(memberId, first, '2026-01-01');
-    const b = await assignDraft(memberId, second, '2026-01-01');
+    const b = await legacyDraft(memberId, second, '2026-01-01');
 
     const results = await Promise.all([commit(a), commit(b)]);
-    const statuses = results.map((r) => r.status).sort();
-    expect(statuses[0]).toBe(200);
-    expect(statuses[1]).not.toBe(200);
+    // At most one wins. Both may lose here: the legacy row's commit takes the
+    // unique index and then meets the other Draft's version in flight, which
+    // rolls it back — the invariant is that two plans are never live.
+    expect(results.filter((r) => r.status === 200).length).toBeLessThanOrEqual(1);
     const rows = await assignmentsOf(memberId);
     expect(rows.filter((r: any) => r.status === 'active')).toHaveLength(1);
   });
@@ -298,7 +318,7 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     const third = await createPlan(gymId, 'Gold');
     await assignLive(memberId, first, '2026-01-01');
     const b = await assignDraft(memberId, second, '2026-10-01');
-    const c = await assignDraft(memberId, third, '2026-10-01');
+    const c = await legacyDraft(memberId, third, '2026-10-01');
 
     const results = await Promise.all([
       commit(b, { confirm: true }),

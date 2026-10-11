@@ -205,15 +205,17 @@ describe('a Pending Payment row blocks a second assignment for the same member',
     const pending = await assignDraft(memberId, await createPaidPlan());
     await api('post', `/user-memberships/${pending}/save-and-pay`).send({});
 
-    const second = await assignDraft(memberId, await createFreePlan(), '2026-06-01');
-    const refused = await api('post', `/user-memberships/${second}/save-and-pay`).send({ confirm: true });
+    // #1325 PR 3e: the block now holds from the moment of creation — a member
+    // with a version awaiting payment cannot be given a second Draft at all
+    // (one version in flight per owner), where it used to be refused only at
+    // Save & Pay and activation.
+    const freePlan = await createFreePlan();
+    const refused = await api('post', '/user-memberships')
+      .send({ member_id: memberId, membership_plan_id: freePlan, starts_at: '2026-06-01' });
     expect(refused.status).toBe(409);
-    expect(refused.body.error).toBe('plan_pending_payment');
-    expect(refused.body.pending_user_membership_ids).toEqual([pending]);
-    expect((await api('post', `/user-memberships/${second}/activate`).send({ confirm: true })).status).toBe(409);
-    expect(await status(second)).toBe('draft');
 
     await api('post', `/user-memberships/${pending}/close`).send({});
+    const second = await assignDraft(memberId, freePlan, '2026-06-01');
     expect((await api('post', `/user-memberships/${second}/activate`).send({})).status).toBe(200);
   });
 
