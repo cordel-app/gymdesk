@@ -65,11 +65,10 @@ export const navigationGroups: NavGroup[] = [
     icon: 'users',
     featureKey: 'membership',
     module: 'MEMBERS',
+    // #1454: Members is a single page in the main menu; the Membership
+    // dashboard is gone.
+    directLink: true,
     items: [
-      {
-        href: '/{{locale}}',
-        labelKey: 'nav.dashboard',
-      },
       {
         href: '/{{locale}}/members',
         labelKey: 'nav.members',
