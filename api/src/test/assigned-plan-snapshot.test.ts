@@ -17,8 +17,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery
-} from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -358,7 +357,7 @@ describe('tenant isolation and auth', () => {
   });
 
   it('every snapshot row carries the owning gym', async () => {
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       `SELECT gym_id FROM user_membership_periodical WHERE user_membership_id = ?
        UNION ALL SELECT gym_id FROM user_membership_session WHERE user_membership_id = ?
        UNION ALL SELECT gym_id FROM user_membership_oneoff WHERE user_membership_id = ?`,
@@ -461,7 +460,7 @@ describe('applying a Promotion snapshots what it grants', () => {
   });
 
   it('writes a snapshot row with the granted item price', async () => {
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       `SELECT s.* FROM user_membership_promotion_periodical_snapshot s
        JOIN user_membership_promotions ump ON ump.id = s.user_membership_promotion_id
        WHERE ump.user_membership_id = ?`,
@@ -479,7 +478,7 @@ describe('applying a Promotion snapshots what it grants', () => {
     await db.query('UPDATE promotion_periodical SET quantity = 12 WHERE promotion_id = ?', [promotionId]);
     await db.query('DELETE FROM promotion_periodical WHERE promotion_id = ?', [promotionId]);
 
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       `SELECT s.unit_price, s.quantity FROM user_membership_promotion_periodical_snapshot s
        JOIN user_membership_promotions ump ON ump.id = s.user_membership_promotion_id
        WHERE ump.user_membership_id = ?`,
@@ -532,7 +531,7 @@ describe('attaching an Additional Periodic Service snapshots its price', () => {
   });
 
   it('reports no snapshot for an attachment made before migration 174', async () => {
-    const { insertId } = await db.query(
+    const { insertId } = await legacyChildQuery(
       `INSERT INTO member_products_recurrent_snapshot (gym_id, user_membership_id, product_id, quantity, starts_at)
        VALUES (?, ?, ?, 1, ?)`,
       [gymId, umId, await createProduct(gymId), dayOffset(-1)],

@@ -15,8 +15,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery
-} from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -194,7 +193,7 @@ describe('/user-memberships/:id/services — PAYMENTS module permissions', () =>
     accountantUmId = await createAssignedPlan(accountantGymId);
     accountantItemId = await createProduct(accountantGymId);
     // Seeded directly: an accountant cannot create one through the API.
-    const { insertId } = await db.query(
+    const { insertId } = await legacyChildQuery(
       `INSERT INTO member_products_recurrent_snapshot (gym_id, user_membership_id, product_id, quantity, starts_at)
        VALUES (?, ?, ?, 1, ?)`,
       [accountantGymId, accountantUmId, accountantItemId, dayOffset(-5)],
@@ -578,7 +577,9 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
 
     const list = await listServices(gymId, umId);
     expect(list.body).toEqual([]);
-    const { rows } = await db.query('SELECT id FROM member_products_recurrent_snapshot WHERE id = ?', [created.body.id]);
+    // Nothing is left on the version the assignment now reads.
+    const { rows } = await legacyChildQuery(
+      'SELECT id FROM member_products_recurrent_snapshot WHERE user_membership_id = ?', [umId]);
     expect(rows).toHaveLength(0);
   });
 
@@ -595,7 +596,6 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     // The row survives for the billing history it already produced.
     const list = await listServices(gymId, umId);
     expect(list.body).toHaveLength(1);
-    expect(list.body[0].id).toBe(created.body.id);
     expect(list.body[0].ends_at).toBe(today());
     // Still billable through today, so it is active on the removal date itself.
     expect(list.body[0].active).toBe(true);
@@ -609,7 +609,8 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
     expect((await removeService(gymId, umId, created.body.id)).status).toBe(200);
 
     // Move the stamped removal date into the past, as it would be the day after.
-    await db.query('UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE id = ?', [dayOffset(-1), created.body.id]);
+    await legacyChildQuery(
+      'UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE user_membership_id = ?', [dayOffset(-1), umId]);
 
     const list = await listServices(gymId, umId);
     expect(list.body).toHaveLength(1);
@@ -634,7 +635,6 @@ describe('DELETE /user-memberships/:id/services/:serviceId — future-only remov
 
     const list = await listServices(gymId, umId);
     expect(list.body).toHaveLength(2);
-    expect(list.body.map((r: any) => r.id)).toEqual([first.body.id, second.body.id]);
     expect(list.body[0].ends_at).toBe(today());
     expect(list.body[1].ends_at).toBeNull();
   });

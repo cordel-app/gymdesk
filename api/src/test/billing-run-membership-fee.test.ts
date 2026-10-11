@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, billingEventsOfAssignment, legacyAssignmentQuery } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, billingEventsOfAssignment, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 /**
  * #635 stages 12 and 15 — one rule decides what the Membership Fee costs on a
@@ -122,7 +122,7 @@ async function applyPromotion(umId: number, opts: {
      VALUES (?, ?, '2000-01-01', '2100-01-01', 'active', ?, ?, ?)`,
     [gym, `DateAware-Promo-${uniq()}`, opts.freeMonths ?? 0, opts.paidMonths ?? 0, opts.bonusMonths ?? 0],
   );
-  await db.query(
+  await legacyChildQuery(
     `INSERT INTO user_membership_promotions
        (gym_id, user_membership_id, promotion_id, applied_by, status, applied_at, snapshot)
      VALUES (?, ?, ?, 'test-actor', 'applied', ?, ?)`,

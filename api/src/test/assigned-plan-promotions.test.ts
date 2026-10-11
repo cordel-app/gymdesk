@@ -21,8 +21,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, legacyAssignmentQuery
-} from './helpers';
+  request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -210,7 +209,7 @@ describe('GET /user-memberships/:id/promotions — the expandable card (#635 §1
     // The window the application agreed to is the snapshot's, so it is the
     // snapshot that is backdated here — the Promotion's own dates are
     // deliberately left alone, which is what proves the read is snapshot-based.
-    await db.query(
+    await legacyChildQuery(
       `UPDATE user_membership_promotions
        SET snapshot = JSON_SET(snapshot, '$.ends_at', '2026-01-31')
        WHERE user_membership_id = ? AND promotion_id = ?`,
@@ -269,7 +268,7 @@ describe('GET /user-memberships/:id/promotions — the expandable card (#635 §1
 
     // An application from before the snapshot flow: inserted directly, with no
     // snapshot JSON and no grant snapshot rows.
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, snapshot)
        VALUES (?, ?, ?, 'legacy-actor', 'applied', NULL)`,
       [gymId, umId, promotionId],
@@ -372,7 +371,7 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
 
     // Four months later its three-month window is over: the next recompute
     // drops it, exactly as the SQL gate did before the snapshot cutover.
-    await db.query(
+    await legacyChildQuery(
       `UPDATE user_membership_promotions SET applied_at = applied_at - INTERVAL 4 MONTH
        WHERE user_membership_id = ? AND promotion_id = ?`,
       [umId, lapsedId],
@@ -388,7 +387,7 @@ describe('Promotion pricing reads the application snapshot (#635 §13/§16)', ()
     await targetPlan(gymId, legacyId, planId);
     await targetPlan(gymId, otherId, planId);
     await setMembershipFeeBenefit(gymId, legacyId, 'fixed_discount', 25);
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, snapshot)
        VALUES (?, ?, ?, 'legacy-actor', 'applied', NULL)`,
       [gymId, umId, legacyId],
@@ -444,14 +443,14 @@ describe('Assigned Plan promotions — tenant isolation and auth', () => {
     const umId = await createAssignment(readOnlyGym, planId);
     const promotionId = await createPromotion(readOnlyGym, `ReadOnly-${uniq()}`);
     await targetPlan(readOnlyGym, promotionId, planId);
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status)
        VALUES (?, ?, ?, 'someone', 'applied')`,
       [readOnlyGym, umId, promotionId],
     );
 
     expect((await revokePromotion(readOnlyGym, umId, promotionId)).status).toBe(403);
-    const { rows } = await db.query<{ status: string }>(
+    const { rows } = await legacyChildQuery<{ status: string }>(
       'SELECT status FROM user_membership_promotions WHERE user_membership_id = ?', [umId],
     );
     expect(rows[0].status).toBe('applied');

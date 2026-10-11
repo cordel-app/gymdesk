@@ -4,11 +4,12 @@ import { Tx } from '../infra/db';
  * #1325 PR 3a — the operational assignment an Active ProductSet projects.
  *
  * `user_memberships` is operational only (validity, access, eligibility,
- * coverage) and a ProductSet is the commercial truth. Until every reader of the
- * commercial columns has moved, this is the **one writer** that keeps the
- * assignment row, and the benefit rows keyed to it, in step with the Active
- * version — written when a version activates and never edited by anything else.
- * It is a derived read model, not a second owner:
+ * coverage) and a ProductSet is the commercial truth. This is the **one writer**
+ * of the assignment row — written when a version activates and never edited by
+ * anything else. Since PR 3e-4a it writes no benefit, Promotion or service rows
+ * of its own: those are the version's, and every reader takes them through the
+ * assignment's latest linked version. It is a derived read model, not a second
+ * owner:
  *
  *  - `next_billing_date` is left NULL, so the assignment-driven nightly pass
  *    (which selects `next_billing_date IS NOT NULL`) never charges a projected
@@ -23,8 +24,6 @@ import { Tx } from '../infra/db';
  * The projection is removed with the legacy commercial columns in the final
  * stage; nothing may start reading it as the commercial owner.
  */
-
-const BENEFIT_TABLES = ['user_membership_session', 'user_membership_oneoff', 'user_membership_periodical'];
 
 interface SetRow {
   id: number;
@@ -56,29 +55,24 @@ const dateOnly = (v: unknown): string | null =>
   v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
 
 async function closeAssignment(tx: Tx, gymId: string, id: number, endsAt: string) {
+  const { rows: before } = await tx.query<{ status: string; member_id: number }>(
+    `SELECT status, member_id FROM user_memberships
+      WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','draft') FOR UPDATE`,
+    [id, gymId]);
+  if (!before[0]) return;
   await tx.query(
     `UPDATE user_memberships
         SET status = 'cancelled', closed_at = UTC_TIMESTAMP(),
             ends_at = LEAST(COALESCE(ends_at, ?), ?)
-      WHERE id = ? AND gym_id = ? AND status IN ('active','paused','pending_payment','draft')`,
+      WHERE id = ? AND gym_id = ?`,
     [endsAt, endsAt, id, gymId],
   );
-}
-
-async function copyBenefitRows(tx: Tx, gymId: string, setId: number, umId: number) {
-  for (const table of BENEFIT_TABLES) {
-    await tx.query(`DELETE FROM ${table} WHERE gym_id = ? AND user_membership_id = ?`, [gymId, umId]);
-    const sessionFrequency = table === 'user_membership_session' ? ', frequency' : '';
-    await tx.query(
-      `INSERT INTO ${table}
-         (gym_id, user_membership_id, product_id, quantity, item_name, item_type, item_billing_frequency,
-          unit_price, currency, \`action\`, \`value\`, mandatory${sessionFrequency})
-       SELECT gym_id, ?, product_id, quantity, item_name, item_type, item_billing_frequency,
-              unit_price, currency, \`action\`, \`value\`, mandatory${sessionFrequency}
-         FROM ${table} WHERE gym_id = ? AND product_set_id = ?`,
-      [umId, gymId, setId],
-    );
-  }
+  // A transition is an audit row (#1325 PR 3, A4), whichever path made it.
+  const { recordStatusChange } = await import('./billing-events');
+  await recordStatusChange(tx, {
+    gymId, userMembershipId: id, memberId: Number(before[0].member_id),
+    previousStatus: before[0].status, newStatus: 'cancelled', source: 'system', actorUserId: null,
+  });
 }
 
 const SET_SELECT = `
@@ -101,62 +95,13 @@ async function loadSet(tx: Tx, gymId: string, productSetId: number): Promise<Set
 }
 
 /**
- * The assignment-keyed copies the readers not yet moved price from: benefit rows,
- * applied Promotions with the grants each froze, recurring services and coverage.
- * Re-written whole from the version's own rows, so it is idempotent.
+ * The assignment-keyed copy the readers not yet moved still use: **coverage**
+ * (`user_membership_members`), from the chain's `product_set_members`. The
+ * benefit rows, applied Promotions and recurring services are no longer copied —
+ * an assignment's are its current version's own (#1325 PR 3e-4a). Re-written
+ * whole, so it is idempotent.
  */
 async function copyAssignmentRows(tx: Tx, gymId: string, set: SetRow, umId: number): Promise<void> {
-  const productSetId = set.id;
-  await copyBenefitRows(tx, gymId, productSetId, umId);
-
-  // Applied Promotions, with the grants each one froze, for the readers that
-  // price them from assignment-keyed applications. The version's own rows stay
-  // keyed to it; these are re-copied on every projection.
-  await tx.query('DELETE FROM user_membership_promotions WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
-  const { rows: applications } = await tx.query<any>(
-    `SELECT id, promotion_id, applied_by, applied_at, consumed_at, status, snapshot, revoked_at
-       FROM user_membership_promotions WHERE gym_id = ? AND product_set_id = ?`,
-    [gymId, productSetId],
-  );
-  for (const app of applications) {
-    const { insertId } = await tx.query(
-      `INSERT INTO user_membership_promotions
-         (gym_id, user_membership_id, promotion_id, applied_by, applied_at, consumed_at, status, snapshot, revoked_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, umId, app.promotion_id, app.applied_by, app.applied_at, app.consumed_at, app.status,
-        app.snapshot == null ? null : (typeof app.snapshot === 'string' ? app.snapshot : JSON.stringify(app.snapshot)),
-        app.revoked_at],
-    );
-    for (const table of [
-      'user_membership_promotion_session_snapshot',
-      'user_membership_promotion_oneoff_snapshot',
-      'user_membership_promotion_periodical_snapshot',
-    ]) {
-      await tx.query(
-        `INSERT INTO ${table}
-           (gym_id, user_membership_promotion_id, product_id, product_name, quantity, item_type,
-            item_billing_frequency, unit_price, currency, \`action\`, \`value\`, requirement)
-         SELECT gym_id, ?, product_id, product_name, quantity, item_type,
-                item_billing_frequency, unit_price, currency, \`action\`, \`value\`, requirement
-           FROM ${table} WHERE gym_id = ? AND user_membership_promotion_id = ?`,
-        [insertId, gymId, app.id],
-      );
-    }
-  }
-
-  // Additional recurring services, for the legacy readers that price them from
-  // the assignment-keyed rows. The set's own rows stay keyed to the version.
-  await tx.query('DELETE FROM member_products_recurrent_snapshot WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
-  await tx.query(
-    `INSERT INTO member_products_recurrent_snapshot
-       (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at,
-        item_name, item_type, unit_price, item_billing_frequency, currency)
-     SELECT gym_id, ?, product_id, quantity, starts_at, ends_at,
-            item_name, item_type, unit_price, item_billing_frequency, currency
-       FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ?`,
-    [umId, gymId, productSetId],
-  );
-
   // Coverage: the owner and every covered member, from the chain.
   await tx.query('DELETE FROM user_membership_members WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
   await tx.query(
@@ -170,7 +115,6 @@ async function copyAssignmentRows(tx: Tx, gymId: string, set: SetRow, umId: numb
      VALUES (?, ?, ?, 1)`,
     [gymId, umId, set.owner_member_id],
   );
-
 }
 
 /** Projects the (just activated) version onto its operational assignment. */

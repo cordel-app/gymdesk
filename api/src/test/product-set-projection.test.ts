@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, legacyChildQuery } from './helpers';
 import { createDraft } from '../api/product-sets';
 import { activateWithEvents, snapshotProductSetFromPlan } from '../api/product-set-configuration';
 import { addCoverage } from '../api/product-sets';
@@ -109,7 +109,7 @@ describe('an Active ProductSet projects its operational assignment (#1325 PR 3a)
     expect((await assignments(lockerOnly)).length).toBe(0);
   });
 
-  it('copies the frozen benefit rows to the assignment for the legacy readers', async () => {
+  it('reads the frozen benefit rows through the version the assignment is linked to', async () => {
     const owner = await member();
     const prod = await product();
     const p = await plan(30);
@@ -117,7 +117,7 @@ describe('an Active ProductSet projects its operational assignment (#1325 PR 3a)
       [gymId, p, prod]);
     await commit(owner, p, 30);
     const [um] = await assignments(owner);
-    const { rows } = await db.query<any>(
+    const { rows } = await legacyChildQuery<any>(
       'SELECT product_id, quantity FROM user_membership_periodical WHERE user_membership_id = ?', [um.id]);
     expect(rows).toEqual([expect.objectContaining({ product_id: prod, quantity: 2 })]);
   });

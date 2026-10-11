@@ -9,7 +9,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet, seedScheduledEvent, clearScheduledEvents, legacyAssignmentQuery } from './helpers';
+  request, ensureTestProductSet, seedScheduledEvent, clearScheduledEvents, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -1243,7 +1243,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
     expect(res.status).toBe(201);
     expect(res.body.applied_promotion_ids).toEqual([promoA, promoB]);
 
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       "SELECT promotion_id FROM user_membership_promotions WHERE user_membership_id = ? AND status = 'applied' ORDER BY promotion_id",
       [res.body.id],
     );
@@ -1287,7 +1287,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
       .send({ membership_plan_id: newPlanId, starts_at: isoDate(1) });
     expect(res.status).toBe(201);
 
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       'SELECT id FROM user_membership_promotions WHERE user_membership_id = ?',
       [res.body.id],
     );
@@ -1333,7 +1333,7 @@ describe('POST /user-memberships/:id/assign-new-plan', () => {
       .send({ membership_plan_id: newPlanId, starts_at: isoDate(1), promotion_ids: [exclusive] });
     expect(res.status).toBe(201);
 
-    const { rows } = await db.query(
+    const { rows } = await legacyChildQuery(
       "SELECT promotion_id FROM user_membership_promotions WHERE user_membership_id = ? AND status = 'applied'",
       [res.body.id],
     );
@@ -2402,7 +2402,7 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
     const applyRes = await applyPromotionViaApi(gymId, umId, promoId);
     expect(applyRes.status).toBe(201);
     // Still-applied (no revoked_at) -> an open-ended window from applied_at.
-    await db.query(
+    await legacyChildQuery(
       'UPDATE user_membership_promotions SET applied_at = ? WHERE user_membership_id = ? AND promotion_id = ?',
       ['2026-02-01', umId, promoId],
     );
@@ -2444,7 +2444,7 @@ describe('GET /user-memberships/:id/billing-events (#511 stage 3)', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(revokeRes.status).toBe(200);
-    await db.query(
+    await legacyChildQuery(
       'UPDATE user_membership_promotions SET applied_at = ?, revoked_at = ? WHERE user_membership_id = ? AND promotion_id = ?',
       ['2026-01-01', '2026-02-01', umId, promoId],
     );
@@ -2514,7 +2514,7 @@ async function setPromotionDuration(
 // Applied directly rather than through POST /:id/promotions so a fixture can
 // pin `applied_at` to the assignment's start date (the API always stamps now).
 async function applyPromotionDirect(gymId: string, umId: number, promoId: number, appliedAt: string): Promise<void> {
-  await db.query(
+  await legacyChildQuery(
     `INSERT INTO user_membership_promotions (gym_id, user_membership_id, promotion_id, applied_by, status, applied_at)
      VALUES (?, ?, ?, ?, 'applied', ?)`,
     [gymId, umId, promoId, TEST_USER_ID, appliedAt],
@@ -2692,7 +2692,7 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     await setBillingPolicy(gymId, planId, 1, 'month');
     const umId = await createUserMembershipWithPrice(gymId, memberId, planId, 'active', 100, '2026-03-01');
     const itemId = await createProduct(gymId, 'Personal Training', 'service', 'month', 30);
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO member_products_recurrent_snapshot (gym_id, user_membership_id, product_id, quantity, starts_at)
        VALUES (?, ?, ?, 2, '2026-04-01')`,
       [gymId, umId, itemId],
@@ -2722,7 +2722,7 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     const promoId = await createPromotion(gymId, planId, `Sim Service Free ${Date.now()}`);
     await setPromotionDuration(promoId, { free: 3 });
     await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO member_products_recurrent_snapshot (gym_id, user_membership_id, product_id, quantity, starts_at, ends_at)
        VALUES (?, ?, ?, 1, '2026-03-01', '2026-04-15')`,
       [gymId, umId, itemId],
@@ -2791,7 +2791,7 @@ describe('GET /user-memberships/member/:memberId/billing-simulation (#629)', () 
     const promoId = await createPromotion(gymId, planId, `Sim Revoked ${Date.now()}`);
     await setPromotionDuration(promoId, { free: 3 });
     await applyPromotionDirect(gymId, umId, promoId, '2026-03-01');
-    await db.query(
+    await legacyChildQuery(
       "UPDATE user_membership_promotions SET status = 'revoked', revoked_at = UTC_TIMESTAMP() WHERE user_membership_id = ? AND promotion_id = ?",
       [umId, promoId],
     );

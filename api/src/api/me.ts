@@ -39,7 +39,7 @@ import { themeLogoUrl } from '../domain/themeLogo';
 import { memberImageUrls, type MemberImageRow } from '../domain/themeMemberImages';
 import { loadMemberImagesByTheme } from './theme-member-images';
 import { ASSIGNMENT_AUTO_RENEW, ASSIGNMENT_CADENCE, loadPlanBenefitsForSimulation } from './assigned-plan-snapshot';
-import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig } from './assignment-config';
+import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId } from './assignment-config';
 import { loadPromotionApplications, regularMembershipFee } from './user-memberships';
 import { currentCycleDate, currentMembershipFee } from './membership-fee-pricing';
 import {
@@ -1620,9 +1620,10 @@ meRouter.get('/promotions', requireRole('member'), requireFeatureEnabled('member
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
       `SELECT p.id, p.name, p.description
-       FROM user_membership_promotions ump
+       FROM user_memberships um
+       JOIN user_membership_promotions ump
+         ON ump.product_set_id = ${assignmentVersionId('um.id')} AND ump.gym_id = um.gym_id
        JOIN promotions p ON p.id = ump.promotion_id
-       JOIN user_memberships um ON um.id = ump.user_membership_id
        WHERE ump.gym_id = ? AND um.member_id = ?
          AND ump.status = 'applied' AND um.status = 'active'
        ORDER BY ump.applied_at DESC`,

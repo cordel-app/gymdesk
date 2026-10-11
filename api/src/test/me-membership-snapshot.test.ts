@@ -22,7 +22,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, seedScheduledEvent, legacyAssignmentQuery } from './helpers';
+  request, seedScheduledEvent, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -86,7 +86,7 @@ const CATEGORY_TABLE: Record<string, string> = {
 async function snapshotBenefit(gymId: string, umId: number, category: string, row: {
   itemId: number; name: string; type: string; quantity: number; price: number; frequency: string | null;
 }) {
-  await db.query(
+  await legacyChildQuery(
     `INSERT INTO ${CATEGORY_TABLE[category]}
        (gym_id, user_membership_id, product_id, quantity, item_name, item_type,
         unit_price, item_billing_frequency, currency)
@@ -366,7 +366,7 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
        VALUES (?, ?, '2099-01-01', '2100-01-01', 'active', 0, 3, 0)`,
       [gymId, `MMS-Promo-${uniq()}`],
     );
-    await db.query(
+    await legacyChildQuery(
       `INSERT INTO user_membership_promotions
          (gym_id, user_membership_id, promotion_id, applied_by, status, applied_at, snapshot)
        VALUES (?, ?, ?, 'test-actor', 'applied', '2099-01-10', ?)`,

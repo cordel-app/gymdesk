@@ -272,26 +272,53 @@ export async function setFeeBenefit(tx: Tx, draft: LockedDraft, body: any): Prom
 
 /* ── Additional recurring services ───────────────────────────────────────── */
 
-export async function addService(tx: Tx, draft: LockedDraft, body: any): Promise<{ ok: true; id: number } | DraftRefusal> {
+/**
+ * `legacy` is the contract of `/user-memberships/:id/services` (a duplicate is a
+ * 409, a removal keeps what was already billed); the Draft router's own is a
+ * 400 and an outright deletion, since a Draft has charged nothing.
+ */
+export async function addService(
+  tx: Tx, draft: LockedDraft, body: any, opts: { legacy?: boolean } = {},
+): Promise<{ ok: true; id: number } | DraftRefusal> {
   const productId = Number(body?.product_id);
   if (!Number.isInteger(productId) || productId <= 0) return { kind: 'invalid', message: 'product_id must be a positive integer' };
   const quantity = body?.quantity == null || body.quantity === '' ? 1 : Number(body.quantity);
   if (!Number.isInteger(quantity) || quantity <= 0) return { kind: 'invalid', message: 'quantity must be a positive integer' };
-  const startsAt = body?.starts_at == null || body.starts_at === '' ? draft.starts_at : String(body.starts_at);
+
+  // A service can never be billed before the plan it belongs to: by default it
+  // starts today, or on the plan's start date when that is still ahead.
+  const today = new Date().toISOString().slice(0, 10);
+  const startsAt = body?.starts_at == null || body.starts_at === ''
+    ? (today > draft.starts_at ? today : draft.starts_at)
+    : String(body.starts_at);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(startsAt)) return { kind: 'invalid', message: 'starts_at must be YYYY-MM-DD' };
+  if (startsAt < draft.starts_at) {
+    return { kind: 'invalid', message: 'starts_at cannot be earlier than the Assigned Plan start date' };
+  }
+  const { rows: window } = await tx.query<any>('SELECT ends_at FROM product_sets WHERE id = ? AND gym_id = ?', [draft.id, draft.gym_id]);
+  const endsAt = window[0]?.ends_at != null ? dateOnly(window[0].ends_at) : null;
+  if (endsAt != null && startsAt > endsAt) {
+    return { kind: 'invalid', message: 'starts_at cannot be later than the Assigned Plan end date' };
+  }
 
   const { rows } = await tx.query<any>(
     `SELECT id, type, billing_frequency, status FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
     [productId, draft.gym_id]);
-  if (!rows[0]) return { kind: 'invalid', message: 'Product not found in this gym' };
-  if (rows[0].status !== 'active') return { kind: 'invalid', message: 'Product is not active in this gym' };
+  if (!rows[0]) return { kind: 'not_found' };
+  if (rows[0].status !== 'active') return { kind: 'invalid', message: 'Product is not active' };
   if (classifyProduct(rows[0]) !== 'periodical') {
-    return { kind: 'invalid', message: 'Only a recurring Product can be attached as an Additional Periodic Service' };
+    return { kind: 'invalid', message: 'Only recurring Products can be added as periodic services' };
   }
+  // The same item may be attached again after an earlier stint ended, but not
+  // while one is still running or one still ends on/after the requested start.
   const { rows: dup } = await tx.query(
-    'SELECT id FROM member_products_recurrent_snapshot WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND ends_at IS NULL',
-    [draft.gym_id, draft.id, productId]);
-  if (dup.length > 0) return { kind: 'invalid', message: 'This service is already attached to the ProductSet' };
+    `SELECT id FROM member_products_recurrent_snapshot
+      WHERE gym_id = ? AND product_set_id = ? AND product_id = ? AND (ends_at IS NULL OR ends_at >= ?)`,
+    [draft.gym_id, draft.id, productId, startsAt]);
+  if (dup.length > 0) {
+    const message = 'This service is already attached to the Assigned Plan for that period';
+    return opts.legacy ? { kind: 'conflict', error: message, message } : { kind: 'invalid', message };
+  }
 
   const { insertId } = await tx.query(
     `INSERT INTO member_products_recurrent_snapshot
@@ -305,14 +332,33 @@ export async function addService(tx: Tx, draft: LockedDraft, body: any): Promise
   return { ok: true, id: Number(insertId) };
 }
 
-export async function removeService(tx: Tx, draft: LockedDraft, serviceId: number): Promise<{ ok: true } | DraftRefusal> {
-  // A Draft has billed nothing, so a removed service is deleted outright.
-  const { rowCount } = await tx.query(
-    'DELETE FROM member_products_recurrent_snapshot WHERE id = ? AND gym_id = ? AND product_set_id = ?',
+/**
+ * #631 §3 — future-only removal. A service already being billed keeps every
+ * charge up to today and stops afterwards (`ends_at = today`); one whose billing
+ * has not started yet is deleted, since an `ends_at` before `starts_at` would
+ * be meaningless. A service already removed is a 409.
+ */
+export async function removeService(
+  tx: Tx, draft: LockedDraft, serviceId: number, opts: { legacy?: boolean } = {},
+): Promise<{ ok: true; deleted: boolean; ends_at: string | null } | DraftRefusal> {
+  const { rows } = await tx.query<any>(
+    `SELECT id, starts_at, ends_at FROM member_products_recurrent_snapshot
+      WHERE id = ? AND gym_id = ? AND product_set_id = ? FOR UPDATE`,
     [serviceId, draft.gym_id, draft.id]);
-  if (rowCount === 0) return { kind: 'not_found' };
+  if (!rows[0]) return { kind: 'not_found' };
+  if (rows[0].ends_at != null) {
+    const message = 'Service has already been removed';
+    return { kind: 'conflict', error: message, message };
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const deleted = !opts.legacy || dateOnly(rows[0].starts_at) > today;
+  if (deleted) {
+    await tx.query('DELETE FROM member_products_recurrent_snapshot WHERE id = ?', [serviceId]);
+  } else {
+    await tx.query('UPDATE member_products_recurrent_snapshot SET ends_at = ? WHERE id = ?', [today, serviceId]);
+  }
   await touch(tx, draft);
-  return { ok: true };
+  return { ok: true, deleted, ends_at: deleted ? null : today };
 }
 
 /* ── Covered members ─────────────────────────────────────────────────────── */
@@ -324,7 +370,7 @@ export async function addCoveredMember(tx: Tx, draft: LockedDraft, memberId: num
   if (draft.membership_plan_id == null) return { kind: 'invalid', message: 'A ProductSet without a Membership Plan covers no one' };
   if (!Number.isInteger(memberId) || memberId <= 0) return { kind: 'invalid', message: 'member_id must be a positive integer' };
   const { rows: m } = await tx.query('SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [memberId, draft.gym_id]);
-  if (m.length === 0) return { kind: 'invalid', message: 'Member not found' };
+  if (m.length === 0) return { kind: 'not_found' };
   const { rows: plan } = await tx.query<{ member_limit: string | null }>(
     'SELECT member_limit FROM membership_plans WHERE id = ? AND gym_id = ?', [draft.membership_plan_id, draft.gym_id]);
   // The owner always counts as one covered Member, whether or not their own row
@@ -333,7 +379,14 @@ export async function addCoveredMember(tx: Tx, draft: LockedDraft, memberId: num
     'SELECT COUNT(*) AS n FROM product_set_members WHERE gym_id = ? AND root_product_set_id = ? AND is_owner = 0',
     [draft.gym_id, draft.root_product_set_id]);
   if (Number(count[0].n) + 1 >= memberLimit(plan[0]?.member_limit)) {
-    return { kind: 'invalid', message: 'This Membership Plan covers no more Members' };
+    return { kind: 'invalid', message: 'This membership has reached its member limit.' };
+  }
+  const { rows: already } = await tx.query(
+    'SELECT 1 FROM product_set_members WHERE gym_id = ? AND root_product_set_id = ? AND member_id = ? LIMIT 1',
+    [draft.gym_id, draft.root_product_set_id, memberId]);
+  if (already.length > 0) {
+    const message = 'This Member is already covered by this Membership.';
+    return { kind: 'conflict', error: message, message };
   }
   // #956 Q4: a Member already on a plan of their own (or covered by another)
   // cannot be added to a second one.

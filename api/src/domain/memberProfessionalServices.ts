@@ -1,3 +1,4 @@
+import { assignmentVersionId } from '../api/assignment-config';
 import { db } from '../infra/db';
 import { applyConsumption, ConsumedTotal, SPEND_ORDER } from './serviceConsumption';
 import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND } from './professionalServiceAdjustments';
@@ -199,7 +200,7 @@ export async function loadMemberProfessionalServiceGrants(
             psn.quantity        AS sessions
      FROM user_memberships um
      JOIN user_membership_promotions ump
-       ON ump.user_membership_id = um.id AND ump.gym_id = um.gym_id AND ump.status = 'applied'
+       ON ump.product_set_id = ${assignmentVersionId('um.id')} AND ump.gym_id = um.gym_id AND ump.status = 'applied'
      JOIN promotion_session psn
        ON psn.promotion_id = ump.promotion_id AND psn.gym_id = um.gym_id
      JOIN products gc ON gc.id = psn.product_id
@@ -226,7 +227,7 @@ export async function loadMemberProfessionalServiceGrants(
             umsv.quantity * COALESCE(gc.units, 1) AS sessions
      FROM user_memberships um
      JOIN member_products_recurrent_snapshot umsv
-       ON umsv.user_membership_id = um.id AND umsv.gym_id = um.gym_id
+       ON umsv.product_set_id = ${assignmentVersionId('um.id')} AND umsv.gym_id = um.gym_id
      JOIN products gc ON gc.id = umsv.product_id AND gc.type = 'sessions'
      JOIN product_professional_services sips
        ON sips.product_id = gc.id AND sips.gym_id = um.gym_id
@@ -251,7 +252,7 @@ export async function loadMemberProfessionalServiceGrants(
                                       WHERE par.user_membership_session_id = umss.id), 0) AS sessions
      FROM user_memberships um
      JOIN user_membership_session umss
-       ON umss.user_membership_id = um.id AND umss.gym_id = um.gym_id
+       ON umss.product_set_id = ${assignmentVersionId('um.id')} AND umss.gym_id = um.gym_id
      JOIN products gc ON gc.id = umss.product_id
      JOIN product_professional_services sips
        ON sips.product_id = gc.id AND sips.gym_id = um.gym_id
