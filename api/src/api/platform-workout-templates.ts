@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { effectiveImageUrlSql, effectiveImageThumbnailUrlSql } from '../domain/effectiveExerciseImage';
 import { db, Tx } from '../infra/db';
 import { parseBlockResultUnit } from '../domain/blockResultUnits';
 import { requireSuperadmin } from '../infra/tenantContext';
@@ -142,7 +143,7 @@ platformWorkoutTemplatesRouter.get('/:id', requireSuperadmin, async (req, res, n
                 SELECT JSON_OBJECT(
                     'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,
                     'exercise_name', ${localizedExerciseNameSql('e', getRequestLocale(req))},
-                    'exercise_image_url', e.image_url, 'exercise_image_thumbnail_url', e.image_thumbnail_url, 'exercise_video_url', e.video_url, 'exercise_video_thumbnail_url', e.video_thumbnail_url,
+                    'exercise_image_url', ${effectiveImageUrlSql('e')}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e')}, 'exercise_video_url', e.video_url, 'exercise_video_thumbnail_url', e.video_thumbnail_url,
                     'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
                     'sets', wte.sets, 'rest_seconds', wte.rest_seconds, 'tempo', wte.tempo,
                     'result_type_id', wte.result_type_id, 'result_type_slug', rt.slug, 'result_type_name', rt.name,
@@ -339,7 +340,7 @@ platformWorkoutTemplatesRouter.get('/:id/blocks/:blockId/exercises', requireSupe
     if (!(await blockExists(blockId, id))) return res.status(404).json({ error: 'Block not found' });
     const { rows } = await db.query(
       `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte
        JOIN exercises e ON e.id = wte.exercise_id
        WHERE wte.workout_template_block_id = ? AND wte.gym_id IS NULL AND wte.deleted_at IS NULL
@@ -390,7 +391,7 @@ platformWorkoutTemplatesRouter.post('/:id/blocks/:blockId/exercises', requireSup
        parsed.sets, parsed.rest_seconds, parsed.tempo,
        parsed.result_type_id, parsed.target_value, parsed.min_value, parsed.max_value, parsed.unit],
       `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?`,
       (exId) => [exId],
     );
@@ -438,7 +439,7 @@ platformWorkoutTemplatesRouter.put('/:id/blocks/:blockId/exercises/:exId', requi
     if (rowCount === 0) return res.status(404).json({ error: 'Exercise item not found' });
     const { rows } = await db.query(
       `SELECT wte.*, ${localizedExerciseNameSql('e', getRequestLocale(req))} AS exercise_name,
-              e.image_url AS exercise_image_url, e.image_thumbnail_url AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
+              ${effectiveImageUrlSql('e')} AS exercise_image_url, ${effectiveImageThumbnailUrlSql('e')} AS exercise_image_thumbnail_url, e.video_url AS exercise_video_url, e.video_thumbnail_url AS exercise_video_thumbnail_url
        FROM workout_template_exercises wte JOIN exercises e ON e.id = wte.exercise_id WHERE wte.id = ?`,
       [exId],
     );

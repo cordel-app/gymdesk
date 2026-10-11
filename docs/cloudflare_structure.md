@@ -1,20 +1,22 @@
 {bucket}/
 ├── cordel/
 │   ├── nutrition
-│   │   └── {food_id}-{food_name}.png                                      — 512 × 512 px
+│   │   └── {food_id}-{food_name}.png                                      — 1080 × 1080 px
 │   │
 │   ├── goals/
-│   │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 512 × 512 px
+│   │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 1080 × 1080 px
 │   │
 │   ├── muscles/
 │   │   └── images/
-│   │       ├── {muscle_name}.png                              — 2048 × 2048 px
-│   │       └── {muscle_name}-thumbnail.png                    — 512 × 512 px
+│   │       ├── {muscle_name}-male.png                              — 1080 × 1080 px
+│   │       ├── {muscle_name}-male-thumbnail.png                  — 256 × 256 px
+│   │       ├── {muscle_name}-female.png                            — 1080 × 1080 px
+│   │       └── {muscle_name}-female-thumbnail.png                  — 256 × 256 px
 │   │
 │   ├── exercises/
 │   │   └── images/
-│   │       ├── {exercise_id}-{exercise_name}.png                          — 2048 × 2048 px
-│   │       └── {exercise_id}-{exercise_name}-thumbnail.png                — 512 × 512 px
+│   │       ├── {exercise_id}-{exercise_name}.png                          — 1080 × 1080 px
+│   │       └── {exercise_id}-{exercise_name}-thumbnail.png                — 256 × 256 px
 │   │
 │   └── themes/
 │       └── {theme_id}-{theme_name}/
@@ -22,30 +24,34 @@
 │           │   └── logo.{extension}                                       — logo del theme
 │           │
 │           └── members_app/
-│               ├── training.png                                           — tamaño definido por el diseño
-│               ├── nutrition.png                                          — tamaño definido por el diseño
-│               ├── calendar.png                                           — tamaño definido por el diseño
-│               ├── bookings.png                                           — tamaño definido por el diseño
-│               ├── background.png                                         — tamaño definido por el diseño
-│               ├── goals.png                                              — tamaño definido por el diseño
-│               ├── bookings.png                                           — tamaño definido por el diseño                                        
-│               └── products.png                                           — tamaño definido por el diseño
+│               ├── training.png                                           — 1080 × 1080 px
+│               ├── nutrition.png                                          — 1080 × 1080 px
+│               ├── calendar.png                                           — 1080 × 1080 px
+│               ├── bookings.png                                           — 1080 × 1080 px
+│               ├── background.png                                         — 1080 × 1080 px
+│               ├── goals.png                                              — 1080 × 1080 px
+│               ├── bookings.png                                           — 1080 × 1080 px                                        
+│               └── products.png                                           — 1080 × 1080 px
 │
 └── gyms/
     └── {gym_id}-{sanitized_gym_name}/
         ├── nutrition
-        │   └── {food_id}-{food_name}.png                                      — 512 × 512 px
+        │   └── {food_id}-{food_name}.png                                      — 1080 × 1080 px
         │        
         ├── goals
-        │   └── {personal_goal_id}-{personnal_goal_name}.png                  — 512 × 512 px
+        │   └── {personal_goal_id}-{personnal_goal_name}.png                  — 1080 × 1080 px
+        │        
+        ├── activities
+        │   └── {activity_id}-{activity_name}.png                             — 1080 × 1080 px
         │        
         ├── members
-        │   └── {member_id}-{member_name}.png                                 — 512 × 512 px
+        │   ├── {member_id}-{member_name}.png                                 — 1080 × 1080 px
+        │   └── {member_id}-{member_name}-thumbnail.png                       — 256 × 256 px
         │       
         ├── exercises/
         │   ├── images/
-        │   │   ├── {exercise_id}-{exercise_name}.png                         — 2048 × 2048 px
-        │   │   └── {exercise_id}-{exercise_name}-thumbnail.png               — 512 × 512 px
+        │   │   ├── {exercise_id}-{exercise_name}.png                         — 1080 × 1080 px
+        │   │   └── {exercise_id}-{exercise_name}-thumbnail.png               — 256 × 256 px
         │   │
         │   └── videos/
         │       └── {exercise_id}-{exercise_name}.mp4                       — vídeo
@@ -56,14 +62,14 @@
                 │   └── logo.{extension}                                   — logo del theme
                 │
                 └── members_app/
-                    ├── training.png                                       — tamaño definido por el diseño
-                    ├── nutrition.png                                      — tamaño definido por el diseño
-                    ├── calendar.png                                       — tamaño definido por el diseño
-                    ├── bookings.png                                       — tamaño definido por el diseño
-                    ├── background.png                                     — tamaño definido por el diseño
-                    ├── goals.png                                          — tamaño definido por el diseño                    
-                    ├── bookings.png                                       — tamaño definido por el diseño                                        
-                    └── products.png                                       — tamaño definido por el diseño
+                    ├── training.png                                       — 1080 × 1080 px
+                    ├── nutrition.png                                      — 1080 × 1080 px
+                    ├── calendar.png                                       — 1080 × 1080 px
+                    ├── bookings.png                                       — 1080 × 1080 px
+                    ├── background.png                                     — 1080 × 1080 px
+                    ├── goals.png                                          — 1080 × 1080 px                    
+                    ├── bookings.png                                       — 1080 × 1080 px                                        
+                    └── products.png                                       — 1080 × 1080 px
 
 ---
 
