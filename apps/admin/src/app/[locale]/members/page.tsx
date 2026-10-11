@@ -143,6 +143,8 @@ export default function MembersPage() {
   const [documentFilter, setDocumentFilter] = useState<string>(searchParams.get('nif_nie_passport') ?? '');
   const [paymentStatusFilter, setPaymentStatusFilter] = useState<string>(searchParams.get('payment_status') ?? '');
   const [enrollmentStatusFilter, setEnrollmentStatusFilter] = useState<string>(searchParams.get('enrollment_status') ?? '');
+  // #1367: `welcomed=false` is where the Home dashboard's "Welcome new members" task lands.
+  const [welcomedFilter, setWelcomedFilter] = useState<string>(searchParams.get('welcomed') ?? '');
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   // #1374 §2: the image picked in the Add modal is held here until the Member
@@ -216,8 +218,9 @@ export default function MembersPage() {
     if (documentFilter.trim()) p.set('nif_nie_passport', documentFilter.trim());
     if (paymentStatusFilter) p.set('payment_status', paymentStatusFilter);
     if (enrollmentStatusFilter) p.set('enrollment_status', enrollmentStatusFilter);
+    if (welcomedFilter) p.set('welcomed', welcomedFilter);
     return p;
-  }, [centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter]);
+  }, [centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter, welcomedFilter]);
 
   async function load() {
     if (!activeGymId) {
@@ -248,10 +251,10 @@ export default function MembersPage() {
 
   useEffect(() => {
     if (!gymLoading) load();
-  }, [activeGymId, gymLoading, centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter]);
+  }, [activeGymId, gymLoading, centerFilter, searchQuery, documentFilter, paymentStatusFilter, enrollmentStatusFilter, welcomedFilter]);
 
   function syncUrl(updates: {
-    centerId?: string; q?: string; nif_nie_passport?: string; payment_status?: string; enrollment_status?: string;
+    centerId?: string; q?: string; nif_nie_passport?: string; payment_status?: string; enrollment_status?: string; welcomed?: string;
     /** #961: the expanded Member and the work area open on it, so a refresh, a
         back/forward and a pasted link all land on the same tab. */
     member?: string; tab?: string;
@@ -287,6 +290,30 @@ export default function MembersPage() {
   function handleEnrollmentFilter(v: string) {
     setEnrollmentStatusFilter(v);
     syncUrl({ enrollment_status: v });
+  }
+
+  function handleWelcomedFilter(v: string) {
+    setWelcomedFilter(v);
+    syncUrl({ welcomed: v });
+  }
+
+  // #1367: the Welcomed checkbox persists at once through its own route, so a
+  // tick can never blank another profile field the way a full PUT would.
+  const [welcomedBusy, setWelcomedBusy] = useState(false);
+  const [welcomedError, setWelcomedError] = useState<string | null>(null);
+  async function setWelcomed(id: number, welcomed: boolean) {
+    setWelcomedBusy(true);
+    setWelcomedError(null);
+    try {
+      const r = await apiFetch<{ id: number; welcomed_at: string | null }>(`/members/${id}/welcomed`, {
+        method: 'PUT', body: JSON.stringify({ welcomed }),
+      });
+      replaceMember({ id: r.id, welcomed_at: r.welcomed_at });
+    } catch (err: any) {
+      setWelcomedError(err.message ?? t('members.error_generic'));
+    } finally {
+      setWelcomedBusy(false);
+    }
   }
 
   function openAdd() {
@@ -688,6 +715,12 @@ export default function MembersPage() {
               <MemberEditForm
                 form={editForm}
                 isNewMember={m.is_new_member}
+                welcomed={{
+                  checked: !!m.welcomed_at,
+                  busy: welcomedBusy,
+                  error: welcomedError,
+                  onChange: (v) => setWelcomed(m.id, v),
+                }}
                 error={editError}
                 saving={editSaving}
                 image={{
@@ -796,6 +829,19 @@ export default function MembersPage() {
             onChange={handleEnrollmentFilter}
             allLabel={t('members.all_enrollment_statuses')}
             options={ENROLLMENT_STATUSES.map((s) => ({ value: s, label: t(`members.enrollment_status_${s}`) }))}
+            style={filterControlStyle}
+          />
+        </FilterField>
+        <FilterField label={t('members.filter_welcomed')} htmlFor="members-filter-welcomed">
+          <StatusFilter
+            id="members-filter-welcomed"
+            value={welcomedFilter}
+            onChange={handleWelcomedFilter}
+            allLabel={t('members.all_welcomed')}
+            options={[
+              { value: 'false', label: t('members.welcomed_no') },
+              { value: 'true', label: t('members.welcomed_yes') },
+            ]}
             style={filterControlStyle}
           />
         </FilterField>

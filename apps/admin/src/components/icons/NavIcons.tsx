@@ -153,11 +153,22 @@ export function ShieldIcon(props: NavIconProps) {
   );
 }
 
+/** Home — a house. */
+export function HomeIcon(props: NavIconProps) {
+  return (
+    <IconShell {...props}>
+      <path d="M3 10.5 12 3l9 7.5" />
+      <path d="M5 9.5V20a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V9.5" />
+    </IconShell>
+  );
+}
+
 /**
  * The one mapping from a name to its drawing. `config/navigationGroups.ts` names
  * the icon; nothing branches on a group id or a label to choose one.
  */
 export const NAV_ICONS: Record<NavIconName, NavIconComponent> = {
+  home: HomeIcon,
   users: UsersIcon,
   calendar: CalendarIcon,
   building: BuildingIcon,

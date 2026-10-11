@@ -61,6 +61,8 @@ const EXPECTED_FILTERS = [
   'filter_center',
   'filter_payment_status',
   'filter_enrollment_status',
+  // #1367: where the Home dashboard's "Welcome new members" task lands.
+  'filter_welcomed',
 ] as const;
 
 /** The two labels the bar needed that the page did not have yet. */
@@ -230,7 +232,7 @@ describe('Members list: one list with Products (#928)', () => {
     expect([...pageSrc.matchAll(/<FilterField /g)]).toHaveLength(EXPECTED_FILTERS.length);
   });
 
-  it('gives all five controls the same height, border and type size', () => {
+  it('gives all six controls the same height, border and type size', () => {
     const controls = [...filterBarUsageSrc.matchAll(
       /style=\{(?:\{ \.\.\.filterControlStyle|filterControlStyle\})/g,
     )];
@@ -240,7 +242,7 @@ describe('Members list: one list with Products (#928)', () => {
     // Each control is reachable from its own label.
     for (const id of [
       'members-filter-search', 'members-filter-document', 'members-filter-center',
-      'members-filter-payment-status', 'members-filter-enrollment-status',
+      'members-filter-payment-status', 'members-filter-enrollment-status', 'members-filter-welcomed',
     ]) {
       expect(filterBarUsageSrc, `${id} has no label of its own`).toContain(`htmlFor="${id}"`);
       expect(filterBarUsageSrc, `${id} is not on a control`).toContain(`id="${id}"`);

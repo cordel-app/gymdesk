@@ -32,8 +32,8 @@ function registryNames(): string[] {
 }
 
 describe('every first-level nav entry names an icon (#884)', () => {
-  it('declares one for all nine groups', () => {
-    expect(navigationGroups.length).toBe(9);
+  it('declares one for all ten groups', () => {
+    expect(navigationGroups.length).toBe(10);
     for (const group of navigationGroups) {
       expect(NAV_ICON_NAMES as readonly string[], group.id).toContain(group.icon);
     }
