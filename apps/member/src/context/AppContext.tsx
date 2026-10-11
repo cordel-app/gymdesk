@@ -82,6 +82,12 @@ interface AppContextValue {
    * the one consumer, and `reload()` is the only way out of it.
    */
   loadError: boolean;
+  /**
+   * the API answered 429 to the context load. Not `loadError` (the gym is
+   * reachable) and not an authorization answer: the member is signed in and
+   * their budget is spent, which an empty Home must not pretend is "no plan".
+   */
+  rateLimited: boolean;
   /** Re-runs the context load, keeping the Clerk session. */
   reload: () => void;
   centers: MemberCenter[];
@@ -103,6 +109,7 @@ const AppContext = createContext<AppContextValue>({
   isLinked: false,
   loading: true,
   loadError: false,
+  rateLimited: false,
   reload: () => {},
   centers: [],
   activeCenterId: null,
@@ -128,6 +135,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   const [isLinked, setIsLinked] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [rateLimited, setRateLimited] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [centers, setCenters] = useState<MemberCenter[]>([]);
   const [activeCenterId, setActiveCenterIdState] = useState<number | null>(null);
@@ -161,6 +169,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     const res = await fetch('/api/proxy/me/profile', {
       headers: buildHeaders(token, resolvedGymId),
     });
+    if (res.status === 429 && !isCancelled?.()) setRateLimited(true);
     if (isCancelled?.() || !res.ok) return false;
     setMember(await res.json());
     setIsLinked(true);
@@ -206,6 +215,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
     if (!background) {
       setLoading(true);
       setLoadError(false);
+      setRateLimited(false);
       setIsLinked(false);
       setMember(null);
       setCenters([]);
@@ -231,6 +241,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
           // A 5xx is the gym being unreachable; a 401/403 is an answer about who
           // the caller is, and the app has screens for that already (#1073).
           if (gymsRes.status >= 500) setLoadError(true);
+          if (gymsRes.status === 429) setRateLimited(true);
           setLoading(false);
           return;
         }
@@ -277,6 +288,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
    * again. */
   const reload = useCallback(() => {
     setLoadError(false);
+    setRateLimited(false);
     setReloadKey((key) => key + 1);
   }, []);
 
@@ -319,7 +331,7 @@ export function AppProvider({ children }: { children: ReactNode; gymId?: string 
   }
 
   return (
-    <AppContext.Provider value={{ gymId, gymName, gyms, switchGym, member, updateMember: setMember, isLinked, loading, loadError, reload, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
+    <AppContext.Provider value={{ gymId, gymName, gyms, switchGym, member, updateMember: setMember, isLinked, loading, loadError, rateLimited, reload, centers, activeCenterId, setActiveCenterId, theme, isSuperadmin, unreadNotifications, refreshUnreadCount: fetchUnreadCount }}>
       {children}
     </AppContext.Provider>
   );

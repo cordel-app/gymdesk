@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
 import { useAuth } from '@clerk/nextjs';
 
 interface FeatureFlagsContextValue {
@@ -22,6 +22,11 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
   const { getToken, isLoaded, isSignedIn } = useAuth();
   const [flags, setFlags] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
+  // `getToken` is a dependency only by identity. Held in a ref, a change
+  // of its identity cannot relaunch the effect (an immediate fetch plus a new
+  // interval each time), which is how one tab can spend the whole API budget.
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
 
   useEffect(() => {
     if (!isLoaded) return;
@@ -35,11 +40,18 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
 
     async function fetchFlags(isInitial: boolean) {
       try {
-        const token = await getToken();
+        const token = await getTokenRef.current();
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
         if (token) headers['Authorization'] = `Bearer ${token}`;
         const res = await fetch('/api/proxy/feature-flags', { headers });
-        const data = res.ok ? await res.json() : {};
+        // a refused poll (429, 5xx) keeps the flags already known. Replacing
+        // them with `{}` meant "everything enabled", so a rate-limited tab
+        // silently switched every disabled feature back on.
+        if (!res.ok) {
+          if (!cancelled && isInitial) setFlags({});
+          return;
+        }
+        const data = await res.json();
         if (!cancelled) setFlags(data ?? {});
       } catch {
         if (!cancelled && isInitial) setFlags({});
@@ -49,10 +61,16 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }) {
     }
 
     fetchFlags(true);
-    const interval = setInterval(() => fetchFlags(false), POLL_INTERVAL_MS);
+    const interval = setInterval(() => {
+      // A background tab is not looking at a flag; it refreshes on return.
+      if (typeof document !== 'undefined' && document.hidden) return;
+      fetchFlags(false);
+    }, POLL_INTERVAL_MS);
+    const onVisible = () => { if (!document.hidden) fetchFlags(false); };
+    document.addEventListener('visibilitychange', onVisible);
 
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [isLoaded, isSignedIn, getToken]);
+    return () => { cancelled = true; clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
+  }, [isLoaded, isSignedIn]);
 
   return (
     <FeatureFlagsContext.Provider value={{ flags, loading }}>

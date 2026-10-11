@@ -631,6 +631,8 @@
     "offline_title": "No podem connectar amb el teu gimnàs",
     "offline_body": "Comprova la connexió i torna-ho a provar.",
     "retry": "Torna-ho a provar",
+    "rate_limited_title": "Massa peticions",
+    "rate_limited_body": "Has fet moltes peticions en poc temps. Espera uns minuts i torna-ho a provar.",
     "continue_with_google": "Continua amb Google",
     "continue_with_apple": "Continua amb Apple",
     "signing_in": "Iniciant sessió…",

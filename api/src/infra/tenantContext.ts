@@ -1,5 +1,12 @@
 import { createClerkClient } from '@clerk/backend';
+import { clerkUserCacheTtlMs, createCachedLookup } from './clerkUserCache';
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
+// The caller's Clerk user is read on every gym-scoped request; see clerkUserCache.ts
+// for why it sits behind a short cache instead of going to Clerk each time.
+const getClerkUser = createCachedLookup(
+  (id: string) => clerkClient.users.getUser(id),
+  { ttlMs: clerkUserCacheTtlMs() },
+);
 import { Request, Response, NextFunction } from 'express';
 import { db } from './db';
 import { AppRole, AppModule, canAccess, canAccessFeature, canWrite, canWriteFeature } from './permissions';
@@ -58,7 +65,7 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
   }
 
   // Superadmins get full admin access to any gym without a membership row
-  const user = await clerkClient.users.getUser(userId);
+  const user = await getClerkUser(userId);
   const meta = (user.publicMetadata ?? {}) as Record<string, unknown>;
   const actorName = user.fullName || [user.firstName, user.lastName].filter(Boolean).join(' ') || null;
 
@@ -115,7 +122,7 @@ export async function tenantContext(req: Request, res: Response, next: NextFunct
 
       let impersonatedActorName: string | null = null;
       try {
-        const targetClerkUser = await clerkClient.users.getUser(impersonateAs);
+        const targetClerkUser = await getClerkUser(impersonateAs);
         if ((targetClerkUser.publicMetadata as any)?.platform_role === 'superadmin') {
           return res.status(400).json({ error: 'Cannot impersonate another superadmin' });
         }
@@ -230,7 +237,7 @@ export function requireFeatureWrite(featureKey: string, module: AppModule) {
 export async function requireSuperadmin(req: Request, res: Response, next: NextFunction) {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ error: 'Unauthorized' });
-  const user = await clerkClient.users.getUser(userId);
+  const user = await getClerkUser(userId);
   const meta = (user.publicMetadata ?? {}) as Record<string, unknown>;
   if (meta.platform_role !== 'superadmin') {
     return res.status(403).json({ error: 'Forbidden' });

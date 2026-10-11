@@ -1012,6 +1012,7 @@ Stated in full in `CLAUDE.md`; linked here so one page can point at all of them.
 | Monthly counters | `GET /payments/dashboard/summary` (#674) |
 | Per-member badge | `GET /members` → `payment_status` |
 | When each nightly run last **completed**, and whether that is overdue | `GET /health/runs` (#782) — unauthenticated, read by two Grafana Cloud alert rules (below, #872) |
+| Users being answered **HTTP 429** by the API, and Clerk's Backend API rate-limiting the API | Two Grafana Cloud rules in folder **Gymdesk**, group `api-availability` (every 1 min, created 2026-10-11 by hand like the freshness ones): *users are getting 429 from the API* (`warning`, Loki `sum(count_over_time({service_name="fitness-api"} \|~ "statusCode\\\\?\":429" [5m])) or vector(0)` > 0) and *Clerk is rate-limiting the API* (`critical`, `\|= "ClerkAPIResponseError: Too Many Requests"` > 0). Both `No data → OK`, `keep_firing_for 10m`, routed to `gymdesk-dev`. |
 
 **What does not exist:** an in-app staff alert for failed payments awaiting action (#779), any
 reconciliation job against the provider, and any member notification of a failed internal

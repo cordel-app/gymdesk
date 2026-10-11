@@ -38,17 +38,21 @@ import { memberTheme, primaryButtonStyle, safeArea } from '@/lib/memberChrome';
 export function NativeAppState() {
   const native = useIsNative();
   const t = useTranslations('native');
-  const { loading, loadError, reload, isSuperadmin } = useApp();
+  const { loading, loadError, rateLimited, reload, isSuperadmin } = useApp();
 
   // A superadmin in support mode has no member context to load and is not who
   // this screen is for — the bars that tell them whose account they are in are
   // outside the Theme for the same reason.
-  if (!native || isSuperadmin) return null;
-  if (!loading && !loadError) return null;
+  if (isSuperadmin) return null;
+  // the one state the web build shows too. A spent request budget used to
+  // render as an empty Home ("No plan"), which reads as the member's own data
+  // being gone; everything else here stays native-only.
+  if (!native && !rateLimited) return null;
+  if (!loading && !loadError && !rateLimited) return null;
 
   return (
     <div
-      role={loadError ? 'alert' : 'status'}
+      role={loadError || rateLimited ? 'alert' : 'status'}
       aria-live="polite"
       style={{
         position: 'fixed',
@@ -65,7 +69,19 @@ export function NativeAppState() {
         color: memberTheme.text,
       }}
     >
-      {loadError ? (
+      {rateLimited ? (
+        <>
+          <h1 style={{ margin: 0, fontSize: 20, color: memberTheme.title1, fontFamily: memberTheme.title1Font }}>{t('rate_limited_title')}</h1>
+          <p style={{ margin: 0, fontSize: 15, color: memberTheme.textMuted, maxWidth: 320 }}>{t('rate_limited_body')}</p>
+          <button
+            type="button"
+            onClick={reload}
+            style={{ ...primaryButtonStyle, padding: '12px 24px', fontSize: 15, fontWeight: 600 }}
+          >
+            {t('retry')}
+          </button>
+        </>
+      ) : loadError ? (
         <>
           <h1 style={{ margin: 0, fontSize: 20, color: memberTheme.title1, fontFamily: memberTheme.title1Font }}>{t('offline_title')}</h1>
           <p style={{ margin: 0, fontSize: 15, color: memberTheme.textMuted, maxWidth: 320 }}>{t('offline_body')}</p>

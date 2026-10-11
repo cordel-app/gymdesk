@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslations } from 'next-intl';
 import { useUser } from '@clerk/nextjs';
 import { useAuth } from '@clerk/nextjs';
@@ -23,6 +23,12 @@ interface Props {
 export function MemberImpersonationDialog({ onClose }: Props) {
   const t = useTranslations('impersonation');
   const { getToken } = useAuth();
+  // `getToken`'s identity is not stable across Clerk token refreshes. As a hook
+  // dependency it relaunches the load each time, and each load asks Clerk for
+  // a token again, which spends the API's request budget in a loop. Held in a
+  // ref, the load runs for what it depends on and nothing else.
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
   const { gymId } = useApp();
   const { startImpersonation } = useImpersonation();
   const { user } = useUser();
@@ -39,7 +45,7 @@ export function MemberImpersonationDialog({ onClose }: Props) {
     setLoading(true);
     setSearchFailed(false);
     try {
-      const token = await getToken();
+      const token = await getTokenRef.current();
       const res = await fetch(
         `/api/proxy/platform/impersonation/targets?q=${encodeURIComponent(q)}&gym_id=${gymId}`,
         { headers: { Authorization: `Bearer ${token}` } },
@@ -57,7 +63,7 @@ export function MemberImpersonationDialog({ onClose }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [gymId, getToken]);
+  }, [gymId]);
 
   useEffect(() => {
     const timer = setTimeout(() => search(query), 300);
