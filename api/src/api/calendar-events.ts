@@ -22,10 +22,12 @@
  */
 import { Router, type Request } from 'express';
 import { db, type Tx } from '../infra/db';
-import { getTenantContext, requireModuleWrite, requireRole } from '../infra/tenantContext';
+import { getTenantContext, requireFeatureWrite, requireModuleWrite, requireRole } from '../infra/tenantContext';
+import { requireFeatureEnabled } from '../infra/featureFlags';
 import { resolveCenterId } from '../infra/centerContext';
 import { recordAudit } from '../infra/audit';
-import { sendBulkNotification } from '../infra/notifications';
+import { recordNotifications, sendBulkNotification } from '../infra/notifications';
+import { parseCommunicationInput, STAFF_COMMUNICATIONS_FEATURE } from '../domain/staffCommunication';
 import { bookMemberOnSession } from './bookings';
 import { spendSessionForBooking } from './service-consumption';
 import { resolveRequestActor } from '../domain/auditActor';
@@ -854,6 +856,65 @@ classSessionsRouter.put('/:id/sharing-authorized', requireModuleWrite('CALENDAR'
     res.json(shapeRow(rows[0]));
   } catch (e) { next(e); }
 });
+
+/**
+ * #1391: send a communication to the members booked on an occurrence.
+ *
+ * Gated three times, all server-side: the `calendar.staff_communications`
+ * feature flag (off → 403), the feature's own write level (Admin, Trainers,
+ * Front Desk and Nutritionist; nobody else), and the tenant scope of the
+ * query. Recipients are derived here from `booked` bookings — the client sends
+ * no member ids — and a waitlisted member is owed nothing, as for every other
+ * event alert. The rows are written awaited (`recordNotifications`), so a 200
+ * means they exist; the push copy is the writer's own courtesy.
+ */
+classSessionsRouter.post(
+  '/:id/communications',
+  requireFeatureEnabled(STAFF_COMMUNICATIONS_FEATURE),
+  requireFeatureWrite(STAFF_COMMUNICATIONS_FEATURE, 'CALENDAR'),
+  async (req, res, next) => {
+    try {
+      const { gymId } = getTenantContext(req);
+      const parsed = parseCommunicationInput(req.body);
+      if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+
+      const { rows: sessionRows } = await db.query(
+        `SELECT id, status, starts_at FROM calendar_events
+         WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL AND deleted_at IS NULL`,
+        [req.params.id, gymId],
+      );
+      if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found' });
+      const session = sessionRows[0];
+      if (session.status === 'cancelled') {
+        return res.status(409).json({ error: 'Cannot send a communication for a cancelled event' });
+      }
+
+      const { rows: bookedRows } = await db.query(
+        `SELECT DISTINCT member_id FROM calendar_event_bookings
+         WHERE calendar_event_id = ? AND gym_id = ? AND status = 'booked'`,
+        [req.params.id, gymId],
+      );
+      const memberIds: number[] = bookedRows.map((r: any) => r.member_id);
+      const eventId = Number(req.params.id);
+
+      const recipients = await recordNotifications(gymId, memberIds.map((memberId) => ({
+        memberId,
+        type: 'staff_message' as const,
+        entityType: 'session' as const,
+        entityId: eventId,
+        payload: { title: parsed.title, message: parsed.message, starts_at: session.starts_at },
+      })));
+
+      recordAudit(req, {
+        action: 'send_communication',
+        entityType: 'class_session',
+        entityId: req.params.id,
+        next: { title: parsed.title, recipients },
+      });
+      res.json({ recipients });
+    } catch (e) { next(e); }
+  },
+);
 
 classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (req, res) => {
   const ctx = getTenantContext(req);

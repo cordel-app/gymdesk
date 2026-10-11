@@ -34,7 +34,7 @@ const ME = readFileSync(join(API_SRC, 'api', 'me.ts'), 'utf8');
 const STAFF_BOOKINGS = readFileSync(join(API_SRC, 'api', 'bookings.ts'), 'utf8');
 const APP = readFileSync(join(API_SRC, 'app.ts'), 'utf8');
 const MIGRATION = readFileSync(
-  join(API_SRC, 'infra', 'migrations', '226_booking_reminder_notification_type.js'),
+  join(API_SRC, 'infra', 'migrations', '270_staff_message_notification.js'),
   'utf8',
 );
 const WORKFLOW = readFileSync(
@@ -98,7 +98,7 @@ describe('the reminder is one declaration (#1113 §2)', () => {
     // CLAUDE.md: a new type goes in two places. The union is the narrower list.
     const unionBlock = code(NOTIFICATIONS).slice(
       code(NOTIFICATIONS).indexOf('export type NotificationType'),
-      code(NOTIFICATIONS).indexOf("| 'booking_reminder_2h';") + "| 'booking_reminder_2h';".length,
+      code(NOTIFICATIONS).indexOf('export interface NotificationPayload'),
     );
     const union = [...unionBlock.matchAll(/\|\s*'([a-z0-9_]+)'/g)].map((m) => m[1]);
     const checkList = MIGRATION.slice(

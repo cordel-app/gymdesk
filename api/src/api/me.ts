@@ -27,6 +27,7 @@ import { validateRequest as validateSharedRequest } from './shared-training-requ
 import { planTreeSelect } from './training-plans';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
+import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
 import { generateReceiptPdf } from '../lib/receipt-pdf';
@@ -1916,7 +1917,11 @@ meRouter.get('/notifications', requireRole('member'), async (req: Request, res: 
       'SELECT COUNT(*) AS unread FROM member_notifications WHERE gym_id = ? AND member_id = ? AND read_at IS NULL',
       [gymId, memberId],
     );
-    res.json({ items: rows, unread: Number(countRows[0].unread) });
+    // #1391: Staff vs Auto is derived from the type, never stored.
+    res.json({
+      items: rows.map((r: any) => ({ ...r, category: notificationCategory(r.type) })),
+      unread: Number(countRows[0].unread),
+    });
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
