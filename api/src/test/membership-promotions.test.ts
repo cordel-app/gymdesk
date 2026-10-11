@@ -14,7 +14,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 afterAll(async () => {
@@ -46,7 +46,7 @@ async function createMember(gymId: string, name: string): Promise<number> {
 }
 
 async function createUserMembership(gymId: string, memberId: number, planId: number, basePrice: number): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', CURDATE(), ?)`,
     [gymId, memberId, planId, basePrice],
@@ -491,7 +491,7 @@ describe('POST /user-memberships/:id/promotions — new-members-only promotions'
     opts: { status?: string; startsAt?: string; endsAt?: string | null; createdMonthsAgo?: number } = {},
   ): Promise<number> {
     const { status = 'active', startsAt = 'CURDATE()', endsAt = null, createdMonthsAgo = 0 } = opts;
-    const { insertId } = await db.query(
+    const { insertId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price, created_at)
        VALUES (?, ?, ?, ?, ${startsAt}, ?, 100, UTC_TIMESTAMP() - INTERVAL ? MONTH)`,

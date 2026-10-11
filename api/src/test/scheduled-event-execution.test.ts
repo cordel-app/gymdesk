@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym } from './helpers';
+import { cleanupTestGyms, createTestGym, legacyAssignmentQuery } from './helpers';
 
 const provider = vi.hoisted(() => ({
   next: { success: true, providerRef: 'ref', providerStatus: 'SUCCEEDED' } as any,
@@ -151,7 +151,7 @@ describe('executing persisted Billing Events (#1325 PR 2c)', () => {
     provider.next = { success: false, providerRef: 'r1', providerStatus: 'FAILED', errorCode: 'E', errorMessage: 'declined' };
     const { eventId, memberId } = await setup();
     const { rows: ps } = await db.query<any>('SELECT product_set_id FROM billing_events WHERE id = ?', [eventId]);
-    const um = await db.query(
+    const um = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, status, starts_at, base_price) VALUES (?, ?, 'active', ?, 0)`,
       [gymId, memberId, YESTERDAY]);
     await db.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [um.insertId, ps[0].product_set_id]);

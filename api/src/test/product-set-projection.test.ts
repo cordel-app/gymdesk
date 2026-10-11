@@ -47,7 +47,11 @@ async function commit(owner: number, planId: number | null, fee = 30) {
 }
 async function assignments(owner: number) {
   const { rows } = await db.query<any>(
-    'SELECT id, status, membership_plan_id, membership_fee_price FROM user_memberships WHERE member_id = ? ORDER BY id', [owner]);
+    `SELECT um.id, um.status, um.membership_plan_id,
+            (SELECT s.membership_fee_price FROM product_sets ps
+               JOIN product_set_plan_snapshots s ON s.product_set_id = ps.id
+              WHERE ps.user_membership_id = um.id ORDER BY ps.version DESC, ps.id DESC LIMIT 1) AS membership_fee_price
+       FROM user_memberships um WHERE um.member_id = ? ORDER BY um.id`, [owner]);
   return rows;
 }
 

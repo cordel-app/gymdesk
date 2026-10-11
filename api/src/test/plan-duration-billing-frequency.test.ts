@@ -28,7 +28,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, billingEventsOfAssignment,
+  request, billingEventsOfAssignment, legacyAssignmentQuery
 } from './helpers';
 
 const SECRET = 'test-billing-secret';
@@ -118,7 +118,7 @@ async function createAssignment(params: {
   durations: { free?: number | null; paid?: number | null; bonus?: number | null; prepaid?: number | null };
 }): Promise<number> {
   const { free = null, paid = null, bonus = null, prepaid = null } = params.durations;
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
         membership_fee_price,

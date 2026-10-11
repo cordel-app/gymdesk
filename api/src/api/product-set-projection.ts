@@ -201,38 +201,25 @@ export async function projectActiveProductSet(tx: Tx, gymId: string, productSetI
     return null;
   }
 
-  const columns = [
-    set.membership_fee_price ?? null, set.free_periods ?? null, set.paid_periods ?? null,
-    set.bonus_periods ?? null, set.pay_beforehand_periods ?? null,
-    set.cadence_interval ?? null, set.cadence_unit ?? null,
-    set.auto_renew ?? 0,
-    set.personal_fee_benefit_action ?? 'no_benefit', set.personal_fee_benefit_value ?? null,
-  ];
-
   let umId: number;
   if (previousUmId != null && previousPlanId === Number(set.membership_plan_id)) {
-    // Same plan, new version: the row is updated in place.
+    // Same plan, new version: the row is updated in place. The commercial
+    // configuration is the version's — the row carries none (migration 258).
     umId = previousUmId;
     await tx.query(
       `UPDATE user_memberships
-          SET membership_fee_price = ?, free_periods = ?, paid_periods = ?, bonus_periods = ?,
-              pay_beforehand_periods = ?, recurring_billing_interval = ?, recurring_billing_unit = ?,
-              auto_renew = ?, personal_fee_benefit_action = ?, personal_fee_benefit_value = ?,
-              ends_at = ?, status = IF(status IN ('cancelled','expired'), status, 'active')
+          SET ends_at = ?, status = IF(status IN ('cancelled','expired'), status, 'active')
         WHERE id = ? AND gym_id = ?`,
-      [...columns, dateOnly(set.ends_at), umId, gymId],
+      [dateOnly(set.ends_at), umId, gymId],
     );
   } else {
     if (previousUmId != null) await closeAssignment(tx, gymId, previousUmId, startsAt);
     const { insertId } = await tx.query(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, starts_at, ends_at, status,
-          membership_fee_price, free_periods, paid_periods, bonus_periods, pay_beforehand_periods,
-          recurring_billing_interval, recurring_billing_unit, auto_renew,
-          personal_fee_benefit_action, personal_fee_benefit_value,
           created_by_name, created_by_type)
-       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at), ...columns,
+       VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
+      [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at),
         set.created_by_name, set.created_by_type],
     );
     umId = Number(insertId);
@@ -261,21 +248,8 @@ export async function syncDraftAssignment(tx: Tx, gymId: string, productSetId: n
   if (!set || set.user_membership_id == null) return;
   const umId = Number(set.user_membership_id);
   await tx.query(
-    `UPDATE user_memberships
-        SET membership_fee_price = ?, free_periods = ?, paid_periods = ?, bonus_periods = ?,
-            pay_beforehand_periods = ?,
-            auto_renew = ?, personal_fee_benefit_action = ?, personal_fee_benefit_value = ?,
-            discount_reason = ?, discount_expires_at = ?, starts_at = ?, ends_at = ?
-      WHERE id = ? AND gym_id = ?`,
-    [
-      set.membership_fee_price ?? null, set.free_periods ?? null, set.paid_periods ?? null,
-      set.bonus_periods ?? null, set.pay_beforehand_periods ?? null,
-      set.auto_renew ?? 0,
-      set.personal_fee_benefit_action ?? 'no_benefit', set.personal_fee_benefit_value ?? null,
-      set.discount_reason ?? null, dateOnly(set.discount_expires_at),
-      dateOnly(set.starts_at), dateOnly(set.ends_at),
-      umId, gymId,
-    ],
+    'UPDATE user_memberships SET starts_at = ?, ends_at = ? WHERE id = ? AND gym_id = ?',
+    [dateOnly(set.starts_at), dateOnly(set.ends_at), umId, gymId],
   );
   await copyAssignmentRows(tx, gymId, set, umId);
 }

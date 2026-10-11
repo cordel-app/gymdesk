@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { cleanupTestGyms, createTestGym, createTestMembership, request, legacyAssignmentQuery } from './helpers';
 
 const SECRET = 'test-billing-secret';
 
@@ -83,7 +83,7 @@ async function createDueMembership(
   planId: number,
   finalPrice = '29.99',
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', '2000-01-01', ?)`,

@@ -82,6 +82,15 @@ describe('a Draft assignment is created set-first', () => {
     expect(rows).toHaveLength(0);
   });
 
+  it('refuses to change the Billing frequency of a Draft (the chain\'s schedule is anchored once)', async () => {
+    const m = await member();
+    const res = await api('post', '/user-memberships')
+      .send({ member_id: m, membership_plan_id: await plan('F'), starts_at: '2026-06-01' });
+    const edit = await api('put', `/user-memberships/${res.body.id}/billing-duration`)
+      .send({ recurring_billing_unit: 'year', recurring_billing_interval: 1 });
+    expect(edit.status).toBe(400);
+  });
+
   it('activating the Draft moves the version it already is', async () => {
     const m = await member();
     const res = await api('post', '/user-memberships')

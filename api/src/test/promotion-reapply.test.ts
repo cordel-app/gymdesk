@@ -32,7 +32,7 @@ import {
   createTestGym,
   createTestMembership,
   ensureTestProductSet,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 afterAll(async () => {
@@ -57,7 +57,7 @@ async function createAssignment(gymId: string, planId: number, basePrice = 100):
     'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
     [gymId, 'PRA Member', `pra-${uniq()}@test.com`],
   );
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', CURDATE(), ?)`,
     [gymId, memberId, planId, basePrice],

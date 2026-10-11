@@ -107,16 +107,37 @@ export async function deleteLinkedDraftSet(tx: Tx, gymId: string, userMembership
 }
 
 /**
- * The assignment's own dates and negotiated-fee reason are edited on the row by
- * `PUT /user-memberships/:id`; a Draft's version carries the same facts, so a
- * write of them is mirrored onto it in the same transaction.
+ * The negotiated fee's reason and expiry are the version's (the row carries
+ * neither since migration 258): written on the latest version linked to the
+ * assignment, a request that mentions only one of the two leaving the other as
+ * it was. Reference text that prices nothing, so it is written in place.
+ */
+export async function writeDiscountOnVersion(tx: Tx, gymId: string, userMembershipId: number, input: {
+  reason: { value: string | null } | null; expires: { value: string | null } | null;
+}): Promise<void> {
+  if (!input.reason && !input.expires) return;
+  await tx.query(
+    `UPDATE product_set_plan_snapshots snap
+       JOIN product_sets ps ON ps.id = snap.product_set_id
+        SET snap.discount_reason = IF(?, ?, snap.discount_reason),
+            snap.discount_expires_at = IF(?, ?, snap.discount_expires_at)
+      WHERE ps.gym_id = ? AND ps.user_membership_id = ?
+        AND ps.version = (SELECT MAX(p2.version) FROM product_sets p2
+                           WHERE p2.gym_id = ps.gym_id AND p2.user_membership_id = ps.user_membership_id)`,
+    [input.reason ? 1 : 0, input.reason?.value ?? null, input.expires ? 1 : 0, input.expires?.value ?? null,
+      gymId, userMembershipId]);
+}
+
+/**
+ * A Draft's dates are edited on the row by `PUT /user-memberships/:id`; its
+ * version carries the same facts, so a write of them is mirrored onto it in the
+ * same transaction.
  */
 export async function syncDraftSetFromAssignment(tx: Tx, gymId: string, userMembershipId: number): Promise<void> {
   const draft = await linkedDraftSetFor(tx, gymId, userMembershipId);
   if (!draft) return;
   const { rows } = await tx.query<any>(
-    `SELECT starts_at, ends_at, discount_reason, discount_expires_at
-       FROM user_memberships WHERE id = ? AND gym_id = ?`, [userMembershipId, gymId]);
+    'SELECT starts_at, ends_at FROM user_memberships WHERE id = ? AND gym_id = ?', [userMembershipId, gymId]);
   const um = rows[0];
   if (!um) return;
   const dateOnly = (v: unknown) => (v == null ? null : (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10));
@@ -136,8 +157,4 @@ export async function syncDraftSetFromAssignment(tx: Tx, gymId: string, userMemb
         WHERE gym_id = ? AND root_product_set_id = ? AND anchor_date = ?`,
       [newStart, gymId, draft.id, oldStart]);
   }
-  await tx.query(
-    `UPDATE product_set_plan_snapshots SET discount_reason = ?, discount_expires_at = ?
-      WHERE product_set_id = ? AND gym_id = ?`,
-    [um.discount_reason ?? null, dateOnly(um.discount_expires_at), draft.id, gymId]);
 }

@@ -22,7 +22,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 const ROOT = '/me/products';
@@ -718,7 +718,7 @@ describe('which Promotions the catalogue offers (#1118 §4, the thread’s Q4)',
        VALUES (?, 'Standard', 'active', 'public')`,
       [gid],
     );
-    await db.query(
+    await legacyAssignmentQuery(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', CURDATE(), 0)`,
