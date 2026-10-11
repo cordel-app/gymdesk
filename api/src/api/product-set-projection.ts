@@ -94,29 +94,6 @@ async function loadSet(tx: Tx, gymId: string, productSetId: number): Promise<Set
   return rows[0] ?? null;
 }
 
-/**
- * The assignment-keyed copy the readers not yet moved still use: **coverage**
- * (`user_membership_members`), from the chain's `product_set_members`. The
- * benefit rows, applied Promotions and recurring services are no longer copied —
- * an assignment's are its current version's own (#1325 PR 3e-4a). Re-written
- * whole, so it is idempotent.
- */
-async function copyAssignmentRows(tx: Tx, gymId: string, set: SetRow, umId: number): Promise<void> {
-  // Coverage: the owner and every covered member, from the chain.
-  await tx.query('DELETE FROM user_membership_members WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
-  await tx.query(
-    `INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner)
-     SELECT ?, ?, member_id, is_owner FROM product_set_members
-      WHERE gym_id = ? AND root_product_set_id = ?`,
-    [gymId, umId, gymId, set.root_product_set_id],
-  );
-  await tx.query(
-    `INSERT IGNORE INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner)
-     VALUES (?, ?, ?, 1)`,
-    [gymId, umId, set.owner_member_id],
-  );
-}
-
 /** Projects the (just activated) version onto its operational assignment. */
 export async function projectActiveProductSet(tx: Tx, gymId: string, productSetId: number): Promise<number | null> {
   const set = await loadSet(tx, gymId, productSetId);
@@ -169,7 +146,6 @@ export async function projectActiveProductSet(tx: Tx, gymId: string, productSetI
     umId = Number(insertId);
   }
 
-  await copyAssignmentRows(tx, gymId, set, umId);
 
   await tx.query('UPDATE product_sets SET user_membership_id = ? WHERE id = ?', [umId, productSetId]);
   return umId;
@@ -195,5 +171,4 @@ export async function syncDraftAssignment(tx: Tx, gymId: string, productSetId: n
     'UPDATE user_memberships SET starts_at = ?, ends_at = ? WHERE id = ? AND gym_id = ?',
     [dateOnly(set.starts_at), dateOnly(set.ends_at), umId, gymId],
   );
-  await copyAssignmentRows(tx, gymId, set, umId);
 }

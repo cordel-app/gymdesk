@@ -66,7 +66,6 @@ describe('development billing reset (#1325)', () => {
     expect(before('payment_requests', 'billing_events')).toBe(true);
     expect(before('member_products_oneoff_snapshot', 'payment_requests')).toBe(true);
     expect(before('user_membership_promotions', 'user_memberships')).toBe(true);
-    expect(before('user_membership_members', 'user_memberships')).toBe(true);
     expect(before('product_set_members', 'product_sets')).toBe(true);
     for (const kept of ['members', 'membership_plans', 'promotions', 'products', 'tax_rates', 'charge_types',
       'payment_methods', 'receipt_sequences', 'audit_logs', 'gyms', 'centers']) {

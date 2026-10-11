@@ -680,8 +680,8 @@ export async function applyPromotionToProductSet(
   const snapshot = await buildPromotionSnapshot(tx, gymId, promotionId);
   const { insertId } = await tx.query(
     `INSERT INTO user_membership_promotions
-       (gym_id, user_membership_id, product_set_id, promotion_id, applied_by, status, snapshot)
-     VALUES (?, NULL, ?, ?, ?, 'applied', ?)`,
+       (gym_id, product_set_id, promotion_id, applied_by, status, snapshot)
+     VALUES (?, ?, ?, ?, 'applied', ?)`,
     [gymId, productSetId, promotionId, userId, snapshot != null ? JSON.stringify(snapshot) : null],
   );
   await snapshotPromotionGrants(tx, gymId, insertId, promotionId);

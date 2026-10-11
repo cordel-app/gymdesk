@@ -11,6 +11,7 @@
  * Mounted with auth + tenantContext only (any staff role may open Home); the
  * response simply omits what the caller may not read.
  */
+import { assignmentVersionId } from './assignment-config';
 import { Router } from 'express';
 import { db } from '../infra/db';
 import { getTenantContext } from '../infra/tenantContext';
@@ -102,7 +103,7 @@ async function loadServicesNotScheduled(gymId: string): Promise<HomeTask> {
   const { rows: pairs } = await db.query<{ member_id: number; member_name: string; ps_id: number; ps_name: string }>(
     `SELECT DISTINCT mm.member_id, m.name AS member_name, ps.id AS ps_id, ps.name AS ps_name
        FROM user_memberships um
-       JOIN user_membership_session umss ON umss.user_membership_id = um.id AND umss.gym_id = um.gym_id
+       JOIN user_membership_session umss ON umss.product_set_id = ${assignmentVersionId('um.id')} AND umss.gym_id = um.gym_id
        JOIN product_professional_services pps ON pps.product_id = umss.product_id AND pps.gym_id = um.gym_id
        JOIN professional_services ps ON ps.id = pps.professional_service_id AND ps.deleted_at IS NULL
        JOIN gym_professional_services gps

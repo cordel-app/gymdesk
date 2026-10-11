@@ -379,7 +379,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
        VALUES (?, ?, ?, 0, ?, 'active', 1, 12, 2, 1, 'month', 80)`,
       [memberId, gym, planId, dayOffset(0)],
     );
-    await db.query(
+    await legacyChildQuery(
       'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
       [gym, insertId, memberId],
     );

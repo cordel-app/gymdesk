@@ -3,8 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
-  TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, legacyAssignmentQuery
-} from './helpers';
+  TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, legacyAssignmentQuery, legacyChildQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -51,7 +50,7 @@ beforeAll(async () => {
     [gymId, john, planId],
   );
   duoId = duo.insertId;
-  await db.query(
+  await legacyChildQuery(
     'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1), (?, ?, ?, 0)',
     [gymId, duoId, john, gymId, duoId, jane],
   );
@@ -61,7 +60,7 @@ beforeAll(async () => {
     [gymId, alone, planId],
   );
   soloId = solo.insertId;
-  await db.query(
+  await legacyChildQuery(
     'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
     [gymId, soloId, alone],
   );
@@ -97,7 +96,7 @@ describe('GET /user-memberships/member/:id/configuration', () => {
       [gymId, familyOwner, familyPlan.insertId],
     );
     const familyId = family.insertId as number;
-    await db.query(
+    await legacyChildQuery(
       'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
       [gymId, familyId, familyOwner],
     );

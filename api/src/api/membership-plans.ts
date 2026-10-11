@@ -805,12 +805,6 @@ membershipPlansRouter.post('/:id/assign', requireRole('admin'), async (req, res,
         previousStatus: null, newStatus: ASSIGNMENT_CREATION_STATUS,
         source: sourceForRole(role), actorUserId: userId,
       });
-      for (const memberId of uniqueMemberIds) {
-        await tx.query(
-          'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, ?)',
-          [gymId, insertId, memberId, memberId === ownerId ? 1 : 0],
-        );
-      }
       // #635 stage 2 — the commercial configuration (Billing & Duration,
       // cadence, regular fee, and the three benefit sections) is frozen onto
       // the assignment here, so every assignment entry point captures the same
