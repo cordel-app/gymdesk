@@ -78,6 +78,8 @@ export function NavGroup({
   collapsed = false,
   separatorAbove = false,
 }: NavGroupProps) {
+  // A group flagged `directLink` is one page: its header navigates there.
+  const direct = !!group.directLink && group.items.length > 0;
   const showBadge = !!badge && badge.count > 0;
   const pathname = usePathname();
   const t = useTranslations();
@@ -178,6 +180,43 @@ export function NavGroup({
   // selected background, text colour and 3px brand rail, no new colour.
   const showActiveParent = collapsed && isAnyChildActive;
 
+  const headerStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: collapsed ? 'center' : 'flex-start',
+    width: '100%',
+    boxSizing: 'border-box',
+    // #884: 16px rather than 20px, and a 6px gap rather than 8px, so the
+    // section icon fits beside the chevron without the longest uppercase
+    // label ("CONFIGURACIÓN", "ENTRENAMIENTO") wrapping onto a second line
+    // in the sidebar (SIDEBAR_EXPANDED_WIDTH). Nothing else about the header's spacing moves.
+    padding: '10px 16px',
+    // #1003: collapsed, the icon is the whole button, so it centres in
+    // the strip rather than sitting at #884's label inset. The expanded
+    // spacing above is untouched — this only overrides it.
+    ...(collapsed ? { padding: '10px 0' } : null),
+    background: showActiveParent
+      ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))'
+      : collapsed && headerHovered
+        ? 'var(--gd-sidebar-hover-bg, rgba(255,255,255,0.08))'
+        : 'transparent',
+    border: 'none',
+    borderLeft: showActiveParent
+      ? '3px solid var(--brand, #6c63ff)'
+      : '3px solid transparent',
+    color: showActiveParent
+      ? 'var(--gd-sidebar-selected-text, #fff)'
+      : 'rgba(255,255,255,0.6)',
+    textDecoration: 'none',
+    fontSize: 14,
+    fontWeight: 600,
+    cursor: 'pointer',
+    textTransform: 'uppercase',
+    letterSpacing: '0.08em',
+    gap: '6px',
+    whiteSpace: 'nowrap',
+  };
+
   return (
     <div>
       {/* #1020: above the header, so it separates this section from the one
@@ -185,53 +224,28 @@ export function NavGroup({
           narrows its inset (navChrome). */}
       {separatorAbove && <div style={navGroupSeparatorStyle(collapsed)} />}
       <div style={{ display: 'flex', alignItems: 'center', marginTop: '8px', position: 'relative' }}>
-      <button
-        onClick={onToggle}
-        onMouseEnter={() => setHeaderHovered(true)}
-        onMouseLeave={() => setHeaderHovered(false)}
-        // Collapsed, the label is the only thing naming the section, so it is
-        // both the tooltip (§4) and the accessible name — the icon beside it is
-        // decorative and `aria-hidden`. Expanded, the label is on screen and
-        // repeating it as a title would just shadow it.
-        title={collapsed ? label : undefined}
-        aria-label={collapsed ? label : undefined}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          width: '100%',
-          boxSizing: 'border-box',
-          // #884: 16px rather than 20px, and a 6px gap rather than 8px, so the
-          // section icon fits beside the chevron without the longest uppercase
-          // label ("CONFIGURACIÓN", "ENTRENAMIENTO") wrapping onto a second line
-          // in the sidebar (SIDEBAR_EXPANDED_WIDTH). Nothing else about the header's spacing moves.
-          padding: '10px 16px',
-          // #1003: collapsed, the icon is the whole button, so it centres in
-          // the strip rather than sitting at #884's label inset. The expanded
-          // spacing above is untouched — this only overrides it.
-          ...(collapsed ? { padding: '10px 0' } : null),
-          background: showActiveParent
-            ? 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))'
-            : collapsed && headerHovered
-              ? 'var(--gd-sidebar-hover-bg, rgba(255,255,255,0.08))'
-              : 'transparent',
-          border: 'none',
-          borderLeft: showActiveParent
-            ? '3px solid var(--brand, #6c63ff)'
-            : '3px solid transparent',
-          color: showActiveParent
-            ? 'var(--gd-sidebar-selected-text, #fff)'
-            : 'rgba(255,255,255,0.6)',
-          textDecoration: 'none',
-          fontSize: 14,
-          fontWeight: 600,
-          cursor: 'pointer',
-          textTransform: 'uppercase',
-          letterSpacing: '0.08em',
-          gap: '6px',
-          whiteSpace: 'nowrap',
-        }}
-      >
+      {direct ? (
+        <Link
+          href={group.items[0].href}
+          onClick={onNavigate}
+          onMouseEnter={() => setHeaderHovered(true)}
+          onMouseLeave={() => setHeaderHovered(false)}
+          title={collapsed ? label : undefined}
+          aria-label={collapsed ? label : undefined}
+          aria-current={isAnyChildActive ? 'page' : undefined}
+          style={{
+            ...headerStyle,
+            ...(isAnyChildActive
+              ? {
+                  background: 'var(--gd-sidebar-selected-bg, rgba(255,255,255,0.1))',
+                  borderLeft: '3px solid var(--brand, #6c63ff)',
+                  color: 'var(--gd-sidebar-selected-text, #fff)',
+                }
+              : headerHovered && !collapsed
+                ? { background: 'var(--gd-sidebar-hover-bg, rgba(255,255,255,0.08))' }
+                : null),
+          }}
+        >
         {!collapsed && (
           <span
             style={{
@@ -260,7 +274,46 @@ export function NavGroup({
         */}
         <NavIcon name={group.icon} />
         {!collapsed && label}
+        </Link>
+      ) : (
+      <button
+        onClick={onToggle}
+        onMouseEnter={() => setHeaderHovered(true)}
+        onMouseLeave={() => setHeaderHovered(false)}
+        title={collapsed ? label : undefined}
+        aria-label={collapsed ? label : undefined}
+        style={headerStyle}
+      >
+        {!collapsed && !direct && (
+          <span
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '16px',
+              height: '16px',
+              flexShrink: 0,
+              transition: 'transform 150ms ease-in-out',
+              transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            }}
+          >
+            ▶
+          </span>
+        )}
+        {/*
+          #884: the section's own icon, beside — never instead of — the chevron:
+          the icon identifies the category, the chevron says whether it is open.
+          It is decorative and `aria-hidden`, so the button's accessible name is
+          still the label, and it draws in `currentColor`, so it follows the
+          header's colour rather than carrying a state of its own.
+
+          #1003: collapsed, it is the only thing left in the button — the one
+          occurrence, rendered at the one shared size in both modes.
+        */}
+        <NavIcon name={group.icon} />
+        {!collapsed && label}
       </button>
+      )}
       {showBadge && (
         collapsed
           // #779's attention count survives the collapse: there is no label to
@@ -274,7 +327,7 @@ export function NavGroup({
       )}
       </div>
 
-      {!collapsed && (
+      {!collapsed && !direct && (
         <div style={groupContainerStyle}>
           {group.items.map((item) => renderNavItem(item))}
         </div>

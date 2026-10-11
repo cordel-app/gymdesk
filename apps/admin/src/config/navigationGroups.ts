@@ -35,6 +35,11 @@ export interface NavGroup {
    * section from nothing.
    */
   separatorAbove?: boolean;
+  /**
+   * #1453: the group is a single page. Its header links straight to
+   * `items[0].href` — no chevron, no submenu — so it needs exactly one item.
+   */
+  directLink?: boolean;
   items: NavItem[];
 }
 
@@ -46,6 +51,7 @@ export const navigationGroups: NavGroup[] = [
     id: 'home',
     labelKey: 'nav.groups.home',
     icon: 'home',
+    directLink: true,
     items: [
       {
         href: '/{{locale}}/home',

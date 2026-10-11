@@ -1,6 +1,7 @@
 import { SYSTEM_ACTOR } from './auditActor';
 import { eventAssignmentSql } from './billingEventOwnership';
 import { chargeGuard } from './chargeGuard';
+import { AttemptMethod, ManualPaymentMethod } from './paymentAttemptMethod';
 import crypto from 'crypto';
 import { Tx, db } from '../infra/db';
 import { advanceBillingDate } from './billingDate';
@@ -55,6 +56,7 @@ export interface RetryResult {
 }
 
 export interface ManualPaymentResult {
+  method: ManualPaymentMethod;
   billing_event_id: number;
   previous_status: BillingEventStatus;
   new_status: BillingEventStatus;
@@ -89,8 +91,12 @@ interface EventContext {
  * `latest_tx_status` subquery is the same one the list endpoint uses — see
  * `deriveBillingEventStatus`.
  */
-async function loadEventContext(gymId: string, billingEventId: number): Promise<EventContext | null> {
-  const { rows } = await db.query<EventContext>(
+async function loadEventContext(
+  gymId: string,
+  billingEventId: number,
+  exec: Pick<Tx, 'query'> = db,
+): Promise<EventContext | null> {
+  const { rows } = await exec.query<EventContext>(
     `SELECT be.id, be.gym_id, be.member_id, um.id AS user_membership_id, be.event_type,
             be.product_set_id, be.is_scheduled, be.billing_date,
             be.amount, be.charge_type_id,
@@ -188,6 +194,10 @@ async function insertTransaction(params: {
   amount: number;
   status: 'completed' | 'failed';
   source: 'retry' | 'manual';
+  /** #1459: how the attempt was made; defaults from `source` (manual → cash, retry → provider). */
+  method?: AttemptMethod;
+  /** Runs inside the caller's transaction when given. */
+  exec?: Pick<Tx, 'query'>;
   attempt: number;
   provider: string;
   providerOrder: string | null;
@@ -200,7 +210,7 @@ async function insertTransaction(params: {
   /** #1325: the provider's own status, verbatim (a manual payment has none). */
   providerStatus?: string | null;
 }): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await (params.exec ?? db).query(
     `INSERT INTO payment_requests
        (gym_id, user_membership_id, member_id, amount, currency, charge_type_id,
         billing_event_id, status, provider, provider_order, provider_ref,
@@ -215,7 +225,7 @@ async function insertTransaction(params: {
       params.status, params.provider, params.providerOrder, params.providerRef,
       params.source, params.attempt, params.actor,
       params.failureCode, params.failureMessage, params.notes,
-      params.source === 'manual' ? 'cash' : 'provider', params.providerStatus ?? null,
+      params.method ?? (params.source === 'manual' ? 'cash' : 'provider'), params.providerStatus ?? null,
       params.status === 'completed' ? new Date() : null,
       params.actor,
     ],
@@ -253,7 +263,7 @@ export async function retryBillingEventPayment(
     `SELECT id, method, provider_status, provider_ref, status FROM payment_requests WHERE billing_event_id = ?`,
     [event.id]);
   const guarded = chargeGuard(earlier.map((a: any) => ({
-    id: Number(a.id), method: (a.method ?? 'provider') as 'provider' | 'cash' | 'waive',
+    id: Number(a.id), method: (a.method ?? 'provider') as AttemptMethod,
     providerStatus: a.provider_status ?? null, providerRef: a.provider_ref ?? null, status: String(a.status),
   })));
   if (!guarded.allowed) {
@@ -380,51 +390,156 @@ export async function recordManualPayment(
   input: { amount?: unknown; notes?: unknown },
   /** #1182: the plain-text actor snapshot (`resolveRequestActor()`); omitted with no user = System. */
   actorArg?: string | null,
+  /** #1459: `cash` (default) or `card_terminal`; neither calls the online provider. */
+  method: ManualPaymentMethod = 'cash',
 ): Promise<{ failure: ActionFailure } | { result: ManualPaymentResult }> {
   const actor = actorArg === undefined ? (actorUserId ? null : SYSTEM_ACTOR) : actorArg;
-  const ev = await loadEventContext(gymId, billingEventId);
-  const guard = guardActionable(ev);
-  if (guard) return { failure: guard };
-  const event = ev!;
 
-  const chargeTypeId = await resolveChargeTypeId(event);
-  if (!chargeTypeId) return { failure: { status: 500, error: 'charge_type membership_fee not configured' } };
+  // #1459: the event's row lock is what makes a duplicate settlement
+  // impossible, not the button: two concurrent requests serialise here and the
+  // second one reads the first one's completed attempt and answers 409.
+  return db.transaction(async (tx) => {
+    await tx.query('SELECT id FROM billing_events WHERE id = ? AND gym_id = ? FOR UPDATE', [billingEventId, gymId]);
+    const ev = await loadEventContext(gymId, billingEventId, tx);
+    const guard = guardActionable(ev);
+    if (guard) return { failure: guard };
+    const event = ev!;
 
-  // Defaults to the event's own amount; an explicit amount (a partial or
-  // renegotiated settlement) is accepted but must be a positive number.
-  let amount = parseFloat(event.amount!);
-  if (input.amount != null && input.amount !== '') {
-    const parsed = parseFloat(String(input.amount));
-    if (isNaN(parsed) || parsed <= 0) {
-      return { failure: { status: 400, error: 'amount must be greater than 0' } };
+    const earlier = await loadEarlierAttempts(tx, event.id);
+    const guarded = chargeGuard(earlier);
+    if (!guarded.allowed) {
+      return { failure: { status: 409, error: `This payment cannot be recorded (${guarded.reason}); reconcile the earlier attempt first.` } };
     }
-    amount = parsed;
-  }
 
-  const notes = typeof input.notes === 'string' && input.notes.trim()
-    ? input.notes.trim().slice(0, 500)
-    : null;
+    const chargeTypeId = await resolveChargeTypeId(event);
+    if (!chargeTypeId) return { failure: { status: 500, error: 'charge_type membership_fee not configured' } };
 
-  const previousStatus = deriveBillingEventStatus(event.event_type, event.latest_tx_status);
+    // Defaults to the event's own amount; an explicit amount (a partial or
+    // renegotiated settlement) is accepted but must be a positive number. The
+    // confirmation modal never sends one (#1459: the full outstanding amount).
+    let amount = parseFloat(event.amount!);
+    if (input.amount != null && input.amount !== '') {
+      const parsed = parseFloat(String(input.amount));
+      if (isNaN(parsed) || parsed <= 0) {
+        return { failure: { status: 400, error: 'amount must be greater than 0' } };
+      }
+      amount = parsed;
+    }
 
-  const paymentRequestId = await insertTransaction({
-    ev: event, chargeTypeId, amount, status: 'completed', source: 'manual',
-    attempt: Number(event.last_attempt ?? 0) + 1,
-    provider: 'manual', providerOrder: null, providerRef: null,
-    failureCode: null, failureMessage: null, notes, actor,
+    const notes = typeof input.notes === 'string' && input.notes.trim()
+      ? input.notes.trim().slice(0, 500)
+      : null;
+
+    const previousStatus = deriveBillingEventStatus(event.event_type, event.latest_tx_status);
+
+    const paymentRequestId = await insertTransaction({
+      ev: event, chargeTypeId, amount, status: 'completed', source: 'manual', method,
+      attempt: Number(event.last_attempt ?? 0) + 1,
+      provider: 'manual', providerOrder: null, providerRef: null,
+      failureCode: null, failureMessage: null, notes, actor, exec: tx,
+    });
+
+    await closeScheduledEvent(tx, event, 'paid', actor);
+    await tx.query(
+      'UPDATE billing_events SET modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ? AND gym_id = ?',
+      [actor, event.id, gymId],
+    );
+
+    return {
+      result: {
+        method,
+        billing_event_id: event.id,
+        previous_status: previousStatus,
+        new_status: 'paid' as BillingEventStatus,
+        payment_request_id: paymentRequestId,
+        amount: amount.toFixed(2),
+        notes,
+      },
+    };
   });
+}
 
-  await db.transaction((tx) => closeScheduledEvent(tx, event, 'paid', actor));
-  await stampEventModified(gymId, event.id, actor);
+export interface WaiveResult {
+  billing_event_id: number;
+  previous_status: BillingEventStatus;
+  /** The amount the gym gave up; the attempt itself carries 0.00 so no total counts it as money. */
+  waived_amount: string;
+  reason: string;
+  payment_request_id: number;
+}
 
-  return {
-    result: {
-      billing_event_id: event.id,
-      previous_status: previousStatus,
-      new_status: 'paid',
-      payment_request_id: paymentRequestId,
-      amount: amount.toFixed(2),
-      notes,
-    },
-  };
+/**
+ * #1459 — **Waive**: staff give up an outstanding amount. A `waive` attempt
+ * (amount 0.00, like the nightly run's own waiver, so nothing summing
+ * collected money can count it) is written on the **same** event, which
+ * becomes `waived_billing` — a type no receipt is ever issued for. No provider
+ * call, no new ledger row, and it is never a received payment. Eligibility is
+ * the manual payment's exactly (`guardActionable` + `chargeGuard`, under the
+ * event's row lock); a reason is required and goes on the attempt's notes and
+ * the audit row. It does not reactivate or pause anything: reactivation stays
+ * explicit.
+ */
+export async function waiveBillingEvent(
+  gymId: string,
+  billingEventId: number,
+  actorUserId: string | null,
+  input: { reason?: unknown },
+  actorArg?: string | null,
+): Promise<{ failure: ActionFailure } | { result: WaiveResult }> {
+  const actor = actorArg === undefined ? (actorUserId ? null : SYSTEM_ACTOR) : actorArg;
+  const reason = typeof input.reason === 'string' ? input.reason.trim().slice(0, 500) : '';
+  if (!reason) return { failure: { status: 400, error: 'A reason is required to waive an amount.' } };
+
+  return db.transaction(async (tx) => {
+    await tx.query('SELECT id FROM billing_events WHERE id = ? AND gym_id = ? FOR UPDATE', [billingEventId, gymId]);
+    const ev = await loadEventContext(gymId, billingEventId, tx);
+    const guard = guardActionable(ev);
+    if (guard) return { failure: guard };
+    const event = ev!;
+
+    const guarded = chargeGuard(await loadEarlierAttempts(tx, event.id));
+    if (!guarded.allowed) {
+      return { failure: { status: 409, error: `This amount cannot be waived (${guarded.reason}); reconcile the earlier attempt first.` } };
+    }
+    const chargeTypeId = await resolveChargeTypeId(event);
+    if (!chargeTypeId) return { failure: { status: 500, error: 'charge_type membership_fee not configured' } };
+
+    const previousStatus = deriveBillingEventStatus(event.event_type, event.latest_tx_status);
+    const waived = parseFloat(event.amount!);
+
+    const paymentRequestId = await insertTransaction({
+      ev: event, chargeTypeId, amount: 0, status: 'completed', source: 'manual', method: 'waive',
+      attempt: Number(event.last_attempt ?? 0) + 1,
+      provider: 'manual', providerOrder: null, providerRef: null,
+      failureCode: null, failureMessage: null, notes: reason, actor, exec: tx,
+    });
+    await tx.query(
+      `UPDATE billing_events SET is_scheduled = 0, event_type = 'waived_billing',
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
+        WHERE id = ? AND gym_id = ?`,
+      [actor, event.id, gymId],
+    );
+
+    return {
+      result: {
+        billing_event_id: event.id,
+        previous_status: previousStatus,
+        waived_amount: waived.toFixed(2),
+        reason,
+        payment_request_id: paymentRequestId,
+      },
+    };
+  });
+}
+
+/** Every earlier attempt of the event, in the shape `chargeGuard()` reads. */
+async function loadEarlierAttempts(exec: Pick<Tx, 'query'>, billingEventId: number) {
+  const { rows } = await exec.query<any>(
+    'SELECT id, method, provider_status, provider_ref, status FROM payment_requests WHERE billing_event_id = ?',
+    [billingEventId],
+  );
+  return rows.map((a: any) => ({
+    id: Number(a.id), method: (a.method ?? 'provider') as AttemptMethod,
+    providerStatus: a.provider_status ?? null, providerRef: a.provider_ref ?? null, status: String(a.status),
+  }));
 }

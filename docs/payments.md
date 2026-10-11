@@ -1240,6 +1240,17 @@ event's derived status flipping to `paid`, `failed_attempts` back to 0, and
 `next_billing_date` advanced. The assignment stays `paused` — reactivate it explicitly via
 its Assigned Plan.
 
+**12a. The Billing Event actions (#1459).** The row's `⋮` offers, only where the API's flags
+say so: **Pay Cash**, **Pay Card (external terminal)**, **Retry Payment** and **Waive**; there is
+no Cancel. Pay Cash / Pay Card open a modal with the member, the full amount and the method —
+closing it records nothing. **Accept** adds one completed attempt with `method` `cash` or
+`card_terminal` (no provider call; Gymdesk cannot verify the terminal, staff do) on the same
+event. A membership's *first* payment (Pending Payment) settles through
+`POST /user-memberships/:id/record-payment` with the same `method`, which also activates it.
+**Waive** needs a reason and writes a `waive` attempt of 0.00 on the same event, which becomes
+`waived_billing`: no receipt, no money received, and it can no longer be paid or retried (409).
+Submitting a settlement twice (or concurrently) leaves exactly one completed attempt.
+
 **13. Receipts.** `POST /payments/:id/receipt` on the settled event issues a number if the
 run did not; calling it twice must return the **same** number. `GET /me/receipts/:id` serves
 it to the member. A `waived_billing` event must be refused with a reason.

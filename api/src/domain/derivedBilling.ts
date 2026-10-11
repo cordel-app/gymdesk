@@ -1,3 +1,4 @@
+import { AttemptMethod } from './paymentAttemptMethod';
 /**
  * #1325 — the billing dates and dunning counts of an assignment, **derived** from
  * the Billing Events and payment attempts of the ProductSet that projects it.
@@ -30,7 +31,7 @@ export interface EventFact {
 
 export interface AttemptFact {
   billingEventId: number;
-  method: 'provider' | 'cash' | 'waive';
+  method: AttemptMethod;
   /** The internal outcome: `pending` / `completed` / `failed` / `expired`. */
   status: string;
   /** ISO datetime of the attempt's creation / completion. */
