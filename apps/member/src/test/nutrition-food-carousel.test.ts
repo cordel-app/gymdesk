@@ -146,7 +146,16 @@ describe('NutritionFoodCarousel (#722 §1, §7, §13, §14)', () => {
 
   it('renders nothing for an empty meal and no controls for a single food', () => {
     expect(src).toContain('if (items.length === 0) return null;');
-    expect(src).toContain('{items.length > 1 && (');
+    expect(src).toContain('{items.length > 1 && overflows && (');
+  });
+
+  it('shows the controls only when the cards really overflow the track', () => {
+    // Two 320px cards fit side by side on a wide screen: with nothing to
+    // scroll to, the arrows, dots and "1 of 2" would page through nothing.
+    expect(src).toContain('track.scrollWidth - track.clientWidth > 1');
+    expect(src).toContain('new ResizeObserver(measure)');
+    // false until measured, so the server and the first client render agree.
+    expect(src).toContain('useState(false)');
   });
 });
 
@@ -155,7 +164,7 @@ describe('My Nutrition page (#722 §15, §16)', () => {
 
   it('renders the meal\'s foods through the shared carousel', () => {
     expect(src).toContain("import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';");
-    expect(src).toContain('<NutritionFoodCarousel items={meal.items} label={meal.display_name} />');
+    expect(src).toContain('<NutritionFoodCarousel items={meal.items} label={mealTitleOf(meal).title} />');
   });
 
   it('keeps the existing plan structure (goals, days, meals, notes) around it', () => {

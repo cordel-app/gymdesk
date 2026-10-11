@@ -133,3 +133,24 @@ export function goalDetail(
   const line = parts.filter(Boolean).join(' · ');
   return line || null;
 }
+
+/**
+ * How a meal is titled: its own name when staff gave it one, with the meal
+ * type's translated label beside it.
+ *
+ * A meal saved with no name stores its type's slug as `display_name`
+ * (`recien_levantado`), which is an identifier and not something to read, so a
+ * name that is empty or equal to the slug is not a name: the title is then the
+ * translated type alone, and there is no suffix repeating it.
+ */
+export function mealTitle(
+  displayName: string | null | undefined,
+  mealType: string | null | undefined,
+  typeLabel: string | null | undefined,
+): { title: string; suffix: string | null } {
+  const name = displayName?.trim() ?? '';
+  const label = typeLabel?.trim() || null;
+  const isSlug = name === '' || (mealType != null && name === mealType);
+  if (isSlug) return { title: label ?? name, suffix: null };
+  return { title: name, suffix: label && label !== name ? label : null };
+}

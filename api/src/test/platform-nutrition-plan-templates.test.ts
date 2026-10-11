@@ -84,3 +84,78 @@ describe('GET /platform/nutrition-plan-templates/component-types', () => {
     expect(Array.isArray(res.body.component_types)).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// A Base template's goal illustration can be changed after creation (#932)
+// ---------------------------------------------------------------------------
+
+describe('PUT /platform/nutrition-plan-templates/:id/goals/:gid', () => {
+  const auth = { Authorization: TEST_AUTH_HEADER };
+  const uniq = `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+  let systemFoodId: number;
+  let gymFoodId: number;
+  let gymId: string;
+
+  async function baseTemplateWithGoal(): Promise<{ tplId: number; goalId: number }> {
+    const tpl = await request.post('/platform/nutrition-plan-templates').set(auth).send({ name: `PGI Base ${uniq}-${Math.random()}` });
+    expect(tpl.status).toBe(201);
+    const goal = await request.post(`/platform/nutrition-plan-templates/${tpl.body.id}/goals`).set(auth)
+      .send({ item_name: 'water', quantity: 2, unit: 'l' });
+    expect(goal.status).toBe(201);
+    return { tplId: tpl.body.id, goalId: goal.body.id };
+  }
+  const put = (tplId: number, goalId: number, body: Record<string, unknown>) =>
+    request.put(`/platform/nutrition-plan-templates/${tplId}/goals/${goalId}`).set(auth).send(body);
+
+  it('sets and clears the System food that illustrates the goal', async () => {
+    const { createTestGym } = await import('./helpers');
+    gymId = await createTestGym('PGI Gym');
+    const sys = await db.query(
+      "INSERT INTO nutrition_library_items (gym_id, name, status, image_url) VALUES (NULL, ?, 'active', 'https://cdn.example/pgi/system.png')",
+      [`PGI System ${uniq}`],
+    );
+    systemFoodId = sys.insertId;
+    const gymFood = await db.query(
+      "INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (?, ?, 'active')",
+      [gymId, `PGI Gym Food ${uniq}`],
+    );
+    gymFoodId = gymFood.insertId;
+
+    const { tplId, goalId } = await baseTemplateWithGoal();
+    const set = await put(tplId, goalId, { nutrition_library_item_id: systemFoodId });
+    expect(set.status).toBe(200);
+    expect(set.body.nutrition_library_item_id).toBe(systemFoodId);
+    expect(set.body.illustration_image_url).toBe('https://cdn.example/pgi/system.png');
+
+    const cleared = await put(tplId, goalId, { nutrition_library_item_id: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.nutrition_library_item_id).toBeNull();
+
+    await db.query('DELETE FROM nutrition_plan_templates WHERE id = ?', [tplId]);
+  });
+
+  it('refuses a gym-owned food, a body naming no food and an unknown goal', async () => {
+    const { tplId, goalId } = await baseTemplateWithGoal();
+    expect((await put(tplId, goalId, { nutrition_library_item_id: gymFoodId })).status).toBe(400);
+    expect((await put(tplId, goalId, {})).status).toBe(400);
+    expect((await put(tplId, 999999999, { nutrition_library_item_id: null })).status).toBe(404);
+    await db.query('DELETE FROM nutrition_plan_templates WHERE id = ?', [tplId]);
+  });
+
+  it('requires auth and a superadmin', async () => {
+    const anon = await request.put('/platform/nutrition-plan-templates/1/goals/1').send({ nutrition_library_item_id: null });
+    expect(anon.status).toBe(401);
+    mockGetUser.mockResolvedValueOnce({
+      publicMetadata: {},
+      fullName: 'Regular User',
+      firstName: 'Regular',
+      lastName: 'User',
+    });
+    const res = await put(1, 1, { nutrition_library_item_id: null });
+    expect(res.status).toBe(403);
+  });
+
+  afterAll(async () => {
+    if (systemFoodId) await db.query('DELETE FROM nutrition_library_items WHERE id = ?', [systemFoodId]);
+  });
+});
