@@ -14,9 +14,19 @@
 │   │       └── {muscle_name}-female-thumbnail.png                  — 256 × 256 px
 │   │
 │   ├── exercises/
-│   │   └── images/
-│   │       ├── {exercise_id}-{exercise_name}.png                          — 1080 × 1080 px
-│   │       └── {exercise_id}-{exercise_name}-thumbnail.png                — 256 × 256 px
+│   │   ├── images/
+│   │   │   ├── {exercise_id}-{exercise_name}-male.webp                          — 1080 × 1080 px
+│   │   │   ├── {exercise_id}-{exercise_name}-male-thumbnail.webp                — 256 × 256 px
+│   │   │   ├── {exercise_id}-{exercise_name}-female.webp                        — 1080 × 1080 px
+│   │   │   └── {exercise_id}-{exercise_name}-female-thumbnail.webp              — 256 × 256 px
+│   │   │
+│   │   └── videos/
+│   │       ├── {exercise_id}-{exercise_name}-male.mp4                    — video
+│   │       ├── {exercise_id}-{exercise_name}-male.webp                   — 1080 x 1080        
+│   │       ├── {exercise_id}-{exercise_name}-male-thumbnail.webp         — 256 x 256        
+│   │       ├── {exercise_id}-{exercise_name}-female.webp                 — 1080 x 1080        
+│   │       ├── {exercise_id}-{exercise_name}-female-thumbnail.webp       — 256 x 256        
+│   │       └── {exercise_id}-{exercise_name}-female.mp4                  — vídeo
 │   │
 │   └── themes/
 │       └── {theme_id}-{theme_name}/
@@ -50,11 +60,18 @@
         │       
         ├── exercises/
         │   ├── images/
-        │   │   ├── {exercise_id}-{exercise_name}.png                         — 1080 × 1080 px
-        │   │   └── {exercise_id}-{exercise_name}-thumbnail.png               — 256 × 256 px
+        │   │   ├── {exercise_id}-{exercise_name}-male.webp                    — 1080 × 1080 px        
+        │   │   ├── {exercise_id}-{exercise_name}-male-thumbnail.webp          — 256 × 256 px        
+        │   │   ├── {exercise_id}-{exercise_name}-female.webp                  — 1080 × 1080 px
+        │   │   └── {exercise_id}-{exercise_name}-female-thumbnail.webp        — 256 × 256 px
         │   │
         │   └── videos/
-        │       └── {exercise_id}-{exercise_name}.mp4                       — vídeo
+        │       ├── {exercise_id}-{exercise_name}-male.mp4                    — video
+        │       ├── {exercise_id}-{exercise_name}-male.webp                   — 1080 x 1080        
+        │       ├── {exercise_id}-{exercise_name}-male-thumbnail.webp         — 256 x 256        
+        │       ├── {exercise_id}-{exercise_name}-female.webp                 — 1080 x 1080        
+        │       ├── {exercise_id}-{exercise_name}-female-thumbnail.webp       — 256 x 256        
+        │       └── {exercise_id}-{exercise_name}-female.mp4                  — vídeo
         │
         └── themes/
             └── {theme_id}-{theme_name}/
