@@ -20,6 +20,7 @@ import {
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
+import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
@@ -201,6 +202,10 @@ export default function ActivityTypesPage() {
   const [professionalServices, setProfessionalServices] = useState<ProfessionalService[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('');
+  // #1389: the page loads every activity once and narrows it here, so the
+  // summary cards stay gym-wide whatever the filters say.
+  const [search, setSearch] = useState('');
+  const [view, setView] = useState<'cards' | 'list'>('cards');
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [rulesMap, setRulesMap] = useState<Map<number, ScheduleRule[]>>(new Map());
@@ -250,14 +255,14 @@ export default function ActivityTypesPage() {
     if (!canRead) { router.replace(`/${locale}`); return; }
   }, [gymLoading, canRead]);
 
-  useEffect(() => { if (!gymLoading && canRead) load(); }, [activeGymId, gymLoading, statusFilter]);
+  useEffect(() => { if (!gymLoading && canRead) load(); }, [activeGymId, gymLoading]);
 
   async function load() {
     if (!activeGymId) { setLoading(false); return; }
     setLoading(true);
     try {
       const [at, ct, sp, tr, ps] = await Promise.all([
-        apiFetch<ActivityType[]>(`/activity-types${statusFilter ? `?status=${statusFilter}` : ''}`),
+        apiFetch<ActivityType[]>('/activity-types'),
         apiFetch<Center[]>('/centers'),
         apiFetch<Space[]>('/spaces'),
         apiFetch<Trainer[]>('/trainers'),
@@ -884,6 +889,87 @@ export default function ActivityTypesPage() {
     );
   }
 
+  // ─── Card header (Cards view, #1389) ─────────────────────────────────────────
+
+  // The closed card. The expanded and edit bodies below it are the list row's
+  // own, so the two views cannot drift. The colour is the activity's saved
+  // `color`, the field the Calendar paints its events with.
+  function renderCardHeader(row: ActivityType, isExpanded: boolean, menuItems: ContextMenuItem[]) {
+    const isEditing = editingId === row.id;
+    const meta = [
+      { icon: '📍', label: row.default_center_name },
+      { icon: '👤', label: row.default_trainer_name },
+      { icon: '▣', label: row.default_space_name },
+    ].filter((m) => m.label);
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <div
+          aria-hidden
+          style={{
+            aspectRatio: '16 / 9', margin: 10, borderRadius: 10, display: 'flex', alignItems: 'center',
+            justifyContent: 'center', fontSize: 32, color: 'var(--gd-text-muted, #9ca3af)',
+            background: 'var(--gd-input-bg, #f3f4f6)',
+          }}
+        >
+          🏋
+        </div>
+        <div style={{ padding: '0 16px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+            <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{row.name}</div>
+            <div onClick={(e) => e.stopPropagation()}>
+              <ContextMenu items={menuItems} ariaLabel={`Actions for ${row.name}`} />
+            </div>
+          </div>
+          <div
+            title={row.description ?? undefined}
+            style={{
+              fontSize: 13, color: '#888', display: '-webkit-box', WebkitLineClamp: 2,
+              WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            }}
+          >
+            {row.description || '—'}
+          </div>
+          {meta.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', fontSize: 13, color: '#666' }}>
+              {meta.map((m) => (
+                <span key={m.icon} style={{ display: 'inline-flex', gap: 4, alignItems: 'center', minWidth: 0 }}>
+                  <span aria-hidden>{m.icon}</span>{m.label}
+                </span>
+              ))}
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <StatusBadge status={row.status} label={tStatus(row.status)} />
+            {row.color && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: '#888' }}>
+                <span
+                  aria-hidden
+                  style={{ width: 12, height: 12, borderRadius: '50%', background: row.color, border: '1px solid rgba(0,0,0,0.15)' }}
+                />
+                {row.color.toUpperCase()}
+              </span>
+            )}
+          </div>
+        </div>
+        {!isEditing && (
+          <button
+            type="button"
+            aria-expanded={isExpanded}
+            onClick={() => toggleExpand(row.id)}
+            style={{
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%',
+              padding: '10px 16px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 13,
+              borderTop: '1px solid var(--gd-card-border, #eee)', color: 'inherit',
+            }}
+          >
+            <span>{isExpanded ? t('hide_details') : t('view_full_description')}</span>
+            <span aria-hidden style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
+          </button>
+        )}
+      </div>
+    );
+  }
+
   // ─── Row renderer ─────────────────────────────────────────────────────────────
 
   function renderRow(row: ActivityType) {
@@ -920,8 +1006,9 @@ export default function ActivityTypesPage() {
     ];
 
     return (
-      <div key={row.id} style={cardStyle}>
-        {/* Collapsed header */}
+      <div key={row.id} style={isEditing && view === 'cards' ? { ...cardStyle, gridColumn: '1 / -1' } : cardStyle}>
+        {view === 'cards' ? renderCardHeader(row, isExpanded, menuItems) : (
+        /* Collapsed header */
         <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(row.id)}>
           <div className={CELL_CLASS.name} title={row.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {row.name}
@@ -962,6 +1049,7 @@ export default function ActivityTypesPage() {
             <ContextMenu items={menuItems} ariaLabel={`Actions for ${row.name}`} />
           </div>
         </div>
+        )}
 
         {/* Inline edit form */}
         {isEditing && (
@@ -1199,18 +1287,67 @@ export default function ActivityTypesPage() {
     );
   }
 
+  const needle = search.trim().toLowerCase();
+  const visibleRows = rows.filter((r) =>
+    (!statusFilter || r.status === statusFilter)
+    && (!needle || r.name.toLowerCase().includes(needle) || (r.description ?? '').toLowerCase().includes(needle)));
+
   if (gymLoading || !canRead) return null;
 
   return (
     <div>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-        <h1 style={{ margin: 0 }}>{t('title')}</h1>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <h1 style={{ margin: 0 }}>{t('title')}</h1>
+          <p style={{ margin: '4px 0 0', color: '#888', fontSize: 14 }}>{t('subtitle')}</p>
+        </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <StatusFilter value={statusFilter} onChange={setStatusFilter} options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))} allLabel={tStatus('all')} />
           <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(primaryBtnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('add')}</button>
         </div>
       </div>
+
+      {/* Summary — gym-wide, so it ignores the search and filters below */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12, marginBottom: 16 }}>
+        {[
+          { label: t('summary_total'), value: rows.length, color: undefined },
+          { label: t('summary_active'), value: rows.filter((r) => r.status === 'active').length, color: '#16a34a' },
+          { label: t('summary_centers'), value: new Set(rows.map((r) => r.default_center_id).filter((c) => c != null)).size, color: undefined },
+        ].map((c) => (
+          <div key={c.label} style={{ ...cardSurfaceStyle, padding: '12px 16px' }}>
+            <div style={{ fontSize: 13, color: '#888' }}>{c.label}</div>
+            <div style={{ fontSize: 26, fontWeight: 700, color: c.color }}>{c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <FilterBar style={{ justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-end' }}>
+          <FilterField label={t('search')} htmlFor="activity-search">
+            <input
+              id="activity-search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={t('search_placeholder')}
+              style={filterControlStyle}
+            />
+          </FilterField>
+          <StatusFilter value={statusFilter} onChange={setStatusFilter} options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))} allLabel={tStatus('all')} />
+        </div>
+        <div role="group" aria-label={t('view_toggle')} style={{ display: 'flex', gap: 4 }}>
+          {(['cards', 'list'] as const).map((v) => (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={view === v}
+              onClick={() => setView(v)}
+              style={view === v ? primaryBtnSmall() : btnSmall('#888')}
+            >
+              {t(`view_${v}`)}
+            </button>
+          ))}
+        </div>
+      </FilterBar>
 
       {loading ? (
         <p style={{ color: '#888' }}>{t('loading')}</p>
@@ -1218,6 +1355,17 @@ export default function ActivityTypesPage() {
         <>
           {renderInlineNewRow()}
           <p style={{ color: '#888' }}>{t('empty')}</p>
+        </>
+      ) : view === 'cards' ? (
+        <>
+          {renderInlineNewRow()}
+          {visibleRows.length === 0 ? (
+            <p style={{ color: '#888' }}>{t('empty_filtered')}</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, alignItems: 'start' }}>
+              {visibleRows.map(renderRow)}
+            </div>
+          )}
         </>
       ) : (
         /* The header band and the cards share LIST_GRID_COLUMNS and scroll
@@ -1238,7 +1386,7 @@ export default function ActivityTypesPage() {
             {renderInlineNewRow()}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {rows.map(renderRow)}
+              {visibleRows.map(renderRow)}
             </div>
           </div>
         </div>
