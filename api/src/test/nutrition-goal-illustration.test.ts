@@ -133,3 +133,75 @@ describe('the illustration follows the goal', () => {
     expect(me.body.plan.goals[0].image_url).toBe('https://cdn.example/ngi/protein.png');
   });
 });
+
+describe('illustrating an existing goal of an assigned plan', () => {
+  async function planWithGoal(withFood: boolean): Promise<{ planId: number; goalId: number }> {
+    const tplId = await createTemplate();
+    await postGoal(tplId, withFood ? { nutrition_library_item_id: foodId } : {});
+    const { insertId: memberId } = await db.query(
+      `INSERT INTO members (gym_id, name, email) VALUES (?, 'NGI Plan Member', ?)`,
+      [gymId, `ngi-plan-${uniq()}@test.com`],
+    );
+    const planRes = await request.post('/member-nutrition-plans').set(h())
+      .send({ member_id: memberId, template_id: tplId, start_date: new Date().toISOString().slice(0, 10) });
+    expect(planRes.status).toBe(201);
+    const hier = await request.get(`/member-nutrition-plans/${planRes.body.id}/hierarchy`).set(h());
+    return { planId: planRes.body.id, goalId: hier.body.goals[0].id };
+  }
+  const put = (planId: number, goalId: number, body: Record<string, unknown>, headers = h()) =>
+    request.put(`/member-nutrition-plans/${planId}/goals/${goalId}`).set(headers).send(body);
+
+  it('sets, replaces and clears the food, and reports its name and image', async () => {
+    const { planId, goalId } = await planWithGoal(false);
+    const set = await put(planId, goalId, { nutrition_library_item_id: foodId });
+    expect(set.status).toBe(200);
+    expect(set.body.nutrition_library_item_id).toBe(foodId);
+    expect(set.body.illustration_image_url).toBe('https://cdn.example/ngi/protein.png');
+
+    const replaced = await put(planId, goalId, { nutrition_library_item_id: systemFoodId });
+    expect(replaced.body.nutrition_library_item_id).toBe(systemFoodId);
+
+    const cleared = await put(planId, goalId, { nutrition_library_item_id: null });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.nutrition_library_item_id).toBeNull();
+    expect(cleared.body.illustration_image_url).toBeNull();
+  });
+
+  it('leaves quantity, unit and frequency untouched', async () => {
+    const { planId, goalId } = await planWithGoal(false);
+    const before = (await request.get(`/member-nutrition-plans/${planId}/hierarchy`).set(h())).body.goals[0];
+    await put(planId, goalId, { nutrition_library_item_id: foodId });
+    const after = (await request.get(`/member-nutrition-plans/${planId}/hierarchy`).set(h())).body.goals[0];
+    expect(after.quantity).toEqual(before.quantity);
+    expect(after.unit).toBe(before.unit);
+    expect(after.frequency).toBe(before.frequency);
+    expect(after.item_name).toBe(before.item_name);
+  });
+
+  it('refuses a deleted food, another gym\'s food, a malformed id and a body that names no food', async () => {
+    const { planId, goalId } = await planWithGoal(true);
+    expect((await put(planId, goalId, { nutrition_library_item_id: deletedFoodId })).status).toBe(400);
+    expect((await put(planId, goalId, { nutrition_library_item_id: foreignFoodId })).status).toBe(400);
+    expect((await put(planId, goalId, { nutrition_library_item_id: 'x' })).status).toBe(400);
+    expect((await put(planId, goalId, {})).status).toBe(400);
+    // a refused write leaves the stored food as it was
+    const hier = await request.get(`/member-nutrition-plans/${planId}/hierarchy`).set(h());
+    expect(hier.body.goals[0].nutrition_library_item_id).toBe(foodId);
+  });
+
+  it('404s an unknown goal and a goal of another plan', async () => {
+    const a = await planWithGoal(false);
+    const b = await planWithGoal(false);
+    expect((await put(a.planId, 999999999, { nutrition_library_item_id: foodId })).status).toBe(404);
+    expect((await put(a.planId, b.goalId, { nutrition_library_item_id: foodId })).status).toBe(404);
+  });
+
+  it('is tenant-scoped and requires auth', async () => {
+    const { planId, goalId } = await planWithGoal(false);
+    await createTestMembership(otherGymId, 'admin');
+    const crossGym = await put(planId, goalId, { nutrition_library_item_id: null }, h(otherGymId));
+    expect([403, 404]).toContain(crossGym.status);
+    const anon = await request.put(`/member-nutrition-plans/${planId}/goals/${goalId}`).send({ nutrition_library_item_id: null });
+    expect(anon.status).toBe(401);
+  });
+});

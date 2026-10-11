@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { NutritionFoodCard } from './NutritionFoodCard';
 import { NutritionFoodItem } from '@/lib/nutritionFood';
@@ -34,6 +34,27 @@ export function NutritionFoodCarousel({ items, label }: {
   const t = useTranslations();
   const trackRef = useRef<HTMLDivElement | null>(null);
   const [current, setCurrent] = useState(0);
+  // Whether the cards are wider than the track. On a wide screen two 320px
+  // cards sit side by side with nothing to scroll to, so the arrows, dots and
+  // "1 of 2" counter would page through nothing. Measured, never inferred from
+  // the item count, and `false` until the first measurement so the server and
+  // the first client render agree.
+  const [overflows, setOverflows] = useState(false);
+
+  useEffect(() => {
+    const track = trackRef.current;
+    if (!track) return;
+    const measure = () => setOverflows(track.scrollWidth - track.clientWidth > 1);
+    measure();
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure);
+      return () => window.removeEventListener('resize', measure);
+    }
+    const observer = new ResizeObserver(measure);
+    observer.observe(track);
+    Array.from(track.children).forEach((child) => observer.observe(child));
+    return () => observer.disconnect();
+  }, [items.length]);
 
   const scrollToIndex = useCallback((index: number) => {
     const track = trackRef.current;
@@ -96,7 +117,7 @@ export function NutritionFoodCarousel({ items, label }: {
         ))}
       </div>
 
-      {items.length > 1 && (
+      {items.length > 1 && overflows && (
         <div style={styles.controls}>
           <button
             type="button"

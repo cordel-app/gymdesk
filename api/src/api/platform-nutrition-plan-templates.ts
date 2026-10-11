@@ -585,6 +585,29 @@ platformNutritionPlanTemplatesRouter.post('/:id/goals', requireSuperadmin, async
   } catch (err) { next(err); }
 });
 
+// Set or clear the System food that illustrates a Base template's goal (#932).
+platformNutritionPlanTemplatesRouter.put('/:id/goals/:gid', requireSuperadmin, async (req, res, next) => {
+  const { id, gid } = req.params as { id: string; gid: string };
+  const { nutrition_library_item_id } = req.body ?? {};
+  if (nutrition_library_item_id === undefined) {
+    return res.status(400).json({ error: 'nutrition_library_item_id is required (an id, or null to clear)' });
+  }
+  const illustration = parseGoalIllustrationInput(nutrition_library_item_id);
+  if ('error' in illustration) return res.status(400).json({ error: illustration.error });
+  try {
+    if (!(await baseTemplateExists(id))) return res.status(404).json({ error: 'Template not found' });
+    const illustrationErr = await validateGoalIllustration(null, illustration.id);
+    if (illustrationErr) return res.status(400).json({ error: illustrationErr });
+    const { rowCount } = await db.query(
+      'UPDATE nutrition_plan_template_goals SET nutrition_library_item_id = ? WHERE id = ? AND nutrition_plan_template_id = ? AND gym_id IS NULL',
+      [illustration.id, gid, id],
+    );
+    if (rowCount === 0) return res.status(404).json({ error: 'Goal not found' });
+    const { rows } = await db.query(goalRowsSql('nutrition_plan_template_goals', 'g.id = ?'), [gid]);
+    res.json(rows[0]);
+  } catch (err) { next(err); }
+});
+
 platformNutritionPlanTemplatesRouter.delete('/:id/goals/:gid', requireSuperadmin, async (req, res, next) => {
   const { id, gid } = req.params as { id: string; gid: string };
   try {
