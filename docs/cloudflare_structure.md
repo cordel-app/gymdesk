@@ -1,10 +1,10 @@
 {bucket}/
 ├── cordel/
 │   ├── nutrition
-│   │   └── {food_id}-{food_name}.png                                      — 512 × 512 px
+│   │   └── {food_id}-{food_name}.png                                      — 1080 × 1080 px
 │   │
 │   ├── goals/
-│   │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 512 × 512 px
+│   │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 1080 × 1080 px
 │   │
 │   ├── muscles/
 │   │   └── images/
@@ -34,13 +34,16 @@
 └── gyms/
     └── {gym_id}-{sanitized_gym_name}/
         ├── nutrition
-        │   └── {food_id}-{food_name}.png                                      — 512 × 512 px
+        │   └── {food_id}-{food_name}.png                                      — 1080 × 1080 px
         │        
         ├── goals
-        │   └── {personal_goal_id}-{personnal_goal_name}.png                  — 512 × 512 px
+        │   └── {personal_goal_id}-{personnal_goal_name}.png                  — 1080 × 1080 px
+        │        
+        ├── activities
+        │   └── {activity_id}-{activity_name}.png                             — 1080 × 1080 px
         │        
         ├── members
-        │   └── {member_id}-{member_name}.png                                 — 512 × 512 px
+        │   └── {member_id}-{member_name}.png                                 — 1080 × 1080 px
         │       
         ├── exercises/
         │   ├── images/
