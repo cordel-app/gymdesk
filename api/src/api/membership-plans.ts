@@ -1424,7 +1424,6 @@ membershipPlansRouter.post('/:id/pricing/apply-to-assigned-plans', requireRole('
     // #1325 PR 3e-2: each assignment is repriced on the version its configuration
     // is (see `assignment-reprice.ts`), one transaction per row so a locked or
     // refused one leaves only itself as it was.
-    const { userId } = getTenantContext(req);
     const actorText = resolveRequestActor(getTenantContext(req));
     const { rows: candidates } = await db.query(
       `SELECT um.id, um.starts_at, ${assignmentConfig('discount_reason')} AS discount_reason
