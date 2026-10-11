@@ -1,8 +1,9 @@
 'use client';
 
-import { createElement, type CSSProperties, type ReactNode } from 'react';
+import { createElement, type CSSProperties, type AnimationEvent, type PointerEvent, type ReactNode } from 'react';
 import { useApp } from '@/context/AppContext';
 import { sectionCardBorder, sectionCardShape, sectionCardText } from '@/lib/memberChrome';
+import { CARD_INTERACTIVE_CLASS, isInteractiveCard, ripplePoint } from '@/lib/cardTouch';
 import {
   backgroundUrlForSlot,
   cardBackgroundStyleValue,
@@ -84,11 +85,31 @@ interface MembersSectionCardProps {
  */
 export function MembersSectionCard({ slot, as = 'div', style, children, ...rest }: MembersSectionCardProps) {
   const background = useSectionBackground(slot);
+  // #1321 stage 3 — only an interactive card carries the class the Touch Effect
+  // stylesheet reaches; a static card never looks pressable. The handlers only
+  // set CSS variables and a data attribute, so click/navigation is untouched.
+  const interactive = isInteractiveCard({ as, onClick: rest.onClick, role: rest.role });
+  const touchProps = interactive
+    ? {
+        className: CARD_INTERACTIVE_CLASS,
+        onPointerDown: (e: PointerEvent<HTMLElement>) => {
+          const el = e.currentTarget;
+          const { x, y } = ripplePoint(e.clientX, e.clientY, el.getBoundingClientRect());
+          el.style.setProperty('--gd-ripple-x', x);
+          el.style.setProperty('--gd-ripple-y', y);
+          el.removeAttribute('data-ripple');
+          void el.offsetWidth; // restart the animation on a quick second tap
+          el.setAttribute('data-ripple', 'on');
+        },
+        onAnimationEnd: (e: AnimationEvent<HTMLElement>) => e.currentTarget.removeAttribute('data-ripple'),
+      }
+    : {};
   return createElement(
     as,
     {
       ...(as === 'button' ? { type: 'button' as const } : {}),
       ...rest,
+      ...touchProps,
       style: { ...sectionCardText, ...style, ...(background ? { background } : {}), ...sectionCardShape, ...sectionCardBorder },
     },
     children,

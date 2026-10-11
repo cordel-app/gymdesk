@@ -68,6 +68,8 @@ export const memberTheme = {
   // (`cardBoxShadow()`), declared as roles so each variable has a reader here;
   // the style word is the Visual Style, which only supplies defaults upstream.
   cardGlow: 'var(--gd-members-card-glow, none)',
+  // #1321 stage 3 — the Touch Effect word, read by lib/cardTouch.ts's stylesheet.
+  cardTouch: 'var(--gd-members-card-touch, none)',
   cardGlowColor: 'var(--gd-members-card-glow-color, #6c63ff)',
   cardVisualStyle: 'var(--gd-members-card-style, clean)',
   // The text inside a Section Card (#1152 §3/§4) — its colour, size and font,
