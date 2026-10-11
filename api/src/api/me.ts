@@ -964,6 +964,27 @@ meRouter.get('/trainers', requireRole('member'), requireFeatureEnabled('calendar
   } catch (err) { next(err); }
 });
 
+/**
+ * A lightweight, member-facing list of the gym's active activity types for the
+ * calendar's activity filter. `/activity-types` is the staff router (behind the
+ * ORGANIZATION module and `organization.activity_types`), which a member can
+ * never read — the Calendar asked it anyway, swallowed the 403 and so never
+ * offered the filter. id + name + colour only, no staff-facing configuration.
+ */
+meRouter.get('/activity-types', requireRole('member'), requireFeatureEnabled('calendar.calendar'), async (req: Request, res: Response, next: NextFunction) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const { rows } = await db.query(
+      `SELECT at.id, at.name, at.color
+         FROM activity_types at
+        WHERE at.gym_id = ? AND at.status = 'active' AND at.deleted_at IS NULL
+        ORDER BY at.name ASC`,
+      [gymId],
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
 /** Book self on a session. Returns the booking with booked/waitlisted status. */
 meRouter.post('/bookings', requireRole('member'), requireFeatureEnabled('calendar.calendar'), requireFeatureEnabled('member_web.my_bookings'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);

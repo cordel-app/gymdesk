@@ -95,6 +95,16 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [cancelPending, setCancelPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // The server renders this page with Clerk not loaded (`isLoaded` false), but by
+  // the time the client hydrates Clerk's script may already have loaded, so the
+  // first client render took the signed-in branch while the HTML on screen was
+  // the landing card: React reported #418/#423/#425, threw the server tree away
+  // and rendered the whole root again, on every load of the Home. `hydrated` is
+  // false on the server and on the client's first render, so both choose the same
+  // branch, and the real state is read one commit later.
+  const [hydrated, setHydrated] = useState(false);
+  useEffect(() => { setHydrated(true); }, []);
+  const authKnown = hydrated && isLoaded;
 
   async function load() {
     setLoading(true);
@@ -155,13 +165,13 @@ export default function HomePage() {
   }
 
   // Not signed in — show landing
-  if (!isLoaded || (!isSignedIn && !appLoading)) {
+  if (!authKnown || (!isSignedIn && !appLoading)) {
     return (
       <main style={styles.center}>
         <div style={styles.landingCard}>
           <h1 style={styles.landingTitle}>{t('home.title')}</h1>
           <p style={styles.landingSubtitle}>{t('home.subtitle')}</p>
-          {!isLoaded ? (
+          {!authKnown ? (
             <p style={styles.hint}>…</p>
           ) : (
             <>
