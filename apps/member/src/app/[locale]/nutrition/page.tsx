@@ -16,6 +16,7 @@ import {
   NutritionRestrictionItem,
   goalDetail,
   goalLabel,
+  mealTitle,
 } from '@/lib/nutritionFood';
 
 interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: NutritionFoodItem[] }
@@ -70,6 +71,10 @@ export default function NutritionPage() {
   function mealTypeLabel(mealType: string | null): string | null {
     if (!mealType) return null;
     try { return t(`nutrition.meal_type.${mealType}` as any); } catch { return mealType; }
+  }
+
+  function mealTitleOf(meal: Meal) {
+    return mealTitle(meal.display_name, meal.meal_type, mealTypeLabel(meal.meal_type));
   }
 
   if (loading) {
@@ -143,15 +148,15 @@ export default function NutritionPage() {
                   {day.meals.map((meal) => (
                     <div key={meal.id} style={styles.mealRow}>
                       <p style={styles.mealName}>
-                        {meal.display_name}
-                        {mealTypeLabel(meal.meal_type) && (
-                          <span style={styles.mealType}> · {mealTypeLabel(meal.meal_type)}</span>
+                        {mealTitleOf(meal).title}
+                        {mealTitleOf(meal).suffix && (
+                          <span style={styles.mealType}> · {mealTitleOf(meal).suffix}</span>
                         )}
                       </p>
                       {/* #722: the meal's foods are swipeable image cards, one
                           carousel per meal — the items of a meal are the
                           alternatives the member chooses between. */}
-                      <NutritionFoodCarousel items={meal.items} label={meal.display_name} />
+                      <NutritionFoodCarousel items={meal.items} label={mealTitleOf(meal).title} />
                       {meal.notes && <p style={styles.mealNotes}>{meal.notes}</p>}
                     </div>
                   ))}

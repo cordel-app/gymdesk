@@ -578,7 +578,13 @@ function MealRow({
           >⠿</span>
         )}
         <span style={{ color: '#9ca3af', fontSize: 11, flexShrink: 0 }}>{expanded ? '▼' : '▶'}</span>
-        <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>{meal.display_name}</span>
+        <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>
+          {/* A meal saved with no name stores its type's slug as display_name:
+              that is an identifier, so the translated type is shown instead. */}
+          {meal.meal_type && (!meal.display_name?.trim() || meal.display_name === meal.meal_type)
+            ? t(`nutrition_plan_templates.tree_meal_type_${meal.meal_type}`)
+            : meal.display_name}
+        </span>
         {!expanded && compactSummary && (
           <span style={{ fontSize: 12.5, color: '#6b7280', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {' · '}{compactSummary}

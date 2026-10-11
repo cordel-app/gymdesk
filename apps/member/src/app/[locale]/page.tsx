@@ -22,7 +22,7 @@ import {
 } from '@/lib/memberChrome';
 import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
-import { goalDetail, goalLabel, type NutritionGoalItem } from '@/lib/nutritionFood';
+import { goalDetail, goalLabel, mealTitle, type NutritionGoalItem } from '@/lib/nutritionFood';
 
 interface UpcomingBooking {
   id: number;
@@ -307,7 +307,7 @@ export default function HomePage() {
           <div style={styles.card}>
             {todayMeals.map((meal) => (
               <div key={meal.id} style={styles.mealRow}>
-                <p style={styles.mealName}>{meal.display_name}</p>
+                <p style={styles.mealName}>{mealTitle(meal.display_name, meal.meal_type, meal.meal_type ? t(`nutrition.meal_type.${meal.meal_type}` as any) : null).title}</p>
                 <p style={styles.bookingSub}>
                   {meal.items.map((i) => i.item_name).join(' + ')}
                 </p>

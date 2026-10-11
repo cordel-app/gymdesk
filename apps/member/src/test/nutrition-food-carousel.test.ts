@@ -164,7 +164,7 @@ describe('My Nutrition page (#722 §15, §16)', () => {
 
   it('renders the meal\'s foods through the shared carousel', () => {
     expect(src).toContain("import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';");
-    expect(src).toContain('<NutritionFoodCarousel items={meal.items} label={meal.display_name} />');
+    expect(src).toContain('<NutritionFoodCarousel items={meal.items} label={mealTitleOf(meal).title} />');
   });
 
   it('keeps the existing plan structure (goals, days, meals, notes) around it', () => {
