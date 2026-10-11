@@ -26,59 +26,77 @@
 const LATEST = (col) =>
   `(SELECT p9.id FROM product_sets p9 WHERE p9.user_membership_id = ${col} ORDER BY p9.version DESC, p9.id DESC LIMIT 1)`;
 
-exports.up = async function up(knex) {
-  // Plan Session Benefit renewals hang off the line: re-point them first.
-  await knex.raw(
-    `UPDATE IGNORE plan_allowance_renewals par
-       JOIN user_membership_session copy
-         ON copy.id = par.user_membership_session_id AND copy.product_set_id IS NULL
-        AND copy.user_membership_id IS NOT NULL
-       JOIN user_membership_session own
-         ON own.product_set_id = ${LATEST('copy.user_membership_id')}
-        AND own.product_id = copy.product_id AND own.gym_id = copy.gym_id
-        SET par.user_membership_session_id = own.id`);
+/**
+ * Each table: how a copy is recognised as "the version already holds this row"
+ * — the predicate of the unique key the version's rows live under, so a row
+ * that is moved can never collide with one the version owns (migration 248:
+ * one per product, one standing application per promotion, one open service
+ * per product).
+ */
+const TABLES = [
+  { table: 'user_membership_session', kind: 'plan_session',
+    same: 'own.product_id = copy.product_id' },
+  { table: 'user_membership_oneoff', kind: null,
+    same: 'own.product_id = copy.product_id' },
+  { table: 'user_membership_periodical', kind: null,
+    same: 'own.product_id = copy.product_id' },
+  { table: 'user_membership_promotions', kind: 'promotion_session',
+    same: "own.promotion_id = copy.promotion_id AND own.status = 'applied' AND copy.status = 'applied'" },
+  { table: 'member_products_recurrent_snapshot', kind: 'membership_service',
+    same: 'own.product_id = copy.product_id AND own.ends_at IS NULL AND copy.ends_at IS NULL' },
+];
 
-  for (const table of ['user_membership_session', 'user_membership_oneoff', 'user_membership_periodical']) {
+const COPY = 'copy.product_set_id IS NULL AND copy.user_membership_id IS NOT NULL';
+const OWN = (t) =>
+  `JOIN ${t.table} own ON own.product_set_id = ${LATEST('copy.user_membership_id')}
+        AND own.gym_id = copy.gym_id AND ${t.same}`;
+
+exports.up = async function up(knex) {
+  // Plan Session Benefit renewals hang off the line: re-point them to the
+  // version's own line first (a renewal date the own line already has stays on
+  // the copy and goes with it).
+  await knex.raw(
+    `UPDATE plan_allowance_renewals par
+       JOIN user_membership_session copy
+         ON copy.id = par.user_membership_session_id AND ${COPY}
+       ${OWN(TABLES[0])}
+        SET par.user_membership_session_id = own.id
+      WHERE NOT EXISTS (SELECT 1 FROM (SELECT user_membership_session_id AS l, renewal_date AS d
+                                         FROM plan_allowance_renewals) x
+                         WHERE x.l = own.id AND x.d = par.renewal_date)`);
+
+  for (const t of TABLES) {
+    // What a spent session or a billed line points at is the row's id: carry
+    // those references over to the row that survives.
+    if (t.kind) {
+      await knex.raw(
+        `UPDATE professional_service_consumptions psc
+           JOIN ${t.table} copy ON copy.id = psc.source_reference_id AND ${COPY}
+           ${OWN(t)}
+            SET psc.source_reference_id = own.id
+          WHERE psc.source_kind = ?`, [t.kind]);
+    }
+    if (t.table === 'user_membership_promotions') {
+      await knex.raw(
+        `UPDATE billing_event_lines bel
+           JOIN ${t.table} copy ON copy.id = bel.promotion_application_id AND ${COPY}
+           ${OWN(t)}
+            SET bel.promotion_application_id = own.id`);
+    }
+    // Copies the version already holds are redundant.
     await knex.raw(
-      `DELETE copy FROM ${table} copy
-         JOIN ${table} own
+      `DELETE copy FROM ${t.table} copy ${OWN(t)} WHERE ${COPY}`);
+    // The rest only ever existed as the assignment's own rows: they move onto
+    // the version (a row the version holds under the same key is never moved).
+    await knex.raw(
+      `UPDATE ${t.table} copy
+         LEFT JOIN ${t.table} own
            ON own.product_set_id = ${LATEST('copy.user_membership_id')}
-          AND own.product_id = copy.product_id AND own.gym_id = copy.gym_id
-        WHERE copy.product_set_id IS NULL AND copy.user_membership_id IS NOT NULL`);
-    await knex.raw(
-      `UPDATE ${table} copy
+          AND own.gym_id = copy.gym_id AND ${t.same}
           SET copy.product_set_id = ${LATEST('copy.user_membership_id')}
-        WHERE copy.product_set_id IS NULL AND copy.user_membership_id IS NOT NULL
+        WHERE ${COPY} AND own.id IS NULL
           AND ${LATEST('copy.user_membership_id')} IS NOT NULL`);
   }
-
-  // Applied Promotions (their grant snapshots hang off the application's id).
-  await knex.raw(
-    `DELETE copy FROM user_membership_promotions copy
-       JOIN user_membership_promotions own
-         ON own.product_set_id = ${LATEST('copy.user_membership_id')}
-        AND own.promotion_id = copy.promotion_id AND own.gym_id = copy.gym_id
-        AND own.status = copy.status AND (own.applied_at <=> copy.applied_at)
-      WHERE copy.product_set_id IS NULL AND copy.user_membership_id IS NOT NULL`);
-  await knex.raw(
-    `UPDATE user_membership_promotions copy
-        SET copy.product_set_id = ${LATEST('copy.user_membership_id')}
-      WHERE copy.product_set_id IS NULL AND copy.user_membership_id IS NOT NULL
-        AND ${LATEST('copy.user_membership_id')} IS NOT NULL`);
-
-  // Recurring services.
-  await knex.raw(
-    `DELETE copy FROM member_products_recurrent_snapshot copy
-       JOIN member_products_recurrent_snapshot own
-         ON own.product_set_id = ${LATEST('copy.user_membership_id')}
-        AND own.product_id = copy.product_id AND own.gym_id = copy.gym_id
-        AND own.starts_at <=> copy.starts_at
-      WHERE copy.product_set_id IS NULL AND copy.user_membership_id IS NOT NULL`);
-  await knex.raw(
-    `UPDATE member_products_recurrent_snapshot copy
-        SET copy.product_set_id = ${LATEST('copy.user_membership_id')}
-      WHERE copy.product_set_id IS NULL AND copy.user_membership_id IS NOT NULL
-        AND ${LATEST('copy.user_membership_id')} IS NOT NULL`);
 };
 
 exports.down = async function down() {
