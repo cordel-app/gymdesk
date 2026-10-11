@@ -50,7 +50,7 @@ export interface ExerciseFacetOptions {
 
 export function ExerciseFilterBar({
   value, onChange, muscleKeys, muscleLabel, facets,
-  showStatus = false, shown, total = null, autoFocusSearch = false,
+  showStatus = false, alwaysShowMetadata = false, shown, total = null, autoFocusSearch = false,
 }: {
   value: ExerciseFilterState;
   onChange: (next: ExerciseFilterState) => void;
@@ -61,6 +61,12 @@ export function ExerciseFilterBar({
   /** The values present in this context; an empty list hides its control. */
   facets?: ExerciseFacetOptions | null;
   showStatus?: boolean;
+  /**
+   * Render Equipment and Category even while no value is present (#1384): the
+   * gym's own Exercises page offers the same row as Base Exercises, where the
+   * default is to hide a control with nothing to choose.
+   */
+  alwaysShowMetadata?: boolean;
   /** How many rows the filtered list is showing (§14). */
   shown: number;
   /** The unfiltered total, or `null` while it is unknown. */
@@ -143,7 +149,7 @@ export function ExerciseFilterBar({
           }
         />
 
-        {equipmentOptions.length > 0 && (
+        {(alwaysShowMetadata || equipmentOptions.length > 0) && (
           <MultiSelectFilter
             id="exercise-filter-equipment"
             label={t('filter_equipment')}
@@ -156,7 +162,7 @@ export function ExerciseFilterBar({
           />
         )}
 
-        {categoryOptions.length > 0 && (
+        {(alwaysShowMetadata || categoryOptions.length > 0) && (
           <MultiSelectFilter
             id="exercise-filter-category"
             label={t('filter_category')}
