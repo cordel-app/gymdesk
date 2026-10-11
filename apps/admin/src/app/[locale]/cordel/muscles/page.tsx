@@ -8,8 +8,9 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ExerciseImageField } from '@/components/ExerciseImageField';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
-import { cardSurfaceStyle, primaryBtnStyle, primaryBtnSmall } from '@/components/ui';
+import { cardSurfaceStyle, primaryBtnStyle, primaryBtnSmall, overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import { formControlStyle, formFieldLabelStyle, inlineActionsRowStyle, secondaryBtnSmall, formErrorStyle } from '@/components/formChrome';
+import { formatExerciseTimestamp, exerciseDisplayValue } from '@/components/exercises/exerciseForm';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 
 /**
@@ -29,6 +30,8 @@ interface Muscle {
   exercise_count: number;
   created_by_name: string | null;
   modified_by_name: string | null;
+  created_at?: string | null;
+  modified_at?: string | null;
 }
 
 export default function CordelMusclesPage() {
@@ -46,6 +49,7 @@ export default function CordelMusclesPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Muscle | null>(null);
+  const [details, setDetails] = useState<Muscle | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -159,6 +163,7 @@ export default function CordelMusclesPage() {
                 ariaLabel={row.name}
                 items={[
                   { label: t('edit'), onClick: () => { setEditingId(row.id); setEditName(row.name); setError(null); } },
+                  { label: t('details'), onClick: () => setDetails(row) },
                   {
                     label: t('delete'), danger: true,
                     disabled: row.exercise_count > 0,
@@ -188,13 +193,39 @@ export default function CordelMusclesPage() {
                 <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
                   <button type="button" style={primaryBtnSmall()} disabled={saving} onClick={() => saveEdit(row)}>{saving ? t('saving') : t('save')}</button>
                   <button type="button" style={secondaryBtnSmall} disabled={saving} onClick={() => { setEditingId(null); setError(null); }}>{t('cancel')}</button>
-                  <ViewAuditLogButton entityType="muscle" entityId={row.id} scope="platform" size="small" />
                 </div>
               </div>
             )}
           </div>
         );
       })}
+
+      {details && (
+        <div style={overlayStyle} onClick={() => setDetails(null)}>
+          <div style={{ ...modalStyle, width: 520, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+            <h2 style={{ margin: '0 0 4px' }}>{t('detail_title')}</h2>
+            <p style={{ margin: '0 0 20px', color: '#666', fontSize: 14 }}>{details.name}</p>
+            {([
+              [t('name'), details.name],
+              [t('slug'), details.slug],
+              [t('exercises'), String(details.exercise_count)],
+              [t('col_created_at'), formatExerciseTimestamp(details.created_at)],
+              [t('created_by'), exerciseDisplayValue(details.created_by_name)],
+              [t('col_modified_at'), formatExerciseTimestamp(details.modified_at)],
+              [t('modified_by'), exerciseDisplayValue(details.modified_by_name)],
+            ] as [string, string][]).map(([label, value]) => (
+              <div key={label} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--gd-card-border, #f5f5f5)' }}>
+                <span style={{ width: 160, flexShrink: 0, fontSize: 13, color: '#888', fontWeight: 500 }}>{label}</span>
+                <span style={{ fontSize: 13, color: '#333' }}>{value}</span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+              <ViewAuditLogButton entityType="muscle" entityId={details.id} scope="platform" onNavigate={() => setDetails(null)} />
+              <button type="button" onClick={() => setDetails(null)} style={btnStyle('#444')}>{t('close')}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={deleting != null}

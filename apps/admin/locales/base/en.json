@@ -1805,6 +1805,8 @@
     "label_rest_default_seconds": "Default rest (seconds)",
     "label_notes_default": "Default notes",
     "label_result_types": "Allowed Result Types",
+    "label_recorded_metrics": "Recorded Metrics",
+    "recorded_metrics_help": "Recorded metrics are determined automatically by the exercise category.",
     "result_type_repetitions": "Repetitions",
     "result_type_weight": "Weight",
     "result_type_distance": "Distance",
@@ -4456,7 +4458,11 @@
     "deleted": "Muscle deleted",
     "saved": "Muscle saved",
     "name_required": "Name is required",
-    "image_after_create": "Save the muscle first, then upload its image from Edit."
+    "image_after_create": "Save the muscle first, then upload its image from Edit.",
+    "col_created_at": "Created At",
+    "col_modified_at": "Modified At",
+    "close": "Close",
+    "detail_title": "Muscle Details"
   },
   "mobile_builds": {
       "title": "Mobile builds",

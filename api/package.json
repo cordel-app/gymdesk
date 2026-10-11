@@ -12,6 +12,7 @@
     "billing:reset-dev": "tsx src/scripts/reset-dev-billing.ts",
     "exercises:import-free-db": "tsx src/scripts/import-free-exercise-db.ts",
     "exercises:audit-categories": "tsx src/scripts/audit-exercise-categories.ts",
+    "exercises:backfill-result-types": "tsx src/scripts/backfill-exercise-result-types.ts",
     "memberships:multi-active": "tsx src/scripts/report-multi-active-memberships.ts",
     "nutrition:base-images": "tsx src/scripts/backfill-base-nutrition-images.ts",
     "storage:rewrite-urls": "tsx src/scripts/rewrite-storage-urls.ts",
