@@ -162,32 +162,18 @@ describe('Exercises: inline creation (#805)', () => {
     });
 
     it('both halves of the card go through the helper', () => {
-      expect(formSrc).toContain('resultTypeLabel(rt,');
-      // #965: the expanded row renders the editor's read-only counterpart, so the
-      // helper is called there rather than in each page — and the Details modal no
-      // longer restates the configuration at all (§12).
-      expect(readOnlySrc).toContain('resultTypeLabel(rt,');
-      // The raw catalogue name is never rendered on its own.
-      expect(readOnlySrc).not.toContain('.map((rt) => rt.name)');
+      // #1360 stage 2: both halves render the one RecordedMetrics component.
+      const recordedSrc = stripComments(readFileSync(new URL('../components/exercises/RecordedMetrics.tsx', import.meta.url), 'utf-8'));
+      expect(recordedSrc).toContain('resultTypeLabel(rt,');
+      expect(editorSrc).toContain('<RecordedMetrics');
+      expect(readOnlySrc).toContain('<RecordedMetrics');
+      expect(recordedSrc).not.toContain('.map((rt) => rt.name)');
     });
   });
 
-  describe('AC5 — the result types have a grid layout', () => {
-    it('renders a reflowing column grid rather than a wrapping row', () => {
-      expect(editorSrc).toContain('const resultTypeGridSt');
-      // #965: declared once in the shared chrome, so the read-only view's own
-      // Allowed Result Types grid cannot be a different shape.
-      expect(chromeSrc).toMatch(/exerciseResultTypeGridStyle[^;]*repeat\(auto-fill, minmax\(180px, 1fr\)\)/);
-      expect(editorSrc).toContain('const resultTypeGridSt = exerciseResultTypeGridStyle;');
-      expect(formSrc).toContain('style={resultTypeGridSt}');
-      expect(readOnlySrc).toContain('style={exerciseResultTypeGridStyle}');
-    });
-
-    it('each option is a real checkbox with an aligned label', () => {
-      expect(formSrc).toContain('type="checkbox"');
-      expect(formSrc).toContain('style={checkboxRowSt}');
-      expect(chromeSrc).toMatch(/exerciseOptionRowStyle[\s\S]*?alignItems: 'center'/);
-      expect(editorSrc).toContain("...exerciseOptionRowStyle, cursor: 'pointer'");
+  describe('AC5 — Recorded Metrics are read-only chips (#1360)', () => {
+    it('renders no checkbox for result types', () => {
+      expect(editorSrc).not.toContain('resultTypeIds');
     });
   });
 
@@ -312,7 +298,6 @@ describe('Exercises: inline creation (#805)', () => {
         notes_default: 'brace',
         status: 'inactive',
         muscles: [{ key: 'quads', role: 'principal' }, { key: 'glutes', role: 'secondary' }],
-        allowed_result_type_ids: [1, 2],
         // #967: the per-language names ride along with the base one; this form
         // has none typed, so the set is empty (never absent — omitting the field
         // means "leave the stored translations alone").
