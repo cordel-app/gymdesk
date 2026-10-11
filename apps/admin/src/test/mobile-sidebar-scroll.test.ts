@@ -27,9 +27,11 @@ const sidebarSrc = read('Sidebar.tsx');
 
 /** The contents of AppShell's one <style> block. */
 function shellCss(): string {
-  const start = shellSrc.indexOf('<style>{`');
-  expect(start, 'no <style> block in AppShell').toBeGreaterThan(-1);
-  const end = shellSrc.indexOf('`}</style>', start);
+  // `<InlineStyle css={`…`} />` since the hydration fix: a text child of <style> is
+  // escaped by the server renderer and mismatches on the client.
+  const start = shellSrc.indexOf('<InlineStyle css={`');
+  expect(start, 'no <InlineStyle> block in AppShell').toBeGreaterThan(-1);
+  const end = shellSrc.indexOf('`} />', start);
   expect(end).toBeGreaterThan(start);
   return shellSrc.slice(start, end);
 }
