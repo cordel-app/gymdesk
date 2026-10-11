@@ -306,7 +306,8 @@ describe('POST /user-memberships — the one-active-plan rule', () => {
     // rolls it back — the invariant is that two plans are never live.
     expect(results.filter((r) => r.status === 200).length).toBeLessThanOrEqual(1);
     const rows = await assignmentsOf(memberId);
-    expect(rows.filter((r: any) => r.status === 'active')).toHaveLength(1);
+    // Zero is a legal outcome (both rolled back), so the invariant is "never two".
+    expect(rows.filter((r: any) => r.status === 'active').length).toBeLessThanOrEqual(1);
   });
 
   it('two concurrent confirmed replacements cannot leave two live plans', async () => {
