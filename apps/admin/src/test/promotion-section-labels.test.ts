@@ -43,7 +43,7 @@ const PROMOTION_SECTIONS: [key: string, english: string][] = [
   ['section_session_benefits', 'Session Promotion'],
   ['section_oneoff_benefits', 'One-off Promotion'],
   ['section_period_benefits', 'Periodical Promotion'],
-  ['section_membership_fee_benefits', 'Membership Fee Promotion'],
+  ['section_membership_fee_benefits', 'Membership Plan Promotion'],
 ];
 
 // The empty states and add buttons that spell the section name out.
