@@ -3,7 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
 import {
-  TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request,
+  TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, legacyAssignmentQuery
 } from './helpers';
 
 afterAll(async () => {
@@ -45,7 +45,7 @@ beforeAll(async () => {
   jane = await member(gymId, 'Jane');
   alone = await member(gymId, 'Alone');
 
-  const duo = await db.query(
+  const duo = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', CURDATE(), 29.99)`,
     [gymId, john, planId],
@@ -55,7 +55,7 @@ beforeAll(async () => {
     'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1), (?, ?, ?, 0)',
     [gymId, duoId, john, gymId, duoId, jane],
   );
-  const solo = await db.query(
+  const solo = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', CURDATE(), 29.99)`,
     [gymId, alone, planId],
@@ -91,7 +91,7 @@ describe('GET /user-memberships/member/:id/configuration', () => {
       [gymId],
     );
     const familyOwner = await member(gymId, 'FamilyOwner');
-    const family = await db.query(
+    const family = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', CURDATE(), 49.99)`,
       [gymId, familyOwner, familyPlan.insertId],

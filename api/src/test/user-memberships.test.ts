@@ -9,7 +9,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet, seedScheduledEvent, clearScheduledEvents } from './helpers';
+  request, ensureTestProductSet, seedScheduledEvent, clearScheduledEvents, legacyAssignmentQuery } from './helpers';
 
 afterAll(async () => {
   await cleanupTestGyms();
@@ -59,7 +59,7 @@ async function createUserMembershipDirect(
   planId: number,
   status: 'active' | 'paused' | 'cancelled' | 'expired' = 'active',
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, ?, CURDATE(), 29.99)`,
     [gymId, memberId, planId, status],
@@ -219,7 +219,7 @@ async function createUserMembershipWithPrice(
   status: 'active' | 'paused' | 'cancelled' | 'expired',
   basePrice: number, startsAt: string, endsAt: string | null = null,
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
     [gymId, memberId, planId, status, startsAt, endsAt, basePrice],
@@ -603,7 +603,7 @@ describe('GET /user-memberships — lifecycle_status', () => {
   it("reports 'pending' for a row whose starts_at is in the future", async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
-    const { insertId: umId } = await db.query(
+    const { insertId: umId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', DATE_ADD(CURDATE(), INTERVAL 7 DAY), 29.99)`,
       [gymId, memberId, planId],
@@ -621,7 +621,7 @@ describe('GET /user-memberships — lifecycle_status', () => {
   it("reports 'expired' for an active row whose ends_at has passed", async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
-    const { insertId: umId } = await db.query(
+    const { insertId: umId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
        VALUES (?, ?, ?, 'active', DATE_SUB(CURDATE(), INTERVAL 60 DAY), DATE_SUB(CURDATE(), INTERVAL 1 DAY), 29.99)`,
       [gymId, memberId, planId],
@@ -656,7 +656,7 @@ describe('GET /user-memberships — advanced filtering', () => {
     const planId = await createPlan(gymId);
 
     const pendingMemberId = await createMember(gymId, 'UM Filter Pending');
-    ({ insertId: pendingId } = await db.query(
+    ({ insertId: pendingId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', DATE_ADD(CURDATE(), INTERVAL 7 DAY), 29.99)`,
       [gymId, pendingMemberId, planId],
@@ -666,7 +666,7 @@ describe('GET /user-memberships — advanced filtering', () => {
     activeId = await createUserMembershipDirect(gymId, memberIdForActive, planId, 'active');
 
     const expiredMemberId = await createMember(gymId, 'UM Filter Expired');
-    ({ insertId: expiredId } = await db.query(
+    ({ insertId: expiredId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
        VALUES (?, ?, ?, 'active', DATE_SUB(CURDATE(), INTERVAL 60 DAY), DATE_SUB(CURDATE(), INTERVAL 1 DAY), 29.99)`,
       [gymId, expiredMemberId, planId],
@@ -1788,7 +1788,7 @@ describe('retired pre-activation statuses (#786)', () => {
     // arrives with stage 2's Save & Pay rather than as a value nothing writes.
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
-    await expect(db.query(
+    await expect(legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'awaiting_payment', CURDATE(), 29.99)`,
       [gymId, memberId, planId],
@@ -1798,7 +1798,7 @@ describe('retired pre-activation statuses (#786)', () => {
   it('the status CHECK accepts a row inserted as draft again (#1108, migration 227)', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
-    const { insertId } = await db.query(
+    const { insertId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'draft', CURDATE(), 29.99)`,
       [gymId, memberId, planId],

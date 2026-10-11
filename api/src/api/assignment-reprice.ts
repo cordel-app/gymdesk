@@ -14,10 +14,10 @@ import { reconfigureProjected } from './product-set-bridge';
  *    makes the new fee what is *charged* and not only what is displayed);
  *  - a **Pending Payment** or closed version is left as it was — it is locked by
  *    Save & Pay or is the record of what was billed;
- *  - an assignment with **no version** keeps the legacy row write (`'legacy'`).
+ *  - an assignment with **no version** does not exist since migration 258.
  */
 
-export type RepriceOutcome = 'updated' | 'skipped' | 'legacy';
+export type RepriceOutcome = 'updated' | 'skipped';
 
 async function latestLinkedStatus(tx: Tx, gymId: string, userMembershipId: number): Promise<string | null> {
   const { rows } = await tx.query<{ status: string }>(
@@ -43,7 +43,7 @@ export async function repriceOnVersion(tx: Tx, input: {
 }): Promise<RepriceOutcome> {
   const { gymId, userMembershipId, price, planPriceId } = input;
   const status = await latestLinkedStatus(tx, gymId, userMembershipId);
-  if (status == null) return 'legacy';
+  if (status == null) return 'skipped';
 
   if (status === 'draft') {
     const draft = await linkedDraftSetFor(tx, gymId, userMembershipId);

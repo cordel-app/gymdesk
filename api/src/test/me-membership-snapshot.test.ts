@@ -22,7 +22,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, seedScheduledEvent } from './helpers';
+  request, seedScheduledEvent, legacyAssignmentQuery } from './helpers';
 
 let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
@@ -64,7 +64,7 @@ async function createAssignment(gymId: string, memberId: number, planId: number,
   snapshot?: { interval: number; unit: string; fee: number };
 } = {}): Promise<number> {
   const { snapshot } = opts;
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
         recurring_billing_interval, recurring_billing_unit, membership_fee_price)
@@ -350,7 +350,7 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
     // January to March 2099 — so the March cycle is still discounted and the
     // April one is not. #635 stage 15: there is no stored discounted number to
     // disagree with that, only the regular fee and the application.
-    const { insertId } = await db.query(
+    const { insertId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
           recurring_billing_interval, recurring_billing_unit, membership_fee_price)
@@ -401,13 +401,14 @@ describe('GET /me/membership — upcoming payments are priced per cycle (#635 st
 
   it('resolves the same amounts the nightly run would charge for those dates', async () => {
     const { priceMembershipFeeOn } = await import('../api/membership-fee-pricing');
+    const { ASSIGNMENT_CONFIG_JOIN } = await import('../api/assignment-config');
     const { rows } = await db.query(
       `SELECT um.id, um.gym_id, um.membership_plan_id, um.starts_at,
-              um.membership_fee_price, um.base_price, um.discount_reason, um.discount_expires_at,
-              um.free_periods, um.paid_periods, um.bonus_periods,
+              cfg.membership_fee_price, cfg.base_price, cfg.discount_reason, cfg.discount_expires_at,
+              cfg.free_periods, cfg.paid_periods, cfg.bonus_periods,
               p.free_periods AS plan_free_periods, p.paid_periods AS plan_paid_periods,
               p.bonus_periods AS plan_bonus_periods, 1 AS has_billing_snapshot
-       FROM user_memberships um
+       FROM user_memberships um${ASSIGNMENT_CONFIG_JOIN()}
        LEFT JOIN membership_plans p ON p.id = um.membership_plan_id
        WHERE um.id = ?`,
       [umId],
@@ -457,26 +458,26 @@ describe('GET /me/membership — past_memberships', () => {
     olderPlanId = await createPlan(gymId, { interval: 1, unit: 'month' });
 
     // The live one the card above is about.
-    await db.query(
+    await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', '2026-10-01', 60)`,
       [gymId, memberId, currentPlanId],
     );
     // Two finished ones, the older carrying no `ends_at` so its `closed_at` is
     // what the history has to fall back to.
-    await db.query(
+    await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, ends_at, base_price)
        VALUES (?, ?, ?, 'cancelled', '2026-06-01', '2026-09-12', 60)`,
       [gymId, memberId, oldPlanId],
     );
-    await db.query(
+    await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, closed_at, base_price)
        VALUES (?, ?, ?, 'expired', '2026-01-05', '2026-05-30 09:15:00', 60)`,
       [gymId, memberId, olderPlanId],
     );
     // A Draft replacement being configured for this member, which is neither
     // their plan nor their history (#1108 Q2).
-    await db.query(
+    await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'draft', '2026-11-01', 60)`,
       [gymId, memberId, oldPlanId],
@@ -513,7 +514,7 @@ describe('GET /me/membership — past_memberships', () => {
     const otherGym = await createTestGym('Me Membership History Gym 2');
     await createTestMembership(otherGym, 'member');
     const otherMember = await createCallingMember(otherGym);
-    await db.query(
+    await legacyAssignmentQuery(
       `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, NULL, 'active', '2026-10-01', 60)`,
       [otherGym, otherMember],

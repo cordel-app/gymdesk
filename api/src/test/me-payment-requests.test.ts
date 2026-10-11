@@ -15,7 +15,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 // The provider is stubbed so no HTTP reaches Monei. Spread the real module so
@@ -85,7 +85,7 @@ async function createPlan(): Promise<number> {
 /** An active assignment whose current cycle owes `fee` (a frozen Membership Fee). */
 async function createAssignment(memberId: number, fee = '29.99'): Promise<number> {
   const planId = await createPlan();
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price, membership_fee_price)
      VALUES (?, ?, ?, 'active', CURDATE(), '0.00', ?)`,
@@ -144,7 +144,7 @@ describe('POST /me/payment-requests — guards', () => {
     const { memberId } = await actAsNewMember('noactive');
     const planId = await createPlan();
     // Cancelled, so the route's `status = 'active'` filter finds nothing.
-    await db.query(
+    await legacyAssignmentQuery(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, status, starts_at, base_price, membership_fee_price)
        VALUES (?, ?, ?, 'cancelled', CURDATE(), '0.00', '29.99')`,
@@ -241,7 +241,7 @@ describe('POST /me/payment-requests — a cycle that owes nothing', () => {
   it('returns 400 while the assignment is inside its Free Period, and calls no provider', async () => {
     const { memberId } = await actAsNewMember('free');
     const umId = await createAssignment(memberId, '29.99');
-    await db.query('UPDATE user_memberships SET free_periods = 1 WHERE id = ?', [umId]);
+    await legacyAssignmentQuery('UPDATE user_memberships SET free_periods = 1 WHERE id = ?', [umId]);
     providerCalls.createPaymentRequest = [];
 
     const res = await post();

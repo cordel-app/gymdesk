@@ -29,7 +29,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery
 } from './helpers';
 
 afterAll(async () => {
@@ -362,7 +362,7 @@ describe('Billing Simulation — an assignment with no snapshot still resolves l
 
     // The shape a row created before migration 174 has: no cadence, no regular
     // fee, no benefit rows of its own.
-    await db.query(
+    await legacyAssignmentQuery(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
        VALUES (?, ?, ?, 'active', ?, 45)`,

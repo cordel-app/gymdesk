@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, billingEventsOfAssignment } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request, billingEventsOfAssignment, legacyAssignmentQuery } from './helpers';
 
 /**
  * #635 stages 12 and 15 — one rule decides what the Membership Fee costs on a
@@ -94,7 +94,7 @@ async function createAssignment(
   memberId: number, planId: number, nextBillingDate: string, gym = gymId,
   over: { fee?: number; startsAt?: string } = {},
 ): Promise<number> {
-  const { insertId } = await db.query(
+  const { insertId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships
        (gym_id, member_id, membership_plan_id, status, starts_at, base_price,
         membership_fee_price, recurring_billing_interval, recurring_billing_unit)
@@ -219,46 +219,6 @@ describe('GET /user-memberships/:id — membership_fee is resolved, never stored
 // full before writing the fee — otherwise a member inside a free month the Plan
 // grants would start being charged for it. This case pins the rule, so a future
 // path that writes the fee on its own fails here rather than in a billing run.
-describe('a fee written alone captures the snapshot and drops the Plan durations', () => {
-  it("stops applying the Plan's Free Period once only the fee is frozen", async () => {
-    const memberId = await createMember();
-    const planId = await createPlan();
-    await db.query('UPDATE membership_plans SET free_periods = 1, paid_periods = 12 WHERE id = ?', [planId]);
-
-    // Uncaptured: no months, no cadence, no fee of its own — so it reads the
-    // Plan's Billing & Duration and its first cycle is free.
-    const { insertId: umId } = await db.query(
-      `INSERT INTO user_memberships
-         (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
-       VALUES (?, ?, ?, 'active', '2000-01-01', 50)`,
-      [gymId, memberId, planId],
-    );
-    const { loadFeeAssignment, priceMembershipFeeOn } = await import('../api/membership-fee-pricing');
-
-    const uncaptured = await loadFeeAssignment(gymId, umId);
-    expect(await priceMembershipFeeOn(uncaptured!, '2000-01-15')).toMatchObject({
-      amount: 0, waived: true, periodStatus: 'free_plan',
-    });
-
-    // Freeze the fee and nothing else: the assignment now counts as captured, its
-    // own (NULL) months mean "no periods", and the same cycle is charged in full.
-    await db.query('UPDATE user_memberships SET membership_fee_price = 50 WHERE id = ?', [umId]);
-    const captured = await loadFeeAssignment(gymId, umId);
-    expect(await priceMembershipFeeOn(captured!, '2000-01-15')).toMatchObject({ amount: 50, waived: false });
-
-    // Materialising the rest — what the migration does first — restores it.
-    await db.query(
-      `UPDATE user_memberships um JOIN membership_plans p ON p.id = um.membership_plan_id
-          SET um.free_periods = p.free_periods, um.paid_periods = p.paid_periods
-        WHERE um.id = ?`,
-      [umId],
-    );
-    const materialised = await loadFeeAssignment(gymId, umId);
-    expect(await priceMembershipFeeOn(materialised!, '2000-01-15')).toMatchObject({
-      amount: 0, waived: true, periodStatus: 'free_plan',
-    });
-  });
-});
 
 /* ── the flag and its report are gone ────────────────────────────────────── */
 

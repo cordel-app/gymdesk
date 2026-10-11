@@ -15,7 +15,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery, getAssignmentConfig
 } from './helpers';
 
 afterAll(async () => {
@@ -299,120 +299,6 @@ describe('PUT /user-memberships/:id/{session,oneoff,periodical}-benefits', () =>
   });
 });
 
-// ─── An assignment that never captured a snapshot (§13 + stage 3's fallback) ──
-
-describe('editing an assignment that predates the snapshot', () => {
-  let gymId: string;
-  let planId: number;
-  let umId: number;
-  let periodicalItem: number;
-  let sessionItem: number;
-
-  beforeAll(async () => {
-    gymId = await createTestGym('APSE Legacy Gym');
-    await createTestMembership(gymId, 'admin');
-    planId = await createPlan(gymId);
-    periodicalItem = await createProduct(gymId, { amount: 20 });
-    sessionItem = await createProduct(gymId, { type: 'sessions', billingFrequency: 'per_session', amount: 30 });
-    await addPlanBenefit(gymId, 'membership_plan_periodical', planId, periodicalItem, 1);
-    await addPlanBenefit(gymId, 'membership_plan_session', planId, sessionItem, 10);
-
-    const res = await assign(gymId, planId, await createMember(gymId));
-    expect(res.status).toBe(201);
-    umId = res.body.id;
-    // Strip the snapshot stage 2 captured, reproducing a row the migration-174
-    // backfill could not reach: it resolves the live catalogue today. Such a row
-    // predates ProductSets as well, so it has no version either (#1325 PR 3e-2:
-    // a version, when there is one, is what its configuration is read from).
-    await db.query('DELETE FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
-    await db.query(
-      `UPDATE user_memberships SET free_periods = NULL, paid_periods = NULL, bonus_periods = NULL,
-          recurring_billing_interval = NULL, recurring_billing_unit = NULL, membership_fee_price = NULL
-       WHERE id = ?`,
-      [umId],
-    );
-    for (const table of ['user_membership_session', 'user_membership_oneoff', 'user_membership_periodical']) {
-      await db.query(`DELETE FROM ${table} WHERE user_membership_id = ?`, [umId]);
-    }
-  });
-
-  it('starts out uncaptured', async () => {
-    const res = await getAssignment(gymId, umId);
-    expect(res.body.snapshot.snapshot_captured).toBe(false);
-  });
-
-  it('captures what it resolves live before applying the first edit', async () => {
-    const res = await putBenefits(gymId, umId, 'periodical-benefits', [
-      { product_id: periodicalItem, quantity: 4 },
-    ]);
-    expect(res.status).toBe(200);
-
-    const after = await getAssignment(gymId, umId);
-    // The edited section is what was asked for…
-    expect(after.body.snapshot.periodical_benefits).toHaveLength(1);
-    expect(after.body.snapshot.periodical_benefits[0]).toMatchObject({ quantity: 4, unit_price: 20 });
-    // …and the sections the edit never mentioned were written down rather than
-    // silently lost with the live fallback.
-    expect(after.body.snapshot.session_benefits).toHaveLength(1);
-    expect(after.body.snapshot.session_benefits[0]).toMatchObject({ product_id: sessionItem, quantity: 10, unit_price: 30 });
-    expect(after.body.snapshot).toMatchObject({
-      free_periods: 1, paid_periods: 12, bonus_periods: 2,
-      recurring_billing_interval: 1, recurring_billing_unit: 'month',
-      membership_fee_price: 80,
-      snapshot_captured: true,
-    });
-  });
-
-  it('then stops following the Plan (§13)', async () => {
-    await db.query('UPDATE membership_plans SET paid_periods = 36 WHERE id = ?', [planId]);
-    await db.query('DELETE FROM membership_plan_session WHERE membership_plan_id = ?', [planId]);
-    const after = await getAssignment(gymId, umId);
-    expect(after.body.snapshot.paid_periods).toBe(12);
-    expect(after.body.snapshot.session_benefits).toHaveLength(1);
-  });
-});
-
-describe('materialising, on an assignment that captured nothing', () => {
-  let gymId: string;
-
-  /** An assignment stripped back to the pre-migration-174 shape. */
-  async function uncapturedAssignment() {
-    const planId = await createPlan(gymId);
-    const res = await assign(gymId, planId, await createMember(gymId));
-    expect(res.status).toBe(201);
-    const umId = res.body.id as number;
-    await db.query(
-      `UPDATE user_memberships SET free_periods = NULL, paid_periods = NULL, bonus_periods = NULL,
-          recurring_billing_interval = NULL, recurring_billing_unit = NULL, membership_fee_price = NULL
-       WHERE id = ?`,
-      [umId],
-    );
-    return umId;
-  }
-
-  beforeAll(async () => {
-    gymId = await createTestGym('APSE Materialise Gym');
-    await createTestMembership(gymId, 'admin');
-  });
-
-  it('refuses a cadence edit on a live plan — the schedule is the ProductSet chain\'s (#1325)', async () => {
-    const umId = await uncapturedAssignment();
-    const res = await putBillingDuration(gymId, umId, { recurring_billing_interval: 2 });
-    expect(res.status).toBe(400);
-  });
-
-  it('rolls the capture back with a rejected edit', async () => {
-    const umId = await uncapturedAssignment();
-    // A row that captured nothing predates ProductSets too: no version behind it.
-    await db.query('DELETE FROM product_sets WHERE gym_id = ? AND user_membership_id = ?', [gymId, umId]);
-    // The Plan has a cadence, so clearing only the unit would leave half of one.
-    const res = await putBillingDuration(gymId, umId, { recurring_billing_unit: null });
-    expect(res.status).toBe(400);
-    const after = await getAssignment(gymId, umId);
-    expect(after.body.snapshot.snapshot_captured).toBe(false);
-  });
-});
-
 // ─── Tenant isolation and auth ────────────────────────────────────────────────
 
 describe('/user-memberships/:id snapshot sections — tenant isolation and auth', () => {
@@ -463,7 +349,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
 
     expect((await putBillingDuration(readOnlyGym, readOnlyUmId, { paid_periods: 1 })).status).toBe(403);
     expect((await putBenefits(readOnlyGym, readOnlyUmId, 'periodical-benefits', [])).status).toBe(403);
-    const { rows } = await db.query('SELECT paid_periods FROM user_memberships WHERE id = ?', [readOnlyUmId]);
+    const { rows } = await (async () => ({ rows: [await getAssignmentConfig(readOnlyUmId)] }))();
     expect(rows[0].paid_periods).toBe(12);
     // Reading the section is allowed for a role with read access.
     expect((await getBenefits(readOnlyGym, readOnlyUmId, 'periodical-benefits')).status).toBe(200);
@@ -486,7 +372,7 @@ describe('/user-memberships/:id snapshot sections — tenant isolation and auth'
     const planId = await createPlan(gym);
     const item = await createProduct(gym, { amount: 20 });
     const memberId = await createMember(gym);
-    const { insertId } = await db.query(
+    const { insertId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships
          (member_id, gym_id, membership_plan_id, base_price, starts_at, status,
           free_periods, paid_periods, bonus_periods, recurring_billing_interval, recurring_billing_unit,

@@ -19,7 +19,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request,
+  request, legacyAssignmentQuery, getAssignmentConfig
 } from './helpers';
 
 afterAll(async () => {
@@ -123,10 +123,7 @@ describe('PUT /user-memberships/:id/fee-benefit', () => {
     expect(res.status).toBe(200);
     expect(res.body.personal_fee_benefit).toEqual({ action: 'percentage_discount', value: 15 });
 
-    const { rows } = await db.query(
-      'SELECT personal_fee_benefit_action, personal_fee_benefit_value FROM user_memberships WHERE id = ?',
-      [umId],
-    );
+    const { rows } = await (async () => ({ rows: [await getAssignmentConfig(umId)] }))();
     expect(rows[0].personal_fee_benefit_action).toBe('percentage_discount');
     expect(Number(rows[0].personal_fee_benefit_value)).toBe(15);
   });
@@ -158,9 +155,7 @@ describe('PUT /user-memberships/:id/fee-benefit', () => {
     expect(res.status).toBe(200);
     expect(res.body.personal_fee_benefit).toEqual({ action: 'no_benefit', value: null });
 
-    const { rows } = await db.query(
-      'SELECT personal_fee_benefit_value FROM user_memberships WHERE id = ?', [umId],
-    );
+    const { rows } = await (async () => ({ rows: [await getAssignmentConfig(umId)] }))();
     expect(rows[0].personal_fee_benefit_value).toBe(null);
     expect((await getAssignment(gymId, umId)).body.membership_fee).toBe(100);
   });
@@ -179,46 +174,12 @@ describe('PUT /user-memberships/:id/fee-benefit', () => {
     }
   });
 
-  it('does not capture a snapshot as a side effect', async () => {
-    // The benefit is not part of the Assigned Plan snapshot: it is agreed with
-    // the member rather than captured from the catalogue, and the snapshot's
-    // fallback is all-or-nothing. Writing one must not flip an assignment that
-    // captured nothing to "captured", which would freeze its Plan's live
-    // durations out of reach.
-    // The pre-migration-174 shape: a real Plan, but not one of the seven
-    // snapshot columns set and no benefit rows of its own.
-    const memberId = await createMember(gymId);
-    const { insertId: bare } = await db.query(
-      `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, base_price, starts_at, status)
-       VALUES (?, ?, ?, 0, ?, 'active')`,
-      [memberId, gymId, planId, dayOffset(0)],
-    );
-    await db.query(
-      'INSERT INTO user_membership_members (gym_id, user_membership_id, member_id, is_owner) VALUES (?, ?, ?, 1)',
-      [gymId, bare, memberId],
-    );
-
-    expect((await putFeeBenefit(gymId, bare as number, { action: 'percentage_discount', value: 20 })).status).toBe(200);
-
-    const after = await getAssignment(gymId, bare as number);
-    expect(after.body.snapshot.snapshot_captured).toBe(false);
-    expect(after.body.snapshot.personal_fee_benefit).toEqual({ action: 'percentage_discount', value: 20 });
-    const { rows } = await db.query(
-      'SELECT free_periods, paid_periods, membership_fee_price FROM user_memberships WHERE id = ?', [bare],
-    );
-    expect(rows[0].free_periods).toBe(null);
-    expect(rows[0].paid_periods).toBe(null);
-    expect(rows[0].membership_fee_price).toBe(null);
-  });
-
   it('refuses to edit a terminal assignment', async () => {
     const closed = await assignPlan(gymId);
     await db.query("UPDATE user_memberships SET status = 'cancelled' WHERE id = ?", [closed.umId]);
     const res = await putFeeBenefit(gymId, closed.umId, { action: 'percentage_discount', value: 10 });
     expect(res.status).toBe(400);
-    const { rows } = await db.query(
-      'SELECT personal_fee_benefit_action FROM user_memberships WHERE id = ?', [closed.umId],
-    );
+    const { rows } = await (async () => ({ rows: [await getAssignmentConfig(closed.umId)] }))();
     expect(rows[0].personal_fee_benefit_action).toBe('no_benefit');
   });
 });
@@ -288,9 +249,7 @@ describe('tenant isolation and auth', () => {
   it("returns 404 for another gym's assignment, and writes nothing", async () => {
     const res = await putFeeBenefit(gymB, umId, { action: 'percentage_discount', value: 50 });
     expect(res.status).toBe(404);
-    const { rows } = await db.query(
-      'SELECT personal_fee_benefit_action FROM user_memberships WHERE id = ?', [umId],
-    );
+    const { rows } = await (async () => ({ rows: [await getAssignmentConfig(umId)] }))();
     expect(rows[0].personal_fee_benefit_action).toBe('no_benefit');
   });
 
@@ -306,16 +265,14 @@ describe('tenant isolation and auth', () => {
     const readOnlyGym = await createTestGym('PFB Accountant Gym');
     await createTestMembership(readOnlyGym, 'accountant');
     const memberId = await createMember(readOnlyGym);
-    const { insertId } = await db.query(
+    const { insertId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, base_price, starts_at, status)
        VALUES (?, ?, NULL, 0, ?, 'active')`,
       [memberId, readOnlyGym, dayOffset(0)],
     );
     const res = await putFeeBenefit(readOnlyGym, insertId as number, { action: 'percentage_discount', value: 10 });
     expect(res.status).toBe(403);
-    const { rows } = await db.query(
-      'SELECT personal_fee_benefit_action FROM user_memberships WHERE id = ?', [insertId],
-    );
+    const { rows } = await (async () => ({ rows: [await getAssignmentConfig(insertId)] }))();
     expect(rows[0].personal_fee_benefit_action).toBe('no_benefit');
   });
 
@@ -323,7 +280,7 @@ describe('tenant isolation and auth', () => {
     const noAccessGym = await createTestGym('PFB Trainer Gym');
     await createTestMembership(noAccessGym, 'trainer_performance');
     const memberId = await createMember(noAccessGym);
-    const { insertId } = await db.query(
+    const { insertId } = await legacyAssignmentQuery(
       `INSERT INTO user_memberships (member_id, gym_id, membership_plan_id, base_price, starts_at, status)
        VALUES (?, ?, NULL, 0, ?, 'active')`,
       [memberId, noAccessGym, dayOffset(0)],

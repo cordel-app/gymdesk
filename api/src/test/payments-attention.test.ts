@@ -14,7 +14,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, ensureTestProductSet } from './helpers';
+  request, ensureTestProductSet, legacyAssignmentQuery } from './helpers';
 
 const PATH = '/payments/billing-events/attention';
 
@@ -36,7 +36,7 @@ async function createBillableMember(gym: string): Promise<{ memberId: number; us
      VALUES (?, ?, 'active', 'staff_only')`,
     [gym, `ATT-Plan-${uniq()}`],
   );
-  const { insertId: userMembershipId } = await db.query(
+  const { insertId: userMembershipId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', '2000-01-01', '49.00')`,
     [gym, memberId, planId],

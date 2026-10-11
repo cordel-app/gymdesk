@@ -9,7 +9,7 @@ import {
   cleanupTestGyms,
   createTestGym,
   createTestMembership,
-  request, seedScheduledEvent, clearScheduledEvents } from './helpers';
+  request, seedScheduledEvent, clearScheduledEvents, legacyAssignmentQuery } from './helpers';
 
 // A card replacement asks the provider for a zero-amount verification. The stub
 // takes no amount at all — `createCardVerificationRequest` has no such
@@ -82,7 +82,7 @@ beforeAll(async () => {
   );
   planId = pid;
 
-  const { insertId: umId } = await db.query(
+  const { insertId: umId } = await legacyAssignmentQuery(
     `INSERT INTO user_memberships (gym_id, member_id, membership_plan_id, status, starts_at, base_price)
      VALUES (?, ?, ?, 'active', CURDATE(), '0.00')`,
     [gymId, memberId, planId],
@@ -233,7 +233,7 @@ describe('POST /me/payment-method/replace-requests', () => {
     // The old way to store a card was the Start payment button, which only
     // appears when the cycle owes a fee — so a free month, a Promotion or a
     // Free Period made updating a card impossible. This must not depend on it.
-    await db.query(
+    await legacyAssignmentQuery(
       'UPDATE user_memberships SET free_periods = 12, paid_periods = 12 WHERE id = ?',
       [membershipId],
     );
@@ -242,7 +242,7 @@ describe('POST /me/payment-method/replace-requests', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(201);
-    await db.query(
+    await legacyAssignmentQuery(
       'UPDATE user_memberships SET free_periods = NULL, paid_periods = NULL WHERE id = ?',
       [membershipId],
     );

@@ -110,17 +110,21 @@ export async function snapshotProductSetFromPlan(tx: Tx, input: {
   await tx.query(
     `INSERT INTO product_set_plan_snapshots
        (gym_id, product_set_id, schedule_id, membership_fee_price,
-        free_periods, paid_periods, bonus_periods, pay_beforehand_periods, auto_renew)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        free_periods, paid_periods, bonus_periods, pay_beforehand_periods, auto_renew,
+        recurring_billing_interval, recurring_billing_unit)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON DUPLICATE KEY UPDATE schedule_id = VALUES(schedule_id), membership_fee_price = VALUES(membership_fee_price),
        free_periods = VALUES(free_periods), paid_periods = VALUES(paid_periods),
        bonus_periods = VALUES(bonus_periods), pay_beforehand_periods = VALUES(pay_beforehand_periods),
-       auto_renew = VALUES(auto_renew)`,
+       auto_renew = VALUES(auto_renew),
+       recurring_billing_interval = VALUES(recurring_billing_interval),
+       recurring_billing_unit = VALUES(recurring_billing_unit)`,
     [
       gymId, productSetId, scheduleId, input.membershipFeePrice ?? null,
       plan.free_periods ?? null, plan.paid_periods ?? null, plan.bonus_periods ?? null,
       plan.pay_beforehand_periods ?? null,
       toPlanDurationRepeats(plan.auto_renew ?? false) ? 1 : 0,
+      plan.recurring_billing_interval ?? null, plan.recurring_billing_unit ?? null,
     ],
   );
 
