@@ -10,8 +10,21 @@
 
 import { storageKeyFromObjectUrl, storageObjectUrlForms } from '../infra/storage';
 
-/** The four exercise columns that hold a media reference. */
-const MEDIA_COLUMNS = ['image_url', 'image_thumbnail_url', 'video_url', 'video_thumbnail_url'] as const;
+/**
+ * The exercise columns that hold a media reference: the four legacy ones and,
+ * since #1420, the four gender-specific masters (their companions are derived
+ * from the master URL, so a master reference covers them).
+ */
+const MEDIA_COLUMNS = [
+  'image_url',
+  'image_thumbnail_url',
+  'video_url',
+  'video_thumbnail_url',
+  'image_male_url',
+  'image_female_url',
+  'video_male_url',
+  'video_female_url',
+] as const;
 
 /**
  * What a media URL points at: its object key when this deployment built the
@@ -35,7 +48,7 @@ export function mediaUrlForms(url: string): string[] {
 
 /**
  * A SQL condition true for any row that references the object `url` names,
- * through any of the four media columns and in any URL form, with its
+ * through any of the media columns and in any URL form, with its
  * parameters. Placeholders are spelled out because `db.query` runs prepared
  * statements, which do not expand an array into `IN (?)`.
  */

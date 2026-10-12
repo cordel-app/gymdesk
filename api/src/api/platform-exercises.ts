@@ -5,6 +5,8 @@ import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
+import { withGenderMediaCompanions } from '../domain/exerciseGenderMedia';
+import { createExerciseGenderMediaRouter } from './exercise-gender-media';
 import {
   exerciseNameSearchSql,
   exerciseTranslationsExpr,
@@ -115,7 +117,7 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
 `;
 
 /** A read row as the caller gets it: translations map plus the effective image (#1368 stage 4). */
-const shapeExercise = (row: any) => withEffectiveImage(withDescriptionTranslations(withExerciseTranslations(row)));
+const shapeExercise = (row: any) => withGenderMediaCompanions(withEffectiveImage(withDescriptionTranslations(withExerciseTranslations(row))));
 
 const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
 
@@ -880,3 +882,17 @@ platformExercisesRouter.delete('/:id', requireSuperadmin, async (req, res, next)
     res.status(204).send();
   } catch (err) { next(err); }
 });
+
+/* ── Base Exercise gender-specific media (#1420 stage 1) ──────────────────── */
+//
+// The platform half of `exercise-gender-media.ts`: the same four references,
+// stored under `cordel/exercises/`. Registered last so `DELETE /:id` above never
+// shadows the two-segment paths (they differ in depth, so this is belt and braces).
+platformExercisesRouter.use(createExerciseGenderMediaRouter({
+  scope: 'platform',
+  guard: requireSuperadmin,
+  respond: async (req, res, id) => {
+    const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id IS NULL`, [id]);
+    res.json(shapeExercise(rows[0]));
+  },
+}));

@@ -49,6 +49,8 @@ import {
   uploadStorageObject,
 } from '../infra/storage';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
+import { withGenderMediaCompanions } from '../domain/exerciseGenderMedia';
+import { createExerciseGenderMediaRouter } from './exercise-gender-media';
 import {
   copyExerciseTranslations,
   exerciseTranslationsExpr,
@@ -173,7 +175,7 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
  * carry the same `display_name` a list read would.
  */
 /** A read row as the caller gets it: translations map plus the effective image (#1368 stage 4). */
-const shapeExercise = (row: any) => withEffectiveImage(withDescriptionTranslations(withExerciseTranslations(row)));
+const shapeExercise = (row: any) => withGenderMediaCompanions(withEffectiveImage(withDescriptionTranslations(withExerciseTranslations(row))));
 
 const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
 
@@ -372,6 +374,7 @@ exercisesRouter.get('/base', async (req, res, next) => {
     SELECT e.id, e.name, ${localizedExerciseNameExpr('e', locale, 'display_name')},
       e.slug, e.description, e.image_url, e.image_thumbnail_url,
       e.video_url, e.video_thumbnail_url,
+      e.image_male_url, e.image_female_url, e.video_male_url, e.video_female_url,
       ${primaryMuscleImagesSql('e')},
       (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
        FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
@@ -631,14 +634,16 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
       const { insertId } = await tx.query(
         `INSERT INTO exercises
           (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
+           image_male_url, image_female_url, video_male_url, video_female_url,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default,
            status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
         // #719: each thumbnail travels with the media it depicts. Both copies
         // point at the *same* objects — nothing is duplicated in R2 — which is
         // why removing one exercise's media only deletes an object when no
         // other exercise still references it (`isMediaStillReferenced()`).
         [gymId, copyName, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
+         src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
          src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
          actor],
       );
@@ -685,13 +690,15 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
       const { insertId } = await tx.query(
         `INSERT INTO exercises
           (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
+           image_male_url, image_female_url, video_male_url, video_female_url,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default,
            status, created_by, cloned_from_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
         // #719 §2: the copy takes the Base Exercise's media *references*, not
         // its bytes — no System object is duplicated into the gym's folder, and
         // the copy owns the references from here on (§3's snapshot rule).
         [gymId, copyName, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
+         src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
          src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
          actor, id],
       );
@@ -836,11 +843,13 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         const { insertId } = await tx.query(
           `INSERT INTO exercises
             (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
+           image_male_url, image_female_url, video_male_url, video_female_url,
              min_reps_default, max_reps_default, rest_default_seconds, sets_default,
              status, created_by, cloned_from_id, category)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
           // #719 §2: references only — the System objects stay where they are.
           [gymId, src.name, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
+         src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
            src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
            actor, id, src.category ?? null],
         );
@@ -1398,3 +1407,15 @@ exercisesRouter.delete('/:id/video', requireModuleWrite('TRAINING'), async (req,
     await respondWithExercise(req, res, gymId, exercise.id);
   } catch (err) { next(err); }
 });
+
+/* ── Gym Exercise gender-specific media (#1420 stage 1) ───────────────────── */
+//
+// `POST`/`DELETE /:id/image/:gender` and `/:id/video/:gender`: four independent
+// references (`image_male_url`, `image_female_url`, `video_male_url`,
+// `video_female_url`) beside the legacy pair, which stays until the last stage.
+// The rules are in `exercise-gender-media.ts`, shared with the platform router.
+exercisesRouter.use(createExerciseGenderMediaRouter({
+  scope: 'gym',
+  guard: requireModuleWrite('TRAINING'),
+  respond: (req, res, id, gymId) => respondWithExercise(req, res, gymId as string, id),
+}));

@@ -179,3 +179,7 @@ line in this file.
 holds, and in R2 a case difference is a different key rather than a rename. Replacing
 that asset is what lands it on the new name; the bulk sweep is a production step, in
 `docs/go-to-production.md`.
+
+## Exercise gender media (#1420)
+
+Stage 1 stores only the master reference per file in `exercises.image_male_url`, `image_female_url`, `video_male_url` and `video_female_url` (migration 276). The thumbnail of an image (`-thumbnail.webp` beside the master) and a video's preview and preview thumbnail (`.webp` and `-thumbnail.webp` beside the `.mp4`, always under `videos/`) are derived from the stored URL; no thumbnail column exists. The legacy `image_url`, `image_thumbnail_url`, `video_url` and `video_thumbnail_url` stay until the last stage moves every consumer and drops them.
