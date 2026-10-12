@@ -11,13 +11,15 @@
 // paying stay on the existing `/product-sets` workflow (ProductSetsInFlight).
 
 import React, { useEffect, useState } from 'react';
-import { useLocale, useTranslations } from 'next-intl';
+import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { StatusBadge } from '@/components/StatusBadge';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { BillingEventSimulation, type BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import { cardHintStyle } from '@/components/formChrome';
+import { formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import type { ProductSetSummary } from './membershipConfiguration';
 import {
   productSetName,
@@ -27,12 +29,10 @@ import {
   type ProductSetProductLine,
 } from './productSetView';
 
-function fmtYmd(ymd: string | null, locale: string): string | null {
+function fmtYmd(ymd: string | null, settings: GymFormatSettings): string | null {
   if (!ymd) return null;
-  const [y, m, d] = ymd.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(locale, {
-    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
-  });
+  const out = formatGymDateOnly(ymd, settings);
+  return out === '—' ? null : out;
 }
 
 function useStatusLabel() {
@@ -46,7 +46,7 @@ function useStatusLabel() {
 /** Section: the metadata of the current ProductSet and the Membership Plan it carries. */
 export function CurrentProductSetHeader({ set }: { set: ProductSetSummary | null }) {
   const t = useTranslations('members');
-  const locale = useLocale();
+  const gymFmt = useGymFormatSettings();
   const statusLabel = useStatusLabel();
   if (!set) return <p style={cardHintStyle}>{t('product_set_none')}</p>;
   const dash = '—';
@@ -54,9 +54,9 @@ export function CurrentProductSetHeader({ set }: { set: ProductSetSummary | null
     <div>
       <CardDetailRow label={t('product_set_label_name')} value={productSetName(set, t('product_set_no_plan'))} />
       <CardDetailRow label={t('product_set_label_plan')} value={set.plan_name ?? t('product_set_no_plan')} />
-      <CardDetailRow label={t('product_set_label_start')} value={fmtYmd(set.starts_at, locale) ?? dash} />
-      <CardDetailRow label={t('product_set_label_end')} value={fmtYmd(set.ends_at, locale) ?? t('product_set_open_ended')} />
-      <CardDetailRow label={t('product_set_label_created_at')} value={fmtYmd(set.created_at, locale) ?? dash} />
+      <CardDetailRow label={t('product_set_label_start')} value={fmtYmd(set.starts_at, gymFmt) ?? dash} />
+      <CardDetailRow label={t('product_set_label_end')} value={fmtYmd(set.ends_at, gymFmt) ?? t('product_set_open_ended')} />
+      <CardDetailRow label={t('product_set_label_created_at')} value={fmtYmd(set.created_at, gymFmt) ?? dash} />
       <CardDetailRow label={t('product_set_label_created_by')} value={set.created_by ?? dash} />
       <CardDetailRow
         label={t('product_set_label_status')}
@@ -144,14 +144,14 @@ export function ProductSetForecast({ forecast, loading, error }: {
 }) {
   const t = useTranslations('members');
   const tPlan = useTranslations('assigned_plans_page');
-  const locale = useLocale();
+  const gymFmt = useGymFormatSettings();
   if (loading) return <p style={cardHintStyle}>{t('product_set_loading')}</p>;
   if (error) return <p style={cardHintStyle}>{t('product_set_error')}</p>;
   return (
     <BillingEventSimulation
       simulation={forecast}
       t={(key, values) => tPlan(key as any, values as any)}
-      formatDate={(date) => fmtYmd(date, locale) ?? date}
+      formatDate={(date) => fmtYmd(date, gymFmt) ?? date}
     />
   );
 }
@@ -159,7 +159,7 @@ export function ProductSetForecast({ forecast, loading, error }: {
 /** The Past Product Sets card: previous versions, clearly history, newest first. */
 export function PastProductSets({ sets }: { sets: ProductSetSummary[] }) {
   const t = useTranslations('members');
-  const locale = useLocale();
+  const gymFmt = useGymFormatSettings();
   const [open, setOpen] = useState(false);
   if (sets.length === 0) return <p style={cardHintStyle}>{t('product_set_past_none')}</p>;
   return (
@@ -176,7 +176,7 @@ export function PastProductSets({ sets }: { sets: ProductSetSummary[] }) {
         <div key={s.id} data-product-set-id={s.id} style={{ marginTop: 8, opacity: 0.85 }}>
           <CardDetailRow
             label={productSetName(s, t('product_set_no_plan'))}
-            value={`${fmtYmd(s.starts_at, locale) ?? '—'} → ${fmtYmd(s.ends_at, locale) ?? t('product_set_open_ended')} · ${t('product_set_status_superseded')}`}
+            value={`${fmtYmd(s.starts_at, gymFmt) ?? '—'} → ${fmtYmd(s.ends_at, gymFmt) ?? t('product_set_open_ended')} · ${t('product_set_status_superseded')}`}
           />
         </div>
       ))}

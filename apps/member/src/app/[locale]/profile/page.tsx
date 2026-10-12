@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { clerkStatusLine, clerkInvitationLine } from '@/lib/clerkAccountLines';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
@@ -48,6 +49,7 @@ interface PaymentRequest {
 export default function ProfilePage() {
   const t = useTranslations();
   const locale = useLocale();
+  const gymFmt = useGymFormatSettings();
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const {
@@ -301,8 +303,8 @@ export default function ProfilePage() {
         {/* #1234: Clerk Status and Clerk Invitation, from stored dates. */}
         {(() => {
           const fields = { clerk_user_id: profile.clerk_user_id, has_pending_invitation: !!profile.invitation_id, invited_at: profile.invited_at, enrolled_at: profile.enrolled_at };
-          const status = clerkStatusLine(fields, locale);
-          const invitation = clerkInvitationLine(fields, locale);
+          const status = clerkStatusLine(fields, locale, gymFmt);
+          const invitation = clerkInvitationLine(fields, locale, gymFmt);
           return (
             <>
               <Field label={t('profile.label_clerk_status')} value={t(`profile.${status.key}`, { date: status.date ?? '' })} />

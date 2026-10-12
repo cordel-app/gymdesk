@@ -38,6 +38,8 @@
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { useToast } from '@/components/Toast';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -105,8 +107,13 @@ interface Props {
   onChanged: () => void;
 }
 
-function fmtDate(iso: string | null) {
-  return iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : '—';
+function fmtDate(iso: string | null, s: GymFormatSettings) {
+  return iso ? formatGymDate(iso, s) : '—';
+}
+
+/** A stored calendar day (not an instant): never moved across a time zone. */
+function fmtDay(iso: string | null, s: GymFormatSettings) {
+  return iso ? formatGymDateOnly(iso, s) : '—';
 }
 
 export function AssignedPlanPromotions({
@@ -119,6 +126,7 @@ export function AssignedPlanPromotions({
   const grantT = (key: string, values?: Record<string, unknown>) =>
     t((PROMOTION_VOICED_KEYS.test(key) ? `promo_${key}` : key) as any, values as any);
   const { apiFetch } = useApiClient();
+  const gymFmt = useGymFormatSettings();
   const { toast } = useToast();
 
   const [expanded, setExpanded] = useState<number | null>(null);
@@ -196,7 +204,7 @@ export function AssignedPlanPromotions({
                 {standing && <span style={cardExpandCaretStyle}>{isOpen ? '▾' : '▸'}</span>}
                 <span style={{ fontWeight: 500, fontSize: 14 }}>{p.promotion_name}</span>
               </button>
-              <span style={metaSt}>{t('promo_created_at', { at: fmtDate(p.applied_at) })}</span>
+              <span style={metaSt}>{t('promo_created_at', { at: fmtDate(p.applied_at, gymFmt) })}</span>
               <span style={metaSt}>{t('promo_created_by', { by: p.created_by ?? t('detail_unknown') })}</span>
               <StatusBadge status={p.display_status} label={tStatus(p.display_status as any)} />
             </div>
@@ -208,8 +216,8 @@ export function AssignedPlanPromotions({
                 {/* The window and durations this member's Promotion was agreed
                     with — the Promotion's own dates may have moved since. */}
                 <SubSection title={t('section_billing_duration')}>
-                  <CardDetailRow label={t('label_start_date')} value={fmtDate(p.starts_at ?? null)} />
-                  <CardDetailRow label={t('label_end_date')} value={fmtDate(p.ends_at ?? null)} />
+                  <CardDetailRow label={t('label_start_date')} value={fmtDay(p.starts_at ?? null, gymFmt)} />
+                  <CardDetailRow label={t('label_end_date')} value={fmtDay(p.ends_at ?? null, gymFmt)} />
                   {DURATION_FIELDS.map((field) => (
                     <CardDetailRow
                       key={field}
@@ -217,7 +225,7 @@ export function AssignedPlanPromotions({
                       value={p[field] != null ? t('months_value', { n: p[field] as number }) : t('not_configured')}
                     />
                   ))}
-                  {p.revoked_at && <CardDetailRow label={t('promo_revoked_at')} value={fmtDate(p.revoked_at)} />}
+                  {p.revoked_at && <CardDetailRow label={t('promo_revoked_at')} value={fmtDate(p.revoked_at, gymFmt)} />}
                 </SubSection>
 
                 {/* §6 keeps Membership Fee Benefits off Plans and Assigned

@@ -5,6 +5,7 @@ import { ViewAuditLogButton, AuditLogScope } from '@/components/ViewAuditLogButt
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import { displayValue, formatTimestamp } from '@/components/nutritionLibrary/nutritionItemProfile';
 import { GOAL_AUDIT_ENTITIES, GoalKind, GoalRow } from './goalProfile';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
  * #947 — `⋮ → Details` for a Personal Goal or a Nutrition Goal: the goal's name,
@@ -33,6 +34,7 @@ export function GoalDetailsModal({ goal, kind, scope = 'gym', name, label, onClo
   label: (key: string) => string;
   onClose: () => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   return (
     <div style={overlayStyle} onClick={onClose}>
       <div style={{ ...modalStyle, width: 520, maxHeight: '90vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
@@ -47,11 +49,11 @@ export function GoalDetailsModal({ goal, kind, scope = 'gym', name, label, onClo
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid var(--card-border, #f0f0f0)' }}>
           <p style={sectionLabelStyle}>{label('section_audit')}</p>
-          <Field label={label('created_at')} value={formatTimestamp(goal.created_at)} />
+          <Field label={label('created_at')} value={formatTimestamp(goal.created_at, gymFmt)} />
           <Field label={label('created_by')} value={displayValue(goal.created_by)} />
-          <Field label={label('modified_at')} value={formatTimestamp(goal.modified_at)} />
+          <Field label={label('modified_at')} value={formatTimestamp(goal.modified_at, gymFmt)} />
           <Field label={label('modified_by')} value={displayValue(goal.modified_by)} />
-          <Field label={label('deleted_at')} value={formatTimestamp(goal.deleted_at)} />
+          <Field label={label('deleted_at')} value={formatTimestamp(goal.deleted_at, gymFmt)} />
           <Field label={label('deleted_by')} value={displayValue(goal.deleted_by)} />
         </div>
 

@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { StatusBadge } from '@/components/StatusBadge';
 import { btnSmall, btnStyle, modalStyle, overlayStyle, primaryBtnStyle } from '@/components/ui';
-import { formatGymDate } from '@/lib/gymFormat';
+import { formatGymDate, formatGymDateOnly } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 interface PaymentRequest {
@@ -268,7 +268,7 @@ export function MemberPaymentsModal({
             {activeMembership.next_billing_date && (
               <span>
                 <strong>{t('member_payments.next_billing_date')}:</strong>{' '}
-                {new Date(activeMembership.next_billing_date).toLocaleDateString()}
+                {formatGymDateOnly(String(activeMembership.next_billing_date), gymFmt)}
               </span>
             )}
             {hasFailedCharge && (
@@ -424,7 +424,7 @@ export function MemberPaymentsModal({
                 {card.payment_method.card_brand ?? t('member_payments.card_generic')}
                 {card.payment_method.card_last4 ? ` •••• ${card.payment_method.card_last4}` : ''}
                 {card.payment_method.since
-                  ? ` · ${t('member_payments.card_since', { date: new Date(card.payment_method.since).toLocaleDateString() })}`
+                  ? ` · ${t('member_payments.card_since', { date: formatGymDate(card.payment_method.since, gymFmt) })}`
                   : ''}
               </>
             ) : (

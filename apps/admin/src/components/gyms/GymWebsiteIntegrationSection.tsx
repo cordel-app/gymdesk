@@ -6,6 +6,8 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { btnSmall, primaryBtnSmall } from '@/components/ui';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateTime } from '@/lib/gymFormat';
 
 /**
  * #1052: the gym's Website Integration, administered from
@@ -52,6 +54,7 @@ const ROOT = '/system/website-integration';
 export function GymWebsiteIntegrationSection({ gymId, canWrite = true }: { gymId: string; canWrite?: boolean }) {
   const t = useTranslations('website_integration');
   const { apiFetch } = useApiClient();
+  const fmt = useGymFormatSettings();
   const { toast } = useToast();
 
   const [status, setStatus] = useState<WebsiteIntegrationStatus | null>(null);
@@ -130,7 +133,7 @@ export function GymWebsiteIntegrationSection({ gymId, canWrite = true }: { gymId
   function fmtDate(iso: string | null): string {
     if (!iso) return '—';
     const d = new Date(iso);
-    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return isNaN(d.getTime()) ? '—' : formatGymDateTime(d, fmt);
   }
 
   if (loading) return <p style={mutedStyle}>{t('loading')}</p>;

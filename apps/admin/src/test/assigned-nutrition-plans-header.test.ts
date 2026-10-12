@@ -95,7 +95,7 @@ describe('Assigned Nutrition Plans: rename and card header (#810)', () => {
 
   it('carries Created At, Created By and Status in the header', () => {
     for (const marker of [
-      'formatDate(plan.created_at, locale)',
+      'formatDate(plan.created_at, gymFmt)',
       "{plan.created_by ?? '—'}",
       'label={t(`status.${plan.status}`)}',
     ]) {

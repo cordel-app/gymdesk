@@ -31,6 +31,7 @@
 //    verbatim, so the decision is taken before `t()` is called.
 
 import { formatPaymentAmount } from './memberPayments';
+import { formatGymNumber, type GymFormatSettings } from './gymFormat';
 
 /** The three states §6 asks the member to be able to tell apart. */
 export type ProductPurchaseState = 'available' | 'pending_payment' | 'purchased';
@@ -90,8 +91,8 @@ export function productFrequencyKey(product: MemberProduct): string | null {
 }
 
 /** The price as the member reads it, or `null` for a Product carrying none. */
-export function productPriceText(product: MemberProduct, locale: string): string | null {
-  return formatPaymentAmount(product.price_incl_tax, product.currency, locale);
+export function productPriceText(product: MemberProduct, gym?: GymFormatSettings): string | null {
+  return formatPaymentAmount(product.price_incl_tax, product.currency, gym);
 }
 
 /**
@@ -247,7 +248,7 @@ export interface AppliedMemberProductPromotion {
  * from a snapshot, which a later stage may well write.
  */
 export function promotionBenefitNote(
-  action: string, value: number | null, currency: string, locale: string,
+  action: string, value: number | null, currency: string, gym?: GymFormatSettings,
 ): ProductNote | null {
   switch (action) {
     case 'waive':
@@ -255,17 +256,17 @@ export function promotionBenefitNote(
     case 'percentage_discount':
       return value == null ? null : {
         key: 'membership.promotion_benefit_percentage',
-        values: { value: formatPercent(value, locale) },
+        values: { value: formatGymNumber(value, gym, 2) },
       };
     case 'fixed_discount':
       return value == null ? null : {
         key: 'membership.promotion_benefit_fixed_discount',
-        values: { amount: formatPaymentAmount(value, currency, locale) ?? '' },
+        values: { amount: formatPaymentAmount(value, currency, gym) ?? '' },
       };
     case 'fixed_price':
       return value == null ? null : {
         key: 'membership.promotion_benefit_fixed_price',
-        values: { amount: formatPaymentAmount(value, currency, locale) ?? '' },
+        values: { amount: formatPaymentAmount(value, currency, gym) ?? '' },
       };
     default:
       return null;
@@ -283,11 +284,6 @@ export function promotionBenefitNote(
 export function promotionDurationNote(durationCycles: number | null): ProductNote | null {
   if (durationCycles == null || durationCycles <= 0) return null;
   return { key: 'membership.promotion_duration_cycles', values: { count: durationCycles } };
-}
-
-/** A percentage as the member reads it — `50`, `12.5`, never `50.00`. */
-function formatPercent(value: number, locale: string): string {
-  return new Intl.NumberFormat(locale, { maximumFractionDigits: 2 }).format(value);
 }
 
 /**
@@ -310,9 +306,9 @@ export function productFinalPrice(
  * membership's, which is a different row and may be a different currency.
  */
 export function productFinalPriceText(
-  product: MemberProduct, applied: MemberProductPromotion | null, locale: string,
+  product: MemberProduct, applied: MemberProductPromotion | null, gym?: GymFormatSettings,
 ): string | null {
-  return formatPaymentAmount(productFinalPrice(product, applied), product.currency, locale);
+  return formatPaymentAmount(productFinalPrice(product, applied), product.currency, gym);
 }
 
 /**

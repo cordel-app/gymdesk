@@ -8,6 +8,7 @@ import { displayValue, formatTimestamp } from '@/components/nutritionLibrary/nut
 import {
   ASSIGNED_PERSONAL_GOAL_AUDIT_ENTITY, AssignedPersonalGoalRow, formatGoalDate, formatTarget,
 } from './assignedPersonalGoalProfile';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
  * #948 §4 — `⋮ → Details` for an Assigned Personal Goal: the member and the goal,
@@ -25,6 +26,7 @@ export function AssignedPersonalGoalDetailsModal({ row, goalName, label, onClose
   label: (key: string) => string;
   onClose: () => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   const locale = useLocale();
   return (
     <div style={overlayStyle} onClick={onClose}>
@@ -38,16 +40,16 @@ export function AssignedPersonalGoalDetailsModal({ row, goalName, label, onClose
           value={row.goal_gym_id === null ? label('ownership_system') : label('ownership_gym')}
         />
         <Field label={label('label_target')} value={formatTarget(row)} />
-        <Field label={label('label_start_date')} value={formatGoalDate(row.start_date, locale)} />
-        <Field label={label('label_target_date')} value={formatGoalDate(row.target_date, locale)} />
+        <Field label={label('label_start_date')} value={formatGoalDate(row.start_date, locale, gymFmt)} />
+        <Field label={label('label_target_date')} value={formatGoalDate(row.target_date, locale, gymFmt)} />
         <Field label={label('label_status')} value={label(`status_${row.status}`)} />
         <Field label={label('label_notes')} value={displayValue(row.notes)} wrap />
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid var(--card-border, #f0f0f0)' }}>
           <p style={sectionLabelStyle}>{label('section_audit')}</p>
-          <Field label={label('created_at')} value={formatTimestamp(row.created_at)} />
+          <Field label={label('created_at')} value={formatTimestamp(row.created_at, gymFmt)} />
           <Field label={label('created_by')} value={displayValue(row.created_by)} />
-          <Field label={label('modified_at')} value={formatTimestamp(row.modified_at)} />
+          <Field label={label('modified_at')} value={formatTimestamp(row.modified_at, gymFmt)} />
           <Field label={label('modified_by')} value={displayValue(row.modified_by)} />
         </div>
 

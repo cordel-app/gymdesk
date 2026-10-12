@@ -4,6 +4,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel } from '@/lib/billingFrequency';
 import { useApiClient } from '@/lib/apiClient';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { useToast } from '@/components/Toast';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -65,18 +67,20 @@ const CLOSEABLE_STATUSES = ['draft', 'pending_payment', 'active', 'paused'];
 // is the pre-checkout configuration state and is *fully* editable.
 const EDITABLE_STATUSES = ['draft', 'active', 'paused'];
 
-function fmtDate(iso: string | null) {
-  return iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : null;
+function fmtDate(iso: string | null, s: GymFormatSettings) {
+  return iso ? formatGymDate(iso, s) : null;
+}
+
+/** A stored calendar day (not an instant): never moved across a time zone. */
+function fmtDay(iso: string | null, s: GymFormatSettings) {
+  return iso ? formatGymDateOnly(iso, s) : null;
 }
 
 // The timeline's dates are plain `YYYY-MM-DD` strings, so they are formatted in
 // the viewer's locale without going through a Date that would shift them by a
 // timezone (the Plan card's `fmtTimelineDate` does the same).
-function fmtTimelineDate(ymd: string, locale: string) {
-  const [y, m, d] = ymd.split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(locale, {
-    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
-  });
+function fmtTimelineDate(ymd: string, s: GymFormatSettings) {
+  return formatGymDateOnly(ymd, s);
 }
 
 function fmtMoney(v: string | number | null) {
@@ -114,6 +118,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // ("Monthly", "Every 4 weeks"), never as the stored pair ("1 / month").
   const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const locale = useLocale();
+  const gymFmt = useGymFormatSettings();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
   const loadedRef = useRef(false);
@@ -410,19 +415,19 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
                 tFreq,
               ),
             },
-            { key: 'starts_at', label: t('label_start_date'), value: fmtDate(detail.starts_at) },
+            { key: 'starts_at', label: t('label_start_date'), value: fmtDay(detail.starts_at, gymFmt) },
             {
               key: 'ends_at',
               label: t('label_end_date'),
-              value: detail.ends_at ? fmtDate(detail.ends_at) : t('open_ended'),
+              value: detail.ends_at ? fmtDay(detail.ends_at, gymFmt) : t('open_ended'),
             },
             !!detail.closed_at && {
-              key: 'closed_at', label: t('label_closure_date'), value: fmtDate(detail.closed_at),
+              key: 'closed_at', label: t('label_closure_date'), value: fmtDate(detail.closed_at, gymFmt),
             },
             !!detail.next_billing_date && {
               key: 'next_billing_date',
               label: t('label_next_billing_date'),
-              value: fmtDate(detail.next_billing_date),
+              value: fmtDay(detail.next_billing_date, gymFmt),
             },
             !!detail.discount_reason && {
               key: 'discount_reason', label: t('label_discount_reason'), value: detail.discount_reason,
@@ -481,7 +486,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
             {detail.example_timeline.anchorDate && (
               <p style={{ ...cardMutedTextStyle, fontSize: 12, margin: '0 0 8px' }}>
                 {t('timeline_anchor_note', {
-                  date: fmtTimelineDate(detail.example_timeline.anchorDate, locale),
+                  date: fmtTimelineDate(detail.example_timeline.anchorDate, gymFmt),
                 })}
               </p>
             )}
@@ -502,8 +507,8 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
                 ),
                 period: row.endsOn ? String(row.period) : `${row.period}+`,
                 dates: row.endsOn
-                  ? `${fmtTimelineDate(row.startsOn, locale)} – ${fmtTimelineDate(row.endsOn, locale)}`
-                  : t('timeline_dates_from', { date: fmtTimelineDate(row.startsOn, locale) }),
+                  ? `${fmtTimelineDate(row.startsOn, gymFmt)} – ${fmtTimelineDate(row.endsOn, gymFmt)}`
+                  : t('timeline_dates_from', { date: fmtTimelineDate(row.startsOn, gymFmt) }),
                 status: t(ASSIGNED_PLAN_TIMELINE_STATUS_LABEL_KEYS[row.status] as any),
                 billing: formatExampleTimelineBilling(
                   row,
@@ -557,7 +562,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         <BillingEventSimulation
           simulation={detail.billing_event_simulation}
           t={(key, values) => t(key as any, values as any)}
-          formatDate={(date) => fmtTimelineDate(date, locale)}
+          formatDate={(date) => fmtTimelineDate(date, gymFmt)}
           cycleNote={(() => {
             // #1130 stage 3 — the same marker the Membership Fee Simulation
             // above carries: whether this contract's cycle starts again is the
@@ -594,7 +599,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
             {detail.billing_events.events.map((ev, i) => (
               <div key={i} style={ledgerRowStyle}>
                 <span>
-                  {fmtDate(ev.date)}
+                  {fmtDay(ev.date, gymFmt)}
                   {ev.promotion_affected && (
                     <span style={ledgerPromotionTagStyle}>({t('billing_event_promotion_affected')})</span>
                   )}

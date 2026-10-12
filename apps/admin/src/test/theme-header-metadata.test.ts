@@ -47,7 +47,7 @@ describe('Custom Themes header metadata (#712)', () => {
     const header = headerSource();
     expect(header).toContain("t('meta_created_by')");
     expect(header).toContain("t('meta_created_at')");
-    expect(header).toContain('formatDate(theme.created_at)');
+    expect(header).toContain('formatDate(theme.created_at, fmt)');
   });
 
   it('falls back to an em dash for a theme with no recorded creator', () => {

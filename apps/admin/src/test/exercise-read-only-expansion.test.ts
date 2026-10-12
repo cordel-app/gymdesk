@@ -230,7 +230,8 @@ describe('the shared declaration (pure)', () => {
   it('reads a MySQL DATETIME as UTC rather than as local time', () => {
     const formatted = formatExerciseTimestamp('2026-09-26 15:50:00');
     expect(formatted).not.toBe(EXERCISE_EMPTY_VALUE);
-    expect(new Date('2026-09-26T15:50:00Z').toLocaleString()).toBe(formatted);
+    // 15:50 UTC is 17:50 in the default gym zone (Europe/Madrid), #1246.
+    expect(formatted).toBe('26/09/2026 17:50');
     expect(formatExerciseTimestamp(null)).toBe(EXERCISE_EMPTY_VALUE);
     expect(formatExerciseTimestamp('not a date')).toBe(EXERCISE_EMPTY_VALUE);
   });

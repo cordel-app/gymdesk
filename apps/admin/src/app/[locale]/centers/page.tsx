@@ -7,6 +7,8 @@ import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, formatGymDateTime, type GymFormatSettings } from '@/lib/gymFormat';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
@@ -79,14 +81,14 @@ const fieldGridStyle: React.CSSProperties = {
   gap: 16,
 };
 
-function formatDate(locale: string, iso: string | null | undefined): string {
+function formatDate(s: GymFormatSettings, iso: string | null | undefined): string {
   if (!iso) return EMPTY_VALUE;
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  return formatGymDateTime(iso, s);
 }
 
-function formatDateShort(locale: string, iso: string | null | undefined): string {
+function formatDateShort(s: GymFormatSettings, iso: string | null | undefined): string {
   if (!iso) return EMPTY_VALUE;
-  return new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(new Date(iso));
+  return formatGymDate(iso, s);
 }
 
 // ─── List columns ─────────────────────────────────────────────────────────────
@@ -155,6 +157,7 @@ export default function CentersPage() {
   const t = useTranslations('centers');
   const tStatus = useTranslations('status');
   const locale = useLocale();
+  const gymFmt = useGymFormatSettings();
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { activeGymId, loading: gymLoading } = useGym();
@@ -489,7 +492,7 @@ export default function CentersPage() {
 
           {/* Created At */}
           <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#666' }}>
-            {formatDateShort(locale, center.created_at)}
+            {formatDateShort(gymFmt, center.created_at)}
           </div>
 
           {/* Status badge */}
@@ -567,13 +570,13 @@ export default function CentersPage() {
           <DetailRow label={t('label_theme')} value={themeLabel(detailsCenter)} />
           <DetailRow label={t('col_status')} value={tStatus(detailsCenter.status)} />
           <div style={{ marginTop: 16, borderTop: '1px solid #eee', paddingTop: 16 }} />
-          <DetailRow label={t('created_at')} value={formatDate(locale, detailsCenter.created_at)} />
+          <DetailRow label={t('created_at')} value={formatDate(gymFmt, detailsCenter.created_at)} />
           <DetailRow label={t('created_by')} value={detailsCenter.created_by} />
-          <DetailRow label={t('modified_at')} value={formatDate(locale, detailsCenter.modified_at)} />
+          <DetailRow label={t('modified_at')} value={formatDate(gymFmt, detailsCenter.modified_at)} />
           <DetailRow label={t('modified_by')} value={detailsCenter.modified_by} />
           {detailsCenter.deleted_at && (
             <>
-              <DetailRow label={t('deleted_at')} value={formatDate(locale, detailsCenter.deleted_at)} />
+              <DetailRow label={t('deleted_at')} value={formatDate(gymFmt, detailsCenter.deleted_at)} />
               <DetailRow label={t('deleted_by')} value={detailsCenter.deleted_by} />
             </>
           )}

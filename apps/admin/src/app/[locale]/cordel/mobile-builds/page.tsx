@@ -5,6 +5,8 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateTime } from '@/lib/gymFormat';
 import { primaryBtnSmall, cardSurfaceStyle } from '@/components/ui';
 import {
   LIST_GRID_ROW_CLASS, LIST_MIN_WIDTH_CLASS, type ListGridColumn,
@@ -55,6 +57,7 @@ const MIN_WIDTH =
 export default function CordelMobileBuildsPage() {
   const t = useTranslations('mobile_builds');
   const locale = useLocale();
+  const fmt = useGymFormatSettings();
   const router = useRouter();
   const { apiFetch, pdfFetch } = useApiClient();
   const { isSuperadmin, loading: gymLoading } = useGym();
@@ -188,7 +191,7 @@ export default function CordelMobileBuildsPage() {
                         </div>
                       </div>
                       <div className={CELL_CLASS.platform}>{t(platformLabelKey(build.platform))}</div>
-                      <div className={CELL_CLASS.built}>{new Date(build.built_at).toLocaleString(locale)}</div>
+                      <div className={CELL_CLASS.built}>{formatGymDateTime(build.built_at, fmt)}</div>
                       <div className={CELL_CLASS.size}>{formatBytes(build.size_bytes)}</div>
                       <div className={CELL_CLASS.actions}>
                         <button

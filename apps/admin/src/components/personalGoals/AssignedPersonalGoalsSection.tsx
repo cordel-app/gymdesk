@@ -29,6 +29,7 @@ import {
   toAssignedPersonalGoalCreatePayload, toAssignedPersonalGoalFormValues,
   toAssignedPersonalGoalUpdatePayload,
 } from './assignedPersonalGoalProfile';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 const LIMIT = 20;
 
@@ -62,6 +63,7 @@ export function AssignedPersonalGoalsSection({
   goalLabel: (key: string) => string;
   ready?: boolean;
 }) {
+  const gymFmt = useGymFormatSettings();
   const locale = useLocale();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
@@ -307,7 +309,7 @@ export function AssignedPersonalGoalsSection({
         />
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
           <ReadOnlyField label={label('label_member')} value={row.member_name} />
-          <ReadOnlyField label={label('label_period')} value={formatGoalPeriod(row, locale)} />
+          <ReadOnlyField label={label('label_period')} value={formatGoalPeriod(row, locale, gymFmt)} />
           <ReadOnlyField label={label('label_status')} value={label(`status_${row.status}`)} />
           <div style={{ gridColumn: '1 / -1' }}>
             <ReadOnlyField label={label('label_notes')} value={row.notes ?? '—'} wrap />
@@ -365,7 +367,7 @@ export function AssignedPersonalGoalsSection({
       header: label('col_period'),
       width: 220,
       mobile: 'secondary',
-      render: (row) => <span style={cellStyle}>{formatGoalPeriod(row, locale)}</span>,
+      render: (row) => <span style={cellStyle}>{formatGoalPeriod(row, locale, gymFmt)}</span>,
     },
     {
       header: label('col_status'),

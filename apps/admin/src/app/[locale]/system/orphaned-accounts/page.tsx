@@ -9,6 +9,8 @@ import { useToast } from '@/components/Toast';
 import { DataTable, Column } from '@/components/DataTable';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { btnSmall } from '@/components/ui';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 
 /**
  * #709: Clerk login accounts linked to nothing in Gymdesk (no active member,
@@ -35,13 +37,14 @@ const REASON_COLORS: Record<Reason, { bg: string; fg: string }> = {
   no_links: { bg: '#f1f3f4', fg: '#44474e' },
 };
 
-const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : '—');
+const fmtDate = (iso: string | null, s: GymFormatSettings) => (iso ? formatGymDate(iso, s) : '—');
 
 export default function OrphanedAccountsPage() {
   const t = useTranslations('orphaned_accounts');
   const router = useRouter();
   const locale = useLocale();
   const { apiFetch } = useApiClient();
+  const fmt = useGymFormatSettings();
   const { isSuperadmin, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
@@ -113,8 +116,8 @@ export default function OrphanedAccountsPage() {
       },
     },
     { header: t('col_gyms'), mobile: 'secondary', render: (r) => (r.gyms.length ? r.gyms.map((g) => g.gym_name ?? g.gym_id).join(', ') : '—') },
-    { header: t('col_created'), width: 110, mobile: 'secondary', render: (r) => fmtDate(r.created_at) },
-    { header: t('col_last_sign_in'), width: 110, mobile: 'secondary', render: (r) => fmtDate(r.last_sign_in_at) },
+    { header: t('col_created'), width: 110, mobile: 'secondary', render: (r) => fmtDate(r.created_at, fmt) },
+    { header: t('col_last_sign_in'), width: 110, mobile: 'secondary', render: (r) => fmtDate(r.last_sign_in_at, fmt) },
     {
       header: t('col_actions'),
       width: 110,

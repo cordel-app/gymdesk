@@ -32,6 +32,7 @@ import {
   type GoalReading,
 } from '../lib/memberGoals';
 import { statusTone } from '../lib/memberChrome';
+import { DEFAULT_GYM_FORMAT } from '../lib/gymFormat';
 
 // #1036 — **My Goals**: the member manages their own Personal Goal
 // assignments, and cannot create a Goal definition.
@@ -457,9 +458,9 @@ describe('#1037 how a reading reads on the member\'s card', () => {
   });
 
   it('shows a time only when one was recorded', () => {
-    expect(formatReadingDate('2026-09-22T00:00:00.000Z', 'en-GB')).toBe('22 Sept 2026');
-    expect(formatReadingDate('2026-09-22T18:30:00.000Z', 'en-GB')).toContain('·');
-    expect(formatReadingDate(null, 'en-GB')).toBe('—');
+    expect(formatReadingDate('2026-09-22T00:00:00.000Z', 'en-GB', DEFAULT_GYM_FORMAT)).toBe('22/09/2026');
+    expect(formatReadingDate('2026-09-22T18:30:00.000Z', 'en-GB', DEFAULT_GYM_FORMAT)).toContain('·');
+    expect(formatReadingDate(null, 'en-GB', DEFAULT_GYM_FORMAT)).toBe('—');
   });
 });
 
@@ -608,11 +609,12 @@ describe('#1037 stage 4 the progress chart', () => {
       ],
       'kg',
       'en-GB',
+      DEFAULT_GYM_FORMAT,
     );
     expect(points.map((p) => p.y)).toEqual([80, 76]);
     expect(points.map((p) => p.group)).toEqual([0, 1]);
     expect(points.map((p) => p.valueLabel)).toEqual(['80 kg', '76 kg']);
-    expect(readingAxisLabel(Date.parse('2026-09-22T00:00:00.000Z'), 'en-GB')).toContain('22');
+    expect(readingAxisLabel(Date.parse('2026-09-22T00:00:00.000Z'), 'en-GB', DEFAULT_GYM_FORMAT)).toBe('22/09');
   });
 
   it('has its three strings in all three languages', () => {

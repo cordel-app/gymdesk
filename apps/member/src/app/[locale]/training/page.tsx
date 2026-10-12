@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
+import { formatGymDateOnly } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { exerciseBackgroundStyle } from '@/lib/exerciseMedia';
@@ -72,6 +74,7 @@ const INLINE_LOG_LIMIT = 5;
 export default function TrainingPage() {
   const t = useTranslations();
   const locale = useLocale();
+  const gymFmt = useGymFormatSettings();
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, isSuperadmin } = useApp();
@@ -240,7 +243,7 @@ export default function TrainingPage() {
               </button>
               {i === 0 && (
                 <span style={styles.mondayDate}>
-                  {new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`))}
+                  {formatGymDateOnly(date, gymFmt)}
                 </span>
               )}
             </div>

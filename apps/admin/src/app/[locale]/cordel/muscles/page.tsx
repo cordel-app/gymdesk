@@ -12,6 +12,7 @@ import { cardSurfaceStyle, primaryBtnStyle, primaryBtnSmall, overlayStyle, modal
 import { formControlStyle, formFieldLabelStyle, inlineActionsRowStyle, secondaryBtnSmall, formErrorStyle } from '@/components/formChrome';
 import { formatExerciseTimestamp, exerciseDisplayValue } from '@/components/exercises/exerciseForm';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
  * #1368 stage 3 — Cordel → Muscles: the global muscle catalogue and its image
@@ -37,6 +38,7 @@ interface Muscle {
 }
 
 export default function CordelMusclesPage() {
+  const gymFmt = useGymFormatSettings();
   const t = useTranslations('muscles_page');
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
@@ -255,9 +257,9 @@ export default function CordelMusclesPage() {
               [t('name'), details.name],
               [t('slug'), details.slug],
               [t('exercises'), String(details.exercise_count)],
-              [t('col_created_at'), formatExerciseTimestamp(details.created_at)],
+              [t('col_created_at'), formatExerciseTimestamp(details.created_at, gymFmt)],
               [t('created_by'), exerciseDisplayValue(details.created_by)],
-              [t('col_modified_at'), formatExerciseTimestamp(details.modified_at)],
+              [t('col_modified_at'), formatExerciseTimestamp(details.modified_at, gymFmt)],
               [t('modified_by'), exerciseDisplayValue(details.modified_by)],
             ] as [string, string][]).map(([label, value]) => (
               <div key={label} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--gd-card-border, #f5f5f5)' }}>

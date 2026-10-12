@@ -29,6 +29,7 @@ import {
   productTaxNoteKey,
 } from '../../../apps/member/src/lib/memberProducts';
 import { STORED_PRODUCT_FREQUENCIES } from '../domain/productFrequency';
+import { DEFAULT_GYM_FORMAT } from '../../../apps/member/src/lib/gymFormat';
 
 const REPO = join(__dirname, '..', '..', '..');
 const MEMBER = join(REPO, 'apps', 'member');
@@ -192,8 +193,8 @@ describe('how the Members App words it (#1121 §4, #1128)', () => {
   });
 
   it('formats the price in the member’s own locale, and null for an unpriced item', () => {
-    expect(productPriceText(product({ price_incl_tax: 15 }), 'en')).toContain('15');
-    expect(productPriceText(product({ price_incl_tax: null }), 'en')).toBeNull();
+    expect(productPriceText(product({ price_incl_tax: 15 }), DEFAULT_GYM_FORMAT)).toContain('15');
+    expect(productPriceText(product({ price_incl_tax: null }), DEFAULT_GYM_FORMAT)).toBeNull();
   });
 
   it('says a Sessions price covers the whole package, with its own count', () => {

@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
+import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
@@ -41,8 +43,8 @@ interface MemberOption { id: number; name: string }
 interface EditForm { name: string; description: string; start_date: string }
 const emptyEditForm: EditForm = { name: '', description: '', start_date: '' };
 
-function formatDate(iso: string, locale: string) {
-  return new Date(iso).toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+function formatDate(iso: string, settings: GymFormatSettings) {
+  return formatGymDate(iso, settings);
 }
 
 // ─── List columns ─────────────────────────────────────────────────────────────
@@ -406,6 +408,7 @@ function PlanCard({
   onCancel: () => void;
   onChanged: () => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   const isActive = plan.status === 'active';
   const canEditPlan = canWrite && isActive;
   const roTitle = useReadOnlyTitle(canWrite);
@@ -469,7 +472,7 @@ function PlanCard({
             {t('nutrition_plans.day_count', { count: plan.day_count })}
           </span>
           <span className={CELL_CLASS.created_at} style={metaCellStyle}>
-            {formatDate(plan.created_at, locale)}
+            {formatDate(plan.created_at, gymFmt)}
           </span>
           <span className={CELL_CLASS.created_by} style={{ ...metaCellStyle, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {plan.created_by ?? '—'}
@@ -524,6 +527,7 @@ function DetailsDialog({
   t: ReturnType<typeof useTranslations>;
   onClose: () => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   if (!plan) return null;
   return (
     <CrudModal
@@ -543,13 +547,13 @@ function DetailsDialog({
         <DetailRow label={t('nutrition_plans.label_description')} value={plan.description ?? '—'} />
         <DetailRow label={t('nutrition_plans.label_member')} value={plan.member_name} />
         <DetailRow label={t('nutrition_plans.label_status')} value={<StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />} />
-        <DetailRow label={t('nutrition_plans.label_start_date')} value={plan.start_date ? formatDate(plan.start_date, locale) : '—'} />
+        <DetailRow label={t('nutrition_plans.label_start_date')} value={plan.start_date ? formatGymDateOnly(plan.start_date, gymFmt) : '—'} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
-        <DetailRow label={t('nutrition_plans.label_created_at')} value={formatDate(plan.created_at, locale)} />
+        <DetailRow label={t('nutrition_plans.label_created_at')} value={formatDate(plan.created_at, gymFmt)} />
         <DetailRow label={t('nutrition_plans.label_created_by')} value={plan.created_by ?? '—'} />
         {plan.modified_at && (
           <>
-            <DetailRow label={t('nutrition_plans.label_modified_at')} value={formatDate(plan.modified_at, locale)} />
+            <DetailRow label={t('nutrition_plans.label_modified_at')} value={formatDate(plan.modified_at, gymFmt)} />
             <DetailRow label={t('nutrition_plans.label_modified_by')} value={plan.modified_by ?? '—'} />
           </>
         )}

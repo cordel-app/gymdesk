@@ -20,6 +20,7 @@
  * `staff.gym_membership_id` (`GET /staff/:id/clerk-status`), and the page
  * renders them as their own sections below these.
  */
+import { DEFAULT_GYM_FORMAT, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 
 /** The persisted `staff` columns the Edit form manages. */
 export interface StaffProfile {
@@ -148,11 +149,13 @@ function dateOnly(value: string | null | undefined): string | null {
  * UTC midnight and prints as *3 May* for anyone west of Greenwich. Build the
  * Date from the parts so the day cannot shift.
  */
-export function formatProfileDate(value: string | null | undefined): string | null {
+export function formatProfileDate(
+  value: string | null | undefined,
+  settings: GymFormatSettings = DEFAULT_GYM_FORMAT,
+): string | null {
   const text = dateOnly(value);
   if (!text) return null;
-  const [y, m, d] = text.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return formatGymDateOnly(text, settings);
 }
 
 /** MySQL TIME comes back as `HH:MM:SS`; the seconds are never meaningful here. */
@@ -180,12 +183,13 @@ export function formatStaffField(
   row: Partial<StaffProfile>,
   field: StaffProfileField,
   translate: (key: string) => string,
+  settings: GymFormatSettings = DEFAULT_GYM_FORMAT,
 ): string {
   const raw = row[field.key];
   if (raw === null || raw === undefined || raw === '') return EMPTY_VALUE;
   switch (field.format) {
     case 'date':
-      return formatProfileDate(raw as string) ?? EMPTY_VALUE;
+      return formatProfileDate(raw as string, settings) ?? EMPTY_VALUE;
     case 'time':
       return formatProfileTime(raw as string) ?? EMPTY_VALUE;
     case 'working_days':

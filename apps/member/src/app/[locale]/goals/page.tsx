@@ -549,14 +549,12 @@ export default function GoalsPage() {
                     readings={readings[goal.id]?.readings ?? []}
                     unit={goal.target_unit}
                     target={goal.effective_target ?? goal.target_value}
-                    locale={locale}
                     labels={chartLabels(goal)}
                   />
                   {/* §18 — collapsed until the member asks. */}
                   <GoalReadingHistory
                     readings={readings[goal.id]?.readings ?? []}
                     unit={goal.target_unit}
-                    locale={locale}
                     labels={historyLabels}
                   />
                 </MemberGoalCard>

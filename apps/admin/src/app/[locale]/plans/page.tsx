@@ -8,6 +8,8 @@ import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
@@ -240,17 +242,16 @@ function emptyInlineNew(): InlineNew {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+function fmtDate(iso: string, s: GymFormatSettings) {
+  return formatGymDate(iso, s);
 }
 
 // #818: a plain YYYY-MM-DD boundary from the Example timeline, read in the
 // viewer's locale. Parsed field by field rather than with `new Date(str)`, which
 // reads a bare date as UTC midnight and can render the previous day west of
 // Greenwich — the same reason the Promotions page parses its timeline dates.
-function fmtTimelineDate(dateStr: string, locale: string) {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
+function fmtTimelineDate(dateStr: string, s: GymFormatSettings) {
+  return formatGymDateOnly(dateStr, s);
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -307,6 +308,7 @@ const LIST_MIN_WIDTH =
   + ROW_PADDING_X * 2;
 
 export default function PlansPage() {
+  const gymFmt = useGymFormatSettings();
   const t = useTranslations();
   const locale = useLocale();
   const router = useRouter();
@@ -1084,7 +1086,7 @@ export default function PlansPage() {
                     {plan.created_by ?? '—'}
                   </div>
                   <div className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#888' }}>
-                    {fmtDate(plan.created_at)}
+                    {fmtDate(plan.created_at, gymFmt)}
                   </div>
                   <div className={CELL_CLASS.status}>
                     <StatusBadge status={plan.lifecycle_status} label={t(`status.${plan.lifecycle_status}`)} />
@@ -1561,7 +1563,7 @@ export default function PlansPage() {
                         {plan.example_timeline.anchorDate && (
                           <p style={{ margin: '0 0 8px', fontSize: 12, color: '#666' }}>
                             {t('plans.timeline_example_note', {
-                              date: fmtTimelineDate(plan.example_timeline.anchorDate, locale),
+                              date: fmtTimelineDate(plan.example_timeline.anchorDate, gymFmt),
                             })}
                           </p>
                         )}
@@ -1583,8 +1585,8 @@ export default function PlansPage() {
                             ),
                             period: row.endsOn ? String(row.period) : `${row.period}+`,
                             dates: row.endsOn
-                              ? `${fmtTimelineDate(row.startsOn, locale)} – ${fmtTimelineDate(row.endsOn, locale)}`
-                              : t('plans.timeline_dates_from', { date: fmtTimelineDate(row.startsOn, locale) }),
+                              ? `${fmtTimelineDate(row.startsOn, gymFmt)} – ${fmtTimelineDate(row.endsOn, gymFmt)}`
+                              : t('plans.timeline_dates_from', { date: fmtTimelineDate(row.startsOn, gymFmt) }),
                             status: t(`plans.${PLAN_TIMELINE_STATUS_LABEL_KEYS[row.status]}` as any),
                             billing: formatPlanTimelineBilling(
                               row,
@@ -1642,7 +1644,7 @@ export default function PlansPage() {
                     <BillingEventSimulation
                       simulation={plan.billing_event_simulation}
                       t={(key, values) => t(`plans.${key}` as any, values as any)}
-                      formatDate={(date) => fmtTimelineDate(date, locale)}
+                      formatDate={(date) => fmtTimelineDate(date, gymFmt)}
                       cycleNote={(() => {
                         // #1130 stage 3 — the same marker the Membership Fee
                         // Simulation above carries, from the same rule and the
