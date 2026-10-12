@@ -534,13 +534,6 @@ export function MemberExpandedRow({
             <ProductSetForecast forecast={productSetDetail.forecast} loading={productSetDetail.loading} error={productSetDetail.error} />
           </Section>
 
-          {/* Personal Training Class Slots (#647 stages 2–3) — the Mon–Sun weekly
-              availability grid, with slot selection and Book. The nightly rolling
-              2-month window is stage 4. */}
-          <Section label={t('members.section_pt_slots')}>
-            <MemberPersonalTrainingSlots memberId={memberId} />
-          </Section>
-
           {/* Session Packages */}
           <Section label={t('members.section_session_packages')}>
             {sessionPackages.length === 0 ? (
@@ -684,6 +677,13 @@ export function MemberExpandedRow({
               read from the same derived balance the booking gate uses. */}
           <Section label={t('members.section_professional_services')} divider={false}>
             <MemberProfessionalServices memberId={memberId} />
+          </Section>
+
+          {/* Personal Training Class Slots (#647 stages 2–3, moved here by #1461) — the Mon–Sun weekly
+              availability grid, with slot selection and Book. The nightly rolling
+              2-month window is stage 4. */}
+          <Section label={t('members.section_pt_slots')}>
+            <MemberPersonalTrainingSlots memberId={memberId} />
           </Section>
         </>
       )}
