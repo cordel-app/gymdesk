@@ -59,6 +59,15 @@ import {
   withExerciseTranslations,
 } from '../domain/exerciseTranslations';
 import {
+  copyExerciseDescriptionTranslations,
+  descriptionTranslationsExpr,
+  localizedDescriptionExprs,
+  parseDescriptionTranslations,
+  parseShortDescription,
+  replaceExerciseDescriptionTranslations,
+  withDescriptionTranslations,
+} from '../domain/exerciseDescriptionTranslations';
+import {
   exerciseFacetsQuery,
   exerciseListFilterSql,
   groupExerciseFacets,
@@ -143,6 +152,8 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
   SELECT e.*,
     ${localizedExerciseNameExpr('e', locale, 'display_name')},
     ${exerciseTranslationsExpr('e')},
+    ${localizedDescriptionExprs('e', locale)},
+    ${descriptionTranslationsExpr('e')},
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.created_by END        AS created_by,
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.modified_by END       AS modified_by,
     CASE WHEN e.gym_id IS NULL THEN NULL ELSE e.deleted_by END        AS deleted_by,
@@ -162,7 +173,7 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
  * carry the same `display_name` a list read would.
  */
 /** A read row as the caller gets it: translations map plus the effective image (#1368 stage 4). */
-const shapeExercise = (row: any) => withEffectiveImage(withExerciseTranslations(row));
+const shapeExercise = (row: any) => withEffectiveImage(withDescriptionTranslations(withExerciseTranslations(row)));
 
 const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
 
@@ -446,6 +457,11 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
   // invented for it (§5, §9).
   const { translations, error: translationsError } = parseExerciseTranslations(req.body);
   if (translationsError) return res.status(400).json({ error: translationsError });
+  // #1419: the description in every other language, and the base short one.
+  const { descriptionTranslations, error: descTranslationsError } = parseDescriptionTranslations(req.body);
+  if (descTranslationsError) return res.status(400).json({ error: descTranslationsError });
+  const shortDescription = parseShortDescription(req.body);
+  if (shortDescription.error) return res.status(400).json({ error: shortDescription.error });
   try {
     if (await nameTaken(gymId, name.trim())) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
@@ -454,10 +470,10 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description, video_url, image_url, category,
+          (gym_id, name, description, short_description, video_url, image_url, category,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, name.trim(), description ?? null, video_url ?? null, image_url ?? null, categoryInput.value,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, name.trim(), description ?? null, shortDescription.value, video_url ?? null, image_url ?? null, categoryInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, status ?? 'active', actor],
       );
@@ -465,6 +481,7 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
       await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
       await syncExerciseResultTypes(tx, insertId, categoryInput.value);
       if (translations) await replaceExerciseTranslations(tx, insertId, translations);
+      if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, insertId, descriptionTranslations);
       return insertId;
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [insertId]);
@@ -505,6 +522,11 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
   // editing another field) cannot silently clear a gym's translations.
   const { translations, error: translationsError } = parseExerciseTranslations(req.body);
   if (translationsError) return res.status(400).json({ error: translationsError });
+  // #1419: the description in every other language, and the base short one.
+  const { descriptionTranslations, error: descTranslationsError } = parseDescriptionTranslations(req.body);
+  if (descTranslationsError) return res.status(400).json({ error: descTranslationsError });
+  const shortDescription = parseShortDescription(req.body);
+  if (shortDescription.error) return res.status(400).json({ error: shortDescription.error });
   try {
     if (name?.trim() && await nameTaken(gymId, name.trim(), id)) {
       return res.status(409).json({ error: 'Exercise with this name already exists.' });
@@ -515,6 +537,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
         `UPDATE exercises SET
           name                  = COALESCE(?, name),
           description           = IF(?, ?, description),
+          short_description     = IF(?, ?, short_description),
           video_url             = IF(?, ?, video_url),
           -- #719 part 2: the poster belongs to the video it was captured from,
           -- so a PUT that repoints video_url (at a YouTube link, say) drops it
@@ -541,6 +564,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
         [
           name?.trim() ?? null,
           'description' in req.body ? 1 : 0, description ?? null,
+          shortDescription.provided ? 1 : 0, shortDescription.value,
           'video_url' in req.body ? 1 : 0, video_url ?? null,
           'video_url' in req.body ? 1 : 0,
           'image_url' in req.body ? 1 : 0, image_url ?? null,
@@ -561,6 +585,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
       await assertRequestedResultTypesMatch(tx, category, allowedResultTypeIds);
       if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category);
       if (translations) await replaceExerciseTranslations(tx, id, translations);
+      if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, id, descriptionTranslations);
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ? AND e.gym_id = ?`, [id, gymId]);
     const updated = shapeExercise(rows[0]);
@@ -632,6 +657,7 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
       // translate, or the copy would read in English for every viewer the
       // original served in their own language.
       await copyExerciseTranslations(tx, id, insertId);
+      await copyExerciseDescriptionTranslations(tx, id, insertId);
       return insertId;
     });
 
@@ -684,6 +710,7 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
       // translate, or the copy would read in English for every viewer the
       // original served in their own language.
       await copyExerciseTranslations(tx, id, insertId);
+      await copyExerciseDescriptionTranslations(tx, id, insertId);
       return insertId;
     });
 
@@ -833,6 +860,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         // overwriting that is what §4's "do not overwrite an existing
         // translation" forbids.
         await copyExerciseTranslations(tx, id, insertId);
+      await copyExerciseDescriptionTranslations(tx, id, insertId);
         insertedIds.push(insertId);
       }
       return { insertedIds, refreshed, skipped };

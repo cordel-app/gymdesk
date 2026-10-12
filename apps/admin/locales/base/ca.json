@@ -1884,6 +1884,7 @@
     "new_exercise": "Nou exercici",
     "save": "Desar",
     "name_translations_hint": "Deixa un idioma en blanc per utilitzar el nom de dalt.",
+    "label_short_description": "Descripció curta",
     "view_toggle_label": "Vista",
     "view_cards": "Targetes",
     "view_list": "Llista",

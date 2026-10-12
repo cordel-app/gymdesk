@@ -1898,6 +1898,7 @@
     "new_exercise": "New Exercise",
     "save": "Save",
     "name_translations_hint": "Leave a language blank to fall back to the name above.",
+    "label_short_description": "Short description",
     "view_toggle_label": "View",
     "view_cards": "Cards",
     "view_list": "List",
