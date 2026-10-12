@@ -219,6 +219,8 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
            FROM calendar_events ce
            JOIN activity_types at ON at.id = ce.activity_type_id
           WHERE ${LIVE_SESSION} AND ce.starts_at >= ? AND ce.starts_at < ?
+            AND EXISTS (SELECT 1 FROM calendar_event_bookings eb
+                         WHERE eb.calendar_event_id = ce.id AND eb.status = 'booked')
           ORDER BY ce.starts_at ASC, ce.id ASC`,
         [gymId, day.from, day.to],
       );
