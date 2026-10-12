@@ -21,8 +21,8 @@ import {
   cardTextLinkStyle,
   formFieldLabelStyle,
   innerCardStyle,
-  secondaryBtnSmall,
 } from '@/components/formChrome';
+import { primaryBtnSmall } from '@/components/ui';
 import { AssignPlanInlineEditor } from './AssignPlanInlineEditor';
 import { MemberBillingSimulation } from './MemberBillingSimulation';
 import {
@@ -600,23 +600,25 @@ export function MemberExpandedRow({
               <div>
                 {nutritionPlans.map((p) => (
                   <div key={p.id} style={card}>
-                    <div style={{ fontWeight: 500, fontSize: 14 }}>{p.name}</div>
-                    {canManageNutrition && (
-                      <div style={{ marginTop: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, fontSize: 14 }}>{p.name}</div>
+                        {p.status && (
+                          <div style={{ marginTop: 4 }}>
+                            <StatusBadge status={p.status} label={p.status} />
+                          </div>
+                        )}
+                      </div>
+                      {canManageNutrition && (
                         <button
                           type="button"
-                          style={secondaryBtnSmall}
+                          style={primaryBtnSmall()}
                           onClick={() => router.push(`/${locale}/nutrition/nutrition-plans?member_id=${memberId}`)}
                         >
                           {t('members.edit')}
                         </button>
-                      </div>
-                    )}
-                    {p.status && (
-                      <div style={{ marginTop: 4 }}>
-                        <StatusBadge status={p.status} label={p.status} />
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -757,7 +759,7 @@ function PlanCard({
           </div>
         </div>
         {onEdit && (
-          <button onClick={onEdit} style={editBtnStyle}>{editLabel}</button>
+          <button type="button" onClick={onEdit} style={primaryBtnSmall()}>{editLabel}</button>
         )}
       </div>
     </div>
@@ -789,7 +791,6 @@ const dim = cardMutedTextStyle;
 const card = innerCardStyle;
 const subLabelStyle = cardSubLabelStyle;
 const fieldLabelStyle = formFieldLabelStyle;
-const editBtnStyle: React.CSSProperties = { ...secondaryBtnSmall, flexShrink: 0 };
 const retryBtn = cardTextLinkStyle;
 const eventRow: React.CSSProperties = {
   display: 'flex', alignItems: 'flex-start', gap: 6,
