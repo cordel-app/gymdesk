@@ -146,7 +146,10 @@
     "clerk_status_not_enrolled": "No registrado",
     "clerk_invitation_invited_on": "Invitado · {date}",
     "clerk_invitation_invited": "Invitado",
-    "clerk_invitation_none": "Ninguna"
+    "clerk_invitation_none": "Ninguna",
+    "clerk_invitation_accepted_on": "Aceptada · {date}",
+    "clerk_invitation_accepted": "Aceptada",
+    "clerk_invitation_cancelled": "Cancelada"
   },
   "packages": {
     "title": "Mis bonos",

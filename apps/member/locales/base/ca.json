@@ -146,7 +146,10 @@
     "clerk_status_not_enrolled": "No registrat",
     "clerk_invitation_invited_on": "Convidat · {date}",
     "clerk_invitation_invited": "Convidat",
-    "clerk_invitation_none": "Cap"
+    "clerk_invitation_none": "Cap",
+    "clerk_invitation_accepted_on": "Acceptada · {date}",
+    "clerk_invitation_accepted": "Acceptada",
+    "clerk_invitation_cancelled": "Cancel·lada"
   },
   "packages": {
     "title": "Els meus bons",
