@@ -1391,7 +1391,13 @@
     "plan_mandatory_yes": "Sí",
     "plan_mandatory_no": "No",
     "plan_mandatory_hint": "Los beneficios obligatorios se incluyen siempre al asignar este plan. Los opcionales los puede rechazar el miembro o el personal al asignarlo.",
-    "benefit_total_price": "Total {amount}"
+    "benefit_total_price": "Total {amount}",
+    "view_toggle_label": "Vista",
+    "view_list": "Lista",
+    "view_cards": "Tarjetas",
+    "card_edit": "Editar",
+    "card_no_benefits": "Sin beneficios incluidos",
+    "card_more_benefits": "+{n} más"
   },
   "prices": {
     "title": "Precios",

@@ -22,6 +22,8 @@ import {
 } from '@/components/listChrome';
 import { AssignPlanToMembersEditor } from './AssignPlanToMembersEditor';
 import { PlanDetailModal } from './PlanDetailModal';
+import { PlanCard } from './PlanCard';
+import { PlanViewToggle, usePlanViewMode } from './PlanViewToggle';
 import { computeVatPreview } from '@/lib/priceVat';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
 import { BillingEventSimulation } from '@/components/BillingEventSimulation';
@@ -340,6 +342,8 @@ export default function PlansPage() {
   // Status filter (aligned with the Promotions list header — the list endpoint
   // already supports ?lifecycle_status=, so this is presentation-only wiring)
   const [statusFilter, setStatusFilter] = useState('');
+  // #1369: Cards (default) or the expandable List; both read the same `plans`.
+  const [viewMode, setViewMode] = usePlanViewMode();
 
   // Accordion expand (view mode)
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
@@ -961,6 +965,16 @@ export default function PlansPage() {
     );
   }
 
+  function planMenuItems(plan: Plan): ContextMenuItem[] {
+    return [
+        { label: t('plans.details'), onClick: () => setDetailFor(plan) },
+        { label: t('plans.edit'), onClick: () => openInlineEdit(plan), disabled: !canWrite, title: readOnlyTitle },
+        { label: t('plans.assign_to_member'), onClick: () => setAssigningPlan(plan), disabled: !canAssign, title: assignReadOnlyTitle },
+        { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan), disabled: !canWrite, title: readOnlyTitle },
+        { label: t('plans.delete'), onClick: () => setDeleting(plan), danger: true, disabled: !canWrite, title: readOnlyTitle },
+      ];
+  }
+
   // ─── Render ─────────────────────────────────────────────────────────────────
 
   if (gymLoading || !canRead) return null;
@@ -977,6 +991,7 @@ export default function PlansPage() {
             options={LIFECYCLE_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))}
             allLabel={t('status.all')}
           />
+          <PlanViewToggle value={viewMode} onChange={setViewMode} />
           <button onClick={openInlineNew} title={readOnlyTitle} style={readOnlyStyle(btnStyle(), !canWrite)} disabled={!canWrite || inlineNew !== null}>{t('plans.add')}</button>
         </div>
       </div>
@@ -994,20 +1009,57 @@ export default function PlansPage() {
            scrolls the list instead of the page (#1011). */
         <div className={listScrollerClass('collapse')} style={{ overflowX: 'auto' }}>
         <div className={LIST_MIN_WIDTH_CLASS} style={{ minWidth: LIST_MIN_WIDTH }}>
-        {/* Column headers */}
-        <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
+        {/* Column headers (List view only — the card grid has none) */}
+        {viewMode === 'list' && <div className={LIST_GRID_ROW_CLASS} style={colHeaderStyle}>
           {LIST_COLUMNS.map((col) => (
             <div key={col.key} className={CELL_CLASS[col.key]}>
               {col.labelKey ? t(`plans.${col.labelKey}`) : null}
             </div>
           ))}
-        </div>
+        </div>}
 
         {/* Inline create */}
         {renderInlineNewRow()}
 
+        {viewMode === 'cards' && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16, marginBottom: 16 }}>
+            {plans.map((plan) => {
+              const rows = [...plan.oneoff_benefits, ...plan.session_benefits, ...plan.periodical_benefits];
+              return (
+                <PlanCard
+                  key={plan.id}
+                  active={editingId === plan.id}
+                  canWrite={canWrite}
+                  readOnlyTitle={readOnlyTitle}
+                  onEdit={() => openInlineEdit(plan)}
+                  menuItems={planMenuItems(plan)}
+                  plan={{
+                    id: plan.id,
+                    name: plan.name,
+                    lifecycle_status: plan.lifecycle_status,
+                    statusLabel: t(`status.${plan.lifecycle_status}`),
+                    member_count: (plan as any).member_count,
+                    priceText: plan.amount_incl_tax != null
+                      ? `€${plan.amount_incl_tax.toFixed(2)}`
+                      : plan.current_price != null ? `€${parseFloat(plan.current_price).toFixed(2)}` : '—',
+                    periodText: plan.billing_policy
+                      ? billingFrequencyText(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)
+                      : null,
+                    benefits: rows.map((r) => ({
+                      key: `${r.product_id}`,
+                      label: r.quantity > 1 ? `${r.quantity} × ${r.product_name}` : r.product_name,
+                    })),
+                  }}
+                />
+              );
+            })}
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          {plans.map((plan) => {
+          {/* Cards view: the grid above lists the plans, and only the plan being
+              edited opens here, in the very same card body the List uses. */}
+          {(viewMode === 'cards' ? plans.filter((p) => p.id === editingId) : plans).map((plan) => {
             const isEditing = editingId === plan.id;
             const isExpanded = isEditing || expanded.has(plan.id);
             // #817 §1: collapsed by default — an id only lands in the set by clicking.
@@ -1016,13 +1068,7 @@ export default function PlansPage() {
               ? plan.description.length > 60 ? plan.description.slice(0, 60) + '…' : plan.description
               : '—';
 
-            const menuItems: ContextMenuItem[] = [
-              { label: t('plans.details'), onClick: () => setDetailFor(plan) },
-              { label: t('plans.edit'), onClick: () => openInlineEdit(plan), disabled: !canWrite, title: readOnlyTitle },
-              { label: t('plans.assign_to_member'), onClick: () => setAssigningPlan(plan), disabled: !canAssign, title: assignReadOnlyTitle },
-              { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan), disabled: !canWrite, title: readOnlyTitle },
-              { label: t('plans.delete'), onClick: () => setDeleting(plan), danger: true, disabled: !canWrite, title: readOnlyTitle },
-            ];
+            const menuItems = planMenuItems(plan);
 
             return (
               <div key={plan.id} style={cardStyle(false)}>

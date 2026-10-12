@@ -1391,7 +1391,13 @@
     "plan_mandatory_yes": "Sí",
     "plan_mandatory_no": "No",
     "plan_mandatory_hint": "Els beneficis obligatoris s'inclouen sempre quan s'assigna aquest pla. Els opcionals els pot rebutjar el membre o el personal en assignar-lo.",
-    "benefit_total_price": "Total {amount}"
+    "benefit_total_price": "Total {amount}",
+    "view_toggle_label": "Vista",
+    "view_list": "Llista",
+    "view_cards": "Targetes",
+    "card_edit": "Edita",
+    "card_no_benefits": "Sense beneficis inclosos",
+    "card_more_benefits": "+{n} més"
   },
   "prices": {
     "title": "Preus",
