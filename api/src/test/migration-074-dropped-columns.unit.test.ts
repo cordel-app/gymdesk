@@ -30,7 +30,7 @@ import { join, relative, sep } from 'node:path';
 const API_SRC = join(__dirname, '..');
 const MEMBER_SRC = join(__dirname, '..', '..', '..', 'apps', 'member', 'src');
 
-const DROPPED_COLUMNS = ['result_type', 'exercise_type', 'distance_value', 'distance_unit'] as const;
+const DROPPED_COLUMNS = ['result_type', 'exercise_type', 'distance_value', 'distance_unit', 'notes_default'] as const;
 
 /**
  * Whole-word, so the current spellings are not matched: `result_types` (the

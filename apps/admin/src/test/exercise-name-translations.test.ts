@@ -63,7 +63,7 @@ describe('the form carries one Name per language', () => {
       translations: { es: 'Press de Banca' },
       description: null, video_url: null,
       min_reps_default: null, max_reps_default: null, sets_default: null,
-      rest_default_seconds: null, notes_default: null, status: 'active',
+      rest_default_seconds: null, status: 'active',
     });
     expect(seeded.name).toBe('Bench Press');
     expect(seeded.translations).toEqual({ es: 'Press de Banca' });
@@ -73,7 +73,7 @@ describe('the form carries one Name per language', () => {
     const seeded = exerciseFormFromRow({
       name: 'Plank', description: null, video_url: null,
       min_reps_default: null, max_reps_default: null, sets_default: null,
-      rest_default_seconds: null, notes_default: null, status: 'active',
+      rest_default_seconds: null, status: 'active',
     });
     expect(seeded.translations).toEqual({});
   });

@@ -53,7 +53,6 @@ export const EXERCISE_CONFIGURATION_FIELDS = [
   'max_reps_default',
   'sets_default',
   'rest_default_seconds',
-  'notes_default',
 ] as const;
 
 /**
@@ -100,7 +99,6 @@ export interface ExerciseFormValues {
   max_reps_default: string;
   sets_default: string;
   rest_default_seconds: string;
-  notes_default: string;
   /** #1360: one of the supported categories, or '' for none. */
   category: string;
   status: string;
@@ -109,7 +107,7 @@ export interface ExerciseFormValues {
 export function emptyExerciseForm(): ExerciseFormValues {
   return {
     name: '', translations: {}, description: '', video_url: '',
-    min_reps_default: '', max_reps_default: '', sets_default: '', rest_default_seconds: '', notes_default: '',
+    min_reps_default: '', max_reps_default: '', sets_default: '', rest_default_seconds: '',
     category: '',
     status: 'active',
   };
@@ -131,7 +129,6 @@ export interface ExerciseRowValues {
   max_reps_default: number | null;
   sets_default: number | null;
   rest_default_seconds: number | null;
-  notes_default: string | null;
   category?: string | null;
   status: string;
 }
@@ -146,7 +143,6 @@ export function exerciseFormFromRow(e: ExerciseRowValues): ExerciseFormValues {
     max_reps_default: e.max_reps_default != null ? String(e.max_reps_default) : '',
     sets_default: e.sets_default != null ? String(e.sets_default) : '',
     rest_default_seconds: e.rest_default_seconds != null ? String(e.rest_default_seconds) : '',
-    notes_default: e.notes_default ?? '',
     category: e.category ?? '',
     status: e.status,
   };
@@ -190,7 +186,6 @@ function sharedPayload(form: ExerciseFormValues, { muscles }: PayloadExtras) {
     max_reps_default: intOrNull(form.max_reps_default),
     sets_default: intOrNull(form.sets_default),
     rest_default_seconds: intOrNull(form.rest_default_seconds),
-    notes_default: textOrNull(form.notes_default),
     // #1360: the API judges it (absent keeps, null clears, unknown is a 400).
     category: form.category || null,
     status: form.status,

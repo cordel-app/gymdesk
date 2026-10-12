@@ -1858,7 +1858,6 @@
     "label_max_reps_default": "Default max reps",
     "label_sets_default": "Default sets",
     "label_rest_default_seconds": "Default rest (seconds)",
-    "label_notes_default": "Default notes",
     "label_result_types": "Allowed Result Types",
     "label_recorded_metrics": "Recorded Metrics",
     "recorded_metrics_help": "Recorded metrics are determined automatically by the exercise category.",

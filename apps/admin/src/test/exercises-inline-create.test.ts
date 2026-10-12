@@ -279,7 +279,6 @@ describe('Exercises: inline creation (#805)', () => {
       max_reps_default: '8',
       sets_default: '4',
       rest_default_seconds: '90',
-      notes_default: ' brace ',
       status: 'inactive',
     };
     const extras = {
@@ -295,7 +294,6 @@ describe('Exercises: inline creation (#805)', () => {
         max_reps_default: 8,
         sets_default: 4,
         rest_default_seconds: 90,
-        notes_default: 'brace',
         status: 'inactive',
         muscles: [{ key: 'quads', role: 'principal' }, { key: 'glutes', role: 'secondary' }],
         // #967: the per-language names ride along with the base one; this form
@@ -310,7 +308,6 @@ describe('Exercises: inline creation (#805)', () => {
       expect(payload.description).toBeNull();
       expect(payload.min_reps_default).toBeNull();
       expect(payload.rest_default_seconds).toBeNull();
-      expect(payload.notes_default).toBeNull();
     });
 
     it('neither payload carries video_url (#717 Q6, #1380)', () => {
@@ -329,12 +326,12 @@ describe('Exercises: inline creation (#805)', () => {
       const row = {
         name: 'Deadlift', description: null, video_url: null,
         min_reps_default: 3, max_reps_default: null, sets_default: 5,
-        rest_default_seconds: null, notes_default: null, status: 'active',
+        rest_default_seconds: null, status: 'active',
       };
       expect(exerciseFormFromRow(row)).toEqual({
         name: 'Deadlift', description: '', video_url: '',
         min_reps_default: '3', max_reps_default: '', sets_default: '5',
-        rest_default_seconds: '', notes_default: '', status: 'active',
+        rest_default_seconds: '', status: 'active',
         // #967: a row with no stored translations seeds an empty map.
         translations: {},
       });

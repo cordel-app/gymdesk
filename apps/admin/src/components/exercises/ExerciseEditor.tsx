@@ -198,10 +198,6 @@ export function ExerciseEditor({
             <label htmlFor={id('rest')} style={inlineLabelSt}>{t('label_rest_default_seconds')}</label>
             <input id={id('rest')} type="number" min="0" value={form.rest_default_seconds} onChange={(e) => setForm({ ...form, rest_default_seconds: e.target.value })} style={inlineInputSt} />
           </div>
-          <div style={exerciseFieldWideStyle}>
-            <label htmlFor={id('notes')} style={inlineLabelSt}>{t('label_notes_default')}</label>
-            <input id={id('notes')} value={form.notes_default} onChange={(e) => setForm({ ...form, notes_default: e.target.value })} style={inlineInputSt} />
-          </div>
         </div>
       </div>
 

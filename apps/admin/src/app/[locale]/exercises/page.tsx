@@ -64,7 +64,7 @@ interface Exercise {
   /** #719: the master reference, and the 512×512 thumbnail when the gym uploaded one. */
   image_url: string | null; image_thumbnail_url: string | null;
   min_reps_default: number | null; max_reps_default: number | null;
-  sets_default: number | null; rest_default_seconds: number | null; notes_default: string | null;
+  sets_default: number | null; rest_default_seconds: number | null;
   status: 'active' | 'inactive';
   gym_id: string | null;
   /** #718: set when the row was imported from a Base Exercise — the "System sourced" half of the source label. */

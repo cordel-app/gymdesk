@@ -330,7 +330,7 @@ describe('PUT /exercises/:id', () => {
       .put(`/exercises/${exerciseId}`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ notes_default: 'hold 30s' });
+      .send({ rest_default_seconds: 30 });
     expect(res.status).toBe(200);
     expect(res.body.modified_at).not.toBeNull();
   });
@@ -363,7 +363,7 @@ describe('PUT /exercises/:id', () => {
     expect(deactivated.body.status).toBe('inactive');
     expect(deactivated.body.name).toBe('Updated Name');
     expect(deactivated.body.description).toBe('Updated description');
-    expect(deactivated.body.notes_default).toBe('hold 30s');
+    expect(deactivated.body.rest_default_seconds).toBe(30);
     expect((deactivated.body.muscles ?? []).length).toBe(2);
 
     const reactivated = await request
