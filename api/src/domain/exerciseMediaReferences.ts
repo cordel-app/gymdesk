@@ -11,15 +11,12 @@
 import { storageKeyFromObjectUrl, storageObjectUrlForms } from '../infra/storage';
 
 /**
- * The exercise columns that hold a media reference: the four legacy ones and,
- * since #1420, the four gender-specific masters (their companions are derived
- * from the master URL, so a master reference covers them).
+ * The exercise columns that hold a media reference: the four gender-specific
+ * masters (#1420; their companions are derived from the master URL, so a master
+ * reference covers them). The legacy `image_url` / `video_url` pairs were dropped
+ * in the same ticket's last stage.
  */
 const MEDIA_COLUMNS = [
-  'image_url',
-  'image_thumbnail_url',
-  'video_url',
-  'video_thumbnail_url',
   'image_male_url',
   'image_female_url',
   'video_male_url',

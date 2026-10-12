@@ -62,10 +62,6 @@ interface Exercise {
   /** #967: the stored per-locale names — what `⋮ → Edit` seeds its language inputs from. */
   translations: Record<string, string>;
   description: string | null;
-  /** #719: the video reference, and its stored poster when the gym uploaded one. */
-  video_url: string | null; video_thumbnail_url: string | null;
-  /** #719: the master reference, and the 512×512 thumbnail when the gym uploaded one. */
-  image_url: string | null; image_thumbnail_url: string | null;
   /** #1420: the four gender-specific references and the companions derived from them. */
   image_male_url: string | null; image_female_url: string | null;
   video_male_url: string | null; video_female_url: string | null;
@@ -330,7 +326,7 @@ export default function ExercisesPage() {
    */
   async function handleSave(id: number) {
     const saved = await editState.submit(async () => {
-      // #717 Q6: `toExerciseUpdatePayload` deliberately omits `video_url` —
+      // `toExerciseUpdatePayload` deliberately omits every media reference —
       // see the shared module.
       await apiFetch(`/exercises/${id}`, {
         method: 'PUT',

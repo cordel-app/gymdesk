@@ -385,9 +385,7 @@ Tick items off in the PR that completes them.
       per row: re-upload the asset from the Exercises or Nutrition Library page (the upload writes the new
       key and best-effort deletes the one it replaced — including the `<uuid>` food images, whose key now
       carries the food's id and name), or copy the objects to the new keys in the bucket and rewrite the
-      columns to match. List what is still on the old names with
-      `SELECT id, gym_id, name, image_url, image_thumbnail_url, video_url, video_thumbnail_url FROM exercises
-      WHERE image_url LIKE '%/Exercises/%' OR video_url LIKE '%/Exercises/%'` and
+      columns to match. Exercise media needs no such step any more: the legacy `Exercises/` objects are removed by the purge item above (#1420). List the foods still on the old names with
       `SELECT id, gym_id, name, image_url FROM nutrition_library_items WHERE image_url LIKE '%/Nutrition/%'`
       (the second also finds the base foods still under `cordel/Nutrition/`). Only then delete the old
       `Nutrition/`, `Nutrition/Images/` and `Exercises/` trees and their markers — deleting an object a row
@@ -1214,22 +1212,18 @@ runbook is how.
       snapshots the rollback does not replay. A rollback that has to bill the old way must
       be followed by an apply/revoke on each affected assignment (which is what used to
       recompute the column), or by restoring from backup.
-- [ ] **Existing exercise images have no thumbnail** (#719 part 1): migration 187 adds
-      `exercises.image_thumbnail_url` and backfills nothing, so every image uploaded
-      through the old `POST /storage/uploads/exercise-image` route (one `<uuid>.png`,
-      #417) and every hand-typed URL reads back with a NULL thumbnail. Nothing breaks —
-      both apps prefer the thumbnail and fall back to the master — but those rows keep
-      making list views download the full-size image until someone re-uploads through
-      `POST /exercises/:id/image`. There is no backfill script: the master is not
-      necessarily 2048×2048, and the API deliberately has no image resizer, so a
-      thumbnail can only come from a browser. Decide per gym whether to re-upload.
-- [ ] **Existing exercise videos have no poster** (#719 part 2): migration 188 adds
-      `exercises.video_thumbnail_url` and backfills nothing, so every `video_url`
-      configured before it — a YouTube link, a hand-typed URL — reads back with a NULL
-      poster. Nothing breaks: both apps fall back to the YouTube still and then to a
-      play tile. There is no backfill script and there cannot be a server-side one —
-      the API has no `ffmpeg` (#719 Q2), so a poster can only be captured by a browser.
-      Decide per gym whether to re-upload through `POST /exercises/:id/video`.
+- [ ] **Remove the legacy exercise media objects from the bucket** (#1420, last stage).
+      Migration 277 dropped `exercises.image_url`, `image_thumbnail_url`, `video_url` and
+      `video_thumbnail_url`; the gender-specific WebP media replaced them and nothing was
+      migrated (the existing exercise media was test data). The objects those columns pointed
+      at — the 2048 PNG pair, the MP4 with its 512 PNG poster, in the `exercises/images/` and
+      `exercises/videos/` folders of `cordel/` and of every gym, plus anything left under the
+      pre-#1035 `Exercises/Images/` and `Exercises/Videos/` — are still in R2. Run **Purge
+      legacy exercise media** (`.github/workflows/exercises-purge-legacy-media.yml`) once per
+      environment: a dry run first (the default) to read the list, then with `dry_run` off. It
+      decides from object keys alone, so it does not matter whether it runs before or after the
+      deploy that applies migration 277, a second run finds nothing, and it never touches a
+      `-male`/`-female` WebP or MP4 or a folder marker.
 - [ ] **An exercise video upload is buffered in the API process** (#719 part 2):
       `EXERCISE_VIDEO_MAX_MB` (default 50, clamped at 200) is what bounds that memory,
       and the request body is base64, so peak usage is roughly 1.4× the cap per

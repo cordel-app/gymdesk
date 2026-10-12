@@ -10,7 +10,7 @@ import {
  * thumbnail without one lookup per exercise.
  *
  * The workout layer does no source/ownership resolution: it reads back exactly
- * what `exercises.image_url` / `exercises.video_url` hold right now.
+ * what `exercises.image_male_url` / `exercises.video_male_url` hold right now.
  */
 
 const IMAGE_URL = 'https://cdn.example.test/gyms/1-Gym/Exercises/Images/press.png';
@@ -23,7 +23,7 @@ let noMediaId: number;
 
 async function createExercise(name: string, imageUrl: string | null, videoUrl: string | null): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO exercises (gym_id, name, status, image_url, video_url) VALUES (?, ?, 'active', ?, ?)`,
+    `INSERT INTO exercises (gym_id, name, status, image_male_url, video_male_url) VALUES (?, ?, 'active', ?, ?)`,
     [gymId, name, imageUrl, videoUrl],
   );
   return insertId;
@@ -102,13 +102,13 @@ describe('workout template exercises (#720)', () => {
 
   it('reflects an exercise whose media changed — the workout holds no copy', async () => {
     const newImage = 'https://cdn.example.test/gyms/1-Gym/Exercises/Images/press-v2.png';
-    await db.query('UPDATE exercises SET image_url = ? WHERE id = ?', [newImage, withMediaId]);
+    await db.query('UPDATE exercises SET image_male_url = ? WHERE id = ?', [newImage, withMediaId]);
 
     const res = await auth(request.get(`/workout-templates/${templateId}`)).expect(200);
     const exercises = res.body.blocks.flatMap((b: any) => b.exercises ?? []);
     expect(exercises.find((e: any) => e.exercise_id === withMediaId).exercise_image_url).toBe(newImage);
 
-    await db.query('UPDATE exercises SET image_url = ? WHERE id = ?', [IMAGE_URL, withMediaId]);
+    await db.query('UPDATE exercises SET image_male_url = ? WHERE id = ?', [IMAGE_URL, withMediaId]);
   });
 });
 

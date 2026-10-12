@@ -35,10 +35,11 @@ export interface BaseExercise {
   /** #967: the Base Exercise's name in the gym admin's language (base name as the fallback). */
   display_name?: string | null;
   description: string | null;
-  image_url: string | null;
-  image_thumbnail_url: string | null;
-  video_url: string | null;
-  video_thumbnail_url: string | null;
+  /** #1420: the four gender-specific references the modal may need to show. */
+  image_male_url: string | null;
+  image_female_url: string | null;
+  video_male_url: string | null;
+  video_female_url: string | null;
   muscles: BaseMuscle[] | null;
   /** The gym's own copy, when it already has one — such a row can't be imported again. */
   imported_exercise_id: number | null;

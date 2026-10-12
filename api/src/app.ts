@@ -45,8 +45,7 @@ import { memberBillingSimulationRouter } from './api/billing-simulation';
 import { memberMembershipConfigurationRouter } from './api/member-membership-configuration';
 import { userMembershipServicesRouter } from './api/user-membership-services';
 import {
-  EXERCISE_IMAGE_UPLOAD_PATH, EXERCISE_VIDEO_UPLOAD_PATH,
-  exerciseImageBodyParser, exerciseVideoBodyParser, exercisesRouter, musclesRouter,
+  exercisesRouter, musclesRouter,
 } from './api/exercises';
 import { resultTypesRouter } from './api/result-types';
 import { workoutTemplatesRouter } from './api/workout-templates';
@@ -78,8 +77,7 @@ import { nutritionGoalsRouter, personalGoalsRouter } from './api/goal-library';
 import { platformNutritionGoalsRouter, platformPersonalGoalsRouter } from './api/platform-goal-library';
 import { platformNutritionPlanTemplatesRouter } from './api/platform-nutrition-plan-templates';
 import {
-  PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH, PLATFORM_EXERCISE_VIDEO_UPLOAD_PATH,
-  platformExerciseImageBodyParser, platformExerciseVideoBodyParser, platformExercisesRouter,
+  platformExercisesRouter,
 } from './api/platform-exercises';
 import {
   EXERCISE_GENDER_MEDIA_UPLOAD_PATH,
@@ -195,26 +193,11 @@ app.use('/webhooks/clerk', express.raw({ type: 'application/json' }), clerkWebho
 // express.raw({ type: '*/*' }) captures any content-type Monei may use.
 app.use('/webhooks/payment', express.raw({ type: '*/*' }), paymentWebhookRouter);
 
-// #719: a Gym Exercise image upload carries two PNGs (a 2048×2048 master and
-// its 512×512 thumbnail) as base64 in one JSON body — the two must succeed or
-// fail together — so it is parsed here, with its own limit, before the global
-// parser's 100 kB default would reject it as a bare 413. #716 gives a Base
-// Exercise the same pair on the platform router, with the same reasoning.
+// #1420: exercise media (gym and platform). An image upload carries the picked
+// picture and a video upload an MP4 and its captured frame, as base64 in one JSON
+// body with a limit of its own (EXERCISE_IMAGE_MAX_MB / EXERCISE_VIDEO_MAX_MB).
 app.use((req, res, next) => {
   if (req.method !== 'POST') return next();
-  if (EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)) return exerciseImageBodyParser(req, res, next);
-  if (PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)) return platformExerciseImageBodyParser(req, res, next);
-  return next();
-});
-
-// #719 part 2: the same for a video upload — an MP4 and its 512×512 poster in
-// one JSON body, with a limit of its own (EXERCISE_VIDEO_MAX_MB) because an MP4
-// is orders of magnitude larger than a PNG pair. #717 gives a Base Exercise the
-// same pair on the platform router, under the same limit.
-app.use((req, res, next) => {
-  if (req.method !== 'POST') return next();
-  if (EXERCISE_VIDEO_UPLOAD_PATH.test(req.path)) return exerciseVideoBodyParser(req, res, next);
-  if (PLATFORM_EXERCISE_VIDEO_UPLOAD_PATH.test(req.path)) return platformExerciseVideoBodyParser(req, res, next);
   // #1420: the gender-specific image/video uploads (gym and platform) carry the
   // picked picture (and, for a video, the MP4) in one JSON body, so they need the
   // larger limit too, and a budget of their own in front of it.
