@@ -107,3 +107,44 @@ export interface HomeTask {
 export function visibleTasks(tasks: HomeTask[]): HomeTask[] {
   return tasks.filter((t) => t.count > 0);
 }
+
+/** #1466: members listed under Home's pending-payments summary (most overdue first). */
+export const PENDING_PAYMENT_MEMBER_LIMIT = 10;
+
+export interface OutstandingEventRow {
+  member_id: number | string | null;
+  amount: number | string | null;
+  created_at: Date | string;
+}
+
+export interface PendingPaymentGroup {
+  member_id: number;
+  outstanding_amount: number;
+  oldest_at: string;
+}
+
+/**
+ * One group per member from the outstanding Billing Events `isAwaitingAction()`
+ * already selected: a member with several is counted once, their amounts are
+ * summed, and the groups are ordered by their oldest outstanding event so the
+ * most overdue member leads. Pure; the caller decides what an event is.
+ */
+export function groupPendingPaymentMembers(rows: OutstandingEventRow[]): PendingPaymentGroup[] {
+  const byMember = new Map<number, { cents: number; oldest: number }>();
+  for (const r of rows) {
+    if (r.member_id == null) continue;
+    const id = Number(r.member_id);
+    const at = new Date(r.created_at).getTime();
+    const cents = Math.round(Number(r.amount ?? 0) * 100);
+    const g = byMember.get(id);
+    if (g) { g.cents += cents; g.oldest = Math.min(g.oldest, at); }
+    else byMember.set(id, { cents, oldest: at });
+  }
+  return [...byMember.entries()]
+    .map(([member_id, g]) => ({
+      member_id,
+      outstanding_amount: g.cents / 100,
+      oldest_at: new Date(g.oldest).toISOString(),
+    }))
+    .sort((a, b) => a.oldest_at.localeCompare(b.oldest_at) || a.member_id - b.member_id);
+}

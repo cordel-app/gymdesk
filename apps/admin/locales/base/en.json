@@ -4692,6 +4692,10 @@
     "members_title": "Latest members",
     "members_empty": "No members yet.",
     "members_view_all": "All members",
-    "members_plan_none": "No plan"
+    "members_plan_none": "No plan",
+    "pending_title": "Members with pending payments",
+    "pending_sub": "{count, plural, =0 {No members need payment follow-up} one {member needs payment follow-up} other {members need payment follow-up}}",
+    "pending_empty": "No member has an outstanding payment.",
+    "pending_view_all": "View all {count} in Payments"
   }
 }

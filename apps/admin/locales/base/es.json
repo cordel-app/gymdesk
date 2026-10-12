@@ -4678,6 +4678,10 @@
     "members_title": "Últimos miembros",
     "members_empty": "Aún no hay miembros.",
     "members_view_all": "Todos los miembros",
-    "members_plan_none": "Sin plan"
+    "members_plan_none": "Sin plan",
+    "pending_title": "Miembros con pagos pendientes",
+    "pending_sub": "{count, plural, =0 {Ningún miembro requiere seguimiento de pago} one {miembro requiere seguimiento de pago} other {miembros requieren seguimiento de pago}}",
+    "pending_empty": "Ningún miembro tiene un pago pendiente.",
+    "pending_view_all": "Ver los {count} en Pagos"
   }
 }

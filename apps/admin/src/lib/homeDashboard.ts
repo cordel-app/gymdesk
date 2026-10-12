@@ -85,6 +85,10 @@ export interface HomeData {
     classes_today?: { count: number; waitlist_total: number };
     outstanding_payments?: { count: number; amount: number; paid_count: number; currency: string };
   };
+  pending_payment_members?: {
+    count: number;
+    members: { member_id: number; name: string; outstanding_amount: number; plan_name: string | null; payment_status: string }[];
+  };
   tasks: HomeTask[];
   classes?: { id: number; name: string; starts_at: string; capacity: number | null; booked_count: number; waitlist_count: number }[];
   latest_members?: { id: number; name: string; image_url: string | null; created_at: string; plan_name: string | null }[];
