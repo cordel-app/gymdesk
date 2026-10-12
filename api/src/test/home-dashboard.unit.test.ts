@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {
-  dayWindow, weekWindow, parseDashboardDate, homeAccess, visibleTasks, resolveTimeZone,
+  dayWindow, weekWindow, parseDashboardDate, homeAccess, visibleTasks, groupPendingPaymentMembers, resolveTimeZone,
 } from '../domain/homeDashboard';
 
 describe('parseDashboardDate', () => {
@@ -72,5 +72,19 @@ describe('route wiring', () => {
   it('scopes every query by gym and gates sections through homeAccess', () => {
     expect(router).toContain('homeAccess(role, isSuperadmin)');
     expect(router).not.toMatch(/LIMIT \?/);
+  });
+});
+
+describe('groupPendingPaymentMembers (#1466)', () => {
+  it('counts a member once, sums their amounts and leads with the most overdue', () => {
+    const g = groupPendingPaymentMembers([
+      { member_id: 2, amount: '10.10', created_at: '2026-10-05T10:00:00Z' },
+      { member_id: 1, amount: 20, created_at: '2026-10-01T10:00:00Z' },
+      { member_id: 2, amount: 5.2, created_at: '2026-09-20T10:00:00Z' },
+      { member_id: null, amount: 99, created_at: '2026-09-01T10:00:00Z' },
+    ]);
+    expect(g.map((x) => x.member_id)).toEqual([2, 1]);
+    expect(g[0].outstanding_amount).toBe(15.3);
+    expect(g[0].oldest_at).toBe('2026-09-20T10:00:00.000Z');
   });
 });

@@ -4705,6 +4705,10 @@
     "members_title": "Últims membres",
     "members_empty": "Encara no hi ha membres.",
     "members_view_all": "Tots els membres",
-    "members_plan_none": "Sense pla"
+    "members_plan_none": "Sense pla",
+    "pending_title": "Membres amb pagaments pendents",
+    "pending_sub": "{count, plural, =0 {Cap membre requereix seguiment de pagament} one {membre requereix seguiment de pagament} other {membres requereixen seguiment de pagament}}",
+    "pending_empty": "Cap membre té un pagament pendent.",
+    "pending_view_all": "Veure els {count} a Pagaments"
   }
 }

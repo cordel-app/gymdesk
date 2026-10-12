@@ -1,7 +1,7 @@
 // Integration tests for the Home dashboard (#1367) and the Welcomed route.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
-import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, ensureTestProductSet, request } from './helpers';
 
 let gymA: string;
 let gymB: string;
@@ -75,5 +75,42 @@ describe('PUT /members/:id/welcomed', () => {
     expect(other.status).toBe(404);
     const bad = await request.put(`/members/${memberA}/welcomed`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymA).send({ welcomed: 'yes' });
     expect(bad.status).toBe(400);
+  });
+});
+
+describe('GET /dashboard/home — pending payment members (#1466)', () => {
+  it('lists a member once with summed amount, ignores resolved events, and is tenant-scoped', async () => {
+    const gym = await createTestGym('Home Pending');
+    await createTestMembership(gym, 'admin');
+    const email = `pending-${Date.now()}@example.com`;
+    const { insertId: memberId } = await db.query(
+      'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gym, 'Pending Member', email],
+    );
+    const setId = await ensureTestProductSet(gym, Number(memberId));
+    for (const [type, amount] of [['failed_billing', '30.00'], ['failed_billing', '12.50'], ['waived_billing', '99.00']]) {
+      await db.query(
+        `INSERT INTO billing_events (gym_id, product_set_id, member_id, event_type, amount, source, billing_date)
+         VALUES (?, ?, ?, ?, ?, 'system', UTC_DATE())`,
+        [gym, setId, memberId, type, amount],
+      );
+    }
+    const res = await get(gym);
+    expect(res.status).toBe(200);
+    const section = res.body.pending_payment_members;
+    expect(section.count).toBe(1);
+    expect(section.members).toHaveLength(1);
+    expect(section.members[0]).toMatchObject({ member_id: Number(memberId), name: 'Pending Member', outstanding_amount: 42.5 });
+
+    // Another gym never sees it.
+    const other = await get(gymB);
+    expect(other.body.pending_payment_members.count).toBe(0);
+  });
+
+  it('is absent for a role that cannot read payments', async () => {
+    const gym = await createTestGym('Home Pending Role');
+    await createTestMembership(gym, 'trainer_performance');
+    const res = await get(gym);
+    expect(res.status).toBe(200);
+    expect(res.body.pending_payment_members).toBeUndefined();
   });
 });
