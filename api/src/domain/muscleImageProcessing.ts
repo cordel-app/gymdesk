@@ -16,7 +16,7 @@ import {
   MEMBER_IMAGE_MAX_PIXELS,
   type MemberImageRejection,
 } from './memberImages';
-import { withImageProcessingSlot } from './memberImageProcessing';
+import { withImageProcessingSlot } from './imageProcessingSlot';
 import { MUSCLE_IMAGE_MASTER_SIZE, MUSCLE_IMAGE_THUMBNAIL_SIZE } from './muscleImages';
 
 export interface ProcessedMuscleImage {

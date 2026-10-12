@@ -11,11 +11,12 @@
 // outputs carry no metadata: `sharp` drops EXIF/XMP/ICC unless asked to keep
 // them, which is what removes a photo's GPS location.
 //
-// This is the one place in the API image that depends on `sharp`; #719 Q2's
-// "no `sharp` for exercises" still holds for the exercise media, whose pair the
-// browser makes.
+// `sharp` is in the API image for two features: this one and the exercise media
+// (`exerciseImageProcessing.ts`, #1420), which shares the process-wide
+// concurrency bound in `imageProcessingSlot.ts`.
 
 import sharp from 'sharp';
+import { withImageProcessingSlot } from './imageProcessingSlot';
 import {
   MEMBER_IMAGE_INPUT_FORMATS,
   MEMBER_IMAGE_MAX_PIXELS,
@@ -32,23 +33,6 @@ export interface ProcessedMemberImage {
 }
 
 const WEBP_QUALITY = 82;
-// Decoding is CPU- and memory-heavy; two at a time keeps one burst of uploads
-// from starving the rest of the API.
-const MAX_CONCURRENT = 2;
-let active = 0;
-const waiting: Array<() => void> = [];
-
-/** One of the two decode slots every server-side image job shares (Member photos, muscle images). */
-export async function withImageProcessingSlot<T>(task: () => Promise<T>): Promise<T> {
-  if (active >= MAX_CONCURRENT) await new Promise<void>((resolve) => waiting.push(resolve));
-  active += 1;
-  try {
-    return await task();
-  } finally {
-    active -= 1;
-    waiting.shift()?.();
-  }
-}
 
 /** The two WebP files for `input`, or why there are none. */
 export async function processMemberImage(

@@ -17,8 +17,12 @@
 // file, thumbnails included.
 //
 // Everything here is pure; the routes (`api/exercise-gender-media.ts`) own the
-// bytes, the row and the authorization. The browser produces the WebP files (the
-// answer on the ticket) and the server validates each file from its own bytes.
+// bytes, the row and the authorization. The **server** makes every WebP file
+// (`exerciseImageProcessing.ts`, #1420): a client sends the picture it picked as
+// it is and the server judges it from its decoded bytes. A video is the one
+// exception to "the client sends one picture": `sharp` cannot decode MP4, so the
+// browser captures a frame and sends it beside the video, and the server
+// processes that frame exactly like an image upload.
 
 import { PLATFORM_STORAGE_ROOT, storageKeyFromObjectUrl } from '../infra/storage';
 import {
@@ -27,8 +31,7 @@ import {
   isGymOwnedImageUrl,
   sanitizeExerciseImageName,
 } from './exerciseImages';
-import { EXERCISE_VIDEOS_FOLDER, validateExerciseVideo } from './exerciseVideos';
-import { readWebpMetadata } from './webpImage';
+import { EXERCISE_VIDEOS_FOLDER, exerciseVideoMaxBytes, validateExerciseVideo } from './exerciseVideos';
 
 export const EXERCISE_GENDERS = ['male', 'female'] as const;
 export type ExerciseGender = (typeof EXERCISE_GENDERS)[number];
@@ -58,8 +61,39 @@ export const EXERCISE_GENDER_IMAGE_MIME = 'image/webp';
 export const EXERCISE_GENDER_VIDEO_MIME = 'video/mp4';
 export const EXERCISE_GENDER_IMAGE_MASTER_SIZE = 1080;
 export const EXERCISE_GENDER_IMAGE_THUMBNAIL_SIZE = 256;
-export const EXERCISE_GENDER_IMAGE_MASTER_MAX_BYTES = 8 * 1024 * 1024;
-export const EXERCISE_GENDER_IMAGE_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
+
+/** What the server will decode: a camera original in any of these, never judged by its header or name. */
+export const EXERCISE_IMAGE_INPUT_FORMATS = ['jpeg', 'png', 'webp', 'gif'] as const;
+
+/** Largest picture, in pixels, the server will decode (a 50-megapixel camera). */
+export const EXERCISE_IMAGE_MAX_PIXELS = 50_000_000;
+
+const DEFAULT_IMAGE_MAX_MB = 10;
+const CEILING_IMAGE_MAX_MB = 25;
+
+/**
+ * The upload ceiling of one picture in bytes: `EXERCISE_IMAGE_MAX_MB`, default 10,
+ * never above 25 so a typo cannot make the buffered request body unbounded. It is
+ * configuration rather than a constant, like `MEMBER_IMAGE_MAX_MB`.
+ */
+export function exerciseImageMaxBytes(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.EXERCISE_IMAGE_MAX_MB);
+  const mb = Number.isFinite(raw) && raw > 0 ? Math.min(raw, CEILING_IMAGE_MAX_MB) : DEFAULT_IMAGE_MAX_MB;
+  return Math.floor(mb * 1024 * 1024);
+}
+
+export const EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_DEFAULT_MAX = 30;
+
+/**
+ * Exercise media uploads one signed-in person may make per window, on top of the
+ * global budget (#1395): decoding and encoding a picture is not a cheap `POST`.
+ * `EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_MAX`, default 30, a positive integer.
+ */
+export function exerciseMediaUploadRateLimitMax(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_MAX);
+  return Number.isInteger(raw) && raw > 0 ? raw : EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_DEFAULT_MAX;
+}
 
 // ─── Keys ─────────────────────────────────────────────────────────────────────
 
@@ -188,57 +222,54 @@ export function isPlatformOwnedGenderMediaUrl(url: string | null | undefined): b
 
 // ─── Upload rules ─────────────────────────────────────────────────────────────
 
-export type GenderMediaFile = 'image' | 'thumbnail' | 'video' | 'preview' | 'preview_thumbnail';
+export type GenderMediaFile = 'image' | 'frame' | 'video';
+
+export type ExerciseImageRejection = 'unreadable' | 'unsupported_format' | 'too_many_pixels';
 
 export interface GenderMediaProblem {
   file: GenderMediaFile;
-  rejection: 'not_webp' | 'wrong_size' | 'too_large' | 'not_an_mp4' | 'no_video_track' | 'unsupported_codec';
+  rejection:
+    | ExerciseImageRejection
+    | 'not_an_image'
+    | 'too_large'
+    | 'not_an_mp4'
+    | 'no_video_track'
+    | 'unsupported_codec';
   message: string;
 }
 
-const LABEL: Record<'image' | 'thumbnail' | 'preview' | 'preview_thumbnail', string> = {
-  image: 'Image',
-  thumbnail: 'Thumbnail',
-  preview: 'Video preview',
-  preview_thumbnail: 'Video preview thumbnail',
+export const EXERCISE_IMAGE_REJECTION_MESSAGES: Record<ExerciseImageRejection, string> = {
+  unreadable: 'The file could not be read as an image',
+  unsupported_format: 'Image must be a JPEG, PNG, WebP or GIF file',
+  too_many_pixels: `Image is too large: at most ${EXERCISE_IMAGE_MAX_PIXELS / 1_000_000} megapixels`,
 };
 
-function validateWebp(
-  body: unknown,
-  file: 'image' | 'thumbnail' | 'preview' | 'preview_thumbnail',
-): GenderMediaProblem | null {
-  const isThumb = file === 'thumbnail' || file === 'preview_thumbnail';
-  const size = isThumb ? EXERCISE_GENDER_IMAGE_THUMBNAIL_SIZE : EXERCISE_GENDER_IMAGE_MASTER_SIZE;
-  const max = isThumb ? EXERCISE_GENDER_IMAGE_THUMBNAIL_MAX_BYTES : EXERCISE_GENDER_IMAGE_MASTER_MAX_BYTES;
+const LABEL: Record<'image' | 'frame', string> = { image: 'Image', frame: 'Video frame' };
+
+/**
+ * The envelope of one picture a request carries — the `image` of an image upload
+ * or the `frame` of a video upload: it must be bytes (a string or an array
+ * carries `length` and numeric indices and would otherwise pass for them) within
+ * the configured ceiling. Whether the bytes are a picture is the decode's answer.
+ */
+export function validateGenderImageInput(body: unknown, file: 'image' | 'frame'): GenderMediaProblem | null {
   const label = LABEL[file];
-  // A string or an array carries `length` and numeric indices, so either would
-  // flow into the checks below as if it were bytes.
-  if (!Buffer.isBuffer(body)) return { file, rejection: 'not_webp', message: `${label} must be a WebP file` };
+  if (!Buffer.isBuffer(body)) return { file, rejection: 'not_an_image', message: `${label} must be an image file` };
+  const max = exerciseImageMaxBytes();
   if (body.length > max) {
-    return { file, rejection: 'too_large', message: `${label} exceeds the ${max / (1024 * 1024)} MB limit` };
-  }
-  const meta = readWebpMetadata(body);
-  if (!meta) return { file, rejection: 'not_webp', message: `${label} must be a WebP file` };
-  if (meta.width !== size || meta.height !== size) {
-    return { file, rejection: 'wrong_size', message: `${label} must be exactly ${size}×${size} pixels` };
+    return { file, rejection: 'too_large', message: `${label} exceeds the ${Math.floor(max / (1024 * 1024))} MB limit` };
   }
   return null;
 }
 
-/** An image upload: the 1080x1080 WebP master and its 256x256 thumbnail. Both must pass. */
-export function validateGenderImagePair(image: unknown, thumbnail: unknown): GenderMediaProblem | null {
-  return validateWebp(image, 'image') ?? validateWebp(thumbnail, 'thumbnail');
+/** The video of a video upload, judged from its bytes (`validateExerciseVideo()`, unchanged). */
+export function validateGenderVideo(video: unknown): GenderMediaProblem | null {
+  const problem = validateExerciseVideo(video);
+  if (!problem) return null;
+  return { file: 'video', rejection: problem.rejection as GenderMediaProblem['rejection'], message: problem.message };
 }
 
-/**
- * A video upload: the MP4 and the WebP preview pair captured from it. The video is
- * checked first so the clearer error wins, and all three must pass before anything
- * is uploaded.
- */
-export function validateGenderVideoTriple(video: unknown, preview: unknown, previewThumbnail: unknown): GenderMediaProblem | null {
-  const videoProblem = validateExerciseVideo(video);
-  if (videoProblem) {
-    return { file: 'video', rejection: videoProblem.rejection as GenderMediaProblem['rejection'], message: videoProblem.message };
-  }
-  return validateWebp(preview, 'preview') ?? validateWebp(previewThumbnail, 'preview_thumbnail');
+/** The ceiling of a whole upload request, for the JSON body parser: the video, one picture, base64's overhead. */
+export function genderMediaRequestMaxBytes(): number {
+  return Math.ceil((exerciseVideoMaxBytes() + exerciseImageMaxBytes()) * 1.4);
 }
