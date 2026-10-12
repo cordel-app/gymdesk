@@ -3,23 +3,33 @@
 // bucket (`domain/memberImages.ts` is the one place all four are decided).
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { encodePngRgba } from '../domain/pngImage';
 import {
   MEMBERS_FOLDER,
+  MEMBER_IMAGE_INPUT_FORMATS,
+  MEMBER_IMAGE_REJECTION_MESSAGES,
   MEMBER_IMAGE_SIZE,
+  MEMBER_IMAGE_STORED_MIME,
+  MEMBER_IMAGE_THUMBNAIL_SIZE,
   buildMemberImageKey,
+  buildMemberImageThumbnailKey,
   isGymOwnedMemberImageUrl,
   memberImageFolderKeys,
+  memberImageMaxBytes,
+  memberImageUploadRateLimitMax,
   sanitizeMemberImageName,
-  validateMemberImage,
 } from '../domain/memberImages';
 
 const PREFIX = 'gyms/gym_abc-Fitness-Club';
 
-describe('member image key (#1374 §1)', () => {
-  it('is <prefix>/members/<member_id>-<sanitized name>.png', () => {
+describe('member image keys (#1374 §1, #1449)', () => {
+  it('is <prefix>/members/<member_id>-<sanitized name>.webp', () => {
     expect(buildMemberImageKey(PREFIX, 42, 'María José Pérez'))
-      .toBe(`${PREFIX}/members/42-Maria-Jose-Perez.png`);
+      .toBe(`${PREFIX}/members/42-Maria-Jose-Perez.webp`);
+  });
+
+  it('the thumbnail is the same key with -thumbnail before the extension', () => {
+    expect(buildMemberImageThumbnailKey(PREFIX, 42, 'María José Pérez'))
+      .toBe(`${PREFIX}/members/42-Maria-Jose-Perez-thumbnail.webp`);
   });
 
   it('spells the folder as the storage constant, lowercase', () => {
@@ -33,7 +43,7 @@ describe('member image key (#1374 §1)', () => {
 
   it('never takes the uploaded file name: punctuation-only names fall back to "member"', () => {
     expect(sanitizeMemberImageName('!!!')).toBe('member');
-    expect(buildMemberImageKey(PREFIX, 9, '...')).toBe(`${PREFIX}/members/9-member.png`);
+    expect(buildMemberImageKey(PREFIX, 9, '...')).toBe(`${PREFIX}/members/9-member.webp`);
   });
 
   it('caps the name part so the URL fits VARCHAR(1024), without a trailing hyphen', () => {
@@ -73,30 +83,31 @@ describe('ownership (#719 §19, one feature over)', () => {
   });
 });
 
-describe('upload rules (#1374 §3)', () => {
-  function png(width: number, height = width, colorType = 6): Buffer {
-    const buf = Buffer.from(encodePngRgba(1, 1, Buffer.alloc(4, 0x40)));
-    buf.writeUInt32BE(width, 16);
-    buf.writeUInt32BE(height, 20);
-    buf[25] = colorType;
-    return buf;
-  }
-
-  it('accepts exactly 512×512, with or without an alpha channel', () => {
-    expect(validateMemberImage(encodePngRgba(MEMBER_IMAGE_SIZE, MEMBER_IMAGE_SIZE, Buffer.alloc(MEMBER_IMAGE_SIZE * MEMBER_IMAGE_SIZE * 4)))).toBeNull();
-    expect(validateMemberImage(png(512, 512, 2))).toBeNull();
+describe('upload rules (#1449)', () => {
+  it('stores 1080 and 256, both WebP, and accepts four input formats', () => {
+    expect(MEMBER_IMAGE_SIZE).toBe(1080);
+    expect(MEMBER_IMAGE_THUMBNAIL_SIZE).toBe(256);
+    expect(MEMBER_IMAGE_STORED_MIME).toBe('image/webp');
+    expect([...MEMBER_IMAGE_INPUT_FORMATS]).toEqual(['jpeg', 'png', 'webp', 'gif']);
   });
 
-  it('refuses any other size — smaller, larger or non-square', () => {
-    expect(validateMemberImage(png(511, 512))).toBe('wrong_dimensions');
-    expect(validateMemberImage(png(513))).toBe('wrong_dimensions');
-    expect(validateMemberImage(png(256))).toBe('wrong_dimensions');
-    expect(validateMemberImage(png(512, 768))).toBe('wrong_dimensions');
+  it('bounds the upload by MEMBER_IMAGE_MAX_MB: default 10, clamped at 25', () => {
+    expect(memberImageMaxBytes({})).toBe(10 * 1024 * 1024);
+    expect(memberImageMaxBytes({ MEMBER_IMAGE_MAX_MB: '5' })).toBe(5 * 1024 * 1024);
+    expect(memberImageMaxBytes({ MEMBER_IMAGE_MAX_MB: '500' })).toBe(25 * 1024 * 1024);
+    expect(memberImageMaxBytes({ MEMBER_IMAGE_MAX_MB: 'abc' })).toBe(10 * 1024 * 1024);
+    expect(memberImageMaxBytes({ MEMBER_IMAGE_MAX_MB: '-3' })).toBe(10 * 1024 * 1024);
   });
 
-  it('refuses anything that is not a PNG, from the bytes', () => {
-    expect(validateMemberImage(Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]))).toBe('not_a_png');
-    expect(validateMemberImage('not bytes')).toBe('not_a_png');
-    expect(validateMemberImage(Buffer.alloc(0))).toBe('not_a_png');
+  it('limits uploads per person: default 30 per window, MEMBER_IMAGE_UPLOAD_RATE_LIMIT_MAX overrides', () => {
+    expect(memberImageUploadRateLimitMax({})).toBe(30);
+    expect(memberImageUploadRateLimitMax({ MEMBER_IMAGE_UPLOAD_RATE_LIMIT_MAX: '5' })).toBe(5);
+    expect(memberImageUploadRateLimitMax({ MEMBER_IMAGE_UPLOAD_RATE_LIMIT_MAX: 'x' })).toBe(30);
+  });
+
+  it('has a message for every rejection', () => {
+    for (const reason of ['unreadable', 'unsupported_format', 'too_many_pixels'] as const) {
+      expect(MEMBER_IMAGE_REJECTION_MESSAGES[reason]).toBeTruthy();
+    }
   });
 });

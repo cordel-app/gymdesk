@@ -7,8 +7,9 @@ import { memberImagePreviewSrc } from '@/components/MemberImageField';
 /**
  * #1376 — a Member's profile image as a small circle in the Members list.
  *
- * Reads the `image_url` the list already returns (#1374) — no request of its
- * own — cache-busted by `memberImagePreviewSrc()`. A Member with no image, or
+ * Draws the 256 × 256 thumbnail the list already returns (`image_thumbnail_url`,
+ * #1449; the caller falls back to `image_url` for a row with none) — no request
+ * of its own — cache-busted by `memberImagePreviewSrc()`. A Member with no image, or
  * one whose image fails to load, gets a neutral circle with their initial
  * rather than a broken-image icon.
  */

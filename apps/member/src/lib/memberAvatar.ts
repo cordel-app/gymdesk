@@ -45,8 +45,8 @@ export function memberAvatarColors(seed: string | number | null | undefined): Av
 /**
  * #1375 — the `src` of the member's photo, or `null` when there is none and the
  * initials are drawn instead. Cache-busted on the row's own `modified_at`,
- * because the object key is deterministic (`gyms/<prefix>/members/<id>-<name>.png`,
- * #1374): a replacement rewrites the same key, so without this the browser would
+ * because the object key is deterministic (`gyms/<prefix>/members/<id>-<name>.webp`,
+ * #1374, #1449): a replacement rewrites the same key, so without this the browser would
  * keep showing the picture it already has. Only an `http(s)` reference is handed
  * to the DOM.
  */

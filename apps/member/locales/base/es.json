@@ -117,6 +117,7 @@
     "photo_uploading": "Subiendo…",
     "photo_error_not_image": "El archivo no es una imagen.",
     "photo_error_unreadable": "No se ha podido leer la imagen.",
+    "photo_error_too_large": "La imagen es demasiado grande.",
     "photo_error_upload_failed": "No se ha podido subir la foto.",
     "photo_error_remove_failed": "No se ha podido quitar la foto.",
     "phone": "Teléfono",

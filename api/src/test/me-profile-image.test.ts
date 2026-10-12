@@ -12,8 +12,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { verifyToken } from '@clerk/backend';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, TEST_USER_ID, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
-import { encodePngRgba } from '../domain/pngImage';
-import { MEMBER_IMAGE_SIZE } from '../domain/memberImages';
+import sharp from 'sharp';
 import { invalidateFeatureFlagsCache } from '../infra/featureFlags';
 
 const sendMock = vi.hoisted(() => vi.fn());
@@ -39,10 +38,11 @@ function setStorageConfigured() {
   process.env.CLOUDFLARE_R2_BUCKET = R2_BUCKET;
 }
 
-function validPng(): Buffer {
-  return encodePngRgba(MEMBER_IMAGE_SIZE, MEMBER_IMAGE_SIZE, Buffer.alloc(MEMBER_IMAGE_SIZE * MEMBER_IMAGE_SIZE * 4, 0x40));
+/** A phone-style picture, any size: the server makes both stored files from it (#1449). */
+function photo(width = 900, height = 1200): Promise<Buffer> {
+  return sharp({ create: { width, height, channels: 3, background: { r: 30, g: 120, b: 200 } } }).jpeg().toBuffer();
 }
-const JPEG_BYTES = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64)]);
+const NOT_AN_IMAGE = Buffer.from('this is plain text, not a picture at all');
 
 function sentCommands(type: 'put' | 'delete') {
   return sendMock.mock.calls.map(([command]) => command).filter((c: any) => c?.__type === type);
@@ -61,7 +61,7 @@ let gymPrefix: string;
 let memberId: number;
 let otherMemberId: number;
 
-function upload(body: Buffer, contentType = 'image/png', gid = gymId) {
+function upload(body: Buffer, contentType = 'image/jpeg', gid = gymId) {
   return request.post(ROOT).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid).set('Content-Type', contentType).send(body);
 }
 function remove(gid = gymId) {
@@ -70,6 +70,11 @@ function remove(gid = gymId) {
 async function imageUrlOf(id: number): Promise<string | null> {
   const { rows } = await db.query<{ image_url: string | null }>('SELECT image_url FROM members WHERE id = ?', [id]);
   return rows[0]?.image_url ?? null;
+}
+async function thumbUrlOf(id: number): Promise<string | null> {
+  const { rows } = await db.query<{ image_thumbnail_url: string | null }>(
+    'SELECT image_thumbnail_url FROM members WHERE id = ?', [id]);
+  return rows[0]?.image_thumbnail_url ?? null;
 }
 
 beforeAll(async () => {
@@ -109,7 +114,7 @@ beforeEach(async () => {
   setStorageConfigured();
   sendMock.mockReset();
   sendMock.mockResolvedValue({});
-  await db.query('UPDATE members SET image_url = NULL WHERE id IN (?, ?)', [memberId, otherMemberId]);
+  await db.query('UPDATE members SET image_url = NULL, image_thumbnail_url = NULL WHERE id IN (?, ?)', [memberId, otherMemberId]);
 });
 
 afterEach(() => {
@@ -118,7 +123,7 @@ afterEach(() => {
 
 describe('auth and gating', () => {
   it('returns 401 without auth and uploads nothing', async () => {
-    const res = await request.post(ROOT).set('x-gym-id', gymId).set('Content-Type', 'image/png').send(validPng());
+    const res = await request.post(ROOT).set('x-gym-id', gymId).set('Content-Type', 'image/jpeg').send((await photo()));
     expect(res.status).toBe(401);
     expect(putKeys()).toHaveLength(0);
   });
@@ -127,7 +132,7 @@ describe('auth and gating', () => {
     const roleGymId = await createTestGym('MeImageRoleGuard');
     await createTestMembership(roleGymId, 'admin', 'me-image-admin-user');
     vi.mocked(verifyToken).mockResolvedValueOnce({ sub: 'me-image-admin-user' } as any);
-    const res = await upload(validPng(), 'image/png', roleGymId);
+    const res = await upload((await photo()), 'image/jpeg', roleGymId);
     expect(res.status).toBe(403);
     expect(putKeys()).toHaveLength(0);
   });
@@ -138,7 +143,7 @@ describe('auth and gating', () => {
     await db.query("UPDATE feature_flags SET enabled = 0 WHERE feature_key = 'member_web.profile'");
     invalidateFeatureFlagsCache();
     try {
-      const res = await upload(validPng());
+      const res = await upload((await photo()));
       expect(res.status).toBe(403);
       expect(putKeys()).toHaveLength(0);
     } finally {
@@ -152,7 +157,7 @@ describe('auth and gating', () => {
     const otherGym = await createTestGym('MeImageNoProfile');
     await createTestMembership(otherGym, 'member', clerkId);
     vi.mocked(verifyToken).mockResolvedValueOnce({ sub: clerkId } as any);
-    const res = await upload(validPng(), 'image/png', otherGym);
+    const res = await upload((await photo()), 'image/jpeg', otherGym);
     expect(res.status).toBe(404);
     expect(putKeys()).toHaveLength(0);
   });
@@ -160,13 +165,16 @@ describe('auth and gating', () => {
 
 describe('POST /me/profile/image', () => {
   it("stores the photo on the caller's own key — the one the staff path writes — and answers the profile", async () => {
-    const res = await upload(validPng());
+    const res = await upload((await photo()));
     expect(res.status).toBe(200);
-    const key = `${gymPrefix}/members/${memberId}-${SANITIZED}.png`;
-    expect(putKeys()).toEqual([key]);
+    const key = `${gymPrefix}/members/${memberId}-${SANITIZED}.webp`;
+    const thumbKey = `${gymPrefix}/members/${memberId}-${SANITIZED}-thumbnail.webp`;
+    expect(putKeys()).toEqual([key, thumbKey]);
     expect(await imageUrlOf(memberId)).toBe(url(key));
+    expect(await thumbUrlOf(memberId)).toBe(url(thumbKey));
     // The answer is GET /me/profile's shape, not the staff row.
     expect(res.body.image_url).toBe(url(key));
+    expect(res.body.image_thumbnail_url).toBe(url(thumbKey));
     expect(res.body).toHaveProperty('preferred_locale');
     expect(res.body).toHaveProperty('fare_name');
     expect(res.body).not.toHaveProperty('is_new_member');
@@ -175,27 +183,31 @@ describe('POST /me/profile/image', () => {
   it('never writes the member a request names', async () => {
     const res = await request.post(`${ROOT}?member_id=${otherMemberId}`)
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId)
-      .set('Content-Type', 'image/png').send(validPng());
+      .set('Content-Type', 'image/jpeg').send((await photo()));
     expect(res.status).toBe(200);
-    expect(putKeys()).toEqual([`${gymPrefix}/members/${memberId}-${SANITIZED}.png`]);
+    expect(putKeys()).toEqual([
+      `${gymPrefix}/members/${memberId}-${SANITIZED}.webp`,
+      `${gymPrefix}/members/${memberId}-${SANITIZED}-thumbnail.webp`,
+    ]);
     expect(await imageUrlOf(otherMemberId)).toBeNull();
   });
 
   it('is reported by GET /me/profile and by the staff read of the same row', async () => {
-    await upload(validPng());
-    const key = url(`${gymPrefix}/members/${memberId}-${SANITIZED}.png`);
+    await upload((await photo()));
+    const key = url(`${gymPrefix}/members/${memberId}-${SANITIZED}.webp`);
     const me = await request.get('/me/profile').set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
     expect(me.body.image_url).toBe(key);
+    expect(me.body.image_thumbnail_url).toBe(url(`${gymPrefix}/members/${memberId}-${SANITIZED}-thumbnail.webp`));
     expect(me.body).toHaveProperty('modified_at');
   });
 
   it('refuses what the staff path refuses, from the bytes, and leaves an existing photo alone', async () => {
-    const existing = url(`${gymPrefix}/members/${memberId}-${SANITIZED}.png`);
+    const existing = url(`${gymPrefix}/members/${memberId}-${SANITIZED}.webp`);
     await db.query('UPDATE members SET image_url = ? WHERE id = ?', [existing, memberId]);
-    expect((await upload(validPng(), 'image/jpeg')).status).toBe(415);
-    const res = await upload(JPEG_BYTES);
+    expect((await upload((await photo()), 'application/pdf')).status).toBe(415);
+    const res = await upload(NOT_AN_IMAGE);
     expect(res.status).toBe(400);
-    expect(res.body.reason).toBe('not_a_png');
+    expect(res.body.reason).toBe('unreadable');
     expect(putKeys()).toHaveLength(0);
     expect(await imageUrlOf(memberId)).toBe(existing);
   });
@@ -203,38 +215,42 @@ describe('POST /me/profile/image', () => {
   it('returns 409 for a gym whose bucket was never initialized and 503 with no R2 configuration', async () => {
     await db.query('UPDATE gyms SET storage_folder_prefix = NULL WHERE id = ?', [gymId]);
     try {
-      expect((await upload(validPng())).status).toBe(409);
+      expect((await upload((await photo()))).status).toBe(409);
     } finally {
       await db.query('UPDATE gyms SET storage_folder_prefix = ? WHERE id = ?', [gymPrefix, gymId]);
     }
     for (const key of R2_ENV_KEYS) delete process.env[key];
-    expect((await upload(validPng())).status).toBe(503);
+    expect((await upload((await photo()))).status).toBe(503);
     expect(putKeys()).toHaveLength(0);
   });
 
   it('overwrites its own object on a replace and answers 502 with the row untouched when R2 fails', async () => {
-    const key = `${gymPrefix}/members/${memberId}-${SANITIZED}.png`;
-    await db.query('UPDATE members SET image_url = ? WHERE id = ?', [url(key), memberId]);
-    expect((await upload(validPng())).status).toBe(200);
-    expect(putKeys()).toEqual([key]);
+    const key = `${gymPrefix}/members/${memberId}-${SANITIZED}.webp`;
+    const thumbKey = `${gymPrefix}/members/${memberId}-${SANITIZED}-thumbnail.webp`;
+    await db.query('UPDATE members SET image_url = ?, image_thumbnail_url = ? WHERE id = ?', [url(key), url(thumbKey), memberId]);
+    expect((await upload((await photo()))).status).toBe(200);
+    expect(putKeys()).toEqual([key, thumbKey]);
     expect(deletedKeys()).toHaveLength(0);
 
     sendMock.mockRejectedValue(new Error('R2 is down'));
-    expect((await upload(validPng())).status).toBe(502);
+    expect((await upload((await photo()))).status).toBe(502);
     expect(await imageUrlOf(memberId)).toBe(url(key));
   });
 });
 
 describe('DELETE /me/profile/image', () => {
   it("clears the caller's own reference and deletes only the gym-owned object", async () => {
-    const key = `${gymPrefix}/members/${memberId}-${SANITIZED}.png`;
-    await db.query('UPDATE members SET image_url = ? WHERE id = ?', [url(key), memberId]);
-    await db.query('UPDATE members SET image_url = ? WHERE id = ?', [url(`${gymPrefix}/members/${otherMemberId}-x.png`), otherMemberId]);
+    const key = `${gymPrefix}/members/${memberId}-${SANITIZED}.webp`;
+    const thumbKey = `${gymPrefix}/members/${memberId}-${SANITIZED}-thumbnail.webp`;
+    await db.query('UPDATE members SET image_url = ?, image_thumbnail_url = ? WHERE id = ?', [url(key), url(thumbKey), memberId]);
+    await db.query('UPDATE members SET image_url = ? WHERE id = ?', [url(`${gymPrefix}/members/${otherMemberId}-x.webp`), otherMemberId]);
     const res = await remove();
     expect(res.status).toBe(200);
     expect(res.body.image_url).toBeNull();
+    expect(res.body.image_thumbnail_url).toBeNull();
     expect(await imageUrlOf(memberId)).toBeNull();
-    expect(deletedKeys()).toEqual([key]);
+    expect(await thumbUrlOf(memberId)).toBeNull();
+    expect(deletedKeys().sort()).toEqual([key, thumbKey].sort());
     expect(await imageUrlOf(otherMemberId)).not.toBeNull();
   });
 

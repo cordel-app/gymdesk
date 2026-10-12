@@ -6,13 +6,12 @@
 // 2. The Members App renders the avatar through one component, in the top bar
 //    and on the Profile page alike.
 // 3. The Profile page offers no upload while impersonating.
-// 4. The Members App's prepared size equals the API's accepted size.
+// 4. The browser crops and encodes nothing: the server makes both WebP files (#1449).
 // 5. Nothing native is reached for the picker: a plain file input.
 
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { MEMBER_IMAGE_SIZE } from '../domain/memberImages';
 
 const ROOT = join(__dirname, '..', '..', '..');
 const read = (rel: string) => readFileSync(join(ROOT, rel), 'utf8');
@@ -25,6 +24,7 @@ const profilePage = read('apps/member/src/app/[locale]/profile/page.tsx');
 const photoField = read('apps/member/src/components/MemberPhotoField.tsx');
 const avatar = read('apps/member/src/components/MemberAvatar.tsx');
 const memberUpload = read('apps/member/src/lib/memberImageUpload.ts');
+const adminUpload = read('apps/admin/src/lib/memberImageUpload.ts');
 const appTs = read('api/src/app.ts');
 
 describe('one storage module for both image paths (#1375 §3)', () => {
@@ -40,12 +40,12 @@ describe('one storage module for both image paths (#1375 §3)', () => {
   it('neither router uploads, validates or sweeps for itself', () => {
     for (const src of [membersRouter, meImageRouter]) {
       expect(src).not.toContain('uploadStorageObject(');
-      expect(src).not.toContain('validateMemberImage(');
+      expect(src).not.toContain('processMemberImage(');
       expect(src).not.toContain('deleteStorageObject(');
       expect(src).not.toContain('express.raw(');
     }
     expect(storage).toContain('uploadStorageObject(');
-    expect(storage).toContain('validateMemberImage(');
+    expect(storage).toContain('processMemberImage(');
   });
 
   it('the member path resolves the caller and never reads an id from the request', () => {
@@ -62,6 +62,17 @@ describe('one storage module for both image paths (#1375 §3)', () => {
     const me = appTs.indexOf("app.use('/me',");
     expect(mount).toBeGreaterThan(-1);
     expect(mount).toBeLessThan(me);
+  });
+});
+
+describe('a budget of its own in front of the upload (#1449)', () => {
+  it('both upload routes are rate limited before the body is buffered', () => {
+    expect(storage).toContain('memberImageUploadRateLimit');
+    expect(storage).toContain('apiRateLimitKey(');
+    for (const src of [membersRouter, meImageRouter]) {
+      const at = src.indexOf('memberImageUploadRateLimit, memberImageBodyParser');
+      expect(at, 'limiter must precede the body parser').toBeGreaterThan(-1);
+    }
   });
 });
 
@@ -87,10 +98,23 @@ describe('one avatar rendering in the Members App', () => {
   });
 });
 
-describe('the browser prepares the one shape the API accepts', () => {
-  it('prepares to the API\'s own size', () => {
-    const m = memberUpload.match(/export const MEMBER_IMAGE_SIZE = (\d+);/);
-    expect(m && Number(m[1])).toBe(MEMBER_IMAGE_SIZE);
+describe('the browser sends the picture as it is; the server makes both WebP files (#1449)', () => {
+  it('neither app crops, scales or encodes a picked photo', () => {
+    for (const src of [memberUpload, adminUpload]) {
+      expect(src).not.toContain('canvas');
+      expect(src).not.toContain('toBlob');
+      expect(src).not.toContain('makeThumbnail');
+      expect(src).not.toContain('drawImage');
+    }
+  });
+
+  it('the server is the one place that makes the 1080 and 256 WebP files', () => {
+    const processing = read('api/src/domain/memberImageProcessing.ts');
+    expect(processing).toContain("from 'sharp'");
+    expect(processing).toContain('.webp(');
+    expect(processing).not.toContain('writeFile');
+    expect(processing).not.toContain("from 'node:fs'");
+    expect(storage).not.toContain("from 'sharp'");
   });
 
   it('uses a plain file input and nothing from the native plugins', () => {
@@ -102,5 +126,9 @@ describe('the browser prepares the one shape the API accepts', () => {
 
   it('removal asks first, through the app\'s one dialog shell', () => {
     expect(photoField).toContain('<MemberDialog');
+  });
+
+  it('the avatar draws the thumbnail and falls back to the master', () => {
+    expect(avatar).toContain('image_thumbnail_url ?? member?.image_url');
   });
 });
