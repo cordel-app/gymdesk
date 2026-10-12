@@ -277,8 +277,14 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
         booked_count: Number(c.booked_count), waitlist_count: Number(c.waitlist_count),
       }));
       out.classes = list;
+      const { rows: totalRows } = await db.query<{ c: number | string }>(
+        `SELECT COUNT(*) AS c FROM calendar_events ce
+          WHERE ${LIVE_SESSION} AND ce.starts_at >= ? AND ce.starts_at < ?`,
+        [gymId, day.from, day.to],
+      );
       cards.classes_today = {
         count: list.length,
+        total: Number(totalRows[0]?.c ?? 0),
         waitlist_total: list.reduce((n: number, c: any) => n + c.waitlist_count, 0),
       };
 
