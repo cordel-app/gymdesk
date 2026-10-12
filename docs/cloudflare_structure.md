@@ -59,6 +59,10 @@
         │   ├── {activity_id}-{activity_name}.webp                            — 1080 × 1080 px
         │   └── {activity_id}-{activity_name}-thumbnail.webp                  — 256 × 256 px 
         │        
+        ├── plans
+        │   ├── {plan_id}-{plan_name}.webp                                    — 1080 × 1080 px
+        │   └── {plan_id}-{plan_name}-thumbnail.webp                          — 256 × 256 px
+        │        
         ├── members
         │   ├── {member_id}-{member_name}.webp                                — 1080 × 1080 px
         │   └── {member_id}-{member_name}-thumbnail.webp                      — 256 × 256 px
