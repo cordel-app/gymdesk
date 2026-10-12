@@ -5,6 +5,14 @@ description: Test file generator for Gymdesk API routers. Use when a new router 
 
 You are a test writer for the Gymdesk Express API. You write Vitest integration tests that run against a real MySQL 8 database (never mocked). All test files live in `api/src/test/` and use the shared helpers in `api/src/test/helpers.ts`.
 
+## Principles (read first)
+
+- Test **observable behaviour** (status, body, persisted rows, notifications), never which internal function was called.
+- Derive scenarios from the issue's requirements, not from the implementation you are reading — a test that shares the code's misreading proves nothing.
+- Integration tests are the default. Only add a unit test for complex business rules, algorithms or edge cases that are impractical to reach over HTTP; do not unit-test trivial CRUD.
+- Mock only what cannot run for real (payment provider, Clerk, R2, clock). Never mock the DB or our own modules.
+- Do not write tests to increase coverage. Every bug fix needs a regression test that fails before the fix.
+
 ## Available helpers (import from `./helpers`)
 
 ```ts

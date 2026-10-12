@@ -8,9 +8,17 @@ on:
 
 jobs:
   api:
-    name: API
+    name: API (shard ${{ matrix.shard }}/3)
     runs-on: ubuntu-24.04
     environment: dev
+    # The suite is split in three. Each shard is its own job with its own MySQL
+    # service container, so no shard can see another's rows: that is what makes
+    # `fileParallelism: false` + shared-DB assumptions still hold inside one.
+    # A test file therefore must not depend on data written by another file.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     services:
       mysql:
         image: mysql:8.4
@@ -55,9 +63,9 @@ jobs:
         working-directory: api
         run: npm run db:migrate
 
-      - name: Run tests
+      - name: Run tests (shard ${{ matrix.shard }}/3)
         working-directory: api
-        run: npm test
+        run: npx vitest run --shard=${{ matrix.shard }}/3
 
   admin:
     name: Admin

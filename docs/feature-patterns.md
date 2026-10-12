@@ -392,7 +392,7 @@ Add a `"widgets"` namespace to each file:
 
 ### 7. Tests (`api/src/test/widgets.test.ts`)
 
-Every new router needs at least three smoke tests: auth guard, role guard, and happy path. Use the helpers in `api/src/test/helpers.ts` — no live Clerk calls, no manual DB setup beyond what the helpers provide.
+Every new router needs at least three smoke tests: auth guard, role guard, and happy path. Use the helpers in `api/src/test/helpers.ts` — no live Clerk calls, no manual DB setup beyond what the helpers provide. These are the floor, not the target: follow the *Testing policy* in `CLAUDE.md` — assert behaviour rather than implementation, mock only what cannot run for real, add unit tests only for complex rules and edge cases, and add a regression test with every bug fix.
 
 ```ts
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
