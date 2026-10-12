@@ -250,7 +250,11 @@ describe('the snapshot (§7, §13, §14, §15)', () => {
     expect(statementFrom(ioSrc, 'FROM member_products_oneoff_promotion_snapshot mpp')).not.toMatch(/JOIN/);
     // Nor does the purchase read touch the live Product: every column of a
     // purchase is its own snapshot (migration 228).
-    expect(statementFrom(ioSrc, 'FROM member_products_oneoff_snapshot mp')).not.toMatch(/JOIN/);
+    // #1521: the one join is the purchase's *own* payment request (tax, status
+    // and billing event), never `products`, `promotions` or `tax_rates`.
+    const purchaseRead = statementFrom(ioSrc, 'FROM member_products_oneoff_snapshot mp');
+    expect([...purchaseRead.matchAll(/JOIN\s+(\w+)/g)].map((m) => m[1])).toEqual(['payment_requests']);
+    expect(purchaseRead).toContain('mp.payment_request_id');
     expect(membersRouterSrc).toContain('loadMemberPurchases(gymId, memberId)');
   });
 
@@ -405,9 +409,13 @@ describe('the Admin half (§11, §12, §13)', () => {
     // In the Promotion's own voice (§3), which is the namespace those labels
     // were written in — never a second vocabulary in `members`.
     expect(src).toContain("useTranslations('promotions')");
-    // Read-only: a purchase is money that moved and no route edits one.
-    expect(src).not.toContain('<button');
+    // Read-only: a purchase is money that moved and no route edits one. #1521:
+    // the card's only buttons are the collapse toggle and the disabled
+    // `+ Add Product`; nothing writes.
     expect(src).not.toContain('<select');
     expect(src).not.toContain('<input');
+    expect(src).not.toMatch(/method:\s*'(POST|PUT|PATCH|DELETE)'/);
+    expect(src).not.toContain('useApiClient');
+    expect(src).toMatch(/<button[^>]*\n?\s*type="button"\n\s*disabled/);
   });
 });

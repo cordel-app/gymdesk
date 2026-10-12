@@ -1,84 +1,71 @@
 'use client';
 
-// #1118 §12/§13 — the Admin side of a Product a member bought from the Members
-// App: what it was, what it cost, what state it is in, and the **Promotion
-// snapshot** it was bought under.
+// #1521 — the Member card's **Products** card: the Products this Member
+// purchased, as one collapsible card with `+ Add Product` in its header, a list
+// of eight columns and a `⋮` per row (Details · View billing event).
+//
+// What it replaced: #1118 §12's three-column list under *Additional Products*
+// and #1463's One-off Products / Current Product Set cards, which showed the
+// ProductSet's configuration instead of what was actually bought.
 //
 // Three of its answers are the rule rather than the implementation.
 //
 //  - **Everything on screen is the purchase's own frozen copy.** The row comes
-//    from `GET /members/:id/products`, which joins neither `products` nor
-//    `promotions` — §13 is explicit that the Admin "should not dynamically
-//    resolve the current Promotion configuration to determine what was applied
-//    historically", which is #635 §16's rule, and migration 228's header says
-//    the same about the Product. So a Product renamed or repriced, or a
-//    Promotion edited from 50% to 30%, moves nothing here.
-//  - **It is read-only in both modes.** A purchase is money that moved: there
-//    is no route that edits one and none is offered, so the block carries no
-//    control at all rather than one gated on Edit mode (#797's rule read the
-//    other way — nothing writes, so nothing is behind the mode).
-//  - **The treatment is read in the Promotion's own voice.** The labels come
-//    from the `promotions` namespace through `benefitTreatmentLabel()`, the one
-//    place a stored `(action, value)` pair becomes words (#896 stage 4) — so
-//    this surface adds no second vocabulary and the same application reads the
-//    same way here as on the Promotion card (#924 stage 2's rule, one table
-//    over).
+//    from `GET /members/:id/products`, which joins neither `products`,
+//    `promotions` nor `tax_rates` (#635 §16, §13 of #1118). A value the system
+//    never stored — a purchase with no tax rate or no payment request — is
+//    `null` and reads `—`; nothing is recalculated or inferred.
+//  - **It is read-only in every mode.** A purchase is money that moved: the menu
+//    carries no edit action, and `+ Add Product` is disabled with its reason —
+//    staff-initiated purchase is not a flow that exists yet (the only existing
+//    "add product" attaches a recurring service to an Assigned Plan, which is a
+//    different record), so it is documented rather than invented.
+//  - **View billing event opens the purchase's own event**, resolved by the
+//    API through `payment_request_id → payment_requests.billing_event_id`,
+//    never the member's latest event; absent, the action is disabled and says
+//    why.
+//
+// The treatment is read in the Promotion's own voice through
+// `benefitTreatmentLabel()` (#896 stage 4), so this surface adds no second
+// vocabulary.
 
 import React, { useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
+import { useRouter } from 'next/navigation';
 import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
+import { ContextMenu } from '@/components/ContextMenu';
+import { CrudModal } from '@/components/CrudModal';
+import { CardDetailRow } from '@/components/CardDetailRow';
+import { CardSectionHeader } from '@/components/CardSectionHeader';
+import { primaryBtnSmall } from '@/components/ui';
 import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
+import { cardMutedTextStyle } from '@/components/formChrome';
 import {
-  cardMutedTextStyle,
-  cardSubLabelStyle,
-  innerCardStyle,
-} from '@/components/formChrome';
+  billingEventPath,
+  formatAppliedTax,
+  hasBillingEvent,
+  paymentStatusKey,
+  purchaseDate,
+  type PurchasedProduct,
+  type PurchasedProductPromotion,
+} from './purchasedProductsView';
 
-/** The Promotion a purchase was made under, as the API reports the snapshot. */
-export interface PurchasedProductPromotion {
-  id: number;
-  promotion_id: number;
-  promotion_name: string;
-  benefit_action: string;
-  benefit_value: number | null;
-  duration_cycles: number | null;
-  regular_amount: number;
-  final_amount: number;
-  applied_at: string | null;
-}
-
-/** One purchase, exactly as `GET /members/:id/products` answers it. */
-export interface PurchasedProduct {
-  id: number;
-  product_id: number;
-  status: string;
-  product_name: string;
-  product_type: string;
-  billing_frequency: string | null;
-  units: number | null;
-  amount: number;
-  currency: string;
-  purchased_at: string | null;
-  created_at: string | null;
-  created_by: string | null;
-  regular_amount: number;
-  promotion: PurchasedProductPromotion | null;
-}
+export type { PurchasedProduct, PurchasedProductPromotion };
 
 export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }) {
   const t = useTranslations('members');
-  // The Promotion voice (§3's *Promotion* / *No promotion*), which is the one
-  // this namespace does not carry — the labels live where they were written.
+  // The Promotion voice (*Promotion* / *No promotion*), which this namespace
+  // does not carry — the labels live where they were written.
   const tp = useTranslations('promotions');
+  const locale = useLocale();
+  const router = useRouter();
   const gymFmt = useGymFormatSettings();
 
-  // #1228: the same collapsible rows as the Membership Plans list (the shared
-  // `DataTable`, its chevron and its phone behaviour), collapsed by default and
-  // expanded independently. A purchase stores no end date, so no column is
-  // invented for one.
+  const [open, setOpen] = useState(true);
+  const [detail, setDetail] = useState<PurchasedProduct | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   function toggleExpand(item: PurchasedProduct) {
@@ -89,6 +76,22 @@ export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }
     });
   }
 
+  const dash = '—';
+  const promotionLabel = (p: PurchasedProductPromotion) => [
+    p.promotion_name,
+    benefitTreatmentLabel(tp as any, 'promotion', { action: p.benefit_action, value: p.benefit_value } as any),
+    // A one-off Product has no billing cycles to express a duration in (#1118
+    // `Q5`), so the API answers `null` and the part simply does not appear.
+    p.duration_cycles != null ? t('purchase_promotion_cycles', { count: p.duration_cycles }) : null,
+  ].filter(Boolean).join(' · ');
+
+  const paymentStatus = (item: PurchasedProduct) => {
+    const key = paymentStatusKey(item.payment_status);
+    return key
+      ? <StatusBadge status={key} label={t(`purchase_payment_status_${key}` as any)} />
+      : <span style={cardMutedTextStyle}>{dash}</span>;
+  };
+
   const columns: Column<PurchasedProduct>[] = [
     {
       header: t('purchase_col_product'),
@@ -97,75 +100,150 @@ export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }
       render: (item) => <div style={{ fontWeight: 500 }}>{item.product_name}</div>,
     },
     {
-      header: t('purchase_date'),
+      header: t('purchase_col_date'),
       mobile: 'secondary',
       render: (item) => (
-        <span style={{ whiteSpace: 'nowrap' }}>{date(item.purchased_at ?? item.created_at, gymFmt)}</span>
+        <span style={{ whiteSpace: 'nowrap' }}>{date(purchaseDate(item), gymFmt)}</span>
       ),
     },
     {
-      header: t('purchase_status'),
+      header: t('purchase_col_price_incl_vat'),
+      mobile: 'secondary',
+      render: (item) => <span style={{ whiteSpace: 'nowrap' }}>{money(item.regular_amount, item.currency)}</span>,
+    },
+    {
+      header: t('purchase_col_applied_tax'),
+      mobile: 'secondary',
+      render: (item) => formatAppliedTax(item.tax_rate_percent) ?? dash,
+    },
+    {
+      header: t('purchase_col_applied_promotion'),
+      mobile: 'secondary',
+      render: (item) => (item.promotion ? item.promotion.promotion_name : dash),
+    },
+    {
+      header: t('purchase_col_final_price'),
+      mobile: 'secondary',
+      render: (item) => <span style={{ whiteSpace: 'nowrap' }}>{money(item.amount, item.currency)}</span>,
+    },
+    {
+      header: t('purchase_col_payment_status'),
+      mobile: 'secondary',
+      render: paymentStatus,
+    },
+    {
+      header: t('purchase_col_status'),
       mobile: 'keep',
       render: (item) => (
         <StatusBadge status={item.status} label={t(`purchase_status_${item.status}` as any)} />
       ),
     },
+    {
+      header: '',
+      width: 48,
+      mobile: 'actions',
+      render: (item) => {
+        const billingPath = billingEventPath(locale, item);
+        return (
+          <ContextMenu
+            ariaLabel={t('purchase_actions_for', { product: item.product_name })}
+            items={[
+              { label: t('action_details'), onClick: () => setDetail(item) },
+              {
+                label: t('action_view_billing_event'),
+                onClick: () => { if (billingPath) router.push(billingPath); },
+                disabled: !hasBillingEvent(item),
+                title: hasBillingEvent(item) ? undefined : t('billing_event_unavailable'),
+              },
+            ]}
+          />
+        );
+      },
+    },
   ];
 
   return (
-    <DataTable
-      columns={columns}
-      rows={items}
-      rowKey={(item) => item.id}
-      loadingText=""
-      emptyText={t('purchased_products_none')}
-      expandedRowKeys={expandedIds}
-      onToggleExpand={toggleExpand}
-      renderExpanded={(item) => (
-        <div style={card}>
-          <Field label={t('purchase_price')}>{money(item.regular_amount, item.currency)}</Field>
-          {/* Only where the two differ: a purchase made at the Product's own
-              price has one figure, and printing it twice says nothing. */}
-          {item.promotion && (
-            <Field label={t('purchase_final_price')}>{money(item.amount, item.currency)}</Field>
-          )}
-          <Field label={t('purchase_status')}>
-            {t(`purchase_status_${item.status}` as any)}
-          </Field>
-          <Field label={t('purchase_date')}>{date(item.purchased_at ?? item.created_at, gymFmt)}</Field>
-          {item.promotion && (
-            <div style={promotionBlock}>
-              <div style={subLabel}>{t('purchase_promotion')}</div>
-              <div style={{ fontSize: 13.5, fontWeight: 500 }}>{item.promotion.promotion_name}</div>
-              <div style={{ ...dim, fontSize: 13 }}>
-                {[
-                  benefitTreatmentLabel(tp as any, 'promotion', {
-                    action: item.promotion.benefit_action,
-                    value: item.promotion.benefit_value,
-                  } as any),
-                  // §6's duration, and only where the Promotion names one: a
-                  // one-off Product has no billing cycles to express it in
-                  // (#1118's `Q5`), so the API answers `null` and this line
-                  // simply does not appear.
-                  item.promotion.duration_cycles != null
-                    ? t('purchase_promotion_cycles', { count: item.promotion.duration_cycles })
-                    : null,
-                ].filter(Boolean).join(' · ')}
-              </div>
-            </div>
-          )}
-        </div>
+    <div>
+      <CardSectionHeader
+        title={t('section_additional_services')}
+        actions={(
+          <>
+            <button
+              type="button"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              aria-label={open ? t('products_card_collapse') : t('products_card_expand')}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: '2px 6px' }}
+            >
+              {open ? '▾' : '▸'}
+            </button>
+            <button
+              type="button"
+              disabled
+              title={t('products_add_unavailable')}
+              style={{ ...primaryBtnSmall(), opacity: 0.5, cursor: 'not-allowed' }}
+            >
+              {t('products_add')}
+            </button>
+          </>
+        )}
+      />
+      {open && (
+        <DataTable
+          columns={columns}
+          rows={items}
+          rowKey={(item) => item.id}
+          loadingText=""
+          emptyText={t('purchased_products_none')}
+          expandedRowKeys={expandedIds}
+          onToggleExpand={toggleExpand}
+          renderExpanded={(item) => <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />}
+        />
       )}
-    />
+
+      <CrudModal
+        open={detail !== null}
+        title={detail?.product_name ?? ''}
+        hideSave
+        cancelLabel={t('close')}
+        saveLabel=""
+        onCancel={() => setDetail(null)}
+        onSave={() => setDetail(null)}
+      >
+        {detail && <PurchaseFacts item={detail} gymFmt={gymFmt} promotionLabel={promotionLabel} />}
+      </CrudModal>
+    </div>
   );
 }
 
-/** The Member card's own `Label: Value` pair — not a second one (#929). */
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+/** The purchase record, read-only: the expanded row and the Details modal. */
+function PurchaseFacts({
+  item, gymFmt, promotionLabel,
+}: {
+  item: PurchasedProduct;
+  gymFmt: GymFormatSettings;
+  promotionLabel: (p: PurchasedProductPromotion) => string;
+}) {
+  const t = useTranslations('members');
+  const dash = '—';
+  const payKey = paymentStatusKey(item.payment_status);
   return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 14, marginBottom: 4 }}>
-      <span style={{ ...cardMutedTextStyle, minWidth: 120, flexShrink: 0 }}>{label}</span>
-      <span>{children}</span>
+    <div style={{ padding: '8px 0' }}>
+      <CardDetailRow label={t('purchase_col_product')} value={item.product_name} />
+      <CardDetailRow label={t('purchase_col_date')} value={date(purchaseDate(item), gymFmt)} />
+      <CardDetailRow label={t('purchase_col_price_incl_vat')} value={money(item.regular_amount, item.currency)} />
+      <CardDetailRow label={t('purchase_col_applied_tax')} value={formatAppliedTax(item.tax_rate_percent) ?? dash} />
+      <CardDetailRow
+        label={t('purchase_col_applied_promotion')}
+        value={item.promotion ? promotionLabel(item.promotion) : dash}
+      />
+      <CardDetailRow label={t('purchase_col_final_price')} value={money(item.amount, item.currency)} />
+      <CardDetailRow
+        label={t('purchase_col_payment_status')}
+        value={payKey ? t(`purchase_payment_status_${payKey}` as any) : dash}
+      />
+      <CardDetailRow label={t('purchase_col_status')} value={t(`purchase_status_${item.status}` as any)} />
+      <CardDetailRow label={t('purchase_created_by')} value={item.created_by ?? dash} />
     </div>
   );
 }
@@ -186,9 +264,3 @@ function date(value: string | null, settings: GymFormatSettings): string {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? '—' : formatGymDate(parsed, settings);
 }
-
-// #929: shared with the Member card's other sections (`components/formChrome.ts`).
-const dim = cardMutedTextStyle;
-const card = innerCardStyle;
-const subLabel = cardSubLabelStyle;
-const promotionBlock: React.CSSProperties = { marginTop: 8 };

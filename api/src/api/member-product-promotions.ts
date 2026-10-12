@@ -246,6 +246,23 @@ export interface MemberPurchasedProduct {
   /** The Product's regular price: the application's own, else the charge itself. */
   regular_amount: number;
   promotion: AppliedPromotion | null;
+  /**
+   * #1521 — the VAT rate the purchase was charged under, as the snapshot froze
+   * it (a percentage; `null` when the gym had no rate configured then).
+   */
+  tax_rate_percent: number | null;
+  /**
+   * #1521 — the purchase's own payment request status (`pending`, `completed`,
+   * `failed`, `expired`), the source the Members list's Payment Status reads
+   * (#1235); `null` when the purchase has no payment request.
+   */
+  payment_status: string | null;
+  /**
+   * #1521 — the Billing Event that this purchase's payment settles, through its
+   * own `payment_request_id` (never the member's latest event); `null` when
+   * none exists.
+   */
+  billing_event_id: number | null;
 }
 
 /**
@@ -268,8 +285,12 @@ export async function loadMemberPurchases(
   const { rows } = await db.query<any>(
     `SELECT mp.id, mp.product_id, mp.status, mp.product_name, mp.product_type,
             mp.billing_frequency, mp.units, mp.amount, mp.currency,
-            mp.purchased_at, mp.created_at, mp.created_by
+            mp.purchased_at, mp.created_at, mp.created_by,
+            mp.tax_rate_percent,
+            pr.status AS payment_status, pr.billing_event_id AS billing_event_id
        FROM member_products_oneoff_snapshot mp
+       LEFT JOIN payment_requests pr
+              ON pr.id = mp.payment_request_id AND pr.gym_id = mp.gym_id
       WHERE mp.gym_id = ? AND mp.member_id = ?
       ORDER BY mp.created_at DESC, mp.id DESC`,
     [gymId, memberId],
@@ -296,6 +317,9 @@ export async function loadMemberPurchases(
       // something honest to read.
       regular_amount: promotion ? promotion.regular_amount : amount,
       promotion,
+      tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
+      payment_status: row.payment_status ?? null,
+      billing_event_id: row.billing_event_id == null ? null : Number(row.billing_event_id),
     };
   });
 }

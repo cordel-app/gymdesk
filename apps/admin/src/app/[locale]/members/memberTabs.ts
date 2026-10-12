@@ -42,8 +42,6 @@ export type MemberTabId = (typeof MEMBER_TAB_IDS)[number];
 /** A `members.section_*` locale key — the heading of one section of the card. */
 export type MemberSectionKey =
   | 'section_profile'
-  | 'section_product_set'
-  | 'section_one_off_products'
   | 'section_billing_events_forecast'
   | 'section_account'
   | 'section_membership_plans'
@@ -73,16 +71,15 @@ export const MEMBER_TABS: readonly MemberTab[] = [
   {
     id: 'products_services',
     labelKey: 'tab_products_services',
-    // #1463 — organised around the current ProductSet: its metadata first, then
-    // its plan, its One-off and Recurring Products, the Billing Simulation and
-    // the Billing Events Forecast, with Past Product Sets at the bottom.
+    // #1521 — Membership Plans, then the Products card (what the Member
+    // purchased), with the Billing Events Forecast directly below it. The
+    // Current Product Set and One-off Products cards of #1463/#1490 are gone
+    // from the UI; their data and endpoints are untouched.
     sections: [
-      'section_product_set',
       'section_membership_plans',
-      'section_one_off_products',
       'section_additional_services',
-      'section_billing_simulation',
       'section_billing_events_forecast',
+      'section_billing_simulation',
       'section_billing_events',
     ],
   },
