@@ -165,6 +165,16 @@ Bin restore).
 first-level markers, with its writer, exactly as `goals/` was — and it is not the
 `Members/` #826 removed, which held nothing.
 
+**`muscles/images/` holds a muscle's two images** (#1368 stage 3, #1412, #1413):
+`cordel/muscles/images/{muscle_name}-{male|female}.webp` (1080 × 1080) and
+`…-thumbnail.webp` (256 × 256), written only by `POST /platform/muscles/:id/image/:sex`
+and cleared by its `DELETE`. The client sends **one** picture as it is (JPEG, PNG,
+WebP or GIF, up to `MUSCLE_IMAGE_MAX_MB`); the **server** fits it into a transparent
+1080 × 1080 square without distortion or cropping and encodes both WebP files in
+memory (`api/src/domain/muscleImageProcessing.ts`), so no dimension is required of
+the upload and no browser-side processing exists. A rename of the muscle moves the
+objects (copy, re-point, delete).
+
 **The `members_app/` slot names above are the target, not the code.** The seven slots
 `MEMBER_IMAGE_SLOTS` (`api/src/domain/themeMemberImages.ts`) and the
 `chk_theme_member_images_slot` CHECK accept are still `training`, `nutrition`,

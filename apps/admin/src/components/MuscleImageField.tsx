@@ -7,13 +7,13 @@ import { btnSmall, primaryBtnSmall } from './ui';
 import { ConfirmDialog } from './ConfirmDialog';
 import { imagePreviewFrameStyle, imagePreviewImageStyle } from './imagePreviewFrame';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
-import { isPreparedMuscleImage, prepareMuscleImage } from '@/lib/muscleImageUpload';
+import { MUSCLE_IMAGE_ACCEPT, isPreparedMuscleImage, prepareMuscleImage } from '@/lib/muscleImageUpload';
 
 /**
  * One sex's image of a muscle (#1412): the current picture, Upload/Replace and
  * Remove, acting on the server straight away (`POST`/`DELETE
  * <basePath>/:id/image/:sex`). Male and female are two instances, so each is
- * uploaded, replaced and removed independently. The control resolves nothing:
+ * uploaded, replaced and removed independently. The file is sent as picked (#1413). The control resolves nothing:
  * it draws what the muscle references for this sex, and never the other sex's.
  */
 interface MuscleImageFieldProps {
@@ -27,7 +27,7 @@ interface MuscleImageFieldProps {
 
 export function MuscleImageField({ muscleId, sex, imageUrl, thumbnailUrl, basePath, onChanged }: MuscleImageFieldProps) {
   const t = useTranslations('muscles_page');
-  const { apiFetch } = useApiClient();
+  const { apiFetch, uploadFetch } = useApiClient();
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState<'upload' | 'remove' | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,12 +43,13 @@ export function MuscleImageField({ muscleId, sex, imageUrl, thumbnailUrl, basePa
     setError(null);
     setBusy('upload');
     try {
-      const prepared = await prepareMuscleImage(file);
+      const prepared = prepareMuscleImage(file);
       if (!isPreparedMuscleImage(prepared)) {
-        setError(t(`image_error_${prepared}` as any));
+        setError(t(prepared));
         return;
       }
-      const updated = await apiFetch(`${basePath}/${muscleId}/image/${sex}`, { method: 'POST', body: JSON.stringify(prepared) });
+      // The picture goes up as picked; the server makes the master and the thumbnail (#1413).
+      const updated = await uploadFetch(`${basePath}/${muscleId}/image/${sex}`, prepared);
       onChanged(updated);
     } catch (err: any) {
       setError(err.message ?? t('image_error_upload_failed'));
@@ -79,7 +80,7 @@ export function MuscleImageField({ muscleId, sex, imageUrl, thumbnailUrl, basePa
           <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>{t('image_none')}</span>
         )}
       </div>
-      <input ref={inputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} disabled={busy !== null} />
+      <input ref={inputRef} type="file" accept={MUSCLE_IMAGE_ACCEPT} style={{ display: 'none' }} onChange={handleFile} disabled={busy !== null} />
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
         <button type="button" onClick={() => inputRef.current?.click()} disabled={busy !== null} style={primaryBtnSmall()}>
           {busy === 'upload' ? t('image_uploading') : preview ? t('image_replace') : t('image_upload')}
