@@ -246,7 +246,7 @@ platformExercisesRouter.get('/:id', requireSuperadmin, async (req, res, next) =>
 platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
   const {
     name, description, video_url, image_url,
-    min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status,
+    min_reps_default, max_reps_default, rest_default_seconds, sets_default, status,
   } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
   if (status && !SETTABLE_STATUSES.includes(status)) {
@@ -271,12 +271,12 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
           (gym_id, name, description, video_url, image_url, category,
-           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status,
+           min_reps_default, max_reps_default, rest_default_seconds, sets_default, status,
            created_by)
-         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [name.trim(), description ?? null, video_url ?? null, image_url ?? null, categoryInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
-         sets_default ?? null, notes_default ?? null, status ?? 'active',
+         sets_default ?? null, status ?? 'active',
          actor],
       );
       if (muscles) {
@@ -302,7 +302,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
   const id = String(req.params.id);
   const {
     name, description, video_url, image_url,
-    min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status,
+    min_reps_default, max_reps_default, rest_default_seconds, sets_default, status,
   } = req.body;
   if (status && !SETTABLE_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${SETTABLE_STATUSES.join(', ')}` });
@@ -348,7 +348,6 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           max_reps_default      = IF(?, ?, max_reps_default),
           rest_default_seconds  = IF(?, ?, rest_default_seconds),
           sets_default          = IF(?, ?, sets_default),
-          notes_default         = IF(?, ?, notes_default),
           category              = IF(?, ?, category),
           status                = COALESCE(?, status),
           modified_at           = UTC_TIMESTAMP(),
@@ -366,7 +365,6 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
           'max_reps_default' in req.body ? 1 : 0, max_reps_default ?? null,
           'rest_default_seconds' in req.body ? 1 : 0, rest_default_seconds ?? null,
           'sets_default' in req.body ? 1 : 0, sets_default ?? null,
-          'notes_default' in req.body ? 1 : 0, notes_default ?? null,
           categoryInput.provided ? 1 : 0, categoryInput.value,
           status ?? null,
           actor,

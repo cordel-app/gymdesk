@@ -100,7 +100,6 @@ describe('it is the Edit view with the controls replaced by values (§2, §14, �
       name: 'label_name', description: 'label_description', status: 'label_status',
       min_reps_default: 'label_min_reps_default', max_reps_default: 'label_max_reps_default',
       sets_default: 'label_sets_default', rest_default_seconds: 'label_rest_default_seconds',
-      notes_default: 'label_notes_default',
     };
     for (const field of [...EXERCISE_GENERAL_FIELDS, ...EXERCISE_CONFIGURATION_FIELDS]) {
       expect(readOnlyView, `${field} is missing`).toContain(`{t('${labelFor[field]}')}`);

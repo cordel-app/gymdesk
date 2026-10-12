@@ -75,7 +75,6 @@ interface Exercise {
   max_reps_default: number | null;
   sets_default: number | null;
   rest_default_seconds: number | null;
-  notes_default: string | null;
   muscles: { key: string; role: MuscleRole }[] | null;
   allowed_result_types: ResultTypeRow[] | null;
   created_at: string;

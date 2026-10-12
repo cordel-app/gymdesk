@@ -119,12 +119,6 @@ export function ExerciseCard({
                 <DefaultValue label={t('label_min_reps_default')} value={exercise.min_reps_default} />
                 <DefaultValue label={t('label_max_reps_default')} value={exercise.max_reps_default} />
               </div>
-              {exercise.notes_default && (
-                <div style={{ marginTop: 8 }}>
-                  <p style={exerciseFieldLabelStyle}>{t('label_notes_default')}</p>
-                  <p style={exerciseFieldValueStyle}>{exercise.notes_default}</p>
-                </div>
-              )}
             </div>
           </div>
         )}

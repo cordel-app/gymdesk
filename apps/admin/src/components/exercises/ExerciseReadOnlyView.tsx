@@ -128,7 +128,6 @@ export function ExerciseReadOnlyView({
           <Field label={t('label_max_reps_default')} value={exerciseDisplayValue(exercise.max_reps_default)} />
           <Field label={t('label_sets_default')} value={exerciseDisplayValue(exercise.sets_default)} />
           <Field label={t('label_rest_default_seconds')} value={exerciseDisplayValue(exercise.rest_default_seconds)} />
-          <Field wide label={t('label_notes_default')} value={exerciseDisplayValue(exercise.notes_default)} />
         </div>
       </div>
 

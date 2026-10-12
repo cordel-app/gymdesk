@@ -428,7 +428,7 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
   const { gymId } = getTenantContext(req);
   const {
     name, description, video_url, image_url,
-    min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
+    min_reps_default, max_reps_default, rest_default_seconds, sets_default,
     status,
   } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name is required' });
@@ -455,11 +455,11 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
       const { insertId } = await tx.query(
         `INSERT INTO exercises
           (gym_id, name, description, video_url, image_url, category,
-           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default, status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           min_reps_default, max_reps_default, rest_default_seconds, sets_default, status, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [gymId, name.trim(), description ?? null, video_url ?? null, image_url ?? null, categoryInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
-         sets_default ?? null, notes_default ?? null, status ?? 'active', actor],
+         sets_default ?? null, status ?? 'active', actor],
       );
       if (muscles) await replaceMuscles(tx, gymId, insertId, muscles);
       await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
@@ -486,7 +486,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
   }
   const {
     name, description, video_url, image_url,
-    min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
+    min_reps_default, max_reps_default, rest_default_seconds, sets_default,
     status,
   } = req.body;
   if (status && !SETTABLE_STATUSES.includes(status)) {
@@ -533,7 +533,6 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           max_reps_default      = IF(?, ?, max_reps_default),
           rest_default_seconds  = IF(?, ?, rest_default_seconds),
           sets_default          = IF(?, ?, sets_default),
-          notes_default         = IF(?, ?, notes_default),
           category              = IF(?, ?, category),
           status                = COALESCE(?, status),
           modified_at           = UTC_TIMESTAMP(),
@@ -550,7 +549,6 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           'max_reps_default' in req.body ? 1 : 0, max_reps_default ?? null,
           'rest_default_seconds' in req.body ? 1 : 0, rest_default_seconds ?? null,
           'sets_default' in req.body ? 1 : 0, sets_default ?? null,
-          'notes_default' in req.body ? 1 : 0, notes_default ?? null,
           categoryInput.provided ? 1 : 0, categoryInput.value,
           status ?? null,
           actor,
@@ -608,15 +606,15 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
       const { insertId } = await tx.query(
         `INSERT INTO exercises
           (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
-           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
+           min_reps_default, max_reps_default, rest_default_seconds, sets_default,
            status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
         // #719: each thumbnail travels with the media it depicts. Both copies
         // point at the *same* objects — nothing is duplicated in R2 — which is
         // why removing one exercise's media only deletes an object when no
         // other exercise still references it (`isMediaStillReferenced()`).
         [gymId, copyName, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
-         src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
+         src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
          actor],
       );
       const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
@@ -661,14 +659,14 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
       const { insertId } = await tx.query(
         `INSERT INTO exercises
           (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
-           min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
+           min_reps_default, max_reps_default, rest_default_seconds, sets_default,
            status, created_by, cloned_from_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
         // #719 §2: the copy takes the Base Exercise's media *references*, not
         // its bytes — no System object is duplicated into the gym's folder, and
         // the copy owns the references from here on (§3's snapshot rule).
         [gymId, copyName, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
-         src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
+         src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
          actor, id],
       );
       const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
@@ -811,12 +809,12 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         const { insertId } = await tx.query(
           `INSERT INTO exercises
             (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
-             min_reps_default, max_reps_default, rest_default_seconds, sets_default, notes_default,
+             min_reps_default, max_reps_default, rest_default_seconds, sets_default,
              status, created_by, cloned_from_id, category)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
           // #719 §2: references only — the System objects stay where they are.
           [gymId, src.name, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
-           src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default, src.notes_default,
+           src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
            actor, id, src.category ?? null],
         );
         const muscles: { key: string; role: string }[] = Array.isArray(src.muscles) ? src.muscles : [];
