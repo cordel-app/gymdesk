@@ -440,7 +440,16 @@
     "welcomed_yes": "Sí",
     "welcomed_no": "No",
     "filter_welcomed": "Benvinguda",
-    "all_welcomed": "Tots"
+    "all_welcomed": "Tots",
+    "product_set_card_title": "Recurrent",
+    "product_set_card_plan": "Pla de membresia",
+    "product_set_label_product_count": "Productes",
+    "product_set_label_plan_status": "Estat del pla de membresia",
+    "product_set_plan_status_active": "Actiu",
+    "product_set_plan_status_inactive": "Inactiu",
+    "product_set_plan_status_expired": "Caducat",
+    "product_set_details_title": "Detalls del conjunt de productes",
+    "close": "Tanca"
   },
   "member_payments": {
     "title": "Pagaments del membre",

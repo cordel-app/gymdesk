@@ -44,9 +44,7 @@ export type MemberSectionKey =
   | 'section_profile'
   | 'section_product_set'
   | 'section_one_off_products'
-  | 'section_recurring_products'
   | 'section_billing_events_forecast'
-  | 'section_past_product_sets'
   | 'section_account'
   | 'section_membership_plans'
   | 'section_additional_services'
@@ -82,12 +80,10 @@ export const MEMBER_TABS: readonly MemberTab[] = [
       'section_product_set',
       'section_membership_plans',
       'section_one_off_products',
-      'section_recurring_products',
       'section_additional_services',
       'section_billing_simulation',
       'section_billing_events_forecast',
       'section_billing_events',
-      'section_past_product_sets',
     ],
   },
   {

@@ -439,7 +439,16 @@
     "welcomed_yes": "Sí",
     "welcomed_no": "No",
     "filter_welcomed": "Bienvenida",
-    "all_welcomed": "Todos"
+    "all_welcomed": "Todos",
+    "product_set_card_title": "Recurrente",
+    "product_set_card_plan": "Plan de membresía",
+    "product_set_label_product_count": "Productos",
+    "product_set_label_plan_status": "Estado del plan de membresía",
+    "product_set_plan_status_active": "Activo",
+    "product_set_plan_status_inactive": "Inactivo",
+    "product_set_plan_status_expired": "Caducado",
+    "product_set_details_title": "Detalles del conjunto de productos",
+    "close": "Cerrar"
   },
   "member_payments": {
     "title": "Pagos del miembro",

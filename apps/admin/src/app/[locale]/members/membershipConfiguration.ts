@@ -95,6 +95,8 @@ export interface ProductSetSummary {
   status: 'draft' | 'pending_payment' | 'active' | 'superseded' | string;
   version: number;
   plan_name: string | null;
+  /** #1490 — the Membership Plan's own lifecycle status (not the version's). */
+  plan_status?: string | null;
   starts_at: string | null;
   ends_at: string | null;
   created_at: string | null;

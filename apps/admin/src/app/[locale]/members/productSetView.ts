@@ -79,3 +79,8 @@ export function splitProductSetProducts(config: ProductSetConfigurationLike | nu
   }
   return { oneOff, recurring };
 }
+
+/** #1490 — every Product the version carries (One-off and Recurring), counted from the lines themselves. */
+export function productSetProductCount(products: ProductSetProducts): number {
+  return products.oneOff.length + products.recurring.length;
+}

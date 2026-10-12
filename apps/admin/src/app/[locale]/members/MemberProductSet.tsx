@@ -17,12 +17,16 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { BillingEventSimulation, type BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
-import { cardHintStyle } from '@/components/formChrome';
+import { cardHintStyle, cardSectionLabelStyle, innerCardStyle } from '@/components/formChrome';
+import { ContextMenu } from '@/components/ContextMenu';
+import { CrudModal } from '@/components/CrudModal';
+import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import type { ProductSetSummary } from './membershipConfiguration';
 import {
   productSetName,
+  productSetProductCount,
   productSetStatusKey,
   splitProductSetProducts,
   type ProductSetConfigurationLike,
@@ -180,6 +184,112 @@ export function PastProductSets({ sets }: { sets: ProductSetSummary[] }) {
           />
         </div>
       ))}
+    </div>
+  );
+}
+
+/** The Membership Plan's own lifecycle status, kept apart from the version's (#1490). */
+function planStatusLabel(status: string | null | undefined, t: (k: string) => string): string {
+  if (!status) return '—';
+  const key = `product_set_plan_status_${status}`;
+  return ['active', 'inactive', 'expired'].includes(status) ? t(key) : status;
+}
+
+/**
+ * #1490 — the current ProductSet as one card titled *Recurring*: a header (plan,
+ * product count, created at/by, Membership Plan status), a `⋮` with Details and
+ * Edit, and three cards inside — Membership Plan, Recurring Products and Past
+ * Product Sets. Presentation only: Edit hands over to the existing Assigned Plan
+ * workflow (`onEdit`) and nothing here writes a Billing Event or Payment Request.
+ */
+export function CurrentProductSetCard({
+  set, products, loading, error, pastSets, canWrite, onEdit,
+}: {
+  set: ProductSetSummary | null;
+  products: { oneOff: ProductSetProductLine[]; recurring: ProductSetProductLine[] };
+  loading: boolean;
+  error: boolean;
+  pastSets: ProductSetSummary[];
+  canWrite: boolean;
+  onEdit: () => void;
+}) {
+  const t = useTranslations('members');
+  const gymFmt = useGymFormatSettings();
+  const statusLabel = useStatusLabel();
+  const [detailsOpen, setDetailsOpen] = useState(false);
+
+  if (!set) {
+    return (
+      <div style={innerCardStyle}>
+        <div style={cardSectionLabelStyle}>{t('product_set_card_title')}</div>
+        <p style={cardHintStyle}>{t('product_set_none')}</p>
+        <PastProductSetsCard sets={pastSets} />
+      </div>
+    );
+  }
+  const dash = '—';
+  const count = productSetProductCount(products);
+  const editable = canWrite && set.status !== 'superseded' && !set.expired;
+  return (
+    <div style={innerCardStyle} data-product-set-id={set.id}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={cardSectionLabelStyle}>{t('product_set_card_title')}</div>
+          <CardDetailRow label={t('product_set_label_name')} value={set.plan_name ?? t('product_set_no_plan')} />
+          <CardDetailRow label={t('product_set_label_product_count')} value={loading || error ? dash : String(count)} />
+          <CardDetailRow label={t('product_set_label_created_at')} value={fmtYmd(set.created_at, gymFmt) ?? dash} />
+          <CardDetailRow label={t('product_set_label_created_by')} value={set.created_by ?? dash} />
+          <CardDetailRow label={t('product_set_label_plan_status')} value={planStatusLabel(set.plan_status, (k) => t(k as any))} />
+        </div>
+        <ContextMenu
+          ariaLabel={t('product_set_card_title')}
+          items={[
+            { label: t('action_details'), onClick: () => setDetailsOpen(true) },
+            { label: t('edit'), onClick: onEdit, disabled: !editable },
+          ]}
+        />
+      </div>
+
+      <div style={innerCardStyle}>
+        <div style={cardSectionLabelStyle}>{t('product_set_card_plan')}</div>
+        <CardDetailRow label={t('product_set_label_plan')} value={set.plan_name ?? t('product_set_no_plan')} />
+        <CardDetailRow label={t('product_set_label_start')} value={fmtYmd(set.starts_at, gymFmt) ?? dash} />
+        <CardDetailRow label={t('product_set_label_end')} value={fmtYmd(set.ends_at, gymFmt) ?? t('product_set_open_ended')} />
+        <CardDetailRow label={t('product_set_label_plan_status')} value={planStatusLabel(set.plan_status, (k) => t(k as any))} />
+      </div>
+
+      <div style={innerCardStyle}>
+        <div style={cardSectionLabelStyle}>{t('section_recurring_products')}</div>
+        <ProductSetProducts lines={products.recurring} loading={loading} error={error} />
+      </div>
+
+      <PastProductSetsCard sets={pastSets} />
+
+      <CrudModal
+        open={detailsOpen}
+        title={t('product_set_details_title')}
+        hideSave
+        cancelLabel={t('close')}
+        saveLabel=""
+        onCancel={() => setDetailsOpen(false)}
+        onSave={() => setDetailsOpen(false)}
+        extraFooter={<ViewAuditLogButton entityType="product_set" entityId={set.id} onNavigate={() => setDetailsOpen(false)} />}
+      >
+        <CurrentProductSetHeader set={set} />
+        <CardDetailRow label={t('product_set_label_plan_status')} value={planStatusLabel(set.plan_status, (k) => t(k as any))} />
+        <CardDetailRow label={t('product_set_label_product_count')} value={String(count)} />
+        <p style={{ ...cardHintStyle, marginTop: 8 }}>{statusLabel(set)}</p>
+      </CrudModal>
+    </div>
+  );
+}
+
+function PastProductSetsCard({ sets }: { sets: ProductSetSummary[] }) {
+  const t = useTranslations('members');
+  return (
+    <div style={innerCardStyle}>
+      <div style={cardSectionLabelStyle}>{t('section_past_product_sets')}</div>
+      <PastProductSets sets={sets} />
     </div>
   );
 }
