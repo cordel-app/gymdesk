@@ -10,7 +10,7 @@ import rateLimit from 'express-rate-limit';
 import { DateTime } from 'luxon';
 import { createClerkClient } from '@clerk/backend';
 import { parseBlockLogResult } from '../domain/blockResultUnits';
-import { FUTURE_WORKOUT_CODE, gymToday, isFutureLoggedDate, trainingProgress } from '../domain/workoutProgress';
+import { FUTURE_WORKOUT_CODE, gymToday, isFutureLoggedDate, trainingProgress, ROLLING_MONTH_DAYS } from '../domain/workoutProgress';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
@@ -1219,7 +1219,7 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
   } catch (err) { next(err); }
 });
 
-/** #1370: Day / Week / Month completed-over-scheduled workouts, in the gym's zone. */
+/** #1370: Day / Last 7 Days / Last 30 Days completed-over-scheduled workouts, in the gym's zone. */
 meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled('training'), requireFeatureEnabled('member_web.my_training_plan'), async (req: Request, res: Response, next: NextFunction) => {
   const ctx = getTenantContext(req);
   const { gymId } = ctx;
@@ -1247,11 +1247,10 @@ meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled(
       if (r.block_id != null) w.blockIds.push(r.block_id);
       byWorkout.set(r.workout_id, w);
     }
-    const monthStart = selected.slice(0, 8) + '01';
     const { rows: logs } = await db.query(
       `SELECT workout_block_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM workout_block_logs
        WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
-      [gymId, memberId, DateTime.fromISO(monthStart).minus({ days: 7 }).toISODate(), DateTime.fromISO(monthStart).endOf('month').plus({ days: 7 }).toISODate()],
+      [gymId, memberId, DateTime.fromISO(selected).minus({ days: ROLLING_MONTH_DAYS }).toISODate(), selected],
     );
     res.json({
       ...trainingProgress(
