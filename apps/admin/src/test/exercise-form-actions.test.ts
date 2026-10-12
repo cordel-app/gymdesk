@@ -16,8 +16,7 @@ import { inlineActionsRowStyle, formActionsRowStyle, secondaryBtnSmall, formErro
 
 const SRC = join(__dirname, '..');
 const EDITOR = join(SRC, 'components', 'exercises', 'ExerciseEditor.tsx');
-const IMAGE_FIELD = join(SRC, 'components', 'ExerciseImageField.tsx');
-const VIDEO_FIELD = join(SRC, 'components', 'ExerciseVideoField.tsx');
+const MEDIA_FIELD = join(SRC, 'components', 'exercises', 'ExerciseGenderMediaField.tsx');
 const BASE_PAGE = join(SRC, 'app', '[locale]', 'cordel', 'exercises', 'page.tsx');
 const GYM_PAGE = join(SRC, 'app', '[locale]', 'exercises', 'page.tsx');
 
@@ -28,8 +27,7 @@ function stripComments(src: string): string {
 const read = (path: string) => stripComments(readFileSync(path, 'utf-8'));
 
 const editorSrc = read(EDITOR);
-const imageSrc = read(IMAGE_FIELD);
-const videoSrc = read(VIDEO_FIELD);
+const mediaFieldSrc = read(MEDIA_FIELD);
 const basePageSrc = read(BASE_PAGE);
 
 describe('The form actions are the platform\'s left-aligned inline row (#968 §3)', () => {
@@ -95,17 +93,17 @@ describe('Save is themed, Cancel is the platform secondary (#968 §1, §2)', () 
 });
 
 describe('The Media pickers follow the Theme (#968 §6, AC8, AC9)', () => {
-  it('renders Upload Image and Upload Video through the shared primary helper', () => {
-    for (const src of [imageSrc, videoSrc]) {
+  it('renders the media upload through the shared primary helper', () => {
+    for (const src of [mediaFieldSrc]) {
       expect(src).toContain('style={primaryBtnSmall()}');
       expect(src).not.toContain("btnSmall('#6c63ff')");
       expect(src).not.toContain('#6c63ff');
-      expect(src).toMatch(/import \{[^}]*\bprimaryBtnSmall\b[^}]*\} from '\.\/ui'/);
+      expect(src).toMatch(/import \{[^}]*\bprimaryBtnSmall\b[^}]*\} from '\.\.\/ui'/);
     }
   });
 
   it('leaves each picker\'s position, gating and Remove button untouched', () => {
-    for (const src of [imageSrc, videoSrc]) {
+    for (const src of [mediaFieldSrc]) {
       // §6: only the colour moved. The hidden <input> is still disabled with
       // the button (#823), and `Remove` is still the neutral grey.
       expect(src).toContain('disabled={blocked || busy !== null}');

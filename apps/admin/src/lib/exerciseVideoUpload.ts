@@ -68,7 +68,7 @@ const DECODE_TIMEOUT_MS = 15_000;
  * resolves once a frame is there to draw — or null when the browser cannot
  * decode it (which is also how a renamed non-video file fails here).
  */
-async function decodeFirstFrame(url: string): Promise<HTMLVideoElement | null> {
+export async function decodeFirstFrame(url: string): Promise<HTMLVideoElement | null> {
   return new Promise((resolve) => {
     const video = document.createElement('video');
     let settled = false;

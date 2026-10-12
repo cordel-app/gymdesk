@@ -10,16 +10,7 @@ import { primaryMuscleImagesSql, withEffectiveImage } from '../domain/effectiveE
 import { MUSCLE_SLUG_SQL, insertExerciseMuscle, listMuscles } from './exercise-muscles';
 import { getReferences } from '../domain/references';
 import { handleDupEntry } from '../infra/db-helpers';
-import {
-  EXERCISE_IMAGE_MASTER_MAX_BYTES,
-  EXERCISE_IMAGE_MIME,
-  EXERCISE_IMAGE_THUMBNAIL_MAX_BYTES,
-  buildGymExerciseImageKey,
-  buildGymExerciseImageThumbnailKey,
-  gymExerciseImageFolderKeys,
-  isGymOwnedImageUrl,
-  validateExerciseImagePair,
-} from '../domain/exerciseImages';
+import { isGymOwnedImageUrl } from '../domain/exerciseImages';
 import {
   EXERCISE_MEDIA_COLUMNS,
   ExerciseMediaRefs,
@@ -27,29 +18,13 @@ import {
   planExerciseMediaRefresh,
 } from '../domain/exerciseMediaImport';
 import {
-  EXERCISE_VIDEO_MIME,
-  EXERCISE_VIDEO_POSTER_MAX_BYTES,
-  EXERCISE_VIDEO_POSTER_MIME,
-  buildGymExerciseVideoKey,
-  buildGymExerciseVideoPosterKey,
-  exerciseVideoMaxBytes,
-  gymExerciseVideoFolderKeys,
-  validateExerciseVideoPair,
-} from '../domain/exerciseVideos';
-import {
   StorageOperationError,
-  buildStorageObjectUrl,
   deleteStorageObject,
   describeStorageError,
-  ensureStorageFolders,
-  getMissingStorageConfigKeys,
-  getStorageDiagnostics,
-  isStorageConfigured,
   storageKeyFromObjectUrl,
-  uploadStorageObject,
 } from '../infra/storage';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
-import { withGenderMediaCompanions } from '../domain/exerciseGenderMedia';
+import { imageObjectUrls, videoObjectUrls, withGenderMediaCompanions } from '../domain/exerciseGenderMedia';
 import { createExerciseGenderMediaRouter } from './exercise-gender-media';
 import {
   copyExerciseTranslations,
@@ -332,10 +307,10 @@ const IMPORTED_COPY_ID = `
  */
 const MEDIA_REFRESHABLE = `
   COALESCE((SELECT
-      CASE WHEN (e.image_url IS NOT NULL
-                  AND NOT ((g.image_url <=> e.image_url) AND (g.image_thumbnail_url <=> e.image_thumbnail_url)))
-                OR (e.video_url IS NOT NULL
-                  AND NOT ((g.video_url <=> e.video_url) AND (g.video_thumbnail_url <=> e.video_thumbnail_url)))
+      CASE WHEN (e.image_male_url IS NOT NULL AND NOT (g.image_male_url <=> e.image_male_url))
+                OR (e.image_female_url IS NOT NULL AND NOT (g.image_female_url <=> e.image_female_url))
+                OR (e.video_male_url IS NOT NULL AND NOT (g.video_male_url <=> e.video_male_url))
+                OR (e.video_female_url IS NOT NULL AND NOT (g.video_female_url <=> e.video_female_url))
         THEN 1 ELSE 0 END
     FROM exercises g
     WHERE g.gym_id = ? AND g.status != 'deleted'
@@ -372,8 +347,7 @@ exercisesRouter.get('/base', async (req, res, next) => {
   const where = exerciseListFilterSql('e', parsed.filter);
   const sql = `
     SELECT e.id, e.name, ${localizedExerciseNameExpr('e', locale, 'display_name')},
-      e.slug, e.description, e.image_url, e.image_thumbnail_url,
-      e.video_url, e.video_thumbnail_url,
+      e.slug, e.description,
       e.image_male_url, e.image_female_url, e.video_male_url, e.video_female_url,
       ${primaryMuscleImagesSql('e')},
       (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
@@ -441,7 +415,7 @@ exercisesRouter.get('/:id/references', async (req, res, next) => {
 exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const {
-    name, description, video_url, image_url,
+    name, description,
     min_reps_default, max_reps_default, rest_default_seconds, sets_default,
     status,
   } = req.body;
@@ -473,10 +447,10 @@ exercisesRouter.post('/', requireModuleWrite('TRAINING'), async (req, res, next)
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description, short_description, video_url, image_url, category,
+          (gym_id, name, description, short_description, category,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [gymId, name.trim(), description ?? null, shortDescription.value, video_url ?? null, image_url ?? null, categoryInput.value,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [gymId, name.trim(), description ?? null, shortDescription.value, categoryInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, status ?? 'active', actor],
       );
@@ -505,7 +479,7 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
     return res.status(403).json({ error: 'Base exercises can only be modified by Cordel administrators.' });
   }
   const {
-    name, description, video_url, image_url,
+    name, description,
     min_reps_default, max_reps_default, rest_default_seconds, sets_default,
     status,
   } = req.body;
@@ -541,20 +515,6 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           name                  = COALESCE(?, name),
           description           = IF(?, ?, description),
           short_description     = IF(?, ?, short_description),
-          video_url             = IF(?, ?, video_url),
-          -- #719 part 2: the poster belongs to the video it was captured from,
-          -- so a PUT that repoints video_url (at a YouTube link, say) drops it
-          -- rather than leaving a still of some other clip behind. POST
-          -- /:id/video is the only writer that sets the two together.
-          video_thumbnail_url   = IF(?, NULL, video_thumbnail_url),
-          image_url              = IF(?, ?, image_url),
-          -- #719: the thumbnail belongs to the master it was made from. A PUT
-          -- that sets image_url is pointing the exercise at some *other* image
-          -- (an external link, or a legacy uuid.png upload), which has no
-          -- 512×512 companion — keeping the old one would pair a thumbnail
-          -- with an image it does not depict. POST /:id/image is the only
-          -- writer that sets the two together.
-          image_thumbnail_url   = IF(?, NULL, image_thumbnail_url),
           min_reps_default      = IF(?, ?, min_reps_default),
           max_reps_default      = IF(?, ?, max_reps_default),
           rest_default_seconds  = IF(?, ?, rest_default_seconds),
@@ -568,10 +528,6 @@ exercisesRouter.put('/:id', requireModuleWrite('TRAINING'), async (req, res, nex
           name?.trim() ?? null,
           'description' in req.body ? 1 : 0, description ?? null,
           shortDescription.provided ? 1 : 0, shortDescription.value,
-          'video_url' in req.body ? 1 : 0, video_url ?? null,
-          'video_url' in req.body ? 1 : 0,
-          'image_url' in req.body ? 1 : 0, image_url ?? null,
-          'image_url' in req.body ? 1 : 0,
           'min_reps_default' in req.body ? 1 : 0, min_reps_default ?? null,
           'max_reps_default' in req.body ? 1 : 0, max_reps_default ?? null,
           'rest_default_seconds' in req.body ? 1 : 0, rest_default_seconds ?? null,
@@ -633,16 +589,16 @@ exercisesRouter.post('/:id/duplicate', requireModuleWrite('TRAINING'), async (re
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
+          (gym_id, name, description,
            image_male_url, image_female_url, video_male_url, video_female_url,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default,
            status, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
-        // #719: each thumbnail travels with the media it depicts. Both copies
-        // point at the *same* objects — nothing is duplicated in R2 — which is
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`,
+        // #719: both copies point at the *same* objects (a thumbnail or preview
+        // is derived from its master's URL, so it travels with it) — nothing is duplicated in R2 — which is
         // why removing one exercise's media only deletes an object when no
         // other exercise still references it (`isMediaStillReferenced()`).
-        [gymId, copyName, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
+        [gymId, copyName, src.description,
          src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
          src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
          actor],
@@ -689,15 +645,15 @@ exercisesRouter.post('/:id/clone', requireModuleWrite('TRAINING'), async (req, r
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
+          (gym_id, name, description,
            image_male_url, image_female_url, video_male_url, video_female_url,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default,
            status, created_by, cloned_from_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
         // #719 §2: the copy takes the Base Exercise's media *references*, not
         // its bytes — no System object is duplicated into the gym's folder, and
         // the copy owns the references from here on (§3's snapshot rule).
-        [gymId, copyName, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
+        [gymId, copyName, src.description,
          src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
          src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
          actor, id],
@@ -797,8 +753,8 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         const src = base.get(id);
         // `ORDER BY id` so the copy refreshed here is the one MEDIA_REFRESHABLE
         // reported on, for a gym that holds both a provenance and a name match.
-        const { rows: existing } = await tx.query<ExerciseMediaRow>(
-          `SELECT id, name, image_url, image_thumbnail_url, video_url, video_thumbnail_url
+        const { rows: existing } = await tx.query<ExerciseMediaRefs & { id: number; name: string }>(
+          `SELECT id, name, image_male_url, image_female_url, video_male_url, video_female_url
              FROM exercises
             WHERE gym_id = ? AND status != 'deleted' AND (cloned_from_id = ? OR name = ?)
             ORDER BY id ASC LIMIT 1`,
@@ -830,10 +786,10 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
             image_refreshed: plan.image,
             video_refreshed: plan.video,
             previous: {
-              image_url: copy.image_url,
-              image_thumbnail_url: copy.image_thumbnail_url,
-              video_url: copy.video_url,
-              video_thumbnail_url: copy.video_thumbnail_url,
+              image_male_url: copy.image_male_url,
+              image_female_url: copy.image_female_url,
+              video_male_url: copy.video_male_url,
+              video_female_url: copy.video_female_url,
             },
             next: mediaRefsAfterRefresh(copy, plan),
             stale: plan.stale,
@@ -842,13 +798,13 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
         }
         const { insertId } = await tx.query(
           `INSERT INTO exercises
-            (gym_id, name, description, video_url, video_thumbnail_url, image_url, image_thumbnail_url,
+            (gym_id, name, description,
            image_male_url, image_female_url, video_male_url, video_female_url,
              min_reps_default, max_reps_default, rest_default_seconds, sets_default,
              status, created_by, cloned_from_id, category)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
           // #719 §2: references only — the System objects stay where they are.
-          [gymId, src.name, src.description, src.video_url, src.video_thumbnail_url, src.image_url, src.image_thumbnail_url,
+          [gymId, src.name, src.description,
          src.image_male_url, src.image_female_url, src.video_male_url, src.video_female_url,
            src.min_reps_default, src.max_reps_default, src.rest_default_seconds, src.sets_default,
            actor, id, src.category ?? null],
@@ -901,7 +857,7 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
           folderPrefix,
           entry.exercise_id,
           entry.stale,
-          [entry.next.image_url, entry.next.image_thumbnail_url, entry.next.video_url, entry.next.video_thumbnail_url],
+          [entry.next.image_male_url, entry.next.image_female_url, entry.next.video_male_url, entry.next.video_female_url],
         );
         recordAudit(req, {
           action: 'update',
@@ -923,39 +879,11 @@ exercisesRouter.post('/import', requireModuleWrite('TRAINING'), async (req, res,
   } catch (err) { next(err); }
 });
 
-/* ── Gym Exercise image (#719 part 1) ─────────────────────────────────────── */
+/* ── Media helpers shared by re-import and the gender-specific routes (#1420) ── */
 //
-// A Gym Exercise's image is a **2048×2048 master plus a 512×512 thumbnail**
-// (§5), both stored in the gym's own R2 folder under keys derived from the row:
-// `<storage_folder_prefix>/Exercises/Images/<id>-<Name>[-thumbnail].png`. The
-// route takes neither the folder nor the key from the request — the prefix is
-// the gym's own column, the exercise is looked up inside the tenant, and the key
-// comes from the row's id and name — so nothing a client sends can reach another
-// gym's folder or the platform's (§18).
-//
-// The **browser** produces the thumbnail (the answer on #719 Q2: no `sharp`, no
-// `ffmpeg` in the API image) and uploads both files, which is why the request
-// body carries two of them. It is JSON with base64 members rather than
-// `multipart/form-data`: the API has no multipart parser and this is one atomic
-// request, which matters because a failed thumbnail must fail the whole upload
-// rather than leave a master without one. The server validates each file from
-// its own bytes — PNG signature, exact square, alpha channel — and never from
-// the `Content-Type` header or a file name (§7, §21).
-//
-// Nothing is uploaded and nothing is written until both pass, so an invalid
-// upload cannot disturb the image already there (§8). The old objects are
-// deleted only *after* the row points at the new ones, and only when they are
-// the gym's own and no other exercise still references them (§19).
-
-/** base64 → Buffer, or null when the value is not base64 at all (an image, a video, a poster). */
-function decodeBase64File(value: unknown): Buffer | null {
-  if (typeof value !== 'string' || value.length === 0) return null;
-  // A data: URL is what a careless client sends; take the payload rather than
-  // decoding the prefix into garbage bytes that would fail as "not a PNG".
-  const payload = value.startsWith('data:') ? value.slice(value.indexOf(',') + 1) : value;
-  const buffer = Buffer.from(payload, 'base64');
-  return buffer.length > 0 ? buffer : null;
-}
+// The upload, replace and remove routes live in `exercise-gender-media.ts`: the
+// legacy `POST`/`DELETE /:id/image` and `/:id/video` pairs were removed with the
+// legacy columns in #1420's last stage.
 
 /**
  * Whether any *other* non-deleted exercise of this gym still points at `url`,
@@ -1011,85 +939,34 @@ async function deleteReplacedExerciseMedia(
   gymId: string,
   folderPrefix: string | null,
   exerciseId: number | string,
-  staleUrls: (string | null)[],
-  keepUrls: (string | null)[],
+  staleMasters: (string | null)[],
+  keepMasters: (string | null)[],
 ): Promise<void> {
-  const keep = new Set(keepUrls.filter((u): u is string => !!u).map(mediaIdentity));
+  const keep = new Set(keepMasters.filter((u): u is string => !!u).map(mediaIdentity));
   const seen = new Set<string>();
-  for (const url of staleUrls) {
-    if (!url) continue;
-    const identity = mediaIdentity(url);
+  for (const master of staleMasters) {
+    if (!master) continue;
+    const identity = mediaIdentity(master);
     if (keep.has(identity) || seen.has(identity)) continue;
     seen.add(identity);
-    if (!isGymOwnedImageUrl(url, folderPrefix)) continue;
-    if (await isMediaStillReferenced(gymId, url, exerciseId)) continue;
-    const key = storageKeyFromObjectUrl(url);
-    if (!key) continue;
-    try {
-      await deleteStorageObject(key);
-    } catch (err: any) {
-      const details = err instanceof StorageOperationError
-        ? err.details
-        : describeStorageError(err, { operation: 'deleteStorageObject', key });
-      logger.warn({ err, details, gymId, exerciseId }, 'Replaced exercise media left an orphaned object in Cloudflare R2');
+    if (!isGymOwnedImageUrl(master, folderPrefix)) continue;
+    // Reference-checked on the master: a thumbnail or a video preview is derived
+    // from it (#1420), so whoever still holds the master still needs its companions.
+    if (await isMediaStillReferenced(gymId, master, exerciseId)) continue;
+    const objects = /\.mp4(?:[?#]|$)/.test(master) ? videoObjectUrls(master) : imageObjectUrls(master);
+    for (const url of objects) {
+      const key = storageKeyFromObjectUrl(url);
+      if (!key) continue;
+      try {
+        await deleteStorageObject(key);
+      } catch (err: any) {
+        const details = err instanceof StorageOperationError
+          ? err.details
+          : describeStorageError(err, { operation: 'deleteStorageObject', key });
+        logger.warn({ err, details, gymId, exerciseId }, 'Replaced exercise media left an orphaned object in Cloudflare R2');
+      }
     }
   }
-}
-
-/**
- * The columns a media route reads: the row's identity (which is where the object
- * keys come from — never the request) and everything it currently points at, so
- * replacing one pair can tell whether the *other* pair still needs an object
- * kept.
- */
-interface ExerciseMediaRow {
-  id: number;
-  name: string;
-  image_url: string | null;
-  image_thumbnail_url: string | null;
-  video_url: string | null;
-  video_thumbnail_url: string | null;
-}
-
-/**
- * The gym-owned, editable exercise this request is about, or the response that
- * says why there isn't one. A base exercise (`gym_id IS NULL`) answers 403 here
- * exactly as `PUT /:id` does — its media is `/platform/exercises`' business
- * (#716/#717), never a gym's.
- */
-async function loadExerciseForMedia(
-  req: Request,
-  res: express.Response,
-  /**
-   * An upload needs somewhere to put the object, so a gym whose bucket was never
-   * initialized is a 409. Removing an image needs no folder: the references are
-   * the gym's to clear whether or not R2 was ever set up, and an object that
-   * cannot be identified as the gym's is not deleted anyway.
-   */
-  options: { requireStoragePrefix: boolean; mediaLabel?: 'images' | 'videos' },
-): Promise<{ gymId: string; folderPrefix: string | null; exercise: ExerciseMediaRow } | null> {
-  const { gymId } = getTenantContext(req);
-  const { rows } = await db.query<ExerciseMediaRow & { gym_id: string | null; status: string }>(
-    `SELECT id, gym_id, name, status, image_url, image_thumbnail_url, video_url, video_thumbnail_url
-       FROM exercises WHERE id = ?`,
-    [req.params.id],
-  );
-  const row = rows[0];
-  if (row && row.gym_id === null) {
-    res.status(403).json({ error: 'Base exercises can only be modified by Cordel administrators.' });
-    return null;
-  }
-  if (!row || row.gym_id !== gymId || row.status === 'deleted') {
-    res.status(404).json({ error: 'Exercise not found' });
-    return null;
-  }
-  const folderPrefix = await gymStorageFolderPrefix(gymId);
-  if (!folderPrefix && options.requireStoragePrefix) {
-    const media = options.mediaLabel ?? 'images';
-    res.status(409).json({ error: `Cloudflare storage has not been initialized for this gym, therefore ${media} cannot be uploaded.` });
-    return null;
-  }
-  return { gymId, folderPrefix, exercise: row };
 }
 
 /** The exercise as every other route returns it, after its media changed. */
@@ -1098,322 +975,12 @@ async function respondWithExercise(req: Request, res: express.Response, gymId: s
   res.json(shapeExercise(rows[0]));
 }
 
-/**
- * The body parser for `POST /exercises/:id/image`, and the path it applies to.
- *
- * Mounted in `app.ts` **before** the global `express.json()`, whose default
- * 100 kB limit a pair of PNGs blows through long before this route is reached —
- * the request would fail as 413 with no chance to say which file was too large.
- * body-parser marks a parsed request, so the global parser is a no-op once this
- * one has run; every other route keeps the default limit.
- *
- * The ceiling is the two file limits plus base64's ~4/3 overhead and a little
- * JSON scaffolding. It bounds the request; `validateExerciseImagePair()` is what
- * bounds each file, and answers with the file's own name.
- */
-export const EXERCISE_IMAGE_UPLOAD_PATH = /^\/exercises\/[^/]+\/image\/?$/;
-
-export const exerciseImageBodyParser = express.json({
-  limit: Math.ceil((EXERCISE_IMAGE_MASTER_MAX_BYTES + EXERCISE_IMAGE_THUMBNAIL_MAX_BYTES) * 1.4),
-});
-
-exercisesRouter.post(
-  '/:id/image',
-  requireModuleWrite('TRAINING'),
-  async (req, res, next) => {
-    try {
-      const image = decodeBase64File(req.body?.image);
-      const thumbnail = decodeBase64File(req.body?.thumbnail);
-      if (!image || !thumbnail) {
-        return res.status(400).json({
-          error: 'Both `image` (the 2048×2048 master) and `thumbnail` (the 512×512 thumbnail) are required, base64-encoded.',
-        });
-      }
-      const problem = validateExerciseImagePair(image, thumbnail);
-      if (problem) {
-        return res.status(problem.rejection === 'too_large' ? 413 : 400).json({
-          error: problem.message,
-          reason: problem.rejection,
-          file: problem.kind,
-        });
-      }
-
-      if (!isStorageConfigured()) {
-        const missingConfig = getMissingStorageConfigKeys();
-        return res.status(503).json({
-          error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
-          missingConfig,
-        });
-      }
-
-      const context = await loadExerciseForMedia(req, res, { requireStoragePrefix: true });
-      if (!context) return;
-      const { gymId, exercise } = context;
-      const folderPrefix = context.folderPrefix as string;
-
-      const imageKey = buildGymExerciseImageKey(folderPrefix, exercise.id, exercise.name);
-      const thumbnailKey = buildGymExerciseImageThumbnailKey(folderPrefix, exercise.id, exercise.name);
-      const imageUrl = buildStorageObjectUrl(imageKey);
-      const thumbnailUrl = buildStorageObjectUrl(thumbnailKey);
-
-      try {
-        await ensureStorageFolders(gymExerciseImageFolderKeys(folderPrefix));
-        await uploadStorageObject(imageKey, EXERCISE_IMAGE_MIME, image);
-        await uploadStorageObject(thumbnailKey, EXERCISE_IMAGE_MIME, thumbnail);
-      } catch (err: any) {
-        const details = err instanceof StorageOperationError
-          ? err.details
-          : describeStorageError(err, { operation: 'uploadStorageObject', key: imageKey });
-        logger.error(
-          { err, details, diagnostics: getStorageDiagnostics(), gymId, exerciseId: exercise.id },
-          'Cloudflare R2 exercise image upload failed',
-        );
-        // The row still points at whatever it pointed at before, so the previous
-        // image stays exactly as it was — nothing was written (§8).
-        return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
-      }
-
-      await db.query(
-        `UPDATE exercises SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-          WHERE id = ? AND gym_id = ?`,
-        [imageUrl, thumbnailUrl, resolveRequestActor(getTenantContext(req)), exercise.id, gymId],
-      );
-
-      await deleteReplacedExerciseMedia(
-        gymId,
-        folderPrefix,
-        exercise.id,
-        [exercise.image_url, exercise.image_thumbnail_url],
-        // The video pair is kept as well as the new image pair: an exercise
-        // whose poster happens to share an object with its old image must not
-        // lose it because the image was replaced.
-        [imageUrl, thumbnailUrl, exercise.video_url, exercise.video_thumbnail_url],
-      );
-
-      recordAudit(req, {
-        action: 'update',
-        entityType: 'exercise',
-        entityId: exercise.id,
-        previous: { image_url: exercise.image_url, image_thumbnail_url: exercise.image_thumbnail_url },
-        next: { image_url: imageUrl, image_thumbnail_url: thumbnailUrl },
-      });
-      await respondWithExercise(req, res, gymId, exercise.id);
-    } catch (err) { next(err); }
-  },
-);
-
-/**
- * Clears a Gym Exercise's image (§10). The references go, the gym's own objects
- * are deleted, and a System object the exercise inherited at import time is
- * left alone. There is deliberately **no fallback** to the Base Exercise's
- * image afterwards — the exercise simply has none, and re-importing is the
- * supported way to get the System media back (§12).
- */
-exercisesRouter.delete('/:id/image', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  try {
-    const context = await loadExerciseForMedia(req, res, { requireStoragePrefix: false });
-    if (!context) return;
-    const { gymId, folderPrefix, exercise } = context;
-
-    await db.query(
-      `UPDATE exercises SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
-        WHERE id = ? AND gym_id = ?`,
-      [resolveRequestActor(getTenantContext(req)), exercise.id, gymId],
-    );
-
-    await deleteReplacedExerciseMedia(
-      gymId,
-      folderPrefix,
-      exercise.id,
-      [exercise.image_url, exercise.image_thumbnail_url],
-      [exercise.video_url, exercise.video_thumbnail_url],
-    );
-
-    recordAudit(req, {
-      action: 'update',
-      entityType: 'exercise',
-      entityId: exercise.id,
-      previous: { image_url: exercise.image_url, image_thumbnail_url: exercise.image_thumbnail_url },
-      next: { image_url: null, image_thumbnail_url: null },
-    });
-    await respondWithExercise(req, res, gymId, exercise.id);
-  } catch (err) { next(err); }
-});
-
-/* ── Gym Exercise video (#719 part 2) ─────────────────────────────────────── */
-//
-// A Gym Exercise's video is an **MP4 plus a 512×512 poster** (§6, §7), both
-// stored in the gym's own R2 folder under keys derived from the row:
-// `<storage_folder_prefix>/Exercises/Videos/<id>-<Name>.mp4` and
-// `…-thumbnail.png`. Everything part 1 established for images holds unchanged:
-// the folder is the gym's own column, the exercise is looked up inside the
-// tenant, and the key comes from the row — so nothing a client sends can reach
-// another gym's folder or the platform's (§18).
-//
-// The **browser** captures the poster frame (the answer on #719 Q2: no `sharp`,
-// no `ffmpeg` in the API image) and uploads both files in one JSON body with
-// base64 members, because a failed poster must fail the whole upload rather than
-// leave a video the UI has to download to draw a row (§7, §9). The server
-// validates each file from its own bytes — the MP4's `ftyp` brand, its `moov`
-// and its video sample entries (`domain/mp4Video.ts`), the poster's PNG
-// signature and exact size — and never from the `Content-Type` header or the
-// file name (§7).
-//
-// Nothing is uploaded and nothing is written until both pass, so an invalid
-// upload cannot disturb the video already there (§9). The old objects are
-// deleted only *after* the row points at the new ones, and only when they are
-// the gym's own and no other exercise still references them (§19).
-
-/** The path `exerciseVideoBodyParser` applies to, mounted in `app.ts`. */
-export const EXERCISE_VIDEO_UPLOAD_PATH = /^\/exercises\/[^/]+\/video\/?$/;
-
-/**
- * The body parser for `POST /exercises/:id/video`.
- *
- * Mounted **before** the global `express.json()`, whose 100 kB default an MP4
- * blows through long before the route is reached — the request would fail as a
- * bare 413 with no chance to say which file was too large or by how much. The
- * ceiling is the two file limits plus base64's ~4/3 overhead and a little JSON
- * scaffolding; it bounds the *request*, while `validateExerciseVideoPair()`
- * bounds each file and answers with the file's own name.
- *
- * `exerciseVideoMaxBytes()` is read once, here, at start-up — the parser's limit
- * is fixed at construction, so changing `EXERCISE_VIDEO_MAX_MB` needs a restart
- * to take effect on the request size (the per-file check re-reads it).
- */
-export const exerciseVideoBodyParser = express.json({
-  limit: Math.ceil((exerciseVideoMaxBytes() + EXERCISE_VIDEO_POSTER_MAX_BYTES) * 1.4),
-});
-
-exercisesRouter.post(
-  '/:id/video',
-  requireModuleWrite('TRAINING'),
-  async (req, res, next) => {
-    try {
-      const video = decodeBase64File(req.body?.video);
-      const poster = decodeBase64File(req.body?.poster);
-      if (!video || !poster) {
-        return res.status(400).json({
-          error: 'Both `video` (the MP4) and `poster` (its 512×512 thumbnail) are required, base64-encoded.',
-        });
-      }
-      const problem = validateExerciseVideoPair(video, poster);
-      if (problem) {
-        return res.status(problem.rejection === 'too_large' ? 413 : 400).json({
-          error: problem.message,
-          reason: problem.rejection,
-          file: problem.kind,
-        });
-      }
-
-      if (!isStorageConfigured()) {
-        const missingConfig = getMissingStorageConfigKeys();
-        return res.status(503).json({
-          error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
-          missingConfig,
-        });
-      }
-
-      const context = await loadExerciseForMedia(req, res, { requireStoragePrefix: true, mediaLabel: 'videos' });
-      if (!context) return;
-      const { gymId, exercise } = context;
-      const folderPrefix = context.folderPrefix as string;
-
-      const videoKey = buildGymExerciseVideoKey(folderPrefix, exercise.id, exercise.name);
-      const posterKey = buildGymExerciseVideoPosterKey(folderPrefix, exercise.id, exercise.name);
-      const videoUrl = buildStorageObjectUrl(videoKey);
-      const posterUrl = buildStorageObjectUrl(posterKey);
-
-      try {
-        await ensureStorageFolders(gymExerciseVideoFolderKeys(folderPrefix));
-        await uploadStorageObject(videoKey, EXERCISE_VIDEO_MIME, video);
-        await uploadStorageObject(posterKey, EXERCISE_VIDEO_POSTER_MIME, poster);
-      } catch (err: any) {
-        const details = err instanceof StorageOperationError
-          ? err.details
-          : describeStorageError(err, { operation: 'uploadStorageObject', key: videoKey });
-        logger.error(
-          { err, details, diagnostics: getStorageDiagnostics(), gymId, exerciseId: exercise.id },
-          'Cloudflare R2 exercise video upload failed',
-        );
-        // The row still points at whatever it pointed at before, so the previous
-        // video and poster stay exactly as they were — nothing was written (§9).
-        return res.status(502).json({ error: `Failed to upload video: ${details.message}`, details });
-      }
-
-      await db.query(
-        `UPDATE exercises SET video_url = ?, video_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-          WHERE id = ? AND gym_id = ?`,
-        [videoUrl, posterUrl, resolveRequestActor(getTenantContext(req)), exercise.id, gymId],
-      );
-
-      await deleteReplacedExerciseMedia(
-        gymId,
-        folderPrefix,
-        exercise.id,
-        [exercise.video_url, exercise.video_thumbnail_url],
-        // The image pair is kept as well as the new video pair: an exercise
-        // whose image happens to share an object with its old poster must not
-        // lose it because the video was replaced.
-        [videoUrl, posterUrl, exercise.image_url, exercise.image_thumbnail_url],
-      );
-
-      recordAudit(req, {
-        action: 'update',
-        entityType: 'exercise',
-        entityId: exercise.id,
-        previous: { video_url: exercise.video_url, video_thumbnail_url: exercise.video_thumbnail_url },
-        next: { video_url: videoUrl, video_thumbnail_url: posterUrl },
-      });
-      await respondWithExercise(req, res, gymId, exercise.id);
-    } catch (err) { next(err); }
-  },
-);
-
-/**
- * Clears a Gym Exercise's video (§10). Both references go, the gym's own objects
- * are deleted, and a System object the exercise inherited at import time is left
- * alone. There is deliberately **no fallback** to the Base Exercise's video
- * afterwards — the exercise simply has none, and re-importing is the supported
- * way to get the System media back (§12).
- */
-exercisesRouter.delete('/:id/video', requireModuleWrite('TRAINING'), async (req, res, next) => {
-  try {
-    const context = await loadExerciseForMedia(req, res, { requireStoragePrefix: false, mediaLabel: 'videos' });
-    if (!context) return;
-    const { gymId, folderPrefix, exercise } = context;
-
-    await db.query(
-      `UPDATE exercises SET video_url = NULL, video_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
-        WHERE id = ? AND gym_id = ?`,
-      [resolveRequestActor(getTenantContext(req)), exercise.id, gymId],
-    );
-
-    await deleteReplacedExerciseMedia(
-      gymId,
-      folderPrefix,
-      exercise.id,
-      [exercise.video_url, exercise.video_thumbnail_url],
-      [exercise.image_url, exercise.image_thumbnail_url],
-    );
-
-    recordAudit(req, {
-      action: 'update',
-      entityType: 'exercise',
-      entityId: exercise.id,
-      previous: { video_url: exercise.video_url, video_thumbnail_url: exercise.video_thumbnail_url },
-      next: { video_url: null, video_thumbnail_url: null },
-    });
-    await respondWithExercise(req, res, gymId, exercise.id);
-  } catch (err) { next(err); }
-});
-
-/* ── Gym Exercise gender-specific media (#1420 stage 1) ───────────────────── */
+/* ── Gym Exercise gender-specific media (#1420) ───────────────────────────── */
 //
 // `POST`/`DELETE /:id/image/:gender` and `/:id/video/:gender`: four independent
 // references (`image_male_url`, `image_female_url`, `video_male_url`,
-// `video_female_url`) beside the legacy pair, which stays until the last stage.
-// The rules are in `exercise-gender-media.ts`, shared with the platform router.
+// `video_female_url`). The rules are in `exercise-gender-media.ts`, shared with
+// the platform router.
 exercisesRouter.use(createExerciseGenderMediaRouter({
   scope: 'gym',
   guard: requireModuleWrite('TRAINING'),

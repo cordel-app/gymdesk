@@ -1,15 +1,17 @@
 {bucket}/
 ├── cordel/
 │   ├── nutrition
-│   │   └── {food_id}-{food_name}.png                                      — 1080 × 1080 px
+│   │   ├── {food_id}-{food_name}.webp                              — 1080 × 1080 px
+│   │   └── {food_id}-{food_name}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── goals/
-│   │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 1080 × 1080 px
+│   │   ├── {goal_id}-{goal_name}.webp                              — 1080 × 1080 px
+│   │   └── {goal_id}-{goal_name}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── muscles/
 │   │   └── images/
 │   │       ├── {muscle_name}-male.webp                              — 1080 × 1080 px
-│   │       ├── {muscle_name}-male-thumbnail.webp                  — 256 × 256 px
+│   │       ├── {muscle_name}-male-thumbnail.webp                    — 256 × 256 px
 │   │       ├── {muscle_name}-female.webp                            — 1080 × 1080 px
 │   │       └── {muscle_name}-female-thumbnail.webp                  — 256 × 256 px
 │   │
@@ -46,14 +48,20 @@
 └── gyms/
     └── {gym_id}-{sanitized_gym_name}/
         ├── nutrition
-        │   └── {food_id}-{food_name}.png                                      — 1080 × 1080 px
+        │   ├── {food_id}-{food_name}.webp                                    — 1080 × 1080 px
+        │   └── {food_id}-{food_name}-thumbnail.webp                          — 256 × 256 px
         │        
         ├── goals
-        │   └── {personal_goal_id}-{personnal_goal_name}.png                  — 1080 × 1080 px
+        │   ├── {goal_id}-{goal_name}-.webp                                   — 1080 × 1080 px
+        │   └── {goal_id}-{goal_name}-thumbnail.webp                          — 256 × 256 px
         │        
         ├── activities
-        │   ├── {activity_id}-{activity_name}.png                             — 1080 × 1080 px
-        │   └── event-{event_id}-{activity_name}.png                          — 1080 × 1080 px (a single Calendar Event's own image, #1382)
+        │   ├── {activity_id}-{activity_name}.webp                            — 1080 × 1080 px
+        │   └── {activity_id}-{activity_name}-thumbnail.webp                  — 256 × 256 px 
+        │        
+        ├── plans
+        │   ├── {plan_id}-{plan_name}.webp                                    — 1080 × 1080 px
+        │   └── {plan_id}-{plan_name}-thumbnail.webp                          — 256 × 256 px
         │        
         ├── members
         │   ├── {member_id}-{member_name}.webp                                — 1080 × 1080 px
@@ -200,3 +208,5 @@ Since stage 2 the **server** makes the WebP files, through `POST`/`DELETE /exerc
 - **A video upload** sends `{ video, frame }`: the MP4 (validated from its bytes, `EXERCISE_VIDEO_MAX_MB`) and one frame the browser captured from it, because `sharp` cannot decode MP4 and no `ffmpeg` is installed. The frame is processed exactly like an image upload and stored as the video's preview and preview thumbnail under `videos/`; it never touches an image column. A request with no frame is a 400.
 - **Nothing is uploaded or written until every file is valid**; a failed upload removes only the objects it created, and the row takes its column in one `UPDATE`.
 - **Uploads are rate limited per signed-in person** (`EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_MAX`, default 30 per 15 minutes, on top of the global budget) and decoding is bounded process-wide (`api/src/domain/imageProcessingSlot.ts`, shared with the Member photo).
+
+**Legacy media (#1420, last stage).** The pre-#1420 exercise objects (`<id>-<name>.png`, `…-thumbnail.png`, the MP4 with its 512 PNG poster, and anything under the pre-#1035 `Exercises/Images/` / `Exercises/Videos/` folders) are not carried over: migration 277 dropped the columns that pointed at them and `npm run exercises:purge-legacy-media` removes the objects by key (a dry run unless `--execute`; the *Purge legacy exercise media* workflow runs it on the VPS). Only the `-male` / `-female` WebP and MP4 names above are valid in an exercise media folder.

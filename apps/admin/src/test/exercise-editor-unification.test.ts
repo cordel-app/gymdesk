@@ -27,8 +27,7 @@ const GYM_PAGE = join(SRC, 'app', '[locale]', 'exercises', 'page.tsx');
 const BASE_PAGE = join(SRC, 'app', '[locale]', 'cordel', 'exercises', 'page.tsx');
 const EDITOR = join(SRC, 'components', 'exercises', 'ExerciseEditor.tsx');
 const HOOK = join(SRC, 'components', 'exercises', 'useExerciseEditorState.ts');
-const IMAGE_FIELD = join(SRC, 'components', 'ExerciseImageField.tsx');
-const VIDEO_FIELD = join(SRC, 'components', 'ExerciseVideoField.tsx');
+const MEDIA_FIELD = join(SRC, 'components', 'exercises', 'ExerciseGenderMediaField.tsx');
 const LOCALES_DIR = join(SRC, '..', 'locales', 'base');
 const LOCALE_CODES = ['en', 'es', 'ca'] as const;
 
@@ -40,8 +39,7 @@ const gymPage = stripComments(readFileSync(GYM_PAGE, 'utf-8'));
 const basePage = stripComments(readFileSync(BASE_PAGE, 'utf-8'));
 const editor = stripComments(readFileSync(EDITOR, 'utf-8'));
 const hook = stripComments(readFileSync(HOOK, 'utf-8'));
-const imageField = stripComments(readFileSync(IMAGE_FIELD, 'utf-8'));
-const videoField = stripComments(readFileSync(VIDEO_FIELD, 'utf-8'));
+const mediaField = stripComments(readFileSync(MEDIA_FIELD, 'utf-8'));
 
 const locales = Object.fromEntries(LOCALE_CODES.map((code) => [
   code,
@@ -175,60 +173,52 @@ describe('AC4/AC5 — the API and permission differences are the parents’', ()
 });
 
 describe('AC6 — the Media UI is one implementation, pointed at two routes', () => {
-  it('both pages render the same two controls', () => {
+  it('both pages render the same four-control Media section', () => {
     for (const [name, page] of [['gym', gymPage], ['base', basePage]] as const) {
-      expect(page, name).toContain('<ExerciseImageField');
-      expect(page, name).toContain('<ExerciseVideoField');
-      expect(page, name).toContain('<ExerciseMediaPair');
+      expect(page, name).toContain('<ExerciseGenderMedia');
+      expect(page, name).not.toContain('<ExerciseImageField');
+      expect(page, name).not.toContain('<ExerciseVideoField');
     }
   });
 
-  it('the controls take their route root from the context and default to the gym’s', () => {
-    for (const [name, field, kind] of [['image', imageField, 'image'], ['video', videoField, 'video']] as const) {
-      expect(field, name).toContain("basePath = '/exercises'");
-      expect(field, name).toContain(`\${basePath}/\${exerciseId}/${kind}`);
-    }
+  it('the control takes its route root from the context and defaults to the gym’s', () => {
+    expect(mediaField).toContain("basePath = '/exercises'");
+    expect(mediaField).toContain('genderMediaPath(basePath, exerciseId, kind, gender)');
     expect(basePage).toContain('basePath={API_BASE}');
   });
 
   it('a platform upload is not gated on a gym’s bucket', () => {
-    // A Base Exercise's objects live in `cordel/Exercises/…`, which no gym's
+    // A Base Exercise's objects live in `cordel/exercises/…`, which no gym's
     // storage settings reach.
     expect(basePage).toContain('requiresGymStorage={false}');
     expect(gymPage).not.toContain('requiresGymStorage');
-    for (const field of [imageField, videoField]) {
-      expect(field).toContain('requiresGymStorage = true');
-      // #823 moved the two storage blocks into `gymStorageBlock()`; the flag is
-      // still what decides whether the selected gym's bucket is consulted.
-      expect(field).toMatch(/gymStorageBlock\(activeGym, requiresGymStorage\)/);
-    }
+    expect(mediaField).toContain('requiresGymStorage = true');
+    expect(mediaField).toMatch(/gymStorageBlock\(activeGym, requiresGymStorage\)/);
   });
 
   it('neither page re-implements the browser-side preparation or its messages', () => {
     for (const [name, page] of [['gym', gymPage], ['base', basePage]] as const) {
+      expect(page, name).not.toContain('prepareGenderImage');
+      expect(page, name).not.toContain('prepareGenderVideo');
       expect(page, name).not.toContain('prepareExerciseImage');
       expect(page, name).not.toContain('prepareExerciseVideo');
-      expect(page, name).not.toContain('IMAGE_PROBLEM_MESSAGES');
-      expect(page, name).not.toContain('VIDEO_PROBLEM_MESSAGES');
     }
-    expect(imageField).toContain('prepareExerciseImage(file)');
-    expect(videoField).toContain('prepareExerciseVideo(file)');
+    expect(mediaField).toContain('prepareGenderImage(file)');
+    expect(mediaField).toContain('prepareGenderVideo(file)');
   });
 
   it('removing media asks first, on both screens, in every locale', () => {
-    expect(imageField).toContain("message={t('image_confirm_remove')}");
-    expect(videoField).toContain("message={t('video_confirm_remove')}");
+    expect(mediaField).toContain("message={t('gender_media_confirm_remove'");
     for (const code of LOCALE_CODES) {
-      expect(locales[code].image_confirm_remove, `${code}.image_confirm_remove`).toBeTruthy();
-      expect(locales[code].video_confirm_remove, `${code}.video_confirm_remove`).toBeTruthy();
+      expect(locales[code].gender_media_confirm_remove, `${code}.gender_media_confirm_remove`).toBeTruthy();
     }
   });
 
-  it('both creation cards stage the pair and upload it once the exercise exists', () => {
-    expect(gymPage).toContain('`/exercises/${created.id}/image`');
-    expect(gymPage).toContain('`/exercises/${created.id}/video`');
-    expect(basePage).toContain('`${API_BASE}/${created.id}/image`');
-    expect(basePage).toContain('`${API_BASE}/${created.id}/video`');
+  it('both creation cards stage the picks and upload them once the exercise exists', () => {
+    expect(gymPage).toContain('uploadStagedGenderMedia(');
+    expect(basePage).toContain('uploadStagedGenderMedia(');
+    expect(gymPage).toContain("'/exercises',");
+    expect(basePage).toContain('API_BASE,');
   });
 });
 

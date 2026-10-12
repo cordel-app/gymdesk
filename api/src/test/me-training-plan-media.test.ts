@@ -24,7 +24,7 @@ let noMediaId: number;
 
 async function createExercise(gid: string, name: string, imageUrl: string | null, videoUrl: string | null): Promise<number> {
   const { insertId } = await db.query(
-    `INSERT INTO exercises (gym_id, name, status, image_url, video_url) VALUES (?, ?, 'active', ?, ?)`,
+    `INSERT INTO exercises (gym_id, name, status, image_male_url, video_male_url) VALUES (?, ?, 'active', ?, ?)`,
     [gid, name, imageUrl, videoUrl],
   );
   return insertId;
@@ -140,13 +140,13 @@ describe('GET /me/training-plans exercise media (#723)', () => {
 
   it('reflects an exercise whose media changed — the plan holds no copy', async () => {
     const newVideo = 'https://cdn.example.test/gyms/1-Gym/Exercises/Videos/squat.mp4';
-    await db.query('UPDATE exercises SET video_url = ? WHERE id = ?', [newVideo, withMediaId]);
+    await db.query('UPDATE exercises SET video_male_url = ? WHERE id = ?', [newVideo, withMediaId]);
 
     const res = await asMember(request.get('/me/training-plans')).expect(200);
     expect(exercisesOf(res.body).find((e) => e.exercise_id === withMediaId).exercise_video_url)
       .toBe(newVideo);
 
-    await db.query('UPDATE exercises SET video_url = ? WHERE id = ?', [VIDEO_URL, withMediaId]);
+    await db.query('UPDATE exercises SET video_male_url = ? WHERE id = ?', [VIDEO_URL, withMediaId]);
   });
 
   it('shows the same exercise\'s media at every occurrence it has in the plan', async () => {

@@ -440,7 +440,16 @@
     "welcomed_yes": "Sí",
     "welcomed_no": "No",
     "filter_welcomed": "Benvinguda",
-    "all_welcomed": "Tots"
+    "all_welcomed": "Tots",
+    "product_set_card_title": "Recurrent",
+    "product_set_card_plan": "Pla de membresia",
+    "product_set_label_product_count": "Productes",
+    "product_set_label_plan_status": "Estat del pla de membresia",
+    "product_set_plan_status_active": "Actiu",
+    "product_set_plan_status_inactive": "Inactiu",
+    "product_set_plan_status_expired": "Caducat",
+    "product_set_details_title": "Detalls del conjunt de productes",
+    "close": "Tanca"
   },
   "member_payments": {
     "title": "Pagaments del membre",
@@ -1896,7 +1905,23 @@
     "card_hide_details": "Amagar detalls",
     "card_full_description": "Descripció completa",
     "card_muscles_worked": "Músculs treballats",
-    "card_default_values": "Valors per defecte"
+    "card_default_values": "Valors per defecte",
+    "gender_male": "Masculí",
+    "gender_female": "Femení",
+    "gender_media_image_requirements": "JPEG, PNG, WebP o GIF, fins a {size} MB. El servidor l'ajusta sencera en un WebP de 1080 × 1080 (farciment transparent, sense retallar) i genera una miniatura de 256 × 256.",
+    "gender_media_video_requirements": "MP4 (H.264), fins a {size} MB. Es captura una imatge de vista prèvia del vídeo i el servidor la desa com a WebP de 1080 × 1080 amb una miniatura de 256 × 256.",
+    "gender_media_upload": "Puja",
+    "gender_media_replace": "Substitueix",
+    "gender_media_input_label": "Fitxer de {kind} ({gender})",
+    "gender_media_confirm_remove": "Vols treure {kind} {gender}? L'exercici conserva tota la resta.",
+    "gender_media_error_not_an_image": "El fitxer ha de ser una imatge JPEG, PNG, WebP o GIF.",
+    "gender_media_error_not_an_mp4": "El vídeo ha de ser un fitxer MP4.",
+    "gender_media_error_too_large": "Aquest fitxer supera els {size} MB que accepta aquest desplegament.",
+    "gender_media_error_unreadable": "No s'ha pogut llegir aquest fitxer.",
+    "gender_media_error_frame_failed": "No s'ha pogut capturar un fotograma de vista prèvia, així que no s'ha pujat res i el vídeo actual no canvia.",
+    "gender_media_error_upload_failed": "No s'ha pogut pujar el fitxer.",
+    "gender_media_error_remove_failed": "No s'ha pogut treure el fitxer.",
+    "gender_media_created_upload_failed": "L'exercici s'ha creat, però no s'ha pogut pujar part del contingut multimèdia. Torna-ho a provar des de l'editor."
   },
   "muscles": {
     "chest": "Pit",

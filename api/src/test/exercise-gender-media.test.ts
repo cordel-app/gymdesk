@@ -100,7 +100,7 @@ async function createExercise(gym: string | null, name: string): Promise<number>
 
 async function mediaOf(id: number) {
   const { rows } = await db.query<Record<string, string | null>>(
-    'SELECT image_male_url, image_female_url, video_male_url, video_female_url, image_url, video_url FROM exercises WHERE id = ?',
+    'SELECT image_male_url, image_female_url, video_male_url, video_female_url FROM exercises WHERE id = ?',
     [id],
   );
   return rows[0];
@@ -146,7 +146,7 @@ beforeEach(async () => {
   sendMock.mockResolvedValue({});
   await db.query(
     `UPDATE exercises SET image_male_url = NULL, image_female_url = NULL, video_male_url = NULL, video_female_url = NULL,
-            image_url = NULL, video_url = NULL, name = ?, status = 'active' WHERE id = ?`,
+            name = ?, status = 'active' WHERE id = ?`,
     [EXERCISE_NAME, exerciseId],
   );
   await db.query(
@@ -169,7 +169,7 @@ describe('Gym Exercise gender images', () => {
     expect(putKeys()).toEqual([master, master.replace('.webp', '-thumbnail.webp')]);
     expect(res.body.image_male_url).toBe(url(master));
     expect(res.body.image_male_thumbnail_url).toBe(url(master.replace('.webp', '-thumbnail.webp')));
-    expect(await mediaOf(exerciseId)).toMatchObject({ image_male_url: url(master), image_female_url: null, image_url: null });
+    expect(await mediaOf(exerciseId)).toMatchObject({ image_male_url: url(master), image_female_url: null });
   });
 
   it('keeps the female image independent of the male one', async () => {

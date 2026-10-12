@@ -30,12 +30,19 @@ describe('the platform router stamps the actor on every write', () => {
     expect(platformRouter).toContain('function platformActor(req: { superadminName?: string | null })');
   });
 
-  it('and on every statement that moves modified_at — all five of them', () => {
+  it('and on every statement that moves modified_at', () => {
     const bumps = platformRouter.match(/modified_at\s+=\s+UTC_TIMESTAMP\(\)/g) ?? [];
-    // PUT /:id, plus the image upload/delete and the video upload/delete.
-    expect(bumps).toHaveLength(5);
+    // Only PUT /:id: since #1420 the media writes are the one shared factory's.
+    expect(bumps).toHaveLength(1);
     const stamps = platformRouter.match(/modified_by\s+=\s+\?/g) ?? [];
     expect(stamps, 'every modified_at bump carries the actor').toHaveLength(bumps.length);
+  });
+
+  it('and the shared media writer stamps it too, for both scopes (#1420)', () => {
+    const media = readFileSync(join(API, 'api', 'exercise-gender-media.ts'), 'utf-8');
+    expect(media).toMatch(/modified_at = UTC_TIMESTAMP\(\), modified_by = \?/);
+    expect(media).toContain("scope === 'platform'");
+    expect(media).toContain('resolvePlatformActor(');
   });
 
   it('and the soft delete records who deleted it', () => {
@@ -44,7 +51,7 @@ describe('the platform router stamps the actor on every write', () => {
 
   it('resolving the actor inside the handler, after requireSuperadmin has run', () => {
     expect(platformRouter).not.toMatch(/^const actor = platformActor/m);
-    expect((platformRouter.match(/const actor = platformActor\(req\);/g) ?? []).length).toBe(6);
+    expect((platformRouter.match(/const actor = platformActor\(req\);/g) ?? []).length).toBe(2);
   });
 });
 

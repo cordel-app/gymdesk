@@ -439,7 +439,16 @@
     "welcomed_yes": "Sí",
     "welcomed_no": "No",
     "filter_welcomed": "Bienvenida",
-    "all_welcomed": "Todos"
+    "all_welcomed": "Todos",
+    "product_set_card_title": "Recurrente",
+    "product_set_card_plan": "Plan de membresía",
+    "product_set_label_product_count": "Productos",
+    "product_set_label_plan_status": "Estado del plan de membresía",
+    "product_set_plan_status_active": "Activo",
+    "product_set_plan_status_inactive": "Inactivo",
+    "product_set_plan_status_expired": "Caducado",
+    "product_set_details_title": "Detalles del conjunto de productos",
+    "close": "Cerrar"
   },
   "member_payments": {
     "title": "Pagos del miembro",
@@ -1896,7 +1905,23 @@
     "card_hide_details": "Ocultar detalles",
     "card_full_description": "Descripción completa",
     "card_muscles_worked": "Músculos trabajados",
-    "card_default_values": "Valores por defecto"
+    "card_default_values": "Valores por defecto",
+    "gender_male": "Masculino",
+    "gender_female": "Femenino",
+    "gender_media_image_requirements": "JPEG, PNG, WebP o GIF, hasta {size} MB. El servidor la ajusta completa en un WebP de 1080 × 1080 (relleno transparente, sin recortar) y genera una miniatura de 256 × 256.",
+    "gender_media_video_requirements": "MP4 (H.264), hasta {size} MB. Se captura una imagen de vista previa del vídeo y el servidor la guarda como WebP de 1080 × 1080 con una miniatura de 256 × 256.",
+    "gender_media_upload": "Subir",
+    "gender_media_replace": "Reemplazar",
+    "gender_media_input_label": "Archivo de {kind} ({gender})",
+    "gender_media_confirm_remove": "¿Quitar {kind} {gender}? El ejercicio conserva todo lo demás.",
+    "gender_media_error_not_an_image": "El archivo debe ser una imagen JPEG, PNG, WebP o GIF.",
+    "gender_media_error_not_an_mp4": "El vídeo debe ser un archivo MP4.",
+    "gender_media_error_too_large": "Ese archivo supera los {size} MB que acepta este despliegue.",
+    "gender_media_error_unreadable": "No se pudo leer ese archivo.",
+    "gender_media_error_frame_failed": "No se pudo capturar un fotograma de vista previa, así que no se subió nada y el vídeo actual no cambia.",
+    "gender_media_error_upload_failed": "No se pudo subir el archivo.",
+    "gender_media_error_remove_failed": "No se pudo quitar el archivo.",
+    "gender_media_created_upload_failed": "El ejercicio se creó, pero no se pudo subir parte del contenido multimedia. Reinténtalo desde el editor."
   },
   "muscles": {
     "chest": "Pecho",

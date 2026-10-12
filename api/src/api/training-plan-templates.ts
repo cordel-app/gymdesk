@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { effectiveImageUrlSql, effectiveImageThumbnailUrlSql } from '../domain/effectiveExerciseImage';
+import { effectiveImageUrlSql, effectiveImageThumbnailUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -164,7 +164,7 @@ trainingPlanTemplatesRouter.get('/:id/hierarchy', async (req, res, next) => {
                       SELECT JSON_OBJECT(
                           'id', wte.id, 'position', wte.position, 'exercise_id', wte.exercise_id,
                           'exercise_name', ${localizedExerciseNameSql('e', getRequestLocale(req))},
-                          'exercise_image_url', ${effectiveImageUrlSql('e')}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e')}, 'exercise_video_url', e.video_url, 'exercise_video_thumbnail_url', e.video_thumbnail_url,
+                          'exercise_image_url', ${effectiveImageUrlSql('e')}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e')}, 'exercise_video_url', ${effectiveVideoUrlSql('e')}, 'exercise_video_thumbnail_url', ${effectiveVideoPosterSql('e')},
                           'min_reps', wte.min_reps, 'max_reps', wte.max_reps,
                           'sets', wte.sets, 'rest_seconds', wte.rest_seconds, 'tempo', wte.tempo,
                           'result_type_id', wte.result_type_id, 'result_type_slug', rt.slug, 'result_type_name', rt.name,

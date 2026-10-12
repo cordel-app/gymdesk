@@ -439,7 +439,16 @@
     "welcomed_yes": "Yes",
     "welcomed_no": "No",
     "filter_welcomed": "Welcomed",
-    "all_welcomed": "All"
+    "all_welcomed": "All",
+    "product_set_card_title": "Recurring",
+    "product_set_card_plan": "Membership Plan",
+    "product_set_label_product_count": "Products",
+    "product_set_label_plan_status": "Membership Plan status",
+    "product_set_plan_status_active": "Active",
+    "product_set_plan_status_inactive": "Inactive",
+    "product_set_plan_status_expired": "Expired",
+    "product_set_details_title": "Product Set details",
+    "close": "Close"
   },
   "member_payments": {
     "title": "Member Payments",
@@ -1910,7 +1919,23 @@
     "card_hide_details": "Hide details",
     "card_full_description": "Full description",
     "card_muscles_worked": "Muscles worked",
-    "card_default_values": "Default values"
+    "card_default_values": "Default values",
+    "gender_male": "Male",
+    "gender_female": "Female",
+    "gender_media_image_requirements": "JPEG, PNG, WebP or GIF, up to {size} MB. The server fits it whole in a 1080 × 1080 WebP (transparent padding, nothing cropped) and makes a 256 × 256 thumbnail.",
+    "gender_media_video_requirements": "MP4 (H.264), up to {size} MB. A preview image is captured from the video and the server stores it as a 1080 × 1080 WebP with a 256 × 256 thumbnail.",
+    "gender_media_upload": "Upload",
+    "gender_media_replace": "Replace",
+    "gender_media_input_label": "{kind} file ({gender})",
+    "gender_media_confirm_remove": "Remove the {gender} {kind}? The exercise keeps everything else.",
+    "gender_media_error_not_an_image": "The file must be a JPEG, PNG, WebP or GIF image.",
+    "gender_media_error_not_an_mp4": "Video must be an MP4 file.",
+    "gender_media_error_too_large": "That file is larger than the {size} MB this deployment accepts.",
+    "gender_media_error_unreadable": "That file could not be read.",
+    "gender_media_error_frame_failed": "A preview frame could not be captured, so nothing was uploaded and the current video is unchanged.",
+    "gender_media_error_upload_failed": "The file could not be uploaded.",
+    "gender_media_error_remove_failed": "The file could not be removed.",
+    "gender_media_created_upload_failed": "The exercise was created, but some media could not be uploaded. Retry it from the editor."
   },
   "muscles": {
     "chest": "Chest",

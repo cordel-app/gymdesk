@@ -15,15 +15,18 @@ import {
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
 import { StatusBadge } from '@/components/StatusBadge';
-import { ExerciseImageField } from '@/components/ExerciseImageField';
-import { ExerciseVideoField } from '@/components/ExerciseVideoField';
-import type { PreparedExerciseImage } from '@/lib/exerciseImageUpload';
-import type { PreparedExerciseVideo } from '@/lib/exerciseVideoUpload';
+import { ExerciseGenderMedia } from '@/components/exercises/ExerciseGenderMedia';
+import {
+  type GenderMediaKey,
+  type PreparedGenderMedia,
+  type StagedGenderMedia,
+  uploadStagedGenderMedia,
+} from '@/lib/exerciseGenderMedia';
 import { btnStyle, cardSurfaceStyle, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 // #806: the Exercise editor, its form-state hook and the form declaration are
 // shared with the platform Base Exercises page — there is one implementation of
 // the form and this page supplies the gym context's persistence.
-import { ExerciseEditor, ExerciseMediaPair, type ExerciseNameLocales } from '@/components/exercises/ExerciseEditor';
+import { ExerciseEditor, type ExerciseNameLocales } from '@/components/exercises/ExerciseEditor';
 import { useExerciseEditorState, useMuscleLabel } from '@/components/exercises/useExerciseEditorState';
 import {
   toExerciseCreatePayload,
@@ -59,10 +62,12 @@ interface Exercise {
   /** #967: the stored per-locale names — what `⋮ → Edit` seeds its language inputs from. */
   translations: Record<string, string>;
   description: string | null;
-  /** #719: the video reference, and its stored poster when the gym uploaded one. */
-  video_url: string | null; video_thumbnail_url: string | null;
-  /** #719: the master reference, and the 512×512 thumbnail when the gym uploaded one. */
-  image_url: string | null; image_thumbnail_url: string | null;
+  /** #1420: the four gender-specific references and the companions derived from them. */
+  image_male_url: string | null; image_female_url: string | null;
+  video_male_url: string | null; video_female_url: string | null;
+  image_male_thumbnail_url: string | null; image_female_thumbnail_url: string | null;
+  video_male_preview_url: string | null; video_male_preview_thumbnail_url: string | null;
+  video_female_preview_url: string | null; video_female_preview_thumbnail_url: string | null;
   min_reps_default: number | null; max_reps_default: number | null;
   sets_default: number | null; rest_default_seconds: number | null;
   status: 'active' | 'inactive';
@@ -172,10 +177,16 @@ export default function ExercisesPage() {
   const [addOpen, setAddOpen] = useState(false);
   const addState = useExerciseEditorState();
   const newNameRef = useRef<HTMLInputElement>(null);
-  // #719: the image picked in the creation card, uploaded once the exercise exists.
-  const [stagedImage, setStagedImage] = useState<PreparedExerciseImage | null>(null);
-  // #719 part 2: and the video picked there, uploaded the same way.
-  const [stagedVideo, setStagedVideo] = useState<PreparedExerciseVideo | null>(null);
+  // #1420: the four media picks of the creation card (image and video, male and
+  // female), posted once the exercise exists and has an id to upload to.
+  const [stagedMedia, setStagedMedia] = useState<StagedGenderMedia>({});
+  const stageMedia = (key: GenderMediaKey, prepared: PreparedGenderMedia | null) =>
+    setStagedMedia((prev) => {
+      const next = { ...prev };
+      if (prepared) next[key] = prepared;
+      else delete next[key];
+      return next;
+    });
 
   // Details, delete, dependency
   const [detailFor, setDetailFor] = useState<Exercise | null>(null);
@@ -315,7 +326,7 @@ export default function ExercisesPage() {
    */
   async function handleSave(id: number) {
     const saved = await editState.submit(async () => {
-      // #717 Q6: `toExerciseUpdatePayload` deliberately omits `video_url` —
+      // `toExerciseUpdatePayload` deliberately omits every media reference —
       // see the shared module.
       await apiFetch(`/exercises/${id}`, {
         method: 'PUT',
@@ -398,8 +409,7 @@ export default function ExercisesPage() {
 
   function openAdd() {
     addState.reset(null);
-    setStagedImage(null);
-    setStagedVideo(null);
+    setStagedMedia({});
     setAddOpen(true);
     setTimeout(() => newNameRef.current?.focus(), 60);
   }
@@ -408,8 +418,7 @@ export default function ExercisesPage() {
   function closeAdd() {
     setAddOpen(false);
     addState.reset(null);
-    setStagedImage(null);
-    setStagedVideo(null);
+    setStagedMedia({});
   }
 
   async function handleAdd() {
@@ -418,24 +427,17 @@ export default function ExercisesPage() {
         method: 'POST',
         body: JSON.stringify(toExerciseCreatePayload(addState.form, addState.extras)),
       });
-      // #719: the image the creation card staged, now that there is an exercise
-      // to attach it to. A failure here leaves the exercise created and
-      // imageless and says so, rather than discarding the exercise — so it is
-      // reported as a toast and does not fail the save.
-      if (stagedImage) {
-        try {
-          await apiFetch(`/exercises/${created.id}/image`, { method: 'POST', body: JSON.stringify(stagedImage) });
-        } catch (err: any) {
-          toast(err.message ?? t('image_error_upload_failed'));
-        }
-      }
-      if (stagedVideo) {
-        try {
-          await apiFetch(`/exercises/${created.id}/video`, { method: 'POST', body: JSON.stringify(stagedVideo) });
-        } catch (err: any) {
-          toast(err.message ?? t('video_error_upload_failed'));
-        }
-      }
+      // #1420: the media the creation card staged, now that there is an
+      // exercise to attach it to. A failure leaves the exercise created without
+      // that file and says so, rather than discarding the exercise — so it is a
+      // toast and does not fail the save.
+      const failures = await uploadStagedGenderMedia(
+        (path, body) => apiFetch(path, { method: 'POST', body: JSON.stringify(body) }),
+        '/exercises',
+        created.id,
+        stagedMedia,
+      );
+      if (failures.length > 0) toast(failures[0].message ?? t('gender_media_created_upload_failed'));
     });
     if (!saved) return;
     closeAdd();
@@ -484,13 +486,13 @@ export default function ExercisesPage() {
             muscleLabel={muscleLabel}
             resultTypes={resultTypes}
             nameRef={newNameRef}
-            media={<ExerciseMediaPair
-              // #719: there is no exercise to upload to yet, so the prepared
-              // pair is held here and posted to `POST /exercises/:id/image` the
-              // moment the exercise exists.
-              image={<ExerciseImageField exerciseId={null} imageUrl={null} onStaged={setStagedImage} />}
-              // #719 part 2: same staging for the video and its poster.
-              video={<ExerciseVideoField exerciseId={null} videoUrl={null} onStaged={setStagedVideo} />}
+            media={<ExerciseGenderMedia
+              // #1420: there is no exercise to upload to yet, so each control
+              // holds its prepared body here and it is posted the moment the
+              // exercise exists.
+              exerciseId={null}
+              values={null}
+              onStage={stageMedia}
             />}
             onCancel={closeAdd}
             onSave={handleAdd}
@@ -512,26 +514,15 @@ export default function ExercisesPage() {
           muscleLabel={muscleLabel}
           resultTypes={resultTypes}
           nameRef={nameInputRef}
-          media={<ExerciseMediaPair
-            // #719: the image is not part of this form. Uploading or removing
-            // acts on the exercise straight away, so cancelling the editor
-            // neither undoes it nor re-applies an image that was removed.
-            image={<ExerciseImageField
-              exerciseId={ex.id}
-              imageUrl={ex.image_url}
-              thumbnailUrl={ex.image_thumbnail_url}
-              onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
-              disabled={!canWrite}
-              disabledTitle={readOnlyTitle}
-            />}
-            video={<ExerciseVideoField
-              exerciseId={ex.id}
-              videoUrl={ex.video_url}
-              posterUrl={ex.video_thumbnail_url}
-              onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
-              disabled={!canWrite}
-              disabledTitle={readOnlyTitle}
-            />}
+          media={<ExerciseGenderMedia
+            // #1420: media is not part of this form. Uploading or removing acts
+            // on the exercise straight away, so cancelling the editor neither
+            // undoes it nor re-applies a file that was removed.
+            exerciseId={ex.id}
+            values={ex}
+            onChanged={(updated) => applyExerciseUpdate(updated as Exercise)}
+            disabled={!canWrite}
+            disabledTitle={readOnlyTitle}
           />}
           onCancel={cancelEdit}
           onSave={() => handleSave(ex.id)}

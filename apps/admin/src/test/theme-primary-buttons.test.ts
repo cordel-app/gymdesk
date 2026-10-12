@@ -164,10 +164,9 @@ const FILE_PICKERS = [
   join(COMPONENTS, 'ImageUploadField.tsx'),
 ];
 
-/** The two pickers #968 moved onto the Theme's Primary Button pair. */
+/** The exercise media picker (#968, now the four gender-specific controls of #1420) on the Theme's Primary Button pair. */
 const THEMED_EXERCISE_PICKERS = [
-  join(COMPONENTS, 'ExerciseImageField.tsx'),
-  join(COMPONENTS, 'ExerciseVideoField.tsx'),
+  join(COMPONENTS, 'exercises', 'ExerciseGenderMediaField.tsx'),
 ];
 
 function sourcesUnder(dir: string): string[] {

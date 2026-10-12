@@ -52,7 +52,7 @@ export function ExerciseCard({
   const [broken, setBroken] = React.useState(false);
 
   const name = exerciseName(exercise);
-  const src = exercise.effective_image_url ?? exercise.image_url ?? null;
+  const src = exercise.effective_image_url ?? null;
   const showImage = !!src && SAFE_IMAGE_SRC.test(src) && !broken;
   const muscles = exercise.muscles ?? [];
   const primary = muscles.filter((m) => m.role === 'principal').map((m) => m.key);
