@@ -1,6 +1,6 @@
 'use client';
 
-import { exerciseCategoryLabelKey } from '@/lib/exerciseCategories';
+import { exerciseCategoryLabel } from '@/lib/exerciseCategories';
 import React from 'react';
 import { RecordedMetrics } from './RecordedMetrics';
 import { useTranslations } from 'next-intl';
@@ -128,7 +128,7 @@ export function ExerciseReadOnlyView({
           ])}
         <Field
           label={t('label_category')}
-          value={exerciseDisplayValue(exerciseCategoryLabelKey(exercise.category) ? t(exerciseCategoryLabelKey(exercise.category) as any) : exercise.category)}
+          value={exerciseDisplayValue(exerciseCategoryLabel(exercise.category, (key) => t(key as any), (v) => v))}
         />
         <div>
           <p style={exerciseFieldLabelStyle}>{t('label_status')}</p>

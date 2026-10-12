@@ -25,6 +25,24 @@ export function exerciseCategoryLabelKey(value: string | null | undefined): stri
 }
 
 /**
+ * #1355 §3: the one place a category's display label is decided — the localized
+ * label for a supported id, the stored value's own humanized form (never a
+ * locale key) for anything else. `resolve` is the page's `t()`, handed the key
+ * only after it is known to exist, so a filter option, a chip, the card and the
+ * editor all read one answer in the language on screen. The stored id stays the
+ * value filters and writes use.
+ */
+export function exerciseCategoryLabel(
+  value: string | null | undefined,
+  resolve: (key: string) => string,
+  fallback: (value: string) => string,
+): string {
+  if (!value) return '';
+  const key = exerciseCategoryLabelKey(value);
+  return key ? resolve(key) : fallback(value);
+}
+
+/**
  * #1360 stage 2: mirror of `CATEGORY_RESULT_TYPE_SLUGS`
  * (`api/src/domain/exerciseCategories.ts`) — display only. The API derives and
  * persists the real set; this decides which chips the editor shows before the
