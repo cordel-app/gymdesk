@@ -84,7 +84,7 @@ import {
   exerciseGenderMediaBodyParser,
   exerciseGenderMediaUploadRateLimit,
 } from './api/exercise-gender-media';
-import { PLATFORM_MUSCLE_IMAGE_UPLOAD_PATH, platformMuscleImageBodyParser, platformMusclesRouter } from './api/platform-muscles';
+import { platformMusclesRouter } from './api/platform-muscles';
 import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
 import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
 import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
@@ -192,15 +192,6 @@ app.use('/webhooks/clerk', express.raw({ type: 'application/json' }), clerkWebho
 // Payment webhooks must also precede express.json() for the same reason.
 // express.raw({ type: '*/*' }) captures any content-type Monei may use.
 app.use('/webhooks/payment', express.raw({ type: '*/*' }), paymentWebhookRouter);
-
-// A Base Muscle image upload carries a master and its thumbnail as base64 in one
-// JSON body, so it is parsed here with its own limit, before the global parser's
-// 100 kB default would reject it as a bare 413.
-app.use((req, res, next) => {
-  if (req.method !== 'POST') return next();
-  if (PLATFORM_MUSCLE_IMAGE_UPLOAD_PATH.test(req.path)) return platformMuscleImageBodyParser(req, res, next);
-  return next();
-});
 
 // #1420: exercise media (gym and platform). An image upload carries the picked
 // picture and a video upload an MP4 and its captured frame, as base64 in one JSON

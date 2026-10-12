@@ -7,7 +7,11 @@
 // `cordel/muscles/images/<muscle name>-<male|female>[-thumbnail].webp`. Upload,
 // replacement and removal act on one sex at a time.
 //
-// Everything here is pure: the keys, the validation and the ownership test.
+// The server makes both files from the one picture a client sends
+// (`muscleImageProcessing.ts`, the Member photo's rule since #1449): the browser
+// only checks it is an image and small enough, so nothing depends on what a
+// user's browser can encode. Everything here is pure: the keys, the upload
+// limits, the check of the files the server produced and the ownership test.
 
 import { PLATFORM_STORAGE_ROOT, sanitizeStorageObjectName, storageKeyFromObjectUrl } from '../infra/storage';
 import { readWebpMetadata } from './webpImage';
@@ -55,6 +59,29 @@ export function buildMuscleImageThumbnailKey(name: string, sex: MuscleSex): stri
   return `${PLATFORM_MUSCLE_IMAGES_PREFIX}/${sanitizeMuscleImageName(name)}-${sex}-thumbnail.webp`;
 }
 
+const DEFAULT_MAX_MB = 10;
+const CEILING_MAX_MB = 25;
+
+/**
+ * The upload ceiling in bytes for the **original** picture: `MUSCLE_IMAGE_MAX_MB`
+ * (megabytes), default 10, never above 25 — `memberImageMaxBytes()`'s shape. The
+ * upload is buffered in the API process, so this is what bounds that memory.
+ */
+export function muscleImageMaxBytes(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.MUSCLE_IMAGE_MAX_MB);
+  const mb = Number.isFinite(raw) && raw > 0 ? Math.min(raw, CEILING_MAX_MB) : DEFAULT_MAX_MB;
+  return Math.floor(mb * 1024 * 1024);
+}
+
+export const MUSCLE_IMAGE_UPLOAD_RATE_LIMIT_DEFAULT_MAX = 30;
+export const MUSCLE_IMAGE_UPLOAD_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+
+/** Uploads one signed-in person may make per window (`MUSCLE_IMAGE_UPLOAD_RATE_LIMIT_MAX`). */
+export function muscleImageUploadRateLimitMax(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.MUSCLE_IMAGE_UPLOAD_RATE_LIMIT_MAX);
+  return Number.isInteger(raw) && raw > 0 ? raw : MUSCLE_IMAGE_UPLOAD_RATE_LIMIT_DEFAULT_MAX;
+}
+
 export interface MuscleImageProblem {
   rejection: 'not_webp' | 'wrong_size' | 'too_large';
   message: string;
@@ -75,7 +102,11 @@ function validateOne(body: unknown, kind: 'image' | 'thumbnail'): MuscleImagePro
   return null;
 }
 
-/** Validates the pair from the bytes; the master first, and both before anything is uploaded. */
+/**
+ * Validates the pair the server produced, from the bytes, before anything is
+ * uploaded: the master first. It is the guard against a bad encode, never a
+ * requirement placed on the picture the client sent.
+ */
 export function validateMuscleImagePair(image: unknown, thumbnail: unknown): MuscleImageProblem | null {
   return validateOne(image, 'image') ?? validateOne(thumbnail, 'thumbnail');
 }
