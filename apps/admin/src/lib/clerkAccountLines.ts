@@ -46,7 +46,22 @@ export function clerkStatusLine(f: ClerkAccountFields, locale: string, settings:
 }
 
 export function clerkInvitationLine(f: ClerkAccountFields, locale: string, settings: GymFormatSettings = DEFAULT_GYM_FORMAT): ClerkAccountLine {
-  if (!f.has_pending_invitation) return { key: 'clerk_invitation_none', date: null };
-  const date = formatClerkDate(f.invited_at, locale, settings);
-  return { key: date ? 'clerk_invitation_invited_on' : 'clerk_invitation_invited', date };
+  // #1326: `invitation_id` is cleared when an invitation is accepted or revoked, so
+  // "no pending invitation" alone read "None" for a member who *was* invited. The
+  // stored `invited_at` is history (#1234) and tells those apart from never invited:
+  // pending = the invitation id; accepted = not pending, enrolled, was invited;
+  // cancelled = not pending, not enrolled, was invited; none = never invited.
+  if (f.has_pending_invitation) {
+    const date = formatClerkDate(f.invited_at, locale, settings);
+    return { key: date ? 'clerk_invitation_invited_on' : 'clerk_invitation_invited', date };
+  }
+  if (f.invited_at) {
+    const enrolled = f.enrolled ?? !!f.clerk_user_id;
+    if (enrolled) {
+      const date = formatClerkDate(f.enrolled_at, locale, settings);
+      return { key: date ? 'clerk_invitation_accepted_on' : 'clerk_invitation_accepted', date };
+    }
+    return { key: 'clerk_invitation_cancelled', date: null };
+  }
+  return { key: 'clerk_invitation_none', date: null };
 }

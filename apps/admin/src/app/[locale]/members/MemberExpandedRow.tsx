@@ -386,7 +386,7 @@ export function MemberExpandedRow({
                   #1326: the value is a chip; the date stays beside it as text. */}
               {clerkStatus && [
                 ['label_clerk_status', clerkStatusLine(clerkStatus, locale, gymFmt), clerkStatus.enrolled ?? !!clerkStatus.clerk_user_id],
-                ['label_clerk_invitation', clerkInvitationLine(clerkStatus, locale, gymFmt), !!clerkStatus.has_pending_invitation],
+                ['label_clerk_invitation', clerkInvitationLine(clerkStatus, locale, gymFmt), !!clerkStatus.has_pending_invitation || clerkInvitationLine(clerkStatus, locale, gymFmt).key.startsWith('clerk_invitation_accepted')],
               ].map(([label, line, positive]) => {
                 const l = line as ClerkAccountLine;
                 const chipKey = l.key.replace(/_on$/, '');

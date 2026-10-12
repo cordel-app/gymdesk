@@ -21,14 +21,31 @@ describe.each([['admin', admin], ['member', member]])('%s clerkAccountLines', (_
   it('invitation is pending-based, date is history', () => {
     expect(m.clerkInvitationLine({ has_pending_invitation: true, invited_at: '2026-10-01T08:00:00Z' }, 'en'))
       .toEqual({ key: 'clerk_invitation_invited_on', date: '01/10/2026' });
-    expect(m.clerkInvitationLine({ has_pending_invitation: false, invited_at: '2026-10-01T08:00:00Z' }, 'en').key)
+    expect(m.clerkInvitationLine({ has_pending_invitation: false }, 'en').key)
       .toBe('clerk_invitation_none');
+  });
+  // #1326: accepting or revoking clears the invitation id; invited_at keeps the history.
+  it('an accepted invitation is not "None"', () => {
+    expect(m.clerkInvitationLine({ has_pending_invitation: false, invited_at: '2026-10-01T08:00:00Z',
+      enrolled: true, enrolled_at: '2026-10-02T08:00:00Z' }, 'en'))
+      .toEqual({ key: 'clerk_invitation_accepted_on', date: '02/10/2026' });
+    expect(m.clerkInvitationLine({ has_pending_invitation: false, invited_at: '2026-10-01T08:00:00Z',
+      clerk_user_id: 'u' }, 'en').key).toBe('clerk_invitation_accepted');
+  });
+  it('a revoked invitation reads Cancelled', () => {
+    expect(m.clerkInvitationLine({ has_pending_invitation: false, invited_at: '2026-10-01T08:00:00Z',
+      enrolled: false }, 'en')).toEqual({ key: 'clerk_invitation_cancelled', date: null });
+  });
+  it('a pending invitation wins over history', () => {
+    expect(m.clerkInvitationLine({ has_pending_invitation: true, invited_at: '2026-10-01T08:00:00Z',
+      enrolled: false }, 'en').key).toBe('clerk_invitation_invited_on');
   });
 });
 
 describe('locale keys and writers', () => {
   const keys = ['label_clerk_status', 'label_clerk_invitation', 'clerk_status_enrolled_on', 'clerk_status_enrolled',
-    'clerk_status_not_enrolled', 'clerk_invitation_invited_on', 'clerk_invitation_invited', 'clerk_invitation_none'];
+    'clerk_status_not_enrolled', 'clerk_invitation_invited_on', 'clerk_invitation_invited', 'clerk_invitation_none', 'clerk_invitation_accepted_on',
+    'clerk_invitation_accepted', 'clerk_invitation_cancelled'];
   it.each(['en', 'es', 'ca'])('both apps carry the keys in %s', (l) => {
     for (const [app, ns] of [['admin', 'members'], ['member', 'profile']] as const) {
       const j = JSON.parse(readFileSync(join(__dirname, `../../../apps/${app}/locales/base/${l}.json`), 'utf8'));
