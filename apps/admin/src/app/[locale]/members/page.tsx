@@ -21,6 +21,8 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { MemberExpandedRow } from './MemberExpandedRow';
 import { MemberDetailModal } from './MemberDetailModal';
+import { MemberCommunicationModal } from './MemberCommunicationModal';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { MemberEditForm } from './MemberEditForm';
 import { MemberImageField } from '@/components/MemberImageField';
 import { MemberAvatar } from '@/components/MemberAvatar';
@@ -158,6 +160,7 @@ export default function MembersPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [detailFor, setDetailFor] = useState<Member | null>(null);
+  const [communicationFor, setCommunicationFor] = useState<Member | null>(null);
   // #961 — the Member card is five parallel tabs. The selected one is the
   // page's state rather than the row's, so it survives a save, an edit and a
   // re-render of the list, and several expanded Members each keep their own.
@@ -200,6 +203,13 @@ export default function MembersPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [editingId]);
 
+  // #1390: its own feature key and write level (a Trainer or Nutritionist can
+  // send though Members is read-only for them); the API enforces both again, so
+  // hiding the item is convenience and not security.
+  const { flags: featureFlags } = useFeatureFlags();
+  const canSendCommunication = (isSuperadmin
+    || (activeGym?.role != null && canWriteFeature(activeGym.role, 'MEMBERS', 'membership.staff_communications')))
+    && featureFlags['membership.staff_communications'] !== false;
   const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'MEMBERS'));
   const canManageTraining = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
   const canManagePackages = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
@@ -609,6 +619,9 @@ export default function MembersPage() {
       items.push({ label: t('members.action_revoke'), onClick: () => guardUnsaved(() => handleRevokeInvite(m.id)) });
     }
     items.push({ label: t('members.edit'), onClick: () => guardUnsaved(() => startEdit(m)) });
+    if (canSendCommunication) {
+      items.push({ label: t('members.action_send_communication'), onClick: () => guardUnsaved(() => setCommunicationFor(m)) });
+    }
     items.push({ label: t('members.action_details'), onClick: () => guardUnsaved(() => setDetailFor(m)) });
     if (canWrite) {
       if (m.access_rights_stored === 'revoked') {
@@ -946,6 +959,9 @@ export default function MembersPage() {
         </div>
       )}
 
+      {communicationFor && (
+        <MemberCommunicationModal memberId={communicationFor.id} memberName={communicationFor.name} onClose={() => setCommunicationFor(null)} />
+      )}
       {detailFor && (
         <MemberDetailModal memberId={detailFor.id} memberName={detailFor.name} onClose={() => setDetailFor(null)} />
       )}

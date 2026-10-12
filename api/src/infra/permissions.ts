@@ -207,6 +207,9 @@ export const FEATURE_PERMISSION_OVERRIDES: Record<string, Partial<Record<AppRole
   // #1391: Admin, Trainers and Front Desk already write Calendar; a Nutritionist
   // only reads it, and may still send a communication to an event's attendees.
   'calendar.staff_communications': { nutritionist: 'RW' },
+  // #1390: Send Communication to one Member. Admin and Front Desk already write
+  // Members; Trainers and the Nutritionist are R_ASSIGNED/read there and may still send.
+  'membership.staff_communications': { trainer_performance: 'RW', trainer_perf_nutrition: 'RW', nutritionist: 'RW' },
 };
 
 /** The level a feature key overrides for a role, or `null` when it inherits. */

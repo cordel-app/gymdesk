@@ -3,7 +3,10 @@ import { Router } from 'express';
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { soleActiveCenterId } from '../infra/centerContext';
-import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
+import { getTenantContext, requireRole, requireModuleWrite, requireFeatureWrite } from '../infra/tenantContext';
+import { requireFeatureEnabled } from '../infra/featureFlags';
+import { recordNotifications } from '../infra/notifications';
+import { parseCommunicationInput, MEMBER_COMMUNICATIONS_FEATURE } from '../domain/staffCommunication';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
 import { deriveAccessRights } from '../domain/memberAccessRights';
@@ -520,6 +523,49 @@ membersRouter.delete('/:id/image', requireModuleWrite('MEMBERS'), async (req, re
     res.json(updated);
   } catch (err) { next(err); }
 });
+
+/**
+ * #1390: send a communication to one Member. The same alert as #1391's
+ * (`staff_message`, written awaited through `recordNotifications()`, so a 200
+ * means the row exists), addressed to the Member of the row. Gated three times,
+ * all server-side: the `membership.staff_communications` flag, that feature's own
+ * write level (Admin, Trainers, Nutritionist and Front Desk) and the tenant
+ * scope of the lookup. The Member is the URL's, never the body's.
+ */
+membersRouter.post(
+  '/:id/communications',
+  requireFeatureEnabled(MEMBER_COMMUNICATIONS_FEATURE),
+  requireFeatureWrite(MEMBER_COMMUNICATIONS_FEATURE, 'MEMBERS'),
+  async (req, res, next) => {
+    try {
+      const { gymId } = getTenantContext(req);
+      const parsed = parseCommunicationInput(req.body);
+      if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+
+      const { rows } = await db.query(
+        'SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+        [req.params.id, gymId],
+      );
+      if (rows.length === 0) return res.status(404).json({ error: 'Member not found' });
+
+      const recipients = await recordNotifications(gymId, [{
+        memberId: rows[0].id,
+        type: 'staff_message',
+        entityType: null,
+        entityId: null,
+        payload: { title: parsed.title, message: parsed.message },
+      }]);
+
+      recordAudit(req, {
+        action: 'send_communication',
+        entityType: 'member',
+        entityId: req.params.id,
+        next: { title: parsed.title, recipients },
+      });
+      res.json({ recipients });
+    } catch (e) { next(e); }
+  },
+);
 
 membersRouter.post('/:id/invite', requireModuleWrite('MEMBERS'), async (req, res, next) => {
   const { gymId } = getTenantContext(req);
