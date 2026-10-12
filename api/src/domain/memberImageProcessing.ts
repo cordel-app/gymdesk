@@ -38,7 +38,8 @@ const MAX_CONCURRENT = 2;
 let active = 0;
 const waiting: Array<() => void> = [];
 
-async function withSlot<T>(task: () => Promise<T>): Promise<T> {
+/** One of the two decode slots every server-side image job shares (Member photos, muscle images). */
+export async function withImageProcessingSlot<T>(task: () => Promise<T>): Promise<T> {
   if (active >= MAX_CONCURRENT) await new Promise<void>((resolve) => waiting.push(resolve));
   active += 1;
   try {
@@ -53,7 +54,7 @@ async function withSlot<T>(task: () => Promise<T>): Promise<T> {
 export async function processMemberImage(
   input: Buffer,
 ): Promise<ProcessedMemberImage | { rejection: MemberImageRejection }> {
-  return withSlot(async () => {
+  return withImageProcessingSlot(async () => {
     try {
       const probe = sharp(input, { limitInputPixels: MEMBER_IMAGE_MAX_PIXELS, failOn: 'error' });
       const meta = await probe.metadata();
