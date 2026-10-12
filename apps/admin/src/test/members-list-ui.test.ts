@@ -313,7 +313,7 @@ describe('Members list: one list with Products (#928)', () => {
     expect(pageSrc).toMatch(/function buildActions\(m: Member\): ContextMenuItem\[\]/);
     for (const action of [
       "t('members.action_invite')", "t('members.action_reinvite')", "t('members.action_revoke')",
-      "t('members.edit')", "t('members.action_details')", "t('members.delete')",
+      "t('members.action_details')", "t('members.delete')",
     ]) {
       expect(pageSrc, `the ⋮ menu no longer offers ${action}`).toContain(action);
     }

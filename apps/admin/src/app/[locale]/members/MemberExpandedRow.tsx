@@ -9,6 +9,7 @@ import { listNameBadgeStyle, listNameBadgeAccentStyle } from '@/components/listC
 import { StatusBadge } from '@/components/StatusBadge';
 import { clerkStatusLine, clerkInvitationLine, type ClerkAccountFields, type ClerkAccountLine } from '@/lib/clerkAccountLines';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { SectionEditButton } from '@/components/SectionEditButton';
 import {
   cardMutedTextStyle,
   cardSectionDividedStyle,
@@ -98,6 +99,8 @@ export function MemberExpandedRow({
   editing,
   canManageTraining,
   canManagePersonalGoals,
+  canManageNutrition,
+  onEditProfile,
   isAdmin,
   plans,
   statuses,
@@ -135,6 +138,10 @@ export function MemberExpandedRow({
    * is what `/member-personal-goals` enforces.
    */
   canManagePersonalGoals: boolean;
+  /** #1428: the Nutrition Plans section's Edit button is offered to roles that can write NUTRITION. */
+  canManageNutrition: boolean;
+  /** #1428: opens the Profile's inline form; `undefined` for a role that cannot write Members. */
+  onEditProfile?: () => void;
   isAdmin: boolean;
   plans: Plan[];
 }) {
@@ -302,6 +309,13 @@ export function MemberExpandedRow({
               showing the same Profile a second time. */}
           {!editing && (
             <Section label={t('members.section_profile')} divider={false}>
+              {/* #1428: the Profile's own Edit button replaces the Member
+                  menu's `⋮ → Edit`; absent for a role that cannot write. */}
+              {onEditProfile && (
+                <div style={{ marginBottom: 8 }}>
+                  <SectionEditButton label={t('members.edit')} onClick={onEditProfile} />
+                </div>
+              )}
               <div style={card}>
                 <MemberProfileLayout
                   /* #1374: the image is a value here — the same frame the Edit
@@ -581,6 +595,17 @@ export function MemberExpandedRow({
                 {nutritionPlans.map((p) => (
                   <div key={p.id} style={card}>
                     <div style={{ fontWeight: 500, fontSize: 14 }}>{p.name}</div>
+                    {canManageNutrition && (
+                      <div style={{ marginTop: 6 }}>
+                        <button
+                          type="button"
+                          style={secondaryBtnSmall}
+                          onClick={() => router.push(`/${locale}/nutrition/nutrition-plans?member_id=${memberId}`)}
+                        >
+                          {t('members.edit')}
+                        </button>
+                      </div>
+                    )}
                     {p.status && (
                       <div style={{ marginTop: 4 }}>
                         <StatusBadge status={p.status} label={p.status} />
@@ -601,7 +626,7 @@ export function MemberExpandedRow({
               for Promotions and why this section carries its own controls; they all
               belong to Edit mode (#957), so the read-only view has none of them. */}
           <Section label={t('members.section_personal_goals')} divider={false}>
-            <MemberPersonalGoals memberId={memberId} canWrite={canManagePersonalGoals} editing={editing} />
+            <MemberPersonalGoals memberId={memberId} canWrite={canManagePersonalGoals} />
           </Section>
         </>
       )}

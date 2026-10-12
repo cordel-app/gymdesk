@@ -141,18 +141,21 @@ export function MemberProfessionalServices({ memberId }: { memberId: number }) {
                   {t('prof_services_available')}: <strong>{row.available_items}</strong>
                 </div>
               </div>
-              <ContextMenu
-                ariaLabel={row.name}
-                items={[
-                  {
-                    label: t('prof_services_edit'),
-                    onClick: () => startEdit(row),
-                    disabled: !canWrite,
-                    title: canWrite ? undefined : readOnlyTitle,
-                  },
-                  { label: t('prof_services_history'), onClick: () => void openHistory(id) },
-                ]}
-              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {/* #1428: Edit is the card's own button (the existing editor,
+                    unchanged); the menu keeps History. */}
+                {canWrite && editingId !== id && (
+                  <button type="button" style={primaryBtnSmall()} onClick={() => startEdit(row)}>
+                    {t('prof_services_edit')}
+                  </button>
+                )}
+                <ContextMenu
+                  ariaLabel={row.name}
+                  items={[
+                    { label: t('prof_services_history'), onClick: () => void openHistory(id) },
+                  ]}
+                />
+              </div>
             </div>
 
             {editingId === id && (

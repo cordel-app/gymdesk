@@ -609,6 +609,40 @@ memberPersonalGoalsRouter.delete('/:id', requireWrite, async (req, res, next) =>
   } catch (err) { next(err); }
 });
 
+/* ── Unassign permanently (hard delete) ───────────────────────────────────── */
+
+/**
+ * #1428 §2.3 — the Member card's **Unassign**: the assignment and every reading
+ * under it are physically removed, in one transaction. The goal definition in
+ * `personal_goals` is never touched, and the readings go with the assignment
+ * through `mpgr_assignment_fk ON DELETE CASCADE`, so there is no second statement
+ * that could leave them behind. The soft `DELETE /:id` above stays as it was (the
+ * member's own removal and the gym-wide list still use it).
+ *
+ * The audit row carries the row as it stood, since nothing else will.
+ */
+memberPersonalGoalsRouter.delete('/:id/permanent', requireWrite, async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const { id } = req.params;
+
+  try {
+    const previous = await loadAssignmentRow(id, gymId);
+    if (!previous) return res.status(404).json({ error: 'Assigned personal goal not found' });
+
+    const deleted = await db.transaction(async (tx) => {
+      const result = await tx.query(
+        'DELETE FROM member_personal_goals WHERE id = ? AND gym_id = ?',
+        [id, gymId],
+      );
+      return result.rowCount;
+    });
+    if (deleted === 0) return res.status(404).json({ error: 'Assigned personal goal not found' });
+
+    recordAudit(req, { action: 'delete_permanent', entityType: 'member_personal_goal', entityId: id, previous });
+    res.status(204).send();
+  } catch (err) { next(err); }
+});
+
 function toNumberOrNull(value: unknown): number | null {
   return value === null || value === undefined ? null : Number(value);
 }

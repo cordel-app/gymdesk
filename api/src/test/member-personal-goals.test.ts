@@ -381,6 +381,40 @@ describe('assigned personal goals — unassign', () => {
   });
 });
 
+describe('assigned personal goals — unassign permanently (#1428)', () => {
+  function delPermanent(id: number | string, gym = gymId) {
+    return request.delete(`${PATH}/${id}/permanent`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gym);
+  }
+
+  it('hard deletes the assignment and its readings and keeps the goal definition', async () => {
+    const created = await assign();
+    await db.query(
+      "INSERT INTO member_personal_goal_readings (gym_id, member_personal_goal_id, value, recorded_at, is_initial) VALUES (?, ?, 80, UTC_TIMESTAMP(), 1)",
+      [gymId, created.id],
+    );
+
+    expect((await delPermanent(created.id)).status).toBe(204);
+
+    const a = await db.query('SELECT id FROM member_personal_goals WHERE id = ?', [created.id]);
+    const r = await db.query('SELECT id FROM member_personal_goal_readings WHERE member_personal_goal_id = ?', [created.id]);
+    const g = await db.query('SELECT id FROM personal_goals WHERE id = ?', [gymGoalId]);
+    expect(a.rows).toHaveLength(0);
+    expect(r.rows).toHaveLength(0);
+    expect(g.rows).toHaveLength(1);
+    expect((await delPermanent(created.id)).status).toBe(404);
+  });
+
+  it('is gym scoped and refused for a role without write access', async () => {
+    const created = await assign();
+    expect((await delPermanent(created.id, otherGymId)).status).toBe(404);
+    expect((await delPermanent(created.id, frontDeskGymId)).status).toBe(403);
+    const still = await db.query('SELECT id FROM member_personal_goals WHERE id = ?', [created.id]);
+    expect(still.rows).toHaveLength(1);
+    // Leave no live assignment behind: the suites below assign this goal again.
+    expect((await delPermanent(created.id)).status).toBe(204);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // List, filters and search
 // ---------------------------------------------------------------------------

@@ -81,8 +81,8 @@ describe('Members: the Profile is rendered once per page (#882)', () => {
     expect(pageSrc).toContain("{activeTab === 'profile' && editingId === m.id && (");
   });
 
-  it('keeps ⋮ → Edit as the only entry point into the form', () => {
-    expect(pageSrc).toContain("items.push({ label: t('members.edit'), onClick: () => guardUnsaved(() => startEdit(m)) });");
+  it('#1428: the Profile section\'s Edit button is the entry point into the form', () => {
+    expect(pageSrc).toContain('onEditProfile={canWrite ? () => guardUnsaved(() => startEdit(m)) : undefined}');
   });
 });
 

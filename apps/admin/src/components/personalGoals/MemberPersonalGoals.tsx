@@ -10,6 +10,7 @@ import {
 } from '@/components/formChrome';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { SectionEditButton } from '@/components/SectionEditButton';
 import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalAvailability, goalDisplayName } from '@/components/goalLibrary/goalProfile';
 import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalForm, GoalOption } from './AssignedPersonalGoalForm';
@@ -47,11 +48,9 @@ import {
  *   rather than a dropdown that could assign to somebody else from inside this
  *   member's card.
  */
-export function MemberPersonalGoals({ memberId, canWrite, editing }: {
+export function MemberPersonalGoals({ memberId, canWrite }: {
   memberId: number;
   canWrite: boolean;
-  /** The Member card's Edit mode — the add/edit/remove actions belong to it. */
-  editing: boolean;
 }) {
   const t = useTranslations('assigned_personal_goals');
   // A System goal's label was written in `goal_library` (#947).
@@ -60,6 +59,9 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
+  // #1428: the section's own Edit mode (the Member card has no global one any
+  // more). The add/edit/unassign actions belong to it and are absent outside it.
+  const [editing, setEditing] = useState(false);
   const [rows, setRows] = useState<AssignedPersonalGoalRow[]>([]);
   const [goals, setGoals] = useState<GoalRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,6 +77,7 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
   const [editSaving, setEditSaving] = useState(false);
 
   const [removing, setRemoving] = useState<AssignedPersonalGoalRow | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
 
   // #1037 — each goal's reading history, loaded with the section: these cards are
   // open by default (the Member card has no per-goal expansion), so the history
@@ -197,22 +200,35 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
     } finally { setEditSaving(false); }
   }
 
+  // #1428 §2.3: unassigning is a permanent delete of the assignment and its
+  // readings (one transaction, server-side). A second click while it runs is
+  // ignored, and the section refreshes only on success.
   async function confirmRemove() {
-    if (!removing) return;
+    if (!removing || removeBusy) return;
+    setRemoveBusy(true);
     try {
-      await apiFetch(`${ASSIGNED_PERSONAL_GOALS_ROOT}/${removing.id}`, { method: 'DELETE' });
+      await apiFetch(`${ASSIGNED_PERSONAL_GOALS_ROOT}/${removing.id}/permanent`, { method: 'DELETE' });
       setRemoving(null);
+      toast(t('unassigned_toast'));
       load();
     } catch (e: any) {
       toast(e.message ?? t('error_generic'));
       setRemoving(null);
-    }
+    } finally { setRemoveBusy(false); }
   }
 
   if (loading) return <p style={cardMutedTextStyle}>{t('loading')}</p>;
 
   return (
     <div>
+      {canWrite && (
+        <div style={{ marginBottom: 8 }}>
+          <SectionEditButton
+            label={editing ? t('done_editing') : t('edit')}
+            onClick={() => setEditing((v) => !v)}
+          />
+        </div>
+      )}
       {rows.length === 0 && !creating && <p style={cardMutedTextStyle}>{t('member_empty')}</p>}
 
       {rows.map((row) => (
@@ -339,7 +355,7 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
             setCreating(true);
           }}
         >
-          {t('member_add')}
+          {t('member_add_goal')}
         </button>
       )}
 
@@ -363,8 +379,10 @@ export function MemberPersonalGoals({ memberId, canWrite, editing }: {
       {removing && (
         <ConfirmDialog
           open
-          message={t('unassign_confirm')}
-          confirmLabel={t('unassign')}
+          message={t('member_unassign_title')}
+          details={<p style={{ margin: '8px 0 0', fontSize: 14 }}>{t('member_unassign_message')}</p>}
+          busy={removeBusy}
+          confirmLabel={t('member_unassign_confirm_label')}
           cancelLabel={t('cancel')}
           onConfirm={confirmRemove}
           onCancel={() => setRemoving(null)}

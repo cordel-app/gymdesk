@@ -212,6 +212,7 @@ export default function MembersPage() {
     && featureFlags['membership.staff_communications'] !== false;
   const canWrite = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'MEMBERS'));
   const canManageTraining = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'TRAINING'));
+  const canManageNutrition = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'NUTRITION'));
   const canManagePackages = isSuperadmin || (activeGym?.role != null && canWriteModule(activeGym.role, 'PAYMENTS'));
   // #948 §4: the PERSONAL GOALS section writes through `/member-personal-goals`,
   // which is mounted on NUTRITION — the same module the catalogue is. #1070: and
@@ -618,7 +619,6 @@ export default function MembersPage() {
       items.push({ label: t('members.action_reinvite'), onClick: () => guardUnsaved(() => handleReinvite(m.id)) });
       items.push({ label: t('members.action_revoke'), onClick: () => guardUnsaved(() => handleRevokeInvite(m.id)) });
     }
-    items.push({ label: t('members.edit'), onClick: () => guardUnsaved(() => startEdit(m)) });
     if (canSendCommunication) {
       items.push({ label: t('members.action_send_communication'), onClick: () => guardUnsaved(() => setCommunicationFor(m)) });
     }
@@ -765,6 +765,8 @@ export default function MembersPage() {
               canManageTraining={canManageTraining}
               canManagePackages={canManagePackages}
               canManagePersonalGoals={canManagePersonalGoals}
+              canManageNutrition={canManageNutrition}
+              onEditProfile={canWrite ? () => guardUnsaved(() => startEdit(m)) : undefined}
               isAdmin={isAdmin}
               plans={plans}
               statuses={[
