@@ -13,8 +13,9 @@ import {
   isPlatformOwnedGenderMediaUrl,
   parseExerciseGender,
   thumbnailKeyFor,
-  validateGenderImagePair,
-  validateGenderVideoTriple,
+  exerciseImageMaxBytes,
+  validateGenderImageInput,
+  validateGenderVideo,
   videoObjectUrls,
   videoPreviewKeyFor,
   videoPreviewThumbnailUrlFor,
@@ -23,19 +24,6 @@ import {
 } from '../domain/exerciseGenderMedia';
 import { EXERCISE_GENDER_MEDIA_UPLOAD_PATH } from '../api/exercise-gender-media';
 import { mediaReferenceClause } from '../domain/exerciseMediaReferences';
-
-/** A minimal RIFF/WEBP container with a VP8X header of the given size. */
-function webp(width: number, height: number): Buffer {
-  const b = Buffer.alloc(30);
-  b.write('RIFF', 0, 'ascii');
-  b.writeUInt32LE(22, 4);
-  b.write('WEBP', 8, 'ascii');
-  b.write('VP8X', 12, 'ascii');
-  b.writeUInt32LE(10, 16);
-  b.writeUIntLE(width - 1, 24, 3);
-  b.writeUIntLE(height - 1, 27, 3);
-  return b;
-}
 
 describe('exercise gender media keys (#1420)', () => {
   it('builds the documented gym keys, gender suffix on every file', () => {
@@ -134,41 +122,35 @@ describe('exercise gender media ownership', () => {
   });
 });
 
-describe('validateGenderImagePair', () => {
-  it('accepts a 1080 master and a 256 thumbnail', () => {
-    expect(validateGenderImagePair(webp(1080, 1080), webp(256, 256))).toBeNull();
+describe('validateGenderImageInput', () => {
+  it('accepts bytes within the ceiling', () => {
+    expect(validateGenderImageInput(Buffer.alloc(1024), 'image')).toBeNull();
   });
 
-  it('rejects a master of the wrong size', () => {
-    expect(validateGenderImagePair(webp(1000, 1080), webp(256, 256))).toMatchObject({ file: 'image', rejection: 'wrong_size' });
+  it('rejects a string and an array, which carry a length like bytes', () => {
+    expect(validateGenderImageInput('RIFF....WEBP', 'image')).toMatchObject({ file: 'image', rejection: 'not_an_image' });
+    expect(validateGenderImageInput([1, 2, 3], 'frame')).toMatchObject({ file: 'frame', rejection: 'not_an_image' });
   });
 
-  it('rejects a thumbnail of the wrong size', () => {
-    expect(validateGenderImagePair(webp(1080, 1080), webp(512, 512))).toMatchObject({ file: 'thumbnail', rejection: 'wrong_size' });
+  it('rejects an oversized picture before decoding it', () => {
+    const big = Buffer.alloc(exerciseImageMaxBytes() + 1);
+    expect(validateGenderImageInput(big, 'image')).toMatchObject({ file: 'image', rejection: 'too_large' });
   });
 
-  it('rejects a PNG, a string and an array', () => {
-    const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)]);
-    expect(validateGenderImagePair(png, webp(256, 256))).toMatchObject({ file: 'image', rejection: 'not_webp' });
-    expect(validateGenderImagePair('RIFF....WEBP', webp(256, 256))).toMatchObject({ rejection: 'not_webp' });
-    expect(validateGenderImagePair([1, 2, 3], webp(256, 256))).toMatchObject({ rejection: 'not_webp' });
-  });
-
-  it('rejects an oversized master before reading it', () => {
-    const big = Buffer.alloc(9 * 1024 * 1024);
-    expect(validateGenderImagePair(big, webp(256, 256))).toMatchObject({ file: 'image', rejection: 'too_large' });
+  it('reads the ceiling from EXERCISE_IMAGE_MAX_MB, defaulting to 10 and never above 25', () => {
+    expect(exerciseImageMaxBytes({} as NodeJS.ProcessEnv)).toBe(10 * 1024 * 1024);
+    expect(exerciseImageMaxBytes({ EXERCISE_IMAGE_MAX_MB: '4' } as any)).toBe(4 * 1024 * 1024);
+    expect(exerciseImageMaxBytes({ EXERCISE_IMAGE_MAX_MB: '999' } as any)).toBe(25 * 1024 * 1024);
+    expect(exerciseImageMaxBytes({ EXERCISE_IMAGE_MAX_MB: 'abc' } as any)).toBe(10 * 1024 * 1024);
   });
 });
 
-describe('validateGenderVideoTriple', () => {
-  it('names the video first when it is not an MP4', () => {
-    expect(validateGenderVideoTriple(Buffer.alloc(64), webp(1080, 1080), webp(256, 256))).toMatchObject({
-      file: 'video',
-      rejection: 'not_an_mp4',
-    });
+describe('validateGenderVideo', () => {
+  it('names the video when it is not an MP4', () => {
+    expect(validateGenderVideo(Buffer.alloc(64))).toMatchObject({ file: 'video', rejection: 'not_an_mp4' });
   });
 
   it('rejects a non-buffer video', () => {
-    expect(validateGenderVideoTriple('video', webp(1080, 1080), webp(256, 256))).toMatchObject({ file: 'video' });
+    expect(validateGenderVideo('video')).toMatchObject({ file: 'video' });
   });
 });

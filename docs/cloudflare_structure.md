@@ -165,6 +165,16 @@ Bin restore).
 first-level markers, with its writer, exactly as `goals/` was — and it is not the
 `Members/` #826 removed, which held nothing.
 
+**`muscles/images/` holds a muscle's two images** (#1368 stage 3, #1412, #1413):
+`cordel/muscles/images/{muscle_name}-{male|female}.webp` (1080 × 1080) and
+`…-thumbnail.webp` (256 × 256), written only by `POST /platform/muscles/:id/image/:sex`
+and cleared by its `DELETE`. The client sends **one** picture as it is (JPEG, PNG,
+WebP or GIF, up to `MUSCLE_IMAGE_MAX_MB`); the **server** fits it into a transparent
+1080 × 1080 square without distortion or cropping and encodes both WebP files in
+memory (`api/src/domain/muscleImageProcessing.ts`), so no dimension is required of
+the upload and no browser-side processing exists. A rename of the muscle moves the
+objects (copy, re-point, delete).
+
 **The `members_app/` slot names above are the target, not the code.** The seven slots
 `MEMBER_IMAGE_SLOTS` (`api/src/domain/themeMemberImages.ts`) and the
 `chk_theme_member_images_slot` CHECK accept are still `training`, `nutrition`,
@@ -183,3 +193,10 @@ that asset is what lands it on the new name; the bulk sweep is a production step
 ## Exercise gender media (#1420)
 
 Stage 1 stores only the master reference per file in `exercises.image_male_url`, `image_female_url`, `video_male_url` and `video_female_url` (migration 276). The thumbnail of an image (`-thumbnail.webp` beside the master) and a video's preview and preview thumbnail (`.webp` and `-thumbnail.webp` beside the `.mp4`, always under `videos/`) are derived from the stored URL; no thumbnail column exists. The legacy `image_url`, `image_thumbnail_url`, `video_url` and `video_thumbnail_url` stay until the last stage moves every consumer and drops them.
+
+Since stage 2 the **server** makes the WebP files, through `POST`/`DELETE /exercises/:id/(image|video)/:gender` and the `/platform/exercises` mirror (one factory, `api/src/api/exercise-gender-media.ts`):
+
+- **An image upload** sends one picture as it is (JPEG, PNG, WebP or GIF, up to `EXERCISE_IMAGE_MAX_MB`, default 10, clamped at 25) as `{ image }`, base64 in a JSON body. `api/src/domain/exerciseImageProcessing.ts` (`sharp`, in memory) orients it, **contains** it whole in a 1080 × 1080 canvas with transparent padding — never stretched, never cropped; this is deliberately not the Member photo's centre-crop — encodes the master and makes the 256 × 256 thumbnail **from that master**, and verifies both are WebP of exactly that size before anything is uploaded. The input is judged from its decoded bytes, never from `Content-Type` or a file name.
+- **A video upload** sends `{ video, frame }`: the MP4 (validated from its bytes, `EXERCISE_VIDEO_MAX_MB`) and one frame the browser captured from it, because `sharp` cannot decode MP4 and no `ffmpeg` is installed. The frame is processed exactly like an image upload and stored as the video's preview and preview thumbnail under `videos/`; it never touches an image column. A request with no frame is a 400.
+- **Nothing is uploaded or written until every file is valid**; a failed upload removes only the objects it created, and the row takes its column in one `UPDATE`.
+- **Uploads are rate limited per signed-in person** (`EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_MAX`, default 30 per 15 minutes, on top of the global budget) and decoding is bounded process-wide (`api/src/domain/imageProcessingSlot.ts`, shared with the Member photo).

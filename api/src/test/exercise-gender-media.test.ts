@@ -1,11 +1,14 @@
-// #1420 stage 1 — gender-specific exercise media: `POST`/`DELETE
+// #1420 stages 1–2 — gender-specific exercise media: `POST`/`DELETE
 // /exercises/:id/(image|video)/:gender` for a Gym Exercise and the
 // `/platform/exercises` mirror for a Base Exercise. This file mocks
 // @aws-sdk/client-s3 and moves the CLOUDFLARE_R2_* env around, so it is separate
-// from exercises.test.ts.
+// from exercises.test.ts. Since stage 2 the server makes the WebP files from the
+// picture a client sends, so the tests send real pictures and read the uploaded
+// bytes back with sharp.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createClerkClient } from '@clerk/backend';
+import sharp from 'sharp';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 import { buildMp4 } from './mp4-fixtures';
@@ -40,24 +43,17 @@ function setStorageConfigured() {
   process.env.CLOUDFLARE_R2_BUCKET = R2_BUCKET;
 }
 
-/** A RIFF/WEBP container with a VP8X header of the given size. */
-function webp(width: number, height: number): Buffer {
-  const b = Buffer.alloc(30);
-  b.write('RIFF', 0, 'ascii');
-  b.writeUInt32LE(22, 4);
-  b.write('WEBP', 8, 'ascii');
-  b.write('VP8X', 12, 'ascii');
-  b.writeUInt32LE(10, 16);
-  b.writeUIntLE(width - 1, 24, 3);
-  b.writeUIntLE(height - 1, 27, 3);
-  return b;
+/** A real picture of the given size and colour, in the given format. */
+async function picture(width: number, height: number, format: 'png' | 'jpeg' | 'webp' = 'png', alpha = false): Promise<Buffer> {
+  const base = sharp({
+    create: { width, height, channels: alpha ? 4 : 3, background: alpha ? { r: 200, g: 80, b: 40, alpha: 1 } : { r: 200, g: 80, b: 40 } },
+  });
+  return base[format]().toBuffer();
 }
 
-const MASTER = webp(1080, 1080).toString('base64');
-const THUMBNAIL = webp(256, 256).toString('base64');
-const IMAGE_BODY = { image: MASTER, thumbnail: THUMBNAIL };
+let IMAGE_BODY: { image: string };
+let VIDEO_BODY: { video: string; frame: string };
 const VIDEO = buildMp4({ mdatBytes: 4096 }).toString('base64');
-const VIDEO_BODY = { video: VIDEO, preview: MASTER, preview_thumbnail: THUMBNAIL };
 
 const superadminUser = { publicMetadata: { platform_role: 'superadmin' }, fullName: 'Test Admin' };
 const regularUser = { publicMetadata: {}, fullName: 'Test User' };
@@ -80,6 +76,12 @@ function sentCommands(type: 'put' | 'delete') {
 const putKeys = () => sentCommands('put').map((c: any) => c.input.Key).filter((k: string) => !k.endsWith('/'));
 const deletedKeys = () => sentCommands('delete').map((c: any) => c.input.Key);
 const url = (key: string) => `${R2_ENDPOINT}/${R2_BUCKET}/${key}`;
+
+/** The body of the PutObject call that wrote `key`. */
+function uploadedBody(key: string): Buffer {
+  const command: any = sentCommands('put').find((c: any) => c.input.Key === key);
+  return command.input.Body as Buffer;
+}
 
 const GYM_NAME = 'GenderMediaGym';
 const EXERCISE_NAME = 'Test Gender Media Press';
@@ -114,6 +116,8 @@ const baseDelete = (path: string) =>
   request.delete(`/platform/exercises/${baseExerciseId}/${path}`).set('Authorization', TEST_AUTH_HEADER);
 
 beforeAll(async () => {
+  IMAGE_BODY = { image: (await picture(1600, 900, 'jpeg')).toString('base64') };
+  VIDEO_BODY = { video: VIDEO, frame: (await picture(1280, 720)).toString('base64') };
   gymId = await createTestGym(GYM_NAME);
   await createTestMembership(gymId, 'admin');
   gymPrefix = `gyms/${gymId}-${GYM_NAME}`;
@@ -179,12 +183,50 @@ describe('Gym Exercise gender images', () => {
     expect(media.image_female_url).toMatch(/-female\.webp$/);
   });
 
-  it('refuses an unknown gender, a wrong size and a missing thumbnail without uploading', async () => {
+  it('converts a non-square picture to a 1080 master and a 256 thumbnail without stretching or cropping', async () => {
+    // 1600x900 JPEG, fully opaque: contained at 1080x607, centred, padded with transparency.
+    const res = await gymPost('image/male', IMAGE_BODY);
+    expect(res.status).toBe(200);
+    const master = `${gymPrefix}/exercises/images/${exerciseId}-Test-Gender-Media-Press-male.webp`;
+    const thumb = master.replace('.webp', '-thumbnail.webp');
+
+    const m = await sharp(uploadedBody(master)).metadata();
+    expect(m).toMatchObject({ format: 'webp', width: 1080, height: 1080, hasAlpha: true });
+    const t = await sharp(uploadedBody(thumb)).metadata();
+    expect(t).toMatchObject({ format: 'webp', width: 256, height: 256, hasAlpha: true });
+
+    const { data, info } = await sharp(uploadedBody(master)).raw().toBuffer({ resolveWithObject: true });
+    const alphaAt = (y: number) => data[(y * info.width + 540) * info.channels + 3];
+    expect(alphaAt(10)).toBe(0); // top padding
+    expect(alphaAt(1070)).toBe(0); // bottom padding
+    expect(alphaAt(540)).toBe(255); // the picture is in the middle
+    // The 16:9 source is fitted whole: about 607 rows of picture, not 1080.
+    let opaqueRows = 0;
+    for (let y = 0; y < info.height; y++) if (alphaAt(y) === 255) opaqueRows++;
+    expect(opaqueRows).toBeGreaterThan(590);
+    expect(opaqueRows).toBeLessThan(625);
+  });
+
+  it('converts PNG and WebP uploads too', async () => {
+    for (const format of ['png', 'webp'] as const) {
+      sendMock.mockClear();
+      const body = { image: (await picture(300, 300, format)).toString('base64') };
+      const res = await gymPost('image/male', body);
+      expect(res.status).toBe(200);
+      expect(await sharp(uploadedBody(putKeys()[0])).metadata()).toMatchObject({ format: 'webp', width: 1080, height: 1080 });
+    }
+  });
+
+  it('refuses an unknown gender, a missing, unreadable or unsupported picture without uploading', async () => {
     expect((await gymPost('image/other', IMAGE_BODY)).status).toBe(400);
-    const wrong = await gymPost('image/male', { image: webp(1000, 1080).toString('base64'), thumbnail: THUMBNAIL });
-    expect(wrong.status).toBe(400);
-    expect(wrong.body.reason).toBe('wrong_size');
-    expect((await gymPost('image/male', { image: MASTER })).status).toBe(400);
+    expect((await gymPost('image/male', {})).status).toBe(400);
+    const garbage = await gymPost('image/male', { image: Buffer.from('not a picture at all').toString('base64') });
+    expect(garbage.status).toBe(400);
+    expect(garbage.body.reason).toBe('unreadable');
+    const tiff = await sharp({ create: { width: 20, height: 20, channels: 3, background: '#123456' } }).tiff().toBuffer();
+    const unsupported = await gymPost('image/male', { image: tiff.toString('base64') });
+    expect(unsupported.status).toBe(400);
+    expect(unsupported.body.reason).toBe('unsupported_format');
     expect(putKeys()).toHaveLength(0);
     expect(await mediaOf(exerciseId)).toMatchObject({ image_male_url: null });
   });
@@ -259,14 +301,37 @@ describe('Gym Exercise gender videos', () => {
     });
   });
 
-  it('refuses a file that is not an MP4 and a preview of the wrong size without uploading', async () => {
+  it('makes the preview and its thumbnail from the frame, contained and padded', async () => {
+    const res = await gymPost('video/male', VIDEO_BODY);
+    expect(res.status).toBe(200);
+    const video = `${gymPrefix}/exercises/videos/${exerciseId}-Test-Gender-Media-Press-male.mp4`;
+    expect(await sharp(uploadedBody(video.replace('.mp4', '.webp'))).metadata()).toMatchObject({
+      format: 'webp', width: 1080, height: 1080, hasAlpha: true,
+    });
+    expect(await sharp(uploadedBody(video.replace('.mp4', '-thumbnail.webp'))).metadata()).toMatchObject({
+      format: 'webp', width: 256, height: 256,
+    });
+    expect(uploadedBody(video).length).toBeGreaterThan(0);
+  });
+
+  it('does not overwrite a separately uploaded image with the video preview', async () => {
+    await gymPost('image/male', IMAGE_BODY);
+    const before = (await mediaOf(exerciseId)).image_male_url;
+    await gymPost('video/male', VIDEO_BODY);
+    expect((await mediaOf(exerciseId)).image_male_url).toBe(before);
+  });
+
+  it('refuses a file that is not an MP4, a missing frame and an unreadable frame without uploading', async () => {
     const bad = await gymPost('video/male', { ...VIDEO_BODY, video: Buffer.alloc(64).toString('base64') });
     expect(bad.status).toBe(400);
     expect(bad.body.file).toBe('video');
-    const small = await gymPost('video/male', { ...VIDEO_BODY, preview: THUMBNAIL });
-    expect(small.status).toBe(400);
-    expect(small.body.file).toBe('preview');
+    const missing = await gymPost('video/male', { video: VIDEO });
+    expect(missing.status).toBe(400);
+    const unreadable = await gymPost('video/male', { ...VIDEO_BODY, frame: Buffer.from('nope').toString('base64') });
+    expect(unreadable.status).toBe(400);
+    expect(unreadable.body.file).toBe('frame');
     expect(putKeys()).toHaveLength(0);
+    expect(await mediaOf(exerciseId)).toMatchObject({ video_male_url: null });
   });
 
   it('removes the video and its preview objects', async () => {

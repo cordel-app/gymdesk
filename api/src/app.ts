@@ -81,8 +81,12 @@ import {
   PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH, PLATFORM_EXERCISE_VIDEO_UPLOAD_PATH,
   platformExerciseImageBodyParser, platformExerciseVideoBodyParser, platformExercisesRouter,
 } from './api/platform-exercises';
-import { EXERCISE_GENDER_MEDIA_UPLOAD_PATH, exerciseGenderMediaBodyParser } from './api/exercise-gender-media';
-import { PLATFORM_MUSCLE_IMAGE_UPLOAD_PATH, platformMuscleImageBodyParser, platformMusclesRouter } from './api/platform-muscles';
+import {
+  EXERCISE_GENDER_MEDIA_UPLOAD_PATH,
+  exerciseGenderMediaBodyParser,
+  exerciseGenderMediaUploadRateLimit,
+} from './api/exercise-gender-media';
+import { platformMusclesRouter } from './api/platform-muscles';
 import { platformWorkoutTemplatesRouter } from './api/platform-workout-templates';
 import { platformTrainingPlanTemplatesRouter } from './api/platform-training-plan-templates';
 import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
@@ -200,7 +204,6 @@ app.use((req, res, next) => {
   if (req.method !== 'POST') return next();
   if (EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)) return exerciseImageBodyParser(req, res, next);
   if (PLATFORM_EXERCISE_IMAGE_UPLOAD_PATH.test(req.path)) return platformExerciseImageBodyParser(req, res, next);
-  if (PLATFORM_MUSCLE_IMAGE_UPLOAD_PATH.test(req.path)) return platformMuscleImageBodyParser(req, res, next);
   return next();
 });
 
@@ -212,9 +215,13 @@ app.use((req, res, next) => {
   if (req.method !== 'POST') return next();
   if (EXERCISE_VIDEO_UPLOAD_PATH.test(req.path)) return exerciseVideoBodyParser(req, res, next);
   if (PLATFORM_EXERCISE_VIDEO_UPLOAD_PATH.test(req.path)) return platformExerciseVideoBodyParser(req, res, next);
-  // #1420: the gender-specific image/video uploads (gym and platform) carry WebP
-  // files in one JSON body, so they need the larger limit too.
-  if (EXERCISE_GENDER_MEDIA_UPLOAD_PATH.test(req.path)) return exerciseGenderMediaBodyParser(req, res, next);
+  // #1420: the gender-specific image/video uploads (gym and platform) carry the
+  // picked picture (and, for a video, the MP4) in one JSON body, so they need the
+  // larger limit too, and a budget of their own in front of it.
+  if (EXERCISE_GENDER_MEDIA_UPLOAD_PATH.test(req.path)) {
+    return exerciseGenderMediaUploadRateLimit(req, res, (err?: unknown) =>
+      err ? next(err) : exerciseGenderMediaBodyParser(req, res, next));
+  }
   return next();
 });
 
