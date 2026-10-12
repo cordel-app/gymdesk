@@ -44,6 +44,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import { useApiClient } from '@/lib/apiClient';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { primaryBtnSmall, readOnlyStyle } from '@/components/ui';
 import { useToast } from '@/components/Toast';
 import {
@@ -93,8 +95,13 @@ interface Props {
   onChanged: () => void;
 }
 
-function fmtDate(iso: string | null) {
-  return iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : '—';
+function fmtDate(iso: string | null, s: GymFormatSettings) {
+  return iso ? formatGymDate(iso, s) : '—';
+}
+
+/** A stored calendar day (not an instant): never moved across a time zone. */
+function fmtDay(iso: string | null, s: GymFormatSettings) {
+  return iso ? formatGymDateOnly(iso, s) : '—';
 }
 
 function fmtMoney(v: string | number | null) {
@@ -112,6 +119,7 @@ export function AdditionalPeriodicServices({
   const t = useTranslations('assigned_plans_page');
   const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
   const { apiFetch } = useApiClient();
+  const gymFmt = useGymFormatSettings();
   const { toast } = useToast();
   const itemsLoadedRef = useRef(false);
 
@@ -244,8 +252,8 @@ export function AdditionalPeriodicServices({
                 <td style={td}>{s.quantity}</td>
                 <td style={td}>{frequencyLabel(s.billing_frequency)}</td>
                 <td style={td}>{fmtMoney(s.unit_price)}</td>
-                <td style={td}>{fmtDate(s.starts_at)}</td>
-                <td style={td}>{s.ends_at ? fmtDate(s.ends_at) : '—'}</td>
+                <td style={td}>{fmtDay(s.starts_at, gymFmt)}</td>
+                <td style={td}>{s.ends_at ? fmtDay(s.ends_at, gymFmt) : '—'}</td>
                 <td style={{ ...td, textAlign: 'right' }}>
                   {s.ends_at == null ? (
                     // #797: the control is absent outside Edit mode, so the

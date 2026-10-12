@@ -9,6 +9,8 @@
  * bounces a direct URL so the Dashboard is genuinely unreachable when it is off.
  */
 
+import { formatGymDate } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -86,10 +88,10 @@ export default function PaymentsDashboard() {
   // #779: the one card that is a to-do rather than a monthly statistic — its
   // period line is the age of the oldest unresolved failure, and it opens the
   // failed list oldest first, like the sidebar badge.
+  const gymFmt = useGymFormatSettings();
   const oldestLabel = useMemo(() => {
-    const fmt = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeZone: 'UTC' });
-    return (iso: string | null) => (iso ? t('awaiting_action_oldest', { date: fmt.format(new Date(iso)) }) : t('awaiting_action_none'));
-  }, [locale, t]);
+    return (iso: string | null) => (iso ? t('awaiting_action_oldest', { date: formatGymDate(iso, gymFmt) }) : t('awaiting_action_none'));
+  }, [gymFmt, t]);
 
   const cards = summary ? [
     { key: 'scheduled_this_month', value: summary.scheduled_this_month, period: monthLabel(summary.current_month_start) },

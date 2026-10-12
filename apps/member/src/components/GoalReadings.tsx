@@ -1,6 +1,8 @@
 'use client';
 
 import { type CSSProperties, type ReactNode, useState } from 'react';
+import { useLocale } from 'next-intl';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import {
   memberTheme, rowDividerStyle, statusPillStyle,
 } from '@/lib/memberChrome';
@@ -65,10 +67,9 @@ export function GoalHeaderFields({ fields, trailing }: {
   );
 }
 
-export function GoalReadingHistory({ readings, unit, locale, labels }: {
+export function GoalReadingHistory({ readings, unit, labels }: {
   readings: GoalReading[];
   unit: string | null;
-  locale: string;
   labels: {
     title: string;
     empty: string;
@@ -76,6 +77,8 @@ export function GoalReadingHistory({ readings, unit, locale, labels }: {
     markers: Record<string, string>;
   };
 }) {
+  const locale = useLocale();
+  const gym = useGymFormatSettings();
   const [open, setOpen] = useState(false);
   const rows = readingHistoryRows(readings);
 
@@ -99,7 +102,7 @@ export function GoalReadingHistory({ readings, unit, locale, labels }: {
           <ul style={styles.list}>
             {rows.map((reading) => (
               <li key={reading.id} style={styles.listRow}>
-                <span style={styles.readingDate}>{formatReadingDate(reading.recorded_at, locale)}</span>
+                <span style={styles.readingDate}>{formatReadingDate(reading.recorded_at, locale, gym)}</span>
                 <span style={styles.readingValue}>{formatReadingValue(reading.value, unit) ?? '—'}</span>
                 {reading.marker && (
                   <span style={styles.marker}>{labels.markers[READING_MARKER_KEYS[reading.marker]]}</span>

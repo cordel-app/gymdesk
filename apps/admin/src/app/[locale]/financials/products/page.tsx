@@ -7,6 +7,8 @@ import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
@@ -224,14 +226,15 @@ function fmtAmount(amount: string | null, currency: string) {
   return `${sym}${parseFloat(amount).toFixed(2)}`;
 }
 
-function fmtDate(iso: string | null) {
+function fmtDate(iso: string | null, s: GymFormatSettings) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return formatGymDate(iso, s);
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ProductsPage() {
+  const gymFmt = useGymFormatSettings();
   const t = useTranslations('products');
   // #1128: a Product's Billing Frequency is labelled from the one namespace that
   // labels every billing frequency, so this page, a Membership Plan's benefit
@@ -987,7 +990,7 @@ export default function ProductsPage() {
             {item.created_by ?? '—'}
           </div>
           <div className={CELL_CLASS.created_at} style={{ ...cellStyle, fontSize: 13, color: '#888' }}>
-            {fmtDate(item.created_at)}
+            {fmtDate(item.created_at, gymFmt)}
           </div>
           <div className={CELL_CLASS.status} style={badgeCellStyle}>
             <StatusBadge status={item.status} label={tStatus(item.status)} />
@@ -1181,9 +1184,9 @@ export default function ProductsPage() {
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <ModalSection title={t('section_audit')} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <ModalField label={t('audit_created_at')} value={fmtDate(details.created_at)} />
+              <ModalField label={t('audit_created_at')} value={fmtDate(details.created_at, gymFmt)} />
               <ModalField label={t('audit_created_by')} value={details.created_by ?? '—'} />
-              <ModalField label={t('audit_modified_at')} value={fmtDate(details.modified_at)} />
+              <ModalField label={t('audit_modified_at')} value={fmtDate(details.modified_at, gymFmt)} />
               <ModalField label={t('audit_modified_by')} value={details.modified_by ?? '—'} />
               <ModalField label={t('audit_deleted_at')} value="—" />
               <ModalField label={t('audit_deleted_by')} value="—" />

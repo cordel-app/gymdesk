@@ -49,7 +49,8 @@ describe('readings as chart points', () => {
     // A midnight reading shows no time; one with a real time does, which is what
     // keeps two readings on one date legible as two rows.
     expect(first.label).not.toMatch(/00:00/);
-    expect(second.label).toMatch(/09:30/);
+    // 09:30 UTC on 8 Sept is 11:30 in the gym's Europe/Madrid zone (#1246).
+    expect(second.label).toMatch(/11:30/);
   });
 
   it('drops a row with no value or no timestamp rather than plotting it at zero (§14)', () => {

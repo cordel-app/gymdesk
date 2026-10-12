@@ -444,7 +444,7 @@ describe('#1037 how a reading reads', () => {
   });
 
   it('shows a time only when one was recorded', () => {
-    expect(formatReadingTimestamp('2026-09-22T00:00:00.000Z', 'en-GB')).toBe('22 Sept 2026');
+    expect(formatReadingTimestamp('2026-09-22T00:00:00.000Z', 'en-GB')).toBe('22/09/2026');
     expect(formatReadingTimestamp('2026-09-22T18:30:00.000Z', 'en-GB')).toContain('·');
     expect(formatReadingTimestamp(null, 'en-GB')).toBe('—');
     expect(formatReadingTimestamp('not-a-date', 'en-GB')).toBe('—');

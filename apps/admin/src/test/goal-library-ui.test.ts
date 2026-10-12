@@ -456,7 +456,7 @@ describe('read-only expanded row, editing behind the context menu (#797–#800)'
       expect(truncateDescription('word '.repeat(30).trim()).endsWith('…')).toBe(true);
       expect(truncateDescription(null)).toBe('');
       // Created At is the standard formatter; Created By the masked snapshot.
-      expect(columns).toContain('formatTimestamp(goal.created_at)');
+      expect(columns).toContain('formatTimestamp(goal.created_at, gymFmt)');
       expect(columns).toContain('displayValue(goal.created_by)');
       expect(columns).not.toContain("label('col_type')");
     });

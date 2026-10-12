@@ -24,6 +24,7 @@ import {
   pastBillingEventGroups,
   showsRegularPrice,
 } from '../../../apps/member/src/lib/memberPayments';
+import { DEFAULT_GYM_FORMAT } from '../../../apps/member/src/lib/gymFormat';
 
 function line(over: Partial<ForecastLine> = {}): ForecastLine {
   return {
@@ -197,27 +198,27 @@ describe('a line’s treatment is the server’s, never an amount comparison', (
 
 describe('formatting', () => {
   it('writes an amount in the currency the server named', () => {
-    expect(formatPaymentAmount(150, 'EUR', 'en-GB')).toContain('150.00');
-    expect(formatPaymentAmount(150, 'EUR', 'en-GB')).toContain('€');
+    expect(formatPaymentAmount(150, 'EUR', DEFAULT_GYM_FORMAT)).toContain('150,00');
+    expect(formatPaymentAmount(150, 'EUR', DEFAULT_GYM_FORMAT)).toContain('€');
   });
 
   it('falls back to two decimals rather than failing on an unusable currency', () => {
-    expect(formatPaymentAmount(150, 'not-a-currency', 'en-GB')).toBe('150.00');
+    expect(formatPaymentAmount(150, 'not-a-currency', DEFAULT_GYM_FORMAT)).toBe('150.00');
   });
 
   it('answers null for an absent or unusable amount', () => {
-    expect(formatPaymentAmount(null, 'EUR', 'en-GB')).toBeNull();
-    expect(formatPaymentAmount(Number.NaN, 'EUR', 'en-GB')).toBeNull();
+    expect(formatPaymentAmount(null, 'EUR', DEFAULT_GYM_FORMAT)).toBeNull();
+    expect(formatPaymentAmount(Number.NaN, 'EUR', DEFAULT_GYM_FORMAT)).toBeNull();
   });
 
   // The date a charge falls on is compared in SQL and must not shift by a
   // timezone, so both shapes are read as UTC.
   it('reads a date-only value and a timestamp as the same UTC day', () => {
-    expect(formatPaymentDate('2026-10-15', 'en-GB')).toBe(formatPaymentDate('2026-10-15T23:30:00.000Z', 'en-GB'));
-    expect(formatPaymentDate('2026-10-15', 'en-GB')).toContain('2026');
+    expect(formatPaymentDate('2026-10-15', DEFAULT_GYM_FORMAT)).toBe(formatPaymentDate('2026-10-15T23:30:00.000Z', DEFAULT_GYM_FORMAT));
+    expect(formatPaymentDate('2026-10-15', DEFAULT_GYM_FORMAT)).toContain('2026');
   });
 
   it('falls back to the stored day for an unparseable value', () => {
-    expect(formatPaymentDate('not-a-date', 'en-GB')).toBe('not-a-date');
+    expect(formatPaymentDate('not-a-date', DEFAULT_GYM_FORMAT)).toBe('not-a-date');
   });
 });

@@ -6,6 +6,7 @@ import { cardSectionLabelStyle, innerCardStyle } from '@/components/formChrome';
 import {
   GoalReadingRow, readingAxisLabel, readingChartPoints,
 } from './goalReadings';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
  * #1037 §12–§17 / §23–§24 — an Assigned Personal Goal's **progress chart**.
@@ -48,9 +49,10 @@ export function GoalReadingChart({ readings, unit, target, locale, labels }: {
     target: string | null;
   };
 }) {
+  const gymFmt = useGymFormatSettings();
   const points = useMemo(
-    () => readingChartPoints(readings, unit, locale),
-    [readings, unit, locale],
+    () => readingChartPoints(readings, unit, locale, gymFmt),
+    [readings, unit, locale, gymFmt],
   );
 
   if (points.length === 0) return null;
@@ -62,7 +64,7 @@ export function GoalReadingChart({ readings, unit, target, locale, labels }: {
         points={points}
         height={200}
         ariaLabel={labels.ariaLabel}
-        axisLabelFormatter={(value) => readingAxisLabel(value, locale)}
+        axisLabelFormatter={(value) => readingAxisLabel(value, locale, gymFmt)}
         reference={target === null ? null : { value: target, label: labels.target ?? undefined }}
       />
     </div>

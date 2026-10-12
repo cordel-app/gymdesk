@@ -284,7 +284,7 @@ describe('empty values (§AC8)', () => {
     // would drift by the offset; the helper pins it to UTC.
     const formatted = formatTimestamp('2026-07-27 15:54:07');
     expect(formatted).not.toBe(EMPTY_VALUE);
-    expect(formatted).toBe(new Date('2026-07-27T15:54:07Z').toLocaleString());
+    expect(formatted).toBe('27/07/2026 17:54');
   });
 
   it('falls back to the base name when the locale has none', () => {

@@ -24,6 +24,7 @@
  */
 
 import type { ChartPoint } from '@gymdesk/charts';
+import { DEFAULT_GYM_FORMAT, formatGymDate, formatGymDateOnly, formatGymTime, type GymFormatSettings } from '../../lib/gymFormat';
 
 /**
  * §5 — the five fields of the card header, in order, each as the key its own
@@ -135,19 +136,19 @@ export function formatProgress(percent: number | null | undefined): string {
  * rather than as the same row twice — decided per row, never by comparing one
  * row against its neighbour.
  */
-export function formatReadingTimestamp(iso: string | null, locale: string): string {
+export function formatReadingTimestamp(
+  iso: string | null,
+  _locale: string,
+  settings: GymFormatSettings = DEFAULT_GYM_FORMAT,
+): string {
   if (!iso) return '—';
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return '—';
-  const date = at.toLocaleDateString(locale, {
-    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
-  });
   const midnight = at.getUTCHours() === 0 && at.getUTCMinutes() === 0 && at.getUTCSeconds() === 0;
-  if (midnight) return date;
-  const time = at.toLocaleTimeString(locale, {
-    hour: '2-digit', minute: '2-digit', timeZone: 'UTC',
-  });
-  return `${date} · ${time}`;
+  // A midnight-UTC reading is a date, not an instant: it is not moved across a
+  // time zone (#1246).
+  if (midnight) return formatGymDateOnly(at.toISOString(), settings);
+  return `${formatGymDate(at, settings)} · ${formatGymTime(at, settings)}`;
 }
 
 /** The marker a history row carries, as the key the page resolves (§20/§29). */
@@ -285,6 +286,7 @@ export function readingChartPoints(
   readings: GoalReadingRow[],
   unit: string | null,
   locale: string,
+  settings: GymFormatSettings = DEFAULT_GYM_FORMAT,
 ): ChartPoint[] {
   return [...readings]
     .sort((a, b) => timeOf(a) - timeOf(b) || a.id - b.id)
@@ -293,14 +295,21 @@ export function readingChartPoints(
       x: timeOf(reading),
       y: Number(reading.value),
       group: Number.isFinite(reading.period) ? Math.max(0, Math.trunc(reading.period)) : 0,
-      label: formatReadingTimestamp(reading.recorded_at, locale),
+      label: formatReadingTimestamp(reading.recorded_at, locale, settings),
       valueLabel: formatReadingValue(reading.value, unit),
     }));
 }
 
-/** A chart axis tick: the day, short, in the reader's own locale. */
-export function readingAxisLabel(at: number, locale: string): string {
+/** A chart axis tick: the day and month in the gym's own date order (#1246). */
+export function readingAxisLabel(
+  at: number,
+  _locale: string,
+  settings: GymFormatSettings = DEFAULT_GYM_FORMAT,
+): string {
   const date = new Date(at);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  const full = formatGymDateOnly(date.toISOString(), settings);
+  if (full === '—') return '';
+  // `YYYY-MM-DD` → `MM-DD`; `DD/MM/YYYY` / `MM/DD/YYYY` → `DD/MM` / `MM/DD`.
+  return settings.date_format === 'YYYY-MM-DD' ? full.slice(5) : full.slice(0, 5);
 }

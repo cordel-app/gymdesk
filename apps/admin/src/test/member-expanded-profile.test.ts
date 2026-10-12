@@ -208,8 +208,8 @@ describe('Members: Profile value formatting (#797)', () => {
   it('formats a date-only column without shifting it a day', () => {
     // new Date('1990-05-04') is UTC midnight, which prints as 3 May west of
     // Greenwich — wrong for a birth date.
-    expect(formatProfileDate('1990-05-04')).toBe('04 May 1990');
-    expect(formatProfileDate('1990-05-04T00:00:00.000Z')).toBe('04 May 1990');
+    expect(formatProfileDate('1990-05-04')).toBe('04/05/1990');
+    expect(formatProfileDate('1990-05-04T00:00:00.000Z')).toBe('04/05/1990');
   });
 
   it('reports a missing date as absent rather than as a formatted epoch', () => {

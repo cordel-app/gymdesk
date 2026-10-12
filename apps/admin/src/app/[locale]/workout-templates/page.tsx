@@ -9,7 +9,7 @@ import {
 } from '@dnd-kit/core';
 import { sortableKeyboardCoordinates, arrayMove } from '@dnd-kit/sortable';
 import { useApiClient } from '@/lib/apiClient';
-import { formatGymDateTime } from '@/lib/gymFormat';
+import { formatGymDate, formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
@@ -469,7 +469,7 @@ export default function WorkoutTemplatesPage() {
   // ─── Render ───────────────────────────────────────────────────────────────
 
   function fmtDate(iso: string) {
-    return new Date(iso).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
+    return formatGymDate(iso, gymFmt);
   }
 
   function renderInlineNewRow() {

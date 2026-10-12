@@ -140,7 +140,7 @@ describe('Products: column alignment (#637)', () => {
     for (const marker of [
       '{item.name}',
       '{t(`type_${item.type}`)}',
-      '{fmtDate(item.created_at)}',
+      '{fmtDate(item.created_at, gymFmt)}',
       'label={tStatus(item.status)}',
       'label={tStatus(item.enrollment_status)}',
     ]) {

@@ -19,6 +19,8 @@ import {
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
 import { inlineActionsRowStyle } from '@/components/formChrome';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -69,9 +71,9 @@ type InlineNew = {
   error: string | null;
 };
 
-function fmtDate(iso: string | null) {
+function fmtDate(iso: string | null, s: GymFormatSettings) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return formatGymDate(iso, s);
 }
 
 // ─── List columns ─────────────────────────────────────────────────────────────
@@ -130,6 +132,7 @@ export default function CordelPaymentProvidersPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
+  const fmt = useGymFormatSettings();
   const { isSuperadmin, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
@@ -616,7 +619,7 @@ export default function CordelPaymentProvidersPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_at')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{fmtDate(details.created_at)}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{fmtDate(details.created_at, fmt)}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_by')}</span>
@@ -624,7 +627,7 @@ export default function CordelPaymentProvidersPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_at')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{fmtDate(details.modified_at)}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{fmtDate(details.modified_at, fmt)}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_by')}</span>

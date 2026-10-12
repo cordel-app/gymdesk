@@ -4,6 +4,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
+import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
@@ -503,6 +505,7 @@ function TemplateCard({
   onCancel: () => void;
   onChanged: () => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   const roTitle = useReadOnlyTitle(canWrite);
   const menuItems = [
     { label: t('nutrition_plan_templates.edit'), onClick: onEdit, disabled: !canWrite, title: roTitle },
@@ -570,7 +573,7 @@ function TemplateCard({
             {template.created_by ?? '—'}
           </span>
           <span className={CELL_CLASS.created_at} style={{ fontSize: 13, color: '#666', whiteSpace: 'nowrap' }}>
-            {formatDate(template.created_at, locale)}
+            {formatDate(template.created_at, gymFmt)}
           </span>
           <span className={CELL_CLASS.actions} onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('nutrition_plan_templates.col_actions')} items={menuItems} />
@@ -681,6 +684,7 @@ function DetailsDialog({
   t: ReturnType<typeof useTranslations>;
   onClose: () => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   if (!template) return null;
   return (
     <CrudModal
@@ -700,11 +704,11 @@ function DetailsDialog({
         <DetailRow label={t('nutrition_plan_templates.label_description')} value={template.description ?? '—'} />
         <DetailRow label={t('nutrition_plan_templates.label_status')} value={<StatusBadge status={template.status} label={t(`status.${template.status}`)} />} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
-        <DetailRow label={t('nutrition_plan_templates.label_created_at')} value={formatDate(template.created_at, locale)} />
+        <DetailRow label={t('nutrition_plan_templates.label_created_at')} value={formatDate(template.created_at, gymFmt)} />
         <DetailRow label={t('nutrition_plan_templates.label_created_by')} value={template.created_by ?? '—'} />
         {template.modified_at && (
           <>
-            <DetailRow label={t('nutrition_plan_templates.label_modified_at')} value={formatDate(template.modified_at, locale)} />
+            <DetailRow label={t('nutrition_plan_templates.label_modified_at')} value={formatDate(template.modified_at, gymFmt)} />
             <DetailRow label={t('nutrition_plan_templates.label_modified_by')} value={template.modified_by ?? '—'} />
           </>
         )}
@@ -722,10 +726,8 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
-function formatDate(value: string, locale: string): string {
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+function formatDate(value: string, settings: GymFormatSettings): string {
+  return formatGymDate(value, settings);
 }
 
 const filterInputStyle: React.CSSProperties = { padding: '9px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 15, background: '#fff' };

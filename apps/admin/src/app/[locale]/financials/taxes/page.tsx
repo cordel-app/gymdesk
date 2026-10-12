@@ -7,6 +7,8 @@ import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
@@ -69,9 +71,9 @@ function emptyEditForm(item: TaxRate): EditForm {
   };
 }
 
-function fmtDate(iso: string | null) {
+function fmtDate(iso: string | null, s: GymFormatSettings) {
   if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return formatGymDate(iso, s);
 }
 
 // ─── List columns ─────────────────────────────────────────────────────────────
@@ -126,6 +128,7 @@ const LIST_MIN_WIDTH =
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function TaxesPage() {
+  const gymFmt = useGymFormatSettings();
   const t = useTranslations('taxes');
   const tStatus = useTranslations('status');
   const locale = useLocale();
@@ -525,9 +528,9 @@ export default function TaxesPage() {
             <ModalField label={t('label_status')} value={tStatus(details.status)} />
             <hr style={{ margin: '4px 0', borderColor: '#eee' }} />
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <ModalField label={t('audit_created_at')} value={fmtDate(details.created_at)} />
+              <ModalField label={t('audit_created_at')} value={fmtDate(details.created_at, gymFmt)} />
               <ModalField label={t('audit_created_by')} value={details.created_by ?? '—'} />
-              <ModalField label={t('audit_modified_at')} value={fmtDate(details.modified_at)} />
+              <ModalField label={t('audit_modified_at')} value={fmtDate(details.modified_at, gymFmt)} />
               <ModalField label={t('audit_modified_by')} value={details.modified_by ?? '—'} />
             </div>
           </div>

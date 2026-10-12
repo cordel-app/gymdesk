@@ -4,6 +4,8 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
+import { formatGymDate } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
@@ -112,6 +114,7 @@ export default function TrainingPlanTemplatesPage() {
   const t = useTranslations('training_plan_templates');
   const tStatus = useTranslations('status');
   const locale = useLocale();
+  const gymFmt = useGymFormatSettings();
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading } = useGym();
@@ -355,7 +358,7 @@ export default function TrainingPlanTemplatesPage() {
   }
 
   function fmtDate(iso: string) {
-    return new Date(iso).toLocaleDateString(locale, { day: '2-digit', month: 'short', year: 'numeric' });
+    return formatGymDate(iso, gymFmt);
   }
 
   if (gymLoading || !canRead) return null;
@@ -715,10 +718,10 @@ function DetailsDialog({
   tStatus: ReturnType<typeof useTranslations>;
   onClose: () => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   if (!template) return null;
   function fmtDate(value: string) {
-    const d = new Date(value);
-    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+    return formatGymDate(value, gymFmt);
   }
   return (
     <CrudModal

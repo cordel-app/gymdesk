@@ -7,6 +7,8 @@ import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { listNameBadgeStyle, listNameBadgeAccentStyle } from '@/components/listChrome';
 import { StatusBadge } from '@/components/StatusBadge';
+import { formatGymDate, formatGymDateOnly } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { clerkStatusLine, clerkInvitationLine, type ClerkAccountFields, type ClerkAccountLine } from '@/lib/clerkAccountLines';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { SectionEditButton } from '@/components/SectionEditButton';
@@ -147,6 +149,7 @@ export function MemberExpandedRow({
 }) {
   const t = useTranslations();
   const locale = useLocale();
+  const gymFmt = useGymFormatSettings();
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
@@ -333,7 +336,7 @@ export function MemberExpandedRow({
                   renderField={(f) => (
                     <p style={profileValueStyle}>
                       {(f.kind === 'date'
-                        ? formatProfileDate(member[f.key])
+                        ? formatProfileDate(member[f.key], gymFmt)
                         : f.kind === 'gender' && memberGenderLabelKey(member[f.key])
                           ? t(`members.${memberGenderLabelKey(member[f.key])}`)
                           : member[f.key]?.trim()) || EMPTY_VALUE}
@@ -382,8 +385,8 @@ export function MemberExpandedRow({
               {/* #1234: stored dates, independent of membership and payment.
                   #1326: the value is a chip; the date stays beside it as text. */}
               {clerkStatus && [
-                ['label_clerk_status', clerkStatusLine(clerkStatus, locale), clerkStatus.enrolled ?? !!clerkStatus.clerk_user_id],
-                ['label_clerk_invitation', clerkInvitationLine(clerkStatus, locale), !!clerkStatus.has_pending_invitation || clerkInvitationLine(clerkStatus, locale).key.startsWith('clerk_invitation_accepted')],
+                ['label_clerk_status', clerkStatusLine(clerkStatus, locale, gymFmt), clerkStatus.enrolled ?? !!clerkStatus.clerk_user_id],
+                ['label_clerk_invitation', clerkInvitationLine(clerkStatus, locale, gymFmt), !!clerkStatus.has_pending_invitation || clerkInvitationLine(clerkStatus, locale, gymFmt).key.startsWith('clerk_invitation_accepted')],
               ].map(([label, line, positive]) => {
                 const l = line as ClerkAccountLine;
                 const chipKey = l.key.replace(/_on$/, '');
@@ -517,7 +520,7 @@ export function MemberExpandedRow({
                           style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', flexWrap: 'wrap' }}
                           onClick={() => toggleEvent(ev.id)}
                         >
-                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{fmtDate(ev.created_at)}</span>
+                          <span style={{ fontSize: 12, color: '#888', whiteSpace: 'nowrap' }}>{formatGymDate(ev.created_at, gymFmt)}</span>
                           <span style={{ fontSize: 13, flex: 1 }}>{eventTypeLabel(ev.event_type, t)}</span>
                           {ev.amount && (
                             <span style={{ fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
@@ -733,6 +736,7 @@ function PlanCard({
   editLabel: string;
   dim?: boolean;
 }) {
+  const gymFmt = useGymFormatSettings();
   return (
     <div style={{ ...card, opacity: isDim ? 0.75 : 1 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
@@ -742,9 +746,9 @@ function PlanCard({
             <StatusBadge status={status} label={status} />
             {(validFrom || validTo) && (
               <span style={{ fontSize: 12, color: '#888' }}>
-                {validFrom ? fmtDate(validFrom) : ''}
+                {validFrom ? formatGymDateOnly(validFrom, gymFmt) : ''}
                 {validFrom && validTo ? ' — ' : ''}
-                {validTo ? fmtDate(validTo) : ''}
+                {validTo ? formatGymDateOnly(validTo, gymFmt) : ''}
               </span>
             )}
           </div>
@@ -768,10 +772,6 @@ function eventTypeLabel(type: string, t: ReturnType<typeof useTranslations>): st
     case 'waived_billing': return t('members.event_waived_billing');
     default: return type;
   }
-}
-
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
 }
 
 /** #797: the empty-value convention of the Members screens (see the list columns). */

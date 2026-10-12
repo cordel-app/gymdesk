@@ -43,6 +43,8 @@
 
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu';
 import { DataTable, type Column } from '@/components/DataTable';
@@ -73,8 +75,9 @@ export interface AssignedPlanTableRow {
   member_nif_nie_passport?: string | null;
 }
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
+/** starts_at / ends_at are stored calendar days: never moved across a time zone. */
+function fmtDate(iso: string, s: GymFormatSettings) {
+  return formatGymDateOnly(iso, s);
 }
 
 interface Props<T extends AssignedPlanTableRow> {
@@ -99,6 +102,7 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
 }: Props<T>) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
+  const gymFmt = useGymFormatSettings();
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   function toggleExpand(row: T) {
@@ -111,11 +115,11 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
 
   const planCell = (row: T) => <span style={{ color: '#6b7280' }}>{row.plan_name ?? '—'}</span>;
   const startsCell = (row: T) => (
-    <span style={{ whiteSpace: 'nowrap' }}>{row.starts_at ? fmtDate(row.starts_at) : '—'}</span>
+    <span style={{ whiteSpace: 'nowrap' }}>{row.starts_at ? fmtDate(row.starts_at, gymFmt) : '—'}</span>
   );
   const endsCell = (row: T) => (
     <span style={{ whiteSpace: 'nowrap' }}>
-      {row.ends_at ? fmtDate(row.ends_at) : t('open_ended')}
+      {row.ends_at ? fmtDate(row.ends_at, gymFmt) : t('open_ended')}
     </span>
   );
   const relationshipCell = (row: T) => (

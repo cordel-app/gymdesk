@@ -31,6 +31,8 @@
 //    than a colour invented for a projection.
 
 /** `payment_requests.status` folded onto the event, as `#640` derives it. */
+import { DEFAULT_GYM_FORMAT, formatGymAmount, formatGymDateOnly, type GymFormatSettings } from './gymFormat';
+
 export type MemberBillingEventStatus = 'paid' | 'failed' | 'pending' | 'scheduled' | 'recorded';
 
 /** Why a forecast line's charge differs from its regular price. */
@@ -164,39 +166,31 @@ export function pastBillingEventGroups(events: MemberBillingEvent[]): PastBillin
 }
 
 /**
- * An amount as the member's own locale writes it, in the currency the server
+ * An amount as the gym's number format writes it (#1246), in the currency the server
  * named. The symbol is never spelled here: a deployment that ever quotes
  * anything but euros would otherwise read `€` over a different number.
  *
- * `Intl` throws on a currency code it does not know, so an unusable one falls
- * back to the plain two-decimal figure the rest of this page already shows
+ * A code that is not three letters falls back to the plain two-decimal figure the rest of this page already shows
  * rather than taking the card down.
  */
 export function formatPaymentAmount(
-  amount: number | null, currency: string | null | undefined, locale: string,
+  amount: number | null, currency: string | null | undefined, gym: GymFormatSettings = DEFAULT_GYM_FORMAT,
 ): string | null {
   if (amount == null || !Number.isFinite(amount)) return null;
-  try {
-    return new Intl.NumberFormat(locale, {
-      style: 'currency', currency: currency || 'EUR',
-    }).format(amount);
-  } catch {
-    return amount.toFixed(2);
-  }
+  const code = currency || gym.currency;
+  if (!/^[A-Za-z]{3}$/.test(code)) return amount.toFixed(2);
+  return formatGymAmount(amount, { ...gym, currency: code.toUpperCase() });
 }
 
 /**
- * A billing date as the member reads it (`15 October 2026`). The stored value is
+ * A billing date in the gym's date format (#1246). The stored value is
  * a `YYYY-MM-DD` string for a forecast group and a timestamp for a ledger row;
  * both are read as UTC, because the date a charge falls on is the one the
  * nightly run compares in SQL and must not shift by a timezone.
  */
-export function formatPaymentDate(value: string, locale: string): string {
-  const date = new Date(`${value.slice(0, 10)}T00:00:00Z`);
-  if (Number.isNaN(date.getTime())) return value.slice(0, 10);
-  return new Intl.DateTimeFormat(locale, {
-    day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC',
-  }).format(date);
+export function formatPaymentDate(value: string, gym: GymFormatSettings = DEFAULT_GYM_FORMAT): string {
+  const date = formatGymDateOnly(value.slice(0, 10), gym);
+  return date === '—' ? value.slice(0, 10) : date;
 }
 
 /**

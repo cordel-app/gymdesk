@@ -5,7 +5,7 @@ import { useTranslations } from 'next-intl';
 import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
-import { formatGymDateTime } from '@/lib/gymFormat';
+import { formatGymDate, formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
@@ -341,7 +341,7 @@ export default function SpacesPage() {
   // ─── Render helpers ──────────────────────────────────────────────────────────
 
   function fmtDate(iso: string) {
-    return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    return formatGymDate(iso, gymFmt);
   }
 
   function renderInlineNewRow() {

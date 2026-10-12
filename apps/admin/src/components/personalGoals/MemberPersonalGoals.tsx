@@ -26,6 +26,7 @@ import {
   toAssignedPersonalGoalCreatePayload, toAssignedPersonalGoalFormValues,
   toAssignedPersonalGoalUpdatePayload,
 } from './assignedPersonalGoalProfile';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
  * #948 §4 — the Member card's **PERSONAL GOALS** section: the goals this member
@@ -53,6 +54,7 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
   memberId: number;
   canWrite: boolean;
 }) {
+  const gymFmt = useGymFormatSettings();
   const t = useTranslations('assigned_personal_goals');
   // A System goal's label was written in `goal_library` (#947).
   const tGoals = useTranslations('goal_library');
@@ -296,7 +298,7 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
                 trailing={<StatusBadge status={row.status} label={t(`status_${row.status}` as any)} />}
               />
               {/* The card's own `Label: Value` row (#929), never a second one. */}
-              <CardDetailRow label={t('label_period')} value={formatGoalPeriod(row, locale)} />
+              <CardDetailRow label={t('label_period')} value={formatGoalPeriod(row, locale, gymFmt)} />
               {row.notes && <CardDetailRow label={t('label_notes')} value={row.notes} />}
               {/* §12 — the chart between the header and the history. */}
               <div style={{ marginTop: 8 }}>

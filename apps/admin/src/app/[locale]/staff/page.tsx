@@ -27,7 +27,7 @@ import {
   toStaffEditFormValues,
 } from './staffProfile';
 import { inlineActionsRowStyle } from '@/components/formChrome';
-import { formatGymDateTime } from '@/lib/gymFormat';
+import { formatGymDateOnly, formatGymDateTime } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
@@ -889,7 +889,7 @@ export default function StaffPage() {
                   <ReadRow
                     key={field.key}
                     label={t(field.labelKey as any)}
-                    value={formatStaffField(member, field, (key) => t(key as any))}
+                    value={formatStaffField(member, field, (key) => t(key as any), gymFmt)}
                     multiline={field.format === 'multiline'}
                   />
                 ))}
@@ -998,13 +998,13 @@ export default function StaffPage() {
 
           {/* Hire date */}
           <div className={CELL_CLASS.hire_date} style={{ fontSize: 13, color: '#555' }}>
-            {member.hire_date ? new Date(member.hire_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}
+            {member.hire_date ? formatGymDateOnly(String(member.hire_date), gymFmt) : '—'}
           </div>
 
           {/* Contract end */}
           <div className={CELL_CLASS.contract_end} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, minWidth: 0 }}>
             {member.contract_end_date
-              ? new Date(member.contract_end_date).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+              ? formatGymDateOnly(String(member.contract_end_date), gymFmt)
               : <span style={{ color: '#aaa' }}>—</span>}
             {contractBadge(member.contract_days_remaining !== undefined ? Number(member.contract_days_remaining) : null)}
           </div>

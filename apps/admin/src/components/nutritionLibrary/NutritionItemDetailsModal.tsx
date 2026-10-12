@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import { ViewAuditLogButton, AuditLogScope } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import { NutritionLibraryItemRow, displayValue, formatTimestamp } from './nutritionItemProfile';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
  * #799 §9–§14, §23: `⋮ → Details` for a Nutrition Library item — the item's name,
@@ -34,6 +35,7 @@ export function NutritionItemDetailsModal({ item, scope = 'gym', onClose }: {
   scope?: AuditLogScope;
   onClose: () => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   const t = useTranslations('nutrition_library');
 
   return (
@@ -47,13 +49,13 @@ export function NutritionItemDetailsModal({ item, scope = 'gym', onClose }: {
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid var(--card-border, #f0f0f0)' }}>
           <p style={sectionLabelStyle}>{t('section_audit')}</p>
-          <Field label={t('created_at')} value={formatTimestamp(item.created_at)} />
+          <Field label={t('created_at')} value={formatTimestamp(item.created_at, gymFmt)} />
           <Field label={t('created_by')} value={displayValue(item.created_by)} />
-          <Field label={t('modified_at')} value={formatTimestamp(item.modified_at)} />
+          <Field label={t('modified_at')} value={formatTimestamp(item.modified_at, gymFmt)} />
           <Field label={t('modified_by')} value={displayValue(item.modified_by)} />
           {/* An item that was never deleted still shows both rows, with the same
               empty-value convention every other Details modal uses (§13). */}
-          <Field label={t('deleted_at')} value={formatTimestamp(item.deleted_at)} />
+          <Field label={t('deleted_at')} value={formatTimestamp(item.deleted_at, gymFmt)} />
           <Field label={t('deleted_by')} value={displayValue(item.deleted_by)} />
         </div>
 
