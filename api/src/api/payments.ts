@@ -564,6 +564,15 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
 
     // The nightly run records a failed charge's reason on the ledger row's
     // notes; a transaction-level reason (#640) is more specific, so it wins.
+    // #1474: the event's priced components, read-only and tenant-scoped.
+    const { rows: lineRows } = await db.query<any>(
+      `SELECT id, kind, item_name, quantity, regular_unit_price, promotion_name, amount
+         FROM billing_event_lines
+        WHERE billing_event_id = ? AND gym_id = ?
+        ORDER BY id`,
+      [billingEventId, gymId],
+    );
+
     const failureReason = ev.transaction_failure_reason
       ?? (status === 'failed' ? ev.notes ?? null : null);
 
@@ -592,6 +601,15 @@ paymentsRouter.get('/billing-events/:id', async (req, res, next) => {
         ? ((await loadDerivedBilling(gymId, [Number(ev.user_membership_id)])).get(Number(ev.user_membership_id))?.next_billing_date ?? null)
         : null,
       failure_reason: failureReason,
+      lines: lineRows.map((l: any) => ({
+        id: l.id,
+        kind: l.kind,
+        item_name: l.item_name,
+        quantity: l.quantity,
+        unit_amount: l.regular_unit_price,
+        promotion_name: l.promotion_name,
+        amount: l.amount,
+      })),
       can_retry: actions.retry,
       can_record_manual_payment: actions.payCash,
       // #1459
