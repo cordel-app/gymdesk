@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
@@ -123,6 +124,8 @@ interface Plan extends PlanGeneralRow {
   billing_policy: BillingPolicy | null;
   centers: Center[];
   price_history: PriceRow[];
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
   created_at: string;
   created_by: string | null;
   modified_at: string | null;
@@ -1548,6 +1551,37 @@ export default function PlansPage() {
                     ) : (
                       (plan.centers ?? []).map((c) => <DetailRow key={c.id} label="" value={c.name} />)
                     )}
+
+                    {/* MEDIA (#1514) — the plan's image. Read-only outside Edit mode;
+                        in it the control acts on the server straight away
+                        (`POST`/`DELETE /membership-plans/:id/image`), so the
+                        surrounding PUT neither carries nor can undo it. The
+                        server makes the WebP master and thumbnail. */}
+                    <SectionHeader title={t('plans.section_media')} />
+                    <div style={{ margin: '6px 0 10px' }}>
+                      {isEditing ? (
+                        <MemberImageField
+                          target={{
+                            kind: 'immediate',
+                            memberId: plan.id,
+                            basePath: '/membership-plans',
+                            imageUrl: plan.image_url ?? null,
+                            stamp: plan.modified_at,
+                            onChanged: (updated) => {
+                              setPlans((prev) => prev.map((p) => (p.id === plan.id ? { ...p, ...(updated as Plan) } : p)));
+                            },
+                          }}
+                          disabled={!canWrite}
+                          disabledTitle={readOnlyTitle}
+                          label={(key) => t(`plans.${key}`)}
+                        />
+                      ) : (
+                        <MemberImagePreview
+                          src={memberImagePreviewSrc(plan.image_url ?? null, plan.modified_at)}
+                          emptyLabel={t('plans.image_none')}
+                        />
+                      )}
+                    </div>
 
                     {/* EXAMPLE TIMELINE (§10, #818) — the Promotion card's own
                         simulation, for a Plan: one row per billing period of the

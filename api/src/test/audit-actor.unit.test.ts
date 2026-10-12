@@ -108,6 +108,7 @@ describe('gate: audited tables', () => {
   const TECHNICAL_UPDATES: Array<{ file: string; table: string; why: string }> = [
     { file: 'api/me.ts', table: 'members', why: 'POST /me/link: the member linking their own Clerk account (clerk_user_id, invitation_id, enrolled_at), not a content edit' },
     { file: 'api/member-image-storage.ts', table: 'members', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
+    { file: 'api/plan-image-storage.ts', table: 'membership_plans', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/staff.ts', table: 'staff', why: 'gym_membership_id link/unlink bookkeeping when app access is granted or revoked' },
     { file: 'api/themes.ts', table: 'themes', why: "clearing half of set-system-default; stamping it would touch every Base Theme's modified_at (the setting half records the actor)" },
     { file: 'api/training-plan-creation.ts', table: 'members', why: 'member_training_plan_id pointer, written with the assigned plan (stage 3 table)' },

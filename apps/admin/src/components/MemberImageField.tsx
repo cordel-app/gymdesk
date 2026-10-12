@@ -48,6 +48,11 @@ export type MemberImageTarget =
   | {
       kind: 'immediate';
       memberId: number;
+      /**
+       * The API root the entity's image routes hang off (`${basePath}/${id}/image`);
+       * `/members` unless another entity reuses this control (#1514: `/membership-plans`).
+       */
+      basePath?: string;
       imageUrl: string | null;
       /** `modified_at` — the cache-buster, since the key is deterministic. */
       stamp: string | null | undefined;
@@ -102,12 +107,14 @@ export function MemberImageField({
   const hasImage = target.kind === 'staged' ? !!target.file : !!target.imageUrl;
   const shownError = error ?? (target.kind === 'immediate' ? target.retry?.error ?? null : null);
 
+  const basePath = target.kind === 'immediate' ? target.basePath ?? '/members' : '/members';
+
   async function uploadBlob(blob: Blob, memberId: number, onChanged: (m: unknown) => void) {
     setBusy('upload');
     try {
       // `uploadFetch` rather than a hand-rolled fetch against the Next proxy:
       // that proxy forwards `x-gym-id` but cannot invent it (#824).
-      const updated = await uploadFetch(`/members/${memberId}/image`, blob);
+      const updated = await uploadFetch(`${basePath}/${memberId}/image`, blob);
       onChanged(updated);
       if (target.kind === 'immediate') target.onRetryConsumed?.();
     } catch (err: any) {
@@ -146,7 +153,7 @@ export function MemberImageField({
     }
     setBusy('remove');
     try {
-      const updated = await apiFetch(`/members/${target.memberId}/image`, { method: 'DELETE' });
+      const updated = await apiFetch(`${basePath}/${target.memberId}/image`, { method: 'DELETE' });
       target.onChanged(updated);
     } catch (err: any) {
       setError(err.message ?? label('image_error_remove_failed'));

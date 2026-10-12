@@ -466,6 +466,8 @@ Conventions in the entries: a **Membership Plan** is the gym's catalogue offer; 
 
 - **Staff resolve an outstanding payment by cash, external card terminal, retry or waiver** (#1459). Cash and external-card payments are recorded only when staff click Accept after receiving the money; the card terminal is outside Gymdesk and is not verified by it. Closing the confirmation changes nothing, and there is no Cancel action. A waiver needs a written reason, is not a received payment and never produces a receipt. Enforced by `paymentActionsFor()`, `recordManualPayment()` and `waiveBillingEvent()`.
 
+- **A Membership Plan can carry an image** (#1514). Staff (admins) upload one picture in the plan's Media section; the server stores a square 1080 × 1080 version and a 256 × 256 thumbnail in the gym's own `plans/` folder, replacing or removing the image cleans up the old files, and nothing about pricing, benefits, billing or assignments changes. Enforced in `api/src/domain/planImages.ts` and `api/src/api/plan-image-storage.ts`.
+
 ## Not in this file
 
 Constraints that are purely about how the code is organised stay in `CLAUDE.md` alone: where a new status or notification type must be declared, which component renders what, the shared form and list chrome, test gates, naming of identifiers, and the "one place decides it" structure behind most of the entries above. They change how a feature is built, not what a gym or a member sees.
