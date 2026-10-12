@@ -82,7 +82,7 @@ export interface HomeData {
   cards: {
     active_members?: { count: number; joined_this_week: number };
     new_members?: { count: number };
-    classes_today?: { count: number; waitlist_total: number };
+    classes_today?: { count: number; total: number; waitlist_total: number };
     outstanding_payments?: { count: number; amount: number; paid_count: number; currency: string };
   };
   pending_payment_members?: {

@@ -957,6 +957,97 @@ describe('the Admin read of a member’s Products (#1118 §12, §13)', () => {
     });
   });
 
+  it('resolves tax, payment status and the purchase’s own billing event (#1521)', async () => {
+    const gid = await createTestGym('Products Admin Billing Gym');
+    await createTestMembership(gid, 'admin', `${ADMIN_CLERK}-billing`);
+    const clerk = `mep-admin-billing-${uniq()}`;
+    await createTestMembership(gid, 'member', clerk);
+    const memberId = await createLinkedMember(gid, clerk);
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    await buyAs(gid, clerk, productId);
+
+    const { rows: purchase } = await db.query<any>(
+      `SELECT mp.payment_request_id, mp.tax_rate_percent, pr.billing_event_id, pr.status
+         FROM member_products_oneoff_snapshot mp
+         JOIN payment_requests pr ON pr.id = mp.payment_request_id
+        WHERE mp.gym_id = ? AND mp.member_id = ?`,
+      [gid, memberId],
+    );
+    expect(purchase[0].billing_event_id).not.toBeNull();
+
+    // A newer, unrelated event of the same member must never be mistaken for
+    // the event that paid for the product.
+    await db.query(
+      `INSERT INTO billing_events (gym_id, member_id, event_type, amount, source)
+       VALUES (?, ?, 'product_purchase', 5.00, 'system')`,
+      [gid, memberId],
+    );
+
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: `${ADMIN_CLERK}-billing` } as any);
+    const res = await request.get(`/members/${memberId}/products`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid);
+    expect(res.status).toBe(200);
+    expect(res.body.items[0]).toMatchObject({
+      billing_event_id: Number(purchase[0].billing_event_id),
+      payment_status: purchase[0].status,
+      tax_rate_percent: purchase[0].tax_rate_percent == null ? null : Number(purchase[0].tax_rate_percent),
+    });
+  });
+
+  it('reports no billing event and no payment status for a purchase without a request (#1521)', async () => {
+    const gid = await createTestGym('Products Admin No Request Gym');
+    await createTestMembership(gid, 'admin', `${ADMIN_CLERK}-norequest`);
+    const clerk = `mep-admin-norequest-${uniq()}`;
+    await createTestMembership(gid, 'member', clerk);
+    const memberId = await createLinkedMember(gid, clerk);
+    const productId = await createItem(gid, { name: 'Day Pass', amount: '100.00', frequency: 'once' });
+    await buyAs(gid, clerk, productId);
+    await db.query(
+      'UPDATE member_products_oneoff_snapshot SET payment_request_id = NULL WHERE gym_id = ? AND member_id = ?',
+      [gid, memberId],
+    );
+
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: `${ADMIN_CLERK}-norequest` } as any);
+    const res = await request.get(`/members/${memberId}/products`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid);
+    expect(res.body.items[0]).toMatchObject({ billing_event_id: null, payment_status: null });
+  });
+
+  it('opens one billing event by id and never one of another gym (#1521)', async () => {
+    const gid = await createTestGym('Products Admin Event Gym');
+    await createTestMembership(gid, 'admin', `${ADMIN_CLERK}-event`);
+    const otherGym = await createTestGym('Products Admin Event Other Gym');
+    const { insertId: otherMember } = await db.query(
+      'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
+      [otherGym, 'Other', `mep-event-${uniq()}@test.com`],
+    );
+    const { insertId: otherEvent } = await db.query(
+      `INSERT INTO billing_events (gym_id, member_id, event_type, amount, source)
+       VALUES (?, ?, 'product_purchase', 5.00, 'system')`,
+      [otherGym, otherMember],
+    );
+
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: `${ADMIN_CLERK}-event` } as any);
+    const res = await request.get(`/payments/billing-events?id=${otherEvent}`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid);
+    expect(res.status).toBe(200);
+    expect(res.body.items).toHaveLength(0);
+
+    const { insertId: ownMember } = await db.query(
+      'INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)',
+      [gid, 'Own', `mep-event-own-${uniq()}@test.com`],
+    );
+    const { insertId: ownEvent } = await db.query(
+      `INSERT INTO billing_events (gym_id, member_id, event_type, amount, source)
+       VALUES (?, ?, 'product_purchase', 5.00, 'system')`,
+      [gid, ownMember],
+    );
+    vi.mocked(verifyToken).mockResolvedValueOnce({ sub: `${ADMIN_CLERK}-event` } as any);
+    const own = await request.get(`/payments/billing-events?id=${ownEvent}`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gid);
+    expect(own.body.items.map((i: any) => i.id)).toEqual([ownEvent]);
+  });
+
   it('is scoped to the caller’s gym', async () => {
     const gid = await createTestGym('Products Admin Scope Gym');
     await createTestMembership(gid, 'admin', `${ADMIN_CLERK}-scope`);

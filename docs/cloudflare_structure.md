@@ -173,6 +173,17 @@ Bin restore).
 first-level markers, with its writer, exactly as `goals/` was — and it is not the
 `Members/` #826 removed, which held nothing.
 
+**`plans/` holds a Membership Plan's image** (#1514):
+`{gym prefix}/plans/{plan_id}-{plan_name}.webp` (1080 × 1080) and `…-thumbnail.webp`
+(256 × 256), written by `POST /membership-plans/:id/image` (admin) and cleared by its
+`DELETE`, over `api/src/api/plan-image-storage.ts`. The pipeline is the Member photo's
+(one picture sent as it is, the server crops and encodes both WebP files in memory,
+both objects uploaded before `membership_plans.image_url` / `image_thumbnail_url` move
+in one `UPDATE`); `api/src/domain/planImages.ts` builds the keys and decides what a gym
+may delete, and `PUT /membership-plans/:id` moves the objects on a rename
+(copy, re-point, delete). Gym root only (no `cordel/plans/`); appended last to the
+gym's first-level markers with its writer.
+
 **`muscles/images/` holds a muscle's two images** (#1368 stage 3, #1412, #1413):
 `cordel/muscles/images/{muscle_name}-{male|female}.webp` (1080 × 1080) and
 `…-thumbnail.webp` (256 × 256), written only by `POST /platform/muscles/:id/image/:sex`

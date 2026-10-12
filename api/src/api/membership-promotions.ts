@@ -638,6 +638,12 @@ export async function applyPromotionToProductSet(
   actor: string | null,
   productSetId: number,
   promotionId: number,
+  /**
+   * #1521 — a Promotion that is about a **Product** (`applies_to = 'product'`)
+   * is applied to a Draft that need not carry a Membership Plan: it is matched
+   * on the Product it grants, not on `promotion_membership_plans`.
+   */
+  opts: { productTarget?: boolean } = {},
 ): Promise<{ application_id: number }> {
   const { rows: setRows } = await tx.query(
     'SELECT id, owner_member_id, membership_plan_id, status FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE',
@@ -650,7 +656,7 @@ export async function applyPromotionToProductSet(
   }
 
   const { rows: promoRows } = await tx.query(
-    `SELECT id, stackable, lifecycle_status, starts_at, ends_at, only_applicable_for_new_members
+    `SELECT id, stackable, lifecycle_status, starts_at, ends_at, only_applicable_for_new_members, applies_to
        FROM promotions WHERE id = ? AND gym_id = ? AND lifecycle_status != 'deleted'`,
     [promotionId, gymId],
   );
@@ -662,12 +668,18 @@ export async function applyPromotionToProductSet(
     throw Object.assign(new Error('Promotion is outside its active window'), { status: 400 });
   }
 
-  const { rows: matchRows } = await tx.query(
-    'SELECT 1 FROM promotion_membership_plans WHERE promotion_id = ? AND membership_plan_id = ? AND gym_id = ?',
-    [promotionId, set.membership_plan_id, gymId],
-  );
-  if (matchRows.length === 0) {
-    throw Object.assign(new Error("Promotion doesn't target this ProductSet's plan"), { status: 400 });
+  if (opts.productTarget) {
+    if (promo.applies_to !== 'product') {
+      throw Object.assign(new Error('Promotion is not about a Product'), { status: 400 });
+    }
+  } else {
+    const { rows: matchRows } = await tx.query(
+      'SELECT 1 FROM promotion_membership_plans WHERE promotion_id = ? AND membership_plan_id = ? AND gym_id = ?',
+      [promotionId, set.membership_plan_id, gymId],
+    );
+    if (matchRows.length === 0) {
+      throw Object.assign(new Error("Promotion doesn't target this ProductSet's plan"), { status: 400 });
+    }
   }
 
   const editedUm = await assignmentBeingEdited(tx, productSetId);

@@ -1600,3 +1600,7 @@ corback (fitness-api)          corfront (fitness-admin, fitness-members, fitness
 **Deployment**: Handled by `.github/workflows/deploy-alloy.yml` on push to `main`. The workflow SSHs into each VPS, downloads the Alloy arm64 binary, writes the config and unit file, and restarts the service. The API key is read from `~/.config/alloy/secrets` (not in git) as `GRAFANA_CLOUD_API_KEY`.
 
 **Querying**: `{container="fitness-api"} |= "ord-001"` traces a single payment order across all log lines.
+
+### Membership Plan image (#1514)
+
+`membership_plans.image_url` + `image_thumbnail_url` (migration 278) hold a 1080 × 1080 and a 256 × 256 WebP under `gyms/<prefix>/plans/<plan_id>-<sanitized name>[-thumbnail].webp`. `domain/planImages.ts` builds the keys and the ownership test; `api/plan-image-storage.ts` stores, clears and moves them on a rename, reusing the Member photo's request parsing, `processMemberImage()` and upload limiter. `POST`/`DELETE /membership-plans/:id/image` are the only writers. Admin: the **Media** section of the Plans card (`section_media`, after Centers), `MemberImageField` with `basePath: '/membership-plans'`.

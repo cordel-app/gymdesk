@@ -263,6 +263,8 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
   const { gymId } = getTenantContext(req);
   const q = parseQuery(req, res, z.object({
     member_id: z.coerce.number().int().positive().optional(),
+    // #1521: one specific event (the Member card's *View billing event*).
+    id: z.coerce.number().int().positive().optional(),
     status: billingEventStatusParam,
     from: z.string().optional(),
     to: z.string().optional(),
@@ -278,6 +280,7 @@ paymentsRouter.get('/billing-events', async (req, res, next) => {
     const where: string[] = ['be.gym_id = ?'];
     const params: any[] = [gymId];
     if (q.member_id !== undefined) { where.push('be.member_id = ?'); params.push(q.member_id); }
+    if (q.id !== undefined) { where.push('be.id = ?'); params.push(q.id); }
     if (q.from) { where.push('DATE(be.created_at) >= ?'); params.push(q.from.slice(0, 10)); }
     if (q.to)   { where.push('DATE(be.created_at) <= ?'); params.push(q.to.slice(0, 10)); }
     const whereSql = where.join(' AND ');

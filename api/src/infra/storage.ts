@@ -119,6 +119,14 @@ export const MEMBERS_FOLDER = 'members';
  */
 export const ACTIVITIES_FOLDER = 'activities';
 
+/**
+ * `plans` — the gym-root branch holding a Membership Plan's image (#1514):
+ * `<gym prefix>/plans/<plan_id>-<plan_name>.webp` plus its `-thumbnail.webp`.
+ * Declared here for {@link GOALS_FOLDER}'s reason (marker and key builder must
+ * never disagree in case); `domain/planImages.ts` re-exports it.
+ */
+export const PLANS_FOLDER = 'plans';
+
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 //
@@ -177,6 +185,9 @@ const GYM_FOLDERS = [
   // #1373: the gym-level `activities/` root, holding an Activity Type's image.
   // Appended last, with its writer (`POST /activity-types/:id/image`).
   `${ACTIVITIES_FOLDER}/`,
+  // #1514: the gym-level `plans/` root, holding a Membership Plan's image.
+  // Appended last, with its writer (`POST /membership-plans/:id/image`).
+  `${PLANS_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;

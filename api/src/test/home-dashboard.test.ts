@@ -52,6 +52,31 @@ describe('GET /dashboard/home', () => {
   });
 });
 
+describe('classes_today card (#1510)', () => {
+  it('counts classes with a booked member against all classes of the day', async () => {
+    const day = '2031-03-10';
+    const at = await db.query(`INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Spin', 10, 'active')`, [gymB]);
+    const m = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymB, 'Booker', `bk-${Date.now()}@example.com`]);
+    const ids: number[] = [];
+    for (const hour of ['10', '12', '14']) {
+      const r = await db.query(
+        `INSERT INTO calendar_events (gym_id, title, activity_type_id, starts_at, ends_at, status)
+         VALUES (?, 'Spin', ?, ?, ?, 'scheduled')`,
+        [gymB, at.insertId, `${day} ${hour}:00:00`, `${day} ${hour}:45:00`],
+      );
+      ids.push(r.insertId);
+    }
+    await db.query(
+      `INSERT INTO calendar_event_bookings (gym_id, calendar_event_id, member_id, status) VALUES (?, ?, ?, 'booked')`,
+      [gymB, ids[0], m.insertId],
+    );
+    const res = await get(gymB, `/dashboard/home?date=${day}`);
+    expect(res.status).toBe(200);
+    expect(res.body.cards.classes_today.count).toBe(1);
+    expect(res.body.cards.classes_today.total).toBe(3);
+  });
+});
+
 describe('PUT /members/:id/welcomed', () => {
   it('ticks and unticks, and the task follows welcomed_at IS NULL', async () => {
     await db.query('UPDATE members SET welcomed_at = NULL WHERE id = ?', [memberA]);
