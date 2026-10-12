@@ -85,6 +85,8 @@ export function resultTypeLabel(rt: ResultTypeRow, translate: (key: string) => s
   return known ? translate(`result_type_${rt.slug}`) : rt.name;
 }
 
+export type ExerciseDescriptionTranslations = Record<string, { short_description?: string | null; description?: string | null }>;
+
 export type MuscleRole = 'principal' | 'secondary';
 
 export interface ExerciseFormValues {
@@ -93,6 +95,10 @@ export interface ExerciseFormValues {
   /** #967: `{ locale: name }` for the translatable locales; blank = fall back. */
   translations: ExerciseNameTranslations;
   description: string;
+  /** #1419: the one-line summary a list row shows (base locale). */
+  short_description: string;
+  /** #1419: `{ locale: { short_description, description } }` for the translatable locales. */
+  description_translations: ExerciseDescriptionTranslations;
   /** #717 Q6: offered by the creation form only — the editor manages the video through its upload control. */
   video_url: string;
   min_reps_default: string;
@@ -106,7 +112,7 @@ export interface ExerciseFormValues {
 
 export function emptyExerciseForm(): ExerciseFormValues {
   return {
-    name: '', translations: {}, description: '', video_url: '',
+    name: '', translations: {}, description: '', short_description: '', description_translations: {}, video_url: '',
     min_reps_default: '', max_reps_default: '', sets_default: '', rest_default_seconds: '',
     category: '',
     status: 'active',
@@ -124,6 +130,9 @@ export interface ExerciseRowValues {
    */
   translations?: ExerciseNameTranslations | null;
   description: string | null;
+  short_description?: string | null;
+  /** #1419: stored per-locale descriptions; seeded like `translations`, for the same reason. */
+  description_translations?: ExerciseDescriptionTranslations | null;
   video_url: string | null;
   min_reps_default: number | null;
   max_reps_default: number | null;
@@ -138,6 +147,12 @@ export function exerciseFormFromRow(e: ExerciseRowValues): ExerciseFormValues {
     name: e.name,
     translations: { ...(e.translations ?? {}) },
     description: e.description ?? '',
+    short_description: e.short_description ?? '',
+    description_translations: Object.fromEntries(
+      Object.entries(e.description_translations ?? {}).map(([loc, v]) => [
+        loc, { short_description: v?.short_description ?? '', description: v?.description ?? '' },
+      ]),
+    ),
     video_url: e.video_url ?? '',
     min_reps_default: e.min_reps_default != null ? String(e.min_reps_default) : '',
     max_reps_default: e.max_reps_default != null ? String(e.max_reps_default) : '',
@@ -177,11 +192,29 @@ export function trimmedTranslations(translations: ExerciseNameTranslations): Exe
   return out;
 }
 
+/**
+ * #1419: only locales with something typed are submitted; the object is always
+ * present, because omitting it means "leave the stored descriptions alone".
+ */
+export function trimmedDescriptionTranslations(
+  value: ExerciseDescriptionTranslations,
+): Record<string, { short_description: string; description: string }> {
+  const out: Record<string, { short_description: string; description: string }> = {};
+  for (const [locale, v] of Object.entries(value ?? {})) {
+    const short = (v?.short_description ?? '').trim();
+    const full = (v?.description ?? '').trim();
+    if (short || full) out[locale] = { short_description: short, description: full };
+  }
+  return out;
+}
+
 function sharedPayload(form: ExerciseFormValues, { muscles }: PayloadExtras) {
   return {
     name: form.name.trim(),
     translations: trimmedTranslations(form.translations),
     description: textOrNull(form.description),
+    short_description: textOrNull(form.short_description),
+    description_translations: trimmedDescriptionTranslations(form.description_translations),
     min_reps_default: intOrNull(form.min_reps_default),
     max_reps_default: intOrNull(form.max_reps_default),
     sets_default: intOrNull(form.sets_default),
@@ -261,6 +294,9 @@ export interface ExerciseMediaRow {
    * edit form submits back.
    */
   display_name?: string | null;
+  /** #1419: the descriptions in the caller's language, base value as the fallback. Read-only surfaces show these. */
+  display_short_description?: string | null;
+  display_description?: string | null;
   image_url: string | null;
   image_thumbnail_url: string | null;
   /** #1368 stage 4: the exercise's own image, else its primary muscle's. Read-only. */

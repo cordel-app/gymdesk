@@ -89,9 +89,9 @@ export function ExerciseCard({
           </div>
         )}
 
-        {!expanded && exercise.description && (
+        {!expanded && (exercise.display_short_description ?? exercise.display_description ?? exercise.description) && (
           <p style={{ margin: 0, fontSize: 13, color: '#666', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', overflowWrap: 'anywhere' }}>
-            {exercise.description}
+            {exercise.display_short_description ?? exercise.display_description ?? exercise.description}
           </p>
         )}
 
@@ -99,7 +99,7 @@ export function ExerciseCard({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div>
               <p style={exerciseSectionLabelStyle}>{t('card_full_description')}</p>
-              <p style={exerciseFieldValueStyle}>{exerciseDisplayValue(exercise.description)}</p>
+              <p style={exerciseFieldValueStyle}>{exerciseDisplayValue(exercise.display_description ?? exercise.description)}</p>
             </div>
             <div>
               <p style={exerciseSectionLabelStyle}>{t('card_muscles_worked')}</p>
