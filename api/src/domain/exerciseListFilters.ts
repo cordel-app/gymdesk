@@ -152,8 +152,14 @@ export function exerciseListFilterSql(
   if (filter.q) {
     // #967 §7: the base name or any stored translation. The slug is an
     // internal identifier (#1356) and is never searched.
-    parts.push(`(${exerciseNameSearchSql(alias)})`);
-    params.push(`%${filter.q}%`, `%${filter.q}%`);
+    // #1355 §2: and the description, base or translated, so an exercise is
+    // found by what it says in the language the gym wrote it in.
+    parts.push(`(${exerciseNameSearchSql(alias)}
+      OR ${alias}.short_description LIKE ? OR ${alias}.description LIKE ?
+      OR EXISTS (SELECT 1 FROM exercise_description_translations edt
+        WHERE edt.exercise_id = ${alias}.id AND (edt.short_description LIKE ? OR edt.description LIKE ?)))`);
+    const like = `%${filter.q}%`;
+    params.push(like, like, like, like, like, like);
   }
   for (const { column, values } of filter.metadata) {
     // The column itself, not `LOWER(…)`: the table's collation is
