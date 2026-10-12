@@ -95,8 +95,8 @@
     "add_log": "Add log entry",
     "new_chip": "New",
     "progress_day": "Day",
-    "progress_week": "Week",
-    "progress_month": "Month",
+    "progress_week": "Last 7 Days",
+    "progress_month": "Last 30 Days",
     "future_workout": "Available on the day of the workout.",
     "today_marker": "Today",
     "week_nav_hint": "Swipe to change week"

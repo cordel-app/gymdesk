@@ -95,8 +95,8 @@
     "add_log": "Afegeix registre",
     "new_chip": "Nou",
     "progress_day": "Dia",
-    "progress_week": "Setmana",
-    "progress_month": "Mes",
+    "progress_week": "Últims 7 dies",
+    "progress_month": "Últims 30 dies",
     "future_workout": "Disponible el dia de l'entrenament.",
     "today_marker": "Avui",
     "week_nav_hint": "Llisca per canviar de setmana"
