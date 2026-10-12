@@ -1,4 +1,5 @@
 import { resolveRequestActor } from '../domain/auditActor';
+import { payerCheckoutUrl } from './checkout-url';
 import { loadDerivedBilling, withDerivedBilling } from './derived-billing';
 import { createProductSetCheckout, initialCharge } from './product-set-checkout';
 import { openInitialEventForAssignment } from './product-set-bridge';
@@ -2150,6 +2151,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
           gymId, productSetId: Number(pendingSets[0].id), memberId,
           memberEmail: pendingSets[0].member_email ?? '', startsAt, charge,
           actor: resolveRequestActor(ctx),
+          requestLocale: getRequestLocale(req),
         });
         return res.status(201).json({ id: checkout.paymentRequestId, checkoutUrl: checkout.checkoutUrl });
       }
@@ -2214,7 +2216,7 @@ meRouter.post('/payment-requests', requireRole('member'), memberPaymentRateLimit
       [gymId, um.id, memberId, fee.toFixed(2), ctRows[0].id, openEventId, orderId, result.providerOrderId, pageToken, pageTokenExpires, resolveRequestActor(ctx)],
     );
 
-    const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;
+    const checkoutUrl = await payerCheckoutUrl({ gymId, memberId, pageToken, requestLocale: getRequestLocale(req) });
     res.status(201).json({ id: insertId, checkoutUrl });
   } catch (err: any) {
     req.log.error({ err: (err as Error).message }, 'Member payment request creation failed');
@@ -2290,6 +2292,7 @@ meRouter.post('/payment-method/replace-requests', requireRole('member'), memberC
       memberEmail: memberRows[0]?.email ?? '',
       userMembershipId,
       actor: resolveRequestActor(ctx),
+      requestLocale: getRequestLocale(req),
       stampConsent: true,
     });
 
@@ -2595,6 +2598,7 @@ meRouter.post(
         memberEmail: member.email,
         productId,
         promotionId,
+        requestLocale: getRequestLocale(req),
       });
       req.log.info(
         { memberId, productId, purchaseId: result.purchaseId },

@@ -91,7 +91,7 @@ gymdesk/
     payment/                       # Isolated PCI payment page (#204) — vanilla HTML/JS, no npm
       checkout.html                # Monei Card Input + MIT consent
       error.html                   # Expired/invalid token fallback
-      js/checkout.js utils.js
+      js/checkout.js utils.js i18n.js error.js   # i18n.js: the page's dictionaries, by path (#1480)
       css/style.css
       templates/default.conf.template  # envsubst'd at container start (#1083): static
                                        # files, the /payment-page/ and /themes/ proxies,

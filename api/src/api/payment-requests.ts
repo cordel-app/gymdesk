@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { payerCheckoutUrl } from './checkout-url';
 import { Router, Request, Response, NextFunction } from 'express';
 import { db } from '../infra/db';
 import { resolveRequestActor } from '../domain/auditActor';
@@ -155,7 +156,7 @@ paymentRequestsRouter.post(
         ],
       );
 
-      const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;
+      const checkoutUrl = await payerCheckoutUrl({ gymId, memberId: um.member_id, pageToken });
       res.status(201).json({ id: insertId, checkoutUrl });
     } catch (err) {
       req.log.error({ err: (err as Error).message }, 'Payment request creation failed');
