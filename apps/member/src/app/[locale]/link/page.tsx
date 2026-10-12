@@ -253,7 +253,7 @@ export default function LinkPage() {
             hideLabel={t('hide_password')}
           />
           {passwordError && <p style={{ color: memberTheme.statusError, marginBottom: 16 }}>{passwordError}</p>}
-          <button type="submit" disabled={submitting} style={{ width: '100%', padding: 12 }}>
+          <button type="submit" disabled={submitting} style={{ ...primaryButtonStyle, width: '100%', padding: 12, fontSize: 15, fontWeight: 600 }}>
             {submitting ? t('submitting') : t('submit')}
           </button>
         </form>

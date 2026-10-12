@@ -5,6 +5,7 @@ import { useApp } from '@/context/AppContext';
 import { DEFAULT_TOKENS, applyTokens, ThemeTokens } from '@/lib/themeTokens';
 import { applyMembersAppTokens } from '@/lib/membersAppTokens';
 import { CARD_TOUCH_CSS } from '@/lib/cardTouch';
+import { BUTTON_STATES_CSS } from '@/lib/buttonStates';
 import { InlineStyle } from './InlineStyle';
 
 /**
@@ -29,6 +30,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   return (
     <>
       <InlineStyle css={CARD_TOUCH_CSS} />
+      <InlineStyle css={BUTTON_STATES_CSS} />
       {children}
     </>
   );
