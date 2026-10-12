@@ -11,6 +11,7 @@ import {
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { SectionEditButton } from '@/components/SectionEditButton';
+import { primaryBtnSmall } from '@/components/ui';
 import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalAvailability, goalDisplayName } from '@/components/goalLibrary/goalProfile';
 import { AddReadingModal } from './AddReadingModal';
 import { AssignedPersonalGoalForm, GoalOption } from './AssignedPersonalGoalForm';
@@ -168,9 +169,9 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
 
   const canEdit = canWrite && editing;
 
-  async function saveNew() {
+  async function saveNew(): Promise<boolean> {
     const invalid = assignedPersonalGoalFormError(newForm);
-    if (invalid) { setNewError(t(invalid as any)); return; }
+    if (invalid) { setNewError(t(invalid as any)); return false; }
     setNewSaving(true); setNewError(null);
     try {
       await apiFetch(ASSIGNED_PERSONAL_GOALS_ROOT, {
@@ -179,14 +180,16 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
       });
       setCreating(false);
       load();
+      return true;
     } catch (e: any) {
       setNewError(e.message ?? t('error_generic'));
+      return false;
     } finally { setNewSaving(false); }
   }
 
-  async function saveEdit(row: AssignedPersonalGoalRow) {
+  async function saveEdit(row: AssignedPersonalGoalRow): Promise<boolean> {
     const invalid = assignedPersonalGoalFormError(editForm);
-    if (invalid) { setEditError(t(invalid as any)); return; }
+    if (invalid) { setEditError(t(invalid as any)); return false; }
     setEditSaving(true); setEditError(null);
     try {
       await apiFetch(`${ASSIGNED_PERSONAL_GOALS_ROOT}/${row.id}`, {
@@ -195,10 +198,27 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
       });
       setEditingId(null);
       load();
+      return true;
     } catch (e: any) {
       setEditError(e.message ?? t('error_generic'));
+      return false;
     } finally { setEditSaving(false); }
   }
+
+  // #1489: the section's Save persists whichever inline form is open and leaves
+  // Edit mode only when every save succeeded; a failure keeps the mode open with
+  // the draft and its error line intact. Everything else in the section already
+  // persisted through its own route.
+  async function saveSection() {
+    if (creating && !(await saveNew())) return;
+    const open = editingId === null ? null : rows.find((r) => r.id === editingId);
+    if (open && !(await saveEdit(open))) return;
+    setEditing(false);
+  }
+
+  // Cancel discards the open drafts without saving; the mode-exit effect clears
+  // them.
+  function cancelSection() { setEditing(false); }
 
   // #1428 §2.3: unassigning is a permanent delete of the assignment and its
   // readings (one transaction, server-side). A second click while it runs is
@@ -223,10 +243,23 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
     <div>
       {canWrite && (
         <div style={{ marginBottom: 8 }}>
-          <SectionEditButton
-            label={editing ? t('done_editing') : t('edit')}
-            onClick={() => setEditing((v) => !v)}
-          />
+          {editing ? (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                style={{ ...primaryBtnSmall(), opacity: newSaving || editSaving ? 0.6 : 1 }}
+                disabled={newSaving || editSaving}
+                onClick={saveSection}
+              >
+                {t('save')}
+              </button>
+              <button type="button" style={secondaryBtnSmall} disabled={newSaving || editSaving} onClick={cancelSection}>
+                {t('cancel')}
+              </button>
+            </div>
+          ) : (
+            <SectionEditButton label={t('edit')} onClick={() => setEditing(true)} />
+          )}
         </div>
       )}
       {rows.length === 0 && !creating && <p style={cardMutedTextStyle}>{t('member_empty')}</p>}
