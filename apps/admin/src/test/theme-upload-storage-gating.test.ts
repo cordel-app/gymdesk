@@ -79,8 +79,7 @@ describe('gymStorageBlock() — the one readiness rule (#823)', () => {
     // Every per-gym upload control reads the pair through the helper; a fourth
     // inline copy is what this consolidated.
     for (const src of [
-      read('components', 'ExerciseImageField.tsx'),
-      read('components', 'ExerciseVideoField.tsx'),
+      read('components', 'exercises', 'ExerciseGenderMediaField.tsx'),
       read('components', 'ImageUploadField.tsx'),
     ]) {
       expect(src).toContain('gymStorageBlock(');

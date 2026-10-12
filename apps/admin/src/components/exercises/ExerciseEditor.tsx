@@ -23,7 +23,6 @@ import {
   exerciseFieldGridStyle,
   exerciseFieldLabelStyle,
   exerciseFieldWideStyle,
-  exerciseMediaGridStyle,
   exerciseOptionRowStyle,
   exerciseResultTypeGridStyle,
   exerciseSectionLabelStyle,
@@ -95,7 +94,7 @@ export interface ExerciseEditorProps {
   muscleLabel: (key: string) => string;
   /** The result-type catalogue, as the context's lookup endpoint returned it. */
   resultTypes: ResultTypeRow[];
-  /** The Media section's controls — `<ExerciseMediaPair>`, built by the page. */
+  /** The Media section's controls — `<ExerciseGenderMedia>`, built by the page. */
   media: React.ReactNode;
   /** Focused when the form opens. */
   nameRef?: React.RefObject<HTMLInputElement>;
@@ -279,31 +278,6 @@ export function ExerciseEditor({
   );
 }
 
-/**
- * The Media section's two controls (#805 §10): Image and Video side by side on a
- * wide card, stacked on a narrow one. `auto-fit` + a min track does that without
- * a media query, which inline styles cannot carry.
- *
- * The controls themselves are passed in, because *where* the upload goes is the
- * context's business — `/exercises/:id` for a Gym Exercise,
- * `/platform/exercises/:id` for a Base Exercise (#806 §7).
- */
-export function ExerciseMediaPair({ image, video }: { image: React.ReactNode; video: React.ReactNode }) {
-  const t = useTranslations('exercises');
-  return (
-    <div style={mediaGridSt}>
-      <div>
-        <p style={inlineLabelSt}>{t('label_image')}</p>
-        {image}
-      </div>
-      <div>
-        <p style={inlineLabelSt}>{t('label_video')}</p>
-        {video}
-      </div>
-    </div>
-  );
-}
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
 //
 // The editor's own, so both screens are laid out by the same values (AC2).
@@ -316,5 +290,4 @@ const inlineLabelSt = exerciseFieldLabelStyle;
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
 const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };
 const subSectionSt = exerciseSubSectionStyle;
-const mediaGridSt = exerciseMediaGridStyle;
 const sectionLabelSt = exerciseSectionLabelStyle;

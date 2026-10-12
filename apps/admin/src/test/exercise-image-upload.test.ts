@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import {
   EXERCISE_IMAGE_MASTER_SIZE,
   EXERCISE_IMAGE_THUMBNAIL_SIZE,
@@ -9,39 +7,10 @@ import {
   isSafeImageSrc,
 } from '../lib/exerciseImageUpload';
 
-// #719 part 1 — the Image control on a Gym Exercise: a 2048×2048 PNG master
-// uploaded together with the 512×512 thumbnail the *browser* draws from it (the
-// answer on #719 Q2), and the ownership-aware replace/remove behind it.
-//
-// `blobToBase64` and the guard are pure and run here directly. Everything that
-// needs a DOM (`Image`, `<canvas>`) and the rendering itself have no
-// component-test infra in this repo (docs/architecture.md's TL;DR), so — like
-// exercise-media-thumbnails.test.ts (#720) and base-nutrition-images.test.ts
-// (#715) — those are pinned down by scanning the source.
-
-const SRC = join(__dirname, '..');
-const LIB = join(SRC, 'lib', 'exerciseImageUpload.ts');
-const COMPONENT = join(SRC, 'components', 'ExerciseImageField.tsx');
-const PAGE = join(SRC, 'app', '[locale]', 'exercises', 'page.tsx');
-// #965: the thumbnail-over-master rule moved out of both pages and out of the
-// Details modal into the one read-only media preview the two pages share.
-const MEDIA_PREVIEW = join(SRC, 'components', 'exercises', 'ExerciseMediaPreview.tsx');
-const LOCALES_DIR = join(SRC, '..', 'locales', 'base');
-const LOCALE_CODES = ['en', 'es', 'ca'] as const;
-
-function stripComments(src: string): string {
-  return src
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')
-    .replace(/^\s*\/\/.*$/gm, '');
-}
-
-const read = (path: string) => stripComments(readFileSync(path, 'utf-8'));
-
-const libSrc = read(LIB);
-const componentSrc = read(COMPONENT);
-const pageSrc = read(PAGE);
-const mediaPreviewSrc = read(MEDIA_PREVIEW);
+// The pure helpers of the legacy exercise image module. Its upload control was
+// replaced by the four gender-specific controls (#1420 stage 3), which are
+// covered by exercise-gender-media.test.ts; what remains here is what other
+// surfaces still import: the safe-source guard and the base64 encoder.
 
 describe('exerciseImageUpload — sizes', () => {
   it('states the two sizes #719 §5 fixes', () => {
@@ -99,145 +68,4 @@ describe('isSafeImageSrc', () => {
     expect(isSafeImageSrc(undefined)).toBe(false);
     expect(isSafeImageSrc('')).toBe(false);
   });
-});
-
-describe('prepareExerciseImage (source)', () => {
-  it('checks the format and the 2048×2048 master before doing any work', () => {
-    expect(libSrc).toMatch(/return 'not_a_png'/);
-    expect(libSrc).toMatch(/EXERCISE_IMAGE_MASTER_SIZE[\s\S]*?return 'wrong_size'/);
-  });
-
-  it('fails the whole upload when the thumbnail cannot be produced (#719 Q2)', () => {
-    expect(libSrc).toMatch(/const thumbnail = await makeThumbnail\(file\);\s*\n\s*if \(!thumbnail\) return 'thumbnail_failed';/);
-    // The pair is only built after the thumbnail exists, so there is no path
-    // that uploads a master on its own.
-    const returnsPair = libSrc.indexOf('return { image, thumbnail: thumb }');
-    expect(returnsPair).toBeGreaterThan(libSrc.indexOf("return 'thumbnail_failed'"));
-  });
-
-  it('draws the thumbnail on a transparent canvas, undistorted', () => {
-    expect(libSrc).toContain("getContext('2d', { alpha: true })");
-    expect(libSrc).toContain('ctx.drawImage(image, 0, 0, size, size)');
-    // A fill would make the background opaque, which the server rejects.
-    expect(libSrc).not.toContain('fillRect');
-    expect(libSrc).toContain("canvas.toBlob(resolve, 'image/png')");
-  });
-});
-
-describe('ExerciseImageField', () => {
-  it('uploads the pair to the exercise’s own endpoint', () => {
-    // #806: the route root is the context's — `/exercises` for a Gym Exercise,
-    // `/platform/exercises` for a Base Exercise — and it defaults to the gym's,
-    // so the control is never pointed anywhere by accident.
-    expect(componentSrc).toContain("basePath = '/exercises'");
-    expect(componentSrc).toMatch(/\$\{basePath\}\/\$\{exerciseId\}\/image`, \{\s*\n\s*method: 'POST'/);
-    expect(componentSrc).toMatch(/\$\{basePath\}\/\$\{exerciseId\}\/image`, \{ method: 'DELETE' \}/);
-    // Not the generic #417 upload route, which stores a single image with no
-    // thumbnail and no ownership rules.
-    expect(componentSrc).not.toContain('/storage/uploads/exercise-image');
-  });
-
-  it('sends nothing when preparation failed, so existing media survives (§8)', () => {
-    const guard = componentSrc.indexOf('if (!isPreparedExerciseImage(prepared))');
-    const post = componentSrc.indexOf("method: 'POST'");
-    expect(guard).toBeGreaterThan(-1);
-    expect(guard).toBeLessThan(post);
-    expect(componentSrc).toMatch(/if \(!isPreparedExerciseImage\(prepared\)\) \{[\s\S]*?return;/);
-  });
-
-  it('draws the thumbnail, never the 2048 master, and lazy-loads it (§17)', () => {
-    expect(componentSrc).toContain('thumbnailUrl ?? imageUrl');
-    expect(componentSrc).toContain("loading=\"lazy\"");
-    // `objectFit: 'contain'` moved into the app's one image-frame module
-    // (#1035 stage 2) rather than being spelled here: the picture is still
-    // contained rather than cropped, from one declaration both upload controls
-    // read.
-    expect(componentSrc).toContain('imagePreviewImageStyle');
-    expect(componentSrc).toContain('imagePreviewFrameStyle()');
-    const frameSrc = readFileSync(
-      join(__dirname, '..', 'components/imagePreviewFrame.ts'),
-      'utf8',
-    );
-    expect(frameSrc).toContain("objectFit: 'contain'");
-    // The checkerboard travelled with it, so a transparent background still
-    // reads as transparent rather than as white.
-    expect(frameSrc).toMatch(/backgroundImage:[\s\S]*?linear-gradient/);
-  });
-
-  it('hands the frame only a reference the scheme guard passed', () => {
-    expect(componentSrc).toContain('const drawable = preview != null && SAFE_IMAGE_SRC.test(preview)');
-    expect(componentSrc).toMatch(/\{drawable \? \([\s\S]*?<img src=\{preview!\}/);
-    // The reference still drives Replace/Remove: an undrawable one is not an
-    // absent one.
-    expect(componentSrc).toContain('const hasImage = preview != null');
-  });
-
-  it('previews a staged pick as its own prepared thumbnail, not the picked file', () => {
-    expect(componentSrc).toContain('setStagedPreview(`data:image/png;base64,${prepared.thumbnail}`)');
-    // No object URL is minted from the file the input handed over: the frame
-    // draws the 512×512 companion (§17) — the very bytes the upload carries —
-    // so nothing read out of the file input reaches the DOM, and there is no
-    // object URL left to revoke.
-    expect(componentSrc).not.toContain('createObjectURL');
-    expect(componentSrc).not.toContain('revokeObjectURL');
-  });
-
-  it('resolves no media of its own — no Base Exercise fallback (§13)', () => {
-    expect(componentSrc).not.toMatch(/cordel|base_exercise|cloned_from_id/);
-  });
-
-  it('states the required format to the user (§21)', () => {
-    expect(componentSrc).toContain("t('image_requirements'");
-    expect(componentSrc).toContain('accept="image/png"');
-  });
-
-  it('has an uploading, a removing and an error state (§21)', () => {
-    for (const key of ['image_uploading', 'image_removing', 'image_replace', 'image_remove', 'image_none']) {
-      expect(componentSrc).toContain(`t('${key}')`);
-    }
-    expect(componentSrc).toContain('setError');
-  });
-});
-
-describe('Exercises page', () => {
-  it('manages the image through the dedicated control, not the form', () => {
-    expect(pageSrc).toContain('<ExerciseImageField');
-    expect(pageSrc).toContain('exerciseId={ex.id}');
-    // The image is no longer a field of the edit/add payloads: a PUT must not
-    // be able to undo an upload or re-apply a removed image.
-    expect(pageSrc).not.toMatch(/image_url: (editForm|addForm)\./);
-    expect(pageSrc).not.toContain('ImageUploadField');
-  });
-
-  it('stages the image while an exercise is being created and uploads it after', () => {
-    expect(pageSrc).toContain('onStaged={setStagedImage}');
-    expect(pageSrc).toMatch(/if \(stagedImage\) \{[\s\S]*?\/exercises\/\$\{created\.id\}\/image/);
-  });
-
-  it('reads both references from the API and prefers the thumbnail when drawing', () => {
-    expect(pageSrc).toContain('image_url: string | null; image_thumbnail_url: string | null;');
-    // #965: one preview draws it for both pages, so the preference is stated once.
-    expect(mediaPreviewSrc).toContain('exercise.image_thumbnail_url ?? exercise.image_url');
-  });
-});
-
-describe('locales', () => {
-  const keys = [
-    'label_image', 'image_none', 'image_requirements', 'image_upload', 'image_replace',
-    'image_remove', 'image_uploading', 'image_removing', 'image_not_configured',
-    'image_not_initialized', 'image_error_not_a_png', 'image_error_unreadable',
-    'image_error_wrong_size', 'image_error_thumbnail_failed', 'image_error_upload_failed',
-    'image_error_remove_failed',
-  ];
-
-  for (const code of LOCALE_CODES) {
-    it(`${code} carries every exercise image label`, () => {
-      const messages = JSON.parse(readFileSync(join(LOCALES_DIR, `${code}.json`), 'utf-8'));
-      for (const key of keys) {
-        expect(messages.exercises[key], `${code}.exercises.${key}`).toBeTruthy();
-      }
-      // The retired "Image URL" label went with the free-text field it named.
-      expect(messages.exercises.label_image_url).toBeUndefined();
-    });
-  }
 });

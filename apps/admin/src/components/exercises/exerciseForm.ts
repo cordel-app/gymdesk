@@ -308,6 +308,17 @@ export interface ExerciseMediaRow {
   effective_image_thumbnail_url?: string | null;
   video_url: string | null;
   video_thumbnail_url: string | null;
+  /** #1420: the four gender-specific references, and the companions derived from them. */
+  image_male_url?: string | null;
+  image_female_url?: string | null;
+  video_male_url?: string | null;
+  video_female_url?: string | null;
+  image_male_thumbnail_url?: string | null;
+  image_female_thumbnail_url?: string | null;
+  video_male_preview_url?: string | null;
+  video_male_preview_thumbnail_url?: string | null;
+  video_female_preview_url?: string | null;
+  video_female_preview_thumbnail_url?: string | null;
   created_at: string;
   modified_at: string | null;
 }
