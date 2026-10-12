@@ -1024,22 +1024,22 @@ export default function PlansPage() {
         {renderInlineNewRow()}
 
         {viewMode === 'cards' && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16, marginBottom: 16 }}>
             {plans.map((plan) => {
               const rows = [...plan.oneoff_benefits, ...plan.session_benefits, ...plan.periodical_benefits];
               return (
                 <PlanCard
                   key={plan.id}
                   active={editingId === plan.id}
-                  canWrite={canWrite}
-                  readOnlyTitle={readOnlyTitle}
-                  onEdit={() => openInlineEdit(plan)}
                   menuItems={planMenuItems(plan)}
                   plan={{
                     id: plan.id,
                     name: plan.name,
                     lifecycle_status: plan.lifecycle_status,
                     statusLabel: t(`status.${plan.lifecycle_status}`),
+                    enrollment_status: plan.enrollment_status,
+                    enrollmentStatusLabel: t(`status.${plan.enrollment_status}`),
+                    taxNote: plan.amount_incl_tax != null ? t('plans.tax_included_suffix') : null,
                     member_count: (plan as any).member_count,
                     priceText: plan.amount_incl_tax != null
                       ? `€${plan.amount_incl_tax.toFixed(2)}`
