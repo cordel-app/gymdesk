@@ -157,6 +157,15 @@ describe('the committed native projects carry the stage-1 profile', () => {
     );
   });
 
+  it('iOS: the camera usage description is declared, because iOS terminates the app without it (#1449)', () => {
+    // *Take Photo* in a web view's file picker asks for the camera; with no
+    // `NSCameraUsageDescription` the system does not prompt, it kills the app.
+    const plist = read('ios/App/App/Info.plist').replace(/\s+/g, ' ');
+    expect(plist).toContain(
+      `<key>NSCameraUsageDescription</key> <string>${appName} uses the camera so you can take your profile photo.</string>`,
+    );
+  });
+
   it('Android: the applicationId and the four identity strings', () => {
     expect(read('android/app/build.gradle')).toContain(`applicationId "${appId}"`);
     const strings = read('android/app/src/main/res/values/strings.xml');

@@ -22,12 +22,14 @@ import {
 } from '../nativeIdentity';
 import {
   NativeProjectFileError,
+  cameraUsageDescription,
   withAndroidStrings,
   withAppleSignIn,
   withAssociatedDomains,
   withBundleIdentifier,
   withGradleApplicationId,
   withPlistString,
+  withPlistStringEntry,
   withPlistUrlSchemes,
 } from '../nativeProjectFiles';
 
@@ -273,7 +275,13 @@ describe('writing a profile into the native projects', () => {
     );
 
     expect(withBundleIdentifier(pbxproj, ios.bundleId)).toBe(pbxproj);
-    expect(withPlistUrlSchemes(withPlistString(plist, 'CFBundleDisplayName', ios.displayName), ios.urlSchemes)).toBe(plist);
+    expect(
+      withPlistStringEntry(
+        withPlistUrlSchemes(withPlistString(plist, 'CFBundleDisplayName', ios.displayName), ios.urlSchemes),
+        'NSCameraUsageDescription',
+        cameraUsageDescription(ios.displayName),
+      ),
+    ).toBe(plist);
     expect(withGradleApplicationId(gradle, profile.appId)).toBe(gradle);
     expect(
       withAndroidStrings(strings, {
@@ -285,6 +293,30 @@ describe('writing a profile into the native projects', () => {
     ).toBe(strings);
     const entitlements = readFileSync(join(WORKSPACE, 'ios/App/App/App.entitlements'), 'utf8');
     expect(withAssociatedDomains(entitlements, ios.associatedDomains)).toBe(entitlements);
+  });
+});
+
+describe('the camera usage description (#1449 follow-up)', () => {
+  const plist = '<?xml version="1.0"?>\n<plist version="1.0">\n<dict>\n\t<key>CFBundleDisplayName</key>\n\t<string>X</string>\n</dict>\n</plist>\n';
+
+  it('adds the key when the template has none, and says the build\u2019s own name', () => {
+    const out = withPlistStringEntry(plist, 'NSCameraUsageDescription', cameraUsageDescription('Body & Mind'));
+    expect(out).toContain(
+      '<key>NSCameraUsageDescription</key>\n\t<string>Body &amp; Mind uses the camera so you can take your profile photo.</string>',
+    );
+    expect(out.endsWith('</dict>\n</plist>\n')).toBe(true);
+  });
+
+  it('replaces an existing value and is idempotent', () => {
+    const once = withPlistStringEntry(plist, 'NSCameraUsageDescription', 'first');
+    const twice = withPlistStringEntry(once, 'NSCameraUsageDescription', 'second');
+    expect(twice).toContain('<string>second</string>');
+    expect(twice.match(/NSCameraUsageDescription/g)).toHaveLength(1);
+    expect(withPlistStringEntry(twice, 'NSCameraUsageDescription', 'second')).toBe(twice);
+  });
+
+  it('throws rather than reporting success when there is no root dictionary to add to', () => {
+    expect(() => withPlistStringEntry('nothing here', 'NSCameraUsageDescription', 'x')).toThrow(NativeProjectFileError);
   });
 });
 
