@@ -2,7 +2,8 @@
 // part 3).
 //
 // Importing a Base Exercise copies its media *references* into the gym's copy
-// (§2), and from that moment the copy owns them (§3's snapshot rule): the Base
+// (§2) — since #1420 the four gender-specific masters — and from that moment the
+// copy owns them (§3's snapshot rule): the Base
 // Exercise's later edits never reach it, and there is no runtime fallback in
 // either direction. §12 makes **re-importing** the one supported way back to the
 // System media — there is deliberately no separate "restore System media"
@@ -13,12 +14,16 @@
 // Import modal reads (`media_refreshable`) and the UPDATE the route performs are
 // derived from one rule and can be unit-tested without a database or a bucket.
 
-/** The four media columns of an `exercises` row — a Base Exercise's or a gym's copy's. */
+/**
+ * The four gender-specific media masters of an `exercises` row — a Base
+ * Exercise's or a gym's copy's. A master's thumbnail or preview is derived from
+ * its URL (`domain/exerciseGenderMedia.ts`), so a reference covers its companions.
+ */
 export interface ExerciseMediaRefs {
-  image_url: string | null;
-  image_thumbnail_url: string | null;
-  video_url: string | null;
-  video_thumbnail_url: string | null;
+  image_male_url: string | null;
+  image_female_url: string | null;
+  video_male_url: string | null;
+  video_female_url: string | null;
 }
 
 /**
@@ -27,24 +32,24 @@ export interface ExerciseMediaRefs {
  * SQL are literals of this module and can never come from anywhere else.
  */
 export const EXERCISE_MEDIA_COLUMNS = [
-  'image_url',
-  'image_thumbnail_url',
-  'video_url',
-  'video_thumbnail_url',
+  'image_male_url',
+  'image_female_url',
+  'video_male_url',
+  'video_female_url',
 ] as const;
 
 export interface ExerciseMediaRefreshPlan {
-  /** The columns to write — only the pairs the Base Exercise actually has. */
+  /** The columns to write — only the masters the Base Exercise actually has. */
   changes: Partial<ExerciseMediaRefs>;
   /**
-   * What the copy stops pointing at. Candidates for deletion only: the route
-   * still asks `isGymOwnedImageUrl()` whether each one is this gym's own object
-   * and whether another exercise still references it (§19).
+   * The masters the copy stops pointing at. Candidates for deletion only: the
+   * route still asks `isGymOwnedImageUrl()` whether each one is this gym's own
+   * object and whether another exercise still references it (§19).
    */
   stale: string[];
-  /** Whether the image pair is being restored from the Base Exercise. */
+  /** Whether an image master is being restored from the Base Exercise. */
   image: boolean;
-  /** Whether the video pair is being restored from the Base Exercise. */
+  /** Whether a video master is being restored from the Base Exercise. */
   video: boolean;
 }
 
@@ -59,22 +64,17 @@ function same(a: string | null, b: string | null): boolean {
  *
  * Two rules decide this, and both matter:
  *
- *  - **The image pair and the video pair move independently.** They are two
- *    different objects with two different owners' histories; a Base Exercise
- *    that has artwork but no clip restores the artwork and says nothing about
- *    the clip.
- *  - **A pair the Base Exercise does not have restores nothing.** Re-import
+ *  - **The four masters move independently.** A male image, a female image, a
+ *    male video and a female video are four different objects; a Base Exercise
+ *    that has the male image but no female one restores the male image and says
+ *    nothing about the female.
+ *  - **A master the Base Exercise does not have restores nothing.** Re-import
  *    exists to *obtain* the System media (§12), so a base row with no
- *    `image_url` leaves the gym's own uploaded image exactly where it is rather
- *    than clearing it — clearing it would make a routine re-import delete work
- *    the gym did, which §8/§23's "never destroy valid media" rule is there to
- *    prevent. Removing a gym image on purpose is `DELETE /exercises/:id/image`,
- *    and it deliberately leaves the exercise with no image at all (§10).
- *
- * A thumbnail always travels with the media it depicts: restoring an image
- * writes the Base Exercise's `image_thumbnail_url` too, even when that is NULL
- * (a System master stored without a thumbnail), because the gym's old thumbnail
- * belonged to the master it replaced.
+ *    `image_male_url` leaves the gym's own uploaded male image exactly where it
+ *    is rather than clearing it — clearing it would make a routine re-import
+ *    delete work the gym did, which §8/§23's "never destroy valid media" rule is
+ *    there to prevent. Removing a gym image on purpose is
+ *    `DELETE /exercises/:id/image/:gender`.
  *
  * Nothing here touches `cloned_from_id`, the name, the description or the
  * defaults. Provenance is what the badge reads (#718), and a gym may have edited
@@ -89,34 +89,24 @@ export function planExerciseMediaRefresh(
   let image = false;
   let video = false;
 
-  if (base.image_url && !(same(base.image_url, copy.image_url) && same(base.image_thumbnail_url, copy.image_thumbnail_url))) {
-    image = true;
-    changes.image_url = base.image_url;
-    changes.image_thumbnail_url = base.image_thumbnail_url ?? null;
-    stale.push(copy.image_url ?? '', copy.image_thumbnail_url ?? '');
-  }
-
-  if (base.video_url && !(same(base.video_url, copy.video_url) && same(base.video_thumbnail_url, copy.video_thumbnail_url))) {
-    video = true;
-    changes.video_url = base.video_url;
-    changes.video_thumbnail_url = base.video_thumbnail_url ?? null;
-    stale.push(copy.video_url ?? '', copy.video_thumbnail_url ?? '');
+  for (const column of EXERCISE_MEDIA_COLUMNS) {
+    const next = base[column];
+    if (!next || same(next, copy[column])) continue;
+    changes[column] = next;
+    if (copy[column]) stale.push(copy[column] as string);
+    if (column.startsWith('image_')) image = true;
+    else video = true;
   }
 
   if (!image && !video) return null;
 
   const kept = new Set(Object.values(changes).filter((v): v is string => !!v));
-  return {
-    changes,
-    stale: stale.filter((url) => url !== '' && !kept.has(url)),
-    image,
-    video,
-  };
+  return { changes, stale: stale.filter((url) => !kept.has(url)), image, video };
 }
 
 /**
- * The columns a re-import keeps pointing at once `plan` is applied — what
- * `deleteReplacedExerciseMedia()` must *not* delete, including the pair the plan
+ * The masters a re-import keeps pointing at once `plan` is applied — what
+ * `deleteReplacedExerciseMedia()` must *not* delete, including the ones the plan
  * left alone.
  */
 export function mediaRefsAfterRefresh(copy: ExerciseMediaRefs, plan: ExerciseMediaRefreshPlan): ExerciseMediaRefs {

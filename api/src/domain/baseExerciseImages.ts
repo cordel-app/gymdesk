@@ -7,14 +7,12 @@
 // `cordel` sibling of the `gyms/` root that #732 and #715 already use — under
 // the same `exercises/images` leaf a gym uses inside its own tree.
 //
-// Everything here is pure: the object keys and the ownership test. What counts
-// as a *valid* image is not duplicated — a Base Exercise image is the same
-// 2048×2048 master plus 512×512 thumbnail as a Gym Exercise's (#716 §2, §3 are
-// #719 §5 word for word), so the rules stay in `exerciseImages.ts` and both
-// routers call the one implementation.
+// Since #1420 the keys and the upload rules of a Base Exercise's media are
+// `exerciseGenderMedia.ts`'s; what remains here is the platform prefix and the
+// ownership test other features (members, goals) reuse.
 
 import { PLATFORM_STORAGE_ROOT, storageKeyFromObjectUrl } from '../infra/storage';
-import { EXERCISE_FOLDER, EXERCISE_IMAGES_FOLDER, sanitizeExerciseImageName } from './exerciseImages';
+import { EXERCISE_IMAGES_FOLDER } from './exerciseImages';
 
 /**
  * `cordel/exercises/images` — the one folder every Base Exercise image is stored
@@ -23,40 +21,6 @@ import { EXERCISE_FOLDER, EXERCISE_IMAGES_FOLDER, sanitizeExerciseImageName } fr
  * roots, and they must never be confused for one another (§15).
  */
 export const PLATFORM_EXERCISE_IMAGES_PREFIX = `${PLATFORM_STORAGE_ROOT}/${EXERCISE_IMAGES_FOLDER}`;
-
-/**
- * `cordel/exercises/images/<exercise_id>-<sanitized name>.png` — the key a Base
- * Exercise's **master** image is stored under (#716 §13).
- *
- * The id leads, so two exercises whose names sanitize alike never share an
- * object, and the `.png` is part of the fixed name rather than a claim about the
- * bytes: only PNG is accepted, so the two cannot disagree. The uploaded file's
- * own name plays no part in the key (#713's rule), and neither does anything
- * else the request carries — the key is derived from the row (§14).
- */
-export function buildBaseExerciseImageKey(exerciseId: number | string, name: string): string {
-  return `${PLATFORM_EXERCISE_IMAGES_PREFIX}/${exerciseId}-${sanitizeExerciseImageName(name)}.png`;
-}
-
-/** The same key with `-thumbnail` before the extension — the 512×512 companion (#716 §13). */
-export function buildBaseExerciseImageThumbnailKey(exerciseId: number | string, name: string): string {
-  return `${PLATFORM_EXERCISE_IMAGES_PREFIX}/${exerciseId}-${sanitizeExerciseImageName(name)}-thumbnail.png`;
-}
-
-/**
- * Every folder marker between the bucket root and `cordel/exercises/images/`,
- * outermost first. R2 has no directories, so these are the zero-byte `…/`
- * objects `ensureStorageFolders()` writes; Gym Bucket Initialization only writes
- * a *gym's* tree, so the platform root is created by the first upload that needs
- * it (same as `baseNutritionFolderKeys()`, #715).
- */
-export function baseExerciseImageFolderKeys(): string[] {
-  return [
-    `${PLATFORM_STORAGE_ROOT}/`,
-    `${PLATFORM_STORAGE_ROOT}/${EXERCISE_FOLDER}/`,
-    `${PLATFORM_EXERCISE_IMAGES_PREFIX}/`,
-  ];
-}
 
 /**
  * Whether the object behind `url` is one the **platform** owns, and may

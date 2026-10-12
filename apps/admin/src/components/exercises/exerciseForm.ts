@@ -100,8 +100,6 @@ export interface ExerciseFormValues {
   short_description: string;
   /** #1419: `{ locale: { short_description, description } }` for the translatable locales. */
   description_translations: ExerciseDescriptionTranslations;
-  /** #717 Q6: offered by the creation form only — the editor manages the video through its upload control. */
-  video_url: string;
   min_reps_default: string;
   max_reps_default: string;
   sets_default: string;
@@ -113,7 +111,7 @@ export interface ExerciseFormValues {
 
 export function emptyExerciseForm(): ExerciseFormValues {
   return {
-    name: '', translations: {}, description: '', short_description: '', description_translations: {}, video_url: '',
+    name: '', translations: {}, description: '', short_description: '', description_translations: {},
     min_reps_default: '', max_reps_default: '', sets_default: '', rest_default_seconds: '',
     category: '',
     status: 'active',
@@ -134,7 +132,6 @@ export interface ExerciseRowValues {
   short_description?: string | null;
   /** #1419: stored per-locale descriptions; seeded like `translations`, for the same reason. */
   description_translations?: ExerciseDescriptionTranslations | null;
-  video_url: string | null;
   min_reps_default: number | null;
   max_reps_default: number | null;
   sets_default: number | null;
@@ -154,7 +151,6 @@ export function exerciseFormFromRow(e: ExerciseRowValues): ExerciseFormValues {
         loc, { short_description: v?.short_description ?? '', description: v?.description ?? '' },
       ]),
     ),
-    video_url: e.video_url ?? '',
     min_reps_default: e.min_reps_default != null ? String(e.min_reps_default) : '',
     max_reps_default: e.max_reps_default != null ? String(e.max_reps_default) : '',
     sets_default: e.sets_default != null ? String(e.sets_default) : '',
@@ -230,8 +226,8 @@ function sharedPayload(form: ExerciseFormValues, { muscles }: PayloadExtras) {
 /**
  * The creation payload — `POST /exercises` for a Gym Exercise, `POST
  * /platform/exercises` for a Base Exercise (#806 §6: the fields are shared, the
- * route is the context's). No form submits `video_url` (#1380): the video is
- * managed through the upload control.
+ * route is the context's). No form submits media: the four gender-specific
+ * images and videos are managed through their upload controls (#1420).
  */
 export function toExerciseCreatePayload(form: ExerciseFormValues, extras: PayloadExtras) {
   return sharedPayload(form, extras);
@@ -239,9 +235,9 @@ export function toExerciseCreatePayload(form: ExerciseFormValues, extras: Payloa
 
 /**
  * The update payload — `PUT /exercises/:id` or `PUT /platform/exercises/:id` —
- * deliberately without `video_url` (#717 Q6): the editor has no control for it,
- * and re-sending the value the editor opened with would repoint a reference an
- * upload had since replaced and drop its poster with it.
+ * deliberately without any media reference: the upload controls act on the
+ * exercise straight away, and re-sending the value the editor opened with would
+ * repoint a reference an upload had since replaced.
  */
 export function toExerciseUpdatePayload(form: ExerciseFormValues, extras: PayloadExtras) {
   return sharedPayload(form, extras);
@@ -301,13 +297,9 @@ export interface ExerciseMediaRow {
   /** #1419: the descriptions in the caller's language, base value as the fallback. Read-only surfaces show these. */
   display_short_description?: string | null;
   display_description?: string | null;
-  image_url: string | null;
-  image_thumbnail_url: string | null;
   /** #1368 stage 4: the exercise's own image, else its primary muscle's. Read-only. */
   effective_image_url?: string | null;
   effective_image_thumbnail_url?: string | null;
-  video_url: string | null;
-  video_thumbnail_url: string | null;
   /** #1420: the four gender-specific references, and the companions derived from them. */
   image_male_url?: string | null;
   image_female_url?: string | null;

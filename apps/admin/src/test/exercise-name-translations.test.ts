@@ -61,7 +61,7 @@ describe('the form carries one Name per language', () => {
     const seeded = exerciseFormFromRow({
       name: 'Bench Press',
       translations: { es: 'Press de Banca' },
-      description: null, video_url: null,
+      description: null,
       min_reps_default: null, max_reps_default: null, sets_default: null,
       rest_default_seconds: null, status: 'active',
     });
@@ -71,7 +71,7 @@ describe('the form carries one Name per language', () => {
 
   it('seeds an empty map from a row that carries none, never undefined', () => {
     const seeded = exerciseFormFromRow({
-      name: 'Plank', description: null, video_url: null,
+      name: 'Plank', description: null,
       min_reps_default: null, max_reps_default: null, sets_default: null,
       rest_default_seconds: null, status: 'active',
     });

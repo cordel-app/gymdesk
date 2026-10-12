@@ -301,7 +301,8 @@ async function fetchDeletedEntity(type: EntityType, id: string, gymId: string, l
       break;
     case 'exercise':
       sql = `SELECT e.id, ${localizedExerciseNameSql('e', locale)} AS name,
-                    e.description, e.video_url, e.image_url, e.status,
+                    e.description, COALESCE(e.video_male_url, e.video_female_url) AS video_url,
+                    COALESCE(e.image_male_url, e.image_female_url) AS image_url, e.status,
                     e.created_at, e.created_by, e.modified_at, e.modified_by, e.deleted_at, e.deleted_by
              FROM exercises e
              WHERE e.id = ? AND e.gym_id = ? AND e.status = 'deleted'`;

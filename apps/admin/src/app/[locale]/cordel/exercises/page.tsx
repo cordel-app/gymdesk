@@ -56,14 +56,6 @@ interface Exercise {
   translations: Record<string, string>;
   description: string | null;
   status: 'active' | 'inactive';
-  /**
-   * The 2048×2048 master (#716). For a base exercise the object behind it always
-   * lives in `cordel/exercises/images/`; the column is the same one a gym-owned
-   * exercise uses, and the row's ownership is what decides the folder.
-   */
-  image_url: string | null;
-  /** Its 512×512 companion — what every card draws, so no master is downloaded (§4). */
-  image_thumbnail_url: string | null;
   /** #1420: the four gender-specific references and the companions derived from them. */
   image_male_url: string | null;
   image_female_url: string | null;
@@ -75,15 +67,6 @@ interface Exercise {
   video_male_preview_thumbnail_url: string | null;
   video_female_preview_url: string | null;
   video_female_preview_thumbnail_url: string | null;
-  /**
-   * The demonstration video (#717). An uploaded MP4 lives in
-   * `cordel/exercises/videos/`; on a row that was never uploaded to, the same
-   * column may still hold an external link (a YouTube URL), which is why the
-   * card never assumes it can be played inline.
-   */
-  video_url: string | null;
-  /** Its 512×512 poster — what the card draws, so no MP4 is downloaded (§9). */
-  video_thumbnail_url: string | null;
   /** #806: the configuration defaults the shared editor has always written on a Gym Exercise. */
   min_reps_default: number | null;
   max_reps_default: number | null;
@@ -282,8 +265,8 @@ export default function CordelExercisesPage() {
 
   async function saveInlineEdit(exercise: Exercise) {
     const saved = await editState.submit(async () => {
-      // #717 Q6: `toExerciseUpdatePayload` omits `video_url` — the editor's
-      // upload control writes the reference and its poster together.
+      // `toExerciseUpdatePayload` omits every media reference — the editor's
+      // upload controls write them.
       await apiFetch(`${API_BASE}/${exercise.id}`, {
         method: 'PUT',
         body: JSON.stringify(toExerciseUpdatePayload(editState.form, editState.extras)),

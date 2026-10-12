@@ -274,7 +274,6 @@ describe('Exercises: inline creation (#805)', () => {
       ...emptyExerciseForm(),
       name: '  Back Squat  ',
       description: ' heavy ',
-      video_url: ' https://example.com/v.mp4 ',
       min_reps_default: '5',
       max_reps_default: '8',
       sets_default: '4',
@@ -324,12 +323,12 @@ describe('Exercises: inline creation (#805)', () => {
   describe('AC13 — no regression', () => {
     it('seeds the editor from the row it is editing', () => {
       const row = {
-        name: 'Deadlift', description: null, video_url: null,
+        name: 'Deadlift', description: null,
         min_reps_default: 3, max_reps_default: null, sets_default: 5,
         rest_default_seconds: null, status: 'active',
       };
       expect(exerciseFormFromRow(row)).toEqual({
-        name: 'Deadlift', description: '', video_url: '',
+        name: 'Deadlift', description: '',
         min_reps_default: '3', max_reps_default: '', sets_default: '5',
         rest_default_seconds: '', status: 'active',
         // #967: a row with no stored translations seeds an empty map.

@@ -294,8 +294,7 @@ describe('initializeGymBucket()', () => {
   it('spells each first-level folder the way the key builders write it', async () => {
     setConfigured();
     const { buildGymFolderPrefix, initializeGymBucket } = await import('../infra/storage');
-    const { buildGymExerciseImageKey } = await import('../domain/exerciseImages');
-    const { buildGymExerciseVideoKey } = await import('../domain/exerciseVideos');
+    const { buildGymExerciseGenderImageKey, buildGymExerciseGenderVideoKey } = await import('../domain/exerciseGenderMedia');
     const { buildThemeFolderPrefix } = await import('../domain/themeMemberImages');
     const { buildGymPersonalGoalImageKey } = await import('../domain/personalGoalImages');
     const prefix = buildGymFolderPrefix('gym_123', 'Gym Name');
@@ -305,8 +304,8 @@ describe('initializeGymBucket()', () => {
     const folderOf = (key: string) => `${key.slice(0, key.indexOf('/', prefix.length + 1))}/`;
     const { buildGymNutritionImageKey } = await import('../domain/baseNutritionImages');
     expect(markers).toContain(folderOf(buildGymNutritionImageKey(prefix, 7, 'Chicken Breast', 'image/png')));
-    expect(markers).toContain(folderOf(buildGymExerciseImageKey(prefix, 'ex_1', 'Squat')));
-    expect(markers).toContain(folderOf(buildGymExerciseVideoKey(prefix, 'ex_1', 'Squat')));
+    expect(markers).toContain(folderOf(buildGymExerciseGenderImageKey(prefix, 'ex_1', 'Squat', 'male')));
+    expect(markers).toContain(folderOf(buildGymExerciseGenderVideoKey(prefix, 'ex_1', 'Squat', 'male')));
     expect(markers).toContain(folderOf(buildThemeFolderPrefix(prefix, 'theme_9', 'Dark Modern')));
     expect(markers).toContain(folderOf(buildGymPersonalGoalImageKey(prefix, 'pg_1', 'Weight Loss')));
   });
