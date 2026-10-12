@@ -11,6 +11,7 @@
  * half still owns is the cell's contents — an `<input>` on one side, the
  * persisted value on the other.
  */
+import { DEFAULT_GYM_FORMAT, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 export type MemberProfileFieldKey =
   | 'name'
   | 'phone'
@@ -172,12 +173,15 @@ export function dateInputValue(value: string | null | undefined): string {
  * through `new Date(iso)`, which reads `1990-05-04` as UTC midnight and then
  * prints the 3rd of May for anyone west of Greenwich — wrong for a birth date.
  */
-export function formatProfileDate(value: string | null | undefined): string | null {
+export function formatProfileDate(
+  value: string | null | undefined,
+  settings: GymFormatSettings = DEFAULT_GYM_FORMAT,
+): string | null {
   const dateOnly = dateInputValue(value);
   if (!dateOnly) return null;
   const [y, m, d] = dateOnly.split('-').map(Number);
   if (!y || !m || !d) return dateOnly;
-  return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+  return formatGymDateOnly(dateOnly, settings);
 }
 
 /**

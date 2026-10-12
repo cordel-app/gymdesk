@@ -26,6 +26,7 @@
 //    plan ended on the day it began.
 
 import { formatPaymentDate } from './memberPayments';
+import type { GymFormatSettings } from './gymFormat';
 
 /** One row of `past_memberships`, as `GET /me/membership` reports it. */
 export interface MemberPastPlan {
@@ -56,6 +57,6 @@ export function pastPlanName(plan: MemberPastPlan): string {
  * The date under it, formatted in the member's own locale — `null` where the
  * row carries none, which is what makes the line read as the status alone.
  */
-export function pastPlanEndedOn(plan: MemberPastPlan, locale: string): string | null {
-  return plan.ended_on ? formatPaymentDate(plan.ended_on, locale) : null;
+export function pastPlanEndedOn(plan: MemberPastPlan, gym?: GymFormatSettings): string | null {
+  return plan.ended_on ? formatPaymentDate(plan.ended_on, gym) : null;
 }

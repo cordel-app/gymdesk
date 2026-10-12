@@ -8,7 +8,7 @@ import { join } from 'node:path';
 describe.each([['admin', admin], ['member', member]])('%s clerkAccountLines', (_n, m) => {
   it('enrolled with a date', () => {
     expect(m.clerkStatusLine({ clerk_user_id: 'u', enrolled_at: '2026-10-03T10:00:00Z' }, 'en'))
-      .toEqual({ key: 'clerk_status_enrolled_on', date: 'Oct 3, 2026' });
+      .toEqual({ key: 'clerk_status_enrolled_on', date: '03/10/2026' });
   });
   it('enrolled before the column existed has no date', () => {
     expect(m.clerkStatusLine({ clerk_user_id: 'u', enrolled_at: null }, 'en'))
@@ -20,7 +20,7 @@ describe.each([['admin', admin], ['member', member]])('%s clerkAccountLines', (_
   });
   it('invitation is pending-based, date is history', () => {
     expect(m.clerkInvitationLine({ has_pending_invitation: true, invited_at: '2026-10-01T08:00:00Z' }, 'en'))
-      .toEqual({ key: 'clerk_invitation_invited_on', date: 'Oct 1, 2026' });
+      .toEqual({ key: 'clerk_invitation_invited_on', date: '01/10/2026' });
     expect(m.clerkInvitationLine({ has_pending_invitation: false, invited_at: '2026-10-01T08:00:00Z' }, 'en').key)
       .toBe('clerk_invitation_none');
   });

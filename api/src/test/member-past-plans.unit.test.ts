@@ -24,6 +24,7 @@ import {
   pastPlanName,
   pastPlanStatusKey,
 } from '../../../apps/member/src/lib/memberPlans';
+import { DEFAULT_GYM_FORMAT } from '../../../apps/member/src/lib/gymFormat';
 
 const REPO = join(__dirname, '..', '..', '..');
 const MEMBER = join(REPO, 'apps', 'member');
@@ -142,8 +143,8 @@ describe('how the Members App words one', () => {
   });
 
   it('formats the end date in the member\'s own locale, and answers null for none', () => {
-    expect(pastPlanEndedOn(plan, 'en')).toContain('2026');
-    expect(pastPlanEndedOn({ ...plan, ended_on: null }, 'en')).toBeNull();
+    expect(pastPlanEndedOn(plan, DEFAULT_GYM_FORMAT)).toContain('2026');
+    expect(pastPlanEndedOn({ ...plan, ended_on: null }, DEFAULT_GYM_FORMAT)).toBeNull();
   });
 
   it('declares its two keys in every locale', () => {

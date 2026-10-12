@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
@@ -250,16 +252,8 @@ const iso = (v: string) => (v ? v.slice(0, 10) : '');
 const truncate = (s: string | null, n = 60) =>
   s ? (s.length > n ? s.slice(0, n) + '…' : s) : '—';
 
-// Build a locale date string like "1 Aug 2026"
-function fmtDate(d: Date, locale: string) {
-  return d.toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' });
-}
-
-// Parse a YYYY-MM-DD string (as returned by the /promotions/timeline endpoint) as a local Date
-function parseDateStr(dateStr: string): Date {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  return new Date(y, m - 1, d);
-}
+// The timeline endpoint returns plain YYYY-MM-DD days: formatted with the gym's date
+// format and never moved across a time zone (formatGymDateOnly).
 
 // #625: total Promotion duration in months (free + paid + bonus). This is the
 // ceiling for the Membership Fee Benefit duration. Pay Beforehand is excluded —
@@ -312,6 +306,7 @@ type EditForm = ReturnType<typeof emptyEditForm>;
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function PromotionsPage() {
+  const gymFmt = useGymFormatSettings();
   const t = useTranslations('promotions');
   const tStatus = useTranslations('status');
   const locale = useLocale();
@@ -1129,7 +1124,7 @@ export default function PromotionsPage() {
       );
     }
 
-    const enrollmentStr = fmtDate(parseDateStr(timeline.periods[0].startsOn), locale);
+    const enrollmentStr = formatGymDateOnly(timeline.periods[0].startsOn, gymFmt);
 
     // #818: the table itself is the shared `ExampleTimeline` the Membership Plan
     // card renders too — the classification, the labels and the Billing column
@@ -1144,8 +1139,8 @@ export default function PromotionsPage() {
             key: row.period,
             period: row.endsOn ? String(row.period) : `${row.period}+`,
             dates: row.endsOn
-              ? `${fmtDate(parseDateStr(row.startsOn), locale)} – ${fmtDate(parseDateStr(row.endsOn), locale)}`
-              : t('timeline_dates_from', { date: fmtDate(parseDateStr(row.startsOn), locale) }),
+              ? `${formatGymDateOnly(row.startsOn, gymFmt)} – ${formatGymDateOnly(row.endsOn, gymFmt)}`
+              : t('timeline_dates_from', { date: formatGymDateOnly(row.startsOn, gymFmt) }),
             status: t(STATUS_LABEL_KEYS[row.status] as any),
             billing: billingLabelFor(row),
             tone: timelineTone(row.status),
@@ -1178,7 +1173,7 @@ export default function PromotionsPage() {
         <BillingEventSimulation
           simulation={cachedSimulation[promo.id]}
           t={(key, values) => t(key as any, values as any)}
-          formatDate={(date) => fmtDate(parseDateStr(date), locale)}
+          formatDate={(date) => formatGymDateOnly(date, gymFmt)}
         />
       </div>
     );

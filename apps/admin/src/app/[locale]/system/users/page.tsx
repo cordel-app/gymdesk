@@ -10,6 +10,8 @@ import { DataTable, Column } from '@/components/DataTable';
 import { CrudModal, FormLabel, FormInput } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { btnStyle, btnSmall } from '@/components/ui';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate } from '@/lib/gymFormat';
 
 interface Superadmin {
   id: string;
@@ -27,6 +29,7 @@ interface GrantResponse {
 
 export default function SystemUsersPage() {
   const t = useTranslations('system_users');
+  const fmt = useGymFormatSettings();
   const router = useRouter();
   const locale = useLocale();
   const { apiFetch } = useApiClient();
@@ -109,7 +112,7 @@ export default function SystemUsersPage() {
       header: t('col_created'),
       width: 140,
       mobile: 'secondary',
-      render: (r) => (r.created_at ? new Date(r.created_at).toLocaleDateString() : '—'),
+      render: (r) => (r.created_at ? formatGymDate(r.created_at, fmt) : '—'),
     },
     {
       header: t('col_actions'),

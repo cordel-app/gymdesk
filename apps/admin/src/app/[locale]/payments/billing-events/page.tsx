@@ -11,6 +11,8 @@ import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { useToast } from '@/components/Toast';
 import { useModuleAccess } from '@/lib/useModuleAccess';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, formatGymDateTime, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { readOnlyStyle } from '@/components/ui';
 import { PaymentActionModal } from './PaymentActionModal';
 import { PaymentActionKind, actionRequest } from './paymentActions';
@@ -116,18 +118,15 @@ const DEFAULT_LIMIT = 50;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmtDate(iso: string) {
-  return new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' });
+// billing_date is a calendar day (not an instant), so it is not zone-shifted.
+function fmtDate(iso: string, s: GymFormatSettings) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? formatGymDateOnly(iso, s) : formatGymDate(iso, s);
 }
 
-const pad2 = (n: number) => String(n).padStart(2, '0');
-
-/** #639: an instant (billing_events.created_at) as DD/MM/YYYY HH:mm, viewer-local. */
-function fmtDateTime(iso: string | null) {
+/** #639: an instant (billing_events.created_at) in the gym's date/time format and zone. */
+function fmtDateTime(iso: string | null, s: GymFormatSettings) {
   if (!iso) return '—';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return '—';
-  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+  return formatGymDateTime(iso, s);
 }
 
 /**
@@ -135,11 +134,11 @@ function fmtDateTime(iso: string | null) {
  * stores the day, not a time of day — so the scheduled day is rendered verbatim
  * at 00:00 rather than parsed as an instant and shifted by the viewer's timezone.
  */
-function fmtScheduledDate(date: string | null) {
+function fmtScheduledDate(date: string | null, s: GymFormatSettings) {
   if (!date) return '—';
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(date);
-  if (!m) return '—';
-  return `${m[3]}/${m[2]}/${m[1]} 00:00`;
+  const day = formatGymDateOnly(date, s);
+  if (day === '—') return '—';
+  return `${day} ${s.time_format === '12h' ? '12:00 AM' : '00:00'}`;
 }
 
 function fmtAmount(amount: string | null) {
@@ -289,6 +288,7 @@ function ExpandedRow({
   t: ReturnType<typeof useTranslations>;
 }) {
   const billingEventId = billingEvent.id!;
+  const gymFmt = useGymFormatSettings();
   const { apiFetch, pdfFetch } = useApiClient();
   const { toast } = useToast();
   const [details, setDetails] = useState<BillingEventDetails | null>(null);
@@ -378,14 +378,14 @@ function ExpandedRow({
               <DetailField label={t('billing_events_page.det_event_type')}>{details.event_type}</DetailField>
               <DetailField label={t('billing_events_page.det_charge_type')}>{details.charge_type_code ?? '—'}</DetailField>
               <DetailField label={t('billing_events_page.det_source')}>{details.source ?? '—'}</DetailField>
-              <DetailField label={t('billing_events_page.det_created_at')}>{fmtDateTime(details.created_at)}</DetailField>
+              <DetailField label={t('billing_events_page.det_created_at')}>{fmtDateTime(details.created_at, gymFmt)}</DetailField>
               <DetailField label={t('billing_events_page.det_created_by')}>
                 {details.created_by ?? t('billing_events_page.actor_system')}
               </DetailField>
-              <DetailField label={t('billing_events_page.det_modified_at')}>{fmtDateTime(details.modified_at)}</DetailField>
+              <DetailField label={t('billing_events_page.det_modified_at')}>{fmtDateTime(details.modified_at, gymFmt)}</DetailField>
               <DetailField label={t('billing_events_page.det_modified_by')}>{details.modified_by ?? '—'}</DetailField>
               <DetailField label={t('billing_events_page.det_next_payment')}>
-                {fmtScheduledDate(details.next_payment_date)}
+                {fmtScheduledDate(details.next_payment_date, gymFmt)}
               </DetailField>
               <DetailField label={t('billing_events_page.det_receipt')}>{details.receipt_number ?? '—'}</DetailField>
               {details.failure_reason && (
@@ -476,7 +476,7 @@ function ExpandedRow({
             <tbody>
               {rows?.map((tx) => (
                 <tr key={tx.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
-                  <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{fmtDate(tx.created_at)}</td>
+                  <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>{fmtDate(tx.created_at, gymFmt)}</td>
                   <td style={{ padding: '6px 10px' }}>{tx.status}</td>
                   <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>
                     {fmtAmount(tx.amount)} {tx.currency ?? ''}
@@ -506,6 +506,7 @@ function ExpandedRow({
 
 export default function BillingEventsPage() {
   const t = useTranslations();
+  const gymFmt = useGymFormatSettings();
   const locale = useLocale();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -838,12 +839,12 @@ export default function BillingEventsPage() {
                       </td>
                       <td style={{ padding: '8px 12px', fontWeight: 500 }}>{row.member_name ?? '—'}</td>
                       <td style={{ padding: '8px 12px', color: '#6b7280' }}>{row.plan_name ?? '—'}</td>
-                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(row.billing_date)}</td>
+                      <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{fmtDate(row.billing_date, gymFmt)}</td>
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                        {fmtDateTime(row.created_at)}
+                        {fmtDateTime(row.created_at, gymFmt)}
                       </td>
                       <td style={{ padding: '8px 12px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
-                        {fmtScheduledDate(row.next_payment_date)}
+                        {fmtScheduledDate(row.next_payment_date, gymFmt)}
                       </td>
                       <td style={{ padding: '8px 12px', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                         {fmtAmount(row.amount)} {row.currency ?? ''}

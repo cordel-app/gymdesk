@@ -13,6 +13,7 @@
  * The module is pure (no React, no i18n runtime), which is what lets the
  * ordering and the payloads be asserted directly in a unit test.
  */
+import { DEFAULT_GYM_FORMAT, formatGymDateTime, type GymFormatSettings } from '../../lib/gymFormat';
 
 export const EXERCISE_STATUSES = ['active', 'inactive'] as const;
 export type ExerciseStatus = (typeof EXERCISE_STATUSES)[number];
@@ -269,11 +270,14 @@ export function exerciseDisplayValue(value: string | number | null | undefined):
  * back `YYYY-MM-DD HH:MM:SS` for a DATETIME, which Safari refuses to parse — the
  * `T` and the `Z` are what make it a string every browser reads as UTC.
  */
-export function formatExerciseTimestamp(value: string | null | undefined): string {
+export function formatExerciseTimestamp(
+  value: string | null | undefined,
+  settings: GymFormatSettings = DEFAULT_GYM_FORMAT,
+): string {
   if (!value) return EXERCISE_EMPTY_VALUE;
   const parsed = new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}Z`);
   if (Number.isNaN(parsed.getTime())) return EXERCISE_EMPTY_VALUE;
-  return parsed.toLocaleString();
+  return formatGymDateTime(parsed, settings);
 }
 
 /** A stored UTC timestamp as a local date alone — what a list column shows. */

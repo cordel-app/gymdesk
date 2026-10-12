@@ -9,6 +9,7 @@
 // halves stay assertable.
 
 import { formatPaymentAmount } from './memberPayments';
+import type { GymFormatSettings } from './gymFormat';
 import { promotionBenefitNote, type ProductNote } from './memberProducts';
 
 /** One compatible Promotion, as `GET /me/membership-plans` reports it. */
@@ -85,8 +86,8 @@ export function planFrequencyKey(plan: Pick<MemberPlanOffer, 'billing_interval' 
 }
 
 /** The catalogue price, formatted; `null` for a plan with no price (reads `—`). */
-export function planPriceText(plan: Pick<MemberPlanOffer, 'price_incl_tax'>, locale: string, currency = 'EUR'): string | null {
-  return plan.price_incl_tax == null ? null : formatPaymentAmount(plan.price_incl_tax, currency, locale);
+export function planPriceText(plan: Pick<MemberPlanOffer, 'price_incl_tax'>, gym?: GymFormatSettings, currency = 'EUR'): string | null {
+  return plan.price_incl_tax == null ? null : formatPaymentAmount(plan.price_incl_tax, currency, gym);
 }
 
 /**
@@ -100,15 +101,15 @@ export function planFinalPrice(plan: MemberPlanOffer, appliedPromotionId: number
   return applied?.final_price_incl_tax ?? plan.price_incl_tax;
 }
 
-export function planFinalPriceText(plan: MemberPlanOffer, appliedPromotionId: number | null, locale: string, currency = 'EUR'): string | null {
+export function planFinalPriceText(plan: MemberPlanOffer, appliedPromotionId: number | null, gym?: GymFormatSettings, currency = 'EUR'): string | null {
   const price = planFinalPrice(plan, appliedPromotionId);
-  return price == null ? null : formatPaymentAmount(price, currency, locale);
+  return price == null ? null : formatPaymentAmount(price, currency, gym);
 }
 
 /** *50% discount* — the same vocabulary and keys the Products use. */
-export function planPromotionBenefitNote(promotion: MemberPlanOfferPromotion, locale: string, currency = 'EUR'): ProductNote | null {
+export function planPromotionBenefitNote(promotion: MemberPlanOfferPromotion, gym?: GymFormatSettings, currency = 'EUR'): ProductNote | null {
   if (!promotion.benefit.action) return null;
-  return promotionBenefitNote(promotion.benefit.action, promotion.benefit.value, currency, locale);
+  return promotionBenefitNote(promotion.benefit.action, promotion.benefit.value, currency, gym);
 }
 
 /** *3 months* — the Membership Fee Benefit's own unit, never relabelled as cycles. */

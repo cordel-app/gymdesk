@@ -27,6 +27,7 @@ import {
   goalKindIsGymConfigurable, isMeasurableGoalKind, isSystemGoal, toGoalFormValues, toGoalPayload,
   truncateDescription,
 } from './goalProfile';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 const LIMIT = 20;
 
@@ -71,6 +72,7 @@ export function GoalLibrarySection({
    */
   onAssign?: (goal: GoalRow) => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   const basePath = GOAL_API_ROOTS[scope][kind];
   // #1034 §1: asked once, so the column, the read-only field and both halves of
   // the form cannot disagree about whether this kind has a target.
@@ -442,7 +444,7 @@ export function GoalLibrarySection({
       header: label('created_at'),
       width: 150,
       mobile: 'secondary',
-      render: (goal) => <span style={{ fontSize: 13 }}>{formatTimestamp(goal.created_at)}</span>,
+      render: (goal) => <span style={{ fontSize: 13 }}>{formatTimestamp(goal.created_at, gymFmt)}</span>,
     },
     {
       // The actor snapshot, masked for a System row by the API (#799): a gym is

@@ -42,3 +42,28 @@ describe('gym format sweep (#1246 stage 3)', () => {
     expect(files(SRC).length).toBeGreaterThan(0);
   });
 });
+
+// #1246 stage 6 — the allowlist. Every date, time, number and amount the apps
+// show comes out of `lib/gymFormat.ts` (the gym's Time & Localization settings).
+// The ad hoc call sites that remain are the ones with no gym-format equivalent,
+// listed here with how many each file may hold; the count may only go down, and
+// a file not on the list may hold none.
+const AD_HOC_ALL = /toLocale(Date|Time)?String\(|Intl\.(DateTime|Number)Format\(/g;
+const ALLOWED_AD_HOC: Record<string, { count: number; why: string }> = {
+  'lib/gymFormat.ts': { count: 1, why: 'the formatter itself' },
+  'app/[locale]/payments/dashboard/page.tsx': { count: 1, why: 'locale month name of the reported period' },
+  'app/[locale]/calendar/page.tsx': { count: 1, why: 'the browser zone the FullCalendar grid renders in' },
+};
+
+describe('gym format allowlist (#1246 stage 6)', () => {
+  it('has no ad hoc date/number formatting outside the allowlist', () => {
+    const over: string[] = [];
+    for (const abs of files(SRC)) {
+      const rel = path.relative(SRC, abs).split(path.sep).join('/');
+      const n = (fs.readFileSync(abs, 'utf8').match(AD_HOC_ALL) ?? []).length;
+      const allowed = ALLOWED_AD_HOC[rel]?.count ?? 0;
+      if (n > allowed) over.push(`${rel}: ${n} ad hoc call(s), ${allowed} allowed`);
+    }
+    expect(over).toEqual([]);
+  });
+});

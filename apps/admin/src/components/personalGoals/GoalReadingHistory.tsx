@@ -10,6 +10,7 @@ import {
   GoalReadingRow, READING_MARKER_KEYS, formatReadingTimestamp, formatReadingValue,
   readingHistoryRows,
 } from './goalReadings';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 
 /**
  * #1037 §18–§20 — the **READING HISTORY** card: every measurement the assignment
@@ -49,6 +50,7 @@ export function GoalReadingHistory({ readings, unit, locale, label, initiallyOpe
   /** Only the Add-reading flow opens it, so a new measurement is visible at once. */
   initiallyOpen?: boolean;
 }) {
+  const gymFmt = useGymFormatSettings();
   const [open, setOpen] = useState(initiallyOpen);
   const rows = readingHistoryRows(readings);
 
@@ -73,7 +75,7 @@ export function GoalReadingHistory({ readings, unit, locale, label, initiallyOpe
             <ul style={listStyle}>
               {rows.map((reading) => (
                 <li key={reading.id} style={cardDetailRowStyle}>
-                  <span style={dateStyle}>{formatReadingTimestamp(reading.recorded_at, locale)}</span>
+                  <span style={dateStyle}>{formatReadingTimestamp(reading.recorded_at, locale, gymFmt)}</span>
                   <span style={valueStyle}>{formatReadingValue(reading.value, unit)}</span>
                   <span style={markerCellStyle}>
                     {reading.marker && (

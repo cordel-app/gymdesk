@@ -44,6 +44,8 @@ import {
 import { btnSmall, primaryBtnSmall, primaryBtnStyle } from '@/components/ui';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 import { formActionsRowStyle } from '@/components/formChrome';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateTime, type GymFormatSettings } from '@/lib/gymFormat';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -112,11 +114,11 @@ type EditForm = ReturnType<typeof emptyEditForm>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function formatDate(value: string | null, locale: string): string {
+function formatDate(value: string | null, s: GymFormatSettings): string {
   if (!value) return '—';
   const d = new Date(value);
   if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return formatGymDateTime(d, s);
 }
 
 function badgeStyle(color: string): React.CSSProperties {
@@ -154,6 +156,7 @@ export default function ThemesPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch, uploadFetch } = useApiClient();
+  const fmt = useGymFormatSettings();
   const { activeGym, isSuperadmin, loading: gymLoading } = useGym();
   const { centers, activeCenterId } = useCenter();
   const { toast } = useToast();
@@ -926,13 +929,13 @@ export default function ThemesPage() {
         />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('details_created_by')} value={detailsTheme.created_by ?? '—'} />
-        <DetailRow label={t('details_created_at')} value={formatDate(detailsTheme.created_at, locale)} />
+        <DetailRow label={t('details_created_at')} value={formatDate(detailsTheme.created_at, fmt)} />
         <DetailRow label={t('details_modified_by')} value={detailsTheme.modified_by ?? '—'} />
-        <DetailRow label={t('details_modified_at')} value={formatDate(detailsTheme.modified_at, locale)} />
+        <DetailRow label={t('details_modified_at')} value={formatDate(detailsTheme.modified_at, fmt)} />
         {detailsTheme.deleted_at && (
           <>
             <DetailRow label={t('details_deleted_by')} value={detailsTheme.deleted_by ?? '—'} />
-            <DetailRow label={t('details_deleted_at')} value={formatDate(detailsTheme.deleted_at, locale)} />
+            <DetailRow label={t('details_deleted_at')} value={formatDate(detailsTheme.deleted_at, fmt)} />
           </>
         )}
       </div>

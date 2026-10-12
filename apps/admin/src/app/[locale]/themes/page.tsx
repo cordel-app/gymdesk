@@ -58,6 +58,8 @@ import {
 } from './centerAssignments';
 import { DEFAULT_TOKENS, applyTokens, getLiveTokens, tokensEqual, type ThemeTokens } from '@/lib/themeTokens';
 import { formActionsRowStyle } from '@/components/formChrome';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateTime, type GymFormatSettings } from '@/lib/gymFormat';
 
 interface Theme {
   id: string;
@@ -172,6 +174,7 @@ export default function GymThemesPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch, uploadFetch } = useApiClient();
+  const fmt = useGymFormatSettings();
   const { activeGym, isSuperadmin, loading: gymLoading, refreshGyms } = useGym();
   const { centers, activeCenterId, refreshCenters } = useCenter();
   const isAdmin = isSuperadmin || activeGym?.role === 'admin';
@@ -989,7 +992,7 @@ export default function GymThemesPage() {
                 Base Themes are platform-seeded, so they carry no gym-side creator. */}
             {!theme.is_base && (
               <div style={{ fontSize: 12, color: '#888', marginTop: 2 }}>
-                {t('meta_created_by')}: {theme.created_by ?? '—'} · {t('meta_created_at')}: {formatDate(theme.created_at)}
+                {t('meta_created_by')}: {theme.created_by ?? '—'} · {t('meta_created_at')}: {formatDate(theme.created_at, fmt)}
               </div>
             )}
           </div>
@@ -1074,8 +1077,8 @@ export default function GymThemesPage() {
             <DetailRow label={t('col_status')} value={<StatusBadge status={details.status} label={tStatus(details.status)} />} />
             <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
             <DetailRow label={t('details_created_by')} value={details.is_base ? '—' : (details.created_by ?? '—')} />
-            <DetailRow label={t('details_created_at')} value={formatDate(details.created_at)} />
-            {details.modified_at && <DetailRow label={t('details_modified_at')} value={formatDate(details.modified_at)} />}
+            <DetailRow label={t('details_created_at')} value={formatDate(details.created_at, fmt)} />
+            {details.modified_at && <DetailRow label={t('details_modified_at')} value={formatDate(details.modified_at, fmt)} />}
           </div>
         )}
       </CrudModal>
@@ -1108,8 +1111,8 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
   );
 }
 
-function formatDate(iso: string | null): string {
+function formatDate(iso: string | null, s: GymFormatSettings): string {
   if (!iso) return '—';
   const d = new Date(iso);
-  return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  return isNaN(d.getTime()) ? '—' : formatGymDateTime(d, s);
 }

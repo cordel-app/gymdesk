@@ -1,13 +1,20 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { BILLING_FREQUENCY_NAMESPACE, cadenceFrequencyLabel } from '@/lib/billingFrequency';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
 import { overlayStyle, modalStyle, btnStyle } from '@/components/ui';
 import type { AssignedPlanDetail } from './types';
 
-function fmtDate(iso: string | null) {
-  return iso ? new Date(iso).toLocaleDateString(undefined, { dateStyle: 'medium' }) : null;
+function fmtDate(iso: string | null, s: GymFormatSettings) {
+  return iso ? formatGymDate(iso, s) : null;
+}
+
+/** A stored calendar day (not an instant): never moved across a time zone. */
+function fmtDay(iso: string | null, s: GymFormatSettings) {
+  return iso ? formatGymDateOnly(iso, s) : null;
 }
 
 function fmtMoney(v: string | number | null) {
@@ -20,6 +27,7 @@ export function AssignedPlanDetailsModal({ detail, onClose }: {
 }) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
+  const gymFmt = useGymFormatSettings();
   const tFreq = useTranslations(BILLING_FREQUENCY_NAMESPACE);
 
   const field = (label: string, value: string | null | undefined) => (
@@ -40,9 +48,9 @@ export function AssignedPlanDetailsModal({ detail, onClose }: {
         {field(t('detail_source_plan'), detail.plan_name)}
         {field(t('detail_members'), memberNames)}
         {field(t('detail_status'), tStatus(detail.lifecycle_status as any))}
-        {field(t('label_start_date'), fmtDate(detail.starts_at))}
-        {field(t('label_end_date'), detail.ends_at ? fmtDate(detail.ends_at) : t('open_ended'))}
-        {detail.closed_at && field(t('label_closure_date'), fmtDate(detail.closed_at))}
+        {field(t('label_start_date'), fmtDay(detail.starts_at, gymFmt))}
+        {field(t('label_end_date'), detail.ends_at ? fmtDay(detail.ends_at, gymFmt) : t('open_ended'))}
+        {detail.closed_at && field(t('label_closure_date'), fmtDate(detail.closed_at, gymFmt))}
         {field(t('detail_effective_price'), fmtMoney(detail.membership_fee))}
         {detail.billing_policy && field(
           t('label_billing_frequency'),
@@ -57,9 +65,9 @@ export function AssignedPlanDetailsModal({ detail, onClose }: {
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: '2px solid #f0f0f0' }}>
           <p style={{ margin: '0 0 4px', fontSize: 12, fontWeight: 600, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Audit</p>
           {field(t('detail_created_by'), detail.created_by)}
-          {field(t('detail_created_at'), fmtDate(detail.created_at))}
+          {field(t('detail_created_at'), fmtDate(detail.created_at, gymFmt))}
           {field(t('detail_modified_by'), detail.modified_by)}
-          {field(t('detail_modified_at'), detail.modified_at ? fmtDate(detail.modified_at) : null)}
+          {field(t('detail_modified_at'), detail.modified_at ? fmtDate(detail.modified_at, gymFmt) : null)}
         </div>
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>

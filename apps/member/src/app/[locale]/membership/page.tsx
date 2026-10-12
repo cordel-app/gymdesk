@@ -1,5 +1,6 @@
 'use client';
 
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -179,6 +180,7 @@ function formatInterval(interval: number, unit: string, t: (k: string) => string
 export default function MembershipPage() {
   const t = useTranslations();
   const locale = useLocale();
+  const gymFmt = useGymFormatSettings();
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { getToken } = useAuth();
@@ -378,7 +380,7 @@ export default function MembershipPage() {
   const laterGroups = forecastDatesAfterNext(forecast);
   const pastGroups = pastBillingEventGroups(events);
 
-  const money = (amount: number | null) => formatPaymentAmount(amount, forecast.currency, locale);
+  const money = (amount: number | null) => formatPaymentAmount(amount, forecast.currency, gymFmt);
 
   /** Why a forecast line is not at its regular price, named with its Promotion. */
   function treatmentLabel(line: ForecastLine): string | null {
@@ -459,7 +461,7 @@ export default function MembershipPage() {
 
   function pastPlanItems(plans: MemberPastPlan[]): PastMembershipPlanItem[] {
     return plans.map((plan) => {
-      const endedOn = pastPlanEndedOn(plan, locale);
+      const endedOn = pastPlanEndedOn(plan, gymFmt);
       const status = t(pastPlanStatusKey(plan) as any);
       return {
         key: String(plan.id),
@@ -503,9 +505,9 @@ export default function MembershipPage() {
         description: product.description,
         // §5: the Final price, which is the applied Promotion's own figure —
         // the server's, never recomputed here (#817).
-        price: productFinalPriceText(product, applied, locale),
+        price: productFinalPriceText(product, applied, gymFmt),
         regularPrice: showsRegularProductPrice(product, applied)
-          ? productPriceText(product, locale)
+          ? productPriceText(product, gymFmt)
           : null,
         frequency: frequencyKey ? t(frequencyKey as any) : null,
         meta: meta || null,
@@ -543,7 +545,7 @@ export default function MembershipPage() {
         heading: t('membership.promotion_heading'),
         name: promotion.promotion_name,
         benefit: promotionNoteText(
-          promotionBenefitNote(promotion.action, promotion.value, product.currency, locale),
+          promotionBenefitNote(promotion.action, promotion.value, product.currency, gymFmt),
         ),
         duration: promotionNoteText(promotionDurationNote(promotion.duration_cycles)),
         action: isApplied ? (
@@ -573,7 +575,7 @@ export default function MembershipPage() {
       name: promotion.promotion_name,
       benefit: promotionNoteText(
         promotionBenefitNote(
-          promotion.benefit_action, promotion.benefit_value, product.currency, locale,
+          promotion.benefit_action, promotion.benefit_value, product.currency, gymFmt,
         ),
       ),
       duration: promotionNoteText(promotionDurationNote(promotion.duration_cycles)),
@@ -779,12 +781,12 @@ export default function MembershipPage() {
         key: String(plan.id),
         name: plan.name,
         description: plan.description,
-        price: planPriceText(plan, locale),
+        price: planPriceText(plan, gymFmt),
         frequency: frequencyKey
           ? t(frequencyKey as any)
           : (plan.billing_interval != null && plan.billing_unit ? formatInterval(plan.billing_interval, plan.billing_unit, t) : null),
         finalPriceLabel: t('membership.plan_final_price'),
-        finalPrice: applied ? planFinalPriceText(plan, applied, locale) : null,
+        finalPrice: applied ? planFinalPriceText(plan, applied, gymFmt) : null,
         benefitsHeading: t('membership.plan_benefits_heading'),
         benefits: (plan.benefits ?? []).map((b) => ({
           key: planBenefitKey(b),
@@ -795,7 +797,7 @@ export default function MembershipPage() {
           onToggle: () => togglePlanBenefit(plan.id, planBenefitKey(b)),
         })),
         promotions: plan.promotions.map((promotion) => {
-          const benefit = planPromotionBenefitNote(promotion, locale);
+          const benefit = planPromotionBenefitNote(promotion, gymFmt);
           const duration = planPromotionDurationNote(promotion);
           const isApplied = applied === promotion.id;
           return {
@@ -862,7 +864,7 @@ export default function MembershipPage() {
                   ? t('membership.choose_plan_body_free', { name: choosingPlan.name })
                   : t('membership.choose_plan_body', {
                     name: choosingPlan.name,
-                    price: planFinalPriceText(choosingPlan, appliedPlanPromotions[choosingPlan.id] ?? null, locale) ?? '—',
+                    price: planFinalPriceText(choosingPlan, appliedPlanPromotions[choosingPlan.id] ?? null, gymFmt) ?? '—',
                   })}
               </p>
             )}
@@ -959,7 +961,7 @@ export default function MembershipPage() {
                     their applied Promotion, exactly as the card does. */}
                 {t('membership.product_purchase_body', {
                   name: purchasing.name,
-                  price: productFinalPriceText(purchasing, appliedPromotionFor(purchasing), locale) ?? '—',
+                  price: productFinalPriceText(purchasing, appliedPromotionFor(purchasing), gymFmt) ?? '—',
                 })}
               </p>
               <p style={styles.hintLeft}>{t('membership.product_purchase_once')}</p>
@@ -1202,7 +1204,7 @@ export default function MembershipPage() {
         title={t('payments.title')}
         summary={nextGroup
           ? t('payments.summary_next', {
-            date: formatPaymentDate(nextGroup.date, locale),
+            date: formatPaymentDate(nextGroup.date, gymFmt),
             amount: money(nextGroup.total) ?? '—',
           })
           : null}
@@ -1210,7 +1212,7 @@ export default function MembershipPage() {
         <PaymentsSubcard title={t('payments.next_heading')} defaultOpen>
           {nextGroup ? (
             <BillingEventCard
-              date={formatPaymentDate(nextGroup.date, locale)}
+              date={formatPaymentDate(nextGroup.date, gymFmt)}
               total={money(nextGroup.total)}
               totalLabel={t('payments.total')}
               lines={forecastCardLines(nextGroup)}
@@ -1229,7 +1231,7 @@ export default function MembershipPage() {
             pastGroups.map((group) => (
               <BillingEventCard
                 key={group.date}
-                date={formatPaymentDate(group.date, locale)}
+                date={formatPaymentDate(group.date, gymFmt)}
                 total={money(group.total)}
                 totalLabel={t('payments.total')}
                 lines={pastCardLines(group.events)}
@@ -1247,7 +1249,7 @@ export default function MembershipPage() {
             laterGroups.map((group) => (
               <BillingEventCard
                 key={group.date}
-                date={formatPaymentDate(group.date, locale)}
+                date={formatPaymentDate(group.date, gymFmt)}
                 total={money(group.total)}
                 totalLabel={t('payments.total')}
                 lines={forecastCardLines(group)}

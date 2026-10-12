@@ -20,6 +20,8 @@ import {
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
 import { inlineActionsRowStyle } from '@/components/formChrome';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDate, formatGymDateTime } from '@/lib/gymFormat';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -184,6 +186,7 @@ export default function SystemGymsPage() {
   const locale = useLocale();
   const router = useRouter();
   const { apiFetch } = useApiClient();
+  const fmt = useGymFormatSettings();
   const { isSuperadmin, refreshGyms, loading: gymLoading } = useGym();
   const { toast } = useToast();
 
@@ -422,7 +425,7 @@ export default function SystemGymsPage() {
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   function fmtDate(iso: string) {
-    return new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    return formatGymDate(iso, fmt);
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
@@ -753,7 +756,7 @@ export default function SystemGymsPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_at')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{new Date(details.created_at).toLocaleString()}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{formatGymDateTime(details.created_at, fmt)}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_created_by')}</span>
@@ -761,7 +764,7 @@ export default function SystemGymsPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_at')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_at ? new Date(details.modified_at).toLocaleString() : '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.modified_at ? formatGymDateTime(details.modified_at, fmt) : '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_modified_by')}</span>
@@ -769,7 +772,7 @@ export default function SystemGymsPage() {
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_deleted_at')}</span>
-                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_at ? new Date(details.deleted_at).toLocaleString() : '—'}</p>
+                <p style={{ margin: '2px 0 0', fontSize: 14 }}>{details.deleted_at ? formatGymDateTime(details.deleted_at, fmt) : '—'}</p>
               </div>
               <div>
                 <span style={detailLabelStyle}>{t('details_deleted_by')}</span>

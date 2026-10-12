@@ -9,6 +9,8 @@ import { CrudModal } from '@/components/CrudModal';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { canWriteModule } from '@/config/permissions';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateTime } from '@/lib/gymFormat';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -100,6 +102,7 @@ export default function RecycleBinPage() {
   const tStatus = useTranslations('status');
   const { activeGym, isSuperadmin, loading: gymLoading } = useGym();
   const { apiFetch } = useApiClient();
+  const fmt = useGymFormatSettings();
   const { toast } = useToast();
 
   const activeGymId = activeGym?.id;
@@ -205,7 +208,7 @@ export default function RecycleBinPage() {
   function fmtDate(iso: string | null | undefined): string {
     if (!iso) return '—';
     const d = new Date(iso);
-    return isNaN(d.getTime()) ? '—' : d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    return isNaN(d.getTime()) ? '—' : formatGymDateTime(d, fmt);
   }
 
   const totalPages = Math.ceil(total / LIMIT);

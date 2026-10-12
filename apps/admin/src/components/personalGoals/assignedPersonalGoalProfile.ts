@@ -18,6 +18,7 @@
  */
 
 import type { GoalReadingSummaryFields } from './goalReadings';
+import { DEFAULT_GYM_FORMAT, formatGymDateOnly, type GymFormatSettings } from '../../lib/gymFormat';
 
 /** The router root. One mount (`api/src/app.ts`), so one constant. */
 export const ASSIGNED_PERSONAL_GOALS_ROOT = '/member-personal-goals';
@@ -218,21 +219,24 @@ export function formatTarget(row: Pick<AssignedPersonalGoalRow, 'target_value' |
 }
 
 /** A date for display, or `—`. The locale is the caller's. */
-export function formatGoalDate(value: string | null, locale: string): string {
+export function formatGoalDate(
+  value: string | null,
+  _locale: string,
+  settings: GymFormatSettings = DEFAULT_GYM_FORMAT,
+): string {
   const iso = dateInputValue(value);
   if (!iso) return '—';
-  return new Date(`${iso}T00:00:00Z`).toLocaleDateString(locale, {
-    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
-  });
+  return formatGymDateOnly(iso, settings);
 }
 
 /** The dates as one phrase — `1 Jan 2026 → 30 Jun 2026`, with `—` for a missing end. */
 export function formatGoalPeriod(
   row: Pick<AssignedPersonalGoalRow, 'start_date' | 'target_date'>,
   locale: string,
+  settings: GymFormatSettings = DEFAULT_GYM_FORMAT,
 ): string {
-  const start = formatGoalDate(row.start_date, locale);
-  const target = formatGoalDate(row.target_date, locale);
+  const start = formatGoalDate(row.start_date, locale, settings);
+  const target = formatGoalDate(row.target_date, locale, settings);
   if (start === '—' && target === '—') return '—';
   return `${start} → ${target}`;
 }

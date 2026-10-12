@@ -12,6 +12,9 @@
 // paints from.
 
 import type { ChartPoint } from '@gymdesk/charts';
+import {
+  DEFAULT_GYM_FORMAT, formatGymDate, formatGymDateOnly, formatGymDayMonth, formatGymTime, type GymFormatSettings,
+} from './gymFormat';
 
 /**
  * The seeded System Personal Goals (`api/src/domain/goalLibrary.ts`'s
@@ -411,16 +414,19 @@ export function formatProgressPercent(percent: number | null | undefined): strin
  * what keeps §33's two readings on one date legible as two rows. Decided per
  * row, never by comparing one row against its neighbour.
  */
-export function formatReadingDate(iso: string | null, locale: string): string {
+export function formatReadingDate(
+  iso: string | null,
+  _locale: string,
+  gym: GymFormatSettings = DEFAULT_GYM_FORMAT,
+): string {
   if (!iso) return '—';
   const at = new Date(iso);
   if (Number.isNaN(at.getTime())) return '—';
-  const date = at.toLocaleDateString(locale, {
-    year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC',
-  });
   const midnight = at.getUTCHours() === 0 && at.getUTCMinutes() === 0 && at.getUTCSeconds() === 0;
-  if (midnight) return date;
-  return `${date} · ${at.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', timeZone: 'UTC' })}`;
+  // A midnight-UTC reading is a date, not an instant: it is not moved across a
+  // time zone (#1246). Kept identical to the Admin's `formatReadingTimestamp`.
+  if (midnight) return formatGymDateOnly(at.toISOString(), gym);
+  return `${formatGymDate(at, gym)} · ${formatGymTime(at, gym)}`;
 }
 
 /** The marker a history row reads under (§20/§29), as a locale key. */
@@ -531,6 +537,7 @@ export function readingChartPoints(
   readings: GoalReading[],
   unit: string | null,
   locale: string,
+  gym: GymFormatSettings = DEFAULT_GYM_FORMAT,
 ): ChartPoint[] {
   return [...readings]
     .sort((a, b) => readingTime(a) - readingTime(b) || a.id - b.id)
@@ -539,16 +546,16 @@ export function readingChartPoints(
       x: readingTime(reading),
       y: Number(reading.value),
       group: Number.isFinite(reading.period) ? Math.max(0, Math.trunc(reading.period)) : 0,
-      label: formatReadingDate(reading.recorded_at, locale),
+      label: formatReadingDate(reading.recorded_at, locale, gym),
       valueLabel: formatReadingValue(reading.value, unit) ?? undefined,
     }));
 }
 
 /** A chart axis tick: the day, short, in the member's own locale. */
-export function readingAxisLabel(at: number, locale: string): string {
+export function readingAxisLabel(at: number, _locale: string, gym: GymFormatSettings = DEFAULT_GYM_FORMAT): string {
   const date = new Date(at);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toLocaleDateString(locale, { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  return formatGymDayMonth(date.toISOString().slice(0, 10), gym);
 }
 
 /* ── #1115: the goal card ─────────────────────────────────────────────────────

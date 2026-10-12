@@ -1,6 +1,8 @@
 'use client';
 
 import { type CSSProperties, useMemo } from 'react';
+import { useLocale } from 'next-intl';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { LineChart } from '@gymdesk/charts';
 import { memberTheme } from '@/lib/memberChrome';
 import {
@@ -30,12 +32,11 @@ import {
  *   series, axes and tooltip are the Theme's through the charting layer, and the
  *   label is `memberChrome.ts`'s (#983).
  */
-export function GoalReadingChart({ readings, unit, target, locale, labels }: {
+export function GoalReadingChart({ readings, unit, target, labels }: {
   readings: GoalReading[];
   unit: string | null;
   /** The assignment's own target — §13's reference line. `null` draws none. */
   target: number | null;
-  locale: string;
   labels: {
     title: string;
     /** The canvas's accessible name: a canvas has none of its own. */
@@ -44,9 +45,11 @@ export function GoalReadingChart({ readings, unit, target, locale, labels }: {
     target: string | null;
   };
 }) {
+  const locale = useLocale();
+  const gym = useGymFormatSettings();
   const points = useMemo(
-    () => readingChartPoints(readings, unit, locale),
-    [readings, unit, locale],
+    () => readingChartPoints(readings, unit, locale, gym),
+    [readings, unit, locale, gym],
   );
 
   if (points.length === 0) return null;
@@ -58,7 +61,7 @@ export function GoalReadingChart({ readings, unit, target, locale, labels }: {
         points={points}
         height={200}
         ariaLabel={labels.ariaLabel}
-        axisLabelFormatter={(value) => readingAxisLabel(value, locale)}
+        axisLabelFormatter={(value) => readingAxisLabel(value, locale, gym)}
         reference={target === null ? null : { value: target, label: labels.target ?? undefined }}
       />
     </div>

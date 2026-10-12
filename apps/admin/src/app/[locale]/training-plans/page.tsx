@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocale, useTranslations } from 'next-intl';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useApiClient } from '@/lib/apiClient';
+import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess, useReadOnlyTitle } from '@/lib/useModuleAccess';
 import { useToast } from '@/components/Toast';
@@ -585,6 +587,7 @@ function PlanCard({
   toast: (msg: string) => void;
   onChanged: () => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   const isCompleted = row.status === 'completed';
 
   const roTitle = useReadOnlyTitle(canWrite);
@@ -648,12 +651,12 @@ function PlanCard({
             <StatusBadge status={row.status} label={t(`status.${row.status}`)} />
           </div>
           <div className={CELL_CLASS.start_date} style={cellStyle}>
-            <div style={dateCellStyle}>{formatDate(row.start_date, locale)}</div>
-            {row.end_date && <div style={subCellStyle}>→ {formatDate(row.end_date, locale)}</div>}
+            <div style={dateCellStyle}>{formatDay(row.start_date, gymFmt)}</div>
+            {row.end_date && <div style={subCellStyle}>→ {formatDay(row.end_date, gymFmt)}</div>}
           </div>
-          <div className={CELL_CLASS.created_at} style={{ ...cellStyle, ...dateCellStyle }}>{formatDate(row.created_at, locale)}</div>
+          <div className={CELL_CLASS.created_at} style={{ ...cellStyle, ...dateCellStyle }}>{formatDate(row.created_at, gymFmt)}</div>
           <div className={CELL_CLASS.modified_at} style={{ ...cellStyle, ...dateCellStyle }}>
-            {row.modified_at ? formatDate(row.modified_at, locale) : '—'}
+            {row.modified_at ? formatDate(row.modified_at, gymFmt) : '—'}
           </div>
           <div className={CELL_CLASS.actions} style={actionsCellStyle} onClick={(e) => e.stopPropagation()}>
             <ContextMenu ariaLabel={t('training_plans.col_actions')} items={menuItems} />
@@ -958,6 +961,7 @@ function DetailsDialog({ plan, locale, t, onClose }: {
   t: ReturnType<typeof useTranslations>;
   onClose: () => void;
 }) {
+  const gymFmt = useGymFormatSettings();
   return (
     <CrudModal
       open
@@ -978,15 +982,15 @@ function DetailsDialog({ plan, locale, t, onClose }: {
         <DetailRow label={t('training_plans.label_source')} value={plan.template_name ?? t('training_plans.custom')} />
         <DetailRow label={t('training_plans.col_status')} value={<StatusBadge status={plan.status} label={t(`status.${plan.status}`)} />} />
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
-        <DetailRow label={t('training_plans.label_start_date')} value={formatDate(plan.start_date, locale)} />
-        {plan.end_date && <DetailRow label={t('training_plans.label_end_date')} value={formatDate(plan.end_date, locale)} />}
+        <DetailRow label={t('training_plans.label_start_date')} value={formatDay(plan.start_date, gymFmt)} />
+        {plan.end_date && <DetailRow label={t('training_plans.label_end_date')} value={formatDay(plan.end_date, gymFmt)} />}
         <hr style={{ border: 'none', borderTop: '1px solid #eee', margin: '4px 0' }} />
         <DetailRow label={t('training_plans.label_created_by')} value={plan.created_by ?? '—'} />
-        <DetailRow label={t('training_plans.label_created_at')} value={formatDate(plan.created_at, locale)} />
+        <DetailRow label={t('training_plans.label_created_at')} value={formatDate(plan.created_at, gymFmt)} />
         {plan.modified_at && (
           <>
             <DetailRow label={t('training_plans.label_modified_by')} value={plan.modified_by ?? '—'} />
-            <DetailRow label={t('training_plans.label_modified_at')} value={formatDate(plan.modified_at, locale)} />
+            <DetailRow label={t('training_plans.label_modified_at')} value={formatDate(plan.modified_at, gymFmt)} />
           </>
         )}
       </div>
@@ -1005,10 +1009,14 @@ function DetailRow({ label, value }: { label: string; value: React.ReactNode }) 
 
 /* ---- Helpers & Styles ---- */
 
-function formatDate(value: string, locale: string): string {
-  const d = new Date(value);
-  if (isNaN(d.getTime())) return '—';
-  return d.toLocaleDateString(locale, { year: 'numeric', month: 'short', day: 'numeric' });
+// #1246: the gym's own date format. `start_date`/`end_date` are calendar dates
+// (never moved across a time zone); `created_at`/`modified_at` are instants.
+function formatDay(value: string, settings: GymFormatSettings): string {
+  return formatGymDateOnly(value, settings);
+}
+
+function formatDate(value: string, settings: GymFormatSettings): string {
+  return formatGymDate(value, settings);
 }
 
 const modalInputStyle: React.CSSProperties = { ...formControlStyle, padding: '10px 12px', fontSize: 15 };

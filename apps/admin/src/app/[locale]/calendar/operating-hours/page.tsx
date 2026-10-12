@@ -7,6 +7,8 @@ import { useLocale } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { useModuleAccess } from '@/lib/useModuleAccess';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
+import { formatGymDateOnly } from '@/lib/gymFormat';
 import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
@@ -49,6 +51,7 @@ type HolidayForm = typeof emptyHolidayForm;
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function OperatingHoursPage() {
+  const gymFmt = useGymFormatSettings();
   const t = useTranslations('operating_hours');
   const tWeekday = useTranslations('weekday');
   const locale = useLocale();
@@ -247,7 +250,7 @@ export default function OperatingHoursPage() {
   }
 
   function fmtDate(iso: string) {
-    return new Date(iso.slice(0, 10) + 'T00:00:00').toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    return formatGymDateOnly(iso, gymFmt);
   }
 
   function fmtHoliday(h: Holiday) {

@@ -62,3 +62,36 @@ export function formatGymAmount(amount: number, s: GymFormatSettings = DEFAULT_G
   const symbol = s.currency === 'EUR' ? '€' : s.currency;
   return `${amount < 0 ? '-' : ''}${grouped}${decimal}${dec} ${symbol}`;
 }
+
+/**
+ * A calendar date with no time of day (`YYYY-MM-DD`, or a timestamp whose date
+ * part is the value). It is **not** moved across a time zone: a birthday or a
+ * billing date is the same day everywhere, so shifting it is the defect.
+ */
+export function formatGymDateOnly(value: string | null | undefined, s: GymFormatSettings = DEFAULT_GYM_FORMAT): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value ?? '');
+  if (!m) return '—';
+  const [, year, month, day] = m;
+  if (s.date_format === 'MM/DD/YYYY') return `${month}/${day}/${year}`;
+  if (s.date_format === 'YYYY-MM-DD') return `${year}-${month}-${day}`;
+  return `${day}/${month}/${year}`;
+}
+
+/** A plain number (quantity, percentage) with the gym's decimal separator. */
+export function formatGymNumber(value: number, s: GymFormatSettings = DEFAULT_GYM_FORMAT, maxDecimals = 2): string {
+  if (!Number.isFinite(value)) return '—';
+  const [int, dec = ''] = Math.abs(value).toFixed(maxDecimals).split('.');
+  const [group, decimal] = s.number_format === 'dot_decimal' ? [',', '.'] : ['.', ','];
+  const frac = dec.replace(/0+$/, '');
+  const grouped = int.replace(/\B(?=(\d{3})+(?!\d))/g, group);
+  return `${value < 0 ? '-' : ''}${grouped}${frac ? decimal + frac : ''}`;
+}
+
+/** `DD/MM`, `MM/DD` or `MM-DD` — a short chart tick for a date-only value. */
+export function formatGymDayMonth(value: string | null | undefined, s: GymFormatSettings = DEFAULT_GYM_FORMAT): string {
+  const m = /^\d{4}-(\d{2})-(\d{2})/.exec(value ?? '');
+  if (!m) return '';
+  if (s.date_format === 'MM/DD/YYYY') return `${m[1]}/${m[2]}`;
+  if (s.date_format === 'YYYY-MM-DD') return `${m[1]}-${m[2]}`;
+  return `${m[2]}/${m[1]}`;
+}

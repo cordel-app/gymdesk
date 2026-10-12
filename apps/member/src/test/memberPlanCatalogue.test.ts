@@ -3,6 +3,7 @@ import {
   assignErrorKey, choosingOwesNothing, planFinalPrice, planFinalPriceText, planFrequencyKey,
   planPriceText, planPromotionBenefitNote, planPromotionDurationNote, type MemberPlanOffer,
 } from '../lib/memberPlanCatalogue';
+import { DEFAULT_GYM_FORMAT } from '../lib/gymFormat';
 
 // #1122 §1–§6 — the decide half of Add Plan: keys and formatting only.
 
@@ -24,17 +25,17 @@ describe('memberPlanCatalogue', () => {
   });
 
   it('formats the catalogue price and the applied Promotion\'s own final price, never computing one', () => {
-    expect(planPriceText(plan, 'en')).toMatch(/100/);
-    expect(planPriceText({ price_incl_tax: null }, 'en')).toBeNull();
+    expect(planPriceText(plan, DEFAULT_GYM_FORMAT)).toMatch(/100/);
+    expect(planPriceText({ price_incl_tax: null }, DEFAULT_GYM_FORMAT)).toBeNull();
     expect(planFinalPrice(plan, null)).toBe(100);
     expect(planFinalPrice(plan, 3)).toBe(50);
     expect(planFinalPrice(plan, 999)).toBe(100);
-    expect(planFinalPriceText(plan, 4, 'en')).toMatch(/0/);
+    expect(planFinalPriceText(plan, 4, DEFAULT_GYM_FORMAT)).toMatch(/0/);
   });
 
   it('words a Promotion with the Products\' own keys, and its duration in months', () => {
-    expect(planPromotionBenefitNote(plan.promotions[0], 'en')).toEqual({ key: 'membership.promotion_benefit_percentage', values: { value: '50' } });
-    expect(planPromotionBenefitNote(plan.promotions[1], 'en')).toEqual({ key: 'membership.promotion_benefit_waive' });
+    expect(planPromotionBenefitNote(plan.promotions[0], DEFAULT_GYM_FORMAT)).toEqual({ key: 'membership.promotion_benefit_percentage', values: { value: '50' } });
+    expect(planPromotionBenefitNote(plan.promotions[1], DEFAULT_GYM_FORMAT)).toEqual({ key: 'membership.promotion_benefit_waive' });
     expect(planPromotionDurationNote(plan.promotions[0])).toEqual({ key: 'membership.promotion_duration_months', values: { count: 3 } });
     expect(planPromotionDurationNote({ ...plan.promotions[0], duration_months: null })).toBeNull();
   });

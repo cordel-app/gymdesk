@@ -1,4 +1,5 @@
 import type { CSSProperties } from 'react';
+import { DEFAULT_GYM_FORMAT, formatGymDateTime, type GymFormatSettings } from '../../lib/gymFormat';
 
 /**
  * #799: the one declaration of what a Nutrition Library item *is* on the
@@ -108,11 +109,14 @@ export function displayValue(value: string | null | undefined): string {
  * back `YYYY-MM-DD HH:MM:SS` for a DATETIME, which Safari refuses to parse —
  * the `T` makes it an ISO string every browser reads.
  */
-export function formatTimestamp(value: string | null | undefined): string {
+export function formatTimestamp(
+  value: string | null | undefined,
+  settings: GymFormatSettings = DEFAULT_GYM_FORMAT,
+): string {
   if (!value) return EMPTY_VALUE;
   const parsed = new Date(value.includes('T') ? value : value.replace(' ', 'T') + 'Z');
   if (Number.isNaN(parsed.getTime())) return EMPTY_VALUE;
-  return parsed.toLocaleString();
+  return formatGymDateTime(parsed, settings);
 }
 
 /**

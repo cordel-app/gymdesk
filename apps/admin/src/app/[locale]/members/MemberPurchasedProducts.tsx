@@ -28,6 +28,8 @@ import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
+import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import {
   cardMutedTextStyle,
@@ -71,6 +73,7 @@ export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }
   // The Promotion voice (§3's *Promotion* / *No promotion*), which is the one
   // this namespace does not carry — the labels live where they were written.
   const tp = useTranslations('promotions');
+  const gymFmt = useGymFormatSettings();
 
   // #1228: the same collapsible rows as the Membership Plans list (the shared
   // `DataTable`, its chevron and its phone behaviour), collapsed by default and
@@ -97,7 +100,7 @@ export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }
       header: t('purchase_date'),
       mobile: 'secondary',
       render: (item) => (
-        <span style={{ whiteSpace: 'nowrap' }}>{date(item.purchased_at ?? item.created_at)}</span>
+        <span style={{ whiteSpace: 'nowrap' }}>{date(item.purchased_at ?? item.created_at, gymFmt)}</span>
       ),
     },
     {
@@ -129,7 +132,7 @@ export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }
           <Field label={t('purchase_status')}>
             {t(`purchase_status_${item.status}` as any)}
           </Field>
-          <Field label={t('purchase_date')}>{date(item.purchased_at ?? item.created_at)}</Field>
+          <Field label={t('purchase_date')}>{date(item.purchased_at ?? item.created_at, gymFmt)}</Field>
           {item.promotion && (
             <div style={promotionBlock}>
               <div style={subLabel}>{t('purchase_promotion')}</div>
@@ -178,10 +181,10 @@ function money(amount: number | null | undefined, currency: string): string {
   return currency === 'EUR' ? `${value}€` : `${value} ${currency}`;
 }
 
-function date(value: string | null): string {
+function date(value: string | null, settings: GymFormatSettings): string {
   if (!value) return '—';
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleDateString();
+  return Number.isNaN(parsed.getTime()) ? '—' : formatGymDate(parsed, settings);
 }
 
 // #929: shared with the Member card's other sections (`components/formChrome.ts`).

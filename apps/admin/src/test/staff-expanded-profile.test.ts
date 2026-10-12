@@ -210,7 +210,7 @@ describe('Staff: read-only expanded card (#798)', () => {
     });
 
     it('formats dates, times, working days and the break duration', () => {
-      expect(formatStaffField({ hire_date: '2024-03-01' } as any, field('hire_date'), translate)).toBe('01 Mar 2024');
+      expect(formatStaffField({ hire_date: '2024-03-01' } as any, field('hire_date'), translate)).toBe('01/03/2024');
       expect(formatStaffField({ work_start_time: '09:00:00' } as any, field('work_start_time'), translate)).toBe('09:00');
       expect(formatStaffField({ working_days: 'Mon,Tue,Fri' } as any, field('working_days'), translate)).toBe('Mon, Tue, Fri');
       expect(formatStaffField({ break_duration_minutes: 30 } as any, field('break_duration_minutes'), translate)).toBe('30');
@@ -223,14 +223,14 @@ describe('Staff: read-only expanded card (#798)', () => {
       const previous = process.env.TZ;
       process.env.TZ = 'America/New_York';
       try {
-        expect(formatProfileDate('1990-05-04')).toBe('04 May 1990');
+        expect(formatProfileDate('1990-05-04')).toBe('04/05/1990');
       } finally {
         if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous;
       }
     });
 
     it('accepts both a date string and the ISO timestamp the API may send', () => {
-      expect(formatProfileDate('2024-03-01T00:00:00.000Z')).toBe('01 Mar 2024');
+      expect(formatProfileDate('2024-03-01T00:00:00.000Z')).toBe('01/03/2024');
       expect(formatProfileDate('')).toBeNull();
       expect(formatProfileDate(null)).toBeNull();
       expect(formatProfileTime('9:05')).toBe('09:05');
