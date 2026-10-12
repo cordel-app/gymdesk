@@ -34,6 +34,8 @@ import {
   withBundleIdentifier,
   withGradleApplicationId,
   withPlistString,
+  withPlistStringEntry,
+  cameraUsageDescription,
   withPlistUrlSchemes,
 } from '../src/nativeProjectFiles';
 
@@ -76,7 +78,11 @@ function main(): void {
       withBundleIdentifier(text, ios.bundleId),
     ),
     planFileEdit(join(WORKSPACE, 'ios/App/App/Info.plist'), (text) =>
-      withPlistUrlSchemes(withPlistString(text, 'CFBundleDisplayName', ios.displayName), ios.urlSchemes),
+      withPlistStringEntry(
+        withPlistUrlSchemes(withPlistString(text, 'CFBundleDisplayName', ios.displayName), ios.urlSchemes),
+        'NSCameraUsageDescription',
+        cameraUsageDescription(ios.displayName),
+      ),
     ),
     // #1076 (WP4): the `associated-domains` entitlement. Written here for the
     // reason the Bundle ID is — Xcode seeds the file once and a capability

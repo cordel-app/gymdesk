@@ -79,5 +79,7 @@
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Cordel Fitness uses the camera so you can take your profile photo.</string>
 </dict>
 </plist>

@@ -56,6 +56,38 @@ export function withPlistString(plist: string, key: string, value: string): stri
 }
 
 /**
+ * A scalar string under a plist `<key>`, **added when the template has none**.
+ *
+ * `withPlistString()` refuses a missing key on purpose (a Capacitor template that
+ * lost `CFBundleDisplayName` is a template that changed). A privacy usage
+ * description is the opposite case: `cap add` seeds none, and the key has to be
+ * created. The entry goes in front of the root dictionary's closing tag with the
+ * template's own tab indentation, so an applied file stays diff-clean.
+ */
+export function withPlistStringEntry(plist: string, key: string, value: string): string {
+  const existing = new RegExp(`<key>${escapeRegExp(key)}</key>\\s*<string>`);
+  if (existing.test(plist)) return withPlistString(plist, key, value);
+  const closing = /\n<\/dict>\s*<\/plist>\s*$/;
+  requireMatches(closing.test(plist) ? 1 : 0, 'the root </dict> before </plist>', 'Info.plist');
+  return plist.replace(
+    closing,
+    `\n\t<key>${escapeXml(key)}</key>\n\t<string>${escapeXml(value)}</string>\n</dict>\n</plist>\n`,
+  );
+}
+
+/**
+ * What iOS tells the user when the app asks for the camera (#1449 follow-up).
+ *
+ * Without an `NSCameraUsageDescription` iOS **terminates the app** the moment a
+ * web view's file picker opens the camera (*Take Photo*), instead of asking. The
+ * wording names the build's own display name — never a literal — so a stage-2
+ * per-gym app says its own name.
+ */
+export function cameraUsageDescription(displayName: string): string {
+  return `${displayName} uses the camera so you can take your profile photo.`;
+}
+
+/**
  * The `<string>` entries of a plist `<array>` under a given `<key>`.
  *
  * The array is replaced whole rather than appended to, because what a build
