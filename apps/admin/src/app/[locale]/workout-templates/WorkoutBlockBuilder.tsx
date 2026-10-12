@@ -17,15 +17,13 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { ExerciseMediaThumbnails } from '@/components/ExerciseMediaThumbnails';
 import {
-  TREE_COMBO_ITEM_SELECTED_BG, treeAddBtnStyle, treeBlockCardStyle, treeCellInputStyle,
-  treeComboCaretStyle, treeComboDropdownStyle, treeComboItemEmptyStyle, treeComboItemStyle,
-  treeComboListStyle, treeComboPlaceholderStyle, treeComboSearchStyle, treeComboTriggerStyle,
+  treeAddBtnStyle, treeBlockCardStyle, treeCellInputStyle,
   treeControlLabelStyle, treeControlUnitStyle, treeDragHandleStyle, treeDraftRemoveBtnStyle,
   treeHeaderInputStyle, treeHeaderSelectStyle, treeNestedEmptyTextStyle, treeRowDragHandleStyle,
   treeSeparatorTextStyle, treeSummaryTextStyle, treeTableStyle, treeTdStyle, treeThStyle,
 } from '@/components/workoutChrome';
 import { HierBlock, HierExercise } from './summaries';
-import { exerciseMatchesQuery, exerciseName } from '@/lib/exerciseNames';
+import { ExerciseCombobox } from '@/components/ExerciseCombobox';
 import {
   BLOCK_TYPES, BLOCK_TYPE_MAX_EXERCISES,
   blockConfigInput, blockConfigPatch, getBlockConfig, resultUnitAfterTypeChange, resultUnitsFor,
@@ -42,85 +40,6 @@ interface ExerciseOption {
 // DnD ID helpers — workoutKey scopes IDs to avoid collisions between concurrent builder instances
 const mkBlockId = (key: string | number, blockId: number) => `wbb:${key}:block:${blockId}`;
 const mkExId = (key: string | number, blockId: number, exId: number) => `wbb:${key}:ex:${blockId}:${exId}`;
-
-/* ---- Searchable Exercise Combobox ---- */
-function ExerciseCombobox({ value, options, placeholder, onChange }: {
-  value: number | null;
-  options: ExerciseOption[];
-  placeholder: string;
-  onChange: (opt: ExerciseOption) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState('');
-  const containerRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  const selected = options.find((o) => o.id === value);
-  const filtered = query
-    // #967 §7: the same three things the API's `?q=` matches — the displayed
-    // name, the base name and every stored translation.
-    ? options.filter((o) => exerciseMatchesQuery(o, query))
-    : options;
-
-  useEffect(() => {
-    function handleClick(e: MouseEvent) {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setQuery('');
-      }
-    }
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
-
-  function handleOpen() {
-    setOpen(true);
-    setQuery('');
-    setTimeout(() => inputRef.current?.focus(), 0);
-  }
-
-  function pick(opt: ExerciseOption) {
-    onChange(opt);
-    setOpen(false);
-    setQuery('');
-  }
-
-  return (
-    <div ref={containerRef} style={{ position: 'relative', minWidth: 160 }}>
-      <button type="button" onClick={handleOpen} style={treeComboTriggerStyle}>
-        {selected ? exerciseName(selected) : <span style={treeComboPlaceholderStyle}>{placeholder}</span>}
-        <span style={treeComboCaretStyle}>▾</span>
-      </button>
-      {open && (
-        <div style={treeComboDropdownStyle}>
-          <input
-            ref={inputRef}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={placeholder}
-            style={treeComboSearchStyle}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape') { setOpen(false); setQuery(''); }
-              if (e.key === 'Enter' && filtered.length === 1) pick(filtered[0]);
-            }}
-          />
-          <ul style={treeComboListStyle}>
-            {filtered.length === 0 && <li style={treeComboItemEmptyStyle}>—</li>}
-            {filtered.map((opt) => (
-              <li
-                key={opt.id}
-                onMouseDown={() => pick(opt)}
-                style={{ ...treeComboItemStyle, background: opt.id === value ? TREE_COMBO_ITEM_SELECTED_BG : undefined }}
-              >
-                {exerciseName(opt)}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </div>
-  );
-}
 
 /* ---- Block row ---- */
 function BlockRow({ workoutKey, blocksUrl, block, canWrite, exercises, onDuplicate, onDelete, onDeleteExercise, onChanged }: {
