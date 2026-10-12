@@ -43,6 +43,7 @@ export type MemberTabId = (typeof MEMBER_TAB_IDS)[number];
 export type MemberSectionKey =
   | 'section_profile'
   | 'section_billing_events_forecast'
+  | 'section_new_billing_event_simulation'
   | 'section_account'
   | 'section_membership_plans'
   | 'section_additional_services'
@@ -78,6 +79,7 @@ export const MEMBER_TABS: readonly MemberTab[] = [
     sections: [
       'section_membership_plans',
       'section_additional_services',
+      'section_new_billing_event_simulation',
       'section_billing_events_forecast',
       'section_billing_simulation',
       'section_billing_events',

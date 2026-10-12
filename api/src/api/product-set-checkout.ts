@@ -62,13 +62,52 @@ export interface InitialCharge {
 }
 
 /** What the version's first obligation is: every line dated on its start date. */
-export async function initialCharge(gymId: string, productSetId: number, startsAt: string, exec: Exec = db): Promise<InitialCharge | null> {
+export async function initialCharge(
+  gymId: string, productSetId: number, startsAt: string, exec: Exec = db,
+  /**
+   * #1521 — a version that replaces a running one (a recurring Product added to
+   * a member who already holds a plan) owes only what is **new** relative to it:
+   * the plan's fee and every line the previous version already carried belong to
+   * a payment that was made, so they are not asked for again. A line whose
+   * quantity grew owes the added units alone.
+   */
+  opts: { previousProductSetId?: number | null } = {},
+): Promise<InitialCharge | null> {
   const planned = await planScheduledEvents(gymId, productSetId, startsAt, 1, exec);
-  const first = planned.filter((e) => e.date === startsAt);
+  let first = planned.filter((e) => e.date === startsAt);
+
+  if (opts.previousProductSetId != null) {
+    const previous = await planScheduledEvents(gymId, opts.previousProductSetId, startsAt, 1, exec);
+    const carried = new Map<number, number>();
+    for (const e of previous.filter((p) => p.date === startsAt)) {
+      for (const l of e.lines) {
+        if (l.product_id != null) carried.set(l.product_id, (carried.get(l.product_id) ?? 0) + Number(l.quantity));
+      }
+    }
+    first = first
+      .map((e) => ({
+        ...e,
+        lines: e.lines.flatMap((l) => {
+          // The plan's own fee is the previous version's, never this payment's.
+          if (l.kind === 'membership_fee' || l.product_id == null) return [];
+          const had = carried.get(l.product_id) ?? 0;
+          const quantity = Number(l.quantity);
+          if (quantity <= had) return [];
+          if (had === 0) return [l];
+          const ratio = (quantity - had) / quantity;
+          return [{
+            ...l,
+            quantity: quantity - had,
+            actual_charge: Math.round(Number(l.actual_charge) * ratio * 100) / 100,
+          }];
+        }),
+      }))
+      .filter((e) => e.lines.length > 0);
+  }
   if (first.length === 0) return null;
   const lines = first.flatMap((e) => e.lines.map((l) => lineFromSimulation(l)));
   const planEvent = first.find((e) => e.scheduleKey === PLAN_SCHEDULE_KEY);
-  return { amount: linesTotal(lines), lines, scheduleKey: planEvent ? PLAN_SCHEDULE_KEY : null };
+  return { amount: linesTotal(lines), lines, scheduleKey: planEvent && opts.previousProductSetId == null ? PLAN_SCHEDULE_KEY : null };
 }
 
 async function writeLines(tx: Tx, gymId: string, eventId: number, lines: BillingEventLineRow[]) {

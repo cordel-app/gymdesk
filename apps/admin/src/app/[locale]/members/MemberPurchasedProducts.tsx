@@ -15,11 +15,11 @@
 //    `promotions` nor `tax_rates` (#635 §16, §13 of #1118). A value the system
 //    never stored — a purchase with no tax rate or no payment request — is
 //    `null` and reads `—`; nothing is recalculated or inferred.
-//  - **It is read-only in every mode.** A purchase is money that moved: the menu
-//    carries no edit action, and `+ Add Product` is disabled with its reason —
-//    staff-initiated purchase is not a flow that exists yet (the only existing
-//    "add product" attaches a recurring service to an Assigned Plan, which is a
-//    different record), so it is documented rather than invented.
+//  - **A purchase is never edited.** It is money that moved: the menu carries no
+//    edit action. `+ Add Product` opens the inline form (`AddProductPurchase`),
+//    which creates a *new* purchase — a pending one-time purchase, or a Draft
+//    ProductSet that only Save & Pay activates — and nothing here rewrites one
+//    that exists.
 //  - **View billing event opens the purchase's own event**, resolved by the
 //    API through `payment_request_id → payment_requests.billing_event_id`,
 //    never the member's latest event; absent, the action is disabled and says
@@ -43,6 +43,7 @@ import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import { cardMutedTextStyle } from '@/components/formChrome';
+import { AddProductPurchase } from './AddProductPurchase';
 import {
   billingEventPath,
   formatAppliedTax,
@@ -55,7 +56,20 @@ import {
 
 export type { PurchasedProduct, PurchasedProductPromotion };
 
-export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }) {
+export function MemberPurchasedProducts({
+  items, memberId, canWrite, canPay, isAdmin, onChanged, onProposal,
+}: {
+  items: PurchasedProduct[];
+  memberId: number;
+  /** Members write access: `+ Add Product` is absent without it. */
+  canWrite: boolean;
+  /** Payments write access: a recurring Product is a ProductSet, committed through Save & Pay. */
+  canPay: boolean;
+  /** The direct discount is the Admin's alone (the server enforces it too). */
+  isAdmin: boolean;
+  onChanged: () => void;
+  onProposal: (productSetId: number | null) => void;
+}) {
   const t = useTranslations('members');
   // The Promotion voice (*Promotion* / *No promotion*), which this namespace
   // does not carry — the labels live where they were written.
@@ -65,6 +79,7 @@ export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }
   const gymFmt = useGymFormatSettings();
 
   const [open, setOpen] = useState(true);
+  const [adding, setAdding] = useState(false);
   const [detail, setDetail] = useState<PurchasedProduct | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
@@ -179,15 +194,26 @@ export function MemberPurchasedProducts({ items }: { items: PurchasedProduct[] }
             </button>
             <button
               type="button"
-              disabled
-              title={t('products_add_unavailable')}
-              style={{ ...primaryBtnSmall(), opacity: 0.5, cursor: 'not-allowed' }}
+              disabled={!canWrite || adding}
+              title={canWrite ? undefined : t('products_add_read_only')}
+              onClick={() => { setOpen(true); setAdding(true); }}
+              style={{ ...primaryBtnSmall(), opacity: !canWrite || adding ? 0.5 : 1, cursor: !canWrite || adding ? 'not-allowed' : 'pointer' }}
             >
               {t('products_add')}
             </button>
           </>
         )}
       />
+      {open && adding && (
+        <AddProductPurchase
+          memberId={memberId}
+          isAdmin={isAdmin}
+          canPay={canPay}
+          onClose={() => setAdding(false)}
+          onChanged={onChanged}
+          onProposal={onProposal}
+        />
+      )}
       {open && (
         <DataTable
           columns={columns}

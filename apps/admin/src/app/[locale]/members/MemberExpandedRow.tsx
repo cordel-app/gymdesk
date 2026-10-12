@@ -32,6 +32,7 @@ import {
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { ProductSetForecast, useProductSetDetail } from './MemberProductSet';
+import { ProposedSetForecast } from './ProposedSetForecast';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
@@ -94,6 +95,8 @@ export function MemberExpandedRow({
   accountVersion = 0,
   editing,
   canManageTraining,
+  canWriteMembers,
+  canManagePackages,
   canManagePersonalGoals,
   canManageNutrition,
   onEditProfile,
@@ -127,6 +130,8 @@ export function MemberExpandedRow({
    */
   editing: boolean;
   canManageTraining: boolean;
+  /** Members write access: gates `+ Add Product` (#1521). */
+  canWriteMembers: boolean;
   canManagePackages: boolean;
   /**
    * #948 §4: write access to the PERSONAL GOALS section — NUTRITION, read
@@ -172,6 +177,8 @@ export function MemberExpandedRow({
   // #1118 §12 — the Products this Member bought from the Members App, each with
   // the Promotion snapshot it was bought under.
   const [purchasedProducts, setPurchasedProducts] = useState<PurchasedProduct[]>([]);
+  // #1521: the Draft ProductSet proposed from `+ Add Product`, if any.
+  const [proposalSetId, setProposalSetId] = useState<number | null>(null);
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -235,6 +242,17 @@ export function MemberExpandedRow({
       // Leave the last known assignment on screen: an empty list would read as
       // "no centers", which is a different statement from "could not load".
     }
+  }
+
+  /** #1521: a purchase or a version changed — re-read what the Products tab shows. */
+  async function reloadProducts() {
+    try {
+      const purchases = await apiFetch<{ items: PurchasedProduct[] }>(`/members/${memberId}/products`);
+      setPurchasedProducts(purchases.items ?? []);
+    } catch {
+      // Keep the last known list rather than an empty one that reads as "none".
+    }
+    await reloadConfiguration();
   }
 
   // #634 §12: every change in the MEMBERSHIP PLANS or ADDITIONAL PRODUCTS
@@ -459,7 +477,21 @@ export function MemberExpandedRow({
               configuration instead (#1463, #1490). The recurring services
               staff attach to an Assigned Plan are that plan's own section. */}
           <Section label={t('members.section_additional_services')} hideLabel>
-            <MemberPurchasedProducts items={purchasedProducts} />
+            <MemberPurchasedProducts
+              items={purchasedProducts}
+              memberId={memberId}
+              canWrite={canWriteMembers}
+              canPay={canManagePackages}
+              isAdmin={isAdmin}
+              onChanged={reloadProducts}
+              onProposal={setProposalSetId}
+            />
+          </Section>
+
+          {/* #1521 — the resulting billing events if the proposed Draft became
+              the member's: a forecast only, created and charged by nothing. */}
+          <Section label={t('members.section_new_billing_event_simulation')}>
+            <ProposedSetForecast productSetId={proposalSetId} />
           </Section>
 
           {/* #1463 — the current ProductSet's Billing Events Forecast: computed on

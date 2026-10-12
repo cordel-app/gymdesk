@@ -79,7 +79,7 @@ export async function loadPromotionOffers(
     arms.push(`
       SELECT p.id AS promotion_id, p.name AS promotion_name, b.product_id,
              b.\`action\`, b.\`value\`, b.quantity,
-             p.only_applicable_for_new_members, '${category}' AS category
+             p.only_applicable_for_new_members, p.stackable, '${category}' AS category
         FROM ${promotionGrantTableFor(category)} b
         JOIN promotions p ON p.id = b.promotion_id AND p.gym_id = b.gym_id
        WHERE b.gym_id = ?
@@ -192,6 +192,33 @@ export async function writePurchasePromotion(
   );
 }
 
+/**
+ * #1521 — freezes one step of a stacked purchase: the Promotion's own treatment
+ * and the running price it was applied to and left (VAT-inclusive), in the
+ * purchase's transaction.
+ */
+export async function writePurchasePromotionStep(
+  tx: Tx,
+  gymId: string,
+  memberProductId: number,
+  step: {
+    promotion_id: number; promotion_name: string; action: string; value: number | null;
+    duration_cycles: number | null; regular_amount: number; final_amount: number;
+  },
+): Promise<void> {
+  await tx.query(
+    `INSERT INTO member_products_oneoff_promotion_snapshot
+       (gym_id, member_product_id, promotion_id, promotion_name,
+        benefit_action, benefit_value, duration_cycles, regular_amount, final_amount)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      gymId, memberProductId, step.promotion_id, step.promotion_name, step.action,
+      step.value == null ? null : step.value.toFixed(2), step.duration_cycles,
+      step.regular_amount.toFixed(2), step.final_amount.toFixed(2),
+    ],
+  );
+}
+
 /** The columns every read of an application projects. */
 const APPLICATION_COLUMNS = `
   mpp.id, mpp.member_product_id, mpp.promotion_id, mpp.promotion_name,
@@ -207,6 +234,31 @@ const APPLICATION_COLUMNS = `
  * is #635 §16's rule, and the reason the table carries the name and both
  * amounts rather than only the ids.
  */
+/**
+ * #1521 — every Promotion applied to each purchase, in the order they were
+ * applied (each one's `regular_amount` is the running price it was applied to).
+ */
+export async function loadAppliedPromotionLists(
+  gymId: string,
+  memberProductIds: readonly number[],
+): Promise<Map<number, AppliedPromotion[]>> {
+  const byPurchase = new Map<number, AppliedPromotion[]>();
+  const ids = Array.from(new Set(memberProductIds.map(Number))).filter((id) => Number.isFinite(id));
+  if (ids.length === 0) return byPurchase;
+  const { rows } = await db.query<any>(
+    `SELECT ${APPLICATION_COLUMNS}
+       FROM member_products_oneoff_promotion_snapshot mpp
+      WHERE mpp.gym_id = ? AND mpp.member_product_id IN (${ids.map(() => '?').join(',')})
+      ORDER BY mpp.id ASC`,
+    [gymId, ...ids],
+  );
+  for (const row of rows as any[]) {
+    const key = Number(row.member_product_id);
+    byPurchase.set(key, [...(byPurchase.get(key) ?? []), shapeAppliedPromotion(row)]);
+  }
+  return byPurchase;
+}
+
 export async function loadAppliedPromotions(
   gymId: string,
   memberProductIds: readonly number[],
@@ -222,7 +274,11 @@ export async function loadAppliedPromotions(
     [gymId, ...ids],
   );
   for (const row of rows as any[]) {
-    byPurchase.set(Number(row.member_product_id), shapeAppliedPromotion(row));
+    // A purchase may now carry several (#1521); this older single-valued read
+    // reports the first one applied, as it always did when there was only one.
+    if (!byPurchase.has(Number(row.member_product_id))) {
+      byPurchase.set(Number(row.member_product_id), shapeAppliedPromotion(row));
+    }
   }
   return byPurchase;
 }
@@ -245,7 +301,15 @@ export interface MemberPurchasedProduct {
   created_by: string | null;
   /** The Product's regular price: the application's own, else the charge itself. */
   regular_amount: number;
+  /** The first Promotion applied (kept for readers written before stacking). */
   promotion: AppliedPromotion | null;
+  /** #1521 — every Promotion applied, in order; empty when none. */
+  promotions: AppliedPromotion[];
+  /** #1521 — the VAT-inclusive list price the purchase started from, when stored. */
+  list_price: number | null;
+  /** #1521 — an Admin's direct discount: percentage and resulting amount. */
+  direct_discount_percent: number | null;
+  direct_discount_amount: number | null;
   /**
    * #1521 — the VAT rate the purchase was charged under, as the snapshot froze
    * it (a percentage; `null` when the gym had no rate configured then).
@@ -286,7 +350,8 @@ export async function loadMemberPurchases(
     `SELECT mp.id, mp.product_id, mp.status, mp.product_name, mp.product_type,
             mp.billing_frequency, mp.units, mp.amount, mp.currency,
             mp.purchased_at, mp.created_at, mp.created_by,
-            mp.tax_rate_percent,
+            mp.tax_rate_percent, mp.list_price,
+            mp.direct_discount_percent, mp.direct_discount_amount,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id
        FROM member_products_oneoff_snapshot mp
        LEFT JOIN payment_requests pr
@@ -295,10 +360,12 @@ export async function loadMemberPurchases(
       ORDER BY mp.created_at DESC, mp.id DESC`,
     [gymId, memberId],
   );
-  const promotions = await loadAppliedPromotions(gymId, rows.map((r: any) => Number(r.id)));
+  const promotions = await loadAppliedPromotionLists(gymId, rows.map((r: any) => Number(r.id)));
   return rows.map((row: any) => {
-    const promotion = promotions.get(Number(row.id)) ?? null;
+    const applied = promotions.get(Number(row.id)) ?? [];
+    const promotion = applied[0] ?? null;
     const amount = Number(row.amount);
+    const listPrice = row.list_price == null ? null : Number(row.list_price);
     return {
       id: Number(row.id),
       product_id: Number(row.product_id),
@@ -315,8 +382,15 @@ export async function loadMemberPurchases(
       // With no Promotion the two figures are the same number: the purchase was
       // charged at the Product's own price, and §13's *Price* line still has
       // something honest to read.
-      regular_amount: promotion ? promotion.regular_amount : amount,
+      // The price before any Promotion or discount: the stored list price,
+      // else (purchases written before #1521) the first Promotion's own
+      // starting figure, else what was charged.
+      regular_amount: listPrice ?? (promotion ? promotion.regular_amount : amount),
       promotion,
+      promotions: applied,
+      list_price: listPrice,
+      direct_discount_percent: row.direct_discount_percent == null ? null : Number(row.direct_discount_percent),
+      direct_discount_amount: row.direct_discount_amount == null ? null : Number(row.direct_discount_amount),
       tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
       payment_status: row.payment_status ?? null,
       billing_event_id: row.billing_event_id == null ? null : Number(row.billing_event_id),

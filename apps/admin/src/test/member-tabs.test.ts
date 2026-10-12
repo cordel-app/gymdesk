@@ -88,6 +88,7 @@ describe('Member card tabs: the declaration (#961)', () => {
     expect(sectionsForTab('products_services')).toEqual([
       'section_membership_plans',
       'section_additional_services',
+      'section_new_billing_event_simulation',
       'section_billing_events_forecast',
       'section_billing_simulation',
       'section_billing_events',

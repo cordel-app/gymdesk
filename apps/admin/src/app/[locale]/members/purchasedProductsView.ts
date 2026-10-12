@@ -88,3 +88,86 @@ export function billingEventPath(locale: string, item: Pick<PurchasedProduct, 'b
     ? `/${locale}/payments/billing-events?id=${Number(item.billing_event_id)}`
     : null;
 }
+
+/* ── #1521 stage 2: the Add Product form ─────────────────────────────────── */
+
+/** One Product the staff selector offers, as `GET …/product-purchases/catalogue` answers it. */
+export interface PurchasableProductOption {
+  id: number;
+  name: string;
+  type: string;
+  billing_frequency: string | null;
+  currency: string;
+  price_incl_tax: number | null;
+  tax_included: boolean;
+  recurring: boolean;
+  promotions: PurchasableProductPromotion[];
+}
+
+export interface PurchasableProductPromotion {
+  promotion_id: number;
+  promotion_name: string;
+  action: string;
+  value: number | null;
+  duration_cycles: number | null;
+  stackable: boolean;
+}
+
+/** The server's quote (`POST …/product-purchases/quote`): every figure VAT-inclusive. */
+export interface PurchaseQuote {
+  product_id: number;
+  product_name: string;
+  recurring: boolean;
+  currency: string;
+  list_price: number;
+  promotions: Array<{
+    promotion_id: number; promotion_name: string; regular_amount: number; final_amount: number;
+  }>;
+  after_promotions: number;
+  direct_discount_percent: number | null;
+  direct_discount_amount: number | null;
+  final_price: number;
+}
+
+/** The error codes the purchase routes answer with, each with a locale key suffix. */
+const PURCHASE_ERROR_CODES = [
+  'promotions_not_stackable', 'promotion_not_applicable', 'invalid_direct_discount',
+  'final_price_not_positive', 'already_owned', 'purchase_pending', 'edit_locked',
+  'recurring_line_conflict', 'in_flight', 'direct_discount_not_allowed', 'duplicate_promotion',
+  'nothing_to_pay', 'draft_expired',
+] as const;
+
+/** The locale-key suffix for an answered error code; `null` falls back to the generic message. */
+export function purchaseErrorKey(code: string | null | undefined): string | null {
+  return code && (PURCHASE_ERROR_CODES as readonly string[]).includes(code) ? code : null;
+}
+
+/** A percentage typed in the form → what is sent: `null` for empty, `NaN`-safe. */
+export function parseDiscountInput(raw: string): number | null {
+  const trimmed = raw.trim().replace(',', '.');
+  if (trimmed === '') return null;
+  const n = Number(trimmed);
+  return Number.isFinite(n) ? n : Number.NaN;
+}
+
+/**
+ * The part of a version's forecast that belongs to one Product: dates keep only
+ * that Product's lines and their total is the sum of the server's own charges.
+ * Presentation only — no date, amount or benefit is derived here.
+ */
+export function forecastForProduct<
+  T extends { dates: Array<{ date: string; lines: Array<{ product_id: number | null; actual_charge: number }>; total: number }>; total: number },
+>(forecast: T | null, productId: number): T | null {
+  if (!forecast) return forecast;
+  const dates = forecast.dates
+    .map((d) => {
+      const lines = d.lines.filter((l) => l.product_id === productId);
+      return { ...d, lines, total: Math.round(lines.reduce((s, l) => s + l.actual_charge, 0) * 100) / 100 };
+    })
+    .filter((d) => d.lines.length > 0);
+  return {
+    ...forecast,
+    dates,
+    total: Math.round(dates.reduce((s, d) => s + d.total, 0) * 100) / 100,
+  };
+}

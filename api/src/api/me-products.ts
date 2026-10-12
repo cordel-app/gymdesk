@@ -34,7 +34,12 @@ import {
   memberProductCatalogueParams,
   memberProductCatalogueSql,
   shapeMemberProduct,
+  staffProductCatalogueSql,
 } from '../domain/memberProductCatalogue';
+import {
+  type PricingRefusal,
+  priceProductPurchase,
+} from '../domain/productPurchasePricing';
 import {
   type ProductPurchaseFields,
   type PurchaseBlock,
@@ -51,8 +56,7 @@ import {
 import {
   loadAppliedPromotions,
   loadPromotionOffers,
-  resolvePurchasePromotion,
-  writePurchasePromotion,
+  writePurchasePromotionStep,
 } from './member-product-promotions';
 
 /**
@@ -82,7 +86,7 @@ function professionalServiceFilterSql(ids: number[]): string {
 }
 
 /** The columns both reads project — the catalogue's own, plus its tax rate. */
-const PRODUCT_COLUMNS = `
+export const PRODUCT_COLUMNS = `
   p.id, p.name, p.description, p.type, p.units,
   p.billing_frequency, p.amount, p.currency, p.charge_type_id,
   p.tax_behavior, tr.rate_percent AS tax_rate_percent`;
@@ -186,7 +190,7 @@ async function loadLivePurchases(
 }
 
 /** The VAT-inclusive price of one catalogue row, or `null` for an unpriced one. */
-function grossPrice(row: any): number | null {
+export function grossPrice(row: any): number | null {
   if (row.amount == null) return null;
   const { amount_incl_tax } = computePriceFields(row);
   return amount_incl_tax ?? Number(row.amount);
@@ -202,6 +206,21 @@ export interface StartPurchaseInput {
   requestLocale?: string | null;
   /** #1118 §5 — the Promotion the member applied, if they applied one. */
   promotionId?: number | null;
+  /**
+   * #1521 — every Promotion applied, in the order they price the running
+   * figure. Takes precedence over `promotionId`.
+   */
+  promotionIds?: number[];
+  /**
+   * #1521 — an Admin's direct discount, a percentage of the VAT-inclusive
+   * price after Promotions. Only the staff route ever passes it.
+   */
+  directDiscountPercent?: number | null;
+  /**
+   * #1521 — the purchase is being made by staff for this member: the Product is
+   * read through the staff catalogue and `actorName` is the creator recorded.
+   */
+  staff?: { actorName: string };
 }
 
 export interface StartPurchaseResult {
@@ -232,6 +251,13 @@ export class PurchaseRefused extends Error {
 export class PromotionRefused extends Error {
   constructor() {
     super('promotion_not_applicable');
+  }
+}
+
+/** #1521 — the stack of Promotions and discount the purchase asked for cannot be priced. */
+export class PricingRefused extends Error {
+  constructor(readonly refusal: PricingRefusal) {
+    super(refusal);
   }
 }
 
@@ -276,12 +302,14 @@ const ER_DUP_ENTRY = 1062;
 export async function startProductPurchase(
   input: StartPurchaseInput,
 ): Promise<StartPurchaseResult> {
+  const catalogueSql = input.staff ? staffProductCatalogueSql('p') : memberProductCatalogueSql('p');
+  const catalogueParams = input.staff ? [] : memberProductCatalogueParams();
   const { rows } = await db.query<any>(
     `SELECT ${PRODUCT_COLUMNS}
      FROM products p
      LEFT JOIN tax_rates tr ON tr.id = p.tax_rate_id
-     WHERE p.gym_id = ? AND p.id = ? AND ${memberProductCatalogueSql('p')}`,
-    [input.gymId, input.productId, ...memberProductCatalogueParams()],
+     WHERE p.gym_id = ? AND p.id = ? AND ${catalogueSql}`,
+    [input.gymId, input.productId, ...catalogueParams],
   );
   if (!rows[0]) {
     throw Object.assign(new Error('Product not found'), { status: 404 });
@@ -289,33 +317,55 @@ export async function startProductPurchase(
   const row = rows[0];
   const item = shapeMemberProduct(row, grossPrice(row));
   const taxRate = row.tax_rate_percent == null ? null : Number(row.tax_rate_percent);
+  const actorName = input.staff?.actorName ?? input.memberName;
 
   const pending = await hasPendingPurchase(input.gymId, input.memberId, input.productId);
-  const block = productPurchaseBlock(item, pending);
+  // #1521: a one-time Product already bought (`active`) is not sold again.
+  const owned = await hasActivePurchase(input.gymId, input.memberId, input.productId);
+  const block = productPurchaseBlock(item, pending, owned);
   if (block) throw new PurchaseRefused(block);
 
-  // #1118 §5 — what the member applied, re-read and re-priced now. The
-  // purchase is charged the Promotion's Final price, so `member_products_oneoff_snapshot.amount`
-  // stays what it has always been: the figure actually charged. The regular
-  // price it was discounted from is the application's own
-  // (`member_products_oneoff_promotion_snapshot.regular_amount`), which is where §13's *Price*
-  // line reads it from.
-  const offer = input.promotionId
-    ? await resolvePurchasePromotion(input.gymId, input.memberId, {
+  // #1118 §5 / #1521 — what was applied, re-read and re-priced now. Every
+  // Promotion is re-resolved through the loader that produced the offer, and
+  // the whole stack is priced by the one pure module, so the charge is the
+  // figure the quote showed or the purchase is refused.
+  const promotionIds = input.promotionIds
+    ?? (input.promotionId ? [input.promotionId] : []);
+  const offers = promotionIds.length > 0
+    ? (await loadPromotionOffers(input.gymId, input.memberId, [{
       id: item.id,
       type: item.type,
       billing_frequency: item.billing_frequency,
       price_incl_tax: item.price_incl_tax,
-    }, input.promotionId)
-    : null;
-  if (input.promotionId && !offer) throw new PromotionRefused();
+    }])).get(item.id) ?? []
+    : [];
+  const chosen: MemberProductPromotionOffer[] = [];
+  for (const id of promotionIds) {
+    const offer = offers.find((o) => o.promotion_id === id);
+    if (!offer) throw new PromotionRefused();
+    chosen.push(offer);
+  }
+  const priced = priceProductPurchase({
+    listPrice: item.price_incl_tax,
+    promotions: chosen.map((o) => ({
+      promotion_id: o.promotion_id,
+      promotion_name: o.promotion_name,
+      action: o.action,
+      value: o.value,
+      duration_cycles: o.duration_cycles,
+      stackable: o.stackable,
+    })),
+    directDiscountPercent: input.directDiscountPercent ?? null,
+  });
+  if (!priced.ok) throw new PricingRefused(priced.refusal);
+  const price = priced.price;
 
   const snapshot = purchaseSnapshot({
     name: item.name,
     type: item.type,
     billing_frequency: item.billing_frequency,
     units: item.units,
-    price_incl_tax: offer ? offer.final_price_incl_tax : item.price_incl_tax,
+    price_incl_tax: price.final_price,
     currency: item.currency,
     tax_rate_percent: taxRate,
   });
@@ -356,7 +406,7 @@ export async function startProductPurchase(
           input.gymId, input.memberId, snapshot.amount.toFixed(2), snapshot.currency,
           row.charge_type_id ?? null,
           orderId, result.providerOrderId, pageToken, pageTokenExpires,
-          PRODUCT_PURCHASE_SOURCE, input.memberName,
+          PRODUCT_PURCHASE_SOURCE, actorName,
         ],
       );
 
@@ -370,7 +420,7 @@ export async function startProductPurchase(
         `INSERT INTO billing_events
            (gym_id, member_id, event_type, amount, charge_type_id, source, created_by)
          VALUES (?, ?, 'product_purchase', ?, ?, 'provider', ?)`,
-        [input.gymId, input.memberId, snapshot.amount.toFixed(2), row.charge_type_id ?? null, input.memberName],
+        [input.gymId, input.memberId, snapshot.amount.toFixed(2), row.charge_type_id ?? null, actorName],
       );
       await tx.query(
         `UPDATE payment_requests SET billing_event_id = ? WHERE id = ? AND gym_id = ?`,
@@ -382,13 +432,17 @@ export async function startProductPurchase(
            (gym_id, member_id, product_id, status,
             product_name, product_type, billing_frequency, units,
             amount, currency, tax_rate_percent,
-            payment_request_id, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            payment_request_id, created_by,
+            list_price, direct_discount_percent, direct_discount_amount)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           input.gymId, input.memberId, input.productId, PENDING_PURCHASE_STATUS,
           snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
           snapshot.units, snapshot.amount.toFixed(2), snapshot.currency,
-          snapshot.tax_rate_percent, paymentRequestId, input.memberName,
+          snapshot.tax_rate_percent, paymentRequestId, actorName,
+          price.list_price.toFixed(2),
+          price.direct_discount_percent == null ? null : price.direct_discount_percent.toFixed(2),
+          price.direct_discount_amount == null ? null : price.direct_discount_amount.toFixed(2),
         ],
       );
 
@@ -396,7 +450,9 @@ export async function startProductPurchase(
       // the same transaction for #1121 stage 2's reason: a purchase charged a
       // discounted amount with nothing on file explaining it is exactly what
       // §15's audit questions must never meet.
-      if (offer) await writePurchasePromotion(tx, input.gymId, insertId, offer);
+      for (const step of price.promotions) {
+        await writePurchasePromotionStep(tx, input.gymId, insertId, step);
+      }
 
       return insertId;
     });
@@ -413,6 +469,21 @@ export async function startProductPurchase(
     if (err?.errno === ER_DUP_ENTRY) throw new PurchaseRefused('purchase_pending');
     throw err;
   }
+}
+
+/** #1521: whether this member already holds a completed purchase of this Product. */
+async function hasActivePurchase(
+  gymId: string,
+  memberId: number,
+  productId: number,
+): Promise<boolean> {
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM member_products_oneoff_snapshot
+      WHERE gym_id = ? AND member_id = ? AND product_id = ? AND status = 'active'
+      LIMIT 1`,
+    [gymId, memberId, productId],
+  );
+  return rows.length > 0;
 }
 
 /** Whether this member already has a checkout in flight for this Product. */

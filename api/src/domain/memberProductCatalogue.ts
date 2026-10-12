@@ -136,3 +136,13 @@ export function parseProfessionalServiceFilter(
   }
   return { ok: true, ids: ids.slice(0, 20) };
 }
+
+/**
+ * #1521 — the Products a **staff member** may sell to a Member: the gym's
+ * active, non-deleted ones, whatever their enrollment status. `staff_only`
+ * exists precisely so a gym can keep a Product off the Members App while still
+ * selling it at the desk; the member-facing predicate above is untouched.
+ */
+export function staffProductCatalogueSql(alias = 'p'): string {
+  return `${alias}.deleted_at IS NULL AND ${alias}.status = 'active'`;
+}
