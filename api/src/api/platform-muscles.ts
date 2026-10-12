@@ -278,9 +278,13 @@ platformMusclesRouter.post('/:id/image/:sex', requireSuperadmin, muscleImageUplo
     if (!mime.startsWith('image/')) {
       return res.status(415).json({ error: 'Unsupported content type. Send the picture as an image/* body' });
     }
-    // `req.body` is whatever a parser left there; only a Buffer is image bytes.
-    const original: unknown = req.body;
-    if (!Buffer.isBuffer(original)) return res.status(400).json({ error: 'Request body must be raw image bytes' });
+    // `req.body` is whatever a parser left there, and a request can make that a
+    // string or an array — both carry a `length`, so only a Buffer is image bytes.
+    const raw: unknown = req.body;
+    if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
+      return res.status(400).json({ error: 'Request body must be raw image bytes' });
+    }
+    const original: Buffer = raw;
     if (original.length === 0) return res.status(400).json({ error: 'Request body is empty' });
     const maxBytes = muscleImageMaxBytes();
     if (original.length > maxBytes) {
