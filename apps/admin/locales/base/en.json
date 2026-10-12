@@ -439,7 +439,16 @@
     "welcomed_yes": "Yes",
     "welcomed_no": "No",
     "filter_welcomed": "Welcomed",
-    "all_welcomed": "All"
+    "all_welcomed": "All",
+    "product_set_card_title": "Recurring",
+    "product_set_card_plan": "Membership Plan",
+    "product_set_label_product_count": "Products",
+    "product_set_label_plan_status": "Membership Plan status",
+    "product_set_plan_status_active": "Active",
+    "product_set_plan_status_inactive": "Inactive",
+    "product_set_plan_status_expired": "Expired",
+    "product_set_details_title": "Product Set details",
+    "close": "Close"
   },
   "member_payments": {
     "title": "Member Payments",

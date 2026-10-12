@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   productSetName,
+  productSetProductCount,
   productSetStatusKey,
   splitProductSetProducts,
 } from '@/app/[locale]/members/productSetView';
@@ -34,5 +35,11 @@ describe('productSetView (#1463)', () => {
     expect(out.oneOff.map((l) => l.name)).toEqual(['Locker', 'PT x5']);
     expect(out.recurring.map((l) => l.name)).toEqual(['Towel', 'Parking']);
     expect(splitProductSetProducts(null)).toEqual({ oneOff: [], recurring: [] });
+  });
+
+  it('counts every product the version carries, one-off and recurring (#1490)', () => {
+    const line = (key: string) => ({ key, name: key, quantity: 1, unitPrice: 1, billingFrequency: null });
+    expect(productSetProductCount({ oneOff: [line('a')], recurring: [line('b'), line('c')] })).toBe(3);
+    expect(productSetProductCount({ oneOff: [], recurring: [] })).toBe(0);
   });
 });

@@ -147,7 +147,7 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     `SELECT ps.id, ps.status, ps.version, ps.starts_at, ps.created_at, ps.created_by,
             ps.activated_at, ps.superseded_at,
             (ps.status = 'draft' AND ps.last_activity_at < UTC_TIMESTAMP() - INTERVAL 120 MINUTE) AS expired,
-            mp.name AS plan_name, um.ends_at AS ends_at
+            mp.name AS plan_name, mp.lifecycle_status AS plan_status, um.ends_at AS ends_at
        FROM product_sets ps
        LEFT JOIN membership_plans mp ON mp.id = ps.membership_plan_id
        LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
@@ -160,6 +160,8 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     status: String(r.status),
     version: Number(r.version),
     plan_name: r.plan_name ?? null,
+    // #1490 — the Membership Plan's own status, distinct from the version's.
+    plan_status: r.plan_status ?? null,
     starts_at: toDateOnly(r.starts_at),
     ends_at: toDateOnly(r.ends_at),
     created_at: toDateOnly(r.created_at),

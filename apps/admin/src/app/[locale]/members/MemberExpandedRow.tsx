@@ -32,8 +32,7 @@ import {
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
 import {
-  CurrentProductSetHeader,
-  PastProductSets,
+  CurrentProductSetCard,
   ProductSetForecast,
   ProductSetProducts,
   useProductSetDetail,
@@ -430,10 +429,21 @@ export function MemberExpandedRow({
               drawn with the Assigned Plans page's own table (#1051). */}
           {/* #1463 — the current ProductSet's metadata, directly in the layout. */}
           <Section label={t('members.section_product_set')} divider={false}>
-            <CurrentProductSetHeader set={configuration.current_product_set} />
+            {/* #1490 — the card titled Recurring, with Membership Plan, Recurring
+                Products and Past Product Sets inside it. */}
+            <CurrentProductSetCard
+              set={configuration.current_product_set}
+              products={productSetDetail.products}
+              loading={productSetDetail.loading}
+              error={productSetDetail.error}
+              pastSets={configuration.past_product_sets}
+              canWrite={isAdmin}
+              onEdit={() => document.getElementById('member-membership-plans-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            />
           </Section>
 
           <Section label={t('members.section_membership_plans')}>
+            <span id="member-membership-plans-section" />
             <MemberMembershipPlans
               memberId={memberId}
               memberName={member.name}
@@ -473,9 +483,6 @@ export function MemberExpandedRow({
               go through the ProductSet workflow (Save & Pay), never as purchases. */}
           <Section label={t('members.section_one_off_products')}>
             <ProductSetProducts lines={productSetDetail.products.oneOff} loading={productSetDetail.loading} error={productSetDetail.error} />
-          </Section>
-          <Section label={t('members.section_recurring_products')}>
-            <ProductSetProducts lines={productSetDetail.products.recurring} loading={productSetDetail.loading} error={productSetDetail.error} />
           </Section>
 
           <Section label={t('members.section_additional_services')}>
@@ -563,10 +570,6 @@ export function MemberExpandedRow({
             )}
           </Section>
 
-          {/* #1463 — previous ProductSet versions, clearly history, at the bottom. */}
-          <Section label={t('members.section_past_product_sets')}>
-            <PastProductSets sets={configuration.past_product_sets} />
-          </Section>
         </>
       )}
 
