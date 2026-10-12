@@ -91,7 +91,6 @@ describe('Member card tabs: the declaration (#961)', () => {
       'section_additional_services',
       'section_billing_simulation',
       'section_billing_events_forecast',
-      'section_session_packages',
       'section_billing_events',
       'section_past_product_sets',
     ]);

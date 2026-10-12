@@ -52,7 +52,6 @@ export type MemberSectionKey =
   | 'section_additional_services'
   | 'section_billing_simulation'
   | 'section_pt_slots'
-  | 'section_session_packages'
   | 'section_professional_services'
   | 'section_billing_events'
   | 'section_nutrition_plans'
@@ -87,7 +86,6 @@ export const MEMBER_TABS: readonly MemberTab[] = [
       'section_additional_services',
       'section_billing_simulation',
       'section_billing_events_forecast',
-      'section_session_packages',
       'section_billing_events',
       'section_past_product_sets',
     ],

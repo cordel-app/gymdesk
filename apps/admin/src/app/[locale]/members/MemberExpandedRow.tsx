@@ -9,19 +9,14 @@ import { listNameBadgeStyle, listNameBadgeAccentStyle } from '@/components/listC
 import { StatusBadge } from '@/components/StatusBadge';
 import { clerkStatusLine, clerkInvitationLine, type ClerkAccountFields, type ClerkAccountLine } from '@/lib/clerkAccountLines';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { primaryBtnSmall } from '@/components/ui';
 import {
-  cardHintStyle,
   cardMutedTextStyle,
   cardSectionDividedStyle,
   cardSectionLabelStyle,
   cardSectionStyle,
   cardSubLabelStyle,
   cardTextLinkStyle,
-  formControlStyle,
-  formFieldErrorStyle,
   formFieldLabelStyle,
-  inlineActionsRowStyle,
   innerCardStyle,
   secondaryBtnSmall,
 } from '@/components/formChrome';
@@ -74,16 +69,6 @@ interface NutritionPlan {
   status: string;
 }
 
-interface SessionPackage {
-  id: number;
-  package_name: string;
-  package_sessions: number;
-  sessions_remaining: number;
-  purchased_at: string;
-  expires_at: string;
-  status: 'active' | 'consumed' | 'expired' | 'cancelled';
-}
-
 /** `GET /members/:memberId/centers` — the sole-active-center fallback included (#797). */
 interface MemberCenter {
   center_id: number;
@@ -112,7 +97,6 @@ export function MemberExpandedRow({
   accountVersion = 0,
   editing,
   canManageTraining,
-  canManagePackages,
   canManagePersonalGoals,
   isAdmin,
   plans,
@@ -181,14 +165,9 @@ export function MemberExpandedRow({
   const [nutritionPlans, setNutritionPlans] = useState<NutritionPlan[]>([]);
   const [billingEvents, setBillingEvents] = useState<BillingEvent[]>([]);
   const [expandedEventIds, setExpandedEventIds] = useState<Set<number>>(new Set());
-  const [sessionPackages, setSessionPackages] = useState<SessionPackage[]>([]);
   // #1118 §12 — the Products this Member bought from the Members App, each with
   // the Promotion snapshot it was bought under.
   const [purchasedProducts, setPurchasedProducts] = useState<PurchasedProduct[]>([]);
-  const [extendingId, setExtendingId] = useState<number | null>(null);
-  const [extendValue, setExtendValue] = useState('');
-  const [extendSaving, setExtendSaving] = useState(false);
-  const [extendError, setExtendError] = useState<string | null>(null);
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -216,7 +195,7 @@ export function MemberExpandedRow({
     setError(null);
     try {
       const [
-        config, memberTrainingPlans, nutrition, events, clerk, packages, memberCenters, purchases,
+        config, memberTrainingPlans, nutrition, events, clerk, memberCenters, purchases,
       ] = await Promise.all([
         apiFetch<MemberConfiguration>(`/user-memberships/member/${memberId}/configuration`)
           .catch(() => EMPTY_CONFIGURATION),
@@ -226,7 +205,6 @@ export function MemberExpandedRow({
         apiFetch<NutritionPlan[]>(`/member-nutrition-plans?member_id=${memberId}`).catch(() => []),
         apiFetch<{ items: BillingEvent[] }>(`/billing-events/member/${memberId}?limit=50`).catch(() => ({ items: [] })),
         apiFetch<{ status: string } & ClerkAccountFields>(`/members/${memberId}/clerk-status`).catch(() => null),
-        apiFetch<SessionPackage[]>(`/members/${memberId}/class-packages`).catch(() => []),
         apiFetch<MemberCenter[]>(`/members/${memberId}/centers`).catch(() => []),
         apiFetch<{ items: PurchasedProduct[] }>(`/members/${memberId}/products`)
           .catch(() => ({ items: [] })),
@@ -238,7 +216,6 @@ export function MemberExpandedRow({
       setTrainingPlans(memberTrainingPlans);
       setNutritionPlans(nutrition);
       setBillingEvents(events.items ?? []);
-      setSessionPackages(packages);
       setCenters(memberCenters);
     } catch {
       setError(t('members.expanded_error'));
@@ -288,37 +265,6 @@ export function MemberExpandedRow({
       if (next.has(id)) next.delete(id); else next.add(id);
       return next;
     });
-  }
-
-  function startExtend(pkg: SessionPackage) {
-    setExtendingId(pkg.id);
-    setExtendValue(pkg.expires_at.slice(0, 10));
-    setExtendError(null);
-  }
-
-  function cancelExtend() {
-    setExtendingId(null);
-    setExtendValue('');
-    setExtendError(null);
-  }
-
-  async function saveExtend(pkg: SessionPackage) {
-    if (!extendValue) return;
-    setExtendSaving(true);
-    setExtendError(null);
-    try {
-      const updated = await apiFetch<SessionPackage>(
-        `/members/${memberId}/class-packages/${pkg.id}/extend-expiration`,
-        { method: 'PUT', body: JSON.stringify({ expires_at: extendValue }) },
-      );
-      setSessionPackages((prev) => prev.map((p) => (p.id === pkg.id ? updated : p)));
-      setExtendingId(null);
-      setExtendValue('');
-    } catch (err: any) {
-      setExtendError(err?.status === 400 ? t('members.extend_expiration_error') : t('members.extend_expiration_generic_error'));
-    } finally {
-      setExtendSaving(false);
-    }
   }
 
   if (loading) {
@@ -532,70 +478,6 @@ export function MemberExpandedRow({
               read, persisted nowhere, creates no Billing Event. */}
           <Section label={t('members.section_billing_events_forecast')}>
             <ProductSetForecast forecast={productSetDetail.forecast} loading={productSetDetail.loading} error={productSetDetail.error} />
-          </Section>
-
-          {/* Session Packages */}
-          <Section label={t('members.section_session_packages')}>
-            {sessionPackages.length === 0 ? (
-              <p style={dim}>{t('members.no_session_packages')}</p>
-            ) : (
-              <div>
-                {sessionPackages.map((pkg) => {
-                  const used = pkg.package_sessions - pkg.sessions_remaining;
-                  const isExpired = pkg.status === 'expired';
-                  return (
-                    <div key={pkg.id} style={card}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, flexWrap: 'wrap' }}>
-                        <div style={{ minWidth: 0 }}>
-                          <div style={{ fontWeight: 500, fontSize: 14 }}>{pkg.package_name}</div>
-                          <Field label={t('members.package_purchased')}>{fmtDate(pkg.purchased_at)}</Field>
-                          <Field label={t('members.package_sessions_total')}>{pkg.package_sessions}</Field>
-                          <Field label={t('members.package_sessions_used')}>{used}</Field>
-                          <Field label={t('members.package_sessions_remaining')}>{pkg.sessions_remaining}</Field>
-                          <Field label={isExpired ? t('members.package_expired_label') : t('members.package_expires')}>
-                            {fmtDate(pkg.expires_at)}
-                          </Field>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
-                          <StatusBadge status={pkg.status} label={pkg.status} />
-                          {canManagePackages && extendingId !== pkg.id && (
-                            <button onClick={() => startExtend(pkg)} style={editBtnStyle}>{t('members.extend_expiration')}</button>
-                          )}
-                        </div>
-                      </div>
-                      {extendingId === pkg.id && (
-                        <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--gd-card-border, #e8e8ed)' }}>
-                          <div style={fieldLabelStyle}>{t('members.extend_expiration_title')}</div>
-                          <Field label={t('members.extend_expiration_current')}>{fmtDate(pkg.expires_at)}</Field>
-                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6, flexWrap: 'wrap' }}>
-                            <span style={{ ...cardHintStyle, margin: 0, minWidth: 120 }}>{t('members.extend_expiration_new')}</span>
-                            <input
-                              type="date"
-                              value={extendValue}
-                              onChange={(e) => setExtendValue(e.target.value)}
-                              style={{ ...formControlStyle, width: 'auto' }}
-                            />
-                          </div>
-                          {extendError && <p style={formFieldErrorStyle}>{extendError}</p>}
-                          {/* The section's own Save is a primary action and takes the
-                              Theme's primary-button colours (#912), not a black box. */}
-                          <div style={inlineActionsRowStyle}>
-                            <button onClick={cancelExtend} disabled={extendSaving} style={secondaryBtnSmall}>{t('members.cancel')}</button>
-                            <button
-                              onClick={() => saveExtend(pkg)}
-                              disabled={extendSaving || !extendValue}
-                              style={primaryBtnSmall()}
-                            >
-                              {extendSaving ? t('members.saving') : t('members.save_changes')}
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
           </Section>
 
           {/* Billing Events */}
