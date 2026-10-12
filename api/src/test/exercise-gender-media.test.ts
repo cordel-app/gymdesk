@@ -205,6 +205,7 @@ describe('Gym Exercise gender images', () => {
     expect(anon.status).toBe(401);
     const readOnlyGym = await createTestGym('GenderMediaGymReadOnly');
     await createTestMembership(readOnlyGym, 'accountant');
+    mockAsNonSuperadmin();
     expect((await gymPost('image/male', IMAGE_BODY, readOnlyGym)).status).toBe(403);
   });
 

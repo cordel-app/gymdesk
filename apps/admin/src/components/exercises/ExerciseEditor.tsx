@@ -162,6 +162,32 @@ export function ExerciseEditor({
           <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
           <input id={id('description')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={inlineInputSt} />
         </div>
+        <div style={exerciseFieldWideStyle}>
+          <label htmlFor={id('short_description')} style={inlineLabelSt}>{t('label_short_description')}</label>
+          <input id={id('short_description')} maxLength={300} value={form.short_description} onChange={(e) => setForm({ ...form, short_description: e.target.value })} style={inlineInputSt} />
+        </div>
+        {/* #1419: the descriptions in every other supported language. Blank = falls back to the base one. */}
+        {translatableLocales.map((loc) => {
+          const entry = form.description_translations[loc] ?? {};
+          const setEntry = (patch: Record<string, string>) =>
+            setForm({ ...form, description_translations: { ...form.description_translations, [loc]: { ...entry, ...patch } } });
+          return (
+            <React.Fragment key={`desc-${loc}`}>
+              <div style={exerciseFieldWideStyle}>
+                <label htmlFor={id(`short_description-${loc}`)} style={inlineLabelSt}>
+                  {`${t('label_short_description')} — ${localeName(loc)}`}
+                </label>
+                <input id={id(`short_description-${loc}`)} maxLength={300} value={entry.short_description ?? ''} onChange={(e) => setEntry({ short_description: e.target.value })} style={inlineInputSt} />
+              </div>
+              <div style={exerciseFieldWideStyle}>
+                <label htmlFor={id(`description-${loc}`)} style={inlineLabelSt}>
+                  {`${t('label_description')} — ${localeName(loc)}`}
+                </label>
+                <input id={id(`description-${loc}`)} value={entry.description ?? ''} onChange={(e) => setEntry({ description: e.target.value })} style={inlineInputSt} />
+              </div>
+            </React.Fragment>
+          );
+        })}
         <div>
           <label htmlFor={id('category')} style={inlineLabelSt}>{t('label_category')}</label>
           <select id={id('category')} value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} style={inlineSelectSt}>

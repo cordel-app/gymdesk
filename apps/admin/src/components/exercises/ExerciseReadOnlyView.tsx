@@ -109,6 +109,23 @@ export function ExerciseReadOnlyView({
             />
           ))}
         <Field wide label={t('label_description')} value={exerciseDisplayValue(exercise.description)} />
+        <Field wide label={t('label_short_description')} value={exerciseDisplayValue(exercise.short_description)} />
+        {Object.entries(exercise.description_translations ?? {})
+          .sort(([a], [b]) => a.localeCompare(b))
+          .flatMap(([loc, v]) => [
+            <Field
+              key={`sd-${loc}`}
+              wide
+              label={`${t('label_short_description')} — ${localeLabel(loc, (key) => tRoot(key as any))}`}
+              value={exerciseDisplayValue(v?.short_description)}
+            />,
+            <Field
+              key={`d-${loc}`}
+              wide
+              label={`${t('label_description')} — ${localeLabel(loc, (key) => tRoot(key as any))}`}
+              value={exerciseDisplayValue(v?.description)}
+            />,
+          ])}
         <Field
           label={t('label_category')}
           value={exerciseDisplayValue(exerciseCategoryLabelKey(exercise.category) ? t(exerciseCategoryLabelKey(exercise.category) as any) : exercise.category)}
