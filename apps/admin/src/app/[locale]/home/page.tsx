@@ -9,6 +9,7 @@ import { useGym } from '@/context/GymContext';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymAmount, formatGymDate, formatGymTime } from '@/lib/gymFormat';
 import { cardSurfaceStyle } from '@/components/ui';
+import { StatusBadge } from '@/components/StatusBadge';
 import { secondaryBtnSmall, cardMutedTextStyle as mutedTextStyle } from '@/components/formChrome';
 import {
   HomeData, TASK_ACTION_KEY, memberHref, orderedTasks, shiftDate, taskHref,
@@ -38,6 +39,7 @@ function SummaryCard({ label, value, sub, href }: { label: string; value: string
 
 export default function HomePage() {
   const t = useTranslations('home');
+  const tm = useTranslations('members');
   const locale = useLocale();
   const { apiFetch } = useApiClient();
   const { activeGymId } = useGym();
@@ -92,6 +94,37 @@ export default function HomePage() {
 
       {data && (
         <>
+          {data.pending_payment_members && (
+            <section style={{ ...panel, marginBottom: 20 }} aria-label={t('pending_title')} data-testid="home-pending-payments">
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, flexWrap: 'wrap' }}>
+                <h2 style={{ ...panelTitle, margin: 0 }}>{t('pending_title')}</h2>
+                <strong style={{ fontSize: 26 }} data-testid="home-pending-count">{data.pending_payment_members.count}</strong>
+                <span style={mutedTextStyle}>{t('pending_sub', { count: data.pending_payment_members.count })}</span>
+              </div>
+              {data.pending_payment_members.members.length === 0 ? (
+                <p style={{ ...mutedTextStyle, margin: '12px 0 0' }}>{t('pending_empty')}</p>
+              ) : (
+                <div style={{ marginTop: 12 }}>
+                  {data.pending_payment_members.members.map((m) => (
+                    <div key={m.member_id} style={row} data-testid={`home-pending-${m.member_id}`}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <Link href={memberHref(m.member_id, locale, 'profile')} style={{ color: 'inherit', fontWeight: 600 }}>{m.name}</Link>
+                        <div style={{ fontSize: 12, color: 'var(--gd-text-muted, #6b7280)' }}>{m.plan_name ?? t('members_plan_none')}</div>
+                      </div>
+                      <strong>{formatGymAmount(m.outstanding_amount, fmt)}</strong>
+                      <StatusBadge status={m.payment_status} label={tm(`payment_status_${m.payment_status}`)} />
+                    </div>
+                  ))}
+                </div>
+              )}
+              {data.pending_payment_members.count > data.pending_payment_members.members.length && (
+                <p style={{ margin: '12px 0 0' }}>
+                  <Link href={taskHref('payments_with_issues', locale)} style={linkStyle}>{t('pending_view_all', { count: data.pending_payment_members.count })}</Link>
+                </p>
+              )}
+            </section>
+          )}
+
           <div style={cardsGrid}>
             {c?.active_members && (
               <SummaryCard label={t('card_active_members')} value={String(c.active_members.count)}

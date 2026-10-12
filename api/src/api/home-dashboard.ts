@@ -20,8 +20,10 @@ import { isAwaitingAction, deriveBillingEventStatus } from '../domain/billingEve
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import {
   dayWindow, weekWindow, nowSql, todayInZone, parseDashboardDate, resolveTimeZone,
-  homeAccess, visibleTasks, type HomeTask, type UtcWindow,
+  homeAccess, visibleTasks, groupPendingPaymentMembers, PENDING_PAYMENT_MEMBER_LIMIT,
+  type HomeTask, type OutstandingEventRow, type UtcWindow,
 } from '../domain/homeDashboard';
+import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
 import { DEFAULT_GYM_LOCALIZATION } from '../domain/gymLocalization';
 
 export const homeDashboardRouter = Router();
@@ -64,10 +66,11 @@ const LIVE_SESSION = `ce.gym_id = ? AND ce.deleted_at IS NULL AND ce.status <> '
 async function loadPayments(gymId: string, day: UtcWindow) {
   const { rows } = await db.query<{
     event_type: string; latest_tx_status: string | null; amount: number | string | null; created_at: Date | string;
+    member_id: number | string | null;
   }>(
-    `SELECT e.event_type, e.latest_tx_status, e.amount, e.created_at
+    `SELECT e.event_type, e.latest_tx_status, e.amount, e.created_at, e.member_id
        FROM (
-         SELECT be.event_type, be.amount, be.created_at,
+         SELECT be.event_type, be.amount, be.created_at, be.member_id,
                 (SELECT pr.status FROM payment_requests pr
                   WHERE pr.billing_event_id = be.id
                   ORDER BY pr.created_at DESC, pr.id DESC LIMIT 1) AS latest_tx_status
@@ -85,8 +88,10 @@ async function loadPayments(gymId: string, day: UtcWindow) {
   let outstandingCount = 0;
   let outstandingAmount = 0;
   let paidOnDay = 0;
+  const outstanding: OutstandingEventRow[] = [];
   for (const r of rows) {
     if (isAwaitingAction(r.event_type, r.latest_tx_status)) {
+      outstanding.push(r);
       outstandingCount += 1;
       outstandingAmount += Number(r.amount ?? 0);
     }
@@ -95,7 +100,49 @@ async function loadPayments(gymId: string, day: UtcWindow) {
       paidOnDay += 1;
     }
   }
-  return { outstandingCount, outstandingAmount: Math.round(outstandingAmount * 100) / 100, paidOnDay };
+  return { outstandingCount, outstandingAmount: Math.round(outstandingAmount * 100) / 100, paidOnDay, outstanding };
+}
+
+/**
+ * #1466: members with something outstanding, one row each. Eligibility is the
+ * same `isAwaitingAction()` set the Outstanding payments card counts; the
+ * status shown is the member's own aggregated Payment Status (#1235).
+ */
+async function loadPendingPaymentMembers(gymId: string, outstanding: OutstandingEventRow[]) {
+  const all = groupPendingPaymentMembers(outstanding);
+  if (all.length === 0) return { count: 0, members: [] as unknown[] };
+  // A soft-deleted member is gone from every screen, so is not counted either.
+  const { rows: live } = await db.query<{ id: number }>(
+    `SELECT id FROM members WHERE gym_id = ? AND deleted_at IS NULL AND id IN (${all.map(() => '?').join(',')})`,
+    [gymId, ...all.map((g) => g.member_id)],
+  );
+  const liveIds = new Set(live.map((r) => Number(r.id)));
+  const groups = all.filter((g) => liveIds.has(g.member_id));
+  const top = groups.slice(0, PENDING_PAYMENT_MEMBER_LIMIT);
+  if (top.length === 0) return { count: 0, members: [] as unknown[] };
+  const { rows } = await db.query<any>(
+    `SELECT m.id, m.name,
+            ${memberPaymentStatusSql('m')} AS payment_status,
+            (SELECT mp.name FROM user_memberships um
+               JOIN membership_plans mp ON mp.id = um.membership_plan_id
+              WHERE um.member_id = m.id AND um.gym_id = m.gym_id
+                AND um.status NOT IN ('draft', 'pending_payment', 'cancelled')
+              ORDER BY um.created_at DESC, um.id DESC LIMIT 1) AS plan_name
+       FROM members m
+      WHERE m.gym_id = ? AND m.deleted_at IS NULL AND m.id IN (${top.map(() => '?').join(',')})`,
+    [gymId, ...top.map((g) => g.member_id)],
+  );
+  const byId = new Map(rows.map((r: any) => [Number(r.id), r]));
+  const members = top
+    .filter((g) => byId.has(g.member_id))
+    .map((g) => {
+      const r: any = byId.get(g.member_id);
+      return {
+        member_id: g.member_id, name: r.name, outstanding_amount: g.outstanding_amount,
+        plan_name: r.plan_name ?? null, payment_status: r.payment_status ?? 'failed',
+      };
+    });
+  return { count: groups.length, members };
 }
 
 /** Task D: members holding plan-included service sessions with none booked ahead. */
@@ -259,6 +306,7 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
       const p = await loadPayments(gymId, day);
       cards.outstanding_payments = { count: p.outstandingCount, amount: p.outstandingAmount, paid_count: p.paidOnDay, currency: 'EUR' };
       tasks.push({ key: 'payments_with_issues', count: p.outstandingCount });
+      out.pending_payment_members = await loadPendingPaymentMembers(gymId, p.outstanding);
     }
 
     out.cards = cards;
