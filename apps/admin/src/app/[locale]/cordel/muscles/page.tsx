@@ -48,6 +48,7 @@ export default function CordelMusclesPage() {
   const [newName, setNewName] = useState('');
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editName, setEditName] = useState('');
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Muscle | null>(null);
@@ -146,9 +147,19 @@ export default function CordelMusclesPage() {
       ) : rows.map((row) => {
         const thumb = row.image_male_url_thumbnail ?? row.image_male_url ?? row.image_female_url_thumbnail ?? row.image_female_url;
         const editing = editingId === row.id;
+        const expanded = expandedId === row.id || editing;
         return (
           <div key={row.id} style={{ ...cardSurfaceStyle, padding: 12, marginBottom: 8 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={expanded}
+                aria-label={row.name}
+                onClick={() => setExpandedId(expanded ? null : row.id)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(expanded ? null : row.id); } }}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, cursor: 'pointer' }}
+              >
               <div style={{ width: 48, height: 48, borderRadius: 6, overflow: 'hidden', flex: '0 0 auto', background: '#f3f4f6' }}>
                 {thumb && SAFE_IMAGE_SRC.test(thumb) && (
                   // eslint-disable-next-line @next/next/no-img-element
@@ -161,10 +172,11 @@ export default function CordelMusclesPage() {
                   {t('slug')}: {row.slug} · {t('exercises')}: {row.exercise_count}
                 </div>
               </div>
+              </div>
               <ContextMenu
                 ariaLabel={row.name}
                 items={[
-                  { label: t('edit'), onClick: () => { setEditingId(row.id); setEditName(row.name); setError(null); } },
+                  { label: t('edit'), onClick: () => { setEditingId(row.id); setExpandedId(row.id); setEditName(row.name); setError(null); } },
                   { label: t('details'), onClick: () => setDetails(row) },
                   {
                     label: t('delete'), danger: true,
@@ -175,6 +187,33 @@ export default function CordelMusclesPage() {
                 ]}
               />
             </div>
+
+            {expanded && !editing && (
+              <div style={{ marginTop: 12 }}>
+                <label style={formFieldLabelStyle}>{t('name')}</label>
+                <div style={{ fontSize: 14 }}>{row.name}</div>
+                <label style={{ ...formFieldLabelStyle, marginTop: 8 }}>{t('slug')}</label>
+                <div style={{ fontSize: 14 }}>{row.slug}</div>
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginTop: 12 }}>
+                  {(['male', 'female'] as const).map((sex) => {
+                    const src = sex === 'male'
+                      ? (row.image_male_url_thumbnail ?? row.image_male_url)
+                      : (row.image_female_url_thumbnail ?? row.image_female_url);
+                    return (
+                      <div key={sex} style={{ width: 240 }}>
+                        <label style={formFieldLabelStyle}>{t(sex === 'male' ? 'image_male' : 'image_female')}</label>
+                        {src && SAFE_IMAGE_SRC.test(src) ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={src} alt={t(sex === 'male' ? 'image_male' : 'image_female')} loading="lazy" style={{ width: 160, height: 160, objectFit: 'cover', borderRadius: 6 }} />
+                        ) : (
+                          <div style={{ fontSize: 14, color: '#888' }}>—</div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {editing && (
               <div style={{ marginTop: 12 }}>
