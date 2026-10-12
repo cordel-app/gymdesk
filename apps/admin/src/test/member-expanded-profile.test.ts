@@ -88,17 +88,19 @@ describe('Members: PROFILE in the expanded card (#797)', () => {
   });
 
   it('contains no control that could modify Member data', () => {
-    const section = profileSection();
+    // #1428: the one Edit button opens the form; it is not a field.
+    const section = profileSection().replace(/<SectionEditButton[\s\S]*?\/>/, '');
     for (const control of ['<input', '<select', '<textarea', '<button', 'onChange', 'onClick', 'contentEditable']) {
       expect(section, `PROFILE must stay read-only, found ${control}`).not.toContain(control);
     }
   });
 
-  it('adds no Edit affordance — ⋮ → Edit stays the only entry point', () => {
+  it('#1428: Edit is the Profile section\'s own button, not a Member menu item', () => {
     const section = profileSection();
-    expect(section).not.toContain("t('members.edit')");
-    // The context menu still carries Edit, and it still opens the inline form.
-    expect(pageSrc).toContain("items.push({ label: t('members.edit'), onClick: () => guardUnsaved(() => startEdit(m)) });");
+    expect(section).toContain('<SectionEditButton');
+    // The Member menu no longer carries Edit; the section button opens the same inline form.
+    expect(pageSrc).not.toContain("items.push({ label: t('members.edit')");
+    expect(pageSrc).toContain('onEditProfile={canWrite ? () => guardUnsaved(() => startEdit(m)) : undefined}');
     expect(pageSrc).toContain('<MemberEditForm');
     expect(pageSrc).toContain('editingId === m.id');
   });

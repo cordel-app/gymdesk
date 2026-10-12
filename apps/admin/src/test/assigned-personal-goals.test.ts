@@ -273,7 +273,7 @@ describe('the Member card section is behind Edit mode (#797/#957)', () => {
   it('is handed the card own mode, and Personal Goals write access', () => {
     // #1070: the flag is `nutrition.personal_goals`' own, not the NUTRITION
     // module's — the Personal Trainer override reaches this section too.
-    expect(memberRowSrc).toContain('<MemberPersonalGoals memberId={memberId} canWrite={canManagePersonalGoals} editing={editing} />');
+    expect(memberRowSrc).toContain('<MemberPersonalGoals memberId={memberId} canWrite={canManagePersonalGoals} />');
     expect(memberRowSrc).toContain("t('members.section_personal_goals')");
   });
 
