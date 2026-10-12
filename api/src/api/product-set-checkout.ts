@@ -1,4 +1,5 @@
 import { AttemptMethod } from '../domain/paymentAttemptMethod';
+import { payerCheckoutUrl } from './checkout-url';
 import crypto from 'crypto';
 import { db, Tx } from '../infra/db';
 
@@ -133,6 +134,8 @@ export async function createProductSetCheckout(input: {
   gymId: string; productSetId: number; memberId: number; memberEmail: string; startsAt: string; charge: InitialCharge;
   /** #1182: who caused the checkout (staff request actor, or the member). */
   actor: string | null;
+  /** #1480: the caller's language, only when the caller is the member paying. */
+  requestLocale?: string | null;
 }): Promise<{ paymentRequestId: number; billingEventId: number; checkoutUrl: string }> {
   const { rows: ct } = await db.query<{ id: number }>("SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1");
   const chargeTypeId = ct[0]?.id ?? null;
@@ -170,6 +173,8 @@ export async function createProductSetCheckout(input: {
     return { paymentRequestId: Number(insertId), billingEventId };
   });
 
-  const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;
+  const checkoutUrl = await payerCheckoutUrl({
+    gymId: input.gymId, memberId: input.memberId, pageToken, requestLocale: input.requestLocale,
+  });
   return { ...out, checkoutUrl };
 }

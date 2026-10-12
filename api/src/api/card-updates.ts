@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { payerCheckoutUrl } from './checkout-url';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
 import {
@@ -27,6 +28,8 @@ export interface CardUpdateRequest {
 export interface CreateCardUpdateInput {
   gymId: string;
   memberId: number;
+  /** #1480: the caller's language, only when the caller is the member paying. */
+  requestLocale?: string | null;
   memberEmail: string;
   /**
    * The assignment the row hangs off. `payment_requests.user_membership_id` is
@@ -139,7 +142,9 @@ export async function createCardUpdateRequest(
     return requestId;
   });
 
-  const checkoutUrl = `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`;
+  const checkoutUrl = await payerCheckoutUrl({
+    gymId: input.gymId, memberId: input.memberId, pageToken, requestLocale: input.requestLocale,
+  });
   return { id: insertId, checkoutUrl };
 }
 
