@@ -248,7 +248,7 @@ export function NavGroup({
         >
         {!collapsed && (
           <span
-            // #1473: Home shows no chevron. An invisible spacer of the same
+            // #1473/#1509: a direct-link section (Home, Members) shows no chevron. An invisible spacer of the same
             // width keeps its icon and label aligned with the other sections.
             aria-hidden="true"
             style={{
@@ -260,7 +260,7 @@ export function NavGroup({
               flexShrink: 0,
               transition: 'transform 150ms ease-in-out',
               transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)',
-              visibility: group.id === 'home' ? 'hidden' : 'visible',
+              visibility: 'hidden',
             }}
           >
             ▶
