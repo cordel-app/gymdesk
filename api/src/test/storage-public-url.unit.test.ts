@@ -125,21 +125,22 @@ describe('exercise media references', () => {
     expect(mediaIdentity('https://youtube.com/watch?v=abc')).toBe('https://youtube.com/watch?v=abc');
   });
 
-  it('matches every URL form of the object in all four media columns', async () => {
+  it('matches every URL form of the object in all eight media columns', async () => {
     configure(PUBLIC);
     const { mediaReferenceClause } = await import('../domain/exerciseMediaReferences');
     const { clause, params } = mediaReferenceClause(LEGACY_URL);
     expect(clause).toBe(
-      '(image_url IN (?, ?) OR image_thumbnail_url IN (?, ?) OR video_url IN (?, ?) OR video_thumbnail_url IN (?, ?))',
+      '(image_url IN (?, ?) OR image_thumbnail_url IN (?, ?) OR video_url IN (?, ?) OR video_thumbnail_url IN (?, ?)' +
+        ' OR image_male_url IN (?, ?) OR image_female_url IN (?, ?) OR video_male_url IN (?, ?) OR video_female_url IN (?, ?))',
     );
-    expect(params).toEqual([PUBLIC_URL, LEGACY_URL, PUBLIC_URL, LEGACY_URL, PUBLIC_URL, LEGACY_URL, PUBLIC_URL, LEGACY_URL]);
+    expect(params).toEqual(Array(8).fill([PUBLIC_URL, LEGACY_URL]).flat());
   });
 
   it('matches an external URL only as itself', async () => {
     configure(PUBLIC);
     const { mediaReferenceClause } = await import('../domain/exerciseMediaReferences');
     const { params } = mediaReferenceClause('https://youtube.com/watch?v=abc');
-    expect(params).toEqual(Array(4).fill('https://youtube.com/watch?v=abc'));
+    expect(params).toEqual(Array(8).fill('https://youtube.com/watch?v=abc'));
   });
 });
 
