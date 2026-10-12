@@ -1,19 +1,24 @@
 import express, { Router } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { db } from '../infra/db';
 import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolvePlatformActor } from '../domain/auditActor';
+import { apiRateLimitKey } from '../domain/apiRateLimit';
+import { MEMBER_IMAGE_REJECTION_MESSAGES } from '../domain/memberImages';
+import { processMuscleImage } from '../domain/muscleImageProcessing';
 import {
   MUSCLE_IMAGE_COLUMNS,
-  MUSCLE_IMAGE_MASTER_MAX_BYTES,
   MUSCLE_IMAGE_MIME,
-  MUSCLE_IMAGE_THUMBNAIL_MAX_BYTES,
+  MUSCLE_IMAGE_UPLOAD_RATE_LIMIT_WINDOW_MS,
   MUSCLE_SEXES,
   MuscleSex,
   buildMuscleImageKey,
   buildMuscleImageThumbnailKey,
   isPlatformOwnedMuscleImageUrl,
   muscleImageFolderKeys,
+  muscleImageMaxBytes,
+  muscleImageUploadRateLimitMax,
   parseMuscleSex,
   validateMuscleImagePair,
 } from '../domain/muscleImages';
@@ -43,7 +48,7 @@ import {
  *  - Delete is a hard delete, refused with a 409 and the referencing count while
  *    any exercise link uses the muscle (ticket thread).
  *  - Since #1412 a muscle has a male and a female image, each a WebP pair (1080
- *    master + 256 thumbnail, validated from the bytes) at
+ *    master + 256 thumbnail) at
  *    `cordel/muscles/images/<name>-<sex>[-thumbnail].webp`. The sexes are
  *    uploaded, replaced and removed independently. The key follows the name, so a
  *    rename moves the objects: copy, re-point the row, then delete the old ones —
@@ -55,18 +60,26 @@ function platformActor(req: { superadminName?: string | null }) {
   return resolvePlatformActor(req.superadminName);
 }
 
-export const PLATFORM_MUSCLE_IMAGE_UPLOAD_PATH = /^\/platform\/muscles\/[^/]+\/image\/[^/]+\/?$/;
-
-export const platformMuscleImageBodyParser = express.json({
-  limit: Math.ceil((MUSCLE_IMAGE_MASTER_MAX_BYTES + MUSCLE_IMAGE_THUMBNAIL_MAX_BYTES) * 1.4),
+/**
+ * #1413 — the upload is the **one picture as picked**, a raw `image/*` body, and
+ * the server makes the 1080 master and the 256 thumbnail from it
+ * (`processMuscleImage()`), the Member photo's shape (#1449). It carries a budget
+ * of its own, in front of the parser, keyed on the signed-in person: decoding is
+ * the most expensive plain `POST` here.
+ */
+const muscleImageBodyParser = express.raw({
+  type: (req) => (req.headers['content-type'] ?? '').startsWith('image/'),
+  limit: muscleImageMaxBytes() + 64 * 1024,
 });
 
-function decodeBase64File(value: unknown): Buffer | null {
-  if (typeof value !== 'string' || value.length === 0) return null;
-  const payload = value.startsWith('data:') ? value.slice(value.indexOf(',') + 1) : value;
-  const buffer = Buffer.from(payload, 'base64');
-  return buffer.length > 0 ? buffer : null;
-}
+const muscleImageUploadLimiter = rateLimit({
+  windowMs: MUSCLE_IMAGE_UPLOAD_RATE_LIMIT_WINDOW_MS,
+  limit: muscleImageUploadRateLimitMax(),
+  keyGenerator: (req) => apiRateLimitKey(req.headers.authorization, ipKeyGenerator(req.ip ?? '')),
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many image uploads. Please try again later.' }),
+}) as unknown as express.RequestHandler;
 
 /** `Middle Back` → `middle_back`: the catalogue's slug shape. */
 export function slugFromMuscleName(name: string): string {
@@ -257,22 +270,21 @@ platformMusclesRouter.delete('/:id', requireSuperadmin, async (req, res, next) =
   } catch (err) { next(err); }
 });
 
-platformMusclesRouter.post('/:id/image/:sex', requireSuperadmin, async (req, res, next) => {
+platformMusclesRouter.post('/:id/image/:sex', requireSuperadmin, muscleImageUploadLimiter, muscleImageBodyParser, async (req, res, next) => {
   try {
     const sex = parseMuscleSex(req.params.sex);
     if (!sex) return res.status(400).json({ error: 'sex must be "male" or "female"' });
-    const image = decodeBase64File(req.body?.image);
-    const thumbnail = decodeBase64File(req.body?.thumbnail);
-    if (!image || !thumbnail) {
-      return res.status(400).json({
-        error: 'Both `image` (the 1080×1080 WebP master) and `thumbnail` (the 256×256 WebP thumbnail) are required, base64-encoded.',
-      });
+    const mime = req.headers['content-type']?.split(';')[0]?.trim() ?? '';
+    if (!mime.startsWith('image/')) {
+      return res.status(415).json({ error: 'Unsupported content type. Send the picture as an image/* body' });
     }
-    const problem = validateMuscleImagePair(image, thumbnail);
-    if (problem) {
-      return res.status(problem.rejection === 'too_large' ? 413 : 400).json({
-        error: problem.message, reason: problem.rejection, file: problem.kind,
-      });
+    // `req.body` is whatever a parser left there; only a Buffer is image bytes.
+    const original: unknown = req.body;
+    if (!Buffer.isBuffer(original)) return res.status(400).json({ error: 'Request body must be raw image bytes' });
+    if (original.length === 0) return res.status(400).json({ error: 'Request body is empty' });
+    const maxBytes = muscleImageMaxBytes();
+    if (original.length > maxBytes) {
+      return res.status(413).json({ error: `Image exceeds ${Math.floor(maxBytes / (1024 * 1024))} MB limit` });
     }
     if (!isStorageConfigured()) {
       const missingConfig = getMissingStorageConfigKeys();
@@ -283,6 +295,22 @@ platformMusclesRouter.post('/:id/image/:sex', requireSuperadmin, async (req, res
     }
     const muscle = await loadMuscle(String(req.params.id));
     if (!muscle) return res.status(404).json({ error: 'Muscle not found' });
+
+    // Nothing is uploaded and nothing is written on a refusal, so the image the
+    // muscle already has stays exactly as it was.
+    const processed = await processMuscleImage(original);
+    if ('rejection' in processed) {
+      return res.status(400).json({
+        error: MEMBER_IMAGE_REJECTION_MESSAGES[processed.rejection],
+        reason: processed.rejection,
+      });
+    }
+    const { image, thumbnail } = processed;
+    const problem = validateMuscleImagePair(image, thumbnail);
+    if (problem) {
+      logger.error({ problem, muscleId: muscle.id }, 'Muscle image processing produced an invalid file');
+      return res.status(500).json({ error: 'The image could not be processed' });
+    }
 
     const cols = MUSCLE_IMAGE_COLUMNS[sex];
     const previous = [(muscle as any)[cols.image] as string | null, (muscle as any)[cols.thumbnail] as string | null];
