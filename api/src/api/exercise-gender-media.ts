@@ -1,37 +1,43 @@
-// Gender-specific exercise media routes (#1420 stage 1).
+// Gender-specific exercise media routes (#1420).
 //
 // One factory serves both exercise routers, because a Gym Exercise and a Base
 // Exercise differ only in who may write, which folder the objects go in and whose
 // objects a sweep may delete:
 //
-//   POST   /:id/image/:gender    {image, thumbnail}              1080 + 256 WebP
+//   POST   /:id/image/:gender    {image}          any JPEG/PNG/WebP/GIF
 //   DELETE /:id/image/:gender
-//   POST   /:id/video/:gender    {video, preview, preview_thumbnail}
+//   POST   /:id/video/:gender    {video, frame}   an MP4 and one frame captured from it
 //   DELETE /:id/video/:gender
 //
-// The **browser** produces every WebP file (the answer on the ticket: no new
-// server dependency) and the server validates each file from its own bytes, never
-// from the Content-Type header or a file name. Nothing is uploaded and nothing is
-// written until every file passes, so an invalid upload cannot disturb the media
-// already there. Only the master reference is stored; the companions are derived
-// from it (`domain/exerciseGenderMedia.ts`). A video's preview objects live beside
-// the video under `videos/` and never touch the exercise's image columns.
+// The **server** makes every WebP file (`domain/exerciseImageProcessing.ts`):
+// the client sends the picture it picked as it is, base64 in one JSON body, and
+// the server judges it from its decoded bytes — never from the Content-Type
+// header or a file name — contains it in 1080x1080 with transparent padding and
+// derives the 256x256 thumbnail from that master. `sharp` cannot decode MP4, so a
+// video upload carries a `frame` the browser captured; it is processed like an
+// image upload and stored as the video's preview under `videos/`. Nothing is
+// uploaded and nothing is written until every file is valid, so an invalid upload
+// cannot disturb the media already there. Only the master reference is stored;
+// the companions are derived from it (`domain/exerciseGenderMedia.ts`). A video's
+// preview objects live beside the video and never touch the image columns.
 //
 // The key comes from the row's id and name and the gender in the URL, never from
 // anything else the request carries, so nothing a client sends can reach another
 // gym's folder or the platform's.
 
 import express, { Request, RequestHandler, Response, Router } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { db } from '../infra/db';
 import { recordAudit } from '../infra/audit';
 import { getTenantContext } from '../infra/tenantContext';
+import { apiRateLimitKey } from '../domain/apiRateLimit';
 import { resolvePlatformActor, resolveRequestActor } from '../domain/auditActor';
 import { mediaIdentity, mediaReferenceClause } from '../domain/exerciseMediaReferences';
 import {
-  EXERCISE_GENDER_IMAGE_MASTER_MAX_BYTES,
   EXERCISE_GENDER_IMAGE_MIME,
-  EXERCISE_GENDER_IMAGE_THUMBNAIL_MAX_BYTES,
   EXERCISE_GENDER_MEDIA_COLUMNS,
+  EXERCISE_IMAGE_REJECTION_MESSAGES,
+  EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_WINDOW_MS,
   EXERCISE_GENDER_VIDEO_MIME,
   ExerciseGender,
   baseExerciseGenderFolderKeys,
@@ -44,13 +50,15 @@ import {
   isGymOwnedGenderMediaUrl,
   isPlatformOwnedGenderMediaUrl,
   parseExerciseGender,
+  exerciseMediaUploadRateLimitMax,
+  genderMediaRequestMaxBytes,
   thumbnailKeyFor,
-  validateGenderImagePair,
-  validateGenderVideoTriple,
+  validateGenderImageInput,
+  validateGenderVideo,
   videoObjectUrls,
   videoPreviewKeyFor,
 } from '../domain/exerciseGenderMedia';
-import { exerciseVideoMaxBytes } from '../domain/exerciseVideos';
+import { processExerciseImage } from '../domain/exerciseImageProcessing';
 import { logger } from '../lib/logger';
 import {
   StorageOperationError,
@@ -72,15 +80,26 @@ export const EXERCISE_GENDER_MEDIA_UPLOAD_PATH = /^\/(?:platform\/)?exercises\/[
 
 /**
  * Mounted in `app.ts` before the global `express.json()` (whose 100 kB default an
- * MP4 or a pair of WebP files blows through). The ceiling is the largest request
- * either kind carries — the video, its 1080 preview and its thumbnail — plus
- * base64's ~4/3 overhead; the per-file checks give each file its own message.
+ * MP4 or a camera original blows through). The ceiling is the largest request
+ * either kind carries — the video plus one picture — with base64's ~4/3 overhead;
+ * the per-file checks give each file its own message.
  */
-export const exerciseGenderMediaBodyParser = express.json({
-  limit: Math.ceil(
-    (exerciseVideoMaxBytes() + EXERCISE_GENDER_IMAGE_MASTER_MAX_BYTES + EXERCISE_GENDER_IMAGE_THUMBNAIL_MAX_BYTES) * 1.4,
-  ),
-});
+export const exerciseGenderMediaBodyParser = express.json({ limit: genderMediaRequestMaxBytes() });
+
+/**
+ * A budget of its own for the upload routes, in front of the body parser so a
+ * flooded request is refused before a byte is buffered. Keyed on the signed-in
+ * person exactly like the global limiter (`apiRateLimitKey()`, #1395) — never the
+ * address, which behind the two Next proxies would be everybody.
+ */
+export const exerciseGenderMediaUploadRateLimit = rateLimit({
+  windowMs: EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_WINDOW_MS,
+  limit: exerciseMediaUploadRateLimitMax(),
+  keyGenerator: (req) => apiRateLimitKey(req.headers.authorization, ipKeyGenerator(req.ip ?? '')),
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many media uploads. Please try again later.' }),
+}) as unknown as RequestHandler;
 
 function decodeBase64File(value: unknown): Buffer | null {
   if (typeof value !== 'string' || value.length === 0) return null;
@@ -285,23 +304,38 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
     );
   }
 
+  /** Both WebP files for a request's picture, or the response that says why not. */
+  async function processPicture(res: Response, body: unknown, file: 'image' | 'frame') {
+    const problem = validateGenderImageInput(body, file);
+    if (problem) return rejected(res, problem);
+    const processed = await processExerciseImage(body as Buffer);
+    if ('rejection' in processed) {
+      res.status(400).json({
+        error: EXERCISE_IMAGE_REJECTION_MESSAGES[processed.rejection],
+        reason: processed.rejection,
+        file,
+      });
+      return null;
+    }
+    return processed;
+  }
+
   router.post('/:id/image/:gender', guard, async (req, res, next) => {
     try {
       const gender = badGender(req, res);
       if (!gender) return;
-      const image = decodeBase64File(req.body?.image);
-      const thumbnail = decodeBase64File(req.body?.thumbnail);
-      if (!image || !thumbnail) {
-        return res.status(400).json({
-          error: 'Both `image` (the 1080×1080 WebP master) and `thumbnail` (the 256×256 WebP thumbnail) are required, base64-encoded.',
-        });
+      const original = decodeBase64File(req.body?.image);
+      if (!original) {
+        return res.status(400).json({ error: '`image` (the picture, base64-encoded) is required.' });
       }
-      const problem = validateGenderImagePair(image, thumbnail);
-      if (problem) return rejected(res, problem);
       if (storageUnconfigured(res)) return;
 
+      // The row, the gym and the storage prefix are judged before any CPU is spent
+      // decoding a picture nobody may store.
       const ctx = await load(req, res, true, 'images');
       if (!ctx) return;
+      const processed = await processPicture(res, original, 'image');
+      if (!processed) return;
       const { exercise } = ctx;
       const col = column(gender, 'image');
       const previous = (exercise as any)[col] as string | null;
@@ -313,8 +347,8 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
 
       const failure = await uploadAll(
         [
-          { key: imageKey, mime: EXERCISE_GENDER_IMAGE_MIME, body: image },
-          { key: thumbnailKeyFor(imageKey), mime: EXERCISE_GENDER_IMAGE_MIME, body: thumbnail },
+          { key: imageKey, mime: EXERCISE_GENDER_IMAGE_MIME, body: processed.image },
+          { key: thumbnailKeyFor(imageKey), mime: EXERCISE_GENDER_IMAGE_MIME, body: processed.thumbnail },
         ],
         scope === 'platform' ? baseExerciseGenderFolderKeys('image') : gymExerciseGenderFolderKeys(ctx.folderPrefix as string, 'image'),
         ctx,
@@ -366,20 +400,20 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
       const gender = badGender(req, res);
       if (!gender) return;
       const video = decodeBase64File(req.body?.video);
-      const preview = decodeBase64File(req.body?.preview);
-      const previewThumbnail = decodeBase64File(req.body?.preview_thumbnail);
-      if (!video || !preview || !previewThumbnail) {
+      const frame = decodeBase64File(req.body?.frame);
+      if (!video || !frame) {
         return res.status(400).json({
-          error:
-            '`video` (the MP4), `preview` (a 1080×1080 WebP frame) and `preview_thumbnail` (the 256×256 WebP thumbnail) are required, base64-encoded.',
+          error: '`video` (the MP4) and `frame` (a picture captured from it) are required, base64-encoded.',
         });
       }
-      const problem = validateGenderVideoTriple(video, preview, previewThumbnail);
-      if (problem) return rejected(res, problem);
+      const videoProblem = validateGenderVideo(video);
+      if (videoProblem) return rejected(res, videoProblem);
       if (storageUnconfigured(res)) return;
 
       const ctx = await load(req, res, true, 'videos');
       if (!ctx) return;
+      const processed = await processPicture(res, frame, 'frame');
+      if (!processed) return;
       const { exercise } = ctx;
       const col = column(gender, 'video');
       const previous = (exercise as any)[col] as string | null;
@@ -393,8 +427,8 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
       const failure = await uploadAll(
         [
           { key: videoKey, mime: EXERCISE_GENDER_VIDEO_MIME, body: video },
-          { key: previewKey, mime: EXERCISE_GENDER_IMAGE_MIME, body: preview },
-          { key: thumbnailKeyFor(previewKey), mime: EXERCISE_GENDER_IMAGE_MIME, body: previewThumbnail },
+          { key: previewKey, mime: EXERCISE_GENDER_IMAGE_MIME, body: processed.image },
+          { key: thumbnailKeyFor(previewKey), mime: EXERCISE_GENDER_IMAGE_MIME, body: processed.thumbnail },
         ],
         scope === 'platform' ? baseExerciseGenderFolderKeys('video') : gymExerciseGenderFolderKeys(ctx.folderPrefix as string, 'video'),
         ctx,
