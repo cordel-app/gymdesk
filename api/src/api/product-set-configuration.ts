@@ -449,6 +449,23 @@ export async function materialiseScheduledEvents(tx: Tx, input: {
         [productSetId, event.date]);
     if (existing.length > 0) continue;
 
+    // #1521: a period the version's initial payment already covers is not an
+    // obligation again. The initial event only carries a schedule for the plan's
+    // own key, so a recurring line paid up front is recognised by its lines:
+    // the same Product, on the same date, in a payment already recorded.
+    const productIds = event.lines.map((l) => l.product_id).filter((id): id is number => id != null);
+    if (event.scheduleKey !== PLAN_SCHEDULE_KEY && productIds.length > 0) {
+      const { rows: paidUp } = await tx.query(
+        `SELECT be.id FROM billing_events be
+           JOIN billing_event_lines bl ON bl.billing_event_id = be.id
+          WHERE be.gym_id = ? AND be.product_set_id = ? AND be.event_type = 'payment_recorded'
+            AND be.is_scheduled = 0 AND be.billing_date = ?
+            AND bl.product_id IN (${productIds.map(() => '?').join(',')})
+          LIMIT 1`,
+        [gymId, productSetId, event.date, ...productIds]);
+      if (paidUp.length > 0) continue;
+    }
+
     const { insertId } = await tx.query(
       `INSERT INTO billing_events
          (gym_id, member_id, event_type, source, amount, product_set_id, schedule_id,

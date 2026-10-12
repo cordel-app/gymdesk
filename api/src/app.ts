@@ -5,6 +5,7 @@ import swaggerUi from 'swagger-ui-express';
 import { verifyToken } from '@clerk/backend';
 import { Request, Response, NextFunction } from 'express';
 import { membersRouter } from './api/members';
+import { memberProductPurchasesRouter } from './api/member-product-purchases';
 import { bookingsRouter } from './api/bookings';
 import { userMembershipsRouter } from './api/user-memberships';
 import { productSetsRouter, meProductSetsRouter } from './api/product-sets-router';
@@ -336,6 +337,7 @@ app.use('/members/:memberId/centers', requireAuth(), tenantContext, centerContex
 // #647 stage 1: the Member side of the Professional Service link. Gated on the
 // MEMBERS module (it reads one Member's entitlements) but on the Professional
 // Services feature flag, since it has nothing to return when that is off.
+app.use('/members/:memberId/product-purchases', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('membership.members'), memberProductPurchasesRouter);
 app.use('/members/:memberId/professional-services', requireAuth(), tenantContext, requireModuleAccess('MEMBERS'), requireFeatureEnabled('organization.professional_services'), memberProfessionalServicesRouter);
 // #647 stage 2: the weekly Personal Training availability projection. Same
 // gating as stage 1 — it is a read of one Member's slots, and it has nothing

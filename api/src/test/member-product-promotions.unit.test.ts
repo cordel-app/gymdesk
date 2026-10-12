@@ -233,14 +233,16 @@ describe('the snapshot (§7, §13, §14, §15)', () => {
   });
 
   it('is written in the purchase\'s own transaction (§7, §10)', () => {
-    expect(purchaseSrc).toContain('writePurchasePromotion(tx,');
+    expect(purchaseSrc).toContain('writePurchasePromotionStep(tx,');
   });
 
   it('is re-resolved server-side at purchase time, never trusted from the client', () => {
-    expect(purchaseSrc).toContain('resolvePurchasePromotion');
+    // #1521: every Promotion is re-read through the offer loader and the whole
+    // stack is re-priced by the one pure module.
+    expect(purchaseSrc).toContain('priceProductPurchase(');
     // The one refusal: a Promotion that lapsed between the quote and the Buy.
     expect(purchaseSrc).toContain('throw new PromotionRefused()');
-    expect(ioSrc).toContain('loadPromotionOffers(gymId, memberId, [product])');
+    expect(purchaseSrc).toContain('loadPromotionOffers(input.gymId, input.memberId');
   });
 
   it('is read back without touching the live Promotion (#635 §16)', () => {
@@ -250,7 +252,11 @@ describe('the snapshot (§7, §13, §14, §15)', () => {
     expect(statementFrom(ioSrc, 'FROM member_products_oneoff_promotion_snapshot mpp')).not.toMatch(/JOIN/);
     // Nor does the purchase read touch the live Product: every column of a
     // purchase is its own snapshot (migration 228).
-    expect(statementFrom(ioSrc, 'FROM member_products_oneoff_snapshot mp')).not.toMatch(/JOIN/);
+    // #1521: the one join is the purchase's *own* payment request (tax, status
+    // and billing event), never `products`, `promotions` or `tax_rates`.
+    const purchaseRead = statementFrom(ioSrc, 'FROM member_products_oneoff_snapshot mp');
+    expect([...purchaseRead.matchAll(/JOIN\s+(\w+)/g)].map((m) => m[1])).toEqual(['payment_requests']);
+    expect(purchaseRead).toContain('mp.payment_request_id');
     expect(membersRouterSrc).toContain('loadMemberPurchases(gymId, memberId)');
   });
 
@@ -405,9 +411,18 @@ describe('the Admin half (§11, §12, §13)', () => {
     // In the Promotion's own voice (§3), which is the namespace those labels
     // were written in — never a second vocabulary in `members`.
     expect(src).toContain("useTranslations('promotions')");
-    // Read-only: a purchase is money that moved and no route edits one.
-    expect(src).not.toContain('<button');
+    // A purchase is money that moved and no route edits one. #1521: the card's
+    // buttons are the collapse toggle and `+ Add Product` (which opens the
+    // inline form that *creates* a new purchase); the list itself carries no
+    // control and the card writes nothing.
     expect(src).not.toContain('<select');
     expect(src).not.toContain('<input');
+    expect(src).not.toMatch(/method:\s*'(POST|PUT|PATCH|DELETE)'/);
+    expect(src).not.toContain('useApiClient');
+    expect(src).toContain('<AddProductPurchase');
+    // The form decides no price: it asks the server's quote on every change.
+    const form = read(REPO, 'apps', 'admin', 'src', 'app', '[locale]', 'members', 'AddProductPurchase.tsx');
+    expect(form).toContain('/quote');
+    expect(form).not.toMatch(/\*\s*\(\s*1\s*-/);
   });
 });
