@@ -1,15 +1,17 @@
 {bucket}/
 ├── cordel/
 │   ├── nutrition
-│   │   └── {food_id}-{food_name}.png                                      — 1080 × 1080 px
+│   │   ├── {food_id}-{food_name}.webp                              — 1080 × 1080 px
+│   │   └── {food_id}-{food_name}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── goals/
-│   │   └── {personal_goal_id}-{personnal_goal_name}.png                    — 1080 × 1080 px
+│   │   ├── {goal_id}-{goal_name}.webp                              — 1080 × 1080 px
+│   │   └── {goal_id}-{goal_name}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── muscles/
 │   │   └── images/
 │   │       ├── {muscle_name}-male.webp                              — 1080 × 1080 px
-│   │       ├── {muscle_name}-male-thumbnail.webp                  — 256 × 256 px
+│   │       ├── {muscle_name}-male-thumbnail.webp                    — 256 × 256 px
 │   │       ├── {muscle_name}-female.webp                            — 1080 × 1080 px
 │   │       └── {muscle_name}-female-thumbnail.webp                  — 256 × 256 px
 │   │
@@ -46,14 +48,16 @@
 └── gyms/
     └── {gym_id}-{sanitized_gym_name}/
         ├── nutrition
-        │   └── {food_id}-{food_name}.png                                      — 1080 × 1080 px
+        │   ├── {food_id}-{food_name}.webp                                    — 1080 × 1080 px
+        │   └── {food_id}-{food_name}-thumbnail.webp                          — 256 × 256 px
         │        
         ├── goals
-        │   └── {personal_goal_id}-{personnal_goal_name}.png                  — 1080 × 1080 px
+        │   ├── {goal_id}-{goal_name}-.webp                                   — 1080 × 1080 px
+        │   └── {goal_id}-{goal_name}-thumbnail.webp                          — 256 × 256 px
         │        
         ├── activities
-        │   ├── {activity_id}-{activity_name}.png                             — 1080 × 1080 px
-        │   └── event-{event_id}-{activity_name}.png                          — 1080 × 1080 px (a single Calendar Event's own image, #1382)
+        │   ├── {activity_id}-{activity_name}.webp                            — 1080 × 1080 px
+        │   └── {activity_id}-{activity_name}-thumbnail.webp                  — 256 × 256 px 
         │        
         ├── members
         │   ├── {member_id}-{member_name}.webp                                — 1080 × 1080 px
