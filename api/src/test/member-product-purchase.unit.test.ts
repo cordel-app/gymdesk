@@ -340,7 +340,13 @@ describe('a purchase is not a membership cycle (the money paths)', () => {
   it('the hosted page words a one-off purchase as one', () => {
     const checkout = read(REPO, 'apps', 'payment', 'js', 'checkout.js');
     expect(checkout).toContain("data.purpose === 'product_purchase'");
-    expect(checkout).toContain('Es un pago único.');
+    // #1480: the sentence is the page's dictionary's, in every language, and
+    // the purchase branch asks for its own key rather than the fee's.
+    expect(checkout).toContain("payT('consent_purchase'");
+    const i18n = read(REPO, 'apps', 'payment', 'js', 'i18n.js');
+    for (const once of ['Es un pago único.', 'This is a one-off payment.', 'És un pagament únic.']) {
+      expect(i18n).toContain(once);
+    }
     const page = read(REPO, 'api', 'src', 'api', 'payment-page.ts');
     expect(page).toContain('PRODUCT_PURCHASE_SOURCE');
     // An INNER JOIN on the assignment answered "token not found" for every

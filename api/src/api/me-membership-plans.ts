@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { getRequestLocale } from '../infra/locale';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
 import { requireFeatureEnabled } from '../infra/featureFlags';
@@ -288,6 +289,7 @@ meMembershipPlansRouter.post('/:id/assign', async (req, res, next) => {
       checkout = await createProductSetCheckout({
         gymId, productSetId: setId, memberId, memberEmail: emailRows[0]?.email ?? '',
         startsAt, charge: charge as NonNullable<typeof charge>, actor: actor.name,
+        requestLocale: getRequestLocale(req),
       });
     }
 

@@ -1,5 +1,12 @@
 (function () {
-  var EXPIRED_MSG = 'Este enlace de pago ha expirado o no es válido';
+  // Static text and <html lang> follow the path's locale (#1480).
+  document.documentElement.lang = payLocale();
+  document.title = payT('page_title');
+  document.getElementById('page-title').textContent = payT('title_membership');
+  document.getElementById('consent-label').textContent = payT('consent_checkbox');
+  document.getElementById('pay-button').textContent = payT('pay_button');
+
+  var EXPIRED_MSG = payT('expired');
 
   var errorEl = document.getElementById('error');
   var checkoutEl = document.getElementById('checkout');
@@ -34,7 +41,7 @@
       window.location.href = url;
       return;
     }
-    window.location.href = '/error.html';
+    window.location.href = payLocale() === PAY_FALLBACK_LOCALE ? '/error.html' : '/' + payLocale() + '/error.html';
   }
 
   // #489 stage 4: paint the gym's theme colors onto the CSS variables
@@ -102,6 +109,7 @@
     // authorisation, and the member is buying one locker.
     var isCardUpdate = data.purpose === 'card_update';
     var isPurchase = data.purpose === 'product_purchase';
+    var gym = data.gymName || payT('gym_fallback');
 
     applyThemeColors(data.themeColors);
 
@@ -119,30 +127,29 @@
     currencyEl.textContent = '';
 
     if (isCardUpdate) {
-      pageTitleEl.textContent = 'Actualizar tarjeta';
+      pageTitleEl.textContent = payT('title_card_update');
       amountRowEl.hidden = true;
-      payButtonEl.textContent = 'Guardar tarjeta';
-      consentTextEl.textContent =
-        'No se realizará ningún cargo ahora. Al guardar esta tarjeta autorizas a ' +
-        (data.gymName || 'el gimnasio') + ' a cargar en ella tu cuota de membresía ' +
-        billingIntervalLabel(data.billingInterval) +
-        ' hasta que canceles tu membresía.';
+      payButtonEl.textContent = payT('save_card_button');
+      consentTextEl.textContent = payT('consent_card_update', {
+        gym: gym,
+        interval: billingIntervalLabel(data.billingInterval),
+      });
     } else if (isPurchase) {
       amountRowEl.hidden = false;
       amountEl.textContent = formatAmount(data.amount, data.currency);
-      consentTextEl.textContent =
-        'Al completar este pago autorizas a ' + (data.gymName || 'el gimnasio') +
-        ' a cargar ' + formatAmount(data.amount, data.currency) + ' en esta tarjeta' +
-        (data.itemName ? ' por ' + data.itemName : '') +
-        '. Es un pago único.';
+      consentTextEl.textContent = payT('consent_purchase', {
+        gym: gym,
+        amount: formatAmount(data.amount, data.currency),
+        item: data.itemName ? payT('consent_purchase_item', { item: data.itemName }) : '',
+      });
     } else {
       amountRowEl.hidden = false;
       amountEl.textContent = formatAmount(data.amount, data.currency);
-      consentTextEl.textContent =
-        'Al completar este pago autorizas a ' + (data.gymName || 'el gimnasio') +
-        ' a cargar ' + formatAmount(data.amount, data.currency) +
-        ' ' + billingIntervalLabel(data.billingInterval) +
-        ' a esta tarjeta hasta que canceles tu membresía.';
+      consentTextEl.textContent = payT('consent_membership', {
+        gym: gym,
+        amount: formatAmount(data.amount, data.currency),
+        interval: billingIntervalLabel(data.billingInterval),
+      });
     }
 
     checkoutEl.hidden = false;
@@ -155,7 +162,7 @@
 
     cardInput = monei.CardInput({
       paymentId: paymentId,
-      language: 'es',
+      language: payLocale(),
       onChange: function (event) {
         if (event.isTouched && event.error) {
           cardInputEl.classList.add('is-invalid');
@@ -206,7 +213,7 @@
         redirect(koUrl);
       }
     } catch (err) {
-      cardErrorEl.textContent = err && err.message ? err.message : 'No se pudo completar el pago.';
+      cardErrorEl.textContent = err && err.message ? err.message : payT('payment_failed');
       payButtonEl.disabled = false;
     }
   });

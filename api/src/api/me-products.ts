@@ -22,6 +22,7 @@ import { SYSTEM_ACTOR } from '../domain/auditActor';
 //    resolve the caller through `resolveMemberId()` and every statement here is
 //    constrained on `(gym_id, member_id)`.
 
+import { payerCheckoutUrl } from './checkout-url';
 import crypto from 'crypto';
 import { db, type Tx } from '../infra/db';
 import { getPaymentProvider } from '../payments';
@@ -197,6 +198,8 @@ export interface StartPurchaseInput {
   memberName: string;
   memberEmail: string;
   productId: number;
+  /** #1480: the member's own request language (the payer is the caller). */
+  requestLocale?: string | null;
   /** #1118 §5 — the Promotion the member applied, if they applied one. */
   promotionId?: number | null;
 }
@@ -400,7 +403,9 @@ export async function startProductPurchase(
 
     return {
       purchaseId,
-      checkoutUrl: `${process.env.PAYMENT_PAGE_URL ?? 'https://pay.vdicube.com'}/checkout?token=${pageToken}`,
+      checkoutUrl: await payerCheckoutUrl({
+        gymId: input.gymId, memberId: input.memberId, pageToken, requestLocale: input.requestLocale,
+      }),
       amount: snapshot.amount,
       currency: snapshot.currency,
     };

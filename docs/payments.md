@@ -144,7 +144,14 @@ Both then do exactly the same thing:
    decimal (`fee.toFixed(2)`), a fresh `page_token` (UUID v4) and
    `page_token_expires = now + 10 minutes`.
 5. **Answer** `201 { id, checkoutUrl }`, where `checkoutUrl` is
-   `${PAYMENT_PAGE_URL}/checkout?token=<page_token>`.
+   `${PAYMENT_PAGE_URL}/<locale>/checkout?token=<page_token>` (#1480): the locale is the
+   **payer's** — their stored `preferred_locale` (#1039), else the language of their own
+   request, else the base locale — never the language of the staff member who raised it.
+   `buildCheckoutUrl()` (`api/src/domain/checkoutUrl.ts`) is the one place the URL is
+   spelled and `payerCheckoutUrl()` (`api/src/api/checkout-url.ts`) the one place the
+   language is decided; the page reads the locale from the path (`apps/payment/js/i18n.js`)
+   and `/checkout` without one still renders, in Spanish, for links already in flight.
+   The return URLs (`PAYMENT_OK_URL` / `PAYMENT_KO_URL`) stay locale-less (§A4, #1081).
 
 `user_membership_id` is optional on the member route: since #956 (migration 213) a member
 holds **one** live Membership Plan, so there is only ever one candidate and the member is
