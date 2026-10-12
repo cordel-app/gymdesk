@@ -94,6 +94,8 @@ interface BillingEventDetails {
   modified_by: string | null;
   next_payment_date: string | null;
   failure_reason: string | null;
+  /** #1474: the event's priced components, read-only. */
+  lines?: { id: number; kind: string; item_name: string; quantity: number; unit_amount: string | null; promotion_name: string | null; amount: string | null }[];
   can_retry: boolean;
   can_record_manual_payment: boolean;
   /** #787: the event represents money received, so a receipt may be issued for it. */
@@ -418,6 +420,41 @@ function ExpandedRow({
                 </button>
               )}
             </div>
+          </>
+        )}
+
+        {/* ── Billing event lines (#1474, read-only) ── */}
+        {details?.lines && details.lines.length > 0 && (
+          <>
+            <p style={{ margin: '0 0 8px', fontWeight: 600, fontSize: 13 }}>{t('billing_events_page.lines_heading')}</p>
+            <table style={{ borderCollapse: 'collapse', fontSize: 13, width: '100%', marginBottom: 16 }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid #e5e7eb' }}>
+                  {(['col_line_item', 'col_line_quantity', 'col_line_unit', 'col_line_total'] as const).map((k) => (
+                    <th key={k} style={{ padding: '4px 10px', textAlign: 'left', fontWeight: 600, color: '#374151' }}>
+                      {t(`billing_events_page.${k}`)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {details.lines.map((l) => (
+                  <tr key={l.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
+                    <td style={{ padding: '6px 10px' }}>
+                      {l.item_name}
+                      {l.promotion_name && <span style={{ color: '#6b7280' }}> ({l.promotion_name})</span>}
+                    </td>
+                    <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>{l.quantity}</td>
+                    <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>
+                      {l.unit_amount != null ? `${fmtAmount(l.unit_amount)} ${details.currency ?? ''}` : '—'}
+                    </td>
+                    <td style={{ padding: '6px 10px', fontVariantNumeric: 'tabular-nums' }}>
+                      {l.amount != null ? `${fmtAmount(l.amount)} ${details.currency ?? ''}` : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </>
         )}
 
