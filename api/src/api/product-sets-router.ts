@@ -199,8 +199,15 @@ productSetsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), asyn
   const blocking = await loadEditLock(gymId, Number(set.owner_member_id), todayUtc());
   if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
 
-  const startsAt = (set.starts_at instanceof Date ? set.starts_at.toISOString() : String(set.starts_at)).slice(0, 10);
-  const charge = await initialCharge(gymId, Number(set.id), startsAt);
+  // #1521: a version that replaces a running one owes only what is new, dated
+  // today — never the plan's first cycle again.
+  const nextVersion = set.previous_product_set_id != null;
+  const startsAt = nextVersion
+    ? todayUtc()
+    : (set.starts_at instanceof Date ? set.starts_at.toISOString() : String(set.starts_at)).slice(0, 10);
+  const charge = await initialCharge(gymId, Number(set.id), startsAt, db, {
+    previousProductSetId: nextVersion ? Number(set.previous_product_set_id) : null,
+  });
   if (!charge || charge.amount <= 0) {
     return res.status(409).json({ error: 'nothing_to_pay', message: 'No initial payment is owed; activate the ProductSet instead.' });
   }

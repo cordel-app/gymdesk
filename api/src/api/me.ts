@@ -55,7 +55,9 @@ import {
   memberProductCatalogue,
   startProductPurchase,
   PromotionRefused,
+  PricingRefused,
 } from './me-products';
+import { pricingRefusalResponse } from '../domain/productPurchasePricing';
 import { purchaseBlockResponse } from '../domain/memberProductPurchase';
 import { parseProfessionalServiceFilter } from '../domain/memberProductCatalogue';
 import {
@@ -2591,6 +2593,25 @@ meRouter.post(
         }
       }
 
+      // #1521 — several stackable Promotions may be applied; the direct discount
+      // is an Admin's tool and a member's request naming one is refused, not
+      // ignored, so a client bug cannot look like a working discount.
+      const body = req.body ?? {};
+      if (body.direct_discount_percent != null && body.direct_discount_percent !== '' && Number(body.direct_discount_percent) !== 0) {
+        return res.status(403).json({
+          error: 'direct_discount_not_allowed',
+          message: 'A direct discount can only be applied by an Admin',
+        });
+      }
+      let promotionIds: number[] | undefined;
+      if (body.promotion_ids != null) {
+        if (!Array.isArray(body.promotion_ids)
+          || !body.promotion_ids.every((v: unknown) => Number.isInteger(Number(v)) && Number(v) > 0)) {
+          return res.status(400).json({ error: 'Invalid promotion_ids' });
+        }
+        promotionIds = body.promotion_ids.map(Number);
+      }
+
       const result = await startProductPurchase({
         gymId,
         memberId,
@@ -2598,6 +2619,7 @@ meRouter.post(
         memberEmail: member.email,
         productId,
         promotionId,
+        promotionIds,
         requestLocale: getRequestLocale(req),
       });
       req.log.info(
@@ -2608,6 +2630,10 @@ meRouter.post(
     } catch (err: any) {
       if (err instanceof PurchaseRefused) {
         const { status, ...body } = purchaseBlockResponse(err.block);
+        return res.status(status).json(body);
+      }
+      if (err instanceof PricingRefused) {
+        const { status, ...body } = pricingRefusalResponse(err.refusal);
         return res.status(status).json(body);
       }
       if (err instanceof PromotionRefused) {

@@ -31,12 +31,8 @@ import {
 } from './MemberPurchasedProducts';
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
-import {
-  CurrentProductSetCard,
-  ProductSetForecast,
-  ProductSetProducts,
-  useProductSetDetail,
-} from './MemberProductSet';
+import { ProductSetForecast, useProductSetDetail } from './MemberProductSet';
+import { ProposedSetForecast } from './ProposedSetForecast';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
@@ -99,6 +95,8 @@ export function MemberExpandedRow({
   accountVersion = 0,
   editing,
   canManageTraining,
+  canWriteMembers,
+  canManagePackages,
   canManagePersonalGoals,
   canManageNutrition,
   onEditProfile,
@@ -132,6 +130,8 @@ export function MemberExpandedRow({
    */
   editing: boolean;
   canManageTraining: boolean;
+  /** Members write access: gates `+ Add Product` (#1521). */
+  canWriteMembers: boolean;
   canManagePackages: boolean;
   /**
    * #948 §4: write access to the PERSONAL GOALS section — NUTRITION, read
@@ -177,6 +177,8 @@ export function MemberExpandedRow({
   // #1118 §12 — the Products this Member bought from the Members App, each with
   // the Promotion snapshot it was bought under.
   const [purchasedProducts, setPurchasedProducts] = useState<PurchasedProduct[]>([]);
+  // #1521: the Draft ProductSet proposed from `+ Add Product`, if any.
+  const [proposalSetId, setProposalSetId] = useState<number | null>(null);
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -240,6 +242,17 @@ export function MemberExpandedRow({
       // Leave the last known assignment on screen: an empty list would read as
       // "no centers", which is a different statement from "could not load".
     }
+  }
+
+  /** #1521: a purchase or a version changed — re-read what the Products tab shows. */
+  async function reloadProducts() {
+    try {
+      const purchases = await apiFetch<{ items: PurchasedProduct[] }>(`/members/${memberId}/products`);
+      setPurchasedProducts(purchases.items ?? []);
+    } catch {
+      // Keep the last known list rather than an empty one that reads as "none".
+    }
+    await reloadConfiguration();
   }
 
   // #634 §12: every change in the MEMBERSHIP PLANS or ADDITIONAL PRODUCTS
@@ -427,22 +440,7 @@ export function MemberExpandedRow({
 
           {/* 1. MEMBERSHIP PLANS — the Member's assigned plans, Active and Past,
               drawn with the Assigned Plans page's own table (#1051). */}
-          {/* #1463 — the current ProductSet's metadata, directly in the layout. */}
-          <Section label={t('members.section_product_set')} divider={false}>
-            {/* #1490 — the card titled Recurring, with Membership Plan, Recurring
-                Products and Past Product Sets inside it. */}
-            <CurrentProductSetCard
-              set={configuration.current_product_set}
-              products={productSetDetail.products}
-              loading={productSetDetail.loading}
-              error={productSetDetail.error}
-              pastSets={configuration.past_product_sets}
-              canWrite={isAdmin}
-              onEdit={() => document.getElementById('member-membership-plans-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            />
-          </Section>
-
-          <Section label={t('members.section_membership_plans')}>
+          <Section label={t('members.section_membership_plans')} divider={false}>
             <span id="member-membership-plans-section" />
             <MemberMembershipPlans
               memberId={memberId}
@@ -471,37 +469,42 @@ export function MemberExpandedRow({
             />
           </Section>
 
-          {/* 2. PRODUCTS & SERVICES (#1118 §11, renamed from *Additional
-              Products*) — the Admin representation of everything the Member
-              holds beside their plan: the Products they bought from the Members
-              App (§12, read-only — a purchase is money that moved) and the
-              recurring Products staff attach to an Assigned Plan, which are
-              independent from plans and promotions (#634 §4). #957: the section
-              reads in both modes; the services editor's `+ Add Product` button
-              is Edit mode's alone. */}
-          {/* #1463 — the current ProductSet's Products, grouped; read-only. Changes
-              go through the ProductSet workflow (Save & Pay), never as purchases. */}
-          <Section label={t('members.section_one_off_products')}>
-            <ProductSetProducts lines={productSetDetail.products.oneOff} loading={productSetDetail.loading} error={productSetDetail.error} />
+          {/* 2. PRODUCTS (#1521) — the Products this Member purchased, as one
+              collapsible card: what they bought, under which price, tax and
+              Promotion, and the payment that settled it. Read-only: a purchase
+              is money that moved, and the Current Product Set and One-off
+              Products cards that preceded it showed the ProductSet's
+              configuration instead (#1463, #1490). The recurring services
+              staff attach to an Assigned Plan are that plan's own section. */}
+          <Section label={t('members.section_additional_services')} hideLabel>
+            <MemberPurchasedProducts
+              items={purchasedProducts}
+              memberId={memberId}
+              canWrite={canWriteMembers}
+              canPay={canManagePackages}
+              isAdmin={isAdmin}
+              onChanged={reloadProducts}
+              onProposal={setProposalSetId}
+            />
           </Section>
 
-          <Section label={t('members.section_additional_services')}>
-            <div>
-              <div style={subLabelStyle}>{t('members.purchased_products_label')}</div>
-              <MemberPurchasedProducts items={purchasedProducts} />
-            </div>
+          {/* #1521 — the resulting billing events if the proposed Draft became
+              the member's: a forecast only, created and charged by nothing. */}
+          <Section label={t('members.section_new_billing_event_simulation')}>
+            <ProposedSetForecast productSetId={proposalSetId} />
+          </Section>
+
+          {/* #1463 — the current ProductSet's Billing Events Forecast: computed on
+              read, persisted nowhere, creates no Billing Event. #1521: directly
+              below Products. */}
+          <Section label={t('members.section_billing_events_forecast')}>
+            <ProductSetForecast forecast={productSetDetail.forecast} loading={productSetDetail.loading} error={productSetDetail.error} />
           </Section>
 
           {/* Billing Simulation (#629) — a section of its own, never nested inside
               a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
           <Section label={t('members.section_billing_simulation')}>
             <MemberBillingSimulation key={simulationKey} memberId={memberId} />
-          </Section>
-
-          {/* #1463 — the current ProductSet's Billing Events Forecast: computed on
-              read, persisted nowhere, creates no Billing Event. */}
-          <Section label={t('members.section_billing_events_forecast')}>
-            <ProductSetForecast forecast={productSetDetail.forecast} loading={productSetDetail.loading} error={productSetDetail.error} />
           </Section>
 
           {/* Billing Events */}
@@ -706,10 +709,11 @@ export function MemberExpandedRow({
  * header, the spacing and the rule are `formChrome`'s, shared with the Edit
  * form above and with every other card.
  */
-function Section({ label, children, divider = true }: { label: string; children: React.ReactNode; divider?: boolean }) {
+function Section({ label, children, divider = true, hideLabel = false }: { label: string; children: React.ReactNode; divider?: boolean; hideLabel?: boolean }) {
   return (
     <div style={divider ? cardSectionDividedStyle : cardSectionStyle}>
-      <div style={cardSectionLabelStyle}>{label}</div>
+      {/* #1521: a card that carries its own collapsible header names itself. */}
+      {!hideLabel && <div style={cardSectionLabelStyle}>{label}</div>}
       {children}
     </div>
   );

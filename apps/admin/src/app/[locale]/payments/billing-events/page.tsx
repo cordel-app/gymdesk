@@ -528,6 +528,10 @@ export default function BillingEventsPage() {
   // #779: `order=asc` is how the sidebar badge opens the failed list as a work
   // queue, oldest first. Carried through the URL like the filters, no control.
   const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc';
+  // #1521: `?id=` opens one specific event (the Member card's *View billing
+  // event*), expanded; changing any filter leaves it (`pushParams` drops it).
+  const eventIdParam = Number(searchParams.get('id'));
+  const eventId = Number.isInteger(eventIdParam) && eventIdParam > 0 ? eventIdParam : null;
   const [offset, setOffset] = useState(0);
 
   const [items, setItems] = useState<BillingEvent[]>([]);
@@ -568,11 +572,13 @@ export default function BillingEventsPage() {
       if (to) p.set('to', to);
       for (const s of status) p.append('status', s);
       if (order === 'asc') p.set('order', 'asc');
+      if (eventId) p.set('id', String(eventId));
       const data = await apiFetch<PageResult>(`/payments/billing-events?${p}`);
       setItems(data.items);
       setTotal(data.total);
       setOffset(off);
-      setExpanded(new Set()); // collapse all on new page/filter
+      // collapse all on new page/filter — except the one event opened by link
+      setExpanded(new Set(eventId && data.items.some((i) => i.id === eventId) ? [eventId] : []));
       setPending(null);
     } catch {
       setError('Failed to load billing events.');
@@ -580,7 +586,7 @@ export default function BillingEventsPage() {
       setLoading(false);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeGymId, memberId, from, to, status, order]);
+  }, [activeGymId, memberId, from, to, status, order, eventId]);
 
   useEffect(() => { if (!gymLoading) load(0); }, [gymLoading, load]);
 
