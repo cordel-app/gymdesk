@@ -124,6 +124,8 @@ export interface MemberProductPromotionOffer {
   regular_price_incl_tax: number | null;
   /** That price with this Promotion applied — what the member would be charged. */
   final_price_incl_tax: number | null;
+  /** #1521: whether it may be combined with another Promotion on one purchase. */
+  stackable: boolean;
 }
 
 /** The columns an offer is read from, as mysql2 hands them back. */
@@ -135,6 +137,7 @@ export interface PromotionOfferRow {
   value?: unknown;
   quantity?: unknown;
   only_applicable_for_new_members?: number | boolean | null;
+  stackable?: number | boolean | null;
 }
 
 /**
@@ -161,6 +164,7 @@ export function shapePromotionOffer(
     duration_cycles: promotionDurationCycles(category, row.quantity),
     regular_price_incl_tax: regularPriceInclTax,
     final_price_incl_tax: promotionalPrice(regularPriceInclTax, benefit),
+    stackable: !!row.stackable,
   };
 }
 

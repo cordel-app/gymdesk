@@ -764,6 +764,7 @@ export default function MembersPage() {
               editing={editingId === m.id}
               canManageTraining={canManageTraining}
               canManagePackages={canManagePackages}
+              canWriteMembers={canWrite}
               canManagePersonalGoals={canManagePersonalGoals}
               canManageNutrition={canManageNutrition}
               onEditProfile={canWrite ? () => guardUnsaved(() => startEdit(m)) : undefined}

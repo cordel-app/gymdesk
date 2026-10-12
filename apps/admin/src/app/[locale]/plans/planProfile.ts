@@ -86,6 +86,8 @@ export const PLAN_SECTION_ORDER = [
   'section_session_benefits',
   'section_plan_period_benefits',
   'section_centers',
+  // #1514 — the plan's image, after the Centers and before the projections.
+  'section_media',
   'section_fee_simulation',
   // #915 — the Billing Event Simulation sits after the Membership Fee
   // Simulation: that one answers "what does each billing *period* do to the

@@ -166,6 +166,7 @@ describe('Plans: expanded section order (#816 §2)', () => {
       'section_session_benefits',
       'section_plan_period_benefits',
       'section_centers',
+      'section_media',
       'section_fee_simulation',
       // #915 — a second read-only projection, appended after the timeline.
       'section_billing_event_simulation',
@@ -182,6 +183,7 @@ describe('Plans: expanded section order (#816 §2)', () => {
       'plans.section_billing_duration',
       'BENEFIT_SECTIONS.map(',
       'plans.section_centers',
+      'plans.section_media',
       'plans.section_fee_simulation',
     ];
     const positions = markers.map((m) => {

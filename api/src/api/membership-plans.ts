@@ -18,6 +18,11 @@ import { findLiveAssignmentsForMembers, supersedeLiveAssignments } from './one-a
 import { computePlanExampleTimeline } from '../domain/planExampleTimeline';
 import { resolveRequestActor } from '../domain/auditActor';
 import {
+  gymStorageFolderPrefix, isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit,
+  parseMemberImageRequest, STORAGE_NOT_INITIALIZED,
+} from './member-image-storage';
+import { clearPlanImage, migratePlanImageOnRename, PLAN_IMAGE_COLUMNS, storePlanImage } from './plan-image-storage';
+import {
   PlanSimulationItem,
   computePlanBillingEventSimulation,
 } from '../domain/planBillingEventSimulation';
@@ -80,6 +85,8 @@ interface PlanRow {
   // #635 stage 13 — Pre-paid Duration: how many of `paid_periods` are already
   // paid up front (the Promotion's own `pay_beforehand_periods`, migration 189).
   pay_beforehand_periods: number | null;
+  image_url: string | null;
+  image_thumbnail_url: string | null;
   created_by: string | null;
   modified_at: string | null;
   modified_by: string | null;
@@ -689,12 +696,86 @@ membershipPlansRouter.put('/:id', requireRole('admin'), async (req, res, next) =
       ],
     );
     if (rowCount === 0) return res.status(404).json({ error: 'Plan not found' });
-    const { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [req.params.id]);
+    let { rows } = await db.query('SELECT * FROM membership_plans WHERE id = ?', [req.params.id]);
+    // #1514: the image key carries the plan's name, so a rename moves it.
+    if (rows[0]?.image_url) {
+      const migrated = await migratePlanImageOnRename(gymId, await gymStorageFolderPrefix(gymId), {
+        id: rows[0].id, name: rows[0].name, image_url: rows[0].image_url,
+        image_thumbnail_url: rows[0].image_thumbnail_url,
+      });
+      if (migrated) rows = (await db.query('SELECT * FROM membership_plans WHERE id = ?', [req.params.id])).rows;
+    }
     recordAudit(req, { action: 'update', entityType: 'membership_plan', entityId: req.params.id, next: rows[0] });
     res.json(await enrichPlan(rows[0], gymId));
   } catch (err: any) {
     handleDupEntry(err, res, next, 'A plan with this name already exists.');
   }
+});
+
+// ─── Image (#1514) ─────────────────────────────────────────────────────────────
+// `POST`/`DELETE /:id/image` are the only writers of `membership_plans.image_url`
+// / `image_thumbnail_url`. They touch nothing else of the plan (pricing,
+// benefits, billing, assignments). Processing and limits are the Member photo's.
+
+async function loadPlanForImage(req: Request, res: any, requirePrefix: boolean) {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    `SELECT ${PLAN_IMAGE_COLUMNS} FROM membership_plans WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+    [req.params.id, gymId],
+  );
+  const row = rows[0];
+  if (!row) { res.status(404).json({ error: 'Plan not found' }); return null; }
+  const folderPrefix = await gymStorageFolderPrefix(gymId);
+  if (!folderPrefix && requirePrefix) {
+    res.status(STORAGE_NOT_INITIALIZED.status).json(STORAGE_NOT_INITIALIZED.body);
+    return null;
+  }
+  return {
+    gymId, folderPrefix,
+    plan: { id: row.id, name: row.name, image_url: row.image_url, image_thumbnail_url: row.image_thumbnail_url },
+  };
+}
+
+async function readPlanForImageAnswer(gymId: string, id: number | string) {
+  const { rows } = await db.query<PlanRow>(
+    'SELECT * FROM membership_plans WHERE id = ? AND gym_id = ?',
+    [id, gymId],
+  );
+  return enrichPlan(rows[0], gymId);
+}
+
+membershipPlansRouter.post('/:id/image', requireRole('admin'), memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = await parseMemberImageRequest(req);
+    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const context = await loadPlanForImage(req, res, true);
+    if (!context) return;
+    const { gymId, plan } = context;
+    const stored = await storePlanImage({
+      gymId, folderPrefix: context.folderPrefix as string, plan, images: parsed,
+      modifiedBy: resolveRequestActor(getTenantContext(req)),
+    });
+    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'membership_plan', entityId: plan.id, entityName: plan.name,
+      previous: { image_url: plan.image_url }, next: { image_url: stored.image_url },
+    });
+    res.json(await readPlanForImageAnswer(gymId, plan.id));
+  } catch (err) { next(err); }
+});
+
+membershipPlansRouter.delete('/:id/image', requireRole('admin'), async (req, res, next) => {
+  try {
+    const context = await loadPlanForImage(req, res, false);
+    if (!context) return;
+    const { gymId, folderPrefix, plan } = context;
+    await clearPlanImage({ gymId, folderPrefix, plan, modifiedBy: resolveRequestActor(getTenantContext(req)) });
+    recordAudit(req, {
+      action: 'update', entityType: 'membership_plan', entityId: plan.id, entityName: plan.name,
+      previous: { image_url: plan.image_url }, next: { image_url: null },
+    });
+    res.json(await readPlanForImageAnswer(gymId, plan.id));
+  } catch (err) { next(err); }
 });
 
 membershipPlansRouter.delete('/:id', requireRole('admin'), async (req, res) => {
