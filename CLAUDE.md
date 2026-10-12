@@ -260,17 +260,32 @@ Copy `.env.example` to `.env` in each app directory before starting.
 
 Run tests with `npm test` inside `api/`. All test files live under `api/src/test/`. Reuse the helpers in `helpers.ts` — `createTestGym`, `createTestMembership`, `request`, etc.
 
-### Unit tests vs integration tests
+### Testing policy: behaviour first, integration tests as the default
 
-Write **unit tests** when the code under test has no DB or HTTP dependency — pure functions, middleware logic, crypto/validation helpers. No `createTestGym`, no `cleanupTestGyms`, no `db.end()`. Mock external dependencies with `vi.mock` or `vi.spyOn`.
+The goal is maximum confidence in the system's real behaviour at minimum creation and maintenance cost — not more tests and not coverage. AI-generated tests are the main risk: they tend to restate the implementation's own (mis)reading of the requirement, pile up mocks that break on every refactor, and give a false sense of safety while the flows that matter stay untested.
 
-Write **integration tests** for routers and anything that must exercise the full Express + MySQL stack. All rules below apply to integration tests only.
+- **Integration tests are the priority.** Routers, auth and permissions, validation, SQL and transactions, status codes and cross-component contracts are validated against the real Express + MySQL stack. A service with 30 mocked unit tests can still fail because a query returns a different shape than it expects; only an integration test catches that.
+- **Unit tests only where they add clear value**: complex business rules with many combinations (billing and pricing engines, promotion timelines, eligibility), algorithms, parsing and signature verification, and edge cases that would be slow or awkward to reach through HTTP. They also make failures faster to diagnose. Do **not** write unit tests for a trivial CRUD handler or for glue that just loads rows and returns them.
+- **Test observable behaviour, not implementation.** Assert on responses, persisted rows and notifications — never on which internal function was called. A test that fails after a behaviour-preserving refactor is a bad test.
+- **Few mocks, each with a reason.** Mock only what cannot run for real (the payment provider, Clerk, R2, the clock). Never mock the database in a router test, and do not mock our own modules to isolate a unit that has no reason to be isolated.
+- **Never add tests just to raise coverage.** One test that proves a requirement beats five that exercise lines.
+- **Every bug fix ships a regression test** that fails before the fix and passes after it. Write it first, watch it fail, then fix.
+- **Derive scenarios from the requirement (the issue), not from the code you just wrote.** If the test and the implementation share one misreading, both pass and the behaviour is wrong.
+- **Refactors with no functional change add no new tests**; the existing ones must keep passing unchanged. If they had to change, ask whether they were coupled to implementation.
 
-Good candidates for unit tests:
-- Signature verification and payload parsing (e.g. `payments-provider.test.ts`)
-- `requireModuleAccess` / `requireModuleWrite` permission matrix
-- `tenantContext` and `centerContext` middleware
-- Pure helper functions and input validation
+| Change | Tests to add |
+|---|---|
+| Simple CRUD | Integration tests of the main flows |
+| Complex business rule | Unit tests of the combinations **and** one integration test of the flow |
+| DB / migration change | Integration tests against real MySQL |
+| Auth or permission change | Dedicated integration tests (401, 403, tenant isolation) |
+| Bug fix | A regression test that reproduces the bug |
+| Behaviour-preserving refactor | None; existing tests must pass untouched |
+| Admin / Members App UI | Unit tests only for real logic in pure modules; the flow is covered by the API integration tests (and E2E, if one exists, for a few critical user journeys) |
+
+**Unit tests** have no DB or HTTP dependency: no `createTestGym`, no `cleanupTestGyms`, no `db.end()`; mock external dependencies with `vi.mock` or `vi.spyOn`. Typical candidates: signature verification and payload parsing (e.g. `payments-provider.test.ts`), the `requireModuleAccess` / `requireModuleWrite` permission matrix, `tenantContext` / `centerContext`, pure `domain/` modules.
+
+**Integration tests** exercise the full Express + MySQL stack; all rules below apply to them.
 
 ### Rules for every new integration test file
 
@@ -279,6 +294,7 @@ Good candidates for unit tests:
 - Always create a fresh gym + membership in `beforeAll` — never share state across `describe` blocks.
 - Insert DB rows directly via `db.query` for setup; use the HTTP API (`request`) for the action under test.
 - Do **not** add a `slug` column to `centers` — it does not exist in the schema.
+- **A test file must be independent of every other file.** CI splits the suite into three shards (`vitest --shard=i/3`), each with its own MySQL container, so a file may be run first, alone, or without its neighbours. Create everything the file needs in its own `beforeAll`; never read rows another file wrote, never rely on file order or on seeded residue.
 
 ### What to cover for every new router
 
@@ -297,7 +313,7 @@ Before opening the PR, run these checks in order:
 
 1. **Migration review** — if any migration file was added or changed, run the `db-reviewer` agent on it. Fix all BLOCKERs before continuing.
 
-2. **Test files** — for every new router, run the `test-writer` agent to generate `api/src/test/<router>.test.ts` (integration test). For any new pure functions or middleware, also write a unit test file (no DB helpers, use `vi.mock`/`vi.spyOn`). Run `npm test` inside `api/` to confirm all pass.
+2. **Test files** — follow the *Testing policy* above: integration tests first (for every new router, run the `test-writer` agent to generate `api/src/test/<router>.test.ts`), unit tests only for complex business logic, algorithms and edge cases that pay for themselves, and a regression test for every bug fix. Do not add tests to raise coverage or that merely mirror the implementation. Run `npm test` inside `api/` to confirm all pass.
 
 3. **Doc updates** — check whether the changes warrant updating any `.md` files:
    - `docs/changelog.md` — add the ticket's one `- **Done**: #N (…)` entry at the top of the current month (always).
