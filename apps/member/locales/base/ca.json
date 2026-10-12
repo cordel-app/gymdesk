@@ -117,6 +117,7 @@
     "photo_uploading": "Pujant…",
     "photo_error_not_image": "El fitxer no és una imatge.",
     "photo_error_unreadable": "No s'ha pogut llegir la imatge.",
+    "photo_error_too_large": "La imatge és massa gran.",
     "photo_error_upload_failed": "No s'ha pogut pujar la foto.",
     "photo_error_remove_failed": "No s'ha pogut treure la foto.",
     "phone": "Telèfon",

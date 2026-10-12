@@ -56,8 +56,8 @@
         │   └── event-{event_id}-{activity_name}.png                          — 1080 × 1080 px (a single Calendar Event's own image, #1382)
         │        
         ├── members
-        │   ├── {member_id}-{member_name}.png                                 — 1080 × 1080 px
-        │   └── {member_id}-{member_name}-thumbnail.png                       — 256 × 256 px
+        │   ├── {member_id}-{member_name}.webp                                — 1080 × 1080 px
+        │   └── {member_id}-{member_name}-thumbnail.webp                      — 256 × 256 px
         │       
         ├── exercises/
         │   ├── images/
@@ -143,21 +143,24 @@ Nutrition Goal has no image at all: `IMAGE_GOAL_KINDS` says so, and its
 stage 1 deliberately left it out because nothing wrote a Personal Goal image, and it
 arrived with its writer.
 
-**`members/` holds a Member's profile image** (#1374):
-`{gym prefix}/members/{member_id}-{member_name}.png`, written by
-`POST /members/:id/image` (staff, MEMBERS write) and since #1375 by the member's
-own `POST /me/profile/image`, cleared by their `DELETE` counterparts — all four
-through one module, `api/src/api/member-image-storage.ts`, so the two paths write
-the same key and refuse the same bytes. One column holds it — `members.image_url`
-(migration 253) — and `api/src/domain/memberImages.ts` is the one place the key is
-built and the bytes are judged: a PNG of **exactly** 512 × 512 (the admin crops and
-scales whatever staff pick before uploading), no transparency requirement, read from
-the bytes rather than the `Content-Type` header. The key is deterministic, so a
-replacement overwrites its own object; a **rename** is what moves one, and
-`PUT /members/:id` does it in the safe order — copy to the new key, re-point the row,
-then delete the old object — leaving the row on the old URL if the copy fails. Gym
-root only: a Member belongs to one gym, so there is no `cordel/members/`. A
-soft-deleted Member keeps the object (Members have a Recycle Bin restore).
+**`members/` holds a Member's profile image** (#1374, reshaped by #1449):
+`{gym prefix}/members/{member_id}-{member_name}.webp` (1080 × 1080) and
+`…-thumbnail.webp` (256 × 256), written by `POST /members/:id/image` (staff,
+MEMBERS write) and by the member's own `POST /me/profile/image`, cleared by their
+`DELETE` counterparts — all four through one module,
+`api/src/api/member-image-storage.ts`. The client sends **one** picture as it is
+(JPEG, PNG, WebP or GIF, up to `MEMBER_IMAGE_MAX_MB`); the **server** applies its
+orientation, centre-crops to a square and encodes both WebP files in memory
+(`api/src/domain/memberImageProcessing.ts`), so nothing is written to disk and no
+browser-side processing exists. Both objects are uploaded before the row moves and
+two columns hold them — `members.image_url` and `members.image_thumbnail_url` — set
+in one `UPDATE`. `api/src/domain/memberImages.ts` is the one place the keys are
+built. The keys are deterministic, so a replacement overwrites its own objects; a
+**rename** is what moves them, and `PUT /members/:id` does it in the safe order —
+copy both to the new keys, re-point the row, then delete the old objects — leaving
+the row on the old pair if a copy fails. Gym root only: there is no
+`cordel/members/`. A soft-deleted Member keeps the objects (Members have a Recycle
+Bin restore).
 `members/` is appended last to the gym's
 first-level markers, with its writer, exactly as `goals/` was — and it is not the
 `Members/` #826 removed, which held nothing.

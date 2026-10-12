@@ -123,6 +123,7 @@ describe('gate: audited tables', () => {
     { file: 'api/product-set-draft-router.ts', table: 'product_sets', why: 'last_activity_at refresh of a Draft (its edits are recorded on the assignment projection)' },
     { file: 'api/assignment-draft-set.ts', table: 'product_sets', why: 'mirrors starts_at/ends_at and the assignment link of a Draft from its assignment row' },
     { file: 'api/gym-training-plans.ts', table: 'member_training_plans', why: 'status/valid_to when the new-plan flow expires existing plans; the actor is recorded on training_plans.modified_by in the same transaction' },
+    { file: 'domain/exerciseDescriptionTranslations.ts', table: 'exercises', why: 'copies short_description onto a copy created in the same transaction, which already carries created_by' },
     { file: 'api/member-training-plans.ts', table: 'member_training_plans', why: 'PATCH status/valid_from/valid_to transition; the status_change audit row records the actor' },
   ];
 

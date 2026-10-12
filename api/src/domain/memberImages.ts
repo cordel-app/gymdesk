@@ -1,5 +1,6 @@
 // Where a **Member**'s profile image lives, what counts as a valid one, and
-// which objects a gym may delete (#1374).
+// which objects a gym may delete (#1374, reshaped by #1449: a WebP master and a
+// WebP thumbnail, both made by the server from one uploaded original).
 //
 // Everything here is pure: the object key, the folder markers, the upload rules
 // and the ownership test. The router owns the bytes, the row and the
@@ -14,7 +15,7 @@
 // reach `<gym prefix>/members/`, which the ownership predicate enforces.
 
 import { MEMBERS_FOLDER, sanitizeStorageObjectName, storageKeyFromObjectUrl } from '../infra/storage';
-import { readPngMetadata } from './pngImage';
+import { positiveInteger } from './internalRunRateLimit';
 
 /**
  * `members` — re-exported from `infra/storage.ts` rather than spelled again,
@@ -46,24 +47,33 @@ export function sanitizeMemberImageName(name: string): string {
 }
 
 /**
- * `<gym prefix>/members/<member_id>-<sanitized name>.png` — the key a Member's
- * profile image is stored under, exactly as `docs/cloudflare_structure.md`
- * spells it.
+ * `<gym prefix>/members/<member_id>-<sanitized name>.webp` — the key a Member's
+ * 1080 × 1080 profile image is stored under, exactly as
+ * `docs/cloudflare_structure.md` spells it.
  *
  * Deterministic: the same member always produces the same key, so replacing an
  * image overwrites its own object instead of orphaning one, and an object only
  * moves when the key genuinely changes — the member was renamed (which
  * `PUT /members/:id` handles by copying it) or the image predates this shape.
- * The `.png` is part of the fixed name rather than a claim about the bytes —
- * only PNG is accepted, so the two cannot disagree — and the uploaded file's own
- * name plays no part in the key (#713).
+ * The `.webp` is part of the fixed name because the server always encodes
+ * WebP, whatever the uploaded original was, and the uploaded file's own name
+ * plays no part in the key (#713).
  */
 export function buildMemberImageKey(
   folderPrefix: string,
   memberId: number | string,
   name: string,
 ): string {
-  return `${folderPrefix}/${MEMBERS_FOLDER}/${memberId}-${sanitizeMemberImageName(name)}.png`;
+  return `${folderPrefix}/${MEMBERS_FOLDER}/${memberId}-${sanitizeMemberImageName(name)}.webp`;
+}
+
+/** `<gym prefix>/members/<member_id>-<sanitized name>-thumbnail.webp` — the 256 × 256 sibling. */
+export function buildMemberImageThumbnailKey(
+  folderPrefix: string,
+  memberId: number | string,
+  name: string,
+): string {
+  return `${folderPrefix}/${MEMBERS_FOLDER}/${memberId}-${sanitizeMemberImageName(name)}-thumbnail.webp`;
 }
 
 /**
@@ -105,55 +115,66 @@ export function isGymOwnedMemberImageUrl(
   return key.startsWith(`${folderPrefix}/${MEMBERS_FOLDER}/`);
 }
 
-// ─── Upload rules (#1374 §1/§3) ───────────────────────────────────────────────
+// ─── Upload rules (#1449) ─────────────────────────────────────────────────────
 
-/** PNG only: the key is named `.png` and the ticket's tree fixes the format. */
-export const MEMBER_IMAGE_MIME = 'image/png';
+/** The two stored sizes, square — what the server makes, never what a client sends. */
+export const MEMBER_IMAGE_SIZE = 1080;
+export const MEMBER_IMAGE_THUMBNAIL_SIZE = 256;
 
-/**
- * **Exactly** 512 × 512 — the ticket's convention ("Image dimensions: 512 × 512
- * pixels", "the final stored image must comply"). Deliberately stricter than a
- * Personal Goal's *at most* 512 (#1035 `Q3`): a profile image is drawn in a
- * fixed square on every surface, and the admin crops and scales whatever staff
- * pick before uploading, so an off-size file here is a client that skipped that
- * step rather than a legitimate smaller icon.
- */
-export const MEMBER_IMAGE_SIZE = 512;
+/** What the server stores both files as. */
+export const MEMBER_IMAGE_STORED_MIME = 'image/webp';
 
 /**
- * 2 MB, the Personal Goal's ceiling for an image of the same size. The bytes are
- * buffered in the API process (`express.raw`), so the limit exists to bound that
- * rather than to be tight — a 512 × 512 PNG photograph is well under 1 MB.
+ * What a client may *send*: the formats a phone or a website produces. Judged
+ * from the decoded bytes (`memberImageProcessing.ts`), never from the declared
+ * `Content-Type` or the file name — the type below is only the request's
+ * envelope (`image/*`), and a HEIC is not decoded (iOS hands the web view a JPEG
+ * for `accept="image/*"`).
  */
-export const MEMBER_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+export const MEMBER_IMAGE_INPUT_FORMATS = ['jpeg', 'png', 'webp', 'gif'] as const;
+
+/** Largest picture, in pixels, the server will decode (a 50-megapixel camera). */
+export const MEMBER_IMAGE_MAX_PIXELS = 50_000_000;
+
+const DEFAULT_MAX_MB = 10;
+const CEILING_MAX_MB = 25;
+
+/**
+ * The upload ceiling in bytes: `MEMBER_IMAGE_MAX_MB` (megabytes), default 10,
+ * never above 25 — `EXERCISE_VIDEO_MAX_MB`'s shape. The upload is buffered in the
+ * API process, so this is what bounds that memory, and the browser checks the
+ * same number so an oversized file is refused before it is sent.
+ */
+export function memberImageMaxBytes(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = Number(env.MEMBER_IMAGE_MAX_MB);
+  const mb = Number.isFinite(raw) && raw > 0 ? Math.min(raw, CEILING_MAX_MB) : DEFAULT_MAX_MB;
+  return Math.floor(mb * 1024 * 1024);
+}
+
+/** What `MEMBER_IMAGE_UPLOAD_RATE_LIMIT_MAX` defaults to when nothing valid is set. */
+export const MEMBER_IMAGE_UPLOAD_RATE_LIMIT_DEFAULT_MAX = 30;
+
+/** The window the upload limit is counted over, in milliseconds. */
+export const MEMBER_IMAGE_UPLOAD_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+
+/**
+ * Photo uploads one signed-in person may make per window, on top of the global
+ * budget (`API_RATE_LIMIT_MAX`, #1395). A photo upload is the one cheap-looking
+ * request that is not cheap: the server decodes up to `MEMBER_IMAGE_MAX_MB` of
+ * picture and encodes two WebP files, so a loop of uploads costs far more CPU
+ * than the same number of reads. Thirty is generous for a person replacing their
+ * photo and for a front desk adding members with pictures, and refuses a script.
+ */
+export function memberImageUploadRateLimitMax(env: NodeJS.ProcessEnv = process.env): number {
+  return positiveInteger(env.MEMBER_IMAGE_UPLOAD_RATE_LIMIT_MAX, MEMBER_IMAGE_UPLOAD_RATE_LIMIT_DEFAULT_MAX);
+}
 
 /** Why an upload was refused — the router maps each to a status and a message. */
-export type MemberImageRejection = 'not_a_png' | 'wrong_dimensions';
-
-/**
- * Whether these bytes may become a Member's profile image, and if not, why.
- *
- * Validated from the **file**, never from the request: the `Content-Type`
- * header and the file name are both the client's word (#715 §8, #719 §7), so
- * the PNG signature and the dimensions are read out of the bytes themselves. A
- * rejection means nothing is uploaded and nothing is written, so the image
- * already on the member stays exactly as it was.
- *
- * No transparency check: a photograph is opaque, so `pngSupportsTransparency()`
- * is not asked (the #1035 `Q3` rule, which fits a face even better than a goal
- * icon).
- */
-export function validateMemberImage(body: unknown): MemberImageRejection | null {
-  const metadata = readPngMetadata(body);
-  if (!metadata) return 'not_a_png';
-  if (metadata.width !== MEMBER_IMAGE_SIZE || metadata.height !== MEMBER_IMAGE_SIZE) {
-    return 'wrong_dimensions';
-  }
-  return null;
-}
+export type MemberImageRejection = 'unreadable' | 'unsupported_format' | 'too_many_pixels';
 
 /** Human-readable reason for each rejection, as the API returns it. */
 export const MEMBER_IMAGE_REJECTION_MESSAGES: Record<MemberImageRejection, string> = {
-  not_a_png: 'Image must be a PNG file',
-  wrong_dimensions: `Image must be exactly ${MEMBER_IMAGE_SIZE}×${MEMBER_IMAGE_SIZE} pixels`,
+  unreadable: 'The file could not be read as an image',
+  unsupported_format: 'Image must be a JPEG, PNG, WebP or GIF file',
+  too_many_pixels: `Image is too large: at most ${MEMBER_IMAGE_MAX_PIXELS / 1_000_000} megapixels`,
 };

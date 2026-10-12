@@ -24,11 +24,13 @@ import { loadMemberPurchases } from './member-product-promotions';
 // routes (#1375). This router owns the `:id`, the permission and the audit.
 import {
   type MemberImageRow,
+  MEMBER_IMAGE_COLUMNS,
   STORAGE_NOT_INITIALIZED,
   clearMemberImage,
   gymStorageFolderPrefix,
   isMemberImageRefusal,
   memberImageBodyParser,
+  memberImageUploadRateLimit,
   migrateMemberImageOnRename,
   parseMemberImageRequest,
   storeMemberImage,
@@ -393,8 +395,11 @@ membersRouter.put('/:id', requireModuleWrite('MEMBERS'), async (req, res, next) 
     );
     // #1374 §5: the image key carries the member's name, so a rename moves it —
     // after the row has committed, and never by deleting first.
-    const migratedImageUrl = await migrateMemberImageOnRename(gymId, rows[0]);
-    if (migratedImageUrl) rows[0].image_url = migratedImageUrl;
+    const migratedImage = await migrateMemberImageOnRename(gymId, rows[0]);
+    if (migratedImage) {
+      rows[0].image_url = migratedImage.image_url;
+      rows[0].image_thumbnail_url = migratedImage.image_thumbnail_url;
+    }
     recordAudit(req, { action: 'update', entityType: 'member', entityId: req.params.id, next: forAudit(rows[0]) });
     res.json(rows[0]);
   } catch (err: any) {
@@ -466,7 +471,7 @@ async function loadMemberForImage(
 ): Promise<{ gymId: string; folderPrefix: string | null; member: MemberImageRow } | null> {
   const { gymId } = getTenantContext(req);
   const { rows } = await db.query<MemberImageRow>(
-    'SELECT id, name, image_url FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    `SELECT ${MEMBER_IMAGE_COLUMNS} FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
     [req.params.id, gymId],
   );
   const row = rows[0];
@@ -479,12 +484,12 @@ async function loadMemberForImage(
     res.status(STORAGE_NOT_INITIALIZED.status).json(STORAGE_NOT_INITIALIZED.body);
     return null;
   }
-  return { gymId, folderPrefix, member: { id: row.id, name: row.name, image_url: row.image_url } };
+  return { gymId, folderPrefix, member: { id: row.id, name: row.name, image_url: row.image_url, image_thumbnail_url: row.image_thumbnail_url } };
 }
 
-membersRouter.post('/:id/image', requireModuleWrite('MEMBERS'), memberImageBodyParser, async (req, res, next) => {
+membersRouter.post('/:id/image', requireModuleWrite('MEMBERS'), memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
   try {
-    const parsed = parseMemberImageRequest(req);
+    const parsed = await parseMemberImageRequest(req);
     if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
 
     const context = await loadMemberForImage(req, res, { requireStoragePrefix: true });
@@ -493,14 +498,15 @@ membersRouter.post('/:id/image', requireModuleWrite('MEMBERS'), memberImageBodyP
     const tenantCtx = getTenantContext(req);
 
     const stored = await storeMemberImage({
-      gymId, folderPrefix: context.folderPrefix as string, member, body: parsed, modifiedBy: resolveRequestActor(tenantCtx),
+      gymId, folderPrefix: context.folderPrefix as string, member, images: parsed, modifiedBy: resolveRequestActor(tenantCtx),
     });
     if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
 
     const updated = await loadMemberDetail(gymId, member.id);
     recordAudit(req, {
       action: 'update', entityType: 'member', entityId: member.id,
-      previous: { image_url: member.image_url }, next: { image_url: stored },
+      previous: { image_url: member.image_url, image_thumbnail_url: member.image_thumbnail_url },
+      next: { image_url: stored.image_url, image_thumbnail_url: stored.image_thumbnail_url },
     });
     res.json(updated);
   } catch (err) { next(err); }
@@ -518,7 +524,8 @@ membersRouter.delete('/:id/image', requireModuleWrite('MEMBERS'), async (req, re
     const updated = await loadMemberDetail(gymId, member.id);
     recordAudit(req, {
       action: 'update', entityType: 'member', entityId: member.id,
-      previous: { image_url: member.image_url }, next: { image_url: null },
+      previous: { image_url: member.image_url, image_thumbnail_url: member.image_thumbnail_url },
+      next: { image_url: null, image_thumbnail_url: null },
     });
     res.json(updated);
   } catch (err) { next(err); }

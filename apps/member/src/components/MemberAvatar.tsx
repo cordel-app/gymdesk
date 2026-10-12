@@ -17,11 +17,15 @@ import { memberAvatarColors, memberAvatarSrc, memberInitials } from '@/lib/membe
 export function MemberAvatar({
   member, size, style,
 }: {
-  member: { id?: number | null; name?: string | null; image_url?: string | null; modified_at?: string | null } | null;
+  member: {
+    id?: number | null; name?: string | null; image_url?: string | null;
+    image_thumbnail_url?: string | null; modified_at?: string | null;
+  } | null;
   size: number;
   style?: CSSProperties;
 }) {
-  const src = memberAvatarSrc(member?.image_url, member?.modified_at);
+  // #1449: the 256 × 256 thumbnail, the master for a row that has none.
+  const src = memberAvatarSrc(member?.image_thumbnail_url ?? member?.image_url, member?.modified_at);
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [src]);
 

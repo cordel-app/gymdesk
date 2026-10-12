@@ -50,8 +50,8 @@ async function main() {
       for (const [locale, w] of Object.entries(plan.writes)) {
         if (locale === BASE_LOCALE) {
           await tx.query(
-            'UPDATE exercises SET short_description = COALESCE(?, short_description), description = COALESCE(?, description) WHERE id = ?',
-            [w.short_description ?? null, w.description ?? null, ex.id],
+            'UPDATE exercises SET short_description = COALESCE(?, short_description), description = COALESCE(?, description), modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
+            [w.short_description ?? null, w.description ?? null, 'System', ex.id],
           );
         } else {
           await tx.query(

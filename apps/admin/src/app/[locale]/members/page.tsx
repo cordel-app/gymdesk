@@ -663,7 +663,7 @@ export default function MembersPage() {
           }}
         >
           <div className={CELL_CLASS.avatar} style={badgeCellStyle}>
-            <MemberAvatar name={m.name} imageUrl={m.image_url} stamp={m.modified_at} />
+            <MemberAvatar name={m.name} imageUrl={m.image_thumbnail_url ?? m.image_url} stamp={m.modified_at} />
           </div>
           <div className={CELL_CLASS.name} style={nameCellStyle} title={m.name}>
             {m.name}

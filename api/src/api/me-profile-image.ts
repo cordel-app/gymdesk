@@ -6,12 +6,14 @@ import { requireFeatureEnabled } from '../infra/featureFlags';
 import { recordAudit } from '../infra/audit';
 import { loadMemberProfile, resolveMemberId } from './me';
 import {
+  MEMBER_IMAGE_COLUMNS,
   type MemberImageRow,
   STORAGE_NOT_INITIALIZED,
   clearMemberImage,
   gymStorageFolderPrefix,
   isMemberImageRefusal,
   memberImageBodyParser,
+  memberImageUploadRateLimit,
   parseMemberImageRequest,
   storeMemberImage,
 } from './member-image-storage';
@@ -49,19 +51,19 @@ async function loadOwnMember(req: any, res: any): Promise<{ gymId: string; membe
   const ctx = getTenantContext(req);
   const memberId = await resolveMemberId(ctx.gymId, ctx);
   const { rows } = await db.query<MemberImageRow>(
-    'SELECT id, name, image_url FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL',
+    `SELECT ${MEMBER_IMAGE_COLUMNS} FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
     [memberId, ctx.gymId],
   );
   if (!rows[0]) {
     res.status(404).json({ error: 'Member not found' });
     return null;
   }
-  return { gymId: ctx.gymId, member: { id: rows[0].id, name: rows[0].name, image_url: rows[0].image_url } };
+  return { gymId: ctx.gymId, member: { id: rows[0].id, name: rows[0].name, image_url: rows[0].image_url, image_thumbnail_url: rows[0].image_thumbnail_url } };
 }
 
-meProfileImageRouter.post('/', ...guard, memberImageBodyParser, async (req, res, next) => {
+meProfileImageRouter.post('/', ...guard, memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
   try {
-    const parsed = parseMemberImageRequest(req);
+    const parsed = await parseMemberImageRequest(req);
     if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
 
     const own = await loadOwnMember(req, res);
@@ -71,12 +73,13 @@ meProfileImageRouter.post('/', ...guard, memberImageBodyParser, async (req, res,
     if (!folderPrefix) return res.status(STORAGE_NOT_INITIALIZED.status).json(STORAGE_NOT_INITIALIZED.body);
 
     const tenantCtx = getTenantContext(req);
-    const stored = await storeMemberImage({ gymId, folderPrefix, member, body: parsed, modifiedBy: resolveRequestActor(tenantCtx) });
+    const stored = await storeMemberImage({ gymId, folderPrefix, member, images: parsed, modifiedBy: resolveRequestActor(tenantCtx) });
     if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
 
     recordAudit(req, {
       action: 'update', entityType: 'member', entityId: member.id,
-      previous: { image_url: member.image_url }, next: { image_url: stored },
+      previous: { image_url: member.image_url, image_thumbnail_url: member.image_thumbnail_url },
+      next: { image_url: stored.image_url, image_thumbnail_url: stored.image_thumbnail_url },
     });
     res.json(await loadMemberProfile(gymId, member.id));
   } catch (err) { next(err); }
@@ -94,7 +97,8 @@ meProfileImageRouter.delete('/', ...guard, async (req, res, next) => {
 
     recordAudit(req, {
       action: 'update', entityType: 'member', entityId: member.id,
-      previous: { image_url: member.image_url }, next: { image_url: null },
+      previous: { image_url: member.image_url, image_thumbnail_url: member.image_thumbnail_url },
+      next: { image_url: null, image_thumbnail_url: null },
     });
     res.json(await loadMemberProfile(gymId, member.id));
   } catch (err) { next(err); }
