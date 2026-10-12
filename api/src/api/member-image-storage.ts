@@ -10,20 +10,26 @@
 // inside the tenant, or the caller resolved through `resolveMemberId()`), the
 // guard in front, the shape it answers and the audit row.
 //
-// `domain/memberImages.ts` is still the one place the key is built and the
-// bytes are judged; this module is the I/O around it.
+// `domain/memberImages.ts` is still the one place the keys are built and the
+// rules live, `domain/memberImageProcessing.ts` the one place the two WebP files
+// are made (#1449); this module is the I/O around them.
 
 import express from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { db } from '../infra/db';
 import {
-  MEMBER_IMAGE_MAX_BYTES,
-  MEMBER_IMAGE_MIME,
   MEMBER_IMAGE_REJECTION_MESSAGES,
+  MEMBER_IMAGE_STORED_MIME,
+  MEMBER_IMAGE_UPLOAD_RATE_LIMIT_WINDOW_MS,
   buildMemberImageKey,
+  buildMemberImageThumbnailKey,
   isGymOwnedMemberImageUrl,
   memberImageFolderKeys,
-  validateMemberImage,
+  memberImageMaxBytes,
+  memberImageUploadRateLimitMax,
 } from '../domain/memberImages';
+import { apiRateLimitKey } from '../domain/apiRateLimit';
+import { type ProcessedMemberImage, processMemberImage } from '../domain/memberImageProcessing';
 import {
   buildStorageObjectUrl,
   copyStorageObject,
@@ -39,12 +45,16 @@ import {
 } from '../infra/storage';
 import { logger } from '../lib/logger';
 
-/** The three columns the image routes need of a member. */
+/** The columns the image routes need of a member. */
 export interface MemberImageRow {
   id: number;
   name: string;
   image_url: string | null;
+  image_thumbnail_url: string | null;
 }
+
+/** The columns the routes select to build a {@link MemberImageRow}. */
+export const MEMBER_IMAGE_COLUMNS = 'id, name, image_url, image_thumbnail_url';
 
 /** An answer the route sends as-is: a status and a JSON body. */
 export interface MemberImageRefusal {
@@ -57,43 +67,62 @@ export function isMemberImageRefusal(value: unknown): value is MemberImageRefusa
 }
 
 /**
- * Raw bytes rather than JSON-with-base64: one file, so there is no pair to keep
- * atomic, and this is the shape `POST /personal-goals/:id/image` takes.
+ * Raw bytes rather than JSON-with-base64: the client sends the **one** picture
+ * it picked, as it is (#1449), and the server makes both files from it.
  * `express.json()` only parses `application/json`, so no app-level parser has
- * to move for this.
+ * to move for this. The ceiling is `MEMBER_IMAGE_MAX_MB`.
  */
 export const memberImageBodyParser = express.raw({
   type: (req) => (req.headers['content-type'] ?? '').startsWith('image/'),
-  limit: MEMBER_IMAGE_MAX_BYTES + 64 * 1024,
+  limit: memberImageMaxBytes() + 64 * 1024,
 });
 
 /**
- * The bytes an upload request carries, or the refusal that says why there are
- * none: the content type, the body's shape, its size, the PNG signature and the
- * dimensions (`validateMemberImage()`), and whether this deployment has R2 at
- * all. Nothing is uploaded and nothing is written on a refusal, so the image
- * already on the member stays exactly as it was.
+ * #1449 — a budget of its own for the two upload routes, in front of the body
+ * parser so a flooded request is refused before a byte is buffered. Decoding and
+ * encoding a picture is the most expensive thing a plain `POST` does here, so the
+ * global per-person budget (#1395) is not tight enough for it. Keyed exactly like
+ * that one — the signed-in person, never the address, which behind the two Next
+ * proxies would be everybody (`apiRateLimitKey()`) — so one person spending it
+ * locks nobody else out.
  */
-export function parseMemberImageRequest(req: express.Request): Buffer | MemberImageRefusal {
-  const mime = req.headers['content-type']?.split(';')[0]?.trim();
-  if (mime !== MEMBER_IMAGE_MIME) {
-    return { status: 415, body: { error: `Unsupported image type. Allowed: ${MEMBER_IMAGE_MIME}` } };
+const uploadLimiter = rateLimit({
+  windowMs: MEMBER_IMAGE_UPLOAD_RATE_LIMIT_WINDOW_MS,
+  limit: memberImageUploadRateLimitMax(),
+  keyGenerator: (req) => apiRateLimitKey(req.headers.authorization, ipKeyGenerator(req.ip ?? '')),
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => res.status(429).json({ error: 'Too many photo uploads. Please try again later.' }),
+});
+
+export const memberImageUploadRateLimit = uploadLimiter as unknown as express.RequestHandler;
+
+/**
+ * The two WebP files a request's picture becomes, or the refusal that says why
+ * there are none: the content type's envelope, the body's shape, its size, the
+ * decode and the format (`processMemberImage()`), and whether this deployment
+ * has R2 at all. Nothing is uploaded and nothing is written on a refusal, so
+ * the image already on the member stays exactly as it was.
+ */
+export async function parseMemberImageRequest(
+  req: express.Request,
+): Promise<ProcessedMemberImage | MemberImageRefusal> {
+  const mime = req.headers['content-type']?.split(';')[0]?.trim() ?? '';
+  if (!mime.startsWith('image/')) {
+    return { status: 415, body: { error: 'Unsupported content type. Send the picture as an image/* body' } };
   }
   // `req.body` is whatever a parser left there, and a request can make that a
   // string or an array — both carry a `length` and numeric indices, so they
-  // would flow into the size and signature checks as if they were bytes.
+  // would flow into the size and decode checks as if they were bytes.
   const raw: unknown = req.body;
   if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
     return { status: 400, body: { error: 'Request body must be raw image bytes' } };
   }
   const body: Buffer = raw;
   if (body.length === 0) return { status: 400, body: { error: 'Request body is empty' } };
-  if (body.length > MEMBER_IMAGE_MAX_BYTES) {
-    return { status: 413, body: { error: `Image exceeds ${MEMBER_IMAGE_MAX_BYTES / (1024 * 1024)} MB limit` } };
-  }
-  const rejection = validateMemberImage(body);
-  if (rejection) {
-    return { status: 400, body: { error: MEMBER_IMAGE_REJECTION_MESSAGES[rejection], reason: rejection } };
+  const maxBytes = memberImageMaxBytes();
+  if (body.length > maxBytes) {
+    return { status: 413, body: { error: `Image exceeds ${Math.floor(maxBytes / (1024 * 1024))} MB limit` } };
   }
   if (!isStorageConfigured()) {
     const missingConfig = getMissingStorageConfigKeys();
@@ -105,7 +134,14 @@ export function parseMemberImageRequest(req: express.Request): Buffer | MemberIm
       },
     };
   }
-  return body;
+  const processed = await processMemberImage(body);
+  if ('rejection' in processed) {
+    return {
+      status: 400,
+      body: { error: MEMBER_IMAGE_REJECTION_MESSAGES[processed.rejection], reason: processed.rejection },
+    };
+  }
+  return processed;
 }
 
 /** The gym's own R2 folder prefix, or null for a gym whose bucket was never initialized. */
@@ -156,10 +192,11 @@ export async function sweepReplacedMemberImage(
 }
 
 /**
- * Uploads `body` under the member's own key and only then points the row at
- * it, sweeping the previous object when the key genuinely moved. Answers the
- * new URL, or the 502 the route sends when R2 refused the upload — in which
- * case the row still points at whatever it pointed at before.
+ * Uploads the master and the thumbnail under the member's own keys and only
+ * then points the row at **both**, in one `UPDATE`, sweeping the previous
+ * objects when a key genuinely moved. Answers the two new URLs, or the 502 the
+ * route sends when R2 refused either upload — in which case the row still
+ * points at whatever it pointed at before.
  *
  * `modifiedBy` is the resolved actor text (#1182 stage 2), or null when the
  * actor cannot be named.
@@ -168,20 +205,25 @@ export async function storeMemberImage(args: {
   gymId: string;
   folderPrefix: string;
   member: MemberImageRow;
-  body: Buffer;
+  images: ProcessedMemberImage;
   modifiedBy: string | null;
-}): Promise<string | MemberImageRefusal> {
-  const { gymId, folderPrefix, member, body, modifiedBy } = args;
+}): Promise<{ image_url: string; image_thumbnail_url: string } | MemberImageRefusal> {
+  const { gymId, folderPrefix, member, images, modifiedBy } = args;
   const key = buildMemberImageKey(folderPrefix, member.id, member.name);
+  const thumbnailKey = buildMemberImageThumbnailKey(folderPrefix, member.id, member.name);
   const url = buildStorageObjectUrl(key) as string;
+  const thumbnailUrl = buildStorageObjectUrl(thumbnailKey) as string;
 
+  let failingKey = key;
   try {
     await ensureStorageFolders(memberImageFolderKeys(folderPrefix));
-    await uploadStorageObject(key, MEMBER_IMAGE_MIME, body);
+    await uploadStorageObject(key, MEMBER_IMAGE_STORED_MIME, images.image);
+    failingKey = thumbnailKey;
+    await uploadStorageObject(thumbnailKey, MEMBER_IMAGE_STORED_MIME, images.thumbnail);
   } catch (err: any) {
     const details = err instanceof StorageOperationError
       ? err.details
-      : describeStorageError(err, { operation: 'uploadStorageObject', key });
+      : describeStorageError(err, { operation: 'uploadStorageObject', key: failingKey });
     logger.error(
       { err, details, diagnostics: getStorageDiagnostics(), gymId, memberId: member.id },
       'Cloudflare R2 member image upload failed',
@@ -190,21 +232,22 @@ export async function storeMemberImage(args: {
   }
 
   await db.query(
-    `UPDATE members SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+    `UPDATE members SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ?`,
-    [url, modifiedBy, member.id, gymId],
+    [url, thumbnailUrl, modifiedBy, member.id, gymId],
   );
 
-  // The key is deterministic, so a replacement normally overwrites its own
-  // object and there is nothing to sweep. What this catches is a key that
+  // The keys are deterministic, so a replacement normally overwrites its own
+  // objects and there is nothing to sweep. What this catches is a key that
   // genuinely moved: a rename whose copy failed, or an image that predates
-  // this shape.
+  // this shape (a `.png`).
   await sweepReplacedMemberImage(folderPrefix, member.id, member.image_url, url);
-  return url;
+  await sweepReplacedMemberImage(folderPrefix, member.id, member.image_thumbnail_url, thumbnailUrl);
+  return { image_url: url, image_thumbnail_url: thumbnailUrl };
 }
 
 /**
- * Clears a member's image. The reference goes and the gym's own object is
+ * Clears a member's image. Both references go and the gym's own objects are
  * deleted; an object that is not the gym's is left alone. No folder is needed
  * to clear a reference, so a gym with no bucket can still remove one.
  */
@@ -216,48 +259,76 @@ export async function clearMemberImage(args: {
 }): Promise<void> {
   const { gymId, folderPrefix, member, modifiedBy } = args;
   await db.query(
-    `UPDATE members SET image_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
+    `UPDATE members SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ?`,
     [modifiedBy, member.id, gymId],
   );
   if (isStorageConfigured()) {
     await sweepReplacedMemberImage(folderPrefix, member.id, member.image_url, null);
+    await sweepReplacedMemberImage(folderPrefix, member.id, member.image_thumbnail_url, null);
   }
 }
 
 /**
- * #1374 §5: after a rename, moves the member's image onto the key the new name
- * builds — copy to the new key, point the row at it, and only then delete the
- * old object — and answers the new URL, or `null` when nothing moved.
+ * #1374 §5: after a rename, moves the member's image onto the keys the new name
+ * builds — copy both objects to the new keys, point the row at them in one
+ * `UPDATE`, and only then delete the old objects — and answers the new URLs, or
+ * `null` when nothing moved.
  *
- * Every step is best-effort and logged: a copy that fails leaves the row on the
- * old URL, which still renders (the object is still there), and the next upload
- * lands on the new key and sweeps the old one. Only an object this gym owns
- * under `members/` is moved; a URL that is not ours is left exactly as stored.
- * Nothing here runs when the key did not change (deterministic key: the same
- * name builds the same key).
+ * Every step is best-effort and logged: a copy that fails (of either object)
+ * leaves the row on the old pair, which still renders (the objects are still
+ * there), removes the copy that did succeed, and the next upload lands on the
+ * new keys and sweeps the old ones. Only an object this gym owns under
+ * `members/` is moved; a URL that is not ours is left exactly as stored.
+ * Nothing here runs when the keys did not change (deterministic keys: the same
+ * name builds the same keys).
  */
 export async function migrateMemberImageOnRename(
   gymId: string,
   member: MemberImageRow,
-): Promise<string | null> {
+): Promise<{ image_url: string; image_thumbnail_url: string | null } | null> {
   if (!member.image_url || !isStorageConfigured()) return null;
   const folderPrefix = await gymStorageFolderPrefix(gymId);
   if (!folderPrefix || !isGymOwnedMemberImageUrl(member.image_url, folderPrefix)) return null;
+
   const oldKey = storageKeyFromObjectUrl(member.image_url);
   const newKey = buildMemberImageKey(folderPrefix, member.id, member.name);
-  if (!oldKey || oldKey === newKey) return null;
-  const newUrl = buildStorageObjectUrl(newKey) as string;
-  try {
-    await copyStorageObject(oldKey, newKey);
-  } catch (err: any) {
-    const details = err instanceof StorageOperationError
-      ? err.details
-      : describeStorageError(err, { operation: 'copyStorageObject', key: newKey });
-    logger.warn({ err, details, memberId: member.id }, 'Renamed member kept its image on the previous key: copy failed');
-    return null;
+  const oldThumbKey = member.image_thumbnail_url && isGymOwnedMemberImageUrl(member.image_thumbnail_url, folderPrefix)
+    ? storageKeyFromObjectUrl(member.image_thumbnail_url)
+    : null;
+  const newThumbKey = oldThumbKey ? buildMemberImageThumbnailKey(folderPrefix, member.id, member.name) : null;
+
+  const moves: Array<[string, string]> = [];
+  if (oldKey && oldKey !== newKey) moves.push([oldKey, newKey]);
+  if (oldThumbKey && newThumbKey && oldThumbKey !== newThumbKey) moves.push([oldThumbKey, newThumbKey]);
+  if (moves.length === 0) return null;
+
+  const copied: string[] = [];
+  for (const [from, to] of moves) {
+    try {
+      await copyStorageObject(from, to);
+      copied.push(to);
+    } catch (err: any) {
+      const details = err instanceof StorageOperationError
+        ? err.details
+        : describeStorageError(err, { operation: 'copyStorageObject', key: to });
+      logger.warn({ err, details, memberId: member.id }, 'Renamed member kept its image on the previous keys: copy failed');
+      for (const key of copied) {
+        try { await deleteStorageObject(key); } catch { /* an orphan to sweep, never a failure */ }
+      }
+      return null;
+    }
   }
-  await db.query('UPDATE members SET image_url = ? WHERE id = ? AND gym_id = ?', [newUrl, member.id, gymId]);
+
+  const newUrl = oldKey && oldKey !== newKey ? (buildStorageObjectUrl(newKey) as string) : member.image_url;
+  const newThumbUrl = newThumbKey && oldThumbKey !== newThumbKey
+    ? (buildStorageObjectUrl(newThumbKey) as string)
+    : member.image_thumbnail_url;
+  await db.query(
+    'UPDATE members SET image_url = ?, image_thumbnail_url = ? WHERE id = ? AND gym_id = ?',
+    [newUrl, newThumbUrl, member.id, gymId],
+  );
   await sweepReplacedMemberImage(folderPrefix, member.id, member.image_url, newUrl);
-  return newUrl;
+  await sweepReplacedMemberImage(folderPrefix, member.id, member.image_thumbnail_url, newThumbUrl);
+  return { image_url: newUrl, image_thumbnail_url: newThumbUrl };
 }

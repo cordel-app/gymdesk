@@ -132,7 +132,7 @@ export type MemberProfile =
    * `modified_at` the preview is cache-busted on. Not a form value: it is
    * written by its own routes, never by the `PUT`.
    */
-  & { image_url?: string | null; modified_at?: string | null }
+  & { image_url?: string | null; image_thumbnail_url?: string | null; modified_at?: string | null }
   /** #1367 — when staff welcomed the Member; null = still to welcome. Written by its own route. */
   & { welcomed_at?: string | null };
 

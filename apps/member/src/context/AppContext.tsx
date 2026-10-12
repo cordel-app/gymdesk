@@ -26,6 +26,8 @@ export interface MemberProfile {
    * `MemberAvatar` is the one consumer.
    */
   image_url?: string | null;
+  /** #1449: the 256 × 256 thumbnail the avatar draws; falls back to `image_url`. */
+  image_thumbnail_url?: string | null;
   modified_at?: string | null;
 }
 

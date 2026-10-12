@@ -28,6 +28,7 @@ interface Profile {
   preferred_locale: string | null;
   /** #1374/#1375: the member's photo and the stamp its preview is busted on. */
   image_url?: string | null;
+  image_thumbnail_url?: string | null;
   modified_at?: string | null;
   /** #1234: Clerk account history, stored dates. */
   clerk_user_id?: string | null;
@@ -166,7 +167,12 @@ export default function ProfilePage() {
   function photoChanged(updated: unknown) {
     const next = updated as Profile;
     setProfile(next);
-    if (member) updateMember({ ...member, image_url: next.image_url ?? null, modified_at: next.modified_at ?? null });
+    if (member) updateMember({
+      ...member,
+      image_url: next.image_url ?? null,
+      image_thumbnail_url: next.image_thumbnail_url ?? null,
+      modified_at: next.modified_at ?? null,
+    });
   }
 
   if (loading) {

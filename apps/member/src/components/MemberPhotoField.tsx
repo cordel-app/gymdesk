@@ -27,7 +27,10 @@ import { MEMBER_IMAGE_ACCEPT, isPreparedMemberImage, prepareMemberImage } from '
 export function MemberPhotoField({
   member, canEdit, label, onChanged,
 }: {
-  member: { id: number; name: string; image_url?: string | null; modified_at?: string | null };
+  member: {
+    id: number; name: string; image_url?: string | null;
+    image_thumbnail_url?: string | null; modified_at?: string | null;
+  };
   canEdit: boolean;
   /** Resolves a key in the `profile` namespace. */
   label: (key: string) => string;
