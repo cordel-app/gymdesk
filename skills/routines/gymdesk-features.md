@@ -5,11 +5,13 @@ Fetch open issues sorted by creation date (oldest first), in small pages (5-10 a
 For each issue, check the cheap skip conditions first, before reading the full body or comment thread:
 1. Skip (continue to the next issue) if any of these is true:
    - There is already an open PR that links this issue (check via a PR search, not by reading the issue's own thread).
-   - You already posted clarification questions and nobody has replied. A lightweight look at the comment list (author + timestamp) is enough to tell — don't re-read the full thread text to check this.
+   - You already posted a **blocking** question (one with no reasonable default, see point 4) and nobody has replied. A lightweight look at the comment list (author + timestamp) is enough to tell — don't re-read the full thread text to check this. A comment that only recorded a plan or questions *with proposed defaults* does not block: that issue is implementable, so go to point 5.
    - The work is already claimed by another iteration — see **Claiming the work** below. For a multi-stage epic this is per stage, so a claim on stage 4 must not stop you implementing stage 5.
 2. Otherwise, read the title, body, and comments (paginated, 5-10 at a time) to evaluate the issue.
 3. If the issue is a large/architectural change that's too big for one PR, check the comment thread and linked/merged PRs first: if a staged rollout plan was already agreed there (a numbered list of stages, e.g. "stage 1: design, stage 2: schema, ..."), do not re-litigate whether the epic as a whole fits in one iteration. Identify the next stage that has no merged or open PR yet, and implement only that stage. Only propose a new staged plan (as a clarification comment) if no plan exists yet in the thread.
-4. If clarification is needed (including proposing a staged plan per point 3): post your questions as a GitHub comment and in Slack (#issues-open-questions, C0BMQT25DCP), then continue to the next issue. Do not post to Slack if there are no questions.
+4. If something is unclear (including proposing a staged plan per point 3), decide per question whether it has a reasonable default:
+   - **It has one** (the common case: a threshold, a cap, which of two existing rules applies, a label): take the most conservative option that reuses an existing rule, implement with it, and record each choice in the PR body under "Decisions taken" (and in `docs/payments.md` for money questions). The plan-first rule in CLAUDE.md is satisfied by that record and by the PR itself — do not post a plan and wait for approval, and never park the issue on a comment that proposes the default you could simply use. The PR is where the owner corrects a choice.
+   - **It has none** (the answer would change what is built in a way no existing rule decides, or choosing wrong is destructive or irreversible): post the question as a GitHub comment marked **Blocking question**, and in Slack (#issues-open-questions, C0BMQT25DCP), then continue to the next issue. Only this kind of comment makes point 1 skip the issue. Do not post to Slack if there are no blocking questions.
 5. If the issue (or the next un-implemented stage of it) is clear: **claim it first** (below), then implement the solution on the claimed branch and open a pull request. Then stop — the iteration is complete.
 
 ## Claiming the work
@@ -28,7 +30,7 @@ So claim the work **before** implementing it, never after. The claim is a branch
 
 A claim that is never released would block the work for ever, so:
 
-- **If you stop before opening a PR** — the issue turns out to need clarification after all, or you cannot finish — delete the branch you created and say so in a comment, so the next iteration can take the work.
+- **If you stop before opening a PR** — the issue turns out to need a blocking question after all, or you cannot finish — delete the branch you created and say so in a comment, so the next iteration can take the work.
 - **A claim is alive while it keeps moving.** Its last activity is the *later* of two things: the last push to the claim branch, and the last edit of its claim comment. The push half is free and needs no discipline — a session doing the work commits — and the comment half covers the long stretches where there is nothing to push yet.
 - **A claim is stale** when the branch exists, no open PR links the issue, and that last activity is more than **30 minutes** old. Treat it as abandoned: take the work over on that same branch (reuse the ref, don't delete and recreate it — a fresh ref would race with whatever may still be running), say in a comment that you are doing so, and carry on heartbeating it yourself.
 
@@ -44,4 +46,4 @@ PR rules:
 - Follow CLAUDE.md (docs checklist, tests, db-reviewer / test-writer when they apply) before gh pr create.
 - Do not approve or merge the PR. A separate routine reviews and merges.
 
-If no implementable issue is found (all need clarification, already have a PR, are claimed by a live iteration, or no open issues exist), say so briefly.
+If no implementable issue is found (all hold a blocking question, already have a PR, are claimed by a live iteration, or no open issues exist), say so briefly.
