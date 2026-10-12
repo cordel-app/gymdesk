@@ -1884,6 +1884,7 @@
     "new_exercise": "Nuevo ejercicio",
     "save": "Guardar",
     "name_translations_hint": "Deja un idioma en blanco para usar el nombre de arriba.",
+    "label_short_description": "Descripción corta",
     "view_toggle_label": "Vista",
     "view_cards": "Tarjetas",
     "view_list": "Lista",

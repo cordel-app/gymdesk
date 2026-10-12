@@ -15,6 +15,15 @@ import {
   withExerciseTranslations,
 } from '../domain/exerciseTranslations';
 import {
+  copyExerciseDescriptionTranslations,
+  descriptionTranslationsExpr,
+  localizedDescriptionExprs,
+  parseDescriptionTranslations,
+  parseShortDescription,
+  replaceExerciseDescriptionTranslations,
+  withDescriptionTranslations,
+} from '../domain/exerciseDescriptionTranslations';
+import {
   BASE_LOCALE,
   SUPPORTED_LOCALES,
   TRANSLATABLE_LOCALES,
@@ -93,6 +102,8 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
   SELECT e.*,
     ${localizedExerciseNameExpr('e', locale, 'display_name')},
     ${exerciseTranslationsExpr('e')},
+    ${localizedDescriptionExprs('e', locale)},
+    ${descriptionTranslationsExpr('e')},
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('key', ${MUSCLE_SLUG_SQL}, 'role', em.role))
      FROM exercise_muscles em WHERE em.exercise_id = e.id) AS muscles,
     ${primaryMuscleImagesSql('e')},
@@ -104,7 +115,7 @@ const selectFor = (locale: Parameters<typeof localizedExerciseNameExpr>[1]) => `
 `;
 
 /** A read row as the caller gets it: translations map plus the effective image (#1368 stage 4). */
-const shapeExercise = (row: any) => withEffectiveImage(withExerciseTranslations(row));
+const shapeExercise = (row: any) => withEffectiveImage(withDescriptionTranslations(withExerciseTranslations(row)));
 
 const selectForReq = (req: Request) => selectFor(getRequestLocale(req));
 
@@ -262,6 +273,11 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
   // mechanism for both kinds of exercise (§8, §10).
   const { translations, error: translationsError } = parseExerciseTranslations(req.body);
   if (translationsError) return res.status(400).json({ error: translationsError });
+  // #1419: the description in every other language, and the base short one.
+  const { descriptionTranslations, error: descTranslationsError } = parseDescriptionTranslations(req.body);
+  if (descTranslationsError) return res.status(400).json({ error: descTranslationsError });
+  const shortDescription = parseShortDescription(req.body);
+  if (shortDescription.error) return res.status(400).json({ error: shortDescription.error });
   const actor = platformActor(req);
   try {
     if (await nameTaken(name.trim())) {
@@ -270,11 +286,11 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
     const insertId = await db.transaction(async (tx) => {
       const { insertId } = await tx.query(
         `INSERT INTO exercises
-          (gym_id, name, description, video_url, image_url, category,
+          (gym_id, name, description, short_description, video_url, image_url, category,
            min_reps_default, max_reps_default, rest_default_seconds, sets_default, status,
            created_by)
-         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name.trim(), description ?? null, video_url ?? null, image_url ?? null, categoryInput.value,
+         VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name.trim(), description ?? null, shortDescription.value, video_url ?? null, image_url ?? null, categoryInput.value,
          min_reps_default ?? null, max_reps_default ?? null, rest_default_seconds ?? null,
          sets_default ?? null, status ?? 'active',
          actor],
@@ -287,6 +303,7 @@ platformExercisesRouter.post('/', requireSuperadmin, async (req, res, next) => {
       await assertRequestedResultTypesMatch(tx, categoryInput.value, allowedResultTypeIds);
       await syncExerciseResultTypes(tx, insertId, categoryInput.value);
       if (translations) await replaceExerciseTranslations(tx, insertId, translations);
+      if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, insertId, descriptionTranslations);
       return insertId;
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [insertId]);
@@ -318,6 +335,11 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
   // clear the catalogue's translations).
   const { translations, error: translationsError } = parseExerciseTranslations(req.body);
   if (translationsError) return res.status(400).json({ error: translationsError });
+  // #1419: the description in every other language, and the base short one.
+  const { descriptionTranslations, error: descTranslationsError } = parseDescriptionTranslations(req.body);
+  if (descTranslationsError) return res.status(400).json({ error: descTranslationsError });
+  const shortDescription = parseShortDescription(req.body);
+  if (shortDescription.error) return res.status(400).json({ error: shortDescription.error });
   const actor = platformActor(req);
   try {
     const { rows: existing } = await db.query(
@@ -333,6 +355,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
         `UPDATE exercises SET
           name                  = COALESCE(?, name),
           description           = IF(?, ?, description),
+          short_description     = IF(?, ?, short_description),
           video_url             = IF(?, ?, video_url),
           -- #719 part 2: and the video's poster belongs to the video it was
           -- captured from, so repointing video_url drops it too.
@@ -357,6 +380,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
         [
           name?.trim() ?? null,
           'description' in req.body ? 1 : 0, description ?? null,
+          shortDescription.provided ? 1 : 0, shortDescription.value,
           'video_url' in req.body ? 1 : 0, video_url ?? null,
           'video_url' in req.body ? 1 : 0,
           'image_url' in req.body ? 1 : 0, image_url ?? null,
@@ -381,6 +405,7 @@ platformExercisesRouter.put('/:id', requireSuperadmin, async (req, res, next) =>
       await assertRequestedResultTypesMatch(tx, category, allowedResultTypeIds);
       if (categoryInput.provided) await syncExerciseResultTypes(tx, id, category);
       if (translations) await replaceExerciseTranslations(tx, id, translations);
+      if (descriptionTranslations) await replaceExerciseDescriptionTranslations(tx, id, descriptionTranslations);
     });
     const { rows } = await db.query(`${selectForReq(req)} WHERE e.id = ?`, [id]);
     const updated = shapeExercise(rows[0]);
