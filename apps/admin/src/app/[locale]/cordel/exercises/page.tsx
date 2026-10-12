@@ -8,17 +8,20 @@ import { ContextMenu } from '@/components/ContextMenu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { StatusBadge } from '@/components/StatusBadge';
 import { DataTable, Column } from '@/components/DataTable';
-import { ExerciseImageField } from '@/components/ExerciseImageField';
-import { ExerciseVideoField } from '@/components/ExerciseVideoField';
 import { cardSurfaceStyle, primaryBtnStyle } from '@/components/ui';
 import { listNameBadgeStyle } from '@/components/listChrome';
-import type { PreparedExerciseImage } from '@/lib/exerciseImageUpload';
-import type { PreparedExerciseVideo } from '@/lib/exerciseVideoUpload';
+import { ExerciseGenderMedia } from '@/components/exercises/ExerciseGenderMedia';
+import {
+  type GenderMediaKey,
+  type PreparedGenderMedia,
+  type StagedGenderMedia,
+  uploadStagedGenderMedia,
+} from '@/lib/exerciseGenderMedia';
 // #806: one Exercise editor, one form declaration, one form-state hook — the
 // same ones the gym Exercises page renders. What this page supplies is the
 // platform context: the `/platform/exercises` routes and their superadmin
 // permissions, which are untouched (§6, AC4, AC5).
-import { ExerciseEditor, ExerciseMediaPair, type ExerciseNameLocales } from '@/components/exercises/ExerciseEditor';
+import { ExerciseEditor, type ExerciseNameLocales } from '@/components/exercises/ExerciseEditor';
 import { useExerciseEditorState, useMuscleLabel } from '@/components/exercises/useExerciseEditorState';
 // #965: the expanded card is the editor's read-only counterpart, and `⋮ → Details`
 // is the one place the technical metadata lives. Both are shared with the gym
@@ -61,6 +64,17 @@ interface Exercise {
   image_url: string | null;
   /** Its 512×512 companion — what every card draws, so no master is downloaded (§4). */
   image_thumbnail_url: string | null;
+  /** #1420: the four gender-specific references and the companions derived from them. */
+  image_male_url: string | null;
+  image_female_url: string | null;
+  video_male_url: string | null;
+  video_female_url: string | null;
+  image_male_thumbnail_url: string | null;
+  image_female_thumbnail_url: string | null;
+  video_male_preview_url: string | null;
+  video_male_preview_thumbnail_url: string | null;
+  video_female_preview_url: string | null;
+  video_female_preview_thumbnail_url: string | null;
   /**
    * The demonstration video (#717). An uploaded MP4 lives in
    * `cordel/exercises/videos/`; on a row that was never uploaded to, the same
@@ -127,10 +141,16 @@ export default function CordelExercisesPage() {
   const [creating, setCreating] = useState(false);
   const createState = useExerciseEditorState();
   const newNameRef = useRef<HTMLInputElement>(null);
-  // #719's staging, one folder over: there is no exercise to upload to until the
-  // creation call has returned, so the prepared pair waits here.
-  const [stagedImage, setStagedImage] = useState<PreparedExerciseImage | null>(null);
-  const [stagedVideo, setStagedVideo] = useState<PreparedExerciseVideo | null>(null);
+  // #1420: there is no exercise to upload to until the creation call has
+  // returned, so the four prepared picks wait here.
+  const [stagedMedia, setStagedMedia] = useState<StagedGenderMedia>({});
+  const stageMedia = (key: GenderMediaKey, prepared: PreparedGenderMedia | null) =>
+    setStagedMedia((prev) => {
+      const next = { ...prev };
+      if (prepared) next[key] = prepared;
+      else delete next[key];
+      return next;
+    });
 
   const [editingId, setEditingId] = useState<number | null>(null);
   const editState = useExerciseEditorState();
@@ -211,8 +231,7 @@ export default function CordelExercisesPage() {
 
   function openInlineNew() {
     createState.reset(null);
-    setStagedImage(null);
-    setStagedVideo(null);
+    setStagedMedia({});
     setCreating(true);
     setTimeout(() => newNameRef.current?.focus(), 60);
   }
@@ -221,8 +240,7 @@ export default function CordelExercisesPage() {
   function closeInlineNew() {
     setCreating(false);
     createState.reset(null);
-    setStagedImage(null);
-    setStagedVideo(null);
+    setStagedMedia({});
   }
 
   async function saveInlineNew() {
@@ -233,20 +251,13 @@ export default function CordelExercisesPage() {
       });
       // A failed media upload leaves the exercise created and says so, rather
       // than discarding an exercise that already exists (#719's rule).
-      if (stagedImage) {
-        try {
-          await apiFetch(`${API_BASE}/${created.id}/image`, { method: 'POST', body: JSON.stringify(stagedImage) });
-        } catch (err: any) {
-          toast(err.message ?? t('image_error_upload_failed'));
-        }
-      }
-      if (stagedVideo) {
-        try {
-          await apiFetch(`${API_BASE}/${created.id}/video`, { method: 'POST', body: JSON.stringify(stagedVideo) });
-        } catch (err: any) {
-          toast(err.message ?? t('video_error_upload_failed'));
-        }
-      }
+      const failures = await uploadStagedGenderMedia(
+        (path, body) => apiFetch(path, { method: 'POST', body: JSON.stringify(body) }),
+        API_BASE,
+        created.id,
+        stagedMedia,
+      );
+      if (failures.length > 0) toast(failures[0].message ?? t('gender_media_created_upload_failed'));
     });
     if (!saved) return;
     closeInlineNew();
@@ -314,30 +325,18 @@ export default function CordelExercisesPage() {
    */
   function renderEditorMedia(exercise: Exercise | null) {
     return (
-      <ExerciseMediaPair
-        image={<ExerciseImageField
-          basePath={API_BASE}
-          requiresGymStorage={false}
-          exerciseId={exercise?.id ?? null}
-          imageUrl={exercise?.image_url ?? null}
-          thumbnailUrl={exercise?.image_thumbnail_url ?? null}
-          onChanged={exercise ? (updated) => applyExerciseUpdate(updated as Exercise) : undefined}
-          onStaged={exercise ? undefined : setStagedImage}
-        />}
-        video={<ExerciseVideoField
-          basePath={API_BASE}
-          requiresGymStorage={false}
-          exerciseId={exercise?.id ?? null}
-          videoUrl={exercise?.video_url ?? null}
-          posterUrl={exercise?.video_thumbnail_url ?? null}
-          onChanged={exercise ? (updated) => {
-            // A replacement reuses the same key, so a player left open would
-            // keep showing the old bytes from cache.
-            setPlayingId(null);
-            applyExerciseUpdate(updated as Exercise);
-          } : undefined}
-          onStaged={exercise ? undefined : setStagedVideo}
-        />}
+      <ExerciseGenderMedia
+        basePath={API_BASE}
+        requiresGymStorage={false}
+        exerciseId={exercise?.id ?? null}
+        values={exercise}
+        onChanged={exercise ? (updated) => {
+          // A replacement reuses the same key, so a player left open would
+          // keep showing the old bytes from cache.
+          setPlayingId(null);
+          applyExerciseUpdate(updated as Exercise);
+        } : undefined}
+        onStage={exercise ? undefined : stageMedia}
       />
     );
   }

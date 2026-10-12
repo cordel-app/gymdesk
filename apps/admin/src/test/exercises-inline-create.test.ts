@@ -66,7 +66,7 @@ function slice(from: string, to: string, src: string = pageSrc): string {
 }
 
 /** The one form body every Exercise editing surface renders (#806). */
-const formSrc = slice('export function ExerciseEditor(', 'export function ExerciseMediaPair(', editorSrc);
+const formSrc = slice('export function ExerciseEditor(', 'const inlineLabelSt', editorSrc);
 /** The inline creation card. */
 const newRowSrc = slice('function renderInlineNewRow(', 'function renderEditSection(');
 
@@ -196,21 +196,22 @@ describe('Exercises: inline creation (#805)', () => {
       }
     });
 
-    it('the media pair is one responsive grid, Image before Video', () => {
+    it('the media section is one responsive grid, a column per gender with Image before Video', () => {
       expect(chromeSrc).toMatch(/exerciseMediaGridStyle[\s\S]*?repeat\(auto-fit, minmax\(260px, 1fr\)\)/);
-      expect(editorSrc).toContain('const mediaGridSt = exerciseMediaGridStyle;');
-      const pairSrc = slice('export function ExerciseMediaPair(', 'const inlineLabelSt', editorSrc);
-      expect(pairSrc).toContain('style={mediaGridSt}');
-      expect(pairSrc.indexOf("t('label_image')")).toBeLessThan(pairSrc.indexOf("t('label_video')"));
+      const sectionSrc = stripComments(readFileSync(
+        join(__dirname, '..', 'components', 'exercises', 'ExerciseGenderMedia.tsx'), 'utf-8'));
+      expect(sectionSrc).toContain('style={exerciseMediaGridStyle}');
+      expect(sectionSrc.indexOf("'label_image'")).toBeLessThan(sectionSrc.indexOf("'label_video'"));
+      expect(sectionSrc).toContain('EXERCISE_GENDERS.map');
     });
   });
 
   describe('AC9 — the media upload behaviour is untouched', () => {
-    it('the creation card still stages both files for after the exercise exists', () => {
-      expect(newRowSrc).toContain('onStaged={setStagedImage}');
-      expect(newRowSrc).toContain('onStaged={setStagedVideo}');
-      expect(pageSrc).toContain('`/exercises/${created.id}/image`');
-      expect(pageSrc).toContain('`/exercises/${created.id}/video`');
+    it('the creation card stages the four files for after the exercise exists', () => {
+      expect(newRowSrc).toContain('onStage={stageMedia}');
+      expect(newRowSrc).toContain('exerciseId={null}');
+      expect(pageSrc).toContain('uploadStagedGenderMedia(');
+      expect(pageSrc).toContain("'/exercises',\n        created.id,");
     });
 
     it('the editor still acts on the exercise directly', () => {
@@ -233,8 +234,7 @@ describe('Exercises: inline creation (#805)', () => {
       expect(cancel).not.toContain('apiFetch');
       expect(cancel).toContain('setAddOpen(false)');
       expect(cancel).toContain('addState.reset(null)');
-      expect(cancel).toContain('setStagedImage(null)');
-      expect(cancel).toContain('setStagedVideo(null)');
+      expect(cancel).toContain('setStagedMedia({})');
     });
 
     it('Save posts to the existing creation endpoint', () => {
