@@ -4,39 +4,45 @@ import React from 'react';
 import { useTranslations } from 'next-intl';
 // #967: the alt text is the name in the reader's own language.
 import { exerciseName } from '@/lib/exerciseNames';
-import { EXERCISE_IMAGE_MASTER_SIZE, SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
+import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
+import {
+  EXERCISE_GENDERS,
+  type ExerciseGender,
+  genderMediaKey,
+  genderMediaMaster,
+  genderMediaThumbnail,
+} from '@/lib/exerciseGenderMedia';
+
+/** The master size the server stores an exercise image at (#1420). */
+const EXERCISE_GENDER_IMAGE_MASTER_SIZE = 1080;
 import { exerciseMediaGridStyle, exerciseFieldLabelStyle } from './exerciseFieldChrome';
 import type { ExerciseMediaRow } from './exerciseForm';
 
 /**
- * The MEDIA section of a **read-only** expanded Exercise card (#965 §8): the
- * image and the video, shown and nothing else — no upload, no replace, no
- * remove. Those live in `ExerciseEditor`'s own Media section, behind
- * `⋮ → Edit`, which is where every write on an Exercise lives (#797, #806 §11).
+ * The MEDIA section of a **read-only** expanded Exercise card (#965 §8, reshaped
+ * by #1420 stage 3): the four gender-specific references — a male and a female
+ * image, a male and a female video — shown and nothing else. No upload, no
+ * replace, no remove: those live in `ExerciseEditor`'s own Media section, behind
+ * `⋮ → Edit`, where every write on an Exercise lives (#797, #806 §11).
  *
  * It is one component for both Exercise screens, for the reason the editor is
- * (#806): the gym Exercises page and Cordel's Base Exercises page had grown two
- * different previews of the same two columns — one a pair of 160px thumbnails
- * beside the raw `video_url` text, the other a framed thumbnail with a poster
- * that doubles as a play control — so the same exercise read differently
- * depending on which page you opened it from.
+ * (#806), and it renders the same grid the editor's `ExerciseGenderMedia` does —
+ * a column per gender, the image above the video — so a value reads in the place
+ * its control will be.
  *
  * Two properties are the rule rather than the implementation:
  *
- *  - **Nothing heavy is fetched to draw a card.** The image frame draws the
- *    512×512 thumbnail, never the 2048×2048 master (#716 §4) — the master is only
- *    ever fetched by following `View full size`, which opens it in a new tab —
- *    and no `<video>` is mounted until someone asks to play one (#717 §9), so
- *    expanding a card never pulls an MP4 down.
- *  - **Only a reference with a drawable scheme reaches the DOM.** `image_url` and
- *    `video_url` are columns a `PUT` can set to any string, and on a row that was
- *    never uploaded to the video is typically a YouTube link — a reference this
- *    component *links to* rather than tries to play. (CodeQL `js/xss-through-dom`
- *    is the reason the guard is inline at the sink rather than assumed upstream.)
+ *  - **Nothing heavy is fetched to draw a card.** An image frame draws its 256 ×
+ *    256 thumbnail, never the 1080 master (only `View full size` opens it, in a
+ *    new tab), and a video frame draws its preview thumbnail; no `<video>` is
+ *    mounted until someone asks to play one (#717 §9).
+ *  - **Only a reference with a drawable scheme reaches the DOM.** The columns are
+ *    ones a `PUT` can set to any string; the guard is inline at each sink for
+ *    CodeQL's `js/xss-through-dom`.
  *
- * `playing` / `onPlay` are the caller's, not this component's, so a page can keep
- * one player at a time across several expanded cards — a second clip starting
- * over the first is the whole reason the state is not internal.
+ * `playing` / `onPlay` are the caller's, so a page keeps one player at a time
+ * across several expanded cards; which gender's clip is mounted inside that card
+ * is local, since only one of its two can have been asked for.
  */
 export function ExerciseMediaPreview({ exercise, playing, onPlay }: {
   exercise: ExerciseMediaRow;
@@ -45,16 +51,27 @@ export function ExerciseMediaPreview({ exercise, playing, onPlay }: {
   onPlay: () => void;
 }) {
   const t = useTranslations('exercises');
+  const [which, setWhich] = React.useState<ExerciseGender | null>(null);
   return (
     <div style={exerciseMediaGridStyle}>
-      <div>
-        <p style={exerciseFieldLabelStyle}>{t('label_image')}</p>
-        <ImagePreview exercise={exercise} />
-      </div>
-      <div>
-        <p style={exerciseFieldLabelStyle}>{t('label_video')}</p>
-        <VideoPreview exercise={exercise} playing={playing} onPlay={onPlay} />
-      </div>
+      {EXERCISE_GENDERS.map((gender) => (
+        <div key={gender}>
+          <p style={{ ...exerciseFieldLabelStyle, fontSize: 13, marginBottom: 10 }}>{t(`gender_${gender}` as any)}</p>
+          <div style={{ marginBottom: 16 }}>
+            <p style={exerciseFieldLabelStyle}>{t('label_image')}</p>
+            <ImagePreview exercise={exercise} gender={gender} />
+          </div>
+          <div>
+            <p style={exerciseFieldLabelStyle}>{t('label_video')}</p>
+            <VideoPreview
+              exercise={exercise}
+              gender={gender}
+              playing={playing && which === gender}
+              onPlay={() => { setWhich(gender); onPlay(); }}
+            />
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -67,15 +84,13 @@ function cacheKey(exercise: ExerciseMediaRow): string {
   return encodeURIComponent(exercise.modified_at ?? exercise.created_at);
 }
 
-function ImagePreview({ exercise }: { exercise: ExerciseMediaRow }) {
+function ImagePreview({ exercise, gender }: { exercise: ExerciseMediaRow; gender: ExerciseGender }) {
   const t = useTranslations('exercises');
   const version = cacheKey(exercise);
-  // #1368 stage 4: the effective image (own, else the primary muscle's) is what is shown;
-  // the raw fields stay the exercise's own media for the upload controls.
-  const thumbnail = exercise.effective_image_thumbnail_url ?? exercise.effective_image_url
-    ?? exercise.image_thumbnail_url ?? exercise.image_url;
+  const key = genderMediaKey('image', gender);
+  const master = genderMediaMaster(exercise, key);
+  const thumbnail = genderMediaThumbnail(exercise, key) ?? master;
   const drawable = thumbnail != null && SAFE_IMAGE_SRC.test(thumbnail);
-  const master = exercise.effective_image_url ?? exercise.image_url;
   const masterOpenable = master != null && SAFE_IMAGE_SRC.test(master);
 
   return (
@@ -85,7 +100,7 @@ function ImagePreview({ exercise }: { exercise: ExerciseMediaRow }) {
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={`${thumbnail}?v=${version}`}
-            alt={exerciseName(exercise)}
+            alt={`${exerciseName(exercise)} — ${t(`gender_${gender}` as any)}`}
             loading="lazy"
             style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
           />
@@ -95,23 +110,25 @@ function ImagePreview({ exercise }: { exercise: ExerciseMediaRow }) {
       </div>
       {masterOpenable && (
         <a href={`${master}?v=${version}`} target="_blank" rel="noreferrer" style={mediaLinkStyle}>
-          {t('image_view_full_size', { size: EXERCISE_IMAGE_MASTER_SIZE })}
+          {t('image_view_full_size', { size: EXERCISE_GENDER_IMAGE_MASTER_SIZE })}
         </a>
       )}
     </div>
   );
 }
 
-function VideoPreview({ exercise, playing, onPlay }: {
+function VideoPreview({ exercise, gender, playing, onPlay }: {
   exercise: ExerciseMediaRow;
+  gender: ExerciseGender;
   playing: boolean;
   onPlay: () => void;
 }) {
   const t = useTranslations('exercises');
   const version = cacheKey(exercise);
-  const poster = exercise.video_thumbnail_url;
+  const key = genderMediaKey('video', gender);
+  const video = genderMediaMaster(exercise, key);
+  const poster = genderMediaThumbnail(exercise, key);
   const posterDrawable = poster != null && SAFE_IMAGE_SRC.test(poster);
-  const video = exercise.video_url;
   const hasVideo = video != null;
   // An uploaded object is an `.mp4` this deployment stored; anything else the
   // column holds is a link, and a `<video>` would only fail to decode it.
@@ -144,14 +161,11 @@ function VideoPreview({ exercise, playing, onPlay }: {
               src={`${poster}?v=${version}`}
               alt=""
               loading="lazy"
-              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
             />
             {playable && <span aria-hidden="true" style={playOverlayStyle}>▶</span>}
           </button>
         ) : playable ? (
-          // A clip with no stored poster — there is nothing to draw, but it is
-          // still playable, so the frame offers the player rather than a dead
-          // "No preview".
           <button type="button" onClick={onPlay} title={t('video_play')} style={posterButtonStyle(true)}>
             <span style={{ ...playOverlayStyle, color: 'var(--gd-link, #6c63ff)', textShadow: 'none' }}>▶</span>
           </button>
@@ -160,8 +174,6 @@ function VideoPreview({ exercise, playing, onPlay }: {
         )}
       </div>
       {hasVideo && !playable && SAFE_IMAGE_SRC.test(video!) && (
-        // An external link the exercise carries — shown as what it is rather than
-        // played, since nothing here can vouch for what is behind it.
         <a href={video!} target="_blank" rel="noreferrer" style={{ ...mediaLinkStyle, wordBreak: 'break-all' }}>
           {video}
         </a>
