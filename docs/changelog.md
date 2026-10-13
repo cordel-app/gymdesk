@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1582 stage 1 (`user_memberships` dependency inventory in `docs/user-memberships-inventory.md`; `resolveCurrentProductSet()` is the one rule for a member's current ProductSet, used by the Member configuration read; no schema change)
+
 - **Done**: #1570 (the three Description fields of the exercise editor — base, Spanish, Catalan — are multiline textareas, vertically resizable; Short Description stays single-line; presentation only, no API or migration)
 - **Done**: #1566 (Cordel → Muscles list shows two small circular thumbnails — male then female — before each muscle name, each with its own neutral placeholder when missing, and no substitution of one for the other; presentation only, no API or migration)
 - **Done**: #1538 (stage 2: a plan Draft shown in the Member card's Membership Plans keeps only *Cancel* — its individual *Save* / *Save & Pay* buttons and menu item are gone, so the Products tab's one global Save & Pay (Review your changes) commits the plan with the recurring Products; the Assigned Plans page, which has no global section, keeps them. View-only, no API change. Remaining: automatic Draft creation when editing an Active plan, and the component-cancel rules)
