@@ -3,6 +3,8 @@
 // time zone (#1246); weekday is 0=Sunday … 6=Saturday.
 import { DateTime } from 'luxon';
 
+export const ROLLING_WEEK_DAYS = 7;
+export const ROLLING_MONTH_DAYS = 30;
 export const FUTURE_WORKOUT_CODE = 'workout_in_future';
 
 export function gymToday(now: Date, timeZone: string): string {
@@ -35,7 +37,7 @@ export function trainingProgress(
   workouts: WorkoutDef[],
   logs: Completed[],
   today: string,
-  firstDayOfWeek = 1,
+  _firstDayOfWeek = 1,
   selected: string = today,
 ): TrainingProgress {
   const done = new Set(logs.map((l) => `${l.blockId}|${String(l.date).slice(0, 10)}`));
@@ -53,15 +55,13 @@ export function trainingProgress(
     }
     return counts(c, t);
   };
-  // #1370 stage 2: the periods are the ones containing the selected date, and
-  // none of them counts a day after today.
+  // #1524: week and month are rolling windows (7 and 30 days) ending on the
+  // selected date, and none of them counts a day after today.
   const t = DateTime.fromISO(selected, { zone: 'UTC' });
-  const cap = (d: string) => (d > today ? today : d);
-  const back = (((t.weekday % 7) - firstDayOfWeek) + 7) % 7;
-  const weekStart = t.minus({ days: back });
+  const end = selected > today ? today : selected;
   return {
     day: selected > today ? counts(0, 0) : range(selected, selected),
-    week: range(weekStart.toISODate()!, cap(weekStart.plus({ days: 6 }).toISODate()!)),
-    month: range(t.startOf('month').toISODate()!, cap(t.endOf('month').toISODate()!)),
+    week: range(t.minus({ days: ROLLING_WEEK_DAYS - 1 }).toISODate()!, end),
+    month: range(t.minus({ days: ROLLING_MONTH_DAYS - 1 }).toISODate()!, end),
   };
 }

@@ -10,7 +10,6 @@ import {
 } from '@/components/formChrome';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
-import { SectionEditButton } from '@/components/SectionEditButton';
 import { primaryBtnSmall } from '@/components/ui';
 import { GOAL_API_ROOTS, GoalListResponse, GoalRow, goalAvailability, goalDisplayName } from '@/components/goalLibrary/goalProfile';
 import { AddReadingModal } from './AddReadingModal';
@@ -64,7 +63,6 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
 
   // #1428: the section's own Edit mode (the Member card has no global one any
   // more). The add/edit/unassign actions belong to it and are absent outside it.
-  const [editing, setEditing] = useState(false);
   const [rows, setRows] = useState<AssignedPersonalGoalRow[]>([]);
   const [goals, setGoals] = useState<GoalRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,24 +127,13 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
   // The catalogue the picker offers — only needed once Edit mode is open, which is
   // also the only moment it can be stale enough to matter.
   useEffect(() => {
-    if (!editing) return;
+    if (!canWrite) return;
     apiFetch<GoalListResponse>(`${GOAL_API_ROOTS.gym.personal}?limit=200`)
       // #1181 — a goal the gym deactivated is not offered for a new assignment
       // (the server refuses it either way); the picker lists what it may pick.
       .then((data) => setGoals(data.items.filter((goal) => goalAvailability(goal) === 'active')))
       .catch(() => {});
-  }, [apiFetch, editing]);
-
-  // Leaving Edit mode discards a half-typed draft, exactly as the card's own
-  // sections do (#924 stage 5).
-  useEffect(() => {
-    if (editing) return;
-    setCreating(false); setNewError(null);
-    setEditingId(null); setEditError(null);
-    // The reading dialog is one of the mode's controls too, so leaving the mode
-    // closes it rather than leaving it mounted over a read-only card.
-    setReading(null);
-  }, [editing]);
+  }, [apiFetch, canWrite]);
 
   const nameOfGoal = useCallback(
     (row: Pick<AssignedPersonalGoalRow, 'goal_slug' | 'goal_name'>) =>
@@ -169,7 +156,7 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
     [goals, tGoals, locale],
   );
 
-  const canEdit = canWrite && editing;
+  const canEdit = canWrite;
 
   async function saveNew(): Promise<boolean> {
     const invalid = assignedPersonalGoalFormError(newForm);
@@ -207,21 +194,6 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
     } finally { setEditSaving(false); }
   }
 
-  // #1489: the section's Save persists whichever inline form is open and leaves
-  // Edit mode only when every save succeeded; a failure keeps the mode open with
-  // the draft and its error line intact. Everything else in the section already
-  // persisted through its own route.
-  async function saveSection() {
-    if (creating && !(await saveNew())) return;
-    const open = editingId === null ? null : rows.find((r) => r.id === editingId);
-    if (open && !(await saveEdit(open))) return;
-    setEditing(false);
-  }
-
-  // Cancel discards the open drafts without saving; the mode-exit effect clears
-  // them.
-  function cancelSection() { setEditing(false); }
-
   // #1428 §2.3: unassigning is a permanent delete of the assignment and its
   // readings (one transaction, server-side). A second click while it runs is
   // ignored, and the section refreshes only on success.
@@ -243,27 +215,6 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
 
   return (
     <div>
-      {canWrite && (
-        <div style={{ marginBottom: 8 }}>
-          {editing ? (
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button
-                type="button"
-                style={{ ...primaryBtnSmall(), opacity: newSaving || editSaving ? 0.6 : 1 }}
-                disabled={newSaving || editSaving}
-                onClick={saveSection}
-              >
-                {t('save')}
-              </button>
-              <button type="button" style={secondaryBtnSmall} disabled={newSaving || editSaving} onClick={cancelSection}>
-                {t('cancel')}
-              </button>
-            </div>
-          ) : (
-            <SectionEditButton label={t('edit')} onClick={() => setEditing(true)} />
-          )}
-        </div>
-      )}
       {rows.length === 0 && !creating && <p style={cardMutedTextStyle}>{t('member_empty')}</p>}
 
       {rows.map((row) => (
@@ -295,7 +246,25 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
                 unit={row.target_unit}
                 summary={row}
                 label={(key) => t(key as any)}
-                trailing={<StatusBadge status={row.status} label={t(`status_${row.status}` as any)} />}
+                trailing={(
+                  <>
+                    <StatusBadge status={row.status} label={t(`status_${row.status}` as any)} />
+                    {/* #1518: the item's own Edit, as on Professional Services. */}
+                    {canEdit && (
+                      <button
+                        type="button"
+                        style={primaryBtnSmall()}
+                        onClick={() => {
+                          setEditingId(row.id);
+                          setEditForm(toAssignedPersonalGoalFormValues(row));
+                          setEditError(null);
+                        }}
+                      >
+                        {t('edit')}
+                      </button>
+                    )}
+                  </>
+                )}
               />
               {/* The card's own `Label: Value` row (#929), never a second one. */}
               <CardDetailRow label={t('label_period')} value={formatGoalPeriod(row, locale, gymFmt)} />
@@ -330,17 +299,6 @@ export function MemberPersonalGoals({ memberId, canWrite }: {
               {/* Both actions belong to Edit mode: absent outside it, not disabled. */}
               {canEdit && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
-                  <button
-                    type="button"
-                    style={secondaryBtnSmall}
-                    onClick={() => {
-                      setEditingId(row.id);
-                      setEditForm(toAssignedPersonalGoalFormValues(row));
-                      setEditError(null);
-                    }}
-                  >
-                    {t('edit')}
-                  </button>
                   {/* #1037 §3/§21 — a measurement and a new baseline, two
                       writers rather than one with a flag. They belong to Edit
                       mode like every other control in this section (#797/#957):
