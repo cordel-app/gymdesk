@@ -11,6 +11,7 @@ import { DateTime } from 'luxon';
 import { createClerkClient } from '@clerk/backend';
 import { parseBlockLogResult } from '../domain/blockResultUnits';
 import { gymToday, trainingProgress, ROLLING_MONTH_DAYS } from '../domain/workoutProgress';
+import { canCompleteOn, isMealScheduledOn, nutritionProgress } from '../domain/nutritionProgress';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
@@ -1363,6 +1364,116 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
 
     res.json({ plan: { ...plan, days, restrictions: restrictionRows, goals: goalRows } });
   } catch (err) { next(err); }
+});
+
+/**
+ * #1580: the caller's active nutrition plan's meals as (id, weekday) pairs — the
+ * only thing meal-completion rules need from the plan.
+ */
+async function activePlanMeals(gymId: string, memberId: number): Promise<{ id: number; weekday: number }[]> {
+  const { rows } = await db.query(
+    `SELECT m.id, d.weekday
+     FROM member_nutrition_plans p
+     JOIN member_nutrition_plan_days d ON d.member_nutrition_plan_id = p.id AND d.gym_id = p.gym_id
+     JOIN member_nutrition_plan_meals m ON m.member_nutrition_plan_day_id = d.id AND m.gym_id = p.gym_id
+     WHERE p.gym_id = ? AND p.member_id = ? AND p.status = 'active'
+       AND p.id = (SELECT id FROM member_nutrition_plans WHERE gym_id = ? AND member_id = ? AND status = 'active'
+                   ORDER BY created_at DESC LIMIT 1)`,
+    [gymId, memberId, gymId, memberId],
+  );
+  return (rows as any[]).map((r) => ({ id: r.id, weekday: Number(r.weekday) }));
+}
+
+/**
+ * #1580: Today / This Week / This Month meal-completion progress plus the status
+ * of each day of the selected date's Monday-first week. Same windows as
+ * `/training-progress`; future meals are never in a denominator.
+ */
+meRouter.get('/nutrition-progress', requireRole('member'), requireFeatureEnabled('nutrition.nutrition_plans'), requireFeatureEnabled('member_web.my_nutrition'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const tz = await gymTimeZone(gymId);
+    const today = gymToday(new Date(), tz);
+    const q = typeof req.query.date === 'string' ? req.query.date : '';
+    if (q && !/^\d{4}-\d{2}-\d{2}$/.test(q)) return res.status(400).json({ error: 'date must be YYYY-MM-DD' });
+    const selected = q || today;
+    const meals = await activePlanMeals(gymId, memberId);
+    const { rows: logs } = await db.query(
+      `SELECT meal_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS d FROM nutrition_logs
+       WHERE gym_id = ? AND member_id = ? AND logged_date BETWEEN ? AND ?`,
+      [gymId, memberId,
+       DateTime.fromISO(selected).minus({ days: ROLLING_MONTH_DAYS + 7 }).toISODate(),
+       DateTime.fromISO(selected).plus({ days: 7 }).toISODate()],
+    );
+    res.json({
+      ...nutritionProgress(meals, (logs as any[]).map((l) => ({ mealId: l.meal_id, date: l.d })), today, selected),
+      today,
+    });
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #1580: the caller's meal completions (the page marks a meal done on a date from these). */
+meRouter.get('/nutrition-logs', requireRole('member'), requireFeatureEnabled('nutrition.nutrition_plans'), requireFeatureEnabled('member_web.my_nutrition'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const { rows } = await db.query(
+      `SELECT id, meal_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS logged_date, created_at
+       FROM nutrition_logs WHERE gym_id = ? AND member_id = ? ORDER BY logged_date DESC, id DESC`,
+      [gymId, memberId],
+    );
+    res.json(rows);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
+});
+
+/**
+ * #1580: mark a scheduled meal done on a date. The meal must be on the caller's
+ * own active plan and scheduled that weekday, and the date may not be after the
+ * gym's today (the rule is the server's, not the button's). Idempotent: the
+ * UNIQUE (member, meal, date) key means a repeated or concurrent request returns
+ * the existing record (200) instead of a second one. No delete route, as with
+ * workout block logs.
+ */
+meRouter.post('/nutrition-logs', requireRole('member'), requireFeatureEnabled('nutrition.nutrition_plans'), requireFeatureEnabled('member_web.my_nutrition'), async (req: Request, res: Response, next: NextFunction) => {
+  const ctx = getTenantContext(req);
+  const { gymId } = ctx;
+  const mealId = Number(req.body?.meal_id);
+  const loggedDate = req.body?.logged_date;
+  if (!Number.isInteger(mealId) || mealId <= 0 || typeof loggedDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(loggedDate)
+      || !DateTime.fromISO(loggedDate).isValid) {
+    return res.status(400).json({ error: 'meal_id and logged_date (YYYY-MM-DD) are required' });
+  }
+  try {
+    const memberId = await resolveMemberId(gymId, ctx);
+    const meals = await activePlanMeals(gymId, memberId);
+    const meal = meals.find((m) => m.id === mealId);
+    if (!meal) return res.status(403).json({ error: 'You can only log meals of your own nutrition plan.' });
+    if (!isMealScheduledOn(meal, loggedDate)) return res.status(400).json({ error: 'That meal is not scheduled on that date.' });
+    const today = gymToday(new Date(), await gymTimeZone(gymId));
+    if (!canCompleteOn(loggedDate, today)) return res.status(400).json({ error: 'A future meal cannot be marked as done.' });
+    const { rowCount } = await db.query(
+      'INSERT IGNORE INTO nutrition_logs (gym_id, member_id, meal_id, logged_date) VALUES (?, ?, ?, ?)',
+      [gymId, memberId, mealId, loggedDate],
+    );
+    const { rows } = await db.query(
+      `SELECT id, meal_id, DATE_FORMAT(logged_date, '%Y-%m-%d') AS logged_date, created_at
+       FROM nutrition_logs WHERE gym_id = ? AND member_id = ? AND meal_id = ? AND logged_date = ?`,
+      [gymId, memberId, mealId, loggedDate],
+    );
+    res.status(rowCount ? 201 : 200).json(rows[0]);
+  } catch (err: any) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    next(err);
+  }
 });
 
 /**

@@ -577,7 +577,27 @@
     "goal_frequency": {
       "daily": "diario",
       "weekly": "semanal"
-    }
+    },
+    "progress_day": "Hoy",
+    "progress_week": "Esta semana",
+    "progress_month": "Este mes",
+    "week_nav_hint": "Desliza para cambiar de semana",
+    "today_marker": "Hoy",
+    "status_completed": "Completado",
+    "status_pending": "Pendiente",
+    "status_scheduled": "Programado",
+    "status_rest": "Sin comidas",
+    "status_legend_open": "Ver leyenda de estados",
+    "status_legend_title": "Estado de la nutrición",
+    "status_legend_close": "Cerrar",
+    "status_legend_completed": "Verde — Todas las comidas completadas.",
+    "status_legend_pending": "Rojo — Queda al menos una comida pendiente.",
+    "status_legend_scheduled": "Amarillo — Comidas programadas para una fecha futura.",
+    "status_legend_rest": "Gris — Sin comidas programadas.",
+    "mark_done": "Marcar hecho",
+    "meal_done": "Hecho",
+    "mark_done_aria": "Marcar {name} como hecho",
+    "no_meals_today": "No hay comidas programadas para este día."
   },
   "goals": {
     "title": "Mis Objetivos",
