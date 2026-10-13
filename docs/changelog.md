@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1563 (My Training no longer shows the green "Block logged" notice after Mark Done; errors and the individual exercise Register notices are unchanged, no API change)
 - **Done**: #1561 (Base Exercises and Exercises lists show two small circular thumbnails — male then female, from the exercise's existing derived thumbnails — before each name through one shared `ExerciseListThumbnails`; a missing variant shows a neutral circle without hiding the other; presentation only, no API or migration)
 - **Done**: #1539 (stage 2: the Membership Plan assignment editor uses the shared `PromotionPicker` too — a benefit description generated from the Promotion's Membership Fee Benefit (`fee_benefit_action/value/duration_months` added to `GET /promotions`) and the same whole-selection stacking rule; assignment, server validation and Save & Pay unchanged)
 - **Done**: #1538 (stage 1: Members → Membership Plans shows one version of the plan at a time — a Draft or Pending Payment version replaces the Active snapshot in the view (headed *Draft plan*) and is no longer also listed under *In progress*; the Active snapshot is untouched server-side and returns when the Draft is cancelled. View-only: `membershipPlansView.ts`, no API or data change. Automatic Draft creation on Edit and the global Save & Pay for plans remain.)
