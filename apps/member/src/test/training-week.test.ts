@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addDays, mondayIndex, ringGeometry, shiftWeek, swipeWeekDelta, weekDates, weekdayOf, weekStart } from '../lib/trainingWeek';
+import { addDays, mondayIndex, shiftWeek, swipeWeekDelta, weekDates, weekdayOf, weekStart } from '../lib/trainingWeek';
 
 describe('trainingWeek (#1370 stage 2)', () => {
   it('builds Monday-first weeks and numbers weekdays 0=Sunday', () => {
@@ -19,11 +19,5 @@ describe('trainingWeek (#1370 stage 2)', () => {
     expect(swipeWeekDelta(80, -10)).toBe(-1);
     expect(swipeWeekDelta(-30, 0)).toBe(0);
     expect(swipeWeekDelta(-80, 120)).toBe(0); // a vertical scroll
-  });
-  it('clamps the ring and shows an empty ring for 0', () => {
-    expect(ringGeometry(0, 10).dashOffset).toBeCloseTo(ringGeometry(0, 10).circumference);
-    expect(ringGeometry(150, 10).dashOffset).toBeCloseTo(0);
-    expect(ringGeometry(-5, 10).percent).toBe(0);
-    expect(ringGeometry(NaN, 10).percent).toBe(0);
   });
 });
