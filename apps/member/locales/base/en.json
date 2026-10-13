@@ -577,7 +577,27 @@
     "goal_frequency": {
       "daily": "daily",
       "weekly": "weekly"
-    }
+    },
+    "progress_day": "Today",
+    "progress_week": "This Week",
+    "progress_month": "This Month",
+    "week_nav_hint": "Swipe to change week",
+    "today_marker": "Today",
+    "status_completed": "Completed",
+    "status_pending": "Pending",
+    "status_scheduled": "Scheduled",
+    "status_rest": "No meals",
+    "status_legend_open": "Show status legend",
+    "status_legend_title": "Nutrition status",
+    "status_legend_close": "Close",
+    "status_legend_completed": "Green — All meals completed.",
+    "status_legend_pending": "Red — At least one meal is still pending.",
+    "status_legend_scheduled": "Yellow — Meals scheduled for a future date.",
+    "status_legend_rest": "Grey — No meals scheduled.",
+    "mark_done": "Mark Done",
+    "meal_done": "Done",
+    "mark_done_aria": "Mark {name} as done",
+    "no_meals_today": "No meals scheduled for this day."
   },
   "goals": {
     "title": "My Goals",

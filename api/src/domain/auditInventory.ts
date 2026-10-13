@@ -87,6 +87,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "user_membership_promotion_periodical_snapshot": ["parent", "user_membership_promotions"],
   "user_membership_promotion_session_snapshot": ["parent", "user_membership_promotions"],
   "user_membership_session": ["parent", "user_memberships"],
+  "nutrition_logs": ["technical", "member-authored meal completion log; member_id is the author"],
   "workout_block_logs": ["technical", "member-authored workout log; member_id is the author"],
   "workout_blocks": ["parent", "training_plans"],
   "workout_exercises": ["parent", "training_plans"],
