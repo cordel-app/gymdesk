@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1539 (stage 2: the Membership Plan assignment editor uses the shared `PromotionPicker` too — a benefit description generated from the Promotion's Membership Fee Benefit (`fee_benefit_action/value/duration_months` added to `GET /promotions`) and the same whole-selection stacking rule; assignment, server validation and Save & Pay unchanged)
 - **Done**: #1560 (Foods lists in the Gym and Base Nutrition Libraries show a small circular thumbnail before each food's name through one shared `FoodThumbnail` (`object-fit: cover`, neutral circle of the same size when there is no image or it fails to load); columns, filters, actions and data unchanged, no API or migration)
 - **Done**: #1527 (My Training exercise cards: the image is a plain full-width area, the whole card opens a details dialog with the larger image and the exercise's full localized Description (`exercise_description` on the member plan tree), and a ▶ beside the name — only when a video exists, choosing the female video for a Woman and any single video otherwise — plays it without opening the dialog; Register stays independent)
 - **Done**: #1559 (Activities Cards view: each card opens with a small circular thumbnail of the activity's image before its name (`MemberAvatar`, neutral initial circle when there is none), replacing #1531's 4:3 cover banner; List view, data and upload unchanged)

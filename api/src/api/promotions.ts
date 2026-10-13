@@ -89,8 +89,13 @@ promotionsRouter.get('/', async (req, res, next) => {
               p.applies_to,
               p.lifecycle_status, p.created_at, p.deleted_at,
               p.free_months, p.paid_months, p.bonus_months, p.pay_beforehand_months,
-              p.created_by, p.modified_at, p.modified_by
+              p.created_by, p.modified_at, p.modified_by,
+              IF(mfb.enabled = 1, mfb.action, NULL) AS fee_benefit_action,
+              IF(mfb.enabled = 1, mfb.value, NULL) AS fee_benefit_value,
+              IF(mfb.enabled = 1, mfb.duration_months, NULL) AS fee_benefit_duration_months
        FROM promotions p
+       LEFT JOIN promotion_membership_fee_benefits mfb
+         ON mfb.promotion_id = p.id AND mfb.gym_id = p.gym_id
        WHERE ${where.join(' AND ')}
        ORDER BY ${SORT_COLUMNS[sortKey]} ${dir}`,
       params,

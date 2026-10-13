@@ -37,10 +37,6 @@ const PROMOTION_KEYS = [
   'assign_new_plan_promotions_pick_plan',
   'assign_new_plan_promotions_loading',
   'assign_new_plan_promotions_none',
-  'assign_new_plan_promotion_stackable',
-  'assign_new_plan_promotion_non_stackable',
-  'assign_new_plan_promotion_blocked_by_non_stackable',
-  'assign_new_plan_promotion_blocked_non_stackable',
 ];
 
 describe('Assign Plan to Member: inline editor (#628)', () => {
@@ -74,13 +70,15 @@ describe('Assign Plan to Member: inline editor (#628)', () => {
     expect(editorSrc).toContain('promotion_ids: selectedPromotionIds');
   });
 
-  it('enforces the stacking rules on the selection itself', () => {
-    // A selected non-stackable promotion blocks every other promotion…
-    expect(editorSrc).toContain('nonStackableSelected');
-    // …and any selection at all blocks the non-stackable ones.
-    expect(editorSrc).toMatch(/selected\.length > 0 && !isStackable\(p\)/);
-    // Blocked promotions are disabled in place, not rejected on Save.
-    expect(editorSrc).toContain('disabled={saving || blocked !== null}');
+  it('enforces the stacking rules through the shared picker (#1539)', () => {
+    // The selection rule lives once, in lib/promotionSelection.ts, rendered by
+    // the PromotionPicker the Add Product form also uses.
+    expect(editorSrc).toContain('<PromotionPicker');
+    expect(editorSrc).toContain('selectedIds={selectedPromotionIds}');
+    expect(editorSrc).not.toContain('nonStackableSelected');
+    // The description comes from the Promotion's Membership Fee Benefit.
+    expect(editorSrc).toContain('promotionBenefitDescription');
+    expect(editorSrc).toContain('fee_benefit_action');
   });
 
   it('keeps a single assignment editor open at a time', () => {
