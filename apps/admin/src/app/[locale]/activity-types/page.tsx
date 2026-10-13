@@ -27,6 +27,9 @@ import type { MemberResult } from '../calendar/MemberSearchInput';
 import { WAITLIST_MODES } from '@/lib/waitlistModes';
 import { ActivityImageField } from '@/components/ActivityImageField';
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
+import { ExerciseCardGrid } from '@/components/exercises/ExerciseCard';
+import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
+import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import { dashedAddBtnStyle, inlineActionsRowStyle, rowRemoveBtnStyle } from '@/components/formChrome';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -207,7 +210,8 @@ export default function ActivityTypesPage() {
   // #1389: the page loads every activity once and narrows it here, so the
   // summary cards stay gym-wide whatever the filters say.
   const [search, setSearch] = useState('');
-  const [view, setView] = useState<'cards' | 'list'>('cards');
+  // The Cards/List switch and its saved choice are Exercises' own (#1531).
+  const [view, setView] = useExerciseViewMode();
 
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [rulesMap, setRulesMap] = useState<Map<number, ScheduleRule[]>>(new Map());
@@ -929,16 +933,7 @@ export default function ActivityTypesPage() {
     ].filter((m) => m.label);
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
-        <div
-          aria-hidden
-          style={{
-            aspectRatio: '16 / 9', margin: 10, borderRadius: 10, display: 'flex', alignItems: 'center',
-            justifyContent: 'center', fontSize: 32, color: 'var(--gd-text-muted, #9ca3af)',
-            background: 'var(--gd-input-bg, #f3f4f6)',
-          }}
-        >
-          🏋
-        </div>
+        <ActivityCardCover src={memberImagePreviewSrc(row.image_url, row.modified_at)} alt={row.name} emptyLabel={t('image_none')} />
         <div style={{ padding: '0 16px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
             <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{row.name}</div>
@@ -1390,19 +1385,7 @@ export default function ActivityTypesPage() {
           </FilterField>
           <StatusFilter value={statusFilter} onChange={setStatusFilter} options={STATUSES.map((s) => ({ value: s, label: tStatus(s) }))} allLabel={tStatus('all')} />
         </div>
-        <div role="group" aria-label={t('view_toggle')} style={{ display: 'flex', gap: 4 }}>
-          {(['cards', 'list'] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              aria-pressed={view === v}
-              onClick={() => setView(v)}
-              style={view === v ? primaryBtnSmall() : btnSmall('#888')}
-            >
-              {t(`view_${v}`)}
-            </button>
-          ))}
-        </div>
+        <ExerciseViewToggle value={view} onChange={setView} />
       </FilterBar>
 
       {loading ? (
@@ -1418,9 +1401,7 @@ export default function ActivityTypesPage() {
           {visibleRows.length === 0 ? (
             <p style={{ color: '#888' }}>{t('empty_filtered')}</p>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16, alignItems: 'start' }}>
-              {visibleRows.map(renderRow)}
-            </div>
+            <ExerciseCardGrid>{visibleRows.map(renderRow)}</ExerciseCardGrid>
           )}
         </>
       ) : (
@@ -1573,6 +1554,23 @@ export default function ActivityTypesPage() {
 }
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
+
+/** The card's cover: the saved image at 4:3, or the standard placeholder when missing or broken (#1531). */
+function ActivityCardCover({ src, alt, emptyLabel }: { src: string | null; alt: string; emptyLabel: string }) {
+  const [broken, setBroken] = React.useState(false);
+  React.useEffect(() => { setBroken(false); }, [src]);
+  const show = !!src && SAFE_IMAGE_SRC.test(src) && !broken;
+  return (
+    <div style={{ aspectRatio: '4 / 3', background: 'var(--gd-app-bg, #f3f4f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      {show ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={src!} alt={alt} loading="lazy" onError={() => setBroken(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      ) : (
+        <span style={{ fontSize: 13, color: 'var(--gd-text-muted, #9ca3af)' }}>{emptyLabel}</span>
+      )}
+    </div>
+  );
+}
 
 function SectionHeader({ title }: { title: string }) {
   return (
