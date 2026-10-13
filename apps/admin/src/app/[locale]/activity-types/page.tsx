@@ -18,6 +18,7 @@ import {
   listCellClasses, listScrollerClass,
 } from '@/components/listChrome';
 import { ViewAuditLogButton } from '@/components/ViewAuditLogButton';
+import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
@@ -927,9 +928,9 @@ export default function ActivityTypesPage() {
   function renderCardHeader(row: ActivityType, isExpanded: boolean, menuItems: ContextMenuItem[]) {
     const isEditing = editingId === row.id;
     const meta = [
-      { icon: '📍', label: row.default_center_name },
-      { icon: '👤', label: row.default_trainer_name },
-      { icon: '▣', label: row.default_space_name },
+      { icon: 'center' as const, label: row.default_center_name },
+      { icon: 'trainer' as const, label: row.default_trainer_name },
+      { icon: 'space' as const, label: row.default_space_name },
     ].filter((m) => m.label);
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -951,10 +952,10 @@ export default function ActivityTypesPage() {
             {row.description || '—'}
           </div>
           {meta.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', fontSize: 13, color: '#666' }}>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px 12px', fontSize: 13, color: 'var(--gd-text-secondary, #666)' }}>
               {meta.map((m) => (
                 <span key={m.icon} style={{ display: 'inline-flex', gap: 4, alignItems: 'center', minWidth: 0 }}>
-                  <span aria-hidden>{m.icon}</span>{m.label}
+                  <ActivityMetaIcon name={m.icon} />{m.label}
                 </span>
               ))}
             </div>
