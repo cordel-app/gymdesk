@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1559 (Activities Cards view: each card opens with a small circular thumbnail of the activity's image before its name (`MemberAvatar`, neutral initial circle when there is none), replacing #1531's 4:3 cover banner; List view, data and upload unchanged)
 - **Done**: #1574 (Admin → Members → Profile → Account shows a **Payment Token** chip, *Available* / *Not available*, from `has_payment_token` on `GET /members/:id/clerk-status`, read from `payment_methods.payment_token` itself — never from payment history — and only the boolean leaves the API. No payment flow changed.)
 - **Done**: #1531 (Activities catalogue aligned with Exercises: the card grid, the Cards/List switch and its saved choice are Exercises' own components; the card cover is the activity's saved image at 4:3 with the standard placeholder, replacing the fixed emoji tile that never showed an uploaded image; no API or data change)
 - **Done**: #1556 (Activity cards draw the default center, trainer and space with one shared stroke icon set (`ActivityMetaIcon`, `currentColor` in the theme's secondary text colour) instead of multicoloured emoji; data, bookings and status indicators unchanged)
