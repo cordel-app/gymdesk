@@ -27,6 +27,7 @@ import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
 import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
 import { BillingEventSimulation } from '@/components/BillingEventSimulation';
+import { isZeroAmount } from '@/lib/billingEventSimulation';
 import {
   exampleTimelineCycleNote,
   exampleTimelineRowCycle,
@@ -140,6 +141,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   const [paymentStep, setPaymentStep] = useState<'none' | 'confirm_cash'>('none');
   // #1240: Cancel on a Draft is a hard delete, confirmed first.
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [showZeroEvents, setShowZeroEvents] = useState(false);
   const [paymentLink, setPaymentLink] = useState<string | null>(null);
 
   // #613: impersonation-aware; actions that apply to the plan's status are shown, disabled when not permitted.
@@ -566,6 +568,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       <CardSection label={t('section_billing_forecast')}>
         <BillingEventSimulation
           simulation={detail.billing_event_simulation}
+          zeroToggle
           t={(key, values) => t(key as any, values as any)}
           formatDate={(date) => fmtTimelineDate(date, gymFmt)}
           cycleNote={(() => {
@@ -601,7 +604,11 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           <p style={dim}>{t('no_billing_events')}</p>
         ) : (
           <div>
-            {detail.billing_events.events.map((ev, i) => (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginBottom: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={showZeroEvents} onChange={(e) => setShowZeroEvents(e.target.checked)} />
+              {t('simulation_show_zero')}
+            </label>
+            {detail.billing_events.events.filter((ev) => showZeroEvents || !isZeroAmount(Number(ev.amount))).map((ev, i) => (
               <div key={i} style={ledgerRowStyle}>
                 <span>
                   {fmtDay(ev.date, gymFmt)}

@@ -1677,6 +1677,7 @@ export default function PlansPage() {
                     <SectionHeader title={t('plans.section_billing_event_simulation')} />
                     <BillingEventSimulation
                       simulation={plan.billing_event_simulation}
+                      zeroToggle
                       t={(key, values) => t(`plans.${key}` as any, values as any)}
                       formatDate={(date) => fmtTimelineDate(date, gymFmt)}
                       cycleNote={(() => {
