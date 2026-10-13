@@ -175,6 +175,19 @@ describe('/product-sets — Save & Pay to Active (#1325 PR 2d)', () => {
     expect(list.body.map((s: any) => s.status)).toEqual(['active']);
   });
 
+  it("the member-side cancel never touches a set the caller does not own (#1535)", async () => {
+    const memberId = await member();
+    const free = await plan(0);
+    const c = await auth(request.post('/product-sets')).send({ member_id: memberId, membership_plan_id: free, starts_at: TODAY });
+    expect(c.status).toBe(201);
+    // The test user is staff and owns no Member, so it is not this set's owner.
+    const del = await auth(request.delete(`/me/product-sets/${c.body.id}`));
+    expect(del.status).toBe(404);
+    const still = await auth(request.get(`/product-sets/${c.body.id}`));
+    expect(still.status).toBe(200);
+    expect(still.body.status).toBe('draft');
+  });
+
   it('is tenant scoped', async () => {
     const memberId = await member();
     const free = await plan(0);
