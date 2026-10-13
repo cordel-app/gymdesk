@@ -12,26 +12,19 @@ import {
 } from '../domain/nutritionLibrary';
 import { resolvePlatformActor } from '../domain/auditActor';
 import {
-  BASE_NUTRITION_IMAGE_MAX_BYTES,
-  BASE_NUTRITION_IMAGE_MIME,
-  BASE_NUTRITION_IMAGE_REJECTION_MESSAGES,
+  PLATFORM_NUTRITION_PREFIX,
   baseNutritionFolderKeys,
   buildBaseNutritionImageKey,
-  validateBaseNutritionImage,
 } from '../domain/baseNutritionImages';
+import { buildStorageObjectUrl } from '../infra/storage';
 import {
-  deleteStorageObject,
-  describeStorageError,
-  ensureStorageFolders,
-  getMissingStorageConfigKeys,
-  getStorageDiagnostics,
-  isStorageConfigured,
-  StorageOperationError,
-  buildStorageObjectUrl,
-  storageKeyFromObjectUrl,
-  uploadStorageObject,
-} from '../infra/storage';
-import { logger } from '../lib/logger';
+  isNutritionImageRefusal,
+  nutritionImageBodyParser,
+  nutritionImageUploadRateLimit,
+  parseNutritionImageRequest,
+  storeNutritionImagePair,
+  sweepReplacedNutritionImage,
+} from './nutrition-image-storage';
 import { getRequestLocale, SUPPORTED_LOCALES, BASE_LOCALE, TRANSLATABLE_LOCALES } from '../infra/locale';
 
 export const platformNutritionLibraryRouter = Router();
@@ -367,42 +360,10 @@ platformNutritionLibraryRouter.put('/:id/translations', requireSuperadmin, async
 platformNutritionLibraryRouter.post(
   '/:id/image',
   requireSuperadmin,
-  express.raw({
-    type: (req: any) => (req.headers['content-type'] ?? '').startsWith('image/'),
-    limit: BASE_NUTRITION_IMAGE_MAX_BYTES + 64 * 1024,
-  }),
+  nutritionImageUploadRateLimit,
+  nutritionImageBodyParser,
   async (req, res, next) => {
     try {
-      const mime = req.headers['content-type']?.split(';')[0]?.trim();
-      if (mime !== BASE_NUTRITION_IMAGE_MIME) {
-        return res.status(415).json({ error: `Unsupported image type. Allowed: ${BASE_NUTRITION_IMAGE_MIME}` });
-      }
-      // `req.body` is whatever a parser left there, and a request can make that
-      // a string or an array — both carry a `length` and numeric indices, so
-      // they would flow into the size and signature checks as if they were bytes
-      // (CodeQL `js/type-confusion-through-parameter-tampering`).
-      const raw: unknown = req.body;
-      if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
-        return res.status(400).json({ error: 'Request body must be raw image bytes' });
-      }
-      const body: Buffer = raw;
-      if (body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
-      if (body.length > BASE_NUTRITION_IMAGE_MAX_BYTES) {
-        return res.status(413).json({ error: `Image exceeds ${BASE_NUTRITION_IMAGE_MAX_BYTES / (1024 * 1024)} MB limit` });
-      }
-      const rejection = validateBaseNutritionImage(body);
-      if (rejection) {
-        return res.status(400).json({ error: BASE_NUTRITION_IMAGE_REJECTION_MESSAGES[rejection], reason: rejection });
-      }
-
-      if (!isStorageConfigured()) {
-        const missingConfig = getMissingStorageConfigKeys();
-        return res.status(503).json({
-          error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
-          missingConfig,
-        });
-      }
-
       const { rows: existing } = await db.query<{ id: number; name: string; status: string; image_url: string | null }>(
         'SELECT id, name, status, image_url FROM nutrition_library_items WHERE id = ? AND gym_id IS NULL',
         [req.params.id],
@@ -410,56 +371,36 @@ platformNutritionLibraryRouter.post(
       if (existing.length === 0) return res.status(404).json({ error: 'Item not found' });
       if (existing[0].status === 'deleted') return res.status(409).json({ error: 'Item is deleted' });
 
+      // The picture is judged and converted before anything is uploaded or
+      // written, so a refused upload leaves the current image untouched.
+      const processed = await parseNutritionImageRequest(req);
+      if (isNutritionImageRefusal(processed)) return res.status(processed.status).json(processed.body);
+
       const food = existing[0];
       const key = buildBaseNutritionImageKey(food.id, food.name);
       const url = buildStorageObjectUrl(key);
 
-      try {
-        await ensureStorageFolders(baseNutritionFolderKeys());
-        await uploadStorageObject(key, BASE_NUTRITION_IMAGE_MIME, body);
-      } catch (err: any) {
-        const details = err instanceof StorageOperationError
-          ? err.details
-          : describeStorageError(err, { operation: 'uploadStorageObject', key });
-        logger.error(
-          { err, details, diagnostics: getStorageDiagnostics(), itemId: food.id },
-          'Cloudflare R2 base nutrition image upload failed',
-        );
-        // The row still points at whatever it pointed at before, so the previous
-        // image stays visible — nothing was written.
-        return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
-      }
+      const refusal = await storeNutritionImagePair({
+        key,
+        processed,
+        folderKeys: baseNutritionFolderKeys(),
+        currentUrl: food.image_url,
+        logContext: { itemId: food.id },
+      });
+      if (refusal) return res.status(refusal.status).json(refusal.body);
 
-      // The key is deterministic since #1035, so a replacement normally writes
-      // the same object and there is nothing to remove — `staleKey !== key` is
-      // what a *rename* (or an image still under the pre-#1035 `cordel/Nutrition/`
-      // or `<uuid>-` shape) answers true for. Removing it is best-effort and
-      // happens *after* the new object is safely stored: a failure here leaves
-      // an orphan to sweep, not a failed save.
+      // Only after both files are stored does the row move; the replaced objects
+      // are swept afterwards, best-effort, and only under `cordel/nutrition/`.
       const staleUrl = food.image_url;
-      if (staleUrl && url && staleUrl !== url) {
-        const staleKey = storageKeyFromObjectUrl(staleUrl);
-        if (staleKey && staleKey !== key) {
-          try {
-            await deleteStorageObject(staleKey);
-          } catch (err: any) {
-            const details = err instanceof StorageOperationError
-              ? err.details
-              : describeStorageError(err, { operation: 'deleteStorageObject', key: staleKey });
-            logger.warn(
-              { err, details, itemId: food.id },
-              'Replaced base nutrition image left an orphaned object in Cloudflare R2',
-            );
-          }
-        }
-      }
-
       const actor = platformActor(req);
       await db.query(
         `UPDATE nutrition_library_items
          SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
          WHERE id = ?`,
         [url, actor, food.id],
+      );
+      await sweepReplacedNutritionImage(
+        staleUrl, key, (k) => k.toLowerCase().startsWith(`${PLATFORM_NUTRITION_PREFIX}/`), { itemId: food.id },
       );
 
       const { rows } = await db.query(

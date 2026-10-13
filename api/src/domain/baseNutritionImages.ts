@@ -12,12 +12,11 @@
 // one place and can be unit-tested without a database or a bucket.
 
 import {
-  extensionForMime,
   NUTRITION_STORAGE_FOLDER,
   PLATFORM_STORAGE_ROOT,
   sanitizeStorageObjectName,
 } from '../infra/storage';
-import { readPngMetadata, pngSupportsTransparency } from './pngImage';
+import { thumbnailKeyFor } from './exerciseGenderMedia';
 
 /**
  * `nutrition`: the one folder a Nutrition Library food's image lives in, under
@@ -58,7 +57,7 @@ export const PLATFORM_NUTRITION_PREFIX = `${PLATFORM_STORAGE_ROOT}/${NUTRITION_F
  *     to be escaped in a URL.
  *  2. Runs of separators collapse to a single `-`, and leading/trailing ones go.
  *  3. Empty result (a name of nothing but punctuation) falls back to `food`, so
- *     the key can never end up as `cordel/nutrition/<id>-.png`.
+ *     the key can never end up as `cordel/nutrition/<id>-.webp`.
  *
  * Deterministic and case-preserving: the same name always yields the same
  * name part of the key.
@@ -71,7 +70,7 @@ export function sanitizeNutritionImageName(name: string): string {
 }
 
 /**
- * `cordel/nutrition/<food_id>-<sanitized name>.png`: the key a base food's image
+ * `cordel/nutrition/<food_id>-<sanitized name>.webp`: the key a base food's image
  * is stored under (#1035 §4/§12).
  *
  * The id leads, so two foods whose names sanitize alike never share an object —
@@ -82,24 +81,20 @@ export function sanitizeNutritionImageName(name: string): string {
  * renamed. A surface showing the image therefore cache-busts on the row's own
  * `modified_at`, as Cordel's Base Nutrition Library page already does.
  *
- * The `.png` is part of the fixed name rather than a claim about the bytes: only
- * PNG is accepted here, so the two can't disagree. The uploaded file's own name
- * plays no part in the key (#713's rule).
+ * Since #1562 the object is always the server-made 1080 × 1080 WebP master (its
+ * 256 × 256 thumbnail sits beside it, {@link nutritionThumbnailKeyFor}); the
+ * uploaded file's own name and format play no part in the key (#713's rule).
  */
 export function buildBaseNutritionImageKey(foodId: number | string, foodName: string): string {
-  return `${PLATFORM_NUTRITION_PREFIX}/${foodId}-${sanitizeNutritionImageName(foodName)}.png`;
+  return `${PLATFORM_NUTRITION_PREFIX}/${foodId}-${sanitizeNutritionImageName(foodName)}.webp`;
 }
 
 /**
  * `<gym prefix>/nutrition/<food_id>-<sanitized name>.<ext>`: the key a **gym**
  * food's image is stored under (#1035 §4, §5, §12).
  *
- * The same shape one root over, with one difference the ticket's tree does not
- * spell: the extension comes from the server-validated MIME type rather than
- * being a fixed `.png`, because the gym-facing upload has always accepted PNG,
- * JPEG, WebP and GIF and naming a JPEG `.png` would be the one thing a key must
- * never do — lie about its own object. A PNG upload therefore produces exactly
- * the `…/nutrition/<food_id>-<food_name>.png` the ticket asks for.
+ * The same shape one root over. Both roots are `.webp` since #1562, because the
+ * server converts whatever was uploaded.
  *
  * Deterministic like the base key, so replacing an image reuses the key and a
  * rename is what leaves an object to sweep.
@@ -108,9 +103,8 @@ export function buildGymNutritionImageKey(
   folderPrefix: string,
   foodId: number | string,
   foodName: string,
-  mime: string,
 ): string {
-  return `${folderPrefix}/${NUTRITION_FOLDER}/${foodId}-${sanitizeNutritionImageName(foodName)}.${extensionForMime(mime)}`;
+  return `${folderPrefix}/${NUTRITION_FOLDER}/${foodId}-${sanitizeNutritionImageName(foodName)}.webp`;
 }
 
 /**
@@ -136,48 +130,11 @@ export function gymNutritionFolderKeys(folderPrefix: string): string[] {
   return [`${folderPrefix}/`, `${folderPrefix}/${NUTRITION_FOLDER}/`];
 }
 
-// ─── Upload rules (#715 §2, §8) ──────────────────────────────────────────────
-
-/** PNG only: the slot's key is named `.png` and §2 fixes the format. */
-export const BASE_NUTRITION_IMAGE_MIME = 'image/png';
-
-/** 512 × 512, square — the exact size §2 specifies, enforced from the IHDR. */
-export const BASE_NUTRITION_IMAGE_SIZE = 512;
-
 /**
- * 2 MB. A 512×512 PNG of a single food is a few tens of KB; the ceiling exists
- * because the bytes are buffered in the API process (`express.raw`), so it is
- * generous rather than tight.
+ * The 256 × 256 thumbnail key beside a food's master key (#1562):
+ * `<id>-<name>.webp` → `<id>-<name>-thumbnail.webp`. Derived, never stored, so a
+ * food has one image column and the pair cannot disagree.
  */
-export const BASE_NUTRITION_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
-
-/** Why an upload was refused — the router maps each to a status and a message. */
-export type BaseNutritionImageRejection =
-  | 'not_a_png'
-  | 'not_square_512'
-  | 'not_transparent';
-
-/**
- * Whether these bytes may replace a base food's image, and if not, why.
- *
- * Validated from the file, never from the request: the `Content-Type` header and
- * the file name are both the client's word, and #715 §8 requires the server to
- * check independently of the browser. A rejection means nothing is uploaded and
- * nothing is written, so the existing image stays exactly as it was.
- */
-export function validateBaseNutritionImage(body: unknown): BaseNutritionImageRejection | null {
-  const metadata = readPngMetadata(body);
-  if (!metadata) return 'not_a_png';
-  if (metadata.width !== BASE_NUTRITION_IMAGE_SIZE || metadata.height !== BASE_NUTRITION_IMAGE_SIZE) {
-    return 'not_square_512';
-  }
-  if (!pngSupportsTransparency(metadata)) return 'not_transparent';
-  return null;
+export function nutritionThumbnailKeyFor(masterKey: string): string {
+  return thumbnailKeyFor(masterKey);
 }
-
-/** Human-readable reason for each rejection, as the API returns it. */
-export const BASE_NUTRITION_IMAGE_REJECTION_MESSAGES: Record<BaseNutritionImageRejection, string> = {
-  not_a_png: 'Image must be a PNG file',
-  not_square_512: `Image must be exactly ${BASE_NUTRITION_IMAGE_SIZE}×${BASE_NUTRITION_IMAGE_SIZE} pixels`,
-  not_transparent: 'Image must have a transparent background (an alpha channel)',
-};
