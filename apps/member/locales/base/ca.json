@@ -577,7 +577,27 @@
     "goal_frequency": {
       "daily": "diari",
       "weekly": "setmanal"
-    }
+    },
+    "progress_day": "Avui",
+    "progress_week": "Aquesta setmana",
+    "progress_month": "Aquest mes",
+    "week_nav_hint": "Llisca per canviar de setmana",
+    "today_marker": "Avui",
+    "status_completed": "Completat",
+    "status_pending": "Pendent",
+    "status_scheduled": "Programat",
+    "status_rest": "Sense àpats",
+    "status_legend_open": "Mostra la llegenda d'estats",
+    "status_legend_title": "Estat de la nutrició",
+    "status_legend_close": "Tanca",
+    "status_legend_completed": "Verd — Tots els àpats completats.",
+    "status_legend_pending": "Vermell — Queda almenys un àpat pendent.",
+    "status_legend_scheduled": "Groc — Àpats programats per a una data futura.",
+    "status_legend_rest": "Gris — Sense àpats programats.",
+    "mark_done": "Marca fet",
+    "meal_done": "Fet",
+    "mark_done_aria": "Marca {name} com a fet",
+    "no_meals_today": "No hi ha àpats programats per a aquest dia."
   },
   "goals": {
     "title": "Els Meus Objectius",

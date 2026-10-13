@@ -9,7 +9,11 @@ import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';
 import { NutritionItemRow } from '@/components/NutritionItemRow';
-import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
+import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
+import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
+import { DAY_STATUSES, type DayStatus } from '@/lib/trainingDayStatus';
+import { ProgressCounts, deviceToday, mondayIndex, shiftWeek, swipeWeekDelta, weekDates } from '@/lib/trainingWeek';
+import { memberTheme, primaryButtonStyle, sectionCardStyle, statusPillStyle, statusTone } from '@/lib/memberChrome';
 import {
   NutritionFoodItem,
   NutritionGoalItem,
@@ -32,6 +36,15 @@ interface NutritionPlan {
 
 const ALL_DAYS_WEEKDAY = 7;
 
+// #1580: the same shape /me/training-progress answers, plus the week's day statuses.
+interface NutritionProgress {
+  day: ProgressCounts; week: ProgressCounts; month: ProgressCounts;
+  week_days: { date: string; status: DayStatus }[];
+  today?: string;
+}
+const EMPTY_COUNTS: ProgressCounts = { completed: 0, total: 0, percent: 0 };
+const EMPTY_PROGRESS: NutritionProgress = { day: EMPTY_COUNTS, week: EMPTY_COUNTS, month: EMPTY_COUNTS, week_days: [] };
+
 export default function NutritionPage() {
   const t = useTranslations();
   const locale = useLocale();
@@ -44,6 +57,15 @@ export default function NutritionPage() {
   const [plan, setPlan] = useState<NutritionPlan | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // #1580: the selected day is a date; the gym's today replaces the device clock once the API answers.
+  const [today, setToday] = useState<string>(deviceToday());
+  const [selectedDate, setSelectedDate] = useState<string>(deviceToday());
+  const [progress, setProgress] = useState<NutritionProgress>(EMPTY_PROGRESS);
+  const [doneKeys, setDoneKeys] = useState<Set<string>>(new Set());
+  const [pendingMeal, setPendingMeal] = useState<number | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [legendOpen, setLegendOpen] = useState(false);
+  const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     if (appLoading) return;
@@ -54,6 +76,10 @@ export default function NutritionPage() {
       try {
         const data = await apiFetch<{ plan: NutritionPlan | null }>('/me/nutrition-plan');
         if (!cancelled) setPlan(data.plan);
+        if (data.plan) {
+          const logs = await apiFetch<{ meal_id: number; logged_date: string }[]>('/me/nutrition-logs');
+          if (!cancelled) setDoneKeys(new Set(logs.map((l) => `${l.meal_id}|${String(l.logged_date).slice(0, 10)}`)));
+        }
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('nutrition.error'));
       } finally {
@@ -63,9 +89,39 @@ export default function NutritionPage() {
     return () => { cancelled = true; };
   }, [appLoading, isLinked, locale, isSuperadmin, isImpersonating, featureFlags]);
 
-  function weekdayLabel(weekday: number): string {
-    if (weekday === ALL_DAYS_WEEKDAY) return t('nutrition.all_days');
-    return t(`training.weekday_short_${weekday}` as any);
+  async function loadProgress(date: string) {
+    try {
+      const p = await apiFetch<NutritionProgress>(`/me/nutrition-progress?date=${date}`);
+      setProgress(p);
+      if (p.today && p.today !== today) {
+        if (selectedDate === today) setSelectedDate(p.today);
+        setToday(p.today);
+      }
+    } catch { /* progress is decoration; the meals still render */ }
+  }
+
+  useEffect(() => {
+    if (appLoading || !isLinked || !plan) return;
+    loadProgress(selectedDate);
+  }, [appLoading, isLinked, plan, selectedDate, doneKeys]);
+
+  function onTouchEnd(e: React.TouchEvent) {
+    if (!touchStart) return;
+    const t0 = e.changedTouches[0];
+    const delta = swipeWeekDelta(t0.clientX - touchStart.x, t0.clientY - touchStart.y);
+    setTouchStart(null);
+    if (delta !== 0) setSelectedDate((d) => shiftWeek(d, delta));
+  }
+
+  // The server enforces the future-date rule; the button is only hidden for it.
+  async function markMealDone(meal: Meal) {
+    setPendingMeal(meal.id);
+    setMessage(null);
+    try {
+      await apiFetch('/me/nutrition-logs', { method: 'POST', body: JSON.stringify({ meal_id: meal.id, logged_date: selectedDate }) });
+      setDoneKeys((prev) => new Set(prev).add(`${meal.id}|${selectedDate}`));
+    } catch (err: any) { setMessage(err.message ?? t('nutrition.error')); }
+    finally { setPendingMeal(null); }
   }
 
   function mealTypeLabel(mealType: string | null): string | null {
@@ -91,9 +147,17 @@ export default function NutritionPage() {
   const goals = plan?.goals ?? [];
   const restrictions = plan?.restrictions ?? [];
 
+  // The plan's day numbering is Monday-based (0=Mon … 6=Sun), unlike training's.
+  const selectedWeekday = mondayIndex(selectedDate);
+  const mealsForDate: Meal[] = (plan?.days ?? [])
+    .filter((d) => d.weekday === ALL_DAYS_WEEKDAY || d.weekday === selectedWeekday)
+    .flatMap((d) => d.meals);
+
   return (
-    <main style={styles.container}>
+    <main style={styles.container} onTouchStart={(e) => setTouchStart({ x: e.touches[0].clientX, y: e.touches[0].clientY })} onTouchEnd={onTouchEnd}>
       <h1 style={styles.title}>{t('nutrition.title')}</h1>
+
+      {message && <p style={{ ...styles.hint, color: memberTheme.statusError, margin: '0 0 12px' }}>{message}</p>}
 
       {!plan ? (
         <div style={styles.emptyCard}>
@@ -102,6 +166,47 @@ export default function NutritionPage() {
         </div>
       ) : (
         <>
+          <TrainingSummaryCards cards={[
+            { label: t('nutrition.progress_day'), percent: progress.day.percent, detail: `${progress.day.completed}/${progress.day.total}` },
+            { label: t('nutrition.progress_week'), percent: progress.week.percent, detail: `${progress.week.completed}/${progress.week.total}` },
+            { label: t('nutrition.progress_month'), percent: progress.month.percent, detail: `${progress.month.completed}/${progress.month.total}` },
+          ]} />
+
+          <div style={styles.weekCard}>
+            <div style={styles.weekdayBar} role="group" aria-label={t('nutrition.week_nav_hint')}>
+              {weekDates(selectedDate).map((date) => {
+                const selected = date === selectedDate;
+                const isTodayCell = date === today;
+                const status: DayStatus = progress.week_days.find((d) => d.date === date)?.status ?? 'rest';
+                const statusText = t(`nutrition.status_${status}` as any);
+                const longDate = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+                return (
+                  <div key={date} style={styles.dayCell}>
+                    <button type="button" onClick={() => setSelectedDate(date)}
+                            aria-pressed={selected} aria-current={isTodayCell ? 'date' : undefined}
+                            aria-label={longDate} title={isTodayCell ? t('nutrition.today_marker') : undefined}
+                            style={{ ...styles.dayBtn, ...(isTodayCell && !selected ? styles.dayBtnToday : {}), ...(selected ? styles.dayBtnActive : {}) }}>
+                      <span style={styles.dayName}>{new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`))}</span>
+                      <span style={styles.dayNum}>{Number(date.slice(8, 10))}</span>
+                    </button>
+                    <button type="button" onClick={() => setLegendOpen(true)}
+                            aria-label={`${longDate}: ${statusText}. ${t('nutrition.status_legend_open')}`}
+                            title={statusText} style={styles.statusBtn}>
+                      <span aria-hidden="true" style={{ ...styles.statusDot, background: DAY_STATUS_COLOR[status] }} />
+                      <span style={styles.srOnly}>{statusText}</span>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {legendOpen && (
+            <TrainingStatusLegend title={t('nutrition.status_legend_title')} closeLabel={t('nutrition.status_legend_close')}
+              items={DAY_STATUSES.map((st) => ({ status: st, label: t(`nutrition.status_legend_${st}` as any) }))}
+              onClose={() => setLegendOpen(false)} />
+          )}
+
           {/* #932 §2 — the goal's name is a slug (`weight_loss`), translated
               before it is shown, and its value and frequency read as
               "1 l · daily". Both sections render through the same row, so they
@@ -138,32 +243,42 @@ export default function NutritionPage() {
             </div>
           </section>
 
-          {plan.days.map((day) => (
-            <section key={day.id} style={styles.section}>
-              <h2 style={styles.h2}>{weekdayLabel(day.weekday)}</h2>
-              {day.meals.length === 0 ? (
-                <p style={styles.hint}>{t('nutrition.empty')}</p>
-              ) : (
-                <div style={styles.card}>
-                  {day.meals.map((meal) => (
+          {/* #1580: the selected date's meals — a day with its own weekday plus the "every day" ones. */}
+          <section style={styles.section}>
+            <h2 style={styles.h2}>{new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${selectedDate}T00:00:00Z`))}</h2>
+            {mealsForDate.length === 0 ? (
+              <p style={styles.hint}>{t('nutrition.no_meals_today')}</p>
+            ) : (
+              <div style={styles.card}>
+                {mealsForDate.map((meal) => {
+                  const done = doneKeys.has(`${meal.id}|${selectedDate}`);
+                  const title = mealTitleOf(meal);
+                  return (
                     <div key={meal.id} style={styles.mealRow}>
-                      <p style={styles.mealName}>
-                        {mealTitleOf(meal).title}
-                        {mealTitleOf(meal).suffix && (
-                          <span style={styles.mealType}> · {mealTitleOf(meal).suffix}</span>
-                        )}
-                      </p>
+                      <div style={styles.mealHead}>
+                        <p style={styles.mealName}>
+                          {title.title}
+                          {title.suffix && <span style={styles.mealType}> · {title.suffix}</span>}
+                        </p>
+                        {done && <span style={{ ...statusPillStyle(statusTone('completed')), fontSize: 11, padding: '2px 8px' }}>✓ {t('nutrition.meal_done')}</span>}
+                      </div>
                       {/* #722: the meal's foods are swipeable image cards, one
                           carousel per meal — the items of a meal are the
                           alternatives the member chooses between. */}
-                      <NutritionFoodCarousel items={meal.items} label={mealTitleOf(meal).title} />
+                      <NutritionFoodCarousel items={meal.items} label={title.title} />
                       {meal.notes && <p style={styles.mealNotes}>{meal.notes}</p>}
+                      {!done && selectedDate <= today && (
+                        <button type="button" onClick={() => markMealDone(meal)} disabled={pendingMeal === meal.id}
+                                aria-label={t('nutrition.mark_done_aria', { name: title.title })} style={styles.markDoneBtn}>
+                          {t('nutrition.mark_done')}
+                        </button>
+                      )}
                     </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          ))}
+                  );
+                })}
+              </div>
+            )}
+          </section>
         </>
       )}
     </main>
@@ -176,6 +291,19 @@ const styles: Record<string, React.CSSProperties> = {
   section:    { marginBottom: 20 },
   h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:       { ...sectionCardStyle, padding: '4px 18px' },
+  mealHead:   { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  markDoneBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '10px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
+  weekCard:   { ...sectionCardStyle, padding: 10, marginBottom: 20 },
+  weekdayBar: { display: 'flex', justifyContent: 'space-between', gap: 4 },
+  dayCell:    { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, position: 'relative' },
+  dayBtn:     { width: '100%', maxWidth: 48, borderRadius: 10, padding: '6px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: memberTheme.surface, color: memberTheme.textMuted, border: `1px solid ${memberTheme.separator}`, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
+  dayBtnToday: { borderColor: memberTheme.primaryButton, color: memberTheme.text },
+  dayBtnActive: { background: memberTheme.primaryButton, color: memberTheme.primaryButtonText, borderColor: memberTheme.primaryButton },
+  dayName:    { fontSize: 11, fontWeight: 600, textTransform: 'capitalize' },
+  dayNum:     { fontSize: 16, fontWeight: 700 },
+  statusBtn:  { background: 'none', border: 'none', padding: 6, cursor: 'pointer', display: 'flex' },
+  statusDot:  { width: 12, height: 12, borderRadius: '50%', display: 'block' },
+  srOnly:     { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' },
   mealRow:    { padding: '12px 0', borderBottom: `1px solid ${memberTheme.separator}` },
   mealName:   { margin: 0, fontSize: 15, fontWeight: 700, color: memberTheme.text },
   mealType:   { fontSize: 12, fontWeight: 500, color: memberTheme.textMuted, textTransform: 'none' },
