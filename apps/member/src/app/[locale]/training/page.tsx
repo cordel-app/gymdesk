@@ -8,13 +8,12 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
-import { exerciseBackgroundStyle } from '@/lib/exerciseMedia';
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { BlockExerciseCarousel } from '@/components/BlockExerciseCarousel';
 import { DAY_STATUSES, dayStatus, dayStatusKey } from '@/lib/trainingDayStatus';
 import {
-  EMPTY_PROGRESS, TrainingProgress, deviceToday, isFutureDate, shiftWeek, swipeWeekDelta, weekDates, weekdayOf,
+  EMPTY_PROGRESS, TrainingProgress, deviceToday, shiftWeek, swipeWeekDelta, weekDates, weekdayOf,
 } from '@/lib/trainingWeek';
 import { resultUnitKey, resultValueForPayload } from '@/lib/blockResult';
 import {
@@ -89,7 +88,6 @@ export default function TrainingPage() {
   const [progress, setProgress] = useState<TrainingProgress>(EMPTY_PROGRESS);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   const selectedWeekday = weekdayOf(selectedDate);
-  const isFuture = isFutureDate(selectedDate, today);
   const [expandedExercise, setExpandedExercise] = useState<number | null>(null);
   const [logs, setLogs] = useState<Record<number, ExerciseLog[]>>({});
   const [draft, setDraft] = useState<{ weight: string; reps: string }>({ weight: '', reps: '' });
@@ -164,7 +162,7 @@ export default function TrainingPage() {
   // #1297: no Save button — the entry row is persisted as soon as focus leaves
   // it with the required input (reps) filled in.
   async function commitDraft(we: BlockExercise) {
-    if (savingLog || !draft.reps || isFuture) return;
+    if (savingLog || !draft.reps) return;
     setSavingLog(true);
     try {
       await apiFetch('/me/exercise-logs', {
@@ -297,19 +295,19 @@ export default function TrainingPage() {
                   positionLabel={(i, n) => t('training.exercise_position', { current: i, total: n })}
                   cards={(block.exercises ?? []).map((we) => (
                   <div key={we.id} style={styles.exerciseCard}>
-                    <div style={{ ...styles.exerciseHead, ...exerciseBackgroundStyle(we) }}>
-                      <div style={styles.exerciseTitleLine}>
+                    <div style={styles.exerciseSquare}>
+                      <div style={styles.exerciseMedia}><ExerciseMedia exercise={we} fill /></div>
+                      <div style={{ ...styles.exerciseInfo, padding: '0 12px' }}>
                         <span style={styles.exerciseName}>{we.exercise_name}</span>
                         <span style={styles.exerciseMeta}>
-                          — {we.min_reps ?? '—'}{we.max_reps && we.max_reps !== we.min_reps ? `-${we.max_reps}` : ''} reps
+                          {we.min_reps ?? '—'}{we.max_reps && we.max_reps !== we.min_reps ? `-${we.max_reps}` : ''} reps
                           {we.sets ? ` × ${we.sets} sets` : ''} · {we.rest_seconds ?? '—'}s
                         </span>
                       </div>
-                      <ExerciseMedia exercise={we} />
-                      <button onClick={() => openExercise(we)} style={styles.expandBtn}>
-                        {expandedExercise === we.id ? '−' : '+'}
-                      </button>
                     </div>
+                    <button type="button" onClick={() => openExercise(we)} aria-expanded={expandedExercise === we.id} style={{ ...styles.registerBtn, width: 'calc(100% - 24px)', margin: '8px 12px 12px' }}>
+                      {t('training.register')}
+                    </button>
 
                     {expandedExercise === we.id && (
                       <div style={styles.expandBody}>
@@ -336,7 +334,7 @@ export default function TrainingPage() {
                               </td>
                               <td style={styles.logTd}>
                                 <button type="button" aria-label={t('training.add_log')} onClick={() => commitDraft(we)}
-                                        disabled={savingLog || !draft.reps || isFuture} style={styles.addSetBtn}>+</button>
+                                        disabled={savingLog || !draft.reps} style={styles.addSetBtn}>+</button>
                               </td>
                             </tr>
                             {(logs[we.id] ?? []).map((log) => {
@@ -383,11 +381,10 @@ export default function TrainingPage() {
                     );
                   })()}
                   {!doneBlocks.has(block.id) && (
-                    <button onClick={() => markBlockDone(block)} disabled={pending || isFuture} style={{ ...styles.blockDoneBtn, ...(isFuture ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>
+                    <button onClick={() => markBlockDone(block)} disabled={pending} style={styles.blockDoneBtn}>
                       {t('training.mark_done')}
                     </button>
                   )}
-                  {!doneBlocks.has(block.id) && isFuture && <span style={styles.exerciseMeta}>{t('training.future_workout')}</span>}
                 </div>
               </div>
             ))}
@@ -424,9 +421,11 @@ const styles: Record<string, React.CSSProperties> = {
     color: memberTheme.title2,
     background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})`,
   },
-  exerciseCard: { marginTop: 8, padding: 12, borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface },
-  exerciseHead: { display: 'flex', gap: 8, alignItems: 'center' },
-  exerciseTitleLine: { flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 6 },
+  exerciseCard: { marginTop: 8, padding: 0, overflow: 'hidden', borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface },
+  exerciseSquare: { width: '100%', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' },
+  exerciseMedia: { display: 'block', width: '100%' },
+  exerciseInfo: { display: 'flex', flexDirection: 'column', gap: 2, width: '100%' },
+  registerBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '8px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   exerciseName: { fontSize: 15, fontWeight: 600, color: memberTheme.text },
   doneChip: { fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px', color: memberTheme.statusSuccess, background: `color-mix(in srgb, ${memberTheme.statusSuccess} 12%, ${memberTheme.surface})` },
   newChip: { marginLeft: 6, fontSize: 10, fontWeight: 600, borderRadius: 999, padding: '1px 6px', color: memberTheme.title2, background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})` },
@@ -434,8 +433,7 @@ const styles: Record<string, React.CSSProperties> = {
   logTh: { textAlign: 'left', fontSize: 11, fontWeight: 600, color: memberTheme.textMuted, padding: '2px 4px' },
   logTd: { padding: '4px', borderTop: `1px solid ${memberTheme.separator}` },
   exerciseMeta: { fontSize: 12, color: memberTheme.textMuted },
-  expandBtn: { width: 30, height: 30, borderRadius: '50%', border: `1px solid ${memberTheme.inputBorder}`, background: memberTheme.surface, color: memberTheme.text, cursor: 'pointer', fontSize: 16 },
-  expandBody: { marginTop: 10, padding: 10, background: memberTheme.pageBackground, borderRadius: 8 },
+  expandBody: { margin: '10px 12px 12px', padding: 10, background: memberTheme.pageBackground, borderRadius: 8 },
   miniInput: { ...inputStyle, width: 70, padding: '6px 8px', borderRadius: 4, fontSize: 14 },
   addSetBtn: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   blockDoneRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 },

@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { effectiveImageUrlSql, effectiveImageThumbnailUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
+import { type ImageSex, effectiveImageUrlSql, effectiveImageThumbnailUrlSql, effectiveVideoPosterSql, effectiveVideoUrlSql } from '../domain/effectiveExerciseImage';
 import { db, Tx } from '../infra/db';
 import { parseBlockResultUnit } from '../domain/blockResultUnits';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
@@ -132,7 +132,7 @@ function parseExerciseItemBody(body: Record<string, unknown>):
 
 // MySQL's JSON_ARRAYAGG has no ORDER BY clause of its own — each level aggregates
 // over a derived table that is pre-sorted by position, not the aggregate itself.
-export const planTreeSelect = (locale: SupportedLocale) => `
+export const planTreeSelect = (locale: SupportedLocale, sex: ImageSex = 'male') => `
   SELECT tp.*,
     (SELECT JSON_ARRAYAGG(item) FROM (
       SELECT JSON_OBJECT(
@@ -147,7 +147,7 @@ export const planTreeSelect = (locale: SupportedLocale) => `
                 'exercises', (SELECT JSON_ARRAYAGG(item) FROM (
                   SELECT JSON_OBJECT(
                       'id', we.id, 'position', we.position, 'exercise_id', we.exercise_id, 'exercise_name', ${localizedExerciseNameSql('e', locale)},
-                      'exercise_image_url', ${effectiveImageUrlSql('e')}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e')}, 'exercise_video_url', ${effectiveVideoUrlSql('e')}, 'exercise_video_thumbnail_url', ${effectiveVideoPosterSql('e')},
+                      'exercise_image_url', ${effectiveImageUrlSql('e', sex)}, 'exercise_image_thumbnail_url', ${effectiveImageThumbnailUrlSql('e', sex)}, 'exercise_video_url', ${effectiveVideoUrlSql('e')}, 'exercise_video_thumbnail_url', ${effectiveVideoPosterSql('e')},
                       'min_reps', we.min_reps, 'max_reps', we.max_reps, 'sets', we.sets,
                       'rest_seconds', we.rest_seconds, 'tempo', we.tempo, 'notes', we.notes,
                       'result_type_id', we.result_type_id, 'result_type_slug', rt.slug, 'result_type_name', rt.name,

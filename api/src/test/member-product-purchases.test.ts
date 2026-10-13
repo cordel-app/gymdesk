@@ -364,15 +364,20 @@ describe('a recurring purchase is a Draft ProductSet, activated only by Save & P
     expect(Number(rows[0].direct_discount_percent)).toBe(25);
   });
 
-  it('answers 409 in_flight for a second Draft, and lets the same recurring Product be bought again once it is resolved', async () => {
+  it('adds to the same Draft while one is open, and lets the same recurring Product be bought again once it is resolved', async () => {
     const m = await member();
     const weekly = await product({ name: 'Weekly 3', frequency: 'month', amount: '20.00', type: 'service' });
     const first = await auth(request.post(base(m))).send({ product_id: weekly });
     expect(first.status).toBe(201);
+    // #1537: a second add is an edit of the same Draft, never a second version.
     const second = await auth(request.post(base(m))).send({ product_id: weekly });
-    expect(second.status).toBe(409);
-    expect(second.body.error).toBe('in_flight');
+    expect(second.status).toBe(201);
     expect(second.body.product_set_id).toBe(first.body.product_set_id);
+    const { rows: lines } = await db.query<any>(
+      'SELECT id, quantity FROM member_products_recurrent_snapshot WHERE product_set_id = ?', [first.body.product_set_id]);
+    expect(lines.map((l: any) => Number(l.quantity))).toEqual([2]);
+    const qty = await auth(request.put(`/product-sets/${first.body.product_set_id}/services/${lines[0].id}`)).send({ quantity: 1 });
+    expect(qty.status).toBe(200);
 
     // Save & Pay + the webhook is the only way it becomes the member's…
     const sp = await auth(request.post(`/product-sets/${first.body.product_set_id}/save-and-pay`)).send({});

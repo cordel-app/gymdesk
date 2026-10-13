@@ -10,6 +10,8 @@
 // moves the CLOUDFLARE_R2_* env around.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import sharp from 'sharp';
+import { encodePngRgba } from '../domain/pngImage';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
 
@@ -43,8 +45,8 @@ function setStorageConfigured() {
   process.env.CLOUDFLARE_R2_BUCKET = R2_BUCKET;
 }
 
-/** The bytes are not validated beyond their size, so any buffer will do. */
-const PNG_BYTES = Buffer.from('fake-png-bytes');
+/** The server decodes the bytes (#1562), so this must be a real, small picture. */
+const PNG_BYTES = encodePngRgba(16, 16, Buffer.alloc(16 * 16 * 4, 0x40));
 
 function sentCommands(type: 'put' | 'delete') {
   return sendMock.mock.calls.map(([command]) => command).filter((c: any) => c?.__type === type);
@@ -178,12 +180,18 @@ describe('POST /nutrition-library/:id/image — tenant isolation', () => {
 // ─── Happy path: the #1035 key shape ─────────────────────────────────────────
 
 describe('POST /nutrition-library/:id/image — the stored key', () => {
-  it('stores the object at <prefix>/nutrition/<food_id>-<name>.png and persists the URL', async () => {
+  it('stores a 1080 WebP master and a 256 thumbnail at <prefix>/nutrition/<food_id>-<name>.webp and persists the master URL', async () => {
     const res = await upload(gymId, foodId);
     expect(res.status).toBe(200);
 
-    const key = `${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.png`;
+    const key = `${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.webp`;
     expect(sentKeys('put')).toContain(key);
+    expect(sentKeys('put')).toContain(key.replace(/\.webp$/, '-thumbnail.webp'));
+    const bodyOf = (k: string) => sentCommands('put').find((c: any) => c.input.Key === k).input.Body;
+    const master = await sharp(bodyOf(key)).metadata();
+    const thumb = await sharp(bodyOf(key.replace(/\.webp$/, '-thumbnail.webp'))).metadata();
+    expect([master.format, master.width, master.height]).toEqual(['webp', 1080, 1080]);
+    expect([thumb.format, thumb.width, thumb.height]).toEqual(['webp', 256, 256]);
     expect(res.body.image_url).toBe(`${R2_ENDPOINT}/${R2_BUCKET}/${key}`);
     expect(await imageUrlOf(foodId)).toBe(res.body.image_url);
   });
@@ -208,10 +216,11 @@ describe('POST /nutrition-library/:id/image — the stored key', () => {
     expect(keys).toContain(`${prefix}/nutrition/`);
   });
 
-  it('takes the extension from the Content-Type, not from a fixed .png', async () => {
-    const res = await upload(gymId, foodId, PNG_BYTES, 'image/jpeg');
+  it('converts a JPEG upload to the same .webp key', async () => {
+    const jpeg = await sharp({ create: { width: 40, height: 20, channels: 3, background: { r: 1, g: 2, b: 3 } } }).jpeg().toBuffer();
+    const res = await upload(gymId, foodId, jpeg, 'image/jpeg');
     expect(res.status).toBe(200);
-    expect(sentKeys('put')).toContain(`${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.jpg`);
+    expect(sentKeys('put')).toContain(`${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.webp`);
   });
 
   it('returns the whole item, so the list row the page holds stays current', async () => {
@@ -237,14 +246,14 @@ describe('POST /nutrition-library/:id/image — replacing', () => {
 
   it('sweeps the old object when the food was renamed under it', async () => {
     await upload(gymId, foodId);
-    const staleKey = `${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.png`;
+    const staleKey = `${prefix}/nutrition/${foodId}-Test-Gym-Image-Chicken-Breast.webp`;
     await db.query('UPDATE nutrition_library_items SET name = ? WHERE id = ?', ['Test Gym Image Turkey Breast', foodId]);
     sendMock.mockClear();
 
     const res = await upload(gymId, foodId);
     expect(res.status).toBe(200);
-    expect(sentKeys('put')).toContain(`${prefix}/nutrition/${foodId}-Test-Gym-Image-Turkey-Breast.png`);
-    expect(sentKeys('delete')).toEqual([staleKey]);
+    expect(sentKeys('put')).toContain(`${prefix}/nutrition/${foodId}-Test-Gym-Image-Turkey-Breast.webp`);
+    expect(sentKeys('delete').sort()).toEqual([staleKey, staleKey.replace(/\.webp$/, '-thumbnail.webp')].sort());
   });
 
   it('leaves a cordel/ System object alone — a gym never deletes platform media', async () => {
@@ -271,10 +280,34 @@ describe('POST /nutrition-library/:id/image — replacing', () => {
 
 describe('POST /nutrition-library/:id/image — refusals', () => {
   it('returns 415 for an unsupported image type', async () => {
-    const res = await upload(gymId, foodId, PNG_BYTES, 'image/bmp');
+    const res = await upload(gymId, foodId, Buffer.from('{}'), 'application/json');
     expect(res.status).toBe(415);
     expect(sentCommands('put')).toHaveLength(0);
     expect(await imageUrlOf(foodId)).toBeNull();
+  });
+
+  it('returns 400 for bytes that are not a picture, whatever the Content-Type claims', async () => {
+    const res = await upload(gymId, foodId, Buffer.from('not an image at all'), 'image/png');
+    expect(res.status).toBe(400);
+    expect(sentCommands('put')).toHaveLength(0);
+    expect(await imageUrlOf(foodId)).toBeNull();
+  });
+
+  it('keeps the stored image and removes the new master when the thumbnail upload fails', async () => {
+    await upload(gymId, foodId);
+    const stored = await imageUrlOf(foodId);
+    await db.query('UPDATE nutrition_library_items SET name = ? WHERE id = ?', ['Test Gym Image Turkey Breast', foodId]);
+    sendMock.mockReset();
+    sendMock.mockImplementation((command: any) => (
+      command?.__type === 'put' && String(command.input.Key).endsWith('-thumbnail.webp')
+        ? Promise.reject(new Error('R2 rejected the thumbnail'))
+        : Promise.resolve({})
+    ));
+
+    const res = await upload(gymId, foodId);
+    expect(res.status).toBe(502);
+    expect(await imageUrlOf(foodId)).toBe(stored);
+    expect(sentKeys('delete')).toEqual([`${prefix}/nutrition/${foodId}-Test-Gym-Image-Turkey-Breast.webp`]);
   });
 
   it('returns 400 for an empty body', async () => {

@@ -10,7 +10,7 @@ import rateLimit from 'express-rate-limit';
 import { DateTime } from 'luxon';
 import { createClerkClient } from '@clerk/backend';
 import { parseBlockLogResult } from '../domain/blockResultUnits';
-import { FUTURE_WORKOUT_CODE, gymToday, isFutureLoggedDate, trainingProgress, ROLLING_MONTH_DAYS } from '../domain/workoutProgress';
+import { gymToday, trainingProgress, ROLLING_MONTH_DAYS } from '../domain/workoutProgress';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole, TenantContext } from '../infra/tenantContext';
 import { getCenterContext } from '../infra/centerContext';
@@ -26,6 +26,7 @@ import {
 import { CANCELLATION_GRACE_HOURS, CANCELLATION_NOTICE_HOURS } from '../domain/bookingCancellation';
 import { validateRequest as validateSharedRequest } from './shared-training-requests';
 import { planTreeSelect } from './training-plans';
+import { imageSexForGender } from '../domain/effectiveExerciseImage';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { notificationCategory } from '../domain/notificationCategory';
@@ -1208,8 +1209,10 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
   try {
     let memberId: number;
     try { memberId = await resolveMemberId(gymId, ctx); } catch { return res.json([]); }
+    // #1540: the member's profile gender picks which exercise image is shown.
+    const { rows: gRows } = await db.query('SELECT gender FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
     const { rows } = await db.query(
-      `${planTreeSelect(getRequestLocale(req))}
+      `${planTreeSelect(getRequestLocale(req), imageSexForGender(gRows[0]?.gender))}
        JOIN member_training_plans mtp ON mtp.training_plan_id = tp.id
        WHERE tp.gym_id = ? AND tp.member_id = ? AND mtp.status = 'active' AND tp.status != 'deleted'
        ORDER BY mtp.created_at DESC`,
@@ -1406,9 +1409,6 @@ meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('tr
   if (sets != null && !Array.isArray(sets)) return res.status(400).json({ error: 'sets must be an array' });
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    if (isFutureLoggedDate(logged_date, new Date(), await gymTimeZone(gymId))) {
-      return res.status(400).json({ error: 'A workout cannot be marked done before its day.', code: FUTURE_WORKOUT_CODE });
-    }
     const { rows: weRows } = await db.query(
       `SELECT we.exercise_id FROM workout_exercises we
        JOIN workout_blocks wb ON wb.id = we.workout_block_id
@@ -1554,9 +1554,6 @@ meRouter.post('/workout-block-logs', requireRole('member'), requireFeatureEnable
   }
   try {
     const memberId = await resolveMemberId(gymId, ctx);
-    if (isFutureLoggedDate(logged_date, new Date(), await gymTimeZone(gymId))) {
-      return res.status(400).json({ error: 'A workout cannot be marked done before its day.', code: FUTURE_WORKOUT_CODE });
-    }
     const { rows: blockRows } = await db.query(
       `SELECT wb.result_unit FROM workout_blocks wb
        JOIN workouts w ON w.id = wb.workout_id

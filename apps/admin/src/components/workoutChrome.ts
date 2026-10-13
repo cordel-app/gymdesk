@@ -29,7 +29,7 @@ import { dashedAddBtnStyle } from './formChrome';
 import { cardSurfaceStyle } from './ui';
 
 /**
- * The training day a workout is scheduled on — `Mon`, `No day`.
+ * The training day a workout is scheduled on — `Mon`, `All days`.
  *
  * One object for both halves of the read-only/Edit split (#971 §4): the
  * `<select>` an editor renders and the value a reader sees are the same pill,

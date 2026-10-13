@@ -6,6 +6,7 @@ import {
   effectiveImageThumbnailUrlSql,
   effectiveVideoUrlSql,
   effectiveVideoPosterSql,
+  imageSexForGender,
 } from '../domain/effectiveExerciseImage';
 
 const m = (id: number, name: string, url: string | null, thumb: string | null = null) =>
@@ -90,5 +91,14 @@ describe('SQL spelling', () => {
     ]) {
       expect(sql).not.toMatch(/e\.(image|video)_(thumbnail_)?url\b/);
     }
+  });
+
+  it('#1540: a Woman gets the exercise female image first, then male, and a female muscle image', () => {
+    expect(imageSexForGender('Woman')).toBe('female');
+    for (const g of ['Man', 'Other', null, undefined]) expect(imageSexForGender(g)).toBe('male');
+    const url = effectiveImageUrlSql('e', 'female');
+    expect(url).toMatch(/^COALESCE\(e\.image_female_url, e\.image_male_url, /);
+    expect(url).toContain('COALESCE(pm.image_female_url, pm.image_male_url)');
+    expect(effectiveImageThumbnailUrlSql('e', 'female')).toContain('COALESCE(e.image_female_url, e.image_male_url) IS NULL');
   });
 });

@@ -13,6 +13,8 @@ import { activePlanConflictBody } from '../domain/oneActivePlan';
 import {
   Actor, cancelInFlight, createDraft, submitForPayment,
 } from './product-sets';
+import { ensureRecurringDraft } from './recurring-purchase-draft';
+import { diffConfigurations } from '../domain/productSetDiff';
 import {
   activateWithEvents, loadProductSetSimulationAssignment, snapshotProductSetFromPlan,
 } from './product-set-configuration';
@@ -27,6 +29,8 @@ import {
  *   GET    /product-sets/edit-check?member_id=   what blocks editing (Q1)
  *   GET    /product-sets/:id              one version with what it froze
  *   POST   /product-sets                  start a Draft (409 while in flight or locked)
+ *   POST   /product-sets/draft            #1537 — the member's recurring Draft, created on first use (idempotent)
+ *   GET    /product-sets/:id/review       #1537 — diff vs the Active version + the amount due today
  *   POST   /product-sets/:id/save-and-pay Draft → Pending Payment + checkout
  *   POST   /product-sets/:id/activate     Draft → Active when nothing is owed
  *   DELETE /product-sets/:id              cancel an in-flight version
@@ -74,6 +78,25 @@ function shape(row: any) {
     last_activity_at: row.last_activity_at ?? null,
     expired: row.status === 'draft' && Number(row.stale) === 1,
   };
+}
+
+
+/**
+ * What committing `set` asks for **today** — the one answer Save & Pay, the
+ * free activation and the "Review your changes" preview all use, so the figure a
+ * member is shown is the figure charged (#1537). A version that replaces a
+ * running one owes only what is new relative to it, dated today; a first
+ * version owes its first cycle from its own start date.
+ */
+async function commitCharge(gymId: string, set: any) {
+  const nextVersion = set.previous_product_set_id != null;
+  const startsAt = nextVersion
+    ? todayUtc()
+    : (set.starts_at instanceof Date ? set.starts_at.toISOString() : String(set.starts_at)).slice(0, 10);
+  const charge = await initialCharge(gymId, Number(set.id), startsAt, db, {
+    previousProductSetId: nextVersion ? Number(set.previous_product_set_id) : null,
+  });
+  return { startsAt, charge };
 }
 
 export const productSetsRouter = Router({ mergeParams: true });
@@ -201,13 +224,7 @@ productSetsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), asyn
 
   // #1521: a version that replaces a running one owes only what is new, dated
   // today — never the plan's first cycle again.
-  const nextVersion = set.previous_product_set_id != null;
-  const startsAt = nextVersion
-    ? todayUtc()
-    : (set.starts_at instanceof Date ? set.starts_at.toISOString() : String(set.starts_at)).slice(0, 10);
-  const charge = await initialCharge(gymId, Number(set.id), startsAt, db, {
-    previousProductSetId: nextVersion ? Number(set.previous_product_set_id) : null,
-  });
+  const { startsAt, charge } = await commitCharge(gymId, set);
   if (!charge || charge.amount <= 0) {
     return res.status(409).json({ error: 'nothing_to_pay', message: 'No initial payment is owed; activate the ProductSet instead.' });
   }
@@ -236,8 +253,9 @@ productSetsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (r
   if (set.status !== 'draft') return res.status(409).json({ error: 'not_committable', status: set.status });
   if (Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
 
-  const startsAt = (set.starts_at instanceof Date ? set.starts_at.toISOString() : String(set.starts_at)).slice(0, 10);
-  const charge = await initialCharge(gymId, Number(set.id), startsAt);
+  // #1537: the same delta Save & Pay would charge, so a replacement that adds
+  // nothing owed activates here instead of being asked for a plan's first cycle.
+  const { charge } = await commitCharge(gymId, set);
   if (charge && charge.amount > 0) {
     return res.status(409).json({ error: 'payment_required', amount: charge.amount, message: 'An initial payment is owed; use save-and-pay.' });
   }
@@ -328,6 +346,95 @@ productSetsRouter.delete('/:id', requireModuleWrite('PAYMENTS'), async (req, res
   }
   recordAudit(req, { action: 'cancel', entityType: 'product_set', entityId: set.id });
   res.status(204).end();
+});
+
+/**
+ * #1537 — the member's recurring-configuration Draft, created on the first
+ * edit and the same row on every later one. Idempotent: no "create draft" step
+ * exists, a Pending Payment version answers `409 in_flight` (never a second
+ * Draft, never a second charge) and the editing lock is the server's.
+ */
+productSetsRouter.post('/draft', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = Number(req.body?.member_id);
+  if (!Number.isInteger(memberId) || memberId <= 0) return res.status(400).json({ error: 'member_id is required' });
+  try {
+    const { rows: memberRows } = await db.query('SELECT id FROM members WHERE id = ? AND gym_id = ? AND deleted_at IS NULL', [memberId, gymId]);
+    if (memberRows.length === 0) return res.status(404).json({ error: 'Member not found' });
+
+    const blocking = await loadEditLock(gymId, memberId, todayUtc());
+    if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
+
+    const out = await db.transaction((tx) => ensureRecurringDraft(tx, {
+      gymId, memberId, actor: actorOf(req), today: todayUtc(),
+    }));
+    if (out.kind === 'in_flight') {
+      return res.status(409).json({ error: 'in_flight', product_set_id: out.productSetId, status: out.status });
+    }
+    if (out.created) {
+      recordAudit(req, { action: 'create', entityType: 'product_set', entityId: out.productSetId, next: { auto_draft: true } });
+    }
+    const row = await loadSet(gymId, out.productSetId);
+    res.status(out.created ? 201 : 200).json({ ...shape(row), created: out.created });
+  } catch (err) { next(err); }
+});
+
+/**
+ * #1537 — "Review your changes": the differences between the Active version and
+ * this Draft, and what committing it asks for today. Read-only — it writes no
+ * Billing Event, request or version, and it takes its amount from the very
+ * function `save-and-pay` charges from. `amount_due: null` with an `error` means
+ * it could not be established reliably and the screen must not offer Confirm.
+ */
+productSetsRouter.get('/:id/review', async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const set = await loadSet(gymId, req.params.id);
+    if (!set) return res.status(404).json({ error: 'ProductSet not found' });
+    if (set.status !== 'draft' && set.status !== 'pending_payment') {
+      return res.status(409).json({ error: 'not_committable', status: set.status });
+    }
+    if (set.status === 'draft' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
+
+    const after = await loadProductSetSimulationAssignment(gymId, Number(set.id));
+    const before = set.previous_product_set_id != null
+      ? await loadProductSetSimulationAssignment(gymId, Number(set.previous_product_set_id))
+      : null;
+    if (!after) return res.status(404).json({ error: 'ProductSet not found' });
+    const changes = diffConfigurations(before, after);
+
+    let amountDue: number | null = null;
+    let lines: Array<{ item_name: string | null; quantity: number; amount: number }> = [];
+    let error: string | null = null;
+    try {
+      const blocking = await loadEditLock(gymId, Number(set.owner_member_id), todayUtc());
+      if (blocking.length > 0) {
+        error = 'edit_locked';
+      } else {
+        const { charge } = await commitCharge(gymId, set);
+        amountDue = charge ? Math.round(charge.amount * 100) / 100 : 0;
+        lines = (charge?.lines ?? []).map((l: any) => ({
+          item_name: l.item_name ?? null, quantity: Number(l.quantity), amount: Number(l.amount),
+        }));
+        if (!Number.isFinite(amountDue) || amountDue < 0) { amountDue = null; error = 'amount_unavailable'; }
+      }
+    } catch {
+      amountDue = null;
+      error = 'amount_unavailable';
+    }
+
+    res.json({
+      product_set_id: Number(set.id),
+      status: String(set.status),
+      has_previous: set.previous_product_set_id != null,
+      changes,
+      amount_due: amountDue,
+      payment_required: amountDue != null && amountDue > 0,
+      immediate_lines: lines,
+      currency: 'EUR',
+      error,
+    });
+  } catch (err) { next(err); }
 });
 
 productSetsRouter.use('/:id', productSetDraftRouter);

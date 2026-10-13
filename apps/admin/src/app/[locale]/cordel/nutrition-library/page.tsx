@@ -19,7 +19,7 @@ import {
   emptyNutritionItemForm,
   toNutritionItemFormValues,
 } from '@/components/nutritionLibrary/nutritionItemProfile';
-import { btnStyle, btnSmall, cardSurfaceStyle } from '@/components/ui';
+import { btnStyle, btnSmall, primaryBtnSmall, cardSurfaceStyle } from '@/components/ui';
 // #947: the Base library is three tabs too, and they are the same three — the tab
 // declaration and the goal sections are shared with the gym-facing library, so the
 // pair cannot drift (§2). What this page supplies is the platform context: the
@@ -258,13 +258,13 @@ export default function CordelNutritionLibraryPage() {
     } finally { setEditSaving(false); }
   }
 
-  // ─── Image upload (#715) ────────────────────────────────────────────────
+  // ─── Image upload (#715, #1562) ─────────────────────────────────────────
   //
-  // The picker is opened from the expanded card; the file it returns is checked
-  // here for the two constraints a browser can see (a PNG, exactly 512×512) and
-  // then posted as raw bytes to `POST /platform/nutrition-library/:id/image`.
-  // The server validates the same things from the file's own bytes — this pass
-  // exists to give a clear error before the upload, never instead of it.
+  // The picker is opened from the Edit form; the file it returns is checked here
+  // only for what a browser can see (an image, within the size limit) and then
+  // posted as it is, as raw bytes, to `POST /platform/nutrition-library/:id/image`.
+  // The server converts it to the 1080×1080 WebP master and the 256×256
+  // thumbnail — the browser neither resizes nor re-encodes anything.
 
   function openImagePicker(item: LibraryItem) {
     imageTargetRef.current = item;
@@ -276,16 +276,10 @@ export default function CordelNutritionLibraryPage() {
     }
   }
 
-  /** `null` when the file is a 512×512 PNG, otherwise the reason it is not. */
-  async function checkImageFile(file: File): Promise<string | null> {
-    if (file.type !== 'image/png' && !file.name.toLowerCase().endsWith('.png')) {
-      return t('image_png_required');
-    }
-    const dimensions = await readImageDimensions(file);
-    if (!dimensions) return t('image_unreadable');
-    if (dimensions.width !== IMAGE_SIZE || dimensions.height !== IMAGE_SIZE) {
-      return t('image_wrong_size', { size: IMAGE_SIZE, width: dimensions.width, height: dimensions.height });
-    }
+  /** `null` when the file may be sent, otherwise the reason it may not. */
+  function checkImageFile(file: File): string | null {
+    if (!IMAGE_TYPES.includes(file.type)) return t('image_type_required');
+    if (file.size > IMAGE_MAX_BYTES) return t('image_too_large', { mb: IMAGE_MAX_BYTES / (1024 * 1024) });
     return null;
   }
 
@@ -294,7 +288,7 @@ export default function CordelNutritionLibraryPage() {
     const item = imageTargetRef.current;
     if (!file || !item) return;
 
-    const problem = await checkImageFile(file);
+    const problem = checkImageFile(file);
     if (problem) {
       // Nothing is sent, so the existing image stays exactly as it is.
       setImageError({ id: item.id, message: problem });
@@ -307,7 +301,7 @@ export default function CordelNutritionLibraryPage() {
       const token = await getToken();
       const res = await fetch(`/api/proxy/platform/nutrition-library/${item.id}/image`, {
         method: 'POST',
-        headers: { 'Content-Type': 'image/png', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        headers: { 'Content-Type': file.type, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: file,
       });
       if (!res.ok) {
@@ -429,7 +423,7 @@ export default function CordelNutritionLibraryPage() {
         <div style={{ marginBottom: 12 }}>
           <label style={inlineLabelStyle}>{t('label_media')}</label>
           {item ? (
-            <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
               <div style={imageFrameStyle}>
                 {item.image_url ? (
                   /* eslint-disable-next-line @next/next/no-img-element */
@@ -444,17 +438,17 @@ export default function CordelNutritionLibraryPage() {
                   <span style={{ color: '#9ca3af', fontSize: 12, textAlign: 'center', padding: 8 }}>{t('no_image')}</span>
                 )}
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 220 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxWidth: 360 }}>
                 <button
                   type="button"
                   onClick={() => openImagePicker(item)}
                   disabled={uploadingId === item.id}
-                  style={btnSmall()}
+                  style={{ ...primaryBtnSmall(), alignSelf: 'flex-start' }}
                 >
                   {uploadingId === item.id ? t('uploading') : t('upload_image')}
                 </button>
                 <p style={{ margin: 0, fontSize: 12, color: '#888' }}>
-                  {t('image_hint', { size: IMAGE_SIZE })}
+                  {t('image_hint')}
                 </p>
                 {imageError?.id === item.id && (
                   <p style={{ margin: 0, fontSize: 12.5, color: '#c0392b' }}>{imageError.message}</p>
@@ -610,7 +604,7 @@ export default function CordelNutritionLibraryPage() {
       <input
         ref={imageInputRef}
         type="file"
-        accept="image/png"
+        accept={IMAGE_TYPES.join(',')}
         onChange={handleImageSelected}
         style={{ display: 'none' }}
       />
@@ -647,31 +641,13 @@ function trimmedTranslations(translations: Record<string, string>): Record<strin
 }
 
 /**
- * The exact square every Base Nutrition Library image is (#715 §2). Declared
- * once: the picker's check, the hint the administrator reads and the frame the
- * image is drawn in all come from it.
+ * What the picker offers and the browser checks before sending (#1562). The
+ * server judges the bytes themselves and converts whatever it decodes to the
+ * 1080×1080 WebP master and 256×256 thumbnail, so these are a courtesy, not the
+ * boundary. 10 MB is the API's default `EXERCISE_IMAGE_MAX_MB`.
  */
-const IMAGE_SIZE = 512;
-
-/**
- * Natural size of an image file, or null when the browser cannot decode it.
- * Used for the client-side half of the 512×512 check — the server repeats it
- * from the PNG's own IHDR, so a browser that fails here costs a clear error
- * rather than a wrong upload.
- */
-async function readImageDimensions(file: File): Promise<{ width: number; height: number } | null> {
-  const url = URL.createObjectURL(file);
-  try {
-    return await new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
-      img.onerror = () => resolve(null);
-      img.src = url;
-    });
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif'];
+const IMAGE_MAX_BYTES = 10 * 1024 * 1024;
 
 /**
  * A 1:1 frame for the food image. The checkerboard is what makes a transparent

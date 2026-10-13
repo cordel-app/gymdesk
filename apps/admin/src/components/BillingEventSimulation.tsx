@@ -51,6 +51,7 @@ import {
   everyPeriodExpanded,
   initialExpandedPeriods,
   simulationLineTone,
+  visibleBillingDates,
   simulationPriceLabelKey,
 } from '@/lib/billingEventSimulation';
 import type { ExampleTimelineRowCycle } from '@/lib/exampleTimeline';
@@ -81,6 +82,11 @@ interface Props {
    * cycle) renders the section exactly as it did before the ticket.
    */
   cycleNote?: ReactNode;
+  /**
+   * #1536 — offer the "Show €0 billing events" toggle (OFF by default, state
+   * local to this instance). Omitted, the section lists every date as before.
+   */
+  zeroToggle?: boolean;
 }
 
 function fmtMoney(amount: number): string {
@@ -256,8 +262,9 @@ function BillingPeriodCard({
   );
 }
 
-export function BillingEventSimulation({ simulation, t, formatDate, cycleNote }: Props) {
-  const dates = simulation?.dates ?? [];
+export function BillingEventSimulation({ simulation, t, formatDate, cycleNote, zeroToggle }: Props) {
+  const [showZero, setShowZero] = useState(false);
+  const dates = visibleBillingDates(simulation?.dates ?? [], !zeroToggle || showZero);
   const signature = dates.map((group) => group.date).join('|');
 
   // Which cards are open, keyed by the group's own date, so an individual card
@@ -295,6 +302,12 @@ export function BillingEventSimulation({ simulation, t, formatDate, cycleNote }:
 
   return (
     <div>
+      {zeroToggle && (
+        <label style={zeroToggleStyle}>
+          <input type="checkbox" checked={showZero} onChange={(e) => setShowZero(e.target.checked)} />
+          {t('simulation_show_zero')}
+        </label>
+      )}
       {(simulation.anchor_date || simulation.tax_included || showGlobalToggle) && (
         <div style={toolbar}>
           <p style={{ margin: 0, fontSize: 12, color: '#666' }}>
@@ -374,6 +387,9 @@ const cycleNoteStyle: React.CSSProperties = {
 const COL_WIDTHS = { date: 120, status: 300, amount: 90 } as const;
 const tableStyle: React.CSSProperties = {
   width: '100%', minWidth: 640, tableLayout: 'fixed', borderCollapse: 'collapse', fontSize: 13,
+};
+const zeroToggleStyle: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginBottom: 8, cursor: 'pointer',
 };
 const hint: React.CSSProperties = { color: '#888', fontSize: 13, margin: 0 };
 const toolbar: React.CSSProperties = {

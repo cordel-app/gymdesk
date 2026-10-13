@@ -443,6 +443,7 @@ export default function MemberCalendarPage() {
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView="timeGridDay"
+          eventDisplay="block"
           headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' }}
           height="100%"
           events={fetchEvents}
@@ -511,10 +512,16 @@ export default function MemberCalendarPage() {
             <h3 style={{ margin: '0 0 4px', fontSize: 16, color: memberTheme.title3, fontFamily: memberTheme.title3Font }}>{selected.class_type_name}</h3>
             <p style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
               {formatGymDateTime(selected.starts_at, gymFormat)}
-              {selected.trainer_name ? ` · ${selected.trainer_name}` : ''}
-              {selected.center_name ? ` · ${selected.center_name}` : ''}
-              {selected.space_name ? ` · ${selected.space_name}` : ''}
             </p>
+            {([
+              ['filter_trainer_label', selected.trainer_name],
+              ['detail_space_label', selected.space_name],
+              ['filter_center_label', selected.center_name],
+            ] as const).map(([key, value]) => (value && value.trim() ? (
+              <p key={key} style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
+                {t(key)}: <strong>{value.trim()}</strong>
+              </p>
+            ) : null))}
             {selected.my_booking_id && selected.booked_on && (
               <p style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
                 {tRoot(BOOKED_ON_KEY, { date: formatGymDateTime(selected.booked_on, gymFormat) })}

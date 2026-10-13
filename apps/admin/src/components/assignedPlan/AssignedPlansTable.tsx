@@ -94,16 +94,18 @@ interface Props<T extends AssignedPlanTableRow> {
   embedded?: boolean;
   /** The `⋮` this screen puts on a row, if any. */
   rowActions?: (row: T) => ContextMenuItem[];
+  /** #1533: a row to expand on mount and open in Edit mode (a Draft just created). */
+  openInEditId?: number | null;
 }
 
 export function AssignedPlansTable<T extends AssignedPlanTableRow>({
   rows, loading, loadingText, emptyText, onChanged,
-  scope = 'gym', embedded = false, rowActions, viewAsMemberId,
+  scope = 'gym', embedded = false, rowActions, viewAsMemberId, openInEditId = null,
 }: Props<T>) {
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
   const gymFmt = useGymFormatSettings();
-  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set(openInEditId != null ? [openInEditId] : []));
 
   function toggleExpand(row: T) {
     setExpandedIds((prev) => {
@@ -185,7 +187,7 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
       expandedRowKeys={expandedIds}
       onToggleExpand={toggleExpand}
       renderExpanded={(row) => (
-        <AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} />
+        <AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} startEditing={row.id === openInEditId} />
       )}
     />
   );

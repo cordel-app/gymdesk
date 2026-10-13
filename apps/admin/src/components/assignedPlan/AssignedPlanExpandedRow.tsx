@@ -27,6 +27,7 @@ import { AssignedPlanConfiguration } from './AssignedPlanConfiguration';
 import { AssignedPlanPromotions } from './AssignedPlanPromotions';
 import { ExampleTimeline } from '@/components/ExampleTimeline';
 import { BillingEventSimulation } from '@/components/BillingEventSimulation';
+import { isZeroAmount } from '@/lib/billingEventSimulation';
 import {
   exampleTimelineCycleNote,
   exampleTimelineRowCycle,
@@ -105,10 +106,12 @@ function fmtMoney(v: string | number | null) {
  * (#797). Expanding a plan on the Member page reads it; editing the assignment
  * stays on the Assigned Plans page, which is where its own card lives.
  */
-export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false, viewAsMemberId }: {
+export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false, viewAsMemberId, startEditing = false }: {
   assignedPlanId: number;
   onChanged: () => void;
   embedded?: boolean;
+  /** #1533: open straight into Edit mode — a Draft just created from the Member card. */
+  startEditing?: boolean;
   /** #1191: the Member whose context this is; a Linked one reads and never edits. */
   viewAsMemberId?: number;
 }) {
@@ -128,7 +131,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   const [error, setError] = useState<string | null>(null);
 
   const [showDetails, setShowDetails] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(startEditing);
   const [actionBusy, setActionBusy] = useState(false);
   const [closeStep, setCloseStep] = useState<'none' | 'confirm' | 'warn'>('none');
   const [closeWarnings, setCloseWarnings] = useState<string[]>([]);
@@ -138,6 +141,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   const [paymentStep, setPaymentStep] = useState<'none' | 'confirm_cash'>('none');
   // #1240: Cancel on a Draft is a hard delete, confirmed first.
   const [discardOpen, setDiscardOpen] = useState(false);
+  const [showZeroEvents, setShowZeroEvents] = useState(false);
   const [paymentLink, setPaymentLink] = useState<string | null>(null);
 
   // #613: impersonation-aware; actions that apply to the plan's status are shown, disabled when not permitted.
@@ -319,7 +323,10 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // An embedded body has no `⋮`, so it can never be in Edit mode — every
   // section's controls are absent rather than disabled, exactly as they are on
   // the Assigned Plans page outside the mode (#897).
-  const editing = !embedded && isEditing;
+  // #1533: a Draft is the one assignment configured from the Member card too —
+  // it has not been committed, so it keeps the full body, `⋮` and Edit mode.
+  const hostEmbedded = embedded && detail.status !== 'draft';
+  const editing = !hostEmbedded && isEditing;
   // #1191: a Linked context has no Billing Events section at all.
   const isLinked = detail?.assignment_relationship === 'linked';
 
@@ -366,7 +373,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
 
   return (
     <div style={panel}>
-      {!embedded && (
+      {!hostEmbedded && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 16 }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 15 }}>{detail.plan_name ?? '—'}</div>
@@ -561,6 +568,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       <CardSection label={t('section_billing_forecast')}>
         <BillingEventSimulation
           simulation={detail.billing_event_simulation}
+          zeroToggle
           t={(key, values) => t(key as any, values as any)}
           formatDate={(date) => fmtTimelineDate(date, gymFmt)}
           cycleNote={(() => {
@@ -596,7 +604,11 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           <p style={dim}>{t('no_billing_events')}</p>
         ) : (
           <div>
-            {detail.billing_events.events.map((ev, i) => (
+            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, marginBottom: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={showZeroEvents} onChange={(e) => setShowZeroEvents(e.target.checked)} />
+              {t('simulation_show_zero')}
+            </label>
+            {detail.billing_events.events.filter((ev) => showZeroEvents || !isZeroAmount(Number(ev.amount))).map((ev, i) => (
               <div key={i} style={ledgerRowStyle}>
                 <span>
                   {fmtDay(ev.date, gymFmt)}

@@ -57,7 +57,7 @@ import {
 export type { PurchasedProduct, PurchasedProductPromotion };
 
 export function MemberPurchasedProducts({
-  items, memberId, canWrite, canPay, isAdmin, onChanged, onProposal,
+  items, memberId, canWrite, canPay, isAdmin, onChanged,
 }: {
   items: PurchasedProduct[];
   memberId: number;
@@ -68,7 +68,6 @@ export function MemberPurchasedProducts({
   /** The direct discount is the Admin's alone (the server enforces it too). */
   isAdmin: boolean;
   onChanged: () => void;
-  onProposal: (productSetId: number | null) => void;
 }) {
   const t = useTranslations('members');
   // The Promotion voice (*Promotion* / *No promotion*), which this namespace
@@ -215,7 +214,6 @@ export function MemberPurchasedProducts({
           canPay={canPay}
           onClose={() => setAdding(false)}
           onChanged={onChanged}
-          onProposal={onProposal}
         />
       )}
       {open && (
