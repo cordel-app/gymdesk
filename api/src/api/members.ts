@@ -293,7 +293,15 @@ membersRouter.get('/:id/clerk-status', async (req, res, next) => {
   // every branch below because the card passes this whole response to
   // `clerkStatusLine()`, which reads `enrolled` — it was missing, so every member read
   // "Not enrolled" beside an Active badge.
+  // #1574: whether a reusable payment token is stored, from `payment_methods` itself
+  // (never from payment history). Only the boolean leaves the API.
+  const { rows: tokenRows } = await db.query<any>(
+    `SELECT 1 AS present FROM payment_methods
+      WHERE gym_id = ? AND member_id = ? AND payment_token IS NOT NULL AND payment_token <> '' LIMIT 1`,
+    [gymId, req.params.id],
+  );
   const dates = {
+    has_payment_token: !!tokenRows[0],
     invited_at: invited_at ?? null,
     enrolled_at: enrolled_at ?? null,
     has_pending_invitation: !!invitation_id,

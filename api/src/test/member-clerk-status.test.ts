@@ -72,6 +72,23 @@ describe('GET /members/:id/clerk-status', () => {
     expect(res.status).toBe(404);
   });
 
+  it('reports has_payment_token from the stored token without exposing it (#1574)', async () => {
+    const memberId = await createMember(gymId);
+    const get = () =>
+      request.get(`/members/${memberId}/clerk-status`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    const before = await get();
+    expect(before.body.has_payment_token).toBe(false);
+    await db.query(
+      `INSERT INTO payment_methods (gym_id, member_id, provider, payment_token, sequence_id, card_brand, card_last4)
+       VALUES (?, ?, 'monei', 'tok-secret-1574', 'seq-secret-1574', 'visa', '4242')`,
+      [gymId, memberId],
+    );
+    const after = await get();
+    expect(after.body.has_payment_token).toBe(true);
+    expect(JSON.stringify(after.body)).not.toContain('tok-secret-1574');
+    await db.query('DELETE FROM payment_methods WHERE member_id = ?', [memberId]);
+  });
+
   it('returns 404 for a non-existent member id', async () => {
     const res = await request
       .get('/members/9999999/clerk-status')
