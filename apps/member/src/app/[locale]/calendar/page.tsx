@@ -443,6 +443,7 @@ export default function MemberCalendarPage() {
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView="timeGridDay"
+          eventDisplay="block"
           headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' }}
           height="100%"
           events={fetchEvents}
