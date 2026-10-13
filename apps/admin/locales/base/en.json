@@ -451,6 +451,7 @@
     "section_membership_plans": "Membership Plans",
     "no_active_membership_plans": "No active membership plans",
     "membership_plans_active": "Active plans",
+    "membership_plans_draft": "Draft plan",
     "membership_plans_history": "Past plans",
     "add_membership_plan": "+ Add Membership Plan",
     "add_membership_plan_error": "Could not create the draft.",
