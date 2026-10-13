@@ -113,7 +113,8 @@
     "status_legend_rest": "Grey — Rest day.",
     "exercise_prev": "Previous exercise",
     "exercise_next": "Next exercise",
-    "exercise_position": "Exercise {current} of {total}"
+    "exercise_position": "Exercise {current} of {total}",
+    "no_description": "No description available."
   },
   "profile": {
     "title": "My profile",

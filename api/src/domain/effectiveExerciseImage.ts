@@ -115,8 +115,10 @@ export const effectiveImageThumbnailUrlSql = (alias = 'e', sex: ImageSex = 'male
 };
 
 /** The video an exercise is shown with: the male one, else the female one (no sex context, #1412's convention). */
-export const effectiveVideoUrlSql = (alias = 'e') => `COALESCE(${alias}.video_male_url, ${alias}.video_female_url)`;
+// #1527: a Members App read passes the member's sex and the order flips for 'female'; a single video plays whatever the sex.
+export const effectiveVideoUrlSql = (alias = 'e', sex: ImageSex = 'male') =>
+  sex === 'female' ? `COALESCE(${alias}.video_female_url, ${alias}.video_male_url)` : `COALESCE(${alias}.video_male_url, ${alias}.video_female_url)`;
 
 /** That video's 256x256 preview thumbnail, derived from its URL: `<name>.mp4` → `<name>-thumbnail.webp`. */
-export const effectiveVideoPosterSql = (alias = 'e') =>
-  derivedCompanionSql(`COALESCE(${alias}.video_male_url, ${alias}.video_female_url)`, 'mp4');
+export const effectiveVideoPosterSql = (alias = 'e', sex: ImageSex = 'male') =>
+  derivedCompanionSql(effectiveVideoUrlSql(alias, sex), 'mp4');

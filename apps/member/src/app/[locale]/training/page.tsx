@@ -11,6 +11,9 @@ import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { BlockExerciseCarousel } from '@/components/BlockExerciseCarousel';
+import { ExerciseDetailsDialog } from '@/components/ExerciseDetailsDialog';
+import { ExerciseVideoViewer } from '@/components/ExerciseMediaViewer';
+import { exerciseVideoKind, exerciseVideoPosterUrl } from '@/lib/exerciseMedia';
 import { DAY_STATUSES, dayStatus, dayStatusKey } from '@/lib/trainingDayStatus';
 import {
   EMPTY_PROGRESS, TrainingProgress, deviceToday, shiftWeek, swipeWeekDelta, weekDates, weekdayOf,
@@ -35,6 +38,8 @@ interface BlockExercise {
   exercise_image_thumbnail_url?: string | null;
   exercise_video_url?: string | null;
   exercise_video_thumbnail_url?: string | null;
+  /** #1527: the exercise's full Description, localized by the API. */
+  exercise_description?: string | null;
 }
 
 // #1009: a block carries no `result_type`. Migration 074 (#154) moved the result
@@ -89,6 +94,8 @@ export default function TrainingPage() {
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   const selectedWeekday = weekdayOf(selectedDate);
   const [expandedExercise, setExpandedExercise] = useState<number | null>(null);
+  const [detailsExercise, setDetailsExercise] = useState<BlockExercise | null>(null);
+  const [videoExercise, setVideoExercise] = useState<BlockExercise | null>(null);
   const [logs, setLogs] = useState<Record<number, ExerciseLog[]>>({});
   const [draft, setDraft] = useState<{ weight: string; reps: string }>({ weight: '', reps: '' });
   const [savingLog, setSavingLog] = useState(false);
@@ -294,23 +301,35 @@ export default function TrainingPage() {
                   prevLabel={t('training.exercise_prev')} nextLabel={t('training.exercise_next')}
                   positionLabel={(i, n) => t('training.exercise_position', { current: i, total: n })}
                   cards={(block.exercises ?? []).map((we) => (
-                  <div key={we.id} style={styles.exerciseCard}>
-                    <div style={styles.exerciseSquare}>
+                  <div key={we.id} style={{ ...styles.exerciseCard, cursor: 'pointer' }} onClick={() => setDetailsExercise(we)}>
+                    <div style={styles.exerciseSquare}
+                         role="button" tabIndex={0} aria-label={we.exercise_name}
+                         onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); setDetailsExercise(we); } }}>
                       <div style={styles.exerciseMedia}><ExerciseMedia exercise={we} fill /></div>
                       <div style={{ ...styles.exerciseInfo, padding: '0 12px' }}>
-                        <span style={styles.exerciseName}>{we.exercise_name}</span>
+                        <span style={styles.exerciseNameRow}>
+                          <span style={styles.exerciseName}>{we.exercise_name}</span>
+                          {we.exercise_video_url && exerciseVideoKind(we.exercise_video_url) === 'external' && (
+                            <a href={we.exercise_video_url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                               aria-label={t('exercise_media.play_video_of', { name: we.exercise_name })} style={styles.playBtn}>▶</a>
+                          )}
+                          {we.exercise_video_url && exerciseVideoKind(we.exercise_video_url) !== null && exerciseVideoKind(we.exercise_video_url) !== 'external' && (
+                            <button type="button" onClick={(e) => { e.stopPropagation(); setVideoExercise(we); }}
+                                    aria-label={t('exercise_media.play_video_of', { name: we.exercise_name })} style={styles.playBtn}>▶</button>
+                          )}
+                        </span>
                         <span style={styles.exerciseMeta}>
                           {we.min_reps ?? '—'}{we.max_reps && we.max_reps !== we.min_reps ? `-${we.max_reps}` : ''} reps
                           {we.sets ? ` × ${we.sets} sets` : ''} · {we.rest_seconds ?? '—'}s
                         </span>
                       </div>
                     </div>
-                    <button type="button" onClick={() => openExercise(we)} aria-expanded={expandedExercise === we.id} style={{ ...styles.registerBtn, width: 'calc(100% - 24px)', margin: '8px 12px 12px' }}>
+                    <button type="button" onClick={(e) => { e.stopPropagation(); openExercise(we); }} aria-expanded={expandedExercise === we.id} style={{ ...styles.registerBtn, width: 'calc(100% - 24px)', margin: '8px 12px 12px' }}>
                       {t('training.register')}
                     </button>
 
                     {expandedExercise === we.id && (
-                      <div style={styles.expandBody}>
+                      <div style={styles.expandBody} onClick={(e) => e.stopPropagation()}>
                         <table style={styles.logTable}>
                           <thead>
                             <tr>
@@ -391,6 +410,12 @@ export default function TrainingPage() {
           </section>
         ))
       )}
+      {detailsExercise && (
+        <ExerciseDetailsDialog exercise={detailsExercise} description={detailsExercise.exercise_description ?? null} onClose={() => setDetailsExercise(null)} />
+      )}
+      {videoExercise?.exercise_video_url && (
+        <ExerciseVideoViewer url={videoExercise.exercise_video_url} poster={exerciseVideoPosterUrl(videoExercise)} name={videoExercise.exercise_name} onClose={() => setVideoExercise(null)} />
+      )}
     </main>
   );
 }
@@ -426,6 +451,8 @@ const styles: Record<string, React.CSSProperties> = {
   exerciseMedia: { display: 'block', width: '100%' },
   exerciseInfo: { display: 'flex', flexDirection: 'column', gap: 2, width: '100%' },
   registerBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '8px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
+  exerciseNameRow: { display: 'flex', alignItems: 'center', gap: 8 },
+  playBtn: { flex: '0 0 auto', width: 28, height: 28, borderRadius: '50%', padding: 0, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, lineHeight: 1, textDecoration: 'none', background: memberTheme.primaryButton, color: memberTheme.primaryButtonText },
   exerciseName: { fontSize: 15, fontWeight: 600, color: memberTheme.text },
   doneChip: { fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px', color: memberTheme.statusSuccess, background: `color-mix(in srgb, ${memberTheme.statusSuccess} 12%, ${memberTheme.surface})` },
   newChip: { marginLeft: 6, fontSize: 10, fontWeight: 600, borderRadius: 999, padding: '1px 6px', color: memberTheme.title2, background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})` },
