@@ -202,7 +202,6 @@ export default function TrainingPage() {
         }),
       });
       setAllBlockLogs((prev) => [...prev, { workout_block_id: block.id, logged_date: selectedDate }]);
-      setMessage(t('training.block_logged'));
     } catch (err: any) { setMessage(err.message ?? t('common.error')); }
     finally { setPending(false); }
   }
