@@ -49,7 +49,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
-import { AssignPlanToMembersEditor, type AssignablePlan } from '../plans/AssignPlanToMembersEditor';
+import type { AssignablePlan } from '../plans/AssignPlanToMembersEditor';
+import { apiErrorMessage } from '@/lib/apiClient';
+import { formControlStyle, formErrorStyle, inlineEditorStyle, secondaryBtnSmall } from '@/components/formChrome';
 import type { ContextMenuItem } from '@/components/ContextMenu';
 import { AssignedPlansTable } from '@/components/assignedPlan/AssignedPlansTable';
 import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPlanDetailsDialog';
@@ -85,6 +87,10 @@ export function MemberMembershipPlans({
   const optionsLoadedRef = useRef(false);
 
   const [adding, setAdding] = useState(false);
+  // #1533: the Draft just created from the picker — opened in Edit mode in the list.
+  const [newDraftId, setNewDraftId] = useState<number | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
   const [options, setOptions] = useState<AssignablePlan[]>([]);
   // #958: the Assigned Plan whose Details are open, if any — one dialog for the
   // whole section rather than one mounted per row.
@@ -111,7 +117,31 @@ export function MemberMembershipPlans({
   // Plan stays offered — under #956 picking one replaces the live plan, which
   // is what the confirmation dialog is for.
   const activePlanIds = new Set(live.map((p) => p.membership_plan_id).filter((id): id is number => id != null));
-  const selectable = options.filter((o) => !activePlanIds.has(o.id));
+  // #1533: a plan taking more than one Member cannot be drafted for this Member
+  // alone (the server wants the exact count), so those stay on the Plans page's Assign.
+  const selectable = options.filter((o) => !activePlanIds.has(o.id) && o.member_limit !== '2');
+
+  async function createDraft(planId: number) {
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const row = await apiFetch<{ id: number }>(`/membership-plans/${planId}/assign`, {
+        method: 'POST',
+        body: JSON.stringify({
+          member_ids: [memberId],
+          owner_member_id: memberId,
+          starts_at: new Date().toISOString().slice(0, 10),
+        }),
+      });
+      setNewDraftId(row.id);
+      setAdding(false);
+      onChanged();
+    } catch (err: any) {
+      setCreateError(apiErrorMessage(err) ?? t('add_membership_plan_error'));
+    } finally {
+      setCreating(false);
+    }
+  }
 
   function startAdding() {
     setAdding(true);
@@ -161,6 +191,7 @@ export function MemberMembershipPlans({
         embedded
         viewAsMemberId={memberId}
         rowActions={rowActions}
+        openInEditId={newDraftId}
       />
 
       {/* #628: the inline Assign New Plan editor for whichever plan raised it —
@@ -178,12 +209,24 @@ export function MemberMembershipPlans({
           inline editor), launched with this Member selected. It creates a Draft, which
           appears in the list above and is configured and paid from its card. */}
       {adding && (
-        <AssignPlanToMembersEditor
-          planOptions={selectable}
-          initialMember={{ id: memberId, name: memberName, email: memberEmail }}
-          onCancel={() => setAdding(false)}
-          onAssigned={() => { setAdding(false); onChanged(); }}
-        />
+        <div style={{ ...inlineEditorStyle, margin: '10px 0' }}>
+          <select
+            value=""
+            disabled={creating}
+            onChange={(e) => { if (e.target.value) void createDraft(parseInt(e.target.value, 10)); }}
+            style={formControlStyle}
+            aria-label={t('assign_new_plan_label_plan')}
+          >
+            <option value="">{creating ? t('add_membership_plan_loading') : t('assign_new_plan_pick_plan')}</option>
+            {selectable.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          {createError && <p style={{ ...formErrorStyle, margin: '8px 0 0' }}>{createError}</p>}
+          <div style={{ marginTop: 10 }}>
+            <button onClick={() => { setAdding(false); setCreateError(null); }} disabled={creating} style={secondaryBtnSmall}>
+              {t('add_membership_plan_cancel')}
+            </button>
+          </div>
+        </div>
       )}
 
       {/* PAST — the same table, so a terminated assignment reads exactly as a

@@ -444,6 +444,8 @@
     "membership_plans_active": "Active plans",
     "membership_plans_history": "Past plans",
     "add_membership_plan": "+ Add Membership Plan",
+    "add_membership_plan_error": "Could not create the draft.",
+    "add_membership_plan_cancel": "Cancel",
     "add_membership_plan_title": "Add Membership Plan",
     "add_membership_plan_submit": "Add plan",
     "product_sets_in_flight": "In progress",
