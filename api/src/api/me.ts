@@ -26,6 +26,7 @@ import {
 import { CANCELLATION_GRACE_HOURS, CANCELLATION_NOTICE_HOURS } from '../domain/bookingCancellation';
 import { validateRequest as validateSharedRequest } from './shared-training-requests';
 import { planTreeSelect } from './training-plans';
+import { imageSexForGender } from '../domain/effectiveExerciseImage';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
 import { notificationCategory } from '../domain/notificationCategory';
@@ -1208,8 +1209,10 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
   try {
     let memberId: number;
     try { memberId = await resolveMemberId(gymId, ctx); } catch { return res.json([]); }
+    // #1540: the member's profile gender picks which exercise image is shown.
+    const { rows: gRows } = await db.query('SELECT gender FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
     const { rows } = await db.query(
-      `${planTreeSelect(getRequestLocale(req))}
+      `${planTreeSelect(getRequestLocale(req), imageSexForGender(gRows[0]?.gender))}
        JOIN member_training_plans mtp ON mtp.training_plan_id = tp.id
        WHERE tp.gym_id = ? AND tp.member_id = ? AND mtp.status = 'active' AND tp.status != 'deleted'
        ORDER BY mtp.created_at DESC`,

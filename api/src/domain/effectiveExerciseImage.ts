@@ -76,15 +76,28 @@ export function withEffectiveImage<T extends Record<string, any>>(row: T): Omit<
  * reference; `effective-exercise-image.unit.test.ts` pins both.
  */
 // #1412: with no sex context the male image stands in, then the female one.
-const primaryMuscleImageSql = (alias: string, column: 'image_url' | 'image_thumbnail_url') =>
-  `(SELECT ${column === 'image_url'
-      ? 'COALESCE(pm.image_male_url, pm.image_female_url)'
-      : 'IF(pm.image_male_url IS NOT NULL, pm.image_male_url_thumbnail, pm.image_female_url_thumbnail)'} FROM exercise_muscles pem JOIN muscles pm ON pm.id = pem.muscle_id
+// #1540: a Members App read passes the member's sex and the order flips for 'female'.
+export type ImageSex = 'male' | 'female';
+
+/** The member-profile gender (`members.gender`) as the sex an exercise image is chosen for; anything but Woman reads as male (the no-context default). */
+export function imageSexForGender(gender: string | null | undefined): ImageSex {
+  return gender === 'Woman' ? 'female' : 'male';
+}
+
+const first = (alias: string, sex: ImageSex) =>
+  sex === 'female' ? [`${alias}.image_female_url`, `${alias}.image_male_url`] : [`${alias}.image_male_url`, `${alias}.image_female_url`];
+
+const primaryMuscleImageSql = (alias: string, column: 'image_url' | 'image_thumbnail_url', sex: ImageSex = 'male') => {
+  const [m, o] = sex === 'female' ? ['female', 'male'] : ['male', 'female'];
+  return `(SELECT ${column === 'image_url'
+      ? `COALESCE(pm.image_${m}_url, pm.image_${o}_url)`
+      : `IF(pm.image_${m}_url IS NOT NULL, pm.image_${m}_url_thumbnail, pm.image_${o}_url_thumbnail)`} FROM exercise_muscles pem JOIN muscles pm ON pm.id = pem.muscle_id
      WHERE pem.exercise_id = ${alias}.id AND pem.role = 'principal' AND COALESCE(pm.image_male_url, pm.image_female_url) IS NOT NULL
      ORDER BY LOWER(pm.name), pm.id LIMIT 1)`;
+};
 
-export const effectiveImageUrlSql = (alias = 'e') =>
-  `COALESCE(${alias}.image_male_url, ${alias}.image_female_url, ${primaryMuscleImageSql(alias, 'image_url')})`;
+export const effectiveImageUrlSql = (alias = 'e', sex: ImageSex = 'male') =>
+  `COALESCE(${first(alias, sex).join(', ')}, ${primaryMuscleImageSql(alias, 'image_url', sex)})`;
 
 /**
  * `<name>.<ext>` → `<name>-thumbnail.webp` for the SQL expression `url`, NULL when
@@ -94,10 +107,12 @@ const derivedCompanionSql = (url: string, ext: 'webp' | 'mp4') =>
   `IF(${url} LIKE '%.${ext}', CONCAT(LEFT(${url}, CHAR_LENGTH(${url}) - ${ext.length + 1}), '-thumbnail.webp'), NULL)`;
 
 /** An exercise's own thumbnail is derived from its master URL: `<name>.webp` → `<name>-thumbnail.webp`. */
-export const effectiveImageThumbnailUrlSql = (alias = 'e') =>
-  `IF(COALESCE(${alias}.image_male_url, ${alias}.image_female_url) IS NULL,
-      ${primaryMuscleImageSql(alias, 'image_thumbnail_url')},
-      ${derivedCompanionSql(`COALESCE(${alias}.image_male_url, ${alias}.image_female_url)`, 'webp')})`;
+export const effectiveImageThumbnailUrlSql = (alias = 'e', sex: ImageSex = 'male') => {
+  const own = `COALESCE(${first(alias, sex).join(', ')})`;
+  return `IF(${own} IS NULL,
+      ${primaryMuscleImageSql(alias, 'image_thumbnail_url', sex)},
+      ${derivedCompanionSql(own, 'webp')})`;
+};
 
 /** The video an exercise is shown with: the male one, else the female one (no sex context, #1412's convention). */
 export const effectiveVideoUrlSql = (alias = 'e') => `COALESCE(${alias}.video_male_url, ${alias}.video_female_url)`;
