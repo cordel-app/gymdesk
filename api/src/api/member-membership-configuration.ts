@@ -1,3 +1,4 @@
+import { resolveCurrentProductSet } from '../domain/currentProductSet';
 import { withDerivedBilling } from './derived-billing';
 import { Router } from 'express';
 import { db } from '../infra/db';
@@ -168,11 +169,13 @@ memberMembershipConfigurationRouter.get('/', async (req, res) => {
     created_by: r.created_by ?? null,
     expired: Number(r.expired) === 1,
   });
-  const currentRow =
-    setRows.find((r: any) => r.status === 'draft' || r.status === 'pending_payment') ??
-    setRows.find((r: any) => r.status === 'active') ??
-    null;
-
+  // #1582 — one resolver decides the current version; an ambiguous chain
+  // (never expected: migration 246's UNIQUE keys forbid it) reports no current.
+  const resolved = resolveCurrentProductSet(setRows as any[]);
+  const currentRow = resolved.kind === 'current' ? resolved.current : null;
+  if (resolved.kind === 'ambiguous') {
+    console.error(`member ${memberId}: ambiguous ProductSets (${resolved.reason})`);
+  }
   res.json({
     current_product_set: currentRow ? summary(currentRow) : null,
     past_product_sets: setRows.filter((r: any) => r.status === 'superseded').map(summary),
