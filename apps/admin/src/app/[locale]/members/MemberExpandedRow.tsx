@@ -411,6 +411,14 @@ export function MemberExpandedRow({
                   </p>
                 );
               })}
+              {clerkStatus && (
+                <p style={profileValueStyle} data-testid="member-payment-token">
+                  <strong>{t('members.label_payment_token')}:</strong>{' '}
+                  <span style={clerkStatus.has_payment_token ? listNameBadgeAccentStyle : listNameBadgeStyle}>
+                    {t(clerkStatus.has_payment_token ? 'members.payment_token_available' : 'members.payment_token_unavailable')}
+                  </span>
+                </p>
+              )}
             </Section>
           )}
 

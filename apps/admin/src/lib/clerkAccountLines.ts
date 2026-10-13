@@ -14,6 +14,8 @@ export interface ClerkAccountFields {
   clerk_user_id?: string | null;
   enrolled?: boolean;
   has_pending_invitation?: boolean;
+  /** #1574: a reusable payment token is stored (the boolean only, never the token). */
+  has_payment_token?: boolean;
   invited_at?: string | null;
   enrolled_at?: string | null;
 }
