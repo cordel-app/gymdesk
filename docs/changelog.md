@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1556 (Activity cards draw the default center, trainer and space with one shared stroke icon set (`ActivityMetaIcon`, `currentColor` in the theme's secondary text colour) instead of multicoloured emoji; data, bookings and status indicators unchanged)
 - **Done**: #1555 (The Members App booking panel lists Trainer, Space and Center as labelled rows from the occurrence's own names, each omitted when unassigned; no booking, eligibility or capacity behaviour changed. The Admin calendar draws no icons for these, so none were added.)
 - **Done**: #1527 (follow-up: My Training exercise cards drop the inner frame around the image — it fills the card's visual area edge to edge, undistorted (`object-fit: contain`) — and a single-exercise block now uses the same card width as a multi-exercise carousel, left-aligned with no arrows or position indicator, instead of stretching full width. Presentation only; completion and grouping unchanged)
 - **Done**: #1554 (My Training's week status no longer shows a day green while a workout the day card lists — one with no weekday, shown beside the scheduled ones — still has blocks not marked done; a day with no workout scheduled for its weekday stays grey. `dayStatus()` only; completion, persistence and red/yellow unchanged)
