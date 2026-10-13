@@ -136,7 +136,7 @@ export default function HomePage() {
                 sub={t('card_new_members_sub')} href={`/${locale}/members`} />
             )}
             {c?.classes_today && (
-              <SummaryCard label={t('card_classes')} value={String(c.classes_today.count)}
+              <SummaryCard label={t('card_classes')} value={`${c.classes_today.count} / ${c.classes_today.total}`}
                 sub={t('card_classes_sub', { count: c.classes_today.waitlist_total })} href={`/${locale}/calendar`} />
             )}
             {c?.outstanding_payments && (

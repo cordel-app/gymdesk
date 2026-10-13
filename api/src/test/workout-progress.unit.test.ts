@@ -19,7 +19,8 @@ describe('workoutProgress (#1370)', () => {
     const p = trainingProgress(w, logs, '2026-10-14', 1);
     expect(p.day).toEqual({ completed: 1, total: 1, percent: 100 });
     expect(p.week).toEqual({ completed: 2, total: 2, percent: 100 });
-    expect(p.month.total).toBe(4); // Mondays 5,12 + Wednesdays 7,14
+    // Last 30 days = 09-15..10-14: Mondays 9/21,9/28,10/5,10/12 + Wednesdays 9/16,9/23,9/30,10/7,10/14
+    expect(p.month.total).toBe(9);
     expect(p.month.completed).toBe(2);
     expect(trainingProgress([], [], '2026-10-14').day.percent).toBe(0);
   });
@@ -33,19 +34,29 @@ describe('trainingProgress for a selected date (#1370 stage 2)', () => {
   // Mondays (weekday 1) in Oct 2026: 5, 12, 19, 26
   const w = [{ id: 1, weekday: 1, blockIds: [1] }];
   const logs = [{ blockId: 1, date: '2026-10-05' }, { blockId: 1, date: '2026-10-12' }];
-  it('uses the periods containing the selected date, capped at today', () => {
+  it('uses rolling 7 and 30 day windows ending on the selected date (#1524)', () => {
     const p = trainingProgress(w, logs, '2026-10-14', 1, '2026-10-05');
     expect(p.day).toEqual({ completed: 1, total: 1, percent: 100 });
+    // Last 7 days = 09-29..10-05: only Monday 10/5 (9/28 is out)
     expect(p.week).toEqual({ completed: 1, total: 1, percent: 100 });
-    expect(p.month.total).toBe(2); // 5 and 12; 19 and 26 have not happened
+    // Last 30 days = 09-06..10-05: Mondays 9/7,14,21,28 and 10/5
+    expect(p.month.total).toBe(5);
+    expect(p.month.completed).toBe(1);
   });
   it('a future selected day has no day total, and a future week no total', () => {
     const p = trainingProgress(w, logs, '2026-10-14', 1, '2026-10-19');
     expect(p.day).toEqual({ completed: 0, total: 0, percent: 0 });
     expect(p.week.total).toBe(0);
-    expect(p.month.total).toBe(2);
+    expect(p.month.total).toBe(4); // window capped at today: 09-20..10-14
   });
-  it('a past month counts all of its days', () => {
+  it('the window includes both boundary days (#1524)', () => {
+    const wed = [{ id: 1, weekday: 3, blockIds: [1] }];
+    // 7 days ending Wed 10-14 start Thu 10-08, so Wed 10-07 is out and 10-14 is in
+    expect(trainingProgress(wed, [], '2026-10-14').week.total).toBe(1);
+    // 30 days ending 10-14 start 09-15: Wed 9/16 in, Wed 9/9 out
+    expect(trainingProgress(wed, [], '2026-10-14').month.total).toBe(5);
+  });
+  it('a past date uses the window ending there, not today', () => {
     expect(trainingProgress(w, logs, '2026-11-20', 1, '2026-10-14').month.total).toBe(4);
   });
 });
