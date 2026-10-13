@@ -138,6 +138,14 @@ describe('POST /me/workout-block-logs (#1009)', () => {
     expect(Object.keys(rows[0])).not.toContain('result_type');
   });
 
+  it('accepts a block log for a future training date (#1549)', async () => {
+    const res = await asMember(request.post('/me/workout-block-logs')).send({
+      workout_block_id: blockId,
+      logged_date: '2099-01-01',
+    }).expect(201);
+    expect(String(res.body.logged_date)).toContain('2099-01-01');
+  });
+
   it('accepts a block log with no result value at all', async () => {
     // An untyped, optional free-text value: the member app sends null when the
     // input is empty, which is how "I finished it, no number" is expressed now.

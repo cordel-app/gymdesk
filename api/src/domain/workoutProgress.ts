@@ -5,16 +5,10 @@ import { DateTime } from 'luxon';
 
 export const ROLLING_WEEK_DAYS = 7;
 export const ROLLING_MONTH_DAYS = 30;
-export const FUTURE_WORKOUT_CODE = 'workout_in_future';
 
 export function gymToday(now: Date, timeZone: string): string {
   const d = DateTime.fromJSDate(now, { zone: timeZone });
   return (d.isValid ? d : DateTime.fromJSDate(now, { zone: 'UTC' })).toISODate() as string;
-}
-
-/** A workout cannot be marked done for a date after today in the gym's zone. */
-export function isFutureLoggedDate(loggedDate: string, now: Date, timeZone: string): boolean {
-  return String(loggedDate).slice(0, 10) > gymToday(now, timeZone);
 }
 
 export interface WorkoutDef { id: number; weekday: number | null; blockIds: number[] }
@@ -60,7 +54,7 @@ export function trainingProgress(
   const t = DateTime.fromISO(selected, { zone: 'UTC' });
   const end = selected > today ? today : selected;
   return {
-    day: selected > today ? counts(0, 0) : range(selected, selected),
+    day: range(selected, selected),
     week: range(t.minus({ days: ROLLING_WEEK_DAYS - 1 }).toISODate()!, end),
     month: range(t.minus({ days: ROLLING_MONTH_DAYS - 1 }).toISODate()!, end),
   };
