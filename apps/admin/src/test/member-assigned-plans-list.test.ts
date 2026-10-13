@@ -155,7 +155,7 @@ describe('#958: the expansion is the shared Assigned Plan card body (Q3 share)',
       "import { AssignedPlanExpandedRow } from '@/components/assignedPlan/AssignedPlanExpandedRow'",
     );
     expect(tableSrc).toContain(
-      '<AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} />',
+      '<AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} startEditing={row.id === openInEditId} />',
     );
     // The Member card asks for the read-only body; the Assigned Plans page,
     // where a plan's own card lives, does not.
@@ -175,8 +175,8 @@ describe('#958: the expansion is the shared Assigned Plan card body (Q3 share)',
 
   it('keeps the body\'s own header, menu and Edit mode out of an embedded render', () => {
     expect(cardBodySrc).toContain('embedded = false');
-    expect(cardBodySrc).toMatch(/\{!embedded && \([\s\S]{0,700}<ContextMenu/);
-    expect(cardBodySrc).toContain('const editing = !embedded && isEditing');
+    expect(cardBodySrc).toMatch(/\{!hostEmbedded && \([\s\S]{0,700}<ContextMenu/);
+    expect(cardBodySrc).toContain('const editing = !hostEmbedded && isEditing');
   });
 
   it('declares no expand affordance of the Member card\'s own', () => {
@@ -224,8 +224,8 @@ describe('#958: no generic add while a plan is held (#956)', () => {
     // gated. Adding is a new ProductSet version and never overwrites, so the
     // section reports the server's message instead of opening a dialog.
     expect(sectionSrc).not.toContain('<ReplacePlanDialog');
-    // #1450: the request and its error line are the shared modal's.
-    expect(sectionSrc).not.toContain('apiErrorMessage');
+    // #1533: the draft is created by the plan picker's own request, which shows the server's sentence.
+    expect(sectionSrc).toContain('apiErrorMessage');
   });
 });
 

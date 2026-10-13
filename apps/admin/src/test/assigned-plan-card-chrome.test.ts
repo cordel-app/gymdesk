@@ -246,7 +246,7 @@ describe('#924 stage 5: one declaration of the chrome (#929)', () => {
 
 describe('#924 stage 5: expanding reads, ⋮ → Edit writes (#797/#897)', () => {
   it('makes the context menu the single entry point into Edit mode, and out of it', () => {
-    expect(rowSrc).toContain('const [isEditing, setIsEditing] = useState(false)');
+    expect(rowSrc).toContain('const [isEditing, setIsEditing] = useState(startEditing)');
     expect(rowSrc).toMatch(/label: isEditing \? t\('action_done_editing'\) : t\('action_edit'\)/);
     expect(rowSrc).toContain('onClick: () => setIsEditing(!isEditing)');
     // A terminal assignment has nothing to edit, so the action is not offered.
@@ -257,7 +257,7 @@ describe('#924 stage 5: expanding reads, ⋮ → Edit writes (#797/#897)', () =>
     // #958: the one flag every writable section asks is `editing`, which is
     // `isEditing` only when the body is not embedded — the Member card's
     // expansion renders no ⋮, so it can never be in Edit mode.
-    expect(rowSrc).toContain('const editing = !embedded && isEditing');
+    expect(rowSrc).toContain('const editing = !hostEmbedded && isEditing');
     expect(rowSrc).toContain('cardEditing={editing}');
     expect((rowSrc.match(/cardEditing=\{editing\}/g) ?? []).length).toBe(2);
     expect(rowSrc).toContain('editing={editing}');

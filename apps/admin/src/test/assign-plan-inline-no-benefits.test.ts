@@ -21,7 +21,7 @@ describe('Assign plan inline, no Benefits checklist (#1460)', () => {
   });
 
   it('neither editor offers or sends benefits', () => {
-    expect(read('members', 'MemberMembershipPlans.tsx')).toContain('<AssignPlanToMembersEditor');
+    expect(read('members', 'MemberMembershipPlans.tsx')).not.toContain('declined_benefits');
     for (const src of [plansEditor, membersEditor]) {
       expect(src).not.toContain('declined');
       expect(src).not.toContain('-benefits');

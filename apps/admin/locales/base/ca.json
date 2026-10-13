@@ -445,6 +445,8 @@
     "membership_plans_active": "Plans actius",
     "membership_plans_history": "Plans anteriors",
     "add_membership_plan": "+ Afegir Pla de Membresia",
+    "add_membership_plan_error": "No s'ha pogut crear l'esborrany.",
+    "add_membership_plan_cancel": "Cancel·lar",
     "add_membership_plan_title": "Afegir Pla de Membresia",
     "add_membership_plan_submit": "Afegir pla",
     "product_sets_in_flight": "En curs",

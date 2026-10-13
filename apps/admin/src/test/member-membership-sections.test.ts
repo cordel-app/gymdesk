@@ -76,11 +76,13 @@ describe('Member Membership sections (#634)', () => {
   });
 
   it('adds a Membership Plan additively, never superseding another (§14)', () => {
-    // #1450: "+ Add Membership Plan" is the Plans page's Assign Plan to Member
-    // workflow, launched with this Member preselected — never a form or a
-    // request of its own, and never the supersede action.
-    expect(plansSrc).toContain('<AssignPlanToMembersEditor');
-    expect(plansSrc).toContain('initialMember=');
+    // #1533: "+ Add Membership Plan" asks only for the plan, creates the Draft
+    // through the Plans page's own assign route with this Member preselected
+    // (no Assign Plan to Member form), and opens that Draft in Edit mode.
+    expect(plansSrc).not.toContain('<AssignPlanToMembersEditor');
+    expect(plansSrc).toContain('/assign`');
+    expect(plansSrc).toContain('owner_member_id: memberId');
+    expect(plansSrc).toContain('openInEditId=');
     expect(plansSrc).not.toContain('/product-sets');
     expect(plansSrc).not.toContain('assign-new-plan');
     expect(plansSrc).not.toMatch(/apiFetch\('\/user-memberships',\s*\{\s*method: 'POST'/);
@@ -112,9 +114,9 @@ describe('Member Membership sections (#634)', () => {
     expect(lib).not.toContain('confirm');
   });
 
-  it('offers only Active + Public plans, picked inside the shared modal (§2)', () => {
+  it('offers only Active + Public plans, picked in the add picker (§2, #1533)', () => {
     expect(plansSrc).toContain("'/membership-plans?lifecycle_status=active&enrollment_status=public'");
-    expect(plansSrc).toContain('planOptions={selectable}');
+    expect(plansSrc).toContain('selectable.map(');
     // A plan already active for this Member can't be assigned twice.
     expect(plansSrc).toContain('activePlanIds');
   });

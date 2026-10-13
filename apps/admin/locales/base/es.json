@@ -444,6 +444,8 @@
     "membership_plans_active": "Planes activos",
     "membership_plans_history": "Planes anteriores",
     "add_membership_plan": "+ Añadir Plan de Membresía",
+    "add_membership_plan_error": "No se pudo crear el borrador.",
+    "add_membership_plan_cancel": "Cancelar",
     "add_membership_plan_title": "Añadir Plan de Membresía",
     "add_membership_plan_submit": "Añadir plan",
     "product_sets_in_flight": "En curso",

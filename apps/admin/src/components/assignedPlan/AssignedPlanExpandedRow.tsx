@@ -105,10 +105,12 @@ function fmtMoney(v: string | number | null) {
  * (#797). Expanding a plan on the Member page reads it; editing the assignment
  * stays on the Assigned Plans page, which is where its own card lives.
  */
-export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false, viewAsMemberId }: {
+export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false, viewAsMemberId, startEditing = false }: {
   assignedPlanId: number;
   onChanged: () => void;
   embedded?: boolean;
+  /** #1533: open straight into Edit mode — a Draft just created from the Member card. */
+  startEditing?: boolean;
   /** #1191: the Member whose context this is; a Linked one reads and never edits. */
   viewAsMemberId?: number;
 }) {
@@ -128,7 +130,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   const [error, setError] = useState<string | null>(null);
 
   const [showDetails, setShowDetails] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(startEditing);
   const [actionBusy, setActionBusy] = useState(false);
   const [closeStep, setCloseStep] = useState<'none' | 'confirm' | 'warn'>('none');
   const [closeWarnings, setCloseWarnings] = useState<string[]>([]);
@@ -319,7 +321,10 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
   // An embedded body has no `⋮`, so it can never be in Edit mode — every
   // section's controls are absent rather than disabled, exactly as they are on
   // the Assigned Plans page outside the mode (#897).
-  const editing = !embedded && isEditing;
+  // #1533: a Draft is the one assignment configured from the Member card too —
+  // it has not been committed, so it keeps the full body, `⋮` and Edit mode.
+  const hostEmbedded = embedded && detail.status !== 'draft';
+  const editing = !hostEmbedded && isEditing;
   // #1191: a Linked context has no Billing Events section at all.
   const isLinked = detail?.assignment_relationship === 'linked';
 
@@ -366,7 +371,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
 
   return (
     <div style={panel}>
-      {!embedded && (
+      {!hostEmbedded && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 16 }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 15 }}>{detail.plan_name ?? '—'}</div>
