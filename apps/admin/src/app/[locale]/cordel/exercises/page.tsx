@@ -1,5 +1,6 @@
 'use client';
 
+import { ExerciseListThumbnails } from '@/components/exercises/ExerciseListThumbnails';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
@@ -364,7 +365,12 @@ export default function CordelExercisesPage() {
   // the same entity reads the same way on both screens.
   const columns: Column<Exercise>[] = [
     // #967 §6: the list shows the name in the application's language.
-    { header: t('col_name'), mobile: 'name', title: (row) => row.display_name ?? row.name, render: (row) => <strong>{row.display_name ?? row.name}</strong> },
+    { header: t('col_name'), mobile: 'name', title: (row) => row.display_name ?? row.name, render: (row) => (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <ExerciseListThumbnails exercise={row} />
+        <strong>{row.display_name ?? row.name}</strong>
+      </span>
+    ) },
     {
       header: t('col_description'),
       mobile: 'secondary',

@@ -47,6 +47,7 @@ import { ExerciseDetailModal } from '@/components/exercises/ExerciseDetailModal'
 import { EXERCISE_CATEGORIES } from '@/lib/exerciseCategories';
 import { ExerciseFilterBar, type ExerciseFacetOptions } from '@/components/exercises/ExerciseFilterBar';
 import { EMPTY_EXERCISE_FILTER, exerciseFilterQuery, type ExerciseFilterState } from '@/lib/exerciseFilters';
+import { ExerciseListThumbnails } from '@/components/exercises/ExerciseListThumbnails';
 import { ExerciseCard, ExerciseCardGrid } from '@/components/exercises/ExerciseCard';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { ImportExercisesModal } from './ImportExercisesModal';
@@ -618,10 +619,11 @@ export default function ExercisesPage() {
     return (
       <div key={ex.id} style={cardSt}>
         <div className={LIST_GRID_ROW_CLASS} style={rowSt} onClick={() => toggleExpand(ex.id)}>
-          <div className={CELL_CLASS.name} title={ex.display_name ?? ex.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          <div className={CELL_CLASS.name} title={ex.display_name ?? ex.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <ExerciseListThumbnails exercise={ex} />
             {/* #967 §6: the list shows the name in the application's language —
                 the server resolved it, falling back to the base name. */}
-            {ex.display_name ?? ex.name}
+            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ex.display_name ?? ex.name}</span>
           </div>
           <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {truncate(ex.description)}
