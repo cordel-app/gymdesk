@@ -6,6 +6,8 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1582 stage 1 (`user_memberships` dependency inventory in `docs/user-memberships-inventory.md`; `resolveCurrentProductSet()` is the one rule for a member's current ProductSet, used by the Member configuration read; no schema change)
+
 - **Done**: #1565 (Members App subsection header simplified: the back button shows the current section title instead of "Home" and the separator under the header is removed; back navigation, bell and avatar unchanged; presentation only in `TopBar`)
 - **Done**: #1535 (stage 1: the member can cancel their own unpaid checkout — `DELETE /me/product-sets/:id`, the member the session's and the owner of the version, sharing the Admin cancel's one guard `canCancelPending()`: a payment that settled or whose outcome is unknown answers `409 payment_unresolved` and nothing is deleted. Admin and member cancel now share `cancelCheckout()`. Not in this stage: a stored Cancelled billing event and the plan-editor component-cancel rules, which depend on #1538's remaining stages.)
 - **Done**: #1563 (My Training no longer shows the green "Block logged" notice after Mark Done; errors and the individual exercise Register notices are unchanged, no API change)
