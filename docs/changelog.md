@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1527 (Members App → My Training redesign: the three progress rings are replaced by Today / This Week / This Month cards; the week is one card whose days each carry a status dot — green completed, red pending/in progress, yellow scheduled, grey rest — that opens an informational legend modal, derived by `lib/trainingDayStatus.ts` from the same "every block logged that date" rule as `trainingProgress()`; a block's exercises are one navigable card at a time with previous/next, arrow keys and swipe, grouped per block only. Completion still uses the existing block logs; no API or schema change; en/es/ca)
 
 - **Done**: #1532 (Members → Products card: `+ Add Product` moved below the section heading, left-aligned like `+ Add Membership Plan`; empty state stays under it; no behaviour change)
 - **Done**: #1525 (**The exercise search dropdown is no longer clipped in Assigned Training Plans and Workout Templates.** The two copies of the picker are replaced by one shared `components/ExerciseCombobox.tsx` whose panel is rendered in a portal with fixed positioning, so no workout, block or table container can clip it; it follows its trigger on scroll and resize, opens upwards when there is no room below and stays inside the viewport. Search, filtering, selection and styling (`workoutChrome.ts`) are unchanged. Frontend only. Not verified locally: no dependencies installed, so typecheck and the browser were not run.)

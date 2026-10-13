@@ -6,12 +6,13 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
-import { formatGymDateOnly } from '@/lib/gymFormat';
-import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { exerciseBackgroundStyle } from '@/lib/exerciseMedia';
-import { ProgressDonut } from '@/components/ProgressDonut';
+import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
+import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
+import { BlockExerciseCarousel } from '@/components/BlockExerciseCarousel';
+import { DAY_STATUSES, dayStatus, dayStatusKey } from '@/lib/trainingDayStatus';
 import {
   EMPTY_PROGRESS, TrainingProgress, deviceToday, isFutureDate, shiftWeek, swipeWeekDelta, weekDates, weekdayOf,
 } from '@/lib/trainingWeek';
@@ -74,7 +75,6 @@ const INLINE_LOG_LIMIT = 5;
 export default function TrainingPage() {
   const t = useTranslations();
   const locale = useLocale();
-  const gymFmt = useGymFormatSettings();
   const router = useRouter();
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, isSuperadmin } = useApp();
@@ -98,6 +98,7 @@ export default function TrainingPage() {
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [resultInputs, setResultInputs] = useState<Record<number, string>>({});
+  const [legendOpen, setLegendOpen] = useState(false);
 
   async function loadPlans() {
     setLoading(true);
@@ -201,6 +202,8 @@ export default function TrainingPage() {
     finally { setPending(false); }
   }
 
+  const allWorkouts = useMemo(() => plans.flatMap((p) => p.workouts ?? []), [plans]);
+
   // Flatten (plan, workout) pairs across all active plans, grouped by weekday like the old page.
   const workoutsForWeekday = useMemo(() => {
     const entries: { plan: TrainingPlan; workout: Workout }[] = [];
@@ -222,34 +225,46 @@ export default function TrainingPage() {
 
       {message && <div style={styles.message}>{message}</div>}
 
-      <div style={styles.donutRow}>
-        <ProgressDonut label={t('training.progress_day')} percent={progress.day.percent} detail={`${progress.day.completed}/${progress.day.total}`} />
-        <ProgressDonut label={t('training.progress_week')} percent={progress.week.percent} detail={`${progress.week.completed}/${progress.week.total}`} />
-        <ProgressDonut label={t('training.progress_month')} percent={progress.month.percent} detail={`${progress.month.completed}/${progress.month.total}`} />
+      <TrainingSummaryCards cards={[
+        { label: t('training.progress_day'), percent: progress.day.percent, detail: `${progress.day.completed}/${progress.day.total}` },
+        { label: t('training.progress_week'), percent: progress.week.percent, detail: `${progress.week.completed}/${progress.week.total}` },
+        { label: t('training.progress_month'), percent: progress.month.percent, detail: `${progress.month.completed}/${progress.month.total}` },
+      ]} />
+
+      <div style={styles.weekCard}>
+        <div style={styles.weekdayBar} role="group" aria-label={t('training.week_nav_hint')}>
+          {weekDates(selectedDate).map((date) => {
+            const selected = date === selectedDate;
+            const isTodayCell = date === today;
+            const status = dayStatus(date, weekdayOf(date), today, allWorkouts, allBlockLogs);
+            const longDate = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+            return (
+              <div key={date} style={styles.dayCell}>
+                <button type="button" onClick={() => setSelectedDate(date)}
+                        aria-pressed={selected} aria-current={isTodayCell ? 'date' : undefined}
+                        aria-label={longDate}
+                        title={isTodayCell ? t('training.today_marker') : undefined}
+                        style={{ ...styles.dayBtn, ...(isTodayCell && !selected ? styles.dayBtnToday : {}), ...(selected ? styles.dayBtnActive : {}) }}>
+                  <span style={styles.dayName}>{new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`))}</span>
+                  <span style={styles.dayNum}>{Number(date.slice(8, 10))}</span>
+                </button>
+                <button type="button" onClick={() => setLegendOpen(true)}
+                        aria-label={`${longDate}: ${t(dayStatusKey(status))}. ${t('training.status_legend_open')}`}
+                        title={t(dayStatusKey(status))} style={styles.statusBtn}>
+                  <span aria-hidden="true" style={{ ...styles.statusDot, background: DAY_STATUS_COLOR[status] }} />
+                  <span style={styles.srOnly}>{t(dayStatusKey(status))}</span>
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
-      <div style={styles.weekdayBar} role="group" aria-label={t('training.week_nav_hint')}>
-        {weekDates(selectedDate).map((date, i) => {
-          const selected = date === selectedDate;
-          const isTodayCell = date === today;
-          return (
-            <div key={date} style={styles.dayCell}>
-              <button type="button" onClick={() => setSelectedDate(date)}
-                      aria-pressed={selected} aria-current={isTodayCell ? 'date' : undefined}
-                      aria-label={new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`))}
-                      title={isTodayCell ? t('training.today_marker') : undefined}
-                      style={{ ...styles.dayBtn, ...(isTodayCell && !selected ? styles.dayBtnToday : {}), ...(selected ? styles.dayBtnActive : {}) }}>
-                {new Intl.DateTimeFormat(locale, { weekday: 'narrow', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`))}
-              </button>
-              {i === 0 && (
-                <span style={styles.mondayDate}>
-                  {formatGymDateOnly(date, gymFmt)}
-                </span>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      {legendOpen && (
+        <TrainingStatusLegend title={t('training.status_legend_title')} closeLabel={t('training.status_legend_close')}
+          items={DAY_STATUSES.map((st) => ({ status: st, label: t(`training.status_legend_${st}`) }))}
+          onClose={() => setLegendOpen(false)} />
+      )}
 
       {plans.length === 0 ? (
         <p style={styles.hint}>{t('training.empty')}</p>
@@ -276,7 +291,11 @@ export default function TrainingPage() {
                   </div>
                 </div>
 
-                {(block.exercises ?? []).map((we) => (
+                <BlockExerciseCarousel
+                  groupLabel={block.name ?? t(`training.block_type_${block.type.toLowerCase()}`)}
+                  prevLabel={t('training.exercise_prev')} nextLabel={t('training.exercise_next')}
+                  positionLabel={(i, n) => t('training.exercise_position', { current: i, total: n })}
+                  cards={(block.exercises ?? []).map((we) => (
                   <div key={we.id} style={styles.exerciseCard}>
                     <div style={{ ...styles.exerciseHead, ...exerciseBackgroundStyle(we) }}>
                       <div style={styles.exerciseTitleLine}>
@@ -340,7 +359,8 @@ export default function TrainingPage() {
                       </div>
                     )}
                   </div>
-                ))}
+                  ))}
+                />
 
                 <div style={styles.blockDoneRow}>
                   {(() => {
@@ -382,13 +402,17 @@ const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
   title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   message: { ...noticeStyle('success'), marginBottom: 12 },
-  donutRow: { display: 'flex', gap: 8, marginBottom: 16 },
-  weekdayBar: { display: 'flex', justifyContent: 'space-between', gap: 4, marginBottom: 20 },
+  weekCard: { ...sectionCardStyle, padding: 10, marginBottom: 20 },
+  weekdayBar: { display: 'flex', justifyContent: 'space-between', gap: 4 },
   dayCell: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, position: 'relative' },
-  dayBtn: { width: 'min(40px, 100%)', aspectRatio: '1 / 1', borderRadius: '50%', padding: 0, background: memberTheme.surface, color: memberTheme.textMuted, border: `1px solid ${memberTheme.separator}`, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
+  dayBtn: { width: '100%', maxWidth: 48, borderRadius: 10, padding: '6px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, background: memberTheme.surface, color: memberTheme.textMuted, border: `1px solid ${memberTheme.separator}`, fontSize: 14, fontWeight: 600, cursor: 'pointer' },
   dayBtnToday: { borderColor: memberTheme.primaryButton, color: memberTheme.text },
   dayBtnActive: { background: memberTheme.primaryButton, color: memberTheme.primaryButtonText, borderColor: memberTheme.primaryButton },
-  mondayDate: { position: 'absolute', top: '100%', left: 0, marginTop: 4, fontSize: 11, color: memberTheme.textMuted, whiteSpace: 'nowrap' },
+  dayName: { fontSize: 11, fontWeight: 600, textTransform: 'capitalize' },
+  dayNum: { fontSize: 16, fontWeight: 700 },
+  statusBtn: { background: 'none', border: 'none', padding: 6, cursor: 'pointer', display: 'flex' },
+  statusDot: { width: 12, height: 12, borderRadius: '50%', display: 'block' },
+  srOnly: { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' },
   planCard: { ...sectionCardStyle, padding: 16, marginBottom: 16 },
   planName: { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
   planDesc: { margin: '4px 0 12px', fontSize: 13, color: memberTheme.textMuted },
@@ -400,7 +424,7 @@ const styles: Record<string, React.CSSProperties> = {
     color: memberTheme.title2,
     background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})`,
   },
-  exerciseCard: { marginTop: 8, marginLeft: 8 },
+  exerciseCard: { marginTop: 8, padding: 12, borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface },
   exerciseHead: { display: 'flex', gap: 8, alignItems: 'center' },
   exerciseTitleLine: { flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 6 },
   exerciseName: { fontSize: 15, fontWeight: 600, color: memberTheme.text },

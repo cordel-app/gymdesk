@@ -64,15 +64,6 @@ export function swipeWeekDelta(dx: number, dy: number): SwipeResult {
   return dx < 0 ? 1 : -1;
 }
 
-export interface RingGeometry { radius: number; circumference: number; dashOffset: number; percent: number }
-
-/** The progress ring: 0 total is an empty ring, the visual value is clamped to 0–100. */
-export function ringGeometry(percent: number, radius: number): RingGeometry {
-  const p = Number.isFinite(percent) ? Math.min(100, Math.max(0, percent)) : 0;
-  const circumference = 2 * Math.PI * radius;
-  return { radius, circumference, dashOffset: circumference * (1 - p / 100), percent: Math.round(p) };
-}
-
 export interface ProgressCounts { completed: number; total: number; percent: number }
 export interface TrainingProgress { day: ProgressCounts; week: ProgressCounts; month: ProgressCounts; today?: string }
 
