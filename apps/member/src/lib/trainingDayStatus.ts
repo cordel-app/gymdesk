@@ -14,7 +14,7 @@ export const DAY_STATUSES: DayStatus[] = ['completed', 'pending', 'scheduled', '
 
 /**
  * - no workout scheduled that weekday → rest
- * - every scheduled workout fully logged that date → completed (a partly logged one never is)
+ * - every workout listed that day (scheduled for it, or with no weekday) fully logged that date → completed (a partly logged one never is)
  * - a day after today → scheduled
  * - otherwise (today or earlier, not fully done) → pending
  */
@@ -25,8 +25,10 @@ export function dayStatus(
   workouts: DayWorkout[],
   logs: DayBlockLog[],
 ): DayStatus {
-  const scheduled = workouts.filter((w) => w.scheduled_weekday === weekday);
-  if (scheduled.length === 0) return 'rest';
+  if (!workouts.some((w) => w.scheduled_weekday === weekday)) return 'rest';
+  // The day card lists every workout with no weekday beside the scheduled ones
+  // (each with its own "mark done"), so a day is green only when those are done too.
+  const scheduled = workouts.filter((w) => w.scheduled_weekday === weekday || w.scheduled_weekday === null);
   const done = new Set(logs.filter((l) => String(l.logged_date).slice(0, 10) === date).map((l) => l.workout_block_id));
   const complete = (w: DayWorkout) => (w.blocks ?? []).length > 0 && (w.blocks ?? []).every((b) => done.has(b.id));
   if (scheduled.every(complete)) return 'completed';
