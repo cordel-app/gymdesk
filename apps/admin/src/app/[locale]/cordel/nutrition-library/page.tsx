@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
@@ -471,7 +472,12 @@ export default function CordelNutritionLibraryPage() {
   }
 
   const columns: Column<LibraryItem>[] = [
-    { header: t('label_name'), mobile: 'name', title: (item) => item.name, render: (item) => <strong>{item.name}</strong> },
+    { header: t('label_name'), mobile: 'name', title: (item) => item.name, render: (item) => (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <FoodThumbnail imageUrl={item.image_url} version={item.modified_at ?? item.created_at} />
+          <strong>{item.name}</strong>
+        </span>
+      ) },
     {
       header: t('label_categories'),
       mobile: 'secondary',

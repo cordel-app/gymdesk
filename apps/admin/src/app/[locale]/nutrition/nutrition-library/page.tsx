@@ -29,6 +29,7 @@ import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/component
 // in. #948 moved **Personal Goals** out of the strip to its own section
 // (`/{locale}/personal-goals`), which renders that very same component — a
 // Personal Goal does not depend on Nutrition and is a different entity (§8).
+import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
 import { LibraryTabs } from '@/components/goalLibrary/LibraryTabs';
 import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
 import { LibraryTabId, isGoalTab } from '@/components/goalLibrary/goalProfile';
@@ -371,6 +372,7 @@ export default function NutritionLibraryPage() {
   const columns: Column<LibraryItem>[] = [
     { header: t('nutrition_library.label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+          <FoodThumbnail imageUrl={item.image_url} version={item.modified_at ?? item.created_at} />
           <strong>{item.display_name ?? item.name}</strong>
           {item.gym_id === null && <span style={listNameBadgeStyle}>{t('nutrition_library.system_badge')}</span>}
         </span>
