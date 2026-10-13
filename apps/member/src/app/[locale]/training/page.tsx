@@ -296,8 +296,8 @@ export default function TrainingPage() {
                   cards={(block.exercises ?? []).map((we) => (
                   <div key={we.id} style={styles.exerciseCard}>
                     <div style={styles.exerciseSquare}>
-                      <div style={styles.exerciseMedia}><ExerciseMedia exercise={we} size={200} /></div>
-                      <div style={styles.exerciseInfo}>
+                      <div style={styles.exerciseMedia}><ExerciseMedia exercise={we} fill /></div>
+                      <div style={{ ...styles.exerciseInfo, padding: '0 12px' }}>
                         <span style={styles.exerciseName}>{we.exercise_name}</span>
                         <span style={styles.exerciseMeta}>
                           {we.min_reps ?? '—'}{we.max_reps && we.max_reps !== we.min_reps ? `-${we.max_reps}` : ''} reps
@@ -305,7 +305,7 @@ export default function TrainingPage() {
                         </span>
                       </div>
                     </div>
-                    <button type="button" onClick={() => openExercise(we)} aria-expanded={expandedExercise === we.id} style={styles.registerBtn}>
+                    <button type="button" onClick={() => openExercise(we)} aria-expanded={expandedExercise === we.id} style={{ ...styles.registerBtn, width: 'calc(100% - 24px)', margin: '8px 12px 12px' }}>
                       {t('training.register')}
                     </button>
 
@@ -421,9 +421,9 @@ const styles: Record<string, React.CSSProperties> = {
     color: memberTheme.title2,
     background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})`,
   },
-  exerciseCard: { marginTop: 8, padding: 12, borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface },
+  exerciseCard: { marginTop: 8, padding: 0, overflow: 'hidden', borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface },
   exerciseSquare: { width: '100%', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' },
-  exerciseMedia: { display: 'flex', justifyContent: 'center' },
+  exerciseMedia: { display: 'block', width: '100%' },
   exerciseInfo: { display: 'flex', flexDirection: 'column', gap: 2, width: '100%' },
   registerBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '8px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   exerciseName: { fontSize: 15, fontWeight: 600, color: memberTheme.text },
@@ -433,7 +433,7 @@ const styles: Record<string, React.CSSProperties> = {
   logTh: { textAlign: 'left', fontSize: 11, fontWeight: 600, color: memberTheme.textMuted, padding: '2px 4px' },
   logTd: { padding: '4px', borderTop: `1px solid ${memberTheme.separator}` },
   exerciseMeta: { fontSize: 12, color: memberTheme.textMuted },
-  expandBody: { marginTop: 10, padding: 10, background: memberTheme.pageBackground, borderRadius: 8 },
+  expandBody: { margin: '10px 12px 12px', padding: 10, background: memberTheme.pageBackground, borderRadius: 8 },
   miniInput: { ...inputStyle, width: 70, padding: '6px 8px', borderRadius: 4, fontSize: 14 },
   addSetBtn: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   blockDoneRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 },
