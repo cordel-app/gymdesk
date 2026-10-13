@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1570 (the three Description fields of the exercise editor — base, Spanish, Catalan — are multiline textareas, vertically resizable; Short Description stays single-line; presentation only, no API or migration)
 - **Done**: #1566 (Cordel → Muscles list shows two small circular thumbnails — male then female — before each muscle name, each with its own neutral placeholder when missing, and no substitution of one for the other; presentation only, no API or migration)
 - **Done**: #1538 (stage 2: a plan Draft shown in the Member card's Membership Plans keeps only *Cancel* — its individual *Save* / *Save & Pay* buttons and menu item are gone, so the Products tab's one global Save & Pay (Review your changes) commits the plan with the recurring Products; the Assigned Plans page, which has no global section, keeps them. View-only, no API change. Remaining: automatic Draft creation when editing an Active plan, and the component-cancel rules)
 - **Done**: #1565 (Members App subsection header simplified: the back button shows the current section title instead of "Home" and the separator under the header is removed; back navigation, bell and avatar unchanged; presentation only in `TopBar`)

@@ -159,7 +159,7 @@ export function ExerciseEditor({
         )}
         <div style={exerciseFieldWideStyle}>
           <label htmlFor={id('description')} style={inlineLabelSt}>{t('label_description')}</label>
-          <input id={id('description')} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={inlineInputSt} />
+          <textarea id={id('description')} rows={4} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} style={descriptionAreaSt} />
         </div>
         <div style={exerciseFieldWideStyle}>
           <label htmlFor={id('short_description')} style={inlineLabelSt}>{t('label_short_description')}</label>
@@ -182,7 +182,7 @@ export function ExerciseEditor({
                 <label htmlFor={id(`description-${loc}`)} style={inlineLabelSt}>
                   {`${t('label_description')} — ${localeName(loc)}`}
                 </label>
-                <input id={id(`description-${loc}`)} value={entry.description ?? ''} onChange={(e) => setEntry({ description: e.target.value })} style={inlineInputSt} />
+                <textarea id={id(`description-${loc}`)} rows={4} value={entry.description ?? ''} onChange={(e) => setEntry({ description: e.target.value })} style={descriptionAreaSt} />
               </div>
             </React.Fragment>
           );
@@ -288,6 +288,7 @@ export function ExerciseEditor({
 // which only a form has.
 const inlineLabelSt = exerciseFieldLabelStyle;
 const inlineInputSt: React.CSSProperties = { width: '100%', padding: '8px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', marginBottom: 12 };
+const descriptionAreaSt: React.CSSProperties = { ...inlineInputSt, fontFamily: 'inherit', resize: 'vertical', minHeight: 96, overflowY: 'auto' };
 const inlineSelectSt: React.CSSProperties = { width: '100%', padding: '7px 10px', borderRadius: 6, border: '1px solid #ccc', fontSize: 13, boxSizing: 'border-box', background: '#fff', marginBottom: 8 };
 const subSectionSt = exerciseSubSectionStyle;
 const sectionLabelSt = exerciseSectionLabelStyle;
