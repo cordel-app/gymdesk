@@ -212,3 +212,23 @@ export function billingEventCycleCells(
     };
   });
 }
+
+/**
+ * #1536 — whether a billing event's final amount is exactly zero. The amount is
+ * the server's (after discounts, benefits and tax); this only compares it.
+ */
+export function isZeroAmount(amount: number | null | undefined): boolean {
+  return amount != null && Math.round(amount * 100) === 0;
+}
+
+/**
+ * #1536 — the billing dates a card lists: with the toggle off, a date whose
+ * final total is exactly 0.00 is hidden. Presentation only; nothing is deleted
+ * or recomputed.
+ */
+export function visibleBillingDates<T extends { total: number }>(
+  dates: readonly T[],
+  showZero: boolean,
+): T[] {
+  return showZero ? [...dates] : dates.filter((group) => !isZeroAmount(group.total));
+}
