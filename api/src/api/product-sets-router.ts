@@ -3,7 +3,7 @@ import { db } from '../infra/db';
 import { getTenantContext, requireModuleWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolveRequestActor } from '../domain/auditActor';
-import { isDraftExpired } from '../domain/productSet';
+import { canCancelPending, isDraftExpired } from '../domain/productSet';
 import { resolveDeclinedBenefits } from './declined-plan-benefits';
 import { effectivePrice } from './user-memberships';
 import { resolveMemberId } from './me';
@@ -307,43 +307,53 @@ productSetsRouter.post('/:id/record-payment', requireModuleWrite('PAYMENTS'), as
   res.json({ product_set_id: Number(set.id), status: 'active', billing_event_id: out.billingEventId });
 });
 
+/**
+ * Cancels an in-flight version. A Pending Payment checkout is removed with its
+ * initial event and attempts only while `canCancelPending()` says every attempt
+ * is definitively unsuccessful or none was ever submitted (#1535): a submitted
+ * attempt with no provider status is an unknown outcome and a paid one is
+ * money received, so both answer `payment_unresolved` and nothing is touched.
+ */
+async function cancelCheckout(gymId: string, set: any) {
+  if (set.status !== 'pending_payment') {
+    return db.transaction((tx) => cancelInFlight(tx, gymId, Number(set.id)));
+  }
+  return db.transaction(async (tx) => {
+    const { rows: events } = await tx.query<{ id: number }>(
+      `SELECT id FROM billing_events WHERE gym_id = ? AND product_set_id = ? FOR UPDATE`, [gymId, Number(set.id)]);
+    const { rows: attempts } = await tx.query<{ provider_ref: string | null; provider_status: string | null; status: string }>(
+      `SELECT provider_ref, provider_status, status FROM payment_requests
+        WHERE gym_id = ? AND billing_event_id IN (SELECT id FROM billing_events WHERE product_set_id = ?)`,
+      [gymId, Number(set.id)]);
+    const ok = canCancelPending(attempts.map((a) => ({
+      providerRef: a.provider_ref, providerStatus: a.provider_status, status: a.status,
+    })));
+    if (!ok) return { kind: 'unresolved' as const };
+    if (events.length > 0) {
+      await tx.query(
+        `DELETE FROM payment_requests WHERE gym_id = ? AND billing_event_id IN (${events.map(() => '?').join(',')})`,
+        [gymId, ...events.map((e) => e.id)]);
+      await tx.query(
+        `DELETE FROM billing_events WHERE gym_id = ? AND id IN (${events.map(() => '?').join(',')})`,
+        [gymId, ...events.map((e) => e.id)]);
+    }
+    return cancelInFlight(tx, gymId, Number(set.id));
+  });
+}
+
+function cancelFailure(result: { kind: string; status?: string }) {
+  if (result.kind === 'unresolved') {
+    return { error: 'payment_unresolved', message: 'A payment for this ProductSet is still unresolved.' };
+  }
+  return { error: result.kind, status: result.status };
+}
+
 productSetsRouter.delete('/:id', requireModuleWrite('PAYMENTS'), async (req, res) => {
   const { gymId } = getTenantContext(req);
   const set = await loadSet(gymId, req.params.id);
   if (!set) return res.status(404).json({ error: 'ProductSet not found' });
-  if (set.status === 'pending_payment') {
-    // A cancelled checkout takes its initial event and attempts with it, which
-    // `cancelInFlight` only allows when no payment can still settle.
-    const result = await db.transaction(async (tx) => {
-      const { rows: events } = await tx.query<{ id: number }>(
-        `SELECT id FROM billing_events WHERE gym_id = ? AND product_set_id = ? FOR UPDATE`, [gymId, Number(set.id)]);
-      const { rows: attempts } = await tx.query<{ provider_ref: string | null; provider_status: string | null; status: string }>(
-        `SELECT provider_ref, provider_status, status FROM payment_requests
-          WHERE gym_id = ? AND billing_event_id IN (SELECT id FROM billing_events WHERE product_set_id = ?)`,
-        [gymId, Number(set.id)]);
-      const { canCancelPending } = await import('../domain/productSet');
-      const ok = canCancelPending(attempts.map((a) => ({
-        providerRef: a.provider_ref, providerStatus: a.provider_status, status: a.status,
-      })));
-      if (!ok) return { kind: 'unresolved' as const };
-      if (events.length > 0) {
-        await tx.query(
-          `DELETE FROM payment_requests WHERE gym_id = ? AND billing_event_id IN (${events.map(() => '?').join(',')})`,
-          [gymId, ...events.map((e) => e.id)]);
-        await tx.query(
-          `DELETE FROM billing_events WHERE gym_id = ? AND id IN (${events.map(() => '?').join(',')})`,
-          [gymId, ...events.map((e) => e.id)]);
-      }
-      return cancelInFlight(tx, gymId, Number(set.id));
-    });
-    if (result.kind === 'unresolved') {
-      return res.status(409).json({ error: 'payment_unresolved', message: 'A payment for this ProductSet is still unresolved.' });
-    }
-    if (result.kind !== 'cancelled') return res.status(409).json({ error: result.kind });
-  } else {
-    const result = await db.transaction((tx) => cancelInFlight(tx, gymId, Number(set.id)));
-    if (result.kind !== 'cancelled') return res.status(409).json({ error: result.kind, status: (result as any).status });
-  }
+  const result = await cancelCheckout(gymId, set);
+  if (result.kind !== 'cancelled') return res.status(409).json(cancelFailure(result));
   recordAudit(req, { action: 'cancel', entityType: 'product_set', entityId: set.id });
   res.status(204).end();
 });
@@ -453,6 +463,24 @@ meProductSetsRouter.get('/', async (req, res) => {
       ORDER BY ps.root_product_set_id, ps.version DESC`,
     [ctx.gymId, memberId, ctx.gymId, memberId]);
   res.json(rows.filter((r) => r.status !== 'draft' || Number(r.owner_member_id) === memberId).map(shape));
+});
+
+/**
+ * #1535 — the member cancels their own unpaid checkout. The member is the
+ * session's (never named by the request) and must own the version; the same
+ * guard as the Admin's decides, so a payment whose outcome is unknown or that
+ * settled is never discarded (`409 payment_unresolved`).
+ */
+meProductSetsRouter.delete('/:id', async (req, res) => {
+  const ctx = getTenantContext(req);
+  let memberId: number;
+  try { memberId = await resolveMemberId(ctx.gymId, ctx); } catch { return res.status(404).json({ error: 'ProductSet not found' }); }
+  const set = await loadSet(ctx.gymId, req.params.id);
+  if (!set || Number(set.owner_member_id) !== memberId) return res.status(404).json({ error: 'ProductSet not found' });
+  const result = await cancelCheckout(ctx.gymId, set);
+  if (result.kind !== 'cancelled') return res.status(409).json(cancelFailure(result));
+  recordAudit(req, { action: 'cancel', entityType: 'product_set', entityId: set.id });
+  res.status(204).end();
 });
 
 export { isDraftExpired };
