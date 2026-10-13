@@ -276,7 +276,12 @@ export default function ExercisesPage() {
     setExpandedId(ex.id);
     setEditingId(ex.id);
     editState.reset(ex);
-    setTimeout(() => nameInputRef.current?.focus(), 60);
+    // #1571: the editor lives in the list view; switch to it and bring it into view.
+    setViewMode('list');
+    setTimeout(() => {
+      nameInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      nameInputRef.current?.focus({ preventScroll: true });
+    }, 120);
   }
 
   function cancelEdit() {
@@ -593,6 +598,7 @@ export default function ExercisesPage() {
         muscleLabel={muscleLabel}
         menuItems={exerciseMenuItems(ex)}
         onViewDetails={() => setDetailFor(ex)}
+        attributes={renderViewSection(ex)}
       />
     );
   }

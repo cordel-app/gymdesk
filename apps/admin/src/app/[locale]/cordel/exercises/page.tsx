@@ -256,7 +256,12 @@ export default function CordelExercisesPage() {
     setEditingId(exercise.id);
     editState.reset(exercise);
     setExpanded((prev) => new Set(prev).add(exercise.id));
-    setTimeout(() => nameInputRef.current?.focus(), 60);
+    // #1571: the editor lives in the list view; switch to it and bring it into view.
+    setViewMode('list');
+    setTimeout(() => {
+      nameInputRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      nameInputRef.current?.focus({ preventScroll: true });
+    }, 120);
   }
 
   function cancelEdit() {
@@ -500,6 +505,7 @@ export default function CordelExercisesPage() {
                   { label: t('delete'), danger: true, onClick: () => setDeleting(row) },
                 ]}
                 onViewDetails={() => setDetailFor(row)}
+                attributes={renderReadOnly(row)}
               />
             ))}
           </ExerciseCardGrid>
