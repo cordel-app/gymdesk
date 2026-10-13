@@ -192,18 +192,22 @@ export function MemberPurchasedProducts({
             >
               {open ? '▾' : '▸'}
             </button>
-            <button
-              type="button"
-              disabled={!canWrite || adding}
-              title={canWrite ? undefined : t('products_add_read_only')}
-              onClick={() => { setOpen(true); setAdding(true); }}
-              style={{ ...primaryBtnSmall(), opacity: !canWrite || adding ? 0.5 : 1, cursor: !canWrite || adding ? 'not-allowed' : 'pointer' }}
-            >
-              {t('products_add')}
-            </button>
           </>
         )}
       />
+      {/* #1532: the action sits below the heading, left-aligned, as
+          `+ Add Membership Plan` does; the empty state stays under it. */}
+      <div style={{ marginBottom: 8 }}>
+        <button
+          type="button"
+          disabled={!canWrite || adding}
+          title={canWrite ? undefined : t('products_add_read_only')}
+          onClick={() => { setOpen(true); setAdding(true); }}
+          style={{ ...primaryBtnSmall(), opacity: !canWrite || adding ? 0.5 : 1, cursor: !canWrite || adding ? 'not-allowed' : 'pointer' }}
+        >
+          {t('products_add')}
+        </button>
+      </div>
       {open && adding && (
         <AddProductPurchase
           memberId={memberId}
