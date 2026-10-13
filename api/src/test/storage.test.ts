@@ -317,7 +317,7 @@ describe('initializeGymBucket()', () => {
     const markers = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     const folderOf = (key: string) => `${key.slice(0, key.indexOf('/', prefix.length + 1))}/`;
     const { buildGymNutritionImageKey } = await import('../domain/baseNutritionImages');
-    expect(markers).toContain(folderOf(buildGymNutritionImageKey(prefix, 7, 'Chicken Breast', 'image/png')));
+    expect(markers).toContain(folderOf(buildGymNutritionImageKey(prefix, 7, 'Chicken Breast')));
     expect(markers).toContain(folderOf(buildGymExerciseGenderImageKey(prefix, 'ex_1', 'Squat', 'male')));
     expect(markers).toContain(folderOf(buildGymExerciseGenderVideoKey(prefix, 'ex_1', 'Squat', 'male')));
     expect(markers).toContain(folderOf(buildThemeFolderPrefix(prefix, 'theme_9', 'Dark Modern')));

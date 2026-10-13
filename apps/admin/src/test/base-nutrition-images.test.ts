@@ -47,14 +47,14 @@ describe('Base Nutrition Library images (#715)', () => {
     expect(expandedStart).toBeGreaterThan(columnsStart);
 
     const formBlock = pageSrc.slice(formStart, columnsStart);
-    expect(formBlock).toContain('Upload Image');
+    expect(formBlock).toContain("t('upload_image')");
     expect(formBlock).toContain('openImagePicker(item)');
     expect(formBlock).toContain('item.image_url');
 
     // The collapsed row is the `columns` array, which must mention neither.
     const columnsBlock = pageSrc.slice(columnsStart, expandedStart);
     expect(columnsBlock).not.toContain('image_url');
-    expect(columnsBlock).not.toContain('Upload Image');
+    expect(columnsBlock).not.toContain('upload_image');
   });
 
   it('keeps the image square and preserves its transparency', () => {
@@ -65,28 +65,40 @@ describe('Base Nutrition Library images (#715)', () => {
     expect(pageSrc).toMatch(/backgroundImage:[\s\S]*?linear-gradient/);
   });
 
-  it('tells the administrator the required format', () => {
-    expect(pageSrc).toMatch(/Upload a \{IMAGE_SIZE\}×\{IMAGE_SIZE\} PNG image with a transparent background\./);
-    expect(pageSrc).toContain('const IMAGE_SIZE = 512;');
-    expect(pageSrc).toContain('accept="image/png"');
+  it('shows the preview first with Upload Image directly below it', () => {
+    const formStart = pageSrc.indexOf('function renderInlineForm(');
+    const block = pageSrc.slice(formStart);
+    const frame = block.indexOf('<div style={imageFrameStyle}>');
+    const button = block.indexOf("openImagePicker(item)");
+    expect(frame).toBeGreaterThan(-1);
+    expect(button).toBeGreaterThan(frame);
+    // A column, not a row: the button sits under the preview rather than beside it.
+    expect(block.slice(0, frame).split('\n').slice(-3).join('\n')).toContain("flexDirection: 'column'");
+    expect(pageSrc).toContain('primaryBtnSmall()');
   });
 
-  it('validates the obvious constraints before uploading, without replacing anything', () => {
-    expect(pageSrc).toContain("file.type !== 'image/png'");
-    expect(pageSrc).toMatch(/dimensions\.width !== IMAGE_SIZE \|\| dimensions\.height !== IMAGE_SIZE/);
-    expect(pageSrc).toContain('readImageDimensions');
+  it('tells the administrator what is accepted and that the server converts it', () => {
+    expect(pageSrc).toContain("t('image_hint')");
+    expect(pageSrc).toContain('const IMAGE_TYPES');
+  });
+
+  it('checks only what a browser can see, and resizes or encodes nothing (#1562)', () => {
+    expect(pageSrc).toContain('IMAGE_TYPES.includes(file.type)');
+    expect(pageSrc).toContain('file.size > IMAGE_MAX_BYTES');
+    expect(pageSrc).not.toContain('readImageDimensions');
+    expect(pageSrc).not.toContain('canvas');
     // A failed client check sets the error and returns — nothing is sent.
     expect(pageSrc).toMatch(/setImageError\(\{ id: item\.id, message: problem \}\);\s*\n\s*return;/);
   });
 
-  it('posts raw PNG bytes to the platform route', () => {
+  it('posts the picked file as it is to the platform route', () => {
     expect(pageSrc).toContain('/api/proxy/platform/nutrition-library/${item.id}/image');
-    expect(pageSrc).toContain("'Content-Type': 'image/png'");
+    expect(pageSrc).toContain("'Content-Type': file.type");
     expect(pageSrc).not.toContain('/storage/uploads/nutrition-image');
   });
 
   it('surfaces an upload error on the card it belongs to', () => {
     expect(pageSrc).toMatch(/imageError\?\.id === item\.id/);
-    expect(pageSrc).toContain("setImageError({ id: item.id, message: err.message ?? 'Image upload failed' })");
+    expect(pageSrc).toContain("setImageError({ id: item.id, message: err.message ?? t('image_upload_failed') })");
   });
 });
