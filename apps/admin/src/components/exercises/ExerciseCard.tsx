@@ -3,6 +3,7 @@
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/StatusBadge';
+import { InlineStyle } from '@/components/InlineStyle';
 import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu';
 import { cardSurfaceStyle } from '@/components/ui';
 import { exerciseName } from '@/lib/exerciseNames';
@@ -32,7 +33,7 @@ const GRID_CSS = `
 export function ExerciseCardGrid({ children }: { children: React.ReactNode }) {
   return (
     <div className="gd-exercise-grid-wrap">
-      <style>{GRID_CSS}</style>
+      <InlineStyle css={GRID_CSS} />
       <div className="gd-exercise-grid">{children}</div>
     </div>
   );
