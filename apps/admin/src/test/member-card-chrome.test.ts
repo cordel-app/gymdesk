@@ -38,6 +38,9 @@ const CARD_FILES = [
   // #1118 §12: the Products the Member bought, inside the same section.
   'MemberProductSet.tsx',
   'MemberPurchasedProducts.tsx',
+  // #1537: the recurring configuration section and its Review modal.
+  'MemberRecurringProducts.tsx',
+  'AddProductPurchase.tsx',
   'MemberProfessionalServices.tsx',
   'MemberBillingSimulation.tsx',
   'MemberPersonalTrainingSlots.tsx',

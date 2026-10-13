@@ -10,7 +10,7 @@ import { applyPromotionToProductSet, validatePromotionSelection } from './member
 import { loadProductSetSimulationAssignment } from './product-set-configuration';
 import {
   DraftRefusal, LockedDraft, addCoveredMember, addService, isRefusal, loadBenefitSection, lockDraft,
-  removeCoveredMember, removeService, setBillingDuration, setFeeBenefit, setNegotiatedFee, writeBenefitSection,
+  removeCoveredMember, removeService, setBillingDuration, setServiceQuantity, setFeeBenefit, setNegotiatedFee, writeBenefitSection,
 } from './product-set-draft';
 
 /**
@@ -21,7 +21,7 @@ import {
  *   PUT    /billing-duration              Free / Paid / Bonus / Pre-paid periods, auto renew
  *   PUT    /fee                           a negotiated Membership Fee (reason required)
  *   PUT    /fee-benefit                   the Personal Membership Fee Benefit
- *   POST   /services, DELETE /services/:serviceId
+ *   POST   /services, PUT /services/:serviceId (quantity), DELETE /services/:serviceId
  *   POST   /promotions, DELETE /promotions/:applicationId
  *   POST   /members, DELETE /members/:memberId
  *   GET    /billing-event-simulation      the Billing Event Forecast of the Draft
@@ -109,6 +109,10 @@ productSetDraftRouter.post('/services', requireModuleWrite('PAYMENTS'), (req, re
 productSetDraftRouter.delete('/services/:serviceId', requireModuleWrite('PAYMENTS'), (req, res, next) =>
   edit(req, res, 'update', (tx, d) => removeService(tx, d, Number(req.params.serviceId)), next,
     { remove_service: Number(req.params.serviceId) }));
+
+productSetDraftRouter.put('/services/:serviceId', requireModuleWrite('PAYMENTS'), (req, res, next) =>
+  edit(req, res, 'update', (tx, d) => setServiceQuantity(tx, d, Number(req.params.serviceId), req.body?.quantity), next,
+    { service_quantity: { service: Number(req.params.serviceId), quantity: req.body?.quantity } }));
 
 productSetDraftRouter.post('/members', requireModuleWrite('PAYMENTS'), (req, res, next) =>
   edit(req, res, 'update', (tx, d) => addCoveredMember(tx, d, Number(req.body?.member_id)), next,

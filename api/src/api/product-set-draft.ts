@@ -361,6 +361,30 @@ export async function removeService(
   return { ok: true, deleted, ends_at: deleted ? null : today };
 }
 
+/**
+ * #1537 — changes the quantity of a recurring line still running on a Draft.
+ * Only the number moves: the line's frozen price, its discount and its start
+ * stay what the Draft was agreed with, and its schedule is re-derived.
+ */
+export async function setServiceQuantity(
+  tx: Tx, draft: LockedDraft, serviceId: number, raw: unknown,
+): Promise<{ ok: true; quantity: number } | DraftRefusal> {
+  const quantity = Number(raw);
+  if (!Number.isInteger(quantity) || quantity <= 0 || quantity > 999) {
+    return { kind: 'invalid', message: 'quantity must be a positive integer' };
+  }
+  const { rows } = await tx.query<any>(
+    `SELECT id FROM member_products_recurrent_snapshot
+      WHERE id = ? AND gym_id = ? AND product_set_id = ? AND ends_at IS NULL FOR UPDATE`,
+    [serviceId, draft.gym_id, draft.id]);
+  if (!rows[0]) return { kind: 'not_found' };
+  await tx.query('UPDATE member_products_recurrent_snapshot SET quantity = ? WHERE id = ? AND gym_id = ?',
+    [quantity, serviceId, draft.gym_id]);
+  await allocateItemSchedules(tx, draft.gym_id, draft.id);
+  await touch(tx, draft);
+  return { ok: true, quantity };
+}
+
 /* ── Covered members ─────────────────────────────────────────────────────── */
 
 const memberLimit = (limit: string | null | undefined): number =>

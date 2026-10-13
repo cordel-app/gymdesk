@@ -46,6 +46,7 @@ export type MemberSectionKey =
   | 'section_new_billing_event_simulation'
   | 'section_account'
   | 'section_membership_plans'
+  | 'section_recurring_products'
   | 'section_additional_services'
   | 'section_billing_simulation'
   | 'section_pt_slots'
@@ -78,6 +79,8 @@ export const MEMBER_TABS: readonly MemberTab[] = [
     // from the UI; their data and endpoints are untouched.
     sections: [
       'section_membership_plans',
+      // #1537 — the recurring configuration (Active / Draft) and its one Save & Pay.
+      'section_recurring_products',
       'section_additional_services',
       'section_new_billing_event_simulation',
       'section_billing_events_forecast',

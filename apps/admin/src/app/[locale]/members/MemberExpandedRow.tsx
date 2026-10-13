@@ -33,6 +33,7 @@ import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { ProductSetForecast, useProductSetDetail } from './MemberProductSet';
 import { ProposedSetForecast } from './ProposedSetForecast';
+import { MemberRecurringProducts } from './MemberRecurringProducts';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
@@ -177,8 +178,8 @@ export function MemberExpandedRow({
   // #1118 §12 — the Products this Member bought from the Members App, each with
   // the Promotion snapshot it was bought under.
   const [purchasedProducts, setPurchasedProducts] = useState<PurchasedProduct[]>([]);
-  // #1521: the Draft ProductSet proposed from `+ Add Product`, if any.
-  const [proposalSetId, setProposalSetId] = useState<number | null>(null);
+  // #1537: the Draft is the member's own in-flight version (created on first use).
+  const draftSetId = configuration.current_product_set?.status === 'draft' ? configuration.current_product_set.id : null;
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -469,7 +470,21 @@ export function MemberExpandedRow({
             />
           </Section>
 
-          {/* 2. PRODUCTS (#1521) — the Products this Member purchased, as one
+          {/* 2. RECURRING PRODUCTS (#1537) — the member's recurring
+              configuration: Active or Draft, edited as one Draft and committed
+              by the one global Save & Pay (behind Review your changes). */}
+          <Section label={t('members.section_recurring_products')} hideLabel>
+            <MemberRecurringProducts
+              memberId={memberId}
+              current={configuration.current_product_set}
+              reloadKey={configuration}
+              canWrite={canWriteMembers && canManagePackages}
+              isAdmin={isAdmin}
+              onChanged={reloadProducts}
+            />
+          </Section>
+
+          {/* 3. PRODUCTS (#1521) — the Products this Member purchased, as one
               collapsible card: what they bought, under which price, tax and
               Promotion, and the payment that settled it. Read-only: a purchase
               is money that moved, and the Current Product Set and One-off
@@ -484,14 +499,13 @@ export function MemberExpandedRow({
               canPay={canManagePackages}
               isAdmin={isAdmin}
               onChanged={reloadProducts}
-              onProposal={setProposalSetId}
             />
           </Section>
 
           {/* #1521 — the resulting billing events if the proposed Draft became
               the member's: a forecast only, created and charged by nothing. */}
           <Section label={t('members.section_new_billing_event_simulation')}>
-            <ProposedSetForecast productSetId={proposalSetId} />
+            <ProposedSetForecast productSetId={draftSetId} />
           </Section>
 
           {/* #1463 — the current ProductSet's Billing Events Forecast: computed on

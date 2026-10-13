@@ -9,19 +9,18 @@
 // for an Admin, and the server refuses it for anyone else regardless.
 //
 // A one-time Product becomes a pending purchase with a payment link. A
-// recurring one becomes a **Draft ProductSet**: the form then shows that
-// Draft's own forecast for the Product and offers Save & Pay (the existing
-// workflow, the only thing that activates it) or Discard.
+// recurring one is added to the member's **Draft** (#1537: created on first
+// use, the same Draft for every later edit — there is no "create draft" step).
+// Committing it is the recurring section's one global Save & Pay, never a
+// payment of this form.
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { cardHintStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, innerCardStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
-import { ProductSetForecast } from './MemberProductSet';
-import type { BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import {
-  forecastForProduct, parseDiscountInput, purchaseErrorKey,
+  parseDiscountInput, purchaseErrorKey,
   type PurchasableProductOption, type PurchaseQuote,
 } from './purchasedProductsView';
 
@@ -29,21 +28,20 @@ const money = (n: number, currency = 'EUR') => (currency === 'EUR' ? `${n.toFixe
 
 type Outcome =
   | { kind: 'one_time'; checkoutUrl: string }
-  | { kind: 'draft'; productSetId: number; productId: number }
-  | { kind: 'paying'; checkoutUrl: string | null; activated: boolean };
+  | { kind: 'draft_updated' };
 
 export function AddProductPurchase({
-  memberId, isAdmin, canPay, onClose, onChanged, onProposal,
+  memberId, isAdmin, canPay, recurringOnly = false, onClose, onChanged,
 }: {
   memberId: number;
   isAdmin: boolean;
   /** Without Payments write access a recurring Product cannot be committed, so it is not offered. */
   canPay: boolean;
+  /** The recurring section offers only recurring Products (they go to its Draft). */
+  recurringOnly?: boolean;
   onClose: () => void;
   /** A purchase or version changed server-side: re-read the lists. */
   onChanged: () => void;
-  /** The Draft ProductSet being proposed (or `null`), for the section below the card. */
-  onProposal: (productSetId: number | null) => void;
 }) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
@@ -57,7 +55,6 @@ export function AddProductPurchase({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const [forecast, setForecast] = useState<BillingEventSimulationData | null>(null);
 
   const product = useMemo(() => catalogue?.find((p) => p.id === productId) ?? null, [catalogue, productId]);
   const discountValue = parseDiscountInput(discount);
@@ -70,7 +67,7 @@ export function AddProductPurchase({
   useEffect(() => {
     let cancelled = false;
     apiFetch<{ items: PurchasableProductOption[] }>(`${base}/catalogue`)
-      .then((r) => { if (!cancelled) setCatalogue(r.items.filter((p) => canPay || !p.recurring)); })
+      .then((r) => { if (!cancelled) setCatalogue(r.items.filter((p) => (canPay || !p.recurring) && (!recurringOnly || p.recurring))); })
       .catch((err) => { if (!cancelled) { setCatalogue([]); setError(describe(err)); } });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -116,60 +113,14 @@ export function AddProductPurchase({
         setOutcome({ kind: 'one_time', checkoutUrl: res.checkoutUrl });
         onChanged();
       } else {
-        setOutcome({ kind: 'draft', productSetId: res.product_set_id, productId });
-        onProposal(res.product_set_id);
-        const f = await apiFetch<BillingEventSimulationData>(`/product-sets/${res.product_set_id}/billing-event-simulation`);
-        setForecast(f);
+        // The Draft was created on first use or reused; the section reflects it.
+        setOutcome({ kind: 'draft_updated' });
+        onChanged();
       }
     } catch (err: any) {
       setError(describe(err));
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function saveAndPay() {
-    if (outcome?.kind !== 'draft') return;
-    setBusy(true);
-    setError(null);
-    try {
-      const res = await apiFetch<any>(`/product-sets/${outcome.productSetId}/save-and-pay`, { method: 'POST', body: JSON.stringify({}) });
-      setOutcome({ kind: 'paying', checkoutUrl: res.checkout_url ?? null, activated: false });
-      onProposal(null);
-      onChanged();
-    } catch (err: any) {
-      // Nothing is owed today (the added units bill from the next cycle): the
-      // existing free-activation route is the way, still the version's own.
-      if ((err?.body?.error ?? err?.message) === 'nothing_to_pay') {
-        try {
-          await apiFetch(`/product-sets/${outcome.productSetId}/activate`, { method: 'POST', body: JSON.stringify({}) });
-          setOutcome({ kind: 'paying', checkoutUrl: null, activated: true });
-          onProposal(null);
-          onChanged();
-        } catch (e2: any) {
-          setError(describe(e2));
-        }
-      } else {
-        setError(describe(err));
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function discard() {
-    if (outcome?.kind !== 'draft') return;
-    setBusy(true);
-    try {
-      await apiFetch(`/product-sets/${outcome.productSetId}`, { method: 'DELETE' });
-    } catch {
-      // A Draft that already expired is gone: nothing left to discard.
-    } finally {
-      setBusy(false);
-      onProposal(null);
-      setOutcome(null);
-      setForecast(null);
-      onChanged();
     }
   }
 
@@ -251,19 +202,8 @@ export function AddProductPurchase({
         </p>
       )}
 
-      {outcome?.kind === 'draft' && (
-        <div style={{ marginTop: 12 }}>
-          <p style={{ fontSize: 14 }}>{t('add_product_draft_created')}</p>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>{t('add_product_simulation_title')}</div>
-          <ProductSetForecast forecast={forecastForProduct(forecast, outcome.productId)} loading={forecast == null} error={false} />
-        </div>
-      )}
-
-      {outcome?.kind === 'paying' && (
-        <p style={{ fontSize: 14 }}>
-          {outcome.activated ? t('add_product_activated') : t('add_product_purchase_created')}{' '}
-          {outcome.checkoutUrl && <a href={outcome.checkoutUrl} target="_blank" rel="noreferrer">{t('add_product_payment_link')}</a>}
-        </p>
+      {outcome?.kind === 'draft_updated' && (
+        <p style={{ fontSize: 14 }}>{t('add_product_draft_updated')}</p>
       )}
 
       {error && <p role="alert" style={formErrorStyle}>{error}</p>}
@@ -271,17 +211,11 @@ export function AddProductPurchase({
       <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
         {!outcome && (
           <button type="button" style={{ ...primaryBtnSmall(), opacity: canCreate ? 1 : 0.5 }} disabled={!canCreate} onClick={create}>
-            {product?.recurring ? t('add_product_create_draft') : t('add_product_create_purchase')}
+            {product?.recurring ? t('recurring_add_to_draft') : t('add_product_create_purchase')}
           </button>
         )}
-        {outcome?.kind === 'draft' && (
-          <>
-            <button type="button" style={primaryBtnSmall()} disabled={busy} onClick={saveAndPay}>{t('add_product_save_and_pay')}</button>
-            <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={discard}>{t('add_product_discard')}</button>
-          </>
-        )}
-        {outcome?.kind !== 'draft' && (
-          <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={() => { onProposal(null); onClose(); }}>
+        {(
+          <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={onClose}>
             {outcome ? t('close') : t('add_product_cancel')}
           </button>
         )}
