@@ -1,13 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { gymToday, isFutureLoggedDate, trainingProgress } from '../domain/workoutProgress';
+import { gymToday, trainingProgress } from '../domain/workoutProgress';
 
 describe('workoutProgress (#1370)', () => {
   it('uses the gym zone for today', () => {
     const now = new Date('2026-10-10T23:30:00Z');
     expect(gymToday(now, 'Europe/Madrid')).toBe('2026-10-11');
-    expect(isFutureLoggedDate('2026-10-11', now, 'Europe/Madrid')).toBe(false);
-    expect(isFutureLoggedDate('2026-10-11', now, 'UTC')).toBe(true);
-    expect(isFutureLoggedDate('2026-10-09', now, 'UTC')).toBe(false);
   });
   it('counts day/week/month, excluding future days, 0% when total is 0', () => {
     // 2026-10-14 is a Wednesday (weekday 3)
@@ -43,9 +40,9 @@ describe('trainingProgress for a selected date (#1370 stage 2)', () => {
     expect(p.month.total).toBe(5);
     expect(p.month.completed).toBe(1);
   });
-  it('a future selected day has no day total, and a future week no total', () => {
+  it('a future selected day counts its own workouts (#1549), a future week none', () => {
     const p = trainingProgress(w, logs, '2026-10-14', 1, '2026-10-19');
-    expect(p.day).toEqual({ completed: 0, total: 0, percent: 0 });
+    expect(p.day).toEqual({ completed: 0, total: 1, percent: 0 });
     expect(p.week.total).toBe(0);
     expect(p.month.total).toBe(4); // window capped at today: 09-20..10-14
   });

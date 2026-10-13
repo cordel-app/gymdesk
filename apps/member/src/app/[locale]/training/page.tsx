@@ -14,7 +14,7 @@ import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingSta
 import { BlockExerciseCarousel } from '@/components/BlockExerciseCarousel';
 import { DAY_STATUSES, dayStatus, dayStatusKey } from '@/lib/trainingDayStatus';
 import {
-  EMPTY_PROGRESS, TrainingProgress, deviceToday, isFutureDate, shiftWeek, swipeWeekDelta, weekDates, weekdayOf,
+  EMPTY_PROGRESS, TrainingProgress, deviceToday, shiftWeek, swipeWeekDelta, weekDates, weekdayOf,
 } from '@/lib/trainingWeek';
 import { resultUnitKey, resultValueForPayload } from '@/lib/blockResult';
 import {
@@ -89,7 +89,6 @@ export default function TrainingPage() {
   const [progress, setProgress] = useState<TrainingProgress>(EMPTY_PROGRESS);
   const [touchStart, setTouchStart] = useState<{ x: number; y: number } | null>(null);
   const selectedWeekday = weekdayOf(selectedDate);
-  const isFuture = isFutureDate(selectedDate, today);
   const [expandedExercise, setExpandedExercise] = useState<number | null>(null);
   const [logs, setLogs] = useState<Record<number, ExerciseLog[]>>({});
   const [draft, setDraft] = useState<{ weight: string; reps: string }>({ weight: '', reps: '' });
@@ -164,7 +163,7 @@ export default function TrainingPage() {
   // #1297: no Save button — the entry row is persisted as soon as focus leaves
   // it with the required input (reps) filled in.
   async function commitDraft(we: BlockExercise) {
-    if (savingLog || !draft.reps || isFuture) return;
+    if (savingLog || !draft.reps) return;
     setSavingLog(true);
     try {
       await apiFetch('/me/exercise-logs', {
@@ -336,7 +335,7 @@ export default function TrainingPage() {
                               </td>
                               <td style={styles.logTd}>
                                 <button type="button" aria-label={t('training.add_log')} onClick={() => commitDraft(we)}
-                                        disabled={savingLog || !draft.reps || isFuture} style={styles.addSetBtn}>+</button>
+                                        disabled={savingLog || !draft.reps} style={styles.addSetBtn}>+</button>
                               </td>
                             </tr>
                             {(logs[we.id] ?? []).map((log) => {
@@ -383,11 +382,10 @@ export default function TrainingPage() {
                     );
                   })()}
                   {!doneBlocks.has(block.id) && (
-                    <button onClick={() => markBlockDone(block)} disabled={pending || isFuture} style={{ ...styles.blockDoneBtn, ...(isFuture ? { opacity: 0.5, cursor: 'not-allowed' } : {}) }}>
+                    <button onClick={() => markBlockDone(block)} disabled={pending} style={styles.blockDoneBtn}>
                       {t('training.mark_done')}
                     </button>
                   )}
-                  {!doneBlocks.has(block.id) && isFuture && <span style={styles.exerciseMeta}>{t('training.future_workout')}</span>}
                 </div>
               </div>
             ))}
