@@ -59,16 +59,19 @@ const CHIP_BASE: React.CSSProperties = {
  * is the server's — with the standard placeholder when missing or broken.
  */
 export function ExerciseCard({
-  exercise, muscleLabel, menuItems, onViewDetails,
+  exercise, muscleLabel, menuItems, onViewDetails, attributes,
 }: {
   exercise: ExerciseCardRow;
   muscleLabel: (key: string) => string;
   menuItems: ContextMenuItem[];
   onViewDetails: () => void;
+  /** The read-only attribute view (#1571), rendered under the toggle; absent → no toggle. */
+  attributes?: React.ReactNode;
 }) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
   const [broken, setBroken] = React.useState(false);
+  const [showAttributes, setShowAttributes] = React.useState(false);
 
   const name = exerciseName(exercise);
   const src = exercise.effective_image_url ?? null;
@@ -137,6 +140,20 @@ export function ExerciseCard({
           <p aria-label={t('card_params_label')} style={{ margin: 0, fontSize: 13, fontWeight: 600, color: '#444' }}>
             {params.join(' · ')}
           </p>
+        )}
+
+        {attributes && (
+          <div>
+            <button
+              type="button"
+              aria-expanded={showAttributes}
+              onClick={() => setShowAttributes((v) => !v)}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: 'var(--gd-link, #6c63ff)', textAlign: 'left' }}
+            >
+              {showAttributes ? t('card_hide_attributes') : t('card_show_attributes')}
+            </button>
+            {showAttributes && <div style={{ marginTop: 12 }}>{attributes}</div>}
+          </div>
         )}
 
         <div style={{ marginTop: 'auto', paddingTop: 4 }}>

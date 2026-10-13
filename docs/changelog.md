@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1571 (Exercise cards: a *Show all attributes* / *Hide all attributes* toggle expands the shared read-only exercise view, in the viewer's language, separate from `⋮ → Details`; `⋮ → Edit` switches to the List view, opens that exercise's editor and scrolls it into view, on the gym and Base Exercises pages; presentation only, no API or migration)
 - **Done**: #1582 stage 1 (`user_memberships` dependency inventory in `docs/user-memberships-inventory.md`; `resolveCurrentProductSet()` is the one rule for a member's current ProductSet, used by the Member configuration read; no schema change)
 
 - **Done**: #1570 (the three Description fields of the exercise editor — base, Spanish, Catalan — are multiline textareas, vertically resizable; Short Description stays single-line; presentation only, no API or migration)

@@ -2036,6 +2036,8 @@
     "view_list": "Lista",
     "card_no_image": "Sin imagen",
     "card_view_details": "Ver detalles completos",
+    "card_show_attributes": "Mostrar todos los atributos",
+    "card_hide_attributes": "Ocultar todos los atributos",
     "card_param_sets": "{count, plural, one {# serie} other {# series}}",
     "card_param_reps_range": "{min}–{max} reps",
     "card_param_reps": "{count, plural, one {# repetición} other {# repeticiones}}",
