@@ -87,6 +87,8 @@ describe('Member card tabs: the declaration (#961)', () => {
     // cards are gone from the UI.
     expect(sectionsForTab('products_services')).toEqual([
       'section_membership_plans',
+      // #1537: the recurring configuration sits between the plans and the purchases.
+      'section_recurring_products',
       'section_additional_services',
       'section_new_billing_event_simulation',
       'section_billing_events_forecast',

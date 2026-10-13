@@ -33,15 +33,24 @@ export type RecurringDraftOutcome =
   | { kind: 'in_flight'; productSetId: number; status: string }
   | DraftRefusal;
 
-export async function startRecurringPurchaseDraft(tx: Tx, input: {
-  gymId: string;
-  memberId: number;
-  productId: number;
-  promotionIds: readonly number[];
-  directDiscountPercent: number | null;
-  actor: Actor;
-  today: string;
-}): Promise<RecurringDraftOutcome> {
+export type EnsureDraftOutcome =
+  | { kind: 'ok'; productSetId: number; created: boolean }
+  | { kind: 'in_flight'; productSetId: number; status: string };
+
+/**
+ * #1537 — the owner's recurring-configuration Draft, created when there is none.
+ *
+ * Starting an edit (Edit, Add Product, a quantity, a removal) needs no explicit
+ * "create draft" step: the first action asks for the Draft and every later one
+ * gets the **same** row back, its two hours refreshed. Only a plain Draft is
+ * reused — the Admin's plan-assignment Draft (`user_membership_id` set) and a
+ * Pending Payment version stay what they were and answer `in_flight`, so a
+ * member never has two versions in flight and an uncertain payment never gets
+ * a second Draft. The Active version is cloned, never touched.
+ */
+export async function ensureRecurringDraft(tx: Tx, input: {
+  gymId: string; memberId: number; actor: Actor; today: string;
+}): Promise<EnsureDraftOutcome> {
   const { rows: activeRows } = await tx.query<any>(
     `SELECT id, membership_plan_id, starts_at, ends_at FROM product_sets
       WHERE gym_id = ? AND owner_member_id = ? AND status = 'active' FOR UPDATE`,
@@ -56,15 +65,40 @@ export async function startRecurringPurchaseDraft(tx: Tx, input: {
     actor: input.actor,
   });
   if (created.kind === 'in_flight') {
+    if (created.status === 'draft') {
+      const { rows } = await tx.query<any>(
+        'SELECT user_membership_id FROM product_sets WHERE id = ? AND gym_id = ?',
+        [created.productSetId, input.gymId]);
+      if (rows[0] && rows[0].user_membership_id == null) {
+        await tx.query(
+          'UPDATE product_sets SET last_activity_at = UTC_TIMESTAMP() WHERE id = ? AND gym_id = ?',
+          [created.productSetId, input.gymId]);
+        return { kind: 'ok', productSetId: created.productSetId, created: false };
+      }
+    }
     return { kind: 'in_flight', productSetId: created.productSetId, status: created.status };
   }
   const draftId = created.productSet.id;
-
   if (active) {
     await tx.query('UPDATE product_sets SET ends_at = ? WHERE id = ?',
       [active.ends_at == null ? null : dateOnly(active.ends_at), draftId]);
     await cloneConfiguration(tx, input.gymId, Number(active.id), draftId);
   }
+  return { kind: 'ok', productSetId: draftId, created: true };
+}
+
+export async function startRecurringPurchaseDraft(tx: Tx, input: {
+  gymId: string;
+  memberId: number;
+  productId: number;
+  promotionIds: readonly number[];
+  directDiscountPercent: number | null;
+  actor: Actor;
+  today: string;
+}): Promise<RecurringDraftOutcome> {
+  const ensured = await ensureRecurringDraft(tx, input);
+  if (ensured.kind === 'in_flight') return ensured;
+  const draftId = ensured.productSetId;
 
   const locked = await lockDraft(tx, input.gymId, draftId);
   if (isRefusal(locked)) return locked;
