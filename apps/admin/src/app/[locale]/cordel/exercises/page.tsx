@@ -493,8 +493,7 @@ export default function CordelExercisesPage() {
                   { label: t('edit'), onClick: () => openInlineEdit(row) },
                   { label: t('delete'), danger: true, onClick: () => setDeleting(row) },
                 ]}
-                expanded={expanded.has(row.id)}
-                onToggle={() => toggleExpand(row.id)}
+                onViewDetails={() => setDetailFor(row)}
               />
             ))}
           </ExerciseCardGrid>
