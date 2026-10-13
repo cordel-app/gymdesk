@@ -23,6 +23,11 @@ import {
   mealTitle,
 } from '@/lib/nutritionFood';
 
+// Weekday / date names are locale-driven, not a gym format setting (allowlisted in member-gym-format-allowlist).
+function dayText(locale: string, ymd: string, opts: Intl.DateTimeFormatOptions): string {
+  return new Intl.DateTimeFormat(locale, { ...opts, timeZone: 'UTC' }).format(new Date(`${ymd}T00:00:00Z`));
+}
+
 interface Meal { id: number; meal_type: string | null; display_name: string; notes: string | null; items: NutritionFoodItem[] }
 interface NutritionDay { id: number; weekday: number; meals: Meal[] }
 interface NutritionPlan {
@@ -179,14 +184,14 @@ export default function NutritionPage() {
                 const isTodayCell = date === today;
                 const status: DayStatus = progress.week_days.find((d) => d.date === date)?.status ?? 'rest';
                 const statusText = t(`nutrition.status_${status}` as any);
-                const longDate = new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`));
+                const longDate = dayText(locale, date, { weekday: 'long', day: 'numeric', month: 'long' });
                 return (
                   <div key={date} style={styles.dayCell}>
                     <button type="button" onClick={() => setSelectedDate(date)}
                             aria-pressed={selected} aria-current={isTodayCell ? 'date' : undefined}
                             aria-label={longDate} title={isTodayCell ? t('nutrition.today_marker') : undefined}
                             style={{ ...styles.dayBtn, ...(isTodayCell && !selected ? styles.dayBtnToday : {}), ...(selected ? styles.dayBtnActive : {}) }}>
-                      <span style={styles.dayName}>{new Intl.DateTimeFormat(locale, { weekday: 'short', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`))}</span>
+                      <span style={styles.dayName}>{dayText(locale, date, { weekday: 'short' })}</span>
                       <span style={styles.dayNum}>{Number(date.slice(8, 10))}</span>
                     </button>
                     <button type="button" onClick={() => setLegendOpen(true)}
@@ -245,7 +250,7 @@ export default function NutritionPage() {
 
           {/* #1580: the selected date's meals — a day with its own weekday plus the "every day" ones. */}
           <section style={styles.section}>
-            <h2 style={styles.h2}>{new Intl.DateTimeFormat(locale, { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${selectedDate}T00:00:00Z`))}</h2>
+            <h2 style={styles.h2}>{dayText(locale, selectedDate, { weekday: 'long', day: 'numeric', month: 'long' })}</h2>
             {mealsForDate.length === 0 ? (
               <p style={styles.hint}>{t('nutrition.no_meals_today')}</p>
             ) : (
