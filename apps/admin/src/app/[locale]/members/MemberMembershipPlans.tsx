@@ -59,6 +59,7 @@ import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
 import { ProductSetsInFlight } from './ProductSetsInFlight';
+import { visiblePlans } from './membershipPlansView';
 
 
 interface Props {
@@ -111,6 +112,8 @@ export function MemberMembershipPlans({
   }, [adding]);
 
   const live = plans.filter((p) => p.is_live);
+  // #1538: one version at a time — a Draft replaces the Active snapshot in the view.
+  const visible = visiblePlans(plans);
   const history = plans.filter((p) => !p.is_live);
   // The Plan the Member already holds is left out of the picker: re-assigning
   // it would be a replacement with nothing to replace it with. Every *other*
@@ -178,12 +181,14 @@ export function MemberMembershipPlans({
   return (
     <div>
       {/* #1325 PR 3b — versions still in flight (no assignment until activation). */}
-      <ProductSetsInFlight productSets={productSets} canWrite={canWrite} onChanged={onChanged} />
+      {visible.showInFlightList && (
+        <ProductSetsInFlight productSets={productSets} canWrite={canWrite} onChanged={onChanged} />
+      )}
 
       {/* ACTIVE — the ticket's §4 split, over the Assigned Plans page's table. */}
-      <div style={subLabel}>{t('membership_plans_active')}</div>
+      <div style={subLabel}>{t(visible.heading === 'draft' ? 'membership_plans_draft' : 'membership_plans_active')}</div>
       <AssignedPlansTable
-        rows={live}
+        rows={visible.rows}
         loadingText={t('add_membership_plan_loading')}
         emptyText={t('no_active_membership_plans')}
         onChanged={onChanged}
