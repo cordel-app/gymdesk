@@ -45,7 +45,8 @@ export function BlockExerciseCarousel({
 
   useEffect(() => { setCurrent((c) => clampIndex(c, count)); }, [count]);
 
-  if (count <= 1) return <>{cards[0] ?? null}</>;
+  // One card: the same slide width as a carousel's, left-aligned, no controls.
+  if (count <= 1) return cards[0] ? <div style={styles.single}>{cards[0]}</div> : null;
 
   function onKey(e: KeyboardEvent) {
     if (e.target !== e.currentTarget) return;
@@ -76,6 +77,8 @@ export function BlockExerciseCarousel({
   );
 }
 
+const SLIDE_WIDTH = 'min(300px, 78%)';
+
 const styles: Record<string, React.CSSProperties> = {
   wrap: { position: 'relative' },
   track: {
@@ -84,7 +87,8 @@ const styles: Record<string, React.CSSProperties> = {
   },
   // Cards are narrower than the track so the neighbour peeks on a phone and
   // sits beside it on a wide screen.
-  slide: { flex: '0 0 min(300px, 78%)', scrollSnapAlign: 'center', minWidth: 0 },
+  single: { width: SLIDE_WIDTH, maxWidth: '100%' },
+  slide: { flex: `0 0 ${SLIDE_WIDTH}`, scrollSnapAlign: 'center', minWidth: 0 },
   arrow: {
     position: 'absolute', top: '40%', zIndex: 2, width: 40, height: 40, borderRadius: '50%', padding: 0,
     border: `1px solid ${memberTheme.cardBorderColor}`, background: memberTheme.surface, color: memberTheme.text,

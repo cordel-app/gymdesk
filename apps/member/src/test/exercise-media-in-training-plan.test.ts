@@ -224,7 +224,7 @@ describe('My Training Plan page (#723 Scope, Hierarchy, API)', () => {
 
   it('renders the media inside the exercise row, through the shared component', () => {
     expect(src).toContain("import { ExerciseMedia } from '@/components/ExerciseMedia';");
-    expect(src).toContain('<ExerciseMedia exercise={we} />');
+    expect(src).toContain('<ExerciseMedia exercise={we} fill />');
   });
 
   it('places it at the exercise level, not at workout or plan level', () => {
