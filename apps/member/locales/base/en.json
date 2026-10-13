@@ -220,6 +220,7 @@
     "filter_button": "Filter",
     "filter_center_label": "Center",
     "filter_trainer_label": "Trainer",
+    "detail_space_label": "Space",
     "filter_all_centers": "All centers",
     "filter_all_trainers": "All trainers",
     "filter_apply": "Apply",

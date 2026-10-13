@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1555 (The Members App booking panel lists Trainer, Space and Center as labelled rows from the occurrence's own names, each omitted when unassigned; no booking, eligibility or capacity behaviour changed. The Admin calendar draws no icons for these, so none were added.)
 - **Done**: #1554 (My Training's week status no longer shows a day green while a workout the day card lists — one with no weekday, shown beside the scheduled ones — still has blocks not marked done; a day with no workout scheduled for its weekday stays grey. `dayStatus()` only; completion, persistence and red/yellow unchanged)
 - **Done**: #1528 (Members App Calendar Month view paints each class in its Activity Type colour again: `eventDisplay="block"` on the FullCalendar, as the Admin calendar already has — without it dayGrid draws a timed event as a coloured dot with no background. Colour resolution, Week and Day views unchanged)
 - **Done**: #1551 (The "no training day" option of the weekday dropdown in Training Plan Templates and Assigned Training Plans reads *All days* / *Todos los días* / *Tots els dies* instead of *No day*; label only, the empty value and scheduling are unchanged.)
