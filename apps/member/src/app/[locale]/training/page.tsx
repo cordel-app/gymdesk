@@ -8,7 +8,6 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
-import { exerciseBackgroundStyle } from '@/lib/exerciseMedia';
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { BlockExerciseCarousel } from '@/components/BlockExerciseCarousel';
@@ -296,8 +295,8 @@ export default function TrainingPage() {
                   positionLabel={(i, n) => t('training.exercise_position', { current: i, total: n })}
                   cards={(block.exercises ?? []).map((we) => (
                   <div key={we.id} style={styles.exerciseCard}>
-                    <div style={{ ...styles.exerciseSquare, ...exerciseBackgroundStyle(we) }}>
-                      <ExerciseMedia exercise={we} />
+                    <div style={styles.exerciseSquare}>
+                      <div style={styles.exerciseMedia}><ExerciseMedia exercise={we} size={200} /></div>
                       <div style={styles.exerciseInfo}>
                         <span style={styles.exerciseName}>{we.exercise_name}</span>
                         <span style={styles.exerciseMeta}>
@@ -423,9 +422,10 @@ const styles: Record<string, React.CSSProperties> = {
     background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})`,
   },
   exerciseCard: { marginTop: 8, padding: 12, borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface },
-  exerciseSquare: { aspectRatio: '1 / 1', width: '100%', maxWidth: 320, margin: '0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-start', boxSizing: 'border-box' },
+  exerciseSquare: { width: '100%', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' },
+  exerciseMedia: { display: 'flex', justifyContent: 'center' },
   exerciseInfo: { display: 'flex', flexDirection: 'column', gap: 2, width: '100%' },
-  registerBtn: { ...primaryButtonStyle, display: 'block', width: '100%', maxWidth: 320, margin: '8px auto 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
+  registerBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '8px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   exerciseName: { fontSize: 15, fontWeight: 600, color: memberTheme.text },
   doneChip: { fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px', color: memberTheme.statusSuccess, background: `color-mix(in srgb, ${memberTheme.statusSuccess} 12%, ${memberTheme.surface})` },
   newChip: { marginLeft: 6, fontSize: 10, fontWeight: 600, borderRadius: 999, padding: '1px 6px', color: memberTheme.title2, background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})` },
