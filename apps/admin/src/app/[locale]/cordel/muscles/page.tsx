@@ -147,7 +147,10 @@ export default function CordelMusclesPage() {
       {loading ? null : rows.length === 0 ? (
         <p style={{ color: '#888' }}>{t('empty')}</p>
       ) : rows.map((row) => {
-        const thumb = row.image_male_url_thumbnail ?? row.image_male_url ?? row.image_female_url_thumbnail ?? row.image_female_url;
+        const thumbs = [
+          { sex: 'male' as const, src: row.image_male_url_thumbnail ?? row.image_male_url },
+          { sex: 'female' as const, src: row.image_female_url_thumbnail ?? row.image_female_url },
+        ];
         const editing = editingId === row.id;
         const expanded = expandedId === row.id || editing;
         return (
@@ -162,11 +165,19 @@ export default function CordelMusclesPage() {
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedId(expanded ? null : row.id); } }}
                 style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0, cursor: 'pointer' }}
               >
-              <div style={{ width: 48, height: 48, borderRadius: 6, overflow: 'hidden', flex: '0 0 auto', background: '#f3f4f6' }}>
-                {thumb && SAFE_IMAGE_SRC.test(thumb) && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={thumb} alt="" loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '0 0 auto' }}>
+                {thumbs.map(({ sex, src }) => (
+                  <div
+                    key={sex}
+                    title={t(sex === 'male' ? 'image_male' : 'image_female')}
+                    style={{ width: 40, height: 40, borderRadius: '50%', overflow: 'hidden', flex: '0 0 auto', background: '#f3f4f6' }}
+                  >
+                    {src && SAFE_IMAGE_SRC.test(src) && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={src} alt={t(sex === 'male' ? 'image_male' : 'image_female')} loading="lazy" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    )}
+                  </div>
+                ))}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.name}>{row.name}</div>
