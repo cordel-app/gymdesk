@@ -6,6 +6,18 @@ import { useApp } from '@/context/AppContext';
 import { memberTheme, withSafeArea } from '@/lib/memberChrome';
 import { MemberUserMenu } from '@/components/MemberUserMenu';
 
+const SECTION_TITLE_KEYS: Record<string, string> = {
+  calendar: 'nav.calendar',
+  training: 'nav.training',
+  schedule: 'nav.bookings',
+  nutrition: 'nav.nutrition',
+  membership: 'nav.membership',
+  profile: 'nav.profile',
+  notifications: 'nav.alerts',
+  goals: 'nav.goals',
+  packages: 'packages.title',
+};
+
 /**
  * #361: replaces the old bottom tab bar. Home is reached via its own
  * greeting/tiles; every other page gets a slim bar with a way back to Home
@@ -29,6 +41,10 @@ export function TopBar() {
   const homePath = `/${locale}`;
   const isHome = pathname === homePath;
   const isNotifications = pathname.startsWith(`${homePath}/notifications`);
+
+  // #1565: the back button names the current section, not the destination.
+  const segment = pathname.split('/')[2] ?? '';
+  const sectionTitleKey = SECTION_TITLE_KEYS[segment] ?? null;
 
   // #713: same resolution as the Admin header — the gym's Cloudflare copy when
   // the theme has one, the API route for a logo that is still a blob.
@@ -65,7 +81,7 @@ export function TopBar() {
       background: memberTheme.headerBackground,
       color: memberTheme.headerText,
       fontFamily: memberTheme.headerFont,
-      borderBottom: `${memberTheme.headerSeparatorWidth} solid ${memberTheme.headerSeparatorColor}`,
+      // #1565: no separator under a subsection header — the page starts right below it.
     }}>
       {isHome ? (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -82,7 +98,8 @@ export function TopBar() {
           onClick={() => router.push(homePath)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, color: 'inherit', fontFamily: 'inherit', fontSize: 14, fontWeight: 600 }}
         >
-          <span style={{ fontSize: 18 }}>←</span> {t('home.dashboard_title')}
+          <span style={{ fontSize: 18 }}>←</span>
+          {sectionTitleKey && <span>{t(sectionTitleKey)}</span>}
         </button>
       )}
 

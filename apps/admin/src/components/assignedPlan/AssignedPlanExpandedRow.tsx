@@ -354,7 +354,9 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
       }].filter(() => !(isEditing && detail.status === 'draft'))
       : []),
     { label: t('action_details'), onClick: () => setShowDetails(true) },
-    ...(canSaveAndPay
+    // #1538: embedded in the Member card, the Products tab's one global Save & Pay
+    // commits the plan with the recurring Products, so the plan has none of its own.
+    ...(canSaveAndPay && !embedded
       // Not passed by reference: the click's `MouseEvent` would land in
       // `confirmReplacement` and confirm the replacement on the first attempt
       // (#956's own rule for these handlers).
@@ -629,11 +631,11 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
         <div style={inlineActionsRowStyle}>
           <button type="button" style={secondaryBtnSmall} disabled={actionBusy || !canWritePayments} title={readOnlyTitle}
             onClick={() => setDiscardOpen(true)}>{t('action_draft_cancel')}</button>
-          <button type="button" style={secondaryBtnSmall} disabled={actionBusy} onClick={() => saveDraft()}>
+          {!embedded && <button type="button" style={secondaryBtnSmall} disabled={actionBusy} onClick={() => saveDraft()}>
             {t('action_draft_save')}
-          </button>
-          <button type="button" style={primaryBtnSmall()} disabled={actionBusy || !canWritePayments} title={readOnlyTitle}
-            onClick={() => saveAndPay()}>{t('action_save_and_pay')}</button>
+          </button>}
+          {!embedded && <button type="button" style={primaryBtnSmall()} disabled={actionBusy || !canWritePayments} title={readOnlyTitle}
+            onClick={() => saveAndPay()}>{t('action_save_and_pay')}</button>}
         </div>
       )}
 
