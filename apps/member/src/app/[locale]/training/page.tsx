@@ -297,19 +297,19 @@ export default function TrainingPage() {
                   positionLabel={(i, n) => t('training.exercise_position', { current: i, total: n })}
                   cards={(block.exercises ?? []).map((we) => (
                   <div key={we.id} style={styles.exerciseCard}>
-                    <div style={{ ...styles.exerciseHead, ...exerciseBackgroundStyle(we) }}>
-                      <div style={styles.exerciseTitleLine}>
+                    <div style={{ ...styles.exerciseSquare, ...exerciseBackgroundStyle(we) }}>
+                      <ExerciseMedia exercise={we} />
+                      <div style={styles.exerciseInfo}>
                         <span style={styles.exerciseName}>{we.exercise_name}</span>
                         <span style={styles.exerciseMeta}>
-                          — {we.min_reps ?? '—'}{we.max_reps && we.max_reps !== we.min_reps ? `-${we.max_reps}` : ''} reps
+                          {we.min_reps ?? '—'}{we.max_reps && we.max_reps !== we.min_reps ? `-${we.max_reps}` : ''} reps
                           {we.sets ? ` × ${we.sets} sets` : ''} · {we.rest_seconds ?? '—'}s
                         </span>
                       </div>
-                      <ExerciseMedia exercise={we} />
-                      <button onClick={() => openExercise(we)} style={styles.expandBtn}>
-                        {expandedExercise === we.id ? '−' : '+'}
-                      </button>
                     </div>
+                    <button type="button" onClick={() => openExercise(we)} aria-expanded={expandedExercise === we.id} style={styles.registerBtn}>
+                      {t('training.register')}
+                    </button>
 
                     {expandedExercise === we.id && (
                       <div style={styles.expandBody}>
@@ -425,8 +425,9 @@ const styles: Record<string, React.CSSProperties> = {
     background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})`,
   },
   exerciseCard: { marginTop: 8, padding: 12, borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface },
-  exerciseHead: { display: 'flex', gap: 8, alignItems: 'center' },
-  exerciseTitleLine: { flex: 1, display: 'flex', flexWrap: 'wrap', alignItems: 'baseline', columnGap: 6 },
+  exerciseSquare: { aspectRatio: '1 / 1', width: '100%', maxWidth: 320, margin: '0 auto', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', alignItems: 'flex-start', boxSizing: 'border-box' },
+  exerciseInfo: { display: 'flex', flexDirection: 'column', gap: 2, width: '100%' },
+  registerBtn: { ...primaryButtonStyle, display: 'block', width: '100%', maxWidth: 320, margin: '8px auto 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   exerciseName: { fontSize: 15, fontWeight: 600, color: memberTheme.text },
   doneChip: { fontSize: 11, fontWeight: 600, borderRadius: 999, padding: '2px 8px', color: memberTheme.statusSuccess, background: `color-mix(in srgb, ${memberTheme.statusSuccess} 12%, ${memberTheme.surface})` },
   newChip: { marginLeft: 6, fontSize: 10, fontWeight: 600, borderRadius: 999, padding: '1px 6px', color: memberTheme.title2, background: `color-mix(in srgb, ${memberTheme.title2} 12%, ${memberTheme.surface})` },
@@ -434,7 +435,6 @@ const styles: Record<string, React.CSSProperties> = {
   logTh: { textAlign: 'left', fontSize: 11, fontWeight: 600, color: memberTheme.textMuted, padding: '2px 4px' },
   logTd: { padding: '4px', borderTop: `1px solid ${memberTheme.separator}` },
   exerciseMeta: { fontSize: 12, color: memberTheme.textMuted },
-  expandBtn: { width: 30, height: 30, borderRadius: '50%', border: `1px solid ${memberTheme.inputBorder}`, background: memberTheme.surface, color: memberTheme.text, cursor: 'pointer', fontSize: 16 },
   expandBody: { marginTop: 10, padding: 10, background: memberTheme.pageBackground, borderRadius: 8 },
   miniInput: { ...inputStyle, width: 70, padding: '6px 8px', borderRadius: 4, fontSize: 14 },
   addSetBtn: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
