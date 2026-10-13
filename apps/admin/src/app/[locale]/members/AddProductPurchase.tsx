@@ -19,6 +19,8 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { cardHintStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, innerCardStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
+import { PromotionPicker } from '@/components/PromotionPicker';
+import { promotionBenefitDescription } from '@/lib/promotionSelection';
 import {
   parseDiscountInput, purchaseErrorKey,
   type PurchasableProductOption, type PurchaseQuote,
@@ -148,31 +150,34 @@ export function AddProductPurchase({
       {product && !outcome && (
         <>
           <div style={{ ...formFieldLabelStyle, marginTop: 12 }}>{t('add_product_promotions')}</div>
-          {product.promotions.length === 0 ? (
-            <p style={cardHintStyle}>{t('add_product_no_promotions')}</p>
-          ) : product.promotions.map((promo) => (
-            <label key={promo.promotion_id} style={{ display: 'flex', gap: 8, fontSize: 14, marginBottom: 4 }}>
-              <input
-                type="checkbox"
-                checked={promotionIds.includes(promo.promotion_id)}
-                onChange={() => togglePromotion(promo.promotion_id)}
-              />
-              <span>{promo.promotion_name}{!promo.stackable ? ` · ${t('add_product_not_stackable')}` : ''}</span>
-            </label>
-          ))}
+          <PromotionPicker
+            promotions={product.promotions.map((promo) => {
+              const d = promotionBenefitDescription(promo, (n) => money(n, product.currency));
+              return {
+                id: promo.promotion_id,
+                name: promo.promotion_name,
+                stackable: promo.stackable,
+                description: d ? t(d.key as any, d.values as any) : null,
+              };
+            })}
+            selectedIds={promotionIds}
+            onToggle={togglePromotion}
+            disabled={busy}
+            emptyText={t('add_product_no_promotions')}
+          />
 
           {isAdmin && (
-            <>
-              <label style={{ ...formFieldLabelStyle, marginTop: 12 }} htmlFor="add-product-discount">{t('add_product_direct_discount')}</label>
+            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
+              <label style={{ ...formFieldLabelStyle, margin: 0 }} htmlFor="add-product-discount">{t('add_product_direct_discount')}</label>
               <input
                 id="add-product-discount"
-                style={{ ...formControlStyle, maxWidth: 120 }}
+                style={{ ...formControlStyle, width: 90 }}
                 inputMode="decimal"
                 value={discount}
                 onChange={(e) => setDiscount(e.target.value)}
               />
-              <p style={cardHintStyle}>{t('add_product_direct_discount_help')}</p>
-            </>
+              <span style={cardHintStyle}>{t('add_product_direct_discount_help')}</span>
+            </div>
           )}
         </>
       )}
