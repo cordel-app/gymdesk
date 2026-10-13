@@ -46,6 +46,25 @@ export function ExerciseMedia({ exercise, size = 52, fill = false }: {
   const videoKind = exerciseVideoKind(videoUrl);
   const posterSrc = posterBroken ? null : exerciseVideoPosterUrl(exercise);
 
+  // #1527: on a card the image is the card's own visual area and plain
+  // (the card opens the details; the play button sits by the name), so it
+  // is neither a button nor a video tile.
+  if (fill) {
+    if (!thumbSrc) return null;
+    return (
+      <span style={{ display: 'block', width: '100%', aspectRatio: '1 / 1', lineHeight: 0 }}>
+        <img
+          src={thumbSrc}
+          alt={name ? t('exercise_media.image_alt', { name }) : t('exercise_media.image')}
+          loading="lazy"
+          decoding="async"
+          style={{ display: 'block', width: '100%', height: '100%', objectFit: 'contain', border: 'none', borderRadius: 0, background: 'transparent' }}
+          onError={() => setImageBroken(true)}
+        />
+      </span>
+    );
+  }
+
   const tile: React.CSSProperties = fill
     ? { ...styles.tile, ...styles.tileFill, width: '100%', height: '100%' }
     : { ...styles.tile, width: size, height: size };

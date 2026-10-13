@@ -31,6 +31,11 @@ function expr(column: 'short_description' | 'description', alias: string, locale
             WHERE edt.exercise_id = ${alias}.id AND edt.locale = ${literal}), ${alias}.${column})`;
 }
 
+/** The description alone, localized, as a bare expression (for a JSON_OBJECT). */
+export function localizedDescriptionExpr(alias: string, locale: SupportedLocale): string {
+  return expr('description', alias, locale);
+}
+
 /** `display_short_description` and `display_description`, resolved for `locale`. */
 export function localizedDescriptionExprs(alias: string, locale: SupportedLocale): string {
   return `${expr('short_description', alias, locale)} AS display_short_description,

@@ -113,7 +113,8 @@
     "status_legend_rest": "Gris — Día de descanso.",
     "exercise_prev": "Ejercicio anterior",
     "exercise_next": "Ejercicio siguiente",
-    "exercise_position": "Ejercicio {current} de {total}"
+    "exercise_position": "Ejercicio {current} de {total}",
+    "no_description": "No hay descripción disponible."
   },
   "profile": {
     "title": "Mi perfil",
