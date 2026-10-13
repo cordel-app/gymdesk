@@ -15,6 +15,8 @@ import {
   secondaryBtnSmall,
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
+import { PromotionPicker, type PickerPromotion } from '@/components/PromotionPicker';
+import { promotionBenefitDescription } from '@/lib/promotionSelection';
 
 interface Membership {
   id: number;
@@ -31,6 +33,9 @@ interface Promotion {
   id: number;
   name: string;
   stackable: boolean | number;
+  fee_benefit_action?: string | null;
+  fee_benefit_value?: number | string | null;
+  fee_benefit_duration_months?: number | null;
 }
 
 interface Props {
@@ -97,22 +102,26 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
     return () => { cancelled = true; };
   }, [planId]);
 
-  const isStackable = (p: Promotion) => !!p.stackable;
-  const selected = promotions.filter((p) => selectedPromotionIds.includes(p.id));
-  const nonStackableSelected = selected.some((p) => !isStackable(p));
-
-  function disabledReason(p: Promotion): string | null {
-    if (selectedPromotionIds.includes(p.id)) return null;
-    if (nonStackableSelected) return t('members.assign_new_plan_promotion_blocked_by_non_stackable');
-    if (selected.length > 0 && !isStackable(p)) return t('members.assign_new_plan_promotion_blocked_non_stackable');
-    return null;
-  }
-
-  function togglePromotion(p: Promotion) {
-    setSelectedPromotionIds((prev) =>
-      prev.includes(p.id) ? prev.filter((id) => id !== p.id) : [...prev, p.id],
-    );
-  }
+  // #1539: the shared picker owns the stacking rule and the description; the
+  // description is generated from the Promotion's Membership Fee Benefit.
+  const pickerPromotions: PickerPromotion[] = promotions.map((p) => {
+    const d = p.fee_benefit_action
+      ? promotionBenefitDescription(
+          {
+            action: p.fee_benefit_action,
+            value: p.fee_benefit_value == null ? null : Number(p.fee_benefit_value),
+            duration_cycles: p.fee_benefit_duration_months ?? null,
+          },
+          (n) => `${n.toFixed(2)}€`,
+        )
+      : null;
+    return {
+      id: p.id,
+      name: p.name,
+      stackable: !!p.stackable,
+      description: d ? t(`members.${d.key}` as any, d.values as any) : null,
+    };
+  });
 
   async function handleSubmit(confirmReplacement = false) {
     setError(null);
@@ -182,32 +191,16 @@ export function AssignPlanInlineEditor({ membership, plans, onCancel, onAssigned
       ) : promotions.length === 0 ? (
         <p style={hintStyle}>{t('members.assign_new_plan_promotions_none')}</p>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 12 }}>
-          {promotions.map((p) => {
-            const checked = selectedPromotionIds.includes(p.id);
-            const blocked = disabledReason(p);
-            return (
-              <label
-                key={p.id}
-                title={blocked ?? undefined}
-                style={promotionRowStyle(checked, blocked !== null)}
-              >
-                <input
-                  type="checkbox"
-                  checked={checked}
-                  disabled={saving || blocked !== null}
-                  onChange={() => togglePromotion(p)}
-                  style={{ marginRight: 8 }}
-                />
-                <span style={{ flex: 1, minWidth: 0 }}>{p.name}</span>
-                <span style={stackTagStyle(isStackable(p))}>
-                  {isStackable(p)
-                    ? t('members.assign_new_plan_promotion_stackable')
-                    : t('members.assign_new_plan_promotion_non_stackable')}
-                </span>
-              </label>
-            );
-          })}
+        <div style={{ marginBottom: 12 }}>
+          <PromotionPicker
+            promotions={pickerPromotions}
+            selectedIds={selectedPromotionIds}
+            onToggle={(id) => setSelectedPromotionIds((prev) => (
+              prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+            ))}
+            disabled={saving}
+            emptyText={t('members.assign_new_plan_promotions_none')}
+          />
         </div>
       )}
 
@@ -242,27 +235,6 @@ const selectStyle: CSSProperties = { ...formControlStyle, margin: '6px 0 12px' }
 const inputStyle: CSSProperties = { ...formControlStyle, margin: '6px 0 12px' };
 const sectionLabelStyle = cardSectionLabelStyle;
 const hintStyle = cardHintStyle;
-
-function promotionRowStyle(checked: boolean, disabled: boolean): CSSProperties {
-  return {
-    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', borderRadius: 6,
-    border: `1px solid ${checked ? '#bfdbfe' : '#e5e7eb'}`,
-    background: checked ? '#eff6ff' : '#fff',
-    color: checked ? '#1d4ed8' : 'inherit',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.5 : 1,
-    fontSize: 13, userSelect: 'none',
-  };
-}
-
-function stackTagStyle(stackable: boolean): CSSProperties {
-  return {
-    fontSize: 11, fontWeight: 600, color: stackable ? '#15803d' : '#b45309',
-    background: stackable ? '#f0fdf4' : '#fffbeb',
-    border: `1px solid ${stackable ? '#bbf7d0' : '#fde68a'}`,
-    borderRadius: 10, padding: '1px 8px', flexShrink: 0,
-  };
-}
 
 const saveBtnStyle = primaryBtnSmall();
 const cancelBtnStyle = secondaryBtnSmall;

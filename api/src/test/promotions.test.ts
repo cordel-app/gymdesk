@@ -1385,6 +1385,23 @@ describe('GET /promotions — membership_plan_id filter', () => {
     expect(res.body.every((p: any) => p.gym_id === gymId)).toBe(true);
   });
 
+  it('reports an enabled Membership Fee Benefit so the picker can describe it (#1539)', async () => {
+    await db.query(
+      `INSERT INTO promotion_membership_fee_benefits (gym_id, promotion_id, duration_months, enabled, action, value)
+       VALUES (?, ?, 3, 1, 'percentage_discount', 50)`,
+      [gymId, promoForA],
+    );
+    const res = await request
+      .get(`/promotions?membership_plan_id=${planA}`)
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId);
+    expect(res.status).toBe(200);
+    const row = res.body.find((p: any) => p.id === promoForA);
+    expect(row.fee_benefit_action).toBe('percentage_discount');
+    expect(Number(row.fee_benefit_value)).toBe(50);
+    expect(row.fee_benefit_duration_months).toBe(3);
+  });
+
   it('returns 400 for a non-numeric membership_plan_id', async () => {
     const res = await request
       .get('/promotions?membership_plan_id=abc')
