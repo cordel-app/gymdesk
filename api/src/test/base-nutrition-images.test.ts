@@ -13,8 +13,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
+import sharp from 'sharp';
 import { encodePngRgba } from '../domain/pngImage';
-import { BASE_NUTRITION_IMAGE_SIZE } from '../domain/baseNutritionImages';
+const BASE_NUTRITION_IMAGE_SIZE = 512;
 import { backfillBaseNutritionImages, parseArgs } from '../scripts/backfill-base-nutrition-images';
 
 const sendMock = vi.hoisted(() => vi.fn());
@@ -52,16 +53,12 @@ function validPng(size = BASE_NUTRITION_IMAGE_SIZE): Buffer {
   return encodePngRgba(size, size, Buffer.alloc(size * size * 4, 0x40));
 }
 
-/** A 512×512 PNG with no alpha channel — colour type 2 in the IHDR. */
-function opaquePng(): Buffer {
-  const png = Buffer.from(validPng(1));
-  png.writeUInt32BE(BASE_NUTRITION_IMAGE_SIZE, 16);
-  png.writeUInt32BE(BASE_NUTRITION_IMAGE_SIZE, 20);
-  png[25] = 2;
-  return png;
+/** Any decodable picture is accepted since #1562 — a non-square, opaque JPEG included. */
+async function jpegOf(width: number, height: number): Promise<Buffer> {
+  return sharp({ create: { width, height, channels: 3, background: { r: 200, g: 40, b: 40 } } }).jpeg().toBuffer();
 }
 
-const JPEG_BYTES = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64)]);
+const NOT_AN_IMAGE = Buffer.from('<html>definitely not a picture</html>');
 
 const superadminUser = { publicMetadata: { platform_role: 'superadmin' }, fullName: 'Test Admin' };
 const regularUser = { publicMetadata: {}, fullName: 'Test User' };
@@ -178,30 +175,38 @@ describe('POST /platform/nutrition-library/:id/image — auth', () => {
 // ─── Happy path ───────────────────────────────────────────────────────────────
 
 /**
- * `cordel/nutrition/<food_id>-<name>.png`, matched whole. #1035 §12 keys the
+ * `cordel/nutrition/<food_id>-<name>.webp`, matched whole. #1035 §12 keys the
  * object by the **food** rather than by a per-upload UUID, so the pattern takes
  * the row's id: a replacement lands on this very key again, which is what the
  * two sweep cases below assert.
  */
 const keyPattern = (id: number, name: string) =>
-  new RegExp(`^cordel/nutrition/${id}-${name}\\.png$`);
+  new RegExp(`^cordel/nutrition/${id}-${name}\\.webp$`);
 /** The same key as a suffix, for the URL a read reports. */
 const urlPattern = (id: number, name: string) =>
-  new RegExp(`/cordel/nutrition/${id}-${name}\\.png$`);
+  new RegExp(`/cordel/nutrition/${id}-${name}\\.webp$`);
+const objectPuts = () => sentCommands('put').filter((c: any) => !c.input.Key.endsWith('/'));
+/** The master's key — the thumbnail is the other object of the pair. */
 const lastPutKey = () => {
-  const puts = sentCommands('put').filter((c: any) => !c.input.Key.endsWith('/'));
-  return puts[puts.length - 1]?.input.Key as string;
+  const masters = objectPuts().filter((c: any) => !c.input.Key.endsWith('-thumbnail.webp'));
+  return masters[masters.length - 1]?.input.Key as string;
 };
+const thumbOf = (key: string) => key.replace(/\.webp$/, '-thumbnail.webp');
 
 describe('POST /platform/nutrition-library/:id/image', () => {
-  it('stores the image at cordel/nutrition/<image_uuid>-<Name>.png and persists the URL', async () => {
+  it('stores the 1080 master and the 256 thumbnail as WebP and persists the master URL', async () => {
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(200);
 
     const key = lastPutKey();
     expect(key).toMatch(keyPattern(foodId, 'Test-Base-Image-Chicken-Breast'));
-    const puts = sentCommands('put');
-    expect(puts[puts.length - 1].input).toMatchObject({ Bucket: R2_BUCKET, Key: key, ContentType: 'image/png' });
+    const puts = objectPuts();
+    expect(puts.map((c: any) => c.input.Key)).toEqual([key, thumbOf(key)]);
+    for (const put of puts) expect(put.input).toMatchObject({ Bucket: R2_BUCKET, ContentType: 'image/webp' });
+    const master = await sharp(puts[0].input.Body).metadata();
+    const thumb = await sharp(puts[1].input.Body).metadata();
+    expect([master.format, master.width, master.height]).toEqual(['webp', 1080, 1080]);
+    expect([thumb.format, thumb.width, thumb.height]).toEqual(['webp', 256, 256]);
     expect(key.startsWith('cordel/')).toBe(true);
     expect(key).not.toContain('gyms/');
 
@@ -253,12 +258,12 @@ describe('POST /platform/nutrition-library/:id/image', () => {
     expect(res.status).toBe(200);
     const newKey = lastPutKey();
     expect(newKey).toMatch(keyPattern(foodId, 'Test-Base-Image-Renamed-Food'));
-    expect(sentCommands('delete').map((c: any) => c.input.Key)).toEqual([staleKey]);
+    expect(sentCommands('delete').map((c: any) => c.input.Key).sort()).toEqual([staleKey, thumbOf(staleKey)].sort());
     expect(await imageUrlOf(foodId)).toBe(`${R2_ENDPOINT}/${R2_BUCKET}/${newKey}`);
   });
 
   it('moves an image stored under the old cordel/Nutrition/ folder', async () => {
-    const legacyKey = `cordel/Nutrition/${foodId}-Test-Base-Image-Chicken-Breast.png`;
+    const legacyKey = `cordel/Nutrition/${foodId}-Test-Base-Image-Chicken-Breast.png`; // pre-#1035, pre-#1562
     await db.query('UPDATE nutrition_library_items SET image_url = ? WHERE id = ?', [`${R2_ENDPOINT}/${R2_BUCKET}/${legacyKey}`, foodId]);
 
     const res = await upload(foodId, validPng());
@@ -277,7 +282,7 @@ describe('POST /platform/nutrition-library/:id/image', () => {
 
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(200);
-    expect(await imageUrlOf(foodId)).toContain('Test-Base-Image-Renamed-Food.png');
+    expect(await imageUrlOf(foodId)).toContain('Test-Base-Image-Renamed-Food.webp');
   });
 });
 
@@ -285,31 +290,33 @@ describe('POST /platform/nutrition-library/:id/image', () => {
 
 describe('POST /platform/nutrition-library/:id/image — validation', () => {
   it('rejects a non-image content type with 415', async () => {
-    const res = await upload(foodId, validPng(), 'image/jpeg');
+    const res = await upload(foodId, Buffer.from('{}'), 'application/json');
     expect(res.status).toBe(415);
     expect(sentCommands('put')).toHaveLength(0);
   });
 
-  it('rejects bytes that are not a PNG', async () => {
-    const res = await upload(foodId, JPEG_BYTES);
+  it('judges the bytes, not the Content-Type header', async () => {
+    const res = await upload(foodId, validPng(), 'image/jpeg');
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects bytes that are not a picture', async () => {
+    const res = await upload(foodId, NOT_AN_IMAGE);
     expect(res.status).toBe(400);
-    expect(res.body.reason).toBe('not_a_png');
+    expect(['unreadable', 'unsupported_format']).toContain(res.body.reason);
     expect(sentCommands('put')).toHaveLength(0);
   });
 
-  it('rejects the wrong dimensions', async () => {
-    const res = await upload(foodId, validPng(256));
-    expect(res.status).toBe(400);
-    expect(res.body.reason).toBe('not_square_512');
-    expect(res.body.error).toContain('512');
-    expect(sentCommands('put')).toHaveLength(0);
-  });
-
-  it('rejects a PNG without a transparent background', async () => {
-    const res = await upload(foodId, opaquePng());
-    expect(res.status).toBe(400);
-    expect(res.body.reason).toBe('not_transparent');
-    expect(sentCommands('put')).toHaveLength(0);
+  it('accepts a non-square, opaque JPEG and contains it in the 1080 square without stretching', async () => {
+    const res = await upload(foodId, await jpegOf(600, 300), 'image/jpeg');
+    expect(res.status).toBe(200);
+    const [master, thumb] = objectPuts().map((c: any) => c.input.Body);
+    expect((await sharp(master).metadata()).width).toBe(1080);
+    expect((await sharp(master).metadata()).height).toBe(1080);
+    expect((await sharp(thumb).metadata()).width).toBe(256);
+    // contained, so the corner is padding (transparent), not stretched picture
+    const { data } = await sharp(master).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    expect(data[3]).toBe(0);
   });
 
   it('leaves the existing image in place when an upload is refused', async () => {
@@ -317,7 +324,7 @@ describe('POST /platform/nutrition-library/:id/image — validation', () => {
     const good = await imageUrlOf(foodId);
     sendMock.mockClear();
 
-    const res = await upload(foodId, validPng(256));
+    const res = await upload(foodId, NOT_AN_IMAGE);
     expect(res.status).toBe(400);
     expect(await imageUrlOf(foodId)).toBe(good);
     expect(sentCommands('put')).toHaveLength(0);
@@ -330,6 +337,29 @@ describe('POST /platform/nutrition-library/:id/image — validation', () => {
     const res = await upload(foodId, validPng());
     expect(res.status).toBe(502);
     expect(await imageUrlOf(foodId)).toBeNull();
+  });
+
+  it('does not persist a URL and removes the new master when the thumbnail upload fails', async () => {
+    sendMock.mockReset();
+    sendMock.mockImplementation((command: any) => (
+      command?.__type === 'put' && String(command.input.Key).endsWith('-thumbnail.webp')
+        ? Promise.reject(new Error('R2 rejected the thumbnail'))
+        : Promise.resolve({})
+    ));
+    const res = await upload(foodId, validPng());
+    expect(res.status).toBe(502);
+    expect(await imageUrlOf(foodId)).toBeNull();
+    expect(sentCommands('delete').map((c: any) => c.input.Key)).toEqual([lastPutKey()]);
+  });
+
+  it('keeps the previous image reference when a replacement fails', async () => {
+    await upload(foodId, validPng());
+    const good = await imageUrlOf(foodId);
+    sendMock.mockReset();
+    sendMock.mockRejectedValue(new Error('R2 is unreachable'));
+    const res = await upload(foodId, validPng());
+    expect(res.status).toBe(502);
+    expect(await imageUrlOf(foodId)).toBe(good);
   });
 
   it('returns 503 when the deployment has no R2 configured', async () => {
@@ -450,7 +480,7 @@ describe('backfillBaseNutritionImages()', () => {
         .map((c: any) => c.input.Key as string)
         .filter((k: string) => !k.endsWith('/'))
         .sort(),
-    ).toEqual(previousKeys.sort());
+    ).toEqual([...previousKeys, ...previousKeys.map(thumbOf)].sort());
     expect(sentCommands('delete')).toHaveLength(0);
   });
 
@@ -494,21 +524,9 @@ describe('backfillBaseNutritionImages()', () => {
       const counters = await run({ fromDir: dir });
       expect(counters.supplied).toBe(1);
 
-      const put = sentCommands('put').find((c: any) => String(c.input.Key).endsWith('-Test-Base-Image-Chicken-Breast.png'));
-      expect(Buffer.from(put.input.Body).equals(supplied)).toBe(true);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('refuses supplied artwork that the upload route would refuse', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'nutrition-art-'));
-    try {
-      writeFileSync(join(dir, `${foodId}.png`), encodePngRgba(256, 256, Buffer.alloc(256 * 256 * 4)));
-      const counters = await run({ fromDir: dir });
-      expect(counters.failed.map((f) => f.id)).toContain(foodId);
-      expect(counters.failed.find((f) => f.id === foodId)?.error).toContain('512');
-      expect(await imageUrlOf(foodId)).toBeNull();
+      const put = sentCommands('put').find((c: any) => String(c.input.Key).endsWith('-Test-Base-Image-Chicken-Breast.webp'));
+      expect(put.input.ContentType).toBe('image/webp');
+      expect((await sharp(put.input.Body).metadata()).width).toBe(1080);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

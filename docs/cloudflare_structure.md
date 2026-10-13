@@ -116,7 +116,7 @@ keep the order they were written in, and a gym initialized before stage 2 gets t
 folder by re-running the action — cosmetic, since R2 has no directories and an
 upload stores its object under the prefix either way.
 
-A food's image is `nutrition/<food_id>-<food_name>.<ext>` on both sides:
+A food's image is `nutrition/<food_id>-<food_name>.webp` (1080 × 1080) plus `…-thumbnail.webp` (256 × 256) on both sides, made by the server (#1562):
 `POST /nutrition-library/:id/image` for a gym's own food and
 `POST /platform/nutrition-library/:id/image` for a base one. The gym route keeps the
 four image types the generic upload it replaced accepted (PNG, JPEG, WebP, GIF), so

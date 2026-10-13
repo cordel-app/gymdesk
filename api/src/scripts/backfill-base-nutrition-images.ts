@@ -35,12 +35,12 @@ import { basename, extname, join } from 'node:path';
 import 'dotenv/config';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { db } from '../infra/db';
+import { processExerciseImage } from '../domain/exerciseImageProcessing';
+import { EXERCISE_GENDER_IMAGE_MIME, EXERCISE_IMAGE_REJECTION_MESSAGES } from '../domain/exerciseGenderMedia';
 import {
   buildBaseNutritionImageKey,
   baseNutritionFolderKeys,
-  validateBaseNutritionImage,
-  BASE_NUTRITION_IMAGE_MIME,
-  BASE_NUTRITION_IMAGE_REJECTION_MESSAGES,
+  nutritionThumbnailKeyFor,
   sanitizeNutritionImageName,
 } from '../domain/baseNutritionImages';
 import { renderNutritionImage } from '../domain/nutritionImageArt';
@@ -229,8 +229,8 @@ export async function backfillBaseNutritionImages(
       });
       // Supplied artwork goes through exactly the checks the upload route
       // applies, so a backfilled image can never be one the API would refuse.
-      const rejection = validateBaseNutritionImage(png);
-      if (rejection) throw new Error(BASE_NUTRITION_IMAGE_REJECTION_MESSAGES[rejection]);
+      const processed = await processExerciseImage(png);
+      if ('rejection' in processed) throw new Error(EXERCISE_IMAGE_REJECTION_MESSAGES[processed.rejection]);
 
       if (supplied) counters.supplied += 1; else counters.generated += 1;
 
@@ -239,7 +239,8 @@ export async function backfillBaseNutritionImages(
         continue;
       }
 
-      await uploadStorageObject(key, BASE_NUTRITION_IMAGE_MIME, png);
+      await uploadStorageObject(key, EXERCISE_GENDER_IMAGE_MIME, processed.image);
+      await uploadStorageObject(nutritionThumbnailKeyFor(key), EXERCISE_GENDER_IMAGE_MIME, processed.thumbnail);
       await db.query(
         'UPDATE nutrition_library_items SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ? WHERE id = ?',
         [buildStorageObjectUrl(key), SYSTEM_ACTOR, food.id],
