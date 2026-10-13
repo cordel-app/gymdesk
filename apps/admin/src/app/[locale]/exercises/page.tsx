@@ -591,8 +591,7 @@ export default function ExercisesPage() {
         exercise={ex}
         muscleLabel={muscleLabel}
         menuItems={exerciseMenuItems(ex)}
-        expanded={expandedId === ex.id}
-        onToggle={() => toggleExpand(ex.id)}
+        onViewDetails={() => setDetailFor(ex)}
       />
     );
   }

@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1530 (Exercise catalogue cards redesigned: container-width grid of 1 / 2 / 3 columns, 4 only from ~300px per card; image, name + status + `⋮`, 3-line description, primary (blue) and secondary (purple) muscle chips, one `3 sets · 10–15 reps · 60 sec rest` row from the exercise's own defaults, and a *View full details* link that opens the Details view instead of expanding the card in place; missing values are omitted, never defaulted)
 - **Done**: #1527 (Members App → My Training redesign: the three progress rings are replaced by Today / This Week / This Month cards; the week is one card whose days each carry a status dot — green completed, red pending/in progress, yellow scheduled, grey rest — that opens an informational legend modal, derived by `lib/trainingDayStatus.ts` from the same "every block logged that date" rule as `trainingProgress()`; a block's exercises are one navigable card at a time with previous/next, arrow keys and swipe, grouped per block only. Completion still uses the existing block logs; no API or schema change; en/es/ca)
 
 - **Done**: #1532 (Members → Products card: `+ Add Product` moved below the section heading, left-aligned like `+ Add Membership Plan`; empty state stays under it; no behaviour change)
