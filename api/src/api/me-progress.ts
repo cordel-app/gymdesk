@@ -89,16 +89,16 @@ meProgressRouter.get('/exercises', async (req: Request, res: Response, next: Nex
        FROM exercises e WHERE e.id IN (${ids.map(() => '?').join(',')}) AND (e.gym_id = ? OR e.gym_id IS NULL)`,
       [...ids, gymId],
     );
-    const out = exRows.map((e: any) => {
-      const allowed: AllowedResultType[] = (json(e.allowed_result_types) ?? []).map((a: any) => ({ id: Number(a.id), slug: a.slug }));
+    const out = exRows.map((ex: any) => {
+      const allowed: AllowedResultType[] = (json(ex.allowed_result_types) ?? []).map((a: any) => ({ id: Number(a.id), slug: a.slug }));
       return {
-        exercise_id: Number(e.id),
-        exercise_name: e.exercise_name,
-        image_url: e.image_url ?? null,
-        image_thumbnail_url: e.image_thumbnail_url ?? null,
-        ...summarizeExercise(byExercise.get(Number(e.id)) ?? [], allowed),
+        exercise_id: Number(ex.id),
+        exercise_name: ex.exercise_name,
+        image_url: ex.image_url ?? null,
+        image_thumbnail_url: ex.image_thumbnail_url ?? null,
+        ...summarizeExercise(byExercise.get(Number(ex.id)) ?? [], allowed),
       };
-    }).filter((e: any) => e.days_exercised > 0)
+    }).filter((ex: any) => ex.days_exercised > 0)
       .sort((a: any, b: any) => String(a.exercise_name).localeCompare(String(b.exercise_name)));
     res.json(out);
   } catch (err) { next(err); }

@@ -90,7 +90,7 @@ function ExerciseDetail({ item }: { item: ProgressSummary }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item.exercise_id]);
 
-  const unitKey = resultUnitKey(item.result_type?.slug);
+  const unitKey = resultUnitKey(item.result_kind?.slug);
   const unit = unitKey ? t(unitKey) : null;
   const points = useMemo(() => (detail ? progressChartPoints(detail.days, unit, gym) : []), [detail, unit, gym]);
   if (!detail) return null;

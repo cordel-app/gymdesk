@@ -16,7 +16,7 @@ export interface ProgressSummary {
   image_thumbnail_url: string | null;
   days_exercised: number;
   max_weight: number | null;
-  result_type: { id: number; slug: string } | null;
+  result_kind: { id: number; slug: string } | null;
   best_result: { slug: 'weight' | 'repetitions' | 'duration'; value: number } | null;
 }
 

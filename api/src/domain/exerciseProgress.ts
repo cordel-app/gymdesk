@@ -122,7 +122,7 @@ export function progressDays(logs: ProgressLog[], resultType: AllowedResultType 
 export interface ExerciseProgressSummary {
   days_exercised: number;
   max_weight: number | null;
-  result_type: AllowedResultType | null;
+  result_kind: AllowedResultType | null;
   best_result: BestResult | null;
 }
 
@@ -131,7 +131,7 @@ export function summarizeExercise(logs: ProgressLog[], allowed: AllowedResultTyp
   return {
     days_exercised: daysExercised(logs),
     max_weight: maxWeight(logs),
-    result_type: resultType,
+    result_kind: resultType,
     best_result: bestResult(logs, resultType),
   };
 }
