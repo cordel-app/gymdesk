@@ -4,7 +4,6 @@ import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { NutritionFoodItem, formatQuantity, humanizeSlug, translatedLabel } from '@/lib/nutritionFood';
 import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
-import { InlineStyle } from './InlineStyle';
 
 /**
  * #722 — one food of a member's nutrition plan: its image on top, then the
@@ -38,8 +37,7 @@ export function NutritionFoodCard({ item, eager = false }: {
 
   return (
     <article style={styles.card}>
-      <InlineStyle css={FOOD_IMAGE_MOBILE_CSS} />
-      <div className="gd-food-image" style={styles.imageBox}>
+      <div style={styles.imageBox}>
         {imageSrc ? (
           <img
             src={imageSrc}
@@ -71,15 +69,6 @@ export function NutritionFoodCard({ item, eager = false }: {
     </article>
   );
 }
-
-/**
- * #1241 — on a phone the 1:1 image is a third of the screen; shrink it (still
- * square, still centred) so more of the meal is visible. Inline styles cannot
- * carry a media query, hence a rule in a sheet (`!important` beats the inline
- * width). Desktop and tablet keep the full-width image.
- */
-export const FOOD_IMAGE_MOBILE_CSS =
-  '@media (max-width: 768px) { .gd-food-image { width: 50% !important; margin: 0 auto; } }';
 
 const styles: Record<string, React.CSSProperties> = {
   card:        { ...sectionCardStyle, overflow: 'hidden', height: '100%', display: 'flex', flexDirection: 'column' },
