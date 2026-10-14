@@ -593,14 +593,18 @@
     "status_legend_open": "Ver leyenda de estados",
     "status_legend_title": "Estado de la nutrición",
     "status_legend_close": "Cerrar",
-    "status_legend_completed": "Verde — Todas las comidas completadas.",
-    "status_legend_pending": "Rojo — Queda al menos una comida pendiente.",
-    "status_legend_scheduled": "Amarillo — Comidas programadas para una fecha futura.",
-    "status_legend_rest": "Gris — Sin comidas programadas.",
+    "status_legend_completed": "Verde — Todo lo aplicable está completado (puntuación 100%).",
+    "status_legend_pending": "Rojo — Puntuación del 50% o menos, o el día sigue abierto.",
+    "status_legend_scheduled": "Amarillo — Programado para una fecha futura.",
+    "status_legend_rest": "Gris — No hay comidas, objetivos nutricionales ni restricciones dietéticas.",
     "mark_done": "Marcar hecho",
     "meal_done": "Hecho",
     "mark_done_aria": "Marcar {name} como hecho",
-    "no_meals_today": "No hay comidas programadas para este día."
+    "no_meals_today": "No hay comidas programadas para este día.",
+    "status_partial": "Parcialmente completado",
+    "status_legend_partial": "Mitad rojo, mitad verde — Puntuación superior al 50% e inferior al 100%.",
+    "partially_done": "Parcialmente hecho",
+    "partially_done_state": "Parcialmente hecho"
   },
   "goals": {
     "title": "Mis Objetivos",

@@ -2,11 +2,12 @@
 
 import { MemberDialog } from '@/components/MemberDialog';
 import { memberTheme, secondaryButtonStyle } from '@/lib/memberChrome';
-import type { DayStatus } from '@/lib/trainingDayStatus';
+import type { NutritionDayStatus } from '@/lib/trainingDayStatus';
 
 /** The colour role each day status reads in — the app's status tokens, plus a neutral for rest. */
-export const DAY_STATUS_COLOR: Record<DayStatus, string> = {
+export const DAY_STATUS_COLOR: Record<NutritionDayStatus, string> = {
   completed: memberTheme.statusSuccess,
+  partial: `linear-gradient(90deg, ${memberTheme.statusSuccess} 50%, ${memberTheme.statusError} 50%)`,
   pending: memberTheme.statusError,
   scheduled: memberTheme.statusWarning,
   rest: memberTheme.textMuted,
@@ -15,7 +16,7 @@ export const DAY_STATUS_COLOR: Record<DayStatus, string> = {
 /** #1527: informational only — it changes no status. */
 export function TrainingStatusLegend({
   title, closeLabel, items, onClose,
-}: { title: string; closeLabel: string; items: { status: DayStatus; label: string }[]; onClose: () => void }) {
+}: { title: string; closeLabel: string; items: { status: NutritionDayStatus; label: string }[]; onClose: () => void }) {
   return (
     <MemberDialog title={title} onClose={onClose} labelledBy="training-status-legend-title"
       actions={<button type="button" onClick={onClose} style={{ ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6 }}>{closeLabel}</button>}>

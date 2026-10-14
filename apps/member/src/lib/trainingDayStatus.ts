@@ -5,12 +5,15 @@
 // so the calendar and the summary cards cannot disagree about "completed".
 
 export type DayStatus = 'completed' | 'pending' | 'scheduled' | 'rest';
+/** #1603: My Nutrition also has a closed day scored above 50 % but short of 100 % (half red, half green). */
+export type NutritionDayStatus = DayStatus | 'partial';
 
 export interface DayWorkout { scheduled_weekday: number | null; blocks: { id: number }[] | null }
 export interface DayBlockLog { workout_block_id: number; logged_date: string }
 
 /** The legend order, and the colour role each status reads in. */
 export const DAY_STATUSES: DayStatus[] = ['completed', 'pending', 'scheduled', 'rest'];
+export const NUTRITION_DAY_STATUSES: NutritionDayStatus[] = ['completed', 'partial', 'pending', 'scheduled', 'rest'];
 
 /**
  * - no workout scheduled that weekday → rest
