@@ -4,6 +4,13 @@
  *   npm run exercises:backfill-descriptions -- --file content.json              # dry run (default)
  *   npm run exercises:backfill-descriptions -- --file content.json --execute    # write
  *
+ * With no `--file` the bundled catalogue content (`src/data/base-exercise-descriptions.json`,
+ * #1608: EN/ES/CA short and full description for every Free Exercise DB Base Exercise)
+ * is used, so the compiled script runs from the deployed image
+ * (`.github/workflows/exercises-backfill-descriptions.yml`). Every run ends with a
+ * completeness report of the six values per Base Exercise; the process exits
+ * non-zero on an `--execute` run that leaves any of them empty.
+ *
  * The content file is `{ "<base exercise slug>": { "en": { "short_description", "description" },
  * "es": {...}, "ca": {...} } }`. Only Base Exercises (`gym_id IS NULL`) are
  * touched — a gym's own exercises are never part of a platform backfill — and
@@ -16,13 +23,13 @@ import fs from 'fs';
 import { db } from '../infra/db';
 import { BASE_LOCALE, TRANSLATABLE_LOCALES } from '../infra/locale';
 import { planDescriptionBackfill } from '../domain/exerciseDescriptionBackfill';
+import bundledContent from '../data/base-exercise-descriptions.json';
 
 async function main() {
   const execute = process.argv.includes('--execute');
   const fileIdx = process.argv.indexOf('--file');
   const file = fileIdx >= 0 ? process.argv[fileIdx + 1] : undefined;
-  if (!file) throw new Error('--file <content.json> is required');
-  const content = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, Record<string, any>>;
+  const content = (file ? JSON.parse(fs.readFileSync(file, 'utf8')) : bundledContent) as Record<string, Record<string, any>>;
 
   let filled = 0, unchanged = 0, missing = 0, warned = 0;
   for (const [slug, byLocale] of Object.entries(content)) {
@@ -68,7 +75,30 @@ async function main() {
     });
   }
   console.log(`\n${execute ? 'Executed' : 'Dry run'}: ${filled} filled, ${unchanged} already complete, ${missing} slug(s) not found, ${warned} warning(s).`);
+
+  // Completeness: all six values (short + full in the base locale and each translatable one).
+  const locales = [BASE_LOCALE, ...(TRANSLATABLE_LOCALES as string[])];
+  const { rows: bases } = await db.query<any>(
+    "SELECT id, slug, name, short_description, description FROM exercises WHERE gym_id IS NULL AND status != 'deleted'",
+  );
+  const { rows: all } = await db.query<any>(
+    'SELECT t.exercise_id, t.locale, t.short_description, t.description FROM exercise_description_translations t JOIN exercises e ON e.id = t.exercise_id WHERE e.gym_id IS NULL',
+  );
+  const byEx = new Map<number, Record<string, any>>();
+  for (const t of all) (byEx.get(t.exercise_id) ?? byEx.set(t.exercise_id, {}).get(t.exercise_id)!)[t.locale] = t;
+  const incomplete: string[] = [];
+  for (const ex of bases) {
+    const gaps: string[] = [];
+    for (const l of locales) {
+      const v = l === BASE_LOCALE ? ex : byEx.get(ex.id)?.[l];
+      for (const f of ['short_description', 'description']) if (!v?.[f] || String(v[f]).trim() === '') gaps.push(`${l}.${f}`);
+    }
+    if (gaps.length) incomplete.push(`${ex.slug ?? ex.name}: ${gaps.join(', ')}`);
+  }
+  console.log(`Completeness: ${bases.length - incomplete.length}/${bases.length} Base Exercises have all ${locales.length * 2} values.`);
+  for (const line of incomplete) console.log(`incomplete ${line}`);
   await db.end();
+  if (execute && (incomplete.length > 0 || missing > 0)) process.exit(1);
 }
 
 main().catch(async (err) => { console.error(err); await db.end().catch(() => {}); process.exit(1); });

@@ -1476,6 +1476,7 @@ CI (`ci.yml`) runs migrations against a **throwaway MySQL 8.4 service container*
 | `deploy-member.yml` | Build/push/restart `fitness-members` |
 | `deploy-payment.yml` | Build/push/restart `fitness-pay` (corfront `:8083`) |
 | `exercises-import.yml` | **(#964)** `workflow_dispatch` only — runs the Free Exercise DB importer from the VPS against the selected environment's database. Same reason `deploy.yml` runs migrations there: the database is VCN-private and a GitHub runner cannot reach it. Defaults to `--dry-run`, so a dispatch nobody thought about reports rather than writes, and it runs the image that is *deployed* (no `podman pull`) so the catalogue is written by the code serving the API |
+| `exercises-backfill-descriptions.yml` | **(#1608)** `workflow_dispatch` only — runs `exercises:backfill-descriptions` from the VPS with the content bundled in the image (`api/src/data/base-exercise-descriptions.json`), dry run by default; fills empty values only and reports completeness |
 | `debug-vps.yml`, `test-ssh.yml`, `test_ssh_corfront.yml` | Diagnostics (workflow_dispatch) |
 
 ### Operator scripts (`api/src/scripts/`)
