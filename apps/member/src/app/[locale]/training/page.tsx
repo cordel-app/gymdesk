@@ -228,7 +228,6 @@ export default function TrainingPage() {
 
   return (
     <main style={styles.container} onTouchStart={(e) => setTouchStart({ x: e.touches[0].clientX, y: e.touches[0].clientY })} onTouchEnd={onTouchEnd}>
-      <h1 style={styles.title}>{t('training.title')}</h1>
 
       <div role="tablist" style={styles.tabs}>
         {(['plan', 'progress'] as const).map((id) => (
@@ -441,7 +440,6 @@ export default function TrainingPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   message: { ...noticeStyle('success'), marginBottom: 12 },
   weekCard: { ...sectionCardStyle, padding: 10, marginBottom: 20 },
   weekdayBar: { display: 'flex', justifyContent: 'space-between', gap: 4 },

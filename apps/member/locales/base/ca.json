@@ -30,6 +30,7 @@
     "no_nutrition_today": "Sense pla de nutrició per avui."
   },
   "nav": {
+    "back_home": "Torna a l'inici",
     "calendar": "Calendari",
     "training": "El Meu Entrenament",
     "bookings": "Les Meves Reserves",
