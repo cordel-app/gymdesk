@@ -1048,7 +1048,7 @@ export default function MembershipPage() {
         {!pendingMembership && !catalogueOpen && (
           <div style={styles.emptyCard}>
             <div style={{ fontSize: 40, marginBottom: 12 }}>✦</div>
-            <h1 style={styles.emptyTitle}>{t('membership.title')}</h1>
+            <h2 style={styles.emptyTitle}>{t('membership.title')}</h2>
             <p style={styles.hint}>{t('membership.empty')}</p>
           </div>
         )}
@@ -1060,8 +1060,6 @@ export default function MembershipPage() {
 
   return (
     <main style={styles.container}>
-      <h1 style={styles.title}>{t('membership.title')}</h1>
-
       {/* #1122 §1 — Add plan above the current plan, and the plan awaiting
           its first payment while one exists. */}
       {renderPlansHeader()}
@@ -1274,7 +1272,6 @@ function StatusPill({ status, label }: { status: string; label: string }) {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   card: { ...sectionCardStyle, padding: 20 },
   cardHead: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 16 },
   planName: { margin: 0, fontSize: 20, fontWeight: 700, color: memberTheme.text },
