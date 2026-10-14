@@ -213,7 +213,10 @@ describe('a Draft bills nothing and books nothing', () => {
     expect(gate).not.toContain('FROM user_memberships');
     expect(gate).toContain('resolveMemberProfessionalServices');
     const loader = code(API_SRC, 'domain', 'memberProfessionalServices.ts');
-    const assignmentReads = loader.match(/FROM user_memberships um[\s\S]*?WHERE[^;]*?um\.status = 'active'/g) ?? [];
+    // #1196: the status filter is one constant — active, or cancelled but inside
+    // its paid-through date — never a status a Draft or Pending Payment row has.
+    expect(loader).toContain("const ENTITLED_ASSIGNMENT_SQL = \"(um.status = 'active' OR (um.status = 'cancelled' AND um.ends_at >= UTC_DATE()))\"");
+    const assignmentReads = loader.match(/FROM user_memberships um[\s\S]*?WHERE[^;]*?\$\{ENTITLED_ASSIGNMENT_SQL\}/g) ?? [];
     expect(assignmentReads).toHaveLength(3);
   });
 });
