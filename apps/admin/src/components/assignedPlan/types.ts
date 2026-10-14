@@ -270,6 +270,8 @@ export interface AssignedPlanDetail {
   base_price: string | number | null;
   /** The Membership Fee resolved for this assignment's current cycle (#635 stage 15). */
   membership_fee: number | null;
+  /** #1240: the regular fee quoted VAT-inclusive (and net), as the Plan card does; `null` with no price or rate. */
+  effective_price?: { amount_incl_tax: number; amount_excl_tax: number | null; tax_amount: number; applied_tax_rate: number | null } | null;
   discount_reason: string | null;
   discount_expires_at: string | null;
   starts_at: string;

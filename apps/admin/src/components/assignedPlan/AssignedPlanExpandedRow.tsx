@@ -413,7 +413,7 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
             {
               key: 'effective_price',
               label: t('detail_effective_price'),
-              value: fmtMoney(detail.snapshot?.membership_fee_price ?? detail.membership_fee),
+              value: fmtMoney(detail.effective_price?.amount_incl_tax ?? detail.snapshot?.membership_fee_price ?? detail.membership_fee),
             },
             detail.billing_policy && {
               key: 'billing_frequency',

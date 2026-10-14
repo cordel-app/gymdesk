@@ -51,7 +51,7 @@ export function AssignedPlanDetailsModal({ detail, onClose }: {
         {field(t('label_start_date'), fmtDay(detail.starts_at, gymFmt))}
         {field(t('label_end_date'), detail.ends_at ? fmtDay(detail.ends_at, gymFmt) : t('open_ended'))}
         {detail.closed_at && field(t('label_closure_date'), fmtDate(detail.closed_at, gymFmt))}
-        {field(t('detail_effective_price'), fmtMoney(detail.membership_fee))}
+        {field(t('detail_effective_price'), fmtMoney(detail.effective_price?.amount_incl_tax ?? detail.membership_fee))}
         {detail.billing_policy && field(
           t('label_billing_frequency'),
           cadenceFrequencyLabel(

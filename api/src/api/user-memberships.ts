@@ -7,6 +7,8 @@ import { ASSIGNMENT_CONFIG_JOIN, assignmentConfig, assignmentVersionId, withAssi
 import { cancelPendingSetForAssignment, linkInitialPaymentToSet, openInitialEventForAssignment, productSetIdForAssignment } from './product-set-bridge';
 import { setBillingDuration as psSetBillingDuration, setMembershipFeePrice as psSetMembershipFeePrice, setFeeBenefit as psSetFeeBenefit, writeBenefitSection as psWriteBenefitSection, addCoveredMember as psAddCoveredMember, removeCoveredMember as psRemoveCoveredMember } from './product-set-draft';
 import { Router } from 'express';
+import { selectPlanTaxRates } from '../domain/planTaxRate';
+import { computePriceFields } from './products';
 import { db, Tx } from '../infra/db';
 import { getTenantContext, requireRole, requireModuleWrite } from '../infra/tenantContext';
 import { parseQuery, z } from '../infra/validate';
@@ -479,6 +481,29 @@ async function computeBillingEventsView(gymId: string, um: {
   return selectPersistedBillingEventsInRange({ billingStart, endsAt, promotionWindows: windows, events });
 }
 
+async function assignedPlanEffectivePrice(gymId: string, planId: number | null, fee: unknown) {
+  if (fee == null || planId == null) return null;
+  const { rows: planRows } = await db.query<{ tax_rate_id: number | null; tax_behavior: string | null }>(
+    'SELECT tax_rate_id, tax_behavior FROM membership_plans WHERE id = ? AND gym_id = ?', [planId, gymId]);
+  const plan = planRows[0];
+  if (!plan) return null;
+  const { rows: taxRows } = await db.query<any>(
+    `SELECT id, name, rate_percent, is_system, deleted_at FROM tax_rates
+      WHERE gym_id = ? AND (id = ? OR (is_system = 1 AND deleted_at IS NULL))
+      ORDER BY is_system DESC, id ASC`, [gymId, plan.tax_rate_id]);
+  const { effective } = selectPlanTaxRates(taxRows, plan.tax_rate_id);
+  const f = computePriceFields({
+    amount: fee, tax_rate_percent: effective ? effective.rate_percent : null, tax_behavior: plan.tax_behavior,
+  });
+  if (f.amount_incl_tax == null) return null;
+  return {
+    amount_incl_tax: f.amount_incl_tax,
+    amount_excl_tax: f.amount_excl_tax,
+    tax_amount: parseFloat((f.amount_incl_tax - (f.amount_excl_tax ?? 0)).toFixed(2)),
+    applied_tax_rate: f.applied_tax_rate,
+  };
+}
+
 userMembershipsRouter.get('/:id', async (req, res) => {
   const { gymId } = getTenantContext(req);
   const { rows: rawRows } = await db.query(`${LIST_SELECT} WHERE um.id = ? AND um.gym_id = ?`, [req.params.id, gymId]);
@@ -517,9 +542,17 @@ userMembershipsRouter.get('/:id', async (req, res) => {
   // very loader the Member-level Billing Simulation uses, so it cannot price a
   // date differently from the nightly run.
   const billingEventSimulation = await assignedPlanBillingForecast(gymId, Number(um.id));
+  // #1240 — Effective Price is the contract's regular fee, quoted gross and net
+  // the way the Membership Plan card quotes its Current price: the Plan's tax
+  // rate (else the gym's system rate, `selectPlanTaxRates()`) and behaviour
+  // through `computePriceFields()`. Display only — nothing billed reads it.
+  const effectivePrice = await assignedPlanEffectivePrice(
+    gymId, um.membership_plan_id, (snapshot as any)?.membership_fee_price ?? membershipFee,
+  );
 
   res.json({
     ...um,
+    effective_price: effectivePrice,
     // The fee resolved for this assignment's current cycle (#635 stage 15) —
     // the read-only counterpart of `snapshot.membership_fee_price`, which is the
     // regular fee it is priced from and the one an edit writes.
