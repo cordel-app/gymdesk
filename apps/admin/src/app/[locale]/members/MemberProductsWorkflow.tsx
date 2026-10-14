@@ -58,7 +58,7 @@ export function ProductsWorkflowBar({
       ) : statusKey ? (
         <StatusBadge status={statusKey} label={t(`ps_status_${statusKey}` as any)} />
       ) : (
-        <span style={cardHintStyle}>{t('ps_status_none')}</span>
+        <StatusBadge status="none" label={t('ps_status_none')} />
       )}
       <span style={{ flex: 1 }} />
       <button
