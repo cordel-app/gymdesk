@@ -15,9 +15,11 @@
  * compiled script from the VPS.
  */
 import 'dotenv/config';
-import { db } from '../infra/db';
+import { db, type Tx } from '../infra/db';
 import {
   RESET_AUDIT_ENTITY_TYPES,
+  blockingReferences,
+  type TableReference,
   RESET_STEPS,
   evaluateResetGuard,
 } from '../domain/devBillingReset';
@@ -41,6 +43,46 @@ async function countAudit(): Promise<number> {
     [...RESET_AUDIT_ENTITY_TYPES],
   );
   return Number(rows[0]?.c ?? 0);
+}
+
+/** Every (table, column) with a foreign key to `target`, with how many rows use it. */
+async function referencesTo(tx: Tx, target: string): Promise<TableReference[]> {
+  const { rows } = await tx.query<{ t: string; c: string }>(
+    `SELECT table_name AS t, column_name AS c
+       FROM information_schema.key_column_usage
+      WHERE table_schema = DATABASE() AND referenced_table_schema = DATABASE()
+        AND referenced_table_name = ?`,
+    [target],
+  );
+  const out: TableReference[] = [];
+  for (const r of rows) {
+    const { rows: n } = await tx.query<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM \`${String(r.t)}\` WHERE \`${String(r.c)}\` IS NOT NULL`,
+    );
+    out.push({ table: String(r.t), column: String(r.c), rows: Number(n[0]?.n ?? 0) });
+  }
+  return out;
+}
+
+/**
+ * Empties a table whose cascade graph is too wide for MySQL (see
+ * `ResetStep.uncascaded`). Foreign-key checks are off only for this statement
+ * and are restored in `finally`; nothing is deleted while a row elsewhere still
+ * references the table, so no orphan can be left behind.
+ */
+async function deleteUncascaded(tx: Tx, table: string): Promise<number> {
+  const blocking = blockingReferences(table, await referencesTo(tx, table));
+  if (blocking.length > 0) {
+    const list = blocking.map((b) => `${b.table}.${b.column}=${b.rows}`).join(', ');
+    throw new Error(`Cannot delete ${table} without cascading: still referenced by ${list}`);
+  }
+  await tx.query('SET FOREIGN_KEY_CHECKS = 0');
+  try {
+    const { rowCount } = await tx.query(`DELETE FROM \`${table}\``);
+    return rowCount;
+  } finally {
+    await tx.query('SET FOREIGN_KEY_CHECKS = 1');
+  }
 }
 
 async function main() {
@@ -86,6 +128,10 @@ async function main() {
   const deleted = await db.transaction(async (tx) => {
     const out = new Map<string, number>();
     for (const s of steps) {
+      if (s.uncascaded) {
+        out.set(s.table, await deleteUncascaded(tx, s.table));
+        continue;
+      }
       const { rowCount } = await tx.query(`DELETE FROM \`${s.table}\``);
       out.set(s.table, rowCount);
     }

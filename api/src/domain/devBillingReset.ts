@@ -23,6 +23,36 @@ export interface ResetStep {
   reason: string;
   /** Skipped when the table does not exist yet (it is created by a later PR). */
   optional?: boolean;
+  /**
+   * Deleted with `FOREIGN_KEY_CHECKS = 0` so MySQL does not walk the table's
+   * cascade graph. `product_sets` is referenced (ON DELETE CASCADE) by enough
+   * tables — and through `billing_events` by their children — that a plain
+   * `DELETE` fails with "Foreign key cascade delete/update exceeds max tables
+   * limit of 30" even when every child is already empty. That is only safe when
+   * nothing still references the table, which the script verifies first with
+   * `blockingReferences()` and aborts the whole transaction otherwise.
+   */
+  uncascaded?: boolean;
+}
+
+export interface TableReference {
+  /** The referencing table. */
+  table: string;
+  column: string;
+  /** Rows of that table whose `column` is not NULL. */
+  rows: number;
+}
+
+/**
+ * The references that make an uncascaded delete unsafe: a row elsewhere still
+ * points at the table being emptied. The table's own self-reference (a version
+ * chain's `root_product_set_id`) is fine — those rows go in the same statement.
+ */
+export function blockingReferences(
+  target: string,
+  references: readonly TableReference[],
+): TableReference[] {
+  return references.filter((r) => r.table.toLowerCase() !== target.toLowerCase() && r.rows > 0);
 }
 
 /** Children before parents, so no statement depends on a cascade. */
@@ -44,7 +74,7 @@ export const RESET_STEPS: readonly ResetStep[] = [
   { table: 'product_set_members', reason: 'ProductSet rows created since PR 1', optional: true },
   { table: 'product_set_plan_snapshots', reason: 'ProductSet rows created since PR 1', optional: true },
   { table: 'product_set_schedules', reason: 'ProductSet rows created since PR 1', optional: true },
-  { table: 'product_sets', reason: 'ProductSet rows created since PR 1', optional: true },
+  { table: 'product_sets', reason: 'ProductSet rows created since PR 1', optional: true, uncascaded: true },
 ];
 
 /**
