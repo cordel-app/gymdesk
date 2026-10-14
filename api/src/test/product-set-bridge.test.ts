@@ -198,6 +198,29 @@ describe('an edit of a projected assignment is a new version (#1325 PR 5)', () =
     expect((await setsOf(memberId)).length).toBe(1);
   });
 
+  it('cancelling a paid plan keeps it to the end of the paid period and deletes only the future events (#1196)', async () => {
+    const memberId = await member();
+    const umId = await assign(memberId, await plan(30));
+    await auth(request.post(`/user-memberships/${umId}/save-and-pay`)).send({});
+    expect((await auth(request.post(`/user-memberships/${umId}/record-payment`)).send({})).status).toBe(200);
+    const [v1] = await setsOf(memberId);
+    const before = await scheduled(v1.id);
+    expect(before.some((e: any) => e.billing_date > TODAY)).toBe(true);
+
+    expect((await auth(request.post(`/user-memberships/${umId}/close`)).send({ confirm: true })).status).toBe(200);
+
+    const { rows } = await db.query<any>('SELECT status, ends_at FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows[0].status).toBe('cancelled');
+    // Entitled past today (the cash payment covered the first period), and no
+    // renewal is left to be generated or charged.
+    expect((rows[0].ends_at instanceof Date ? rows[0].ends_at.toISOString() : String(rows[0].ends_at)).slice(0, 10) >= TODAY).toBe(true);
+    expect((await scheduled(v1.id)).filter((e: any) => e.billing_date > TODAY)).toHaveLength(0);
+    // The paid first-period event is history and stays.
+    const { rows: paid } = await db.query<any>(
+      "SELECT id FROM billing_events WHERE product_set_id = ? AND event_type = 'payment_recorded'", [v1.id]);
+    expect(paid.length).toBeGreaterThan(0);
+  });
+
   it('closing the plan retires it: an empty version, the assignment closed, nothing left to bill', async () => {
     const { memberId, umId } = await activePlan(0);
     const [v1] = await setsOf(memberId);

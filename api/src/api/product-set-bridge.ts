@@ -1,3 +1,5 @@
+import { loadPaidThrough } from './cancellation-entitlement';
+import { cancellationEndDate } from '../domain/cancellationEntitlement';
 import { Tx } from '../infra/db';
 import { SYSTEM_ACTOR } from '../domain/auditActor';
 import { ASSIGNMENT_CADENCE } from './assigned-plan-snapshot';
@@ -381,9 +383,21 @@ export async function retireProjected(
 ): Promise<ReconfigureOutcome> {
   const set = await projectedSetFor(tx, input.gymId, input.userMembershipId);
   if (!set) return { kind: 'not_projected' };
+  // #1196: the plan-less version starts on the day entitlement ends — the end of
+  // the last paid period, or yesterday when nothing was paid — and the
+  // projection closes the assignment with that as its `ends_at`.
+  const { rows: info } = await tx.query<any>(
+    `SELECT ps.root_product_set_id, um.starts_at AS um_starts_at, ps.starts_at AS set_starts_at
+       FROM product_sets ps LEFT JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+      WHERE ps.id = ? AND ps.gym_id = ?`, [set.id, input.gymId]);
+  const paidThrough = await loadPaidThrough(tx, input.gymId, Number(info[0].root_product_set_id));
+  const endsOn = cancellationEndDate({
+    paidThrough, today: todayUtc(),
+    assignmentStart: dateOnly(info[0].um_starts_at ?? info[0].set_starts_at) as string,
+  });
   const created = await createDraft(tx, {
     gymId: input.gymId, ownerMemberId: set.owner_member_id, membershipPlanId: null,
-    startsAt: todayUtc(), actor: input.actor,
+    startsAt: endsOn, actor: input.actor,
   });
   if (created.kind === 'in_flight') return { kind: 'in_flight', productSetId: created.productSetId };
   const out = await activateWithEvents(tx, { gymId: input.gymId, productSetId: created.productSet.id, today: todayUtc(), actor: input.actor.name });

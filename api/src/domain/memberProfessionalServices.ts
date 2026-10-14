@@ -53,6 +53,14 @@ import { applyAdjustmentsToGrants, netAdjustments, MANUAL_ADJUSTMENT_KIND } from
  * `sources` so a caller that needs the underlying balance can see it.
  */
 
+/**
+ * #1196: an assignment grants its sessions while it is `active` and, once
+ * cancelled, until the paid-through date it was closed with (`ends_at`,
+ * inclusive). Wallet kinds that belong to no assignment (a purchased package, a
+ * staff correction) are untouched and stay open indefinitely.
+ */
+const ENTITLED_ASSIGNMENT_SQL = "(um.status = 'active' OR (um.status = 'cancelled' AND um.ends_at >= UTC_DATE()))";
+
 export type ProfessionalServiceGrantKind =
   | 'class_package'
   | 'promotion_session'
@@ -210,7 +218,7 @@ export async function loadMemberProfessionalServiceGrants(
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps
        ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
-     WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'`,
+     WHERE um.gym_id = ? AND um.member_id = ? AND ${ENTITLED_ASSIGNMENT_SQL}`,
     [gymId, memberId],
   );
 
@@ -235,7 +243,7 @@ export async function loadMemberProfessionalServiceGrants(
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps
        ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
-     WHERE um.gym_id = ? AND um.member_id = ? AND um.status = 'active'
+     WHERE um.gym_id = ? AND um.member_id = ? AND ${ENTITLED_ASSIGNMENT_SQL}
        AND umsv.starts_at <= UTC_DATE()
        AND (umsv.ends_at IS NULL OR umsv.ends_at >= UTC_DATE())`,
     [gymId, memberId],
@@ -260,7 +268,7 @@ export async function loadMemberProfessionalServiceGrants(
        ON ps.id = sips.professional_service_id AND ps.deleted_at IS NULL
      JOIN gym_professional_services gps
        ON gps.professional_service_id = ps.id AND gps.gym_id = um.gym_id AND gps.status = 'active'
-     WHERE um.gym_id = ? AND um.status = 'active'
+     WHERE um.gym_id = ? AND ${ENTITLED_ASSIGNMENT_SQL}
        AND (um.member_id = ?
             OR EXISTS (SELECT 1 FROM user_membership_members umm
                        WHERE umm.user_membership_id = um.id AND umm.member_id = ?))
