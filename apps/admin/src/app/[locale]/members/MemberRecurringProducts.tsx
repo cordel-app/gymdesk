@@ -32,8 +32,11 @@ import { editableLines, recurringState, type EditableLine } from './recurringPro
 interface Detail { configuration?: Parameters<typeof editableLines>[0] }
 
 export function MemberRecurringProducts({
-  memberId, current, reloadKey, canWrite, isAdmin, onChanged,
+  memberId, current, reloadKey, canWrite, isAdmin, onChanged, reviewing, onReviewingChange,
 }: {
+  /** #1613 — the review modal is opened by the tab's one global Save & Pay. */
+  reviewing: boolean;
+  onReviewingChange: (open: boolean) => void;
   memberId: number;
   /** The in-flight version, else the Active one (`current_product_set`). */
   current: ProductSetSummary | null;
@@ -55,7 +58,6 @@ export function MemberRecurringProducts({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
 
@@ -213,11 +215,6 @@ export function MemberRecurringProducts({
           {state.canStartEdit && (
             <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={startEdit}>{t('edit')}</button>
           )}
-          {state.canSaveAndPay && (
-            <button type="button" style={primaryBtnSmall()} disabled={busy} onClick={() => setReviewing(true)}>
-              {t('add_product_save_and_pay')}
-            </button>
-          )}
           {state.canCancel && (
             <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={() => setConfirmCancel(true)}>
               {t('recurring_cancel')}
@@ -231,9 +228,9 @@ export function MemberRecurringProducts({
         <ReviewChangesModal
           productSetId={setId}
           open={reviewing}
-          onClose={() => setReviewing(false)}
+          onClose={() => onReviewingChange(false)}
           onCommitted={({ activated, checkoutUrl: url }) => {
-            setReviewing(false);
+            onReviewingChange(false);
             setCheckoutUrl(url);
             setNotice(activated ? t('add_product_activated') : null);
             onChanged();

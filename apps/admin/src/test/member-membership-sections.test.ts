@@ -38,7 +38,7 @@ const inFlightSrc = read('ProductSetsInFlight.tsx');
 const simulationSrc = read('MemberBillingSimulation.tsx');
 
 const SECTION_KEYS = [
-  'section_membership_plans',
+  'section_membership_plan',
   'section_additional_services',
   'section_billing_simulation',
 ];

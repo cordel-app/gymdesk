@@ -14,10 +14,13 @@ import { useApiClient } from '@/lib/apiClient';
 import { cardHintStyle } from '@/components/formChrome';
 import type { BillingEventSimulationData } from '@/components/BillingEventSimulation';
 import { ProductSetForecast } from './MemberProductSet';
+import { withoutZeroRows } from './productsWorkflowView';
 
 export function ProposedSetForecast({ productSetId }: { productSetId: number | null }) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
+  // #1613 — display only: hides rows charging zero, changes no data.
+  const [hideZero, setHideZero] = useState(false);
   const [state, setState] = useState<{ loading: boolean; error: boolean; forecast: BillingEventSimulationData | null }>(
     { loading: false, error: false, forecast: null },
   );
@@ -40,7 +43,11 @@ export function ProposedSetForecast({ productSetId }: { productSetId: number | n
   return (
     <div data-new-billing-event-simulation>
       <p style={cardHintStyle}>{t('new_simulation_projected')}</p>
-      <ProductSetForecast forecast={state.forecast} loading={state.loading} error={state.error} />
+      <label style={{ ...cardHintStyle, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input type="checkbox" data-hide-zero-toggle checked={hideZero} onChange={(e) => setHideZero(e.target.checked)} />
+        {t('simulation_hide_zero')}
+      </label>
+      <ProductSetForecast forecast={withoutZeroRows(state.forecast, hideZero)} loading={state.loading} error={state.error} />
     </div>
   );
 }

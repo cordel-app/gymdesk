@@ -31,8 +31,10 @@ import {
 } from './MemberPurchasedProducts';
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
-import { ProductSetForecast, useProductSetDetail } from './MemberProductSet';
+import { useProductSetDetail } from './MemberProductSet';
 import { ProposedSetForecast } from './ProposedSetForecast';
+import { ProductsWorkflowBar, useDraftReview } from './MemberProductsWorkflow';
+import { billingMode, pendingOneOffCount, saveAndPayTarget } from './productsWorkflowView';
 import { MemberRecurringProducts } from './MemberRecurringProducts';
 import { MemberProgress } from './MemberProgress';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
@@ -180,7 +182,17 @@ export function MemberExpandedRow({
   // the Promotion snapshot it was bought under.
   const [purchasedProducts, setPurchasedProducts] = useState<PurchasedProduct[]>([]);
   // #1537: the Draft is the member's own in-flight version (created on first use).
-  const draftSetId = configuration.current_product_set?.status === 'draft' ? configuration.current_product_set.id : null;
+  // #1613 — the in-flight version (Draft or awaiting payment) whose simulation is shown.
+  const inFlightSetId = ['draft', 'pending_payment'].includes(configuration.current_product_set?.status ?? '') && !configuration.current_product_set?.expired
+    ? configuration.current_product_set!.id : null;
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const draftReview = useDraftReview(configuration.current_product_set, configuration);
+  const workflow = {
+    current: configuration.current_product_set,
+    review: draftReview,
+    pendingOneOffs: pendingOneOffCount(purchasedProducts),
+  };
+  const billingSectionMode = billingMode(workflow);
 
   useEffect(() => {
     if (loadedRef.current) return;
@@ -450,7 +462,19 @@ export function MemberExpandedRow({
 
           {/* 1. MEMBERSHIP PLANS — the Member's assigned plans, Active and Past,
               drawn with the Assigned Plans page's own table (#1051). */}
-          <Section label={t('members.section_membership_plans')} divider={false}>
+          <ProductsWorkflowBar
+            current={configuration.current_product_set}
+            loading={productSetDetail.loading}
+            error={productSetDetail.error}
+            workflow={workflow}
+            canWrite={canWriteMembers && canManagePackages}
+            onSaveAndPay={() => {
+              const target = saveAndPayTarget(workflow);
+              if (target === 'review') setReviewOpen(true);
+              else if (target === 'purchases') document.getElementById('member-products-section')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+          />
+          <Section label={t('members.section_membership_plan')} divider={false}>
             <span id="member-membership-plans-section" />
             <MemberMembershipPlans
               memberId={memberId}
@@ -482,8 +506,11 @@ export function MemberExpandedRow({
           {/* 2. RECURRING PRODUCTS (#1537) — the member's recurring
               configuration: Active or Draft, edited as one Draft and committed
               by the one global Save & Pay (behind Review your changes). */}
-          <Section label={t('members.section_recurring_products')} hideLabel>
+          <Section label={t('members.section_additional_services')}>
+            <span id="member-products-section" />
             <MemberRecurringProducts
+              reviewing={reviewOpen}
+              onReviewingChange={setReviewOpen}
               memberId={memberId}
               current={configuration.current_product_set}
               reloadKey={configuration}
@@ -491,7 +518,6 @@ export function MemberExpandedRow({
               isAdmin={isAdmin}
               onChanged={reloadProducts}
             />
-          </Section>
 
           {/* 3. PRODUCTS (#1521) — the Products this Member purchased, as one
               collapsible card: what they bought, under which price, tax and
@@ -500,7 +526,6 @@ export function MemberExpandedRow({
               Products cards that preceded it showed the ProductSet's
               configuration instead (#1463, #1490). The recurring services
               staff attach to an Assigned Plan are that plan's own section. */}
-          <Section label={t('members.section_additional_services')} hideLabel>
             <MemberPurchasedProducts
               items={purchasedProducts}
               memberId={memberId}
@@ -511,26 +536,16 @@ export function MemberExpandedRow({
             />
           </Section>
 
-          {/* #1521 — the resulting billing events if the proposed Draft became
-              the member's: a forecast only, created and charged by nothing. */}
-          <Section label={t('members.section_new_billing_event_simulation')}>
-            <ProposedSetForecast productSetId={draftSetId} />
-          </Section>
-
-          {/* #1463 — the current ProductSet's Billing Events Forecast: computed on
-              read, persisted nowhere, creates no Billing Event. #1521: directly
-              below Products. */}
-          <Section label={t('members.section_billing_events_forecast')}>
-            <ProductSetForecast forecast={productSetDetail.forecast} loading={productSetDetail.loading} error={productSetDetail.error} />
-          </Section>
-
-          {/* Billing Simulation (#629) — a section of its own, never nested inside
-              a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
-          <Section label={t('members.section_billing_simulation')}>
-            <MemberBillingSimulation key={simulationKey} memberId={memberId} />
-          </Section>
-
-          {/* Billing Events */}
+          {/* #1613 — one billing section. While billing-affecting changes are
+              pending (the server's review diff, a version awaiting payment or a
+              pending one-off) it is the proposed configuration's simulation;
+              otherwise it is the persisted ledger. */}
+          {billingSectionMode === 'simulation' && (
+            <Section label={t('members.section_billing_event_simulation')}>
+              <ProposedSetForecast productSetId={inFlightSetId} />
+            </Section>
+          )}
+          {billingSectionMode === 'events' && (
           <Section label={t('members.section_billing_events')}>
             {billingEvents.length === 0 ? (
               <p style={dim}>{t('members.no_billing_events')}</p>
@@ -595,6 +610,14 @@ export function MemberExpandedRow({
               </div>
             )}
           </Section>
+          )}
+
+          {/* Billing Simulation (#629) — a section of its own, never nested inside
+              a Membership Plan card (#634 §13). Read-only: it persists nothing. */}
+          <Section label={t('members.section_billing_simulation')}>
+            <MemberBillingSimulation key={simulationKey} memberId={memberId} />
+          </Section>
+
 
         </>
       )}

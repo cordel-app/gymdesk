@@ -43,10 +43,9 @@ export type MemberTabId = (typeof MEMBER_TAB_IDS)[number];
 /** A `members.section_*` locale key — the heading of one section of the card. */
 export type MemberSectionKey =
   | 'section_profile'
-  | 'section_billing_events_forecast'
-  | 'section_new_billing_event_simulation'
   | 'section_account'
-  | 'section_membership_plans'
+  | 'section_membership_plan'
+  | 'section_billing_event_simulation'
   | 'section_recurring_products'
   | 'section_additional_services'
   | 'section_billing_simulation'
@@ -80,14 +79,14 @@ export const MEMBER_TABS: readonly MemberTab[] = [
     // Current Product Set and One-off Products cards of #1463/#1490 are gone
     // from the UI; their data and endpoints are untouched.
     sections: [
-      'section_membership_plans',
+      'section_membership_plan',
       // #1537 — the recurring configuration (Active / Draft) and its one Save & Pay.
-      'section_recurring_products',
       'section_additional_services',
-      'section_new_billing_event_simulation',
-      'section_billing_events_forecast',
-      'section_billing_simulation',
+      // #1613 — one billing section: BILLING EVENT SIMULATION while billing-
+      // affecting changes are pending, else the persisted BILLING EVENTS.
+      'section_billing_event_simulation',
       'section_billing_events',
+      'section_billing_simulation',
     ],
   },
   {
