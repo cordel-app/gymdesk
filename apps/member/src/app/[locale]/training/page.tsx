@@ -449,7 +449,7 @@ const styles: Record<string, React.CSSProperties> = {
   exerciseSquare: { width: '100%', display: 'flex', flexDirection: 'column', gap: 8, boxSizing: 'border-box' },
   exerciseMedia: { display: 'block', width: '100%' },
   exerciseInfo: { display: 'flex', flexDirection: 'column', gap: 2, width: '100%' },
-  registerBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '8px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
+  registerBtn: { ...primaryButtonStyle, display: 'block', boxSizing: 'border-box', maxWidth: '100%', width: '100%', margin: '8px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   exerciseNameRow: { display: 'flex', alignItems: 'center', gap: 8 },
   playBtn: { flex: '0 0 auto', width: 28, height: 28, borderRadius: '50%', padding: 0, border: 'none', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, lineHeight: 1, textDecoration: 'none', background: memberTheme.primaryButton, color: memberTheme.primaryButtonText },
   exerciseName: { fontSize: 15, fontWeight: 600, color: memberTheme.text },
