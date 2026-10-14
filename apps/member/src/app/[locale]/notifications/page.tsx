@@ -119,7 +119,6 @@ export default function NotificationsPage() {
   return (
     <main style={styles.container}>
       <div style={styles.header}>
-        <h1 style={styles.title}>{t('title')}</h1>
         {unread > 0 && (
           <button style={styles.markAllBtn} onClick={markAllRead} disabled={marking}>
             {t('mark_all_read')}
@@ -190,8 +189,7 @@ export default function NotificationsPage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto', paddingBottom: 80 },
-  header: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 },
-  title: { margin: 0, fontSize: 22, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
+  header: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 16 },
   markAllBtn: {
     ...secondaryButtonStyle,
     padding: '6px 12px', fontSize: 13, fontWeight: 500,

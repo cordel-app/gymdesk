@@ -498,7 +498,6 @@ export default function GoalsPage() {
 
   return (
     <main style={styles.container}>
-      <h1 style={styles.title}>{t('goals.title')}</h1>
 
       {notice && <p style={{ ...noticeStyle('success'), marginBottom: 14 }}>{notice}</p>}
 

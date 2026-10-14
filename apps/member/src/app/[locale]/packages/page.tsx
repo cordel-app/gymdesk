@@ -61,7 +61,6 @@ export default function PackagesPage() {
 
   return (
     <main style={styles.container}>
-      <h1 style={styles.title}>{t('packages.title')}</h1>
 
       {active.length === 0 ? (
         <div style={styles.emptyCard}>
