@@ -160,7 +160,6 @@ export default function NutritionPage() {
 
   return (
     <main style={styles.container} onTouchStart={(e) => setTouchStart({ x: e.touches[0].clientX, y: e.touches[0].clientY })} onTouchEnd={onTouchEnd}>
-      <h1 style={styles.title}>{t('nutrition.title')}</h1>
 
       {message && <p style={{ ...styles.hint, color: memberTheme.statusError, margin: '0 0 12px' }}>{message}</p>}
 

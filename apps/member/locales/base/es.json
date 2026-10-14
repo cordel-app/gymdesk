@@ -30,6 +30,7 @@
     "no_nutrition_today": "Sin plan de nutrición para hoy."
   },
   "nav": {
+    "back_home": "Volver al inicio",
     "calendar": "Calendario",
     "training": "Mi Entrenamiento",
     "bookings": "Mis Reservas",

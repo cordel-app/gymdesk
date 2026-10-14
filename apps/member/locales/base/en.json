@@ -30,6 +30,7 @@
     "no_nutrition_today": "No nutrition plan for today."
   },
   "nav": {
+    "back_home": "Back to home",
     "calendar": "Calendar",
     "training": "My Training",
     "bookings": "My Bookings",

@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1601 (Members App subsections: the top bar now carries the large Title 1 heading beside the back arrow — wrapping on narrow screens, bell and avatar kept at the right — and the pages no longer draw a second heading, saving a row of vertical space; presentation only, no API or migration)
 - **Done**: #1240 (stage 3: an Assigned Plan's Effective Price reads VAT-inclusive, like the Membership Plan card's Current price — `GET /user-memberships/:id` reports `effective_price` (`amount_incl_tax`, `amount_excl_tax`, `tax_amount`) from the frozen regular fee through `selectPlanTaxRates()` + `computePriceFields()`, and the card and Details modal show the gross figure; display only, no billing, discount or schema change)
 - **Done**: #1575 (responsive cards: one shared `CardGrid` (container-width driven, 1/2/3/4 columns, no overflow) and `CardSquareImage` (1:1, `object-fit: cover`, placeholder in the same square) replace the Exercise card's own grid and 4:3 image, and the Activities cards view now uses them, showing the activity image as a square above the header; presentation only, no API or migration)
 - **Done**: #1579 (Members App → My Training: the Register button on an exercise card is `box-sizing: border-box` and capped at its card, so its padding no longer pushes it past the card content width on any viewport; styling and registration behaviour unchanged)

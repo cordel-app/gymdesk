@@ -187,7 +187,6 @@ export default function ProfilePage() {
 
   return (
     <main style={styles.container}>
-      <h1 style={styles.title}>{t('profile.title')}</h1>
 
       {toast && <div style={styles.toast}>{toast}</div>}
 

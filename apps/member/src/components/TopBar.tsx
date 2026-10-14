@@ -78,9 +78,15 @@ export function TopBar() {
       // the five variables and lib/memberChrome.ts is where this app reads
       // them (#983). Before #833 the bar borrowed `--gd-sidebar-bg`, which is
       // the Admin sidebar's colour and was never the header's.
-      background: memberTheme.headerBackground,
-      color: memberTheme.headerText,
-      fontFamily: memberTheme.headerFont,
+      //
+      // #1601: a subsection's bar carries the page's large title beside the back arrow
+      // (the pages draw no heading of their own), in the Title 1 theme settings. That
+      // colour is a page-text colour, so the bar is transparent there rather than
+      // painting the header background behind it; Home keeps the header colours.
+      background: isHome ? memberTheme.headerBackground : 'transparent',
+      color: isHome ? memberTheme.headerText : memberTheme.title1,
+      fontFamily: isHome ? memberTheme.headerFont : memberTheme.title1Font,
+      gap: 12,
       // #1565: no separator under a subsection header — the page starts right below it.
     }}>
       {isHome ? (
@@ -94,13 +100,20 @@ export function TopBar() {
           )}
         </div>
       ) : (
-        <button
-          onClick={() => router.push(homePath)}
-          style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, padding: 0, color: 'inherit', fontFamily: 'inherit', fontSize: 14, fontWeight: 600 }}
-        >
-          <span style={{ fontSize: 18 }}>←</span>
-          {sectionTitleKey && <span>{t(sectionTitleKey)}</span>}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+          <button
+            onClick={() => router.push(homePath)}
+            aria-label={t('nav.back_home')}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'inherit', fontFamily: 'inherit', fontSize: 24, lineHeight: 1, flexShrink: 0 }}
+          >
+            ←
+          </button>
+          {sectionTitleKey && (
+            <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, lineHeight: 1.2, color: 'inherit', fontFamily: 'inherit', minWidth: 0, overflowWrap: 'anywhere' }}>
+              {t(sectionTitleKey)}
+            </h1>
+          )}
+        </div>
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

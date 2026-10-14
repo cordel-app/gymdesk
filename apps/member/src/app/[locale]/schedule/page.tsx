@@ -162,7 +162,6 @@ export default function MemberSchedulePage() {
 
   return (
     <main style={styles.container}>
-      <h1 style={styles.title}>{t('member_schedule.title')}</h1>
 
       {message && <div style={styles.message}>{message}</div>}
 
@@ -305,7 +304,6 @@ export default function MemberSchedulePage() {
 
 const styles: Record<string, React.CSSProperties> = {
   container: { padding: 16, maxWidth: 720, margin: '0 auto' },
-  title: { margin: '8px 0 16px', fontSize: 24, fontWeight: 700, color: memberTheme.title1, fontFamily: memberTheme.title1Font },
   message: { ...noticeStyle('success'), marginBottom: 16 },
   cancelNotice: { ...noticeStyle('warning'), fontSize: 13, flex: 1 },
   sectionHead: { margin: '0 0 8px', fontSize: 16, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font },
