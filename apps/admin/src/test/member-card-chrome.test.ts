@@ -40,6 +40,8 @@ const CARD_FILES = [
   'MemberPurchasedProducts.tsx',
   // #1537: the recurring configuration section and its Review modal.
   'MemberRecurringProducts.tsx',
+  // #1613: the PS Status bar and the global Save & Pay.
+  'MemberProductsWorkflow.tsx',
   'AddProductPurchase.tsx',
   'MemberProfessionalServices.tsx',
   'MemberBillingSimulation.tsx',

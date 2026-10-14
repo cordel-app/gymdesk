@@ -20,7 +20,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import {
-  cardHintStyle, cardSectionLabelStyle, formControlStyle, formErrorStyle, inlineActionsRowStyle, innerCardStyle,
+  cardHintStyle, formControlStyle, formErrorStyle, inlineActionsRowStyle, innerCardStyle,
   secondaryBtnSmall,
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
@@ -32,8 +32,11 @@ import { editableLines, recurringState, type EditableLine } from './recurringPro
 interface Detail { configuration?: Parameters<typeof editableLines>[0] }
 
 export function MemberRecurringProducts({
-  memberId, current, reloadKey, canWrite, isAdmin, onChanged,
+  memberId, current, reloadKey, canWrite, isAdmin, onChanged, reviewing, onReviewingChange,
 }: {
+  /** #1613 — the review modal is opened by the tab's one global Save & Pay. */
+  reviewing: boolean;
+  onReviewingChange: (open: boolean) => void;
   memberId: number;
   /** The in-flight version, else the Active one (`current_product_set`). */
   current: ProductSetSummary | null;
@@ -55,7 +58,6 @@ export function MemberRecurringProducts({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [reviewing, setReviewing] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [checkoutUrl, setCheckoutUrl] = useState<string | null>(null);
 
@@ -132,16 +134,16 @@ export function MemberRecurringProducts({
   });
 
   const dash = '—';
-  const chipLabel = state.chip === 'draft' ? t('recurring_status_draft') : t('recurring_status_active');
 
   return (
     <div style={innerCardStyle} data-recurring-products data-recurring-status={state.chip ?? 'none'}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div style={{ ...cardSectionLabelStyle, margin: 0 }}>{t('recurring_products_title')}:</div>
-        {state.chip ? <StatusBadge status={state.chip} label={chipLabel} /> : <span style={cardHintStyle}>{t('recurring_status_none')}</span>}
-        {state.paymentPending && <span style={cardHintStyle}>{t('recurring_payment_pending')}</span>}
-        {state.expired && <span style={cardHintStyle}>{t('recurring_expired')}</span>}
-      </div>
+      {/* #1613 — the title and status chip are gone: the tab's PS Status chip says it. */}
+      {(state.paymentPending || state.expired) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+          {state.paymentPending && <span style={cardHintStyle}>{t('recurring_payment_pending')}</span>}
+          {state.expired && <span style={cardHintStyle}>{t('recurring_expired')}</span>}
+        </div>
+      )}
 
       {state.chip == null && <p style={cardHintStyle}>{t('recurring_empty')}</p>}
       {state.chip != null && loading && <p style={cardHintStyle}>{t('product_set_loading')}</p>}
@@ -213,11 +215,6 @@ export function MemberRecurringProducts({
           {state.canStartEdit && (
             <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={startEdit}>{t('edit')}</button>
           )}
-          {state.canSaveAndPay && (
-            <button type="button" style={primaryBtnSmall()} disabled={busy} onClick={() => setReviewing(true)}>
-              {t('add_product_save_and_pay')}
-            </button>
-          )}
           {state.canCancel && (
             <button type="button" style={secondaryBtnSmall} disabled={busy} onClick={() => setConfirmCancel(true)}>
               {t('recurring_cancel')}
@@ -231,9 +228,9 @@ export function MemberRecurringProducts({
         <ReviewChangesModal
           productSetId={setId}
           open={reviewing}
-          onClose={() => setReviewing(false)}
+          onClose={() => onReviewingChange(false)}
           onCommitted={({ activated, checkoutUrl: url }) => {
-            setReviewing(false);
+            onReviewingChange(false);
             setCheckoutUrl(url);
             setNotice(activated ? t('add_product_activated') : null);
             onChanged();
