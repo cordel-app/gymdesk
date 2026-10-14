@@ -3,7 +3,7 @@ import {
   DRAFT_TTL_MINUTES, canCancelPending, canTransition, isDraftExpired, isInFlight, isProductSetStatus,
 } from '../domain/productSet';
 import {
-  RESET_AUDIT_ENTITY_TYPES, RESET_CONFIRMATION, RESET_STEPS, evaluateResetGuard,
+  RESET_AUDIT_ENTITY_TYPES, RESET_CONFIRMATION, RESET_STEPS, blockingReferences, evaluateResetGuard,
 } from '../domain/devBillingReset';
 
 describe('ProductSet lifecycle (#1325)', () => {
@@ -71,6 +71,28 @@ describe('development billing reset (#1325)', () => {
       'payment_methods', 'receipt_sequences', 'audit_logs', 'gyms', 'centers']) {
       expect(order).not.toContain(kept);
     }
+  });
+
+  it('deletes product_sets uncascaded — and nothing else — because its cascade graph exceeds MySQL\'s 30-table limit', () => {
+    expect(RESET_STEPS.filter((s) => s.uncascaded).map((s) => s.table)).toEqual(['product_sets']);
+    const order = RESET_STEPS.map((s) => s.table);
+    // Every table that references product_sets is emptied before it.
+    for (const child of ['billing_events', 'product_set_schedules', 'product_set_plan_snapshots',
+      'product_set_members', 'user_membership_session', 'user_membership_oneoff',
+      'user_membership_periodical', 'member_products_recurrent_snapshot', 'user_membership_promotions']) {
+      expect(order.indexOf(child)).toBeGreaterThanOrEqual(0);
+      expect(order.indexOf(child)).toBeLessThan(order.indexOf('product_sets'));
+    }
+  });
+
+  it('refuses an uncascaded delete while another table still references the rows', () => {
+    const refs = [
+      { table: 'product_sets', column: 'root_product_set_id', rows: 4 }, // its own chain: fine
+      { table: 'billing_events', column: 'product_set_id', rows: 0 },
+      { table: 'some_new_table', column: 'product_set_id', rows: 2 },
+    ];
+    expect(blockingReferences('product_sets', refs)).toEqual([refs[2]]);
+    expect(blockingReferences('product_sets', refs.slice(0, 2))).toEqual([]);
   });
 
   it('removes the audit rows of the removed entities and of no catalogue', () => {
