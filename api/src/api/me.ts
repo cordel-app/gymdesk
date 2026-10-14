@@ -1551,7 +1551,10 @@ meRouter.post('/nutrition-requirement-logs', requireRole('member'), requireFeatu
     if (!owned) return res.status(403).json({ error: 'You can only log items of your own nutrition plan.' });
     const today = gymToday(new Date(), await gymTimeZone(gymId));
     if (!canCompleteOn(loggedDate, today)) return res.status(400).json({ error: 'A future day cannot be marked as done.' });
-    const { rowCount } = await db.query(
+    const itemKey = goalId !== null ? `g${goalId}` : `r${restrictionId}`;
+    // affectedRows is unreliable for ON DUPLICATE KEY (an unchanged row can still count as 1), so "created" is read beforehand.
+    const existing = await db.query(`${REQUIREMENT_LOG_SELECT} AND item_key = ? AND logged_date = ?`, [gymId, memberId, itemKey, loggedDate]);
+    await db.query(
       `INSERT INTO nutrition_requirement_logs (gym_id, member_id, goal_id, restriction_id, logged_date, level)
        VALUES (?, ?, ?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE level = IF(level = 'partial' AND VALUES(level) = 'done', 'done', level),
@@ -1560,9 +1563,9 @@ meRouter.post('/nutrition-requirement-logs', requireRole('member'), requireFeatu
     );
     const { rows } = await db.query(
       `${REQUIREMENT_LOG_SELECT} AND item_key = ? AND logged_date = ?`,
-      [gymId, memberId, goalId !== null ? `g${goalId}` : `r${restrictionId}`, loggedDate],
+      [gymId, memberId, itemKey, loggedDate],
     );
-    res.status(rowCount === 1 ? 201 : 200).json(rows[0]);
+    res.status(existing.rows.length === 0 ? 201 : 200).json(rows[0]);
   } catch (err: any) {
     if (err.status) return res.status(err.status).json({ error: err.message });
     next(err);
