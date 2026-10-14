@@ -20,7 +20,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { BILLING_FREQUENCY_NAMESPACE, billingFrequencyLabel } from '@/lib/billingFrequency';
 import {
-  cardHintStyle, cardSectionLabelStyle, formControlStyle, formErrorStyle, inlineActionsRowStyle, innerCardStyle,
+  cardHintStyle, formControlStyle, formErrorStyle, inlineActionsRowStyle, innerCardStyle,
   secondaryBtnSmall,
 } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
@@ -134,16 +134,16 @@ export function MemberRecurringProducts({
   });
 
   const dash = '—';
-  const chipLabel = state.chip === 'draft' ? t('recurring_status_draft') : t('recurring_status_active');
 
   return (
     <div style={innerCardStyle} data-recurring-products data-recurring-status={state.chip ?? 'none'}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-        <div style={{ ...cardSectionLabelStyle, margin: 0 }}>{t('recurring_products_title')}:</div>
-        {state.chip ? <StatusBadge status={state.chip} label={chipLabel} /> : <span style={cardHintStyle}>{t('recurring_status_none')}</span>}
-        {state.paymentPending && <span style={cardHintStyle}>{t('recurring_payment_pending')}</span>}
-        {state.expired && <span style={cardHintStyle}>{t('recurring_expired')}</span>}
-      </div>
+      {/* #1613 — the title and status chip are gone: the tab's PS Status chip says it. */}
+      {(state.paymentPending || state.expired) && (
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+          {state.paymentPending && <span style={cardHintStyle}>{t('recurring_payment_pending')}</span>}
+          {state.expired && <span style={cardHintStyle}>{t('recurring_expired')}</span>}
+        </div>
+      )}
 
       {state.chip == null && <p style={cardHintStyle}>{t('recurring_empty')}</p>}
       {state.chip != null && loading && <p style={cardHintStyle}>{t('product_set_loading')}</p>}
