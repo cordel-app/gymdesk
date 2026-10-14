@@ -114,7 +114,9 @@
     "exercise_prev": "Previous exercise",
     "exercise_next": "Next exercise",
     "exercise_position": "Exercise {current} of {total}",
-    "no_description": "No description available."
+    "no_description": "No description available.",
+    "tab_plan": "My Training Plan",
+    "tab_progress": "My Progress"
   },
   "profile": {
     "title": "My profile",
@@ -694,5 +696,23 @@
     "signing_in": "Signing in…",
     "google_failed": "Google sign-in didn't work. Please try again.",
     "apple_failed": "Apple sign-in didn't work. Please try again."
+  },
+  "progress": {
+    "loading": "Loading your progress…",
+    "error": "We couldn't load your progress.",
+    "empty": "No exercises logged yet. Log a set in your training plan and your progress will show up here.",
+    "days_exercised": "Days exercised",
+    "max_weight": "Max weight",
+    "best_result": "Best result",
+    "chart_title": "Progress",
+    "chart_aria": "Progress chart for {name}",
+    "history": "Daily readings",
+    "set": "Set",
+    "reps": "Reps",
+    "weight": "Weight",
+    "unit_kg": "kg",
+    "unit_reps": "reps",
+    "unit_seconds": "s",
+    "summary": "{days, plural, one {# day} other {# days}}"
   }
 }

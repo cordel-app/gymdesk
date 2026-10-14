@@ -7,6 +7,7 @@ import { useApp } from '@/context/AppContext';
 import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
+import { MemberProgress } from '@/components/MemberProgress';
 import { ExerciseMedia } from '@/components/ExerciseMedia';
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
@@ -104,6 +105,8 @@ export default function TrainingPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [resultInputs, setResultInputs] = useState<Record<number, string>>({});
   const [legendOpen, setLegendOpen] = useState(false);
+  // #1224: the page has two tabs; My Training Plan stays the default.
+  const [tab, setTab] = useState<'plan' | 'progress'>('plan');
 
   async function loadPlans() {
     setLoading(true);
@@ -227,6 +230,22 @@ export default function TrainingPage() {
     <main style={styles.container} onTouchStart={(e) => setTouchStart({ x: e.touches[0].clientX, y: e.touches[0].clientY })} onTouchEnd={onTouchEnd}>
       <h1 style={styles.title}>{t('training.title')}</h1>
 
+      <div role="tablist" style={styles.tabs}>
+        {(['plan', 'progress'] as const).map((id) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            onClick={() => setTab(id)}
+            style={{ ...styles.tab, ...(tab === id ? styles.tabActive : null) }}
+          >
+            {t(id === 'plan' ? 'training.tab_plan' : 'training.tab_progress')}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'progress' ? <MemberProgress /> : (<>
       {message && <div style={styles.message}>{message}</div>}
 
       <TrainingSummaryCards cards={[
@@ -415,6 +434,7 @@ export default function TrainingPage() {
       {videoExercise?.exercise_video_url && (
         <ExerciseVideoViewer url={videoExercise.exercise_video_url} poster={exerciseVideoPosterUrl(videoExercise)} name={videoExercise.exercise_name} onClose={() => setVideoExercise(null)} />
       )}
+      </>)}
     </main>
   );
 }
@@ -465,4 +485,7 @@ const styles: Record<string, React.CSSProperties> = {
   blockDoneRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 },
   blockDoneBtn: { ...primaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
+  tabs: { display: 'flex', gap: 8, margin: '12px 0', overflowX: 'auto' },
+  tab: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', opacity: 0.7 },
+  tabActive: { ...primaryButtonStyle, opacity: 1 },
 };
