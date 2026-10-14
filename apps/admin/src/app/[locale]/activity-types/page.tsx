@@ -389,6 +389,7 @@ export default function ActivityTypesPage() {
   // ─── Edit ─────────────────────────────────────────────────────────────────
 
   async function openEdit(row: ActivityType) {
+    setView('cards');
     setEditingId(row.id);
     resetScheduleEditing();
     setEditForm({
@@ -410,6 +411,10 @@ export default function ActivityTypesPage() {
     if (!rulesMap.has(row.id)) await fetchRules(row.id);
     const services = eligibleServicesMap.get(row.id) ?? (await fetchEligibleServices(row.id));
     setEditSelectedServices(new Set(services.map((p) => p.id)));
+    // The card is rendered by now (Cards view, expanded, editing): bring it into view.
+    requestAnimationFrame(() => {
+      document.getElementById(`activity-card-${row.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   }
 
   /**
@@ -984,7 +989,7 @@ export default function ActivityTypesPage() {
               borderTop: '1px solid var(--gd-card-border, #eee)', color: 'inherit',
             }}
           >
-            <span>{isExpanded ? t('hide_details') : t('view_full_description')}</span>
+            <span>{isExpanded ? t('hide_all_attributes') : t('show_all_attributes')}</span>
             <span aria-hidden style={{ transform: isExpanded ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s' }}>▾</span>
           </button>
         )}
@@ -1028,7 +1033,7 @@ export default function ActivityTypesPage() {
     ];
 
     return (
-      <div key={row.id} style={isEditing && view === 'cards' ? { ...cardStyle, gridColumn: '1 / -1' } : cardStyle}>
+      <div key={row.id} id={`activity-card-${row.id}`} style={isEditing && view === 'cards' ? { ...cardStyle, gridColumn: '1 / -1' } : cardStyle}>
         {view === 'cards' ? renderCardHeader(row, isExpanded, menuItems) : (
         /* Collapsed header */
         <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(row.id)}>
