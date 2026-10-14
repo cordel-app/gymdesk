@@ -412,6 +412,10 @@ Tick items off in the PR that completes them.
       destination objects, but if that sweep itself could not run (the log line is
       *"Failed theme clone left an orphaned object in Cloudflare R2"*) the keys it names sit under a
       `themes/<theme_id>-…/` folder whose id no `themes` row carries, so they are safe to delete by hand.
+- [ ] **Load the Base Exercise descriptions** (#1608), after the catalogue import: run **Backfill Base Exercise Descriptions**
+      (`.github/workflows/exercises-backfill-descriptions.yml`) once with `dry_run` on, read the report, then again with it
+      off. Existing non-empty values are never overwritten; the run ends with a completeness line and fails if any Base
+      Exercise still lacks one of its six values.
 - [ ] **Import the Base Exercise catalogue** (#964): run the **Import Base Exercises** workflow
       (`.github/workflows/exercises-import.yml`, `workflow_dispatch`), picking the environment. It runs the
       importer from the VPS against that environment's database — the same reason migrations run there, since
