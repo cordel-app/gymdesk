@@ -58,7 +58,7 @@ export function NutritionItemRow({ name, imageUrl = null, detail = null }: {
 
 const styles: Record<string, React.CSSProperties> = {
   row:         { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: `1px solid ${memberTheme.separator}` },
-  imageBox:    { flex: '0 0 auto', width: 56, aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', background: memberTheme.pageBackground, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  imageBox:    { flex: '0 0 auto', width: 52, aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', background: memberTheme.pageBackground, display: 'flex', alignItems: 'center', justifyContent: 'center' },
   image:       { width: '100%', height: '100%', objectFit: 'contain', display: 'block' },
   placeholder: { color: memberTheme.textMuted, fontSize: 9, lineHeight: 1.2, textAlign: 'center', padding: '0 4px' },
   body:        { minWidth: 0 },
