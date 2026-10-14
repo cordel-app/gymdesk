@@ -31,7 +31,7 @@ async function memberWithPlan(name: string, clerk: string | null) {
   const g = await db.query(
     `INSERT INTO member_nutrition_plan_goals (gym_id, member_nutrition_plan_id, item_name, quantity, unit, frequency, applies_all_days, position)
      VALUES (?, ?, 'water', 2, 'l', 'daily', 1, 0)`, [gymId, planId]);
-  const food = await db.query(`INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (?, 'Bread', 'active')`, [gymId]);
+  const food = await db.query(`INSERT INTO nutrition_library_items (gym_id, name, status) VALUES (?, ?, 'active')`, [gymId, `Bread ${memberId}`]);
   const r = await db.query(
     `INSERT INTO member_nutrition_plan_restrictions (gym_id, member_nutrition_plan_id, nutrition_library_item_id, applies_all_days, position)
      VALUES (?, ?, ?, 1, 0)`, [gymId, planId, food.insertId]);
