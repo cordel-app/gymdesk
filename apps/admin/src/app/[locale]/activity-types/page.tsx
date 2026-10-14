@@ -29,7 +29,7 @@ import { WAITLIST_MODES } from '@/lib/waitlistModes';
 import { ActivityImageField } from '@/components/ActivityImageField';
 import { MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
 import { MemberAvatar } from '@/components/MemberAvatar';
-import { ExerciseCardGrid } from '@/components/exercises/ExerciseCard';
+import { CardGrid, CardSquareImage } from '@/components/CardGrid';
 import { ExerciseViewToggle, useExerciseViewMode } from '@/components/exercises/ExerciseViewToggle';
 import { dashedAddBtnStyle, inlineActionsRowStyle, rowRemoveBtnStyle } from '@/components/formChrome';
 
@@ -939,9 +939,12 @@ export default function ActivityTypesPage() {
     ].filter((m) => m.label);
     return (
       <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {row.image_url && (
+          <CardSquareImage src={row.image_url} alt={row.name} version={row.modified_at} placeholder={null} />
+        )}
         <div style={{ padding: '12px 16px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <MemberAvatar name={row.name} imageUrl={row.image_url} stamp={row.modified_at} size={40} />
+            {!row.image_url && <MemberAvatar name={row.name} imageUrl={row.image_url} stamp={row.modified_at} size={40} />}
             <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 16, overflowWrap: 'anywhere' }}>{row.name}</div>
             <div onClick={(e) => e.stopPropagation()}>
               <ContextMenu items={menuItems} ariaLabel={`Actions for ${row.name}`} />
@@ -1407,7 +1410,7 @@ export default function ActivityTypesPage() {
           {visibleRows.length === 0 ? (
             <p style={{ color: '#888' }}>{t('empty_filtered')}</p>
           ) : (
-            <ExerciseCardGrid>{visibleRows.map(renderRow)}</ExerciseCardGrid>
+            <CardGrid>{visibleRows.map(renderRow)}</CardGrid>
           )}
         </>
       ) : (

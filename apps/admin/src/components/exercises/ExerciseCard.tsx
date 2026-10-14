@@ -3,11 +3,10 @@
 import React from 'react';
 import { useTranslations } from 'next-intl';
 import { StatusBadge } from '@/components/StatusBadge';
-import { InlineStyle } from '@/components/InlineStyle';
+import { CardGrid, CardSquareImage } from '@/components/CardGrid';
 import { ContextMenu, type ContextMenuItem } from '@/components/ContextMenu';
 import { cardSurfaceStyle } from '@/components/ui';
 import { exerciseName } from '@/lib/exerciseNames';
-import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
 import { type ExerciseReadOnlyRow } from './exerciseForm';
 
 /** An exercise as the card needs it: the list row, plus the optional equipment facet. */
@@ -16,28 +15,8 @@ export type ExerciseCardRow = ExerciseReadOnlyRow & { equipment?: string | null 
 /** Muscle chips shown before the rest collapse into a `+N` chip, so a card never grows without bound. */
 const MAX_MUSCLE_CHIPS = 6;
 
-/**
- * The responsive card grid (#1530), driven by the width of its own container
- * rather than the viewport (the sidebar changes the room a page has): one card per
- * row on a phone, two on a tablet, three by default and four only once each card
- * can keep about 300px. Layout only — it filters and sorts nothing.
- */
-const GRID_CSS = `
-.gd-exercise-grid-wrap { container-type: inline-size; }
-.gd-exercise-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-@container (min-width: 640px) { .gd-exercise-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; } }
-@container (min-width: 960px) { .gd-exercise-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; } }
-@container (min-width: 1272px) { .gd-exercise-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
-`;
-
-export function ExerciseCardGrid({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="gd-exercise-grid-wrap">
-      <InlineStyle css={GRID_CSS} />
-      <div className="gd-exercise-grid">{children}</div>
-    </div>
-  );
-}
+/** The exercise views use the app's one responsive card grid (#1575). */
+export const ExerciseCardGrid = CardGrid;
 
 // Two distinct accessible pairs (light background, dark text); the variables are the theme's own when set.
 const PRIMARY_CHIP: React.CSSProperties = {
@@ -70,12 +49,10 @@ export function ExerciseCard({
 }) {
   const t = useTranslations('exercises');
   const tStatus = useTranslations('status');
-  const [broken, setBroken] = React.useState(false);
   const [showAttributes, setShowAttributes] = React.useState(false);
 
   const name = exerciseName(exercise);
   const src = exercise.effective_image_url ?? null;
-  const showImage = !!src && SAFE_IMAGE_SRC.test(src) && !broken;
   const muscles = exercise.muscles ?? [];
   const chips = [
     ...muscles.filter((m) => m.role === 'principal').map((m) => ({ key: `p-${m.key}`, label: muscleLabel(m.key), style: PRIMARY_CHIP })),
@@ -96,20 +73,12 @@ export function ExerciseCard({
 
   return (
     <div style={{ ...cardSurfaceStyle, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ aspectRatio: '4 / 3', background: 'var(--gd-app-bg, #f3f4f6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        {showImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={`${src}${src!.includes('?') ? '&' : '?'}v=${encodeURIComponent(cacheBust ?? '')}`}
-            alt={name}
-            loading="lazy"
-            onError={() => setBroken(true)}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
-        ) : (
-          <span style={{ fontSize: 13, color: 'var(--gd-text-muted, #9ca3af)' }}>{t('card_no_image')}</span>
-        )}
-      </div>
+      <CardSquareImage
+        src={src}
+        alt={name}
+        version={cacheBust}
+        placeholder={<span style={{ fontSize: 13, color: 'var(--gd-text-muted, #9ca3af)' }}>{t('card_no_image')}</span>}
+      />
 
       <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
