@@ -135,7 +135,7 @@ describe('NutritionItemRow (#932 §3, §4)', () => {
 
   it('owns the look both sections share, so neither can drift from the other', () => {
     expect(src).toContain('borderRadius: 10');
-    expect(src).toContain('width: 56');
+    expect(src).toContain('width: 52');
   });
 });
 
