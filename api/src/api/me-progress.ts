@@ -29,12 +29,12 @@ meProgressRouter.use(
   requireFeatureEnabled('member_web.my_training_plan'),
 );
 
-const json = (v: unknown): any => {
+export const json = (v: unknown): any => {
   if (typeof v === 'string') { try { return JSON.parse(v); } catch { return null; } }
   return v;
 };
 
-function toLog(r: any): ProgressLog {
+export function toLog(r: any): ProgressLog {
   const sets = (json(r.sets) ?? []) as any[];
   const d = r.logged_date instanceof Date ? r.logged_date.toISOString().slice(0, 10) : String(r.logged_date).slice(0, 10);
   return {
@@ -49,11 +49,11 @@ function toLog(r: any): ProgressLog {
   };
 }
 
-const LOG_SELECT = `el.exercise_id, el.logged_date, el.duration_seconds, el.skipped,
+export const LOG_SELECT = `el.exercise_id, el.logged_date, el.duration_seconds, el.skipped,
   (SELECT JSON_ARRAYAGG(JSON_OBJECT('set_number', s.set_number, 'weight', s.weight, 'reps', s.reps))
      FROM exercise_log_sets s WHERE s.exercise_log_id = el.id AND s.gym_id = el.gym_id) AS sets`;
 
-const allowedTypesSql = `(SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'slug', rt.slug, 'name', rt.name))
+export const allowedTypesSql = `(SELECT JSON_ARRAYAGG(JSON_OBJECT('id', rt.id, 'slug', rt.slug, 'name', rt.name))
    FROM exercise_allowed_result_types ar JOIN result_types rt ON rt.id = ar.result_type_id
    WHERE ar.exercise_id = e.id) AS allowed_result_types`;
 

@@ -34,6 +34,7 @@ import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { ProductSetForecast, useProductSetDetail } from './MemberProductSet';
 import { ProposedSetForecast } from './ProposedSetForecast';
 import { MemberRecurringProducts } from './MemberRecurringProducts';
+import { MemberProgress } from './MemberProgress';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
 import {
@@ -707,6 +708,16 @@ export function MemberExpandedRow({
                 )}
               </>
             )}
+          </Section>
+        </>
+      )}
+
+      {tab === 'progress' && (
+        <>
+          {/* Progress (#1231) — #1224's derived history for this Member; the readings
+              can be edited (value and notes) or hard-deleted from their ⋮ menu. */}
+          <Section label={t('members.section_progress')} divider={false}>
+            <MemberProgress memberId={memberId} canWrite={canManageTraining} />
           </Section>
         </>
       )}

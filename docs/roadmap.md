@@ -6,7 +6,7 @@ The record of how each ticket landed is `docs/changelog.md` — one entry per sh
 
 ## Status (2026-10-09)
 
-Derived from the GitHub issue state on that date: **1,304 issues closed, 17 open** (4 of those 17 are work already merged whose issue stays open for a later stage or a deployment step — they are named under *Open work*).
+Derived from the GitHub issue state on that date: **1,305 issues closed, 16 open** (4 of those 17 are work already merged whose issue stays open for a later stage or a deployment step — they are named under *Open work*).
 
 | Area | State | Shipped | Open |
 |---|---|---|---|
@@ -39,7 +39,6 @@ Every open issue, with what has merged and what is left. An issue appears once, 
 - [#1227](https://github.com/cordel-app/gymdesk/issues/1227) Professional Services member wallets. Stage 1 (visible balance, transaction history, staff adjustment) has merged; stage 2 (nightly renewal of plan Session Benefit allowances, grant entries in the history) is in review. Nothing is left after it.
 
 **Members & Goals**
-- [#1231](https://github.com/cordel-app/gymdesk/issues/1231) Member Progress tab: one card per exercise with a graph and its readings; staff edit value and notes, never the date; no audit rows. Decisions taken 2026-10-08, not started.
 - [#1229](https://github.com/cordel-app/gymdesk/issues/1229) Personal Goals: absolute vs relative targets. PR #1280 open (Maintenance relative, negative relative targets allowed, baseline fixed).
 
 **Platform**

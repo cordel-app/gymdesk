@@ -94,6 +94,7 @@ import { memberNutritionPlansRouter } from './api/member-nutrition-plans';
 import { memberPersonalGoalsRouter } from './api/member-personal-goals';
 import { mePersonalGoalsRouter } from './api/me-personal-goals';
 import { meProgressRouter } from './api/me-progress';
+import { memberProgressRouter } from './api/member-progress';
 import { meProfileImageRouter } from './api/me-profile-image';
 import { meMembershipPlansRouter } from './api/me-membership-plans';
 import { nutritionDashboardRouter } from './api/nutrition-dashboard';
@@ -359,6 +360,7 @@ app.use('/training-plans',   requireAuth(), tenantContext, requireModuleAccess('
 app.use('/members/:memberId/training-plans', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.training_plans'), trainingPlansRouter);
 app.use('/members/:memberId/member-training-plans', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training.training_plans'), memberTrainingPlansRouter);
 app.use('/members/:memberId/exercise-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training'), exerciseLogsRouter);
+app.use('/members/:memberId/progress', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training'), memberProgressRouter);
 app.use('/members/:memberId/workout-block-logs', requireAuth(), tenantContext, requireModuleAccess('TRAINING'), requireFeatureEnabled('training'), workoutBlockLogsRouter);
 // #614: Calendar is its own permission module (#247) — front desk can create/edit events.
 app.use('/class-sessions',         requireAuth(), tenantContext, centerContext, requireModuleAccess('CALENDAR'), requireFeatureEnabled('calendar.calendar'), classSessionsRouter);

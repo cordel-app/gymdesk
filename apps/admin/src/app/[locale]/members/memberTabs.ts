@@ -35,6 +35,7 @@ export const MEMBER_TAB_IDS = [
   'nutrition',
   'personal_goals',
   'training_plan',
+  'progress',
 ] as const;
 
 export type MemberTabId = (typeof MEMBER_TAB_IDS)[number];
@@ -54,7 +55,8 @@ export type MemberSectionKey =
   | 'section_billing_events'
   | 'section_nutrition_plans'
   | 'section_personal_goals'
-  | 'section_training_plans';
+  | 'section_training_plans'
+  | 'section_progress';
 
 export interface MemberTab {
   id: MemberTabId;
@@ -98,6 +100,8 @@ export const MEMBER_TABS: readonly MemberTab[] = [
   // tab for a feature that does not exist yet (the thread's `Q3` answer).
   { id: 'personal_goals', labelKey: 'tab_personal_goals', sections: ['section_personal_goals'] },
   { id: 'training_plan', labelKey: 'tab_training_plan', sections: ['section_training_plans'] },
+  // #1231 — the exercises the Member has logged, with their readings.
+  { id: 'progress', labelKey: 'tab_progress', sections: ['section_progress'] },
 ] as const;
 
 /** The tab a Member opens on, and the one an unusable `?tab=` falls back to. */
