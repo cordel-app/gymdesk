@@ -84,12 +84,13 @@ describe('the settings the API reads are the settings deploy.yml writes', () => 
     for (const name of INTERNAL_SECRETS) expectForwarded(name, 'secrets');
   });
 
-  it('writes the environment into a file, never onto podman’s command line (#1192)', () => {
+  it('writes the environment as one Environment= line per variable, like corfront', () => {
     expect(ENV_FILE_BLOCK).not.toBe('');
-    // The unit points at the file; no inline value is written into it.
-    expect(DEPLOY).toContain('sed -i "/^\\[Container\\]$/a EnvironmentFile=$ENV_FILE" "$CF"');
-    expect(DEPLOY).not.toMatch(/^\s*Environment=[A-Z_]+=/m);
-    expect(DEPLOY).toContain('chmod 600 "$ENV_TMP"');
+    // Every KEY=value line becomes an `Environment=` line of the unit, right
+    // under [Container]; there is no EnvironmentFile= any more.
+    expect(DEPLOY).toContain("s/^/Environment=/");
+    expect(DEPLOY).toContain('sed -i "/^\\[Container\\]$/r $UNIT_ENV" "$CF"');
+    expect(DEPLOY).not.toContain('EnvironmentFile=$ENV_FILE');
   });
 
   it('sends the API’s output to journald, where the log collector reads it (#1186)', () => {
