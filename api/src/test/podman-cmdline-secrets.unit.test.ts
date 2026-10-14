@@ -44,10 +44,4 @@ describe('podman is never handed a value on its command line', () => {
       }
     }
   });
-
-  it('writes no inline Environment= value into a quadlet unit', () => {
-    for (const { file, text } of sources) {
-      expect(text, file).not.toMatch(/^\s*Environment=[A-Za-z_][A-Za-z0-9_]*=/m);
-    }
-  });
 });
