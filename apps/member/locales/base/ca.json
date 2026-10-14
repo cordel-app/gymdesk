@@ -593,14 +593,18 @@
     "status_legend_open": "Mostra la llegenda d'estats",
     "status_legend_title": "Estat de la nutrició",
     "status_legend_close": "Tanca",
-    "status_legend_completed": "Verd — Tots els àpats completats.",
-    "status_legend_pending": "Vermell — Queda almenys un àpat pendent.",
-    "status_legend_scheduled": "Groc — Àpats programats per a una data futura.",
-    "status_legend_rest": "Gris — Sense àpats programats.",
+    "status_legend_completed": "Verd — Tot el que s'aplica està completat (puntuació 100%).",
+    "status_legend_pending": "Vermell — Puntuació del 50% o menys, o el dia encara és obert.",
+    "status_legend_scheduled": "Groc — Programat per a una data futura.",
+    "status_legend_rest": "Gris — No hi ha àpats, objectius nutricionals ni restriccions dietètiques.",
     "mark_done": "Marca fet",
     "meal_done": "Fet",
     "mark_done_aria": "Marca {name} com a fet",
-    "no_meals_today": "No hi ha àpats programats per a aquest dia."
+    "no_meals_today": "No hi ha àpats programats per a aquest dia.",
+    "status_partial": "Parcialment completat",
+    "status_legend_partial": "Meitat vermell, meitat verd — Puntuació superior al 50% i inferior al 100%.",
+    "partially_done": "Parcialment fet",
+    "partially_done_state": "Parcialment fet"
   },
   "goals": {
     "title": "Els Meus Objectius",

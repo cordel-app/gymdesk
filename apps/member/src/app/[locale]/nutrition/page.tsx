@@ -11,7 +11,7 @@ import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';
 import { NutritionItemRow } from '@/components/NutritionItemRow';
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
-import { DAY_STATUSES, type DayStatus } from '@/lib/trainingDayStatus';
+import { NUTRITION_DAY_STATUSES, type NutritionDayStatus } from '@/lib/trainingDayStatus';
 import { ProgressCounts, deviceToday, mondayIndex, shiftWeek, swipeWeekDelta, weekDates } from '@/lib/trainingWeek';
 import { memberTheme, primaryButtonStyle, sectionCardStyle, statusPillStyle, statusTone } from '@/lib/memberChrome';
 import {
@@ -44,7 +44,7 @@ const ALL_DAYS_WEEKDAY = 7;
 // #1580: the same shape /me/training-progress answers, plus the week's day statuses.
 interface NutritionProgress {
   day: ProgressCounts; week: ProgressCounts; month: ProgressCounts;
-  week_days: { date: string; status: DayStatus }[];
+  week_days: { date: string; status: NutritionDayStatus }[];
   today?: string;
 }
 const EMPTY_COUNTS: ProgressCounts = { completed: 0, total: 0, percent: 0 };
@@ -67,6 +67,9 @@ export default function NutritionPage() {
   const [selectedDate, setSelectedDate] = useState<string>(deviceToday());
   const [progress, setProgress] = useState<NutritionProgress>(EMPTY_PROGRESS);
   const [doneKeys, setDoneKeys] = useState<Set<string>>(new Set());
+  // #1603: goal / dietary-restriction completions, keyed `goal|id|date` / `restriction|id|date` -> level.
+  const [reqLevels, setReqLevels] = useState<Record<string, 'partial' | 'done'>>({});
+  const [pendingReq, setPendingReq] = useState<string | null>(null);
   const [pendingMeal, setPendingMeal] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [legendOpen, setLegendOpen] = useState(false);
@@ -84,6 +87,11 @@ export default function NutritionPage() {
         if (data.plan) {
           const logs = await apiFetch<{ meal_id: number; logged_date: string }[]>('/me/nutrition-logs');
           if (!cancelled) setDoneKeys(new Set(logs.map((l) => `${l.meal_id}|${String(l.logged_date).slice(0, 10)}`)));
+          const reqLogs = await apiFetch<{ goal_id: number | null; restriction_id: number | null; level: 'partial' | 'done'; logged_date: string }[]>('/me/nutrition-requirement-logs');
+          if (!cancelled) {
+            setReqLevels(Object.fromEntries(reqLogs.map((l) => [
+              `${l.goal_id != null ? 'goal' : 'restriction'}|${l.goal_id ?? l.restriction_id}|${String(l.logged_date).slice(0, 10)}`, l.level])));
+          }
         }
       } catch (err: any) {
         if (!cancelled) setError(err.message ?? t('nutrition.error'));
@@ -127,6 +135,38 @@ export default function NutritionPage() {
       setDoneKeys((prev) => new Set(prev).add(`${meal.id}|${selectedDate}`));
     } catch (err: any) { setMessage(err.message ?? t('nutrition.error')); }
     finally { setPendingMeal(null); }
+  }
+
+  // #1603: the server decides eligibility and only ever raises partial -> done.
+  async function markRequirement(kind: 'goal' | 'restriction', id: number, level: 'partial' | 'done') {
+    const key = `${kind}|${id}|${selectedDate}`;
+    setPendingReq(key);
+    setMessage(null);
+    try {
+      const body = { [kind === 'goal' ? 'goal_id' : 'restriction_id']: id, logged_date: selectedDate, level };
+      const row = await apiFetch<{ level: 'partial' | 'done' }>('/me/nutrition-requirement-logs', { method: 'POST', body: JSON.stringify(body) });
+      setReqLevels((prev) => ({ ...prev, [key]: row.level }));
+      loadProgress(selectedDate);
+    } catch (err: any) { setMessage(err.message ?? t('nutrition.error')); }
+    finally { setPendingReq(null); }
+  }
+
+  function requirementActions(kind: 'goal' | 'restriction', id: number) {
+    const level = reqLevels[`${kind}|${id}|${selectedDate}`];
+    if (level === 'done') {
+      return <span style={{ ...statusPillStyle(statusTone('completed')), fontSize: 11, padding: '2px 8px', alignSelf: 'flex-start' }}>✓ {t('nutrition.meal_done')}</span>;
+    }
+    if (selectedDate > today) return null;
+    const busy = pendingReq === `${kind}|${id}|${selectedDate}`;
+    return (
+      <div style={styles.reqActions}>
+        {level === 'partial' && <span style={{ ...statusPillStyle(statusTone('scheduled')), fontSize: 11, padding: '2px 8px' }}>{t('nutrition.partially_done_state')}</span>}
+        <button type="button" onClick={() => markRequirement(kind, id, 'done')} disabled={busy} style={styles.reqBtn}>{t('nutrition.mark_done')}</button>
+        {kind === 'restriction' && level !== 'partial' && (
+          <button type="button" onClick={() => markRequirement(kind, id, 'partial')} disabled={busy} style={styles.reqBtn}>{t('nutrition.partially_done')}</button>
+        )}
+      </div>
+    );
   }
 
   function mealTypeLabel(mealType: string | null): string | null {
@@ -181,7 +221,7 @@ export default function NutritionPage() {
               {weekDates(selectedDate).map((date) => {
                 const selected = date === selectedDate;
                 const isTodayCell = date === today;
-                const status: DayStatus = progress.week_days.find((d) => d.date === date)?.status ?? 'rest';
+                const status: NutritionDayStatus = progress.week_days.find((d) => d.date === date)?.status ?? 'rest';
                 const statusText = t(`nutrition.status_${status}` as any);
                 const longDate = dayText(locale, date, { weekday: 'long', day: 'numeric', month: 'long' });
                 return (
@@ -207,7 +247,7 @@ export default function NutritionPage() {
 
           {legendOpen && (
             <TrainingStatusLegend title={t('nutrition.status_legend_title')} closeLabel={t('nutrition.status_legend_close')}
-              items={DAY_STATUSES.map((st) => ({ status: st, label: t(`nutrition.status_legend_${st}` as any) }))}
+              items={NUTRITION_DAY_STATUSES.map((st) => ({ status: st, label: t(`nutrition.status_legend_${st}` as any) }))}
               onClose={() => setLegendOpen(false)} />
           )}
 
@@ -223,12 +263,14 @@ export default function NutritionPage() {
                 <p style={styles.sectionEmpty}>{t('nutrition.goals_empty')}</p>
               ) : (
                 goals.map((g) => (
-                  <NutritionItemRow
-                    key={g.id}
-                    name={goalLabel(t, g.item_name)}
-                    detail={goalDetail(t, g)}
-                    imageUrl={g.image_url ?? null}
-                  />
+                  <div key={g.id}>
+                    <NutritionItemRow
+                      name={goalLabel(t, g.item_name)}
+                      detail={goalDetail(t, g)}
+                      imageUrl={g.image_url ?? null}
+                    />
+                    {requirementActions('goal', g.id)}
+                  </div>
                 ))
               )}
             </div>
@@ -241,7 +283,10 @@ export default function NutritionPage() {
                 <p style={styles.sectionEmpty}>{t('nutrition.restrictions_empty')}</p>
               ) : (
                 restrictions.map((r) => (
-                  <NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url} />
+                  <div key={r.id}>
+                    <NutritionItemRow name={r.item_name} imageUrl={r.image_url} />
+                    {requirementActions('restriction', r.id)}
+                  </div>
                 ))
               )}
             </div>
@@ -296,6 +341,8 @@ const styles: Record<string, React.CSSProperties> = {
   h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:       { ...sectionCardStyle, padding: '4px 18px' },
   mealHead:   { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+  reqActions: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '0 0 10px' },
+  reqBtn:     { ...primaryButtonStyle, padding: '6px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600 },
   markDoneBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '10px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   weekCard:   { ...sectionCardStyle, padding: 10, marginBottom: 20 },
   weekdayBar: { display: 'flex', justifyContent: 'space-between', gap: 4 },

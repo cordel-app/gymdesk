@@ -14,10 +14,24 @@ export const ALL_DAYS_WEEKDAY = 7;
 export interface PlanMeal { id: number; weekday: number }
 export interface MealCompletion { mealId: number; date: string }
 export interface ProgressCounts { completed: number; total: number; percent: number }
-export type NutritionDayStatus = 'completed' | 'pending' | 'scheduled' | 'rest';
+export type NutritionDayStatus = 'completed' | 'partial' | 'pending' | 'scheduled' | 'rest';
+export type RequirementKind = 'goal' | 'restriction';
+export type RequirementLevel = 'partial' | 'done';
+/** The plan's goals and dietary restrictions; both apply on every day (applies_all_days). */
+export interface PlanRequirements { goalIds: number[]; restrictionIds: number[] }
+export interface RequirementCompletion { kind: RequirementKind; itemId: number; date: string; level: RequirementLevel }
+
+// #1603 — the daily score is weighted: restrictions 30 %, goals 30 %, meals 40 %.
+// A category that does not apply that day drops out and the rest are re-based,
+// so a day with only goals is scored on goals alone.
+export const WEIGHT_RESTRICTIONS = 30;
+export const WEIGHT_GOALS = 30;
+export const WEIGHT_MEALS = 40;
+/** A restriction marked "partially done" earns half of its share. */
+export const PARTIAL_CREDIT = 0.5;
 export interface NutritionProgress {
   day: ProgressCounts; week: ProgressCounts; month: ProgressCounts;
-  week_days: { date: string; status: NutritionDayStatus }[];
+  week_days: { date: string; status: NutritionDayStatus; score: number | null }[];
 }
 
 function counts(completed: number, total: number): ProgressCounts {
@@ -51,6 +65,8 @@ export function nutritionProgress(
   completions: MealCompletion[],
   today: string,
   selected: string = today,
+  requirements: PlanRequirements = { goalIds: [], restrictionIds: [] },
+  requirementLogs: RequirementCompletion[] = [],
 ): NutritionProgress {
   const done = new Set(completions.map((c) => `${c.mealId}|${String(c.date).slice(0, 10)}`));
   const isDone = (m: PlanMeal, date: string) => done.has(`${m.id}|${date}`);
@@ -68,16 +84,45 @@ export function nutritionProgress(
   };
   const sel = DateTime.fromISO(selected, { zone: 'UTC' });
   const end = selected > today ? today : selected;
-  const dayStatus = (date: string): NutritionDayStatus => {
+  const reqLevel = new Map(requirementLogs.map((l) => [`${l.kind}|${l.itemId}|${String(l.date).slice(0, 10)}`, l.level]));
+  /** Weighted 0..100 score of a date, or null when nothing at all applies to it. */
+  const dayScore = (date: string): number | null => {
     const scheduled = meals.filter((m) => isMealScheduledOn(m, date));
-    if (scheduled.length === 0) return 'rest';
-    if (scheduled.every((m) => isDone(m, date))) return 'completed';
-    return canCompleteOn(date, today) ? 'pending' : 'scheduled';
+    let earned = 0, possible = 0;
+    if (scheduled.length > 0) {
+      possible += WEIGHT_MEALS;
+      earned += WEIGHT_MEALS * (scheduled.filter((m) => isDone(m, date)).length / scheduled.length);
+    }
+    if (requirements.goalIds.length > 0) {
+      possible += WEIGHT_GOALS;
+      const done = requirements.goalIds.filter((id) => reqLevel.get(`goal|${id}|${date}`) === 'done').length;
+      earned += WEIGHT_GOALS * (done / requirements.goalIds.length);
+    }
+    if (requirements.restrictionIds.length > 0) {
+      possible += WEIGHT_RESTRICTIONS;
+      const credit = requirements.restrictionIds.reduce((sum, id) => {
+        const level = reqLevel.get(`restriction|${id}|${date}`);
+        return sum + (level === 'done' ? 1 : level === 'partial' ? PARTIAL_CREDIT : 0);
+      }, 0);
+      earned += WEIGHT_RESTRICTIONS * (credit / requirements.restrictionIds.length);
+    }
+    return possible === 0 ? null : Math.round((earned / possible) * 100);
+  };
+  // Grey only when nothing applies. A closed day (before today) is judged by its
+  // score — red up to 50 %, half-and-half above it, green at 100 %; today stays
+  // open (red until complete) and a later day is "scheduled".
+  const dayStatus = (date: string): NutritionDayStatus => {
+    const score = dayScore(date);
+    if (score === null) return 'rest';
+    if (score === 100) return 'completed';
+    if (date > today) return 'scheduled';
+    if (date === today) return 'pending';
+    return score > 50 ? 'partial' : 'pending';
   };
   return {
-    day: selected > today ? counts(0, 0) : range(selected, selected),
+    day: selected > today ? counts(0, 0) : { ...range(selected, selected), percent: dayScore(selected) ?? 0 },
     week: range(sel.minus({ days: ROLLING_WEEK_DAYS - 1 }).toISODate() as string, end),
     month: range(sel.minus({ days: ROLLING_MONTH_DAYS - 1 }).toISODate() as string, end),
-    week_days: mondayWeek(selected).map((date) => ({ date, status: dayStatus(date) })),
+    week_days: mondayWeek(selected).map((date) => ({ date, status: dayStatus(date), score: date > today ? null : dayScore(date) })),
   };
 }

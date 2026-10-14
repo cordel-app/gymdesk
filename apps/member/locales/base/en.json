@@ -593,14 +593,18 @@
     "status_legend_open": "Show status legend",
     "status_legend_title": "Nutrition status",
     "status_legend_close": "Close",
-    "status_legend_completed": "Green — All meals completed.",
-    "status_legend_pending": "Red — At least one meal is still pending.",
-    "status_legend_scheduled": "Yellow — Meals scheduled for a future date.",
-    "status_legend_rest": "Grey — No meals scheduled.",
+    "status_legend_completed": "Green — Everything that applies is completed (score 100%).",
+    "status_legend_pending": "Red — Score of 50% or lower, or the day is still open.",
+    "status_legend_scheduled": "Yellow — Scheduled for a future date.",
+    "status_legend_rest": "Grey — No meals, nutrition goals or dietary restrictions apply.",
     "mark_done": "Mark Done",
     "meal_done": "Done",
     "mark_done_aria": "Mark {name} as done",
-    "no_meals_today": "No meals scheduled for this day."
+    "no_meals_today": "No meals scheduled for this day.",
+    "status_partial": "Partly completed",
+    "status_legend_partial": "Half red, half green — Score above 50% but below 100%.",
+    "partially_done": "Partially Done",
+    "partially_done_state": "Partially done"
   },
   "goals": {
     "title": "My Goals",
