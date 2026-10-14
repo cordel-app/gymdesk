@@ -29,7 +29,7 @@ import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
  *    member's goal cards).
  */
 export function MemberCollapsibleCard({
-  title, summary, defaultOpen = false, bodyStyle, children,
+  title, summary, defaultOpen = false, bodyStyle, cardStyle, children,
 }: {
   title: string;
   /** A one-line hint beside the title — the next payment, how many past plans. */
@@ -38,11 +38,13 @@ export function MemberCollapsibleCard({
   defaultOpen?: boolean;
   /** What the body is laid out as, which is the caller's and not the chrome's. */
   bodyStyle?: CSSProperties;
+  /** Extra card chrome from the caller — e.g. #1224's exercise image behind the header. */
+  cardStyle?: CSSProperties;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <section style={styles.card}>
+    <section style={cardStyle ? { ...styles.card, ...cardStyle } : styles.card}>
       <button type="button" onClick={() => setOpen((prev) => !prev)} aria-expanded={open} style={styles.toggle}>
         <span style={styles.title}>{title}</span>
         <span style={styles.right}>

@@ -115,7 +115,9 @@
     "exercise_prev": "Ejercicio anterior",
     "exercise_next": "Ejercicio siguiente",
     "exercise_position": "Ejercicio {current} de {total}",
-    "no_description": "No hay descripción disponible."
+    "no_description": "No hay descripción disponible.",
+    "tab_plan": "Mi plan de entrenamiento",
+    "tab_progress": "Mi progreso"
   },
   "profile": {
     "title": "Mi perfil",
@@ -695,5 +697,23 @@
     "signing_in": "Iniciando sesión…",
     "google_failed": "No se ha podido iniciar sesión con Google. Inténtalo de nuevo.",
     "apple_failed": "No se ha podido iniciar sesión con Apple. Inténtalo de nuevo."
+  },
+  "progress": {
+    "loading": "Cargando tu progreso…",
+    "error": "No hemos podido cargar tu progreso.",
+    "empty": "Aún no has registrado ejercicios. Registra una serie en tu plan de entrenamiento y tu progreso aparecerá aquí.",
+    "days_exercised": "Días entrenados",
+    "max_weight": "Peso máximo",
+    "best_result": "Mejor resultado",
+    "chart_title": "Progreso",
+    "chart_aria": "Gráfico de progreso de {name}",
+    "history": "Registros diarios",
+    "set": "Serie",
+    "reps": "Reps",
+    "weight": "Peso",
+    "unit_kg": "kg",
+    "unit_reps": "reps",
+    "unit_seconds": "s",
+    "summary": "{days, plural, one {# día} other {# días}}"
   }
 }
