@@ -86,14 +86,12 @@ describe('Member card tabs: the declaration (#961)', () => {
     // Forecast directly below it; the Current Product Set and One-off Products
     // cards are gone from the UI.
     expect(sectionsForTab('products_services')).toEqual([
-      'section_membership_plans',
-      // #1537: the recurring configuration sits between the plans and the purchases.
-      'section_recurring_products',
+      // #1613: PS Status, MEMBERSHIP PLAN, PRODUCTS, then one billing section.
+      'section_membership_plan',
       'section_additional_services',
-      'section_new_billing_event_simulation',
-      'section_billing_events_forecast',
-      'section_billing_simulation',
+      'section_billing_event_simulation',
       'section_billing_events',
+      'section_billing_simulation',
     ]);
     // #1227: the Member's Professional Service balance is a tab of its own.
     expect(sectionsForTab('professional_services')).toEqual(['section_professional_services', 'section_pt_slots']);

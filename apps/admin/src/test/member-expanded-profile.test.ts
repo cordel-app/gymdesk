@@ -70,7 +70,7 @@ describe('Members: PROFILE in the expanded card (#797)', () => {
   });
 
   it('is the first section of the expanded row', () => {
-    const order = ['section_profile', 'section_account', 'section_membership_plans', 'section_billing_events'];
+    const order = ['section_profile', 'section_account', 'section_membership_plan', 'section_billing_events'];
     const positions = order.map((key) => expandedSrc.indexOf(`t('members.${key}')`));
     for (const [i, pos] of positions.entries()) {
       expect(pos, `members.${order[i]} not rendered`).toBeGreaterThan(-1);
