@@ -193,10 +193,15 @@ describe('translations on a gym goal', () => {
 
 describe('POST/DELETE /nutrition-goals/:id/image', () => {
   let goalId: number;
-  const NAME = `Image Goal ${RUN}`;
-  const sanitized = `Image-Goal-${RUN}`;
+  let NAME: string;
+  let sanitized: string;
+  let seq = 0;
 
   beforeEach(async () => {
+    // Live names are unique per gym, so each test needs its own goal name.
+    seq += 1;
+    NAME = `Image Goal ${seq} ${RUN}`;
+    sanitized = `Image-Goal-${seq}-${RUN}`;
     const created = await createGoal({ name: NAME });
     goalId = created.body.id;
   });

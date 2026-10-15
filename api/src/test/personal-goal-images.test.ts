@@ -268,15 +268,6 @@ describe('POST /personal-goals/:id/image — auth and ownership', () => {
     expect(res.status).toBe(503);
     expect(res.body.missingConfig?.length).toBeGreaterThan(0);
   });
-
-  it('has no image route at all for a Nutrition Goal', async () => {
-    // `IMAGE_GOAL_KINDS` decides whether the routes are registered, so this is a
-    // 404 from the router rather than a write to a column that does not exist
-    // (which would be ER_BAD_FIELD_ERROR and a bare 500, #966).
-    const res = await upload(`/nutrition-goals/${nutritionGoalId}/image`, gymId, validPng());
-    expect(res.status).toBe(404);
-    expect(putKeys()).toHaveLength(0);
-  });
 });
 
 // ─── Validation (the file, never the request) ────────────────────────────────
@@ -522,12 +513,6 @@ describe('POST /platform/personal-goals/:id/image', () => {
     expect((await upload(`/platform/personal-goals/${systemGoalId}/image`, null, validPng())).status).toBe(200);
     expect(deletedKeys()).toHaveLength(0);
   });
-
-  it('has no image route for a Nutrition Goal', async () => {
-    const res = await upload(`/platform/nutrition-goals/${nutritionGoalId}/image`, null, validPng());
-    expect(res.status).toBe(404);
-    expect(putKeys()).toHaveLength(0);
-  });
 });
 
 describe('DELETE /platform/personal-goals/:id/image', () => {
@@ -581,14 +566,14 @@ describe('personal_goals.image_url (migration 225)', () => {
     expect(list.status).toBe(200);
     expect(list.body.items.find((g: any) => g.id === goalId)?.image_url).toBe(url(key));
 
-    // `nutrition_goals` has no such column, so the key must be absent rather
-    // than null — a projection of it would be ER_BAD_FIELD_ERROR (#966).
+    // Nutrition Goals have their own WebP image columns since #1623; the
+    // personal-goal PNG route is not theirs to serve.
     const nutrition = await request
       .get('/nutrition-goals')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(nutrition.status).toBe(200);
-    expect(nutrition.body.items[0]).not.toHaveProperty('image_url');
+    expect(nutrition.body.items.length).toBeGreaterThan(0);
   });
 
   it('is bounded by the request limit rather than by a stray large body', async () => {

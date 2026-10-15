@@ -41,19 +41,11 @@ describe('#812 component_type sets match their CHECK constraints', () => {
     );
   });
 
-  it('an assigned plan meal item takes four (chk_mnpmi_comp, migration 105)', () => {
+  it('an assigned plan meal item takes the same seven (chk_mnpmi_comp, migration 283)', () => {
     expect([...MEMBER_PLAN_COMPONENT_TYPES]).toEqual(
-      checkedTypes('105_base_nutrition.js', 'chk_mnpmi_comp'),
+      checkedTypes('283_member_meal_item_component_types.js', 'chk_mnpmi_comp'),
     );
-  });
-
-  it('the assigned-plan set is narrower — #294 widened the template table only', () => {
-    expect([...MEMBER_PLAN_COMPONENT_TYPES].every((c) =>
-      (TEMPLATE_COMPONENT_TYPES as readonly string[]).includes(c))).toBe(true);
-    for (const onlyOnTemplates of ['drink', 'dessert', 'other']) {
-      expect(TEMPLATE_COMPONENT_TYPES as readonly string[]).toContain(onlyOnTemplates);
-      expect(MEMBER_PLAN_COMPONENT_TYPES as readonly string[]).not.toContain(onlyOnTemplates);
-    }
+    expect([...MEMBER_PLAN_COMPONENT_TYPES]).toEqual([...TEMPLATE_COMPONENT_TYPES]);
   });
 
   it('every slug has a Food Type label in all three locales', () => {
@@ -78,8 +70,7 @@ describe('#812 isComponentType', () => {
   });
 
   it('refuses a value the surface does not accept', () => {
-    // The exact case the narrower CHECK exists for.
-    expect(isComponentType(MEMBER_PLAN_COMPONENT_TYPES, 'dessert')).toBe(false);
+    expect(isComponentType(MEMBER_PLAN_COMPONENT_TYPES, 'starter')).toBe(false);
   });
 
   it('refuses a missing, empty or non-string value without throwing', () => {
