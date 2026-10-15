@@ -349,7 +349,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       params.push(id);
       await db.transaction(async (tx) => {
         await tx.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`, params);
-        if (goalTranslations.translations) await replaceGoalTranslations(tx, id, goalTranslations.translations);
+        if (goalTranslations.translations) await replaceGoalTranslations(tx, String(id), goalTranslations.translations);
       });
 
       // #1623: the image key carries the goal's name, so a rename moves it.
