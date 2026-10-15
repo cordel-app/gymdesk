@@ -75,16 +75,13 @@ describe('Member Membership sections (#634)', () => {
     }
   });
 
-  it('adds a Membership Plan additively, never superseding another (§14)', () => {
-    // #1533: "+ Add Membership Plan" asks only for the plan, creates the Draft
-    // through the Plans page's own assign route with this Member preselected
-    // (no Assign Plan to Member form), and opens that Draft in Edit mode.
-    expect(plansSrc).not.toContain('<AssignPlanToMembersEditor');
-    expect(plansSrc).toContain('/assign`');
-    expect(plansSrc).toContain('owner_member_id: memberId');
-    expect(plansSrc).toContain('openInEditId=');
+  it('adds a Membership Plan through the Plans page\'s own Assign Plan to Member editor (#1659)', () => {
+    // One workflow, two entry points: the same shared editor, this Member preselected.
+    expect(plansSrc).toContain('<AssignPlanToMembersEditor');
+    expect(plansSrc).toContain('initialMember=');
+    expect(plansSrc).toContain('planOptions=');
     expect(plansSrc).not.toContain('/product-sets');
-    expect(plansSrc).not.toContain('assign-new-plan');
+    expect(plansSrc).not.toContain('assign-new-plan`,\n        method: \'POST\',\n        body: JSON.stringify({\n          member_ids');
     expect(plansSrc).not.toMatch(/apiFetch\('\/user-memberships',\s*\{\s*method: 'POST'/);
   });
 
@@ -114,9 +111,9 @@ describe('Member Membership sections (#634)', () => {
     expect(lib).not.toContain('confirm');
   });
 
-  it('offers only Active + Public plans, picked in the add picker (§2, #1533)', () => {
-    expect(plansSrc).toContain("'/membership-plans?lifecycle_status=active&enrollment_status=public'");
-    expect(plansSrc).toContain('selectable.map(');
+  it('offers Active + Public plans and Draft plans (shown, not selectable) in the add picker (#1659)', () => {
+    expect(plansSrc).toContain("apiFetch<(AssignablePlan & { enrollment_status?: string })[]>('/membership-plans')");
+    expect(plansSrc).toContain("p.lifecycle_status === 'draft'");
     // A plan already active for this Member can't be assigned twice.
     expect(plansSrc).toContain('activePlanIds');
   });

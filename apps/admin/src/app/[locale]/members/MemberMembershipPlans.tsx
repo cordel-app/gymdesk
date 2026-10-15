@@ -53,6 +53,7 @@ import type { AssignablePlan } from '../plans/AssignPlanToMembersEditor';
 import { apiErrorMessage } from '@/lib/apiClient';
 import { formControlStyle, formErrorStyle, inlineEditorStyle, secondaryBtnSmall } from '@/components/formChrome';
 import type { ContextMenuItem } from '@/components/ContextMenu';
+import { AssignPlanToMembersEditor } from '../plans/AssignPlanToMembersEditor';
 import { AssignedPlansTable } from '@/components/assignedPlan/AssignedPlansTable';
 import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPlanDetailsDialog';
 import { cardSubLabelStyle } from '@/components/formChrome';
@@ -109,8 +110,13 @@ export function MemberMembershipPlans({
     optionsLoadedRef.current = true;
     setOptionsLoading(true);
     setOptionsError(false);
-    apiFetch<AssignablePlan[]>('/membership-plans?lifecycle_status=active&enrollment_status=public')
-      .then((rows) => setOptions(Array.isArray(rows) ? rows : []))
+    // #1659: Active (and Public, the server's assignability rule) plus Draft
+    // plans, listed with their status; a Draft is shown but not selectable.
+    apiFetch<(AssignablePlan & { enrollment_status?: string })[]>('/membership-plans')
+      .then((rows) => setOptions(
+        (Array.isArray(rows) ? rows : []).filter((p) => p.lifecycle_status === 'draft'
+          || (p.lifecycle_status === 'active' && p.enrollment_status === 'public')),
+      ))
       .catch(() => {
         // A failed load must not be remembered as "loaded": reopening retries.
         optionsLoadedRef.current = false;
@@ -130,31 +136,7 @@ export function MemberMembershipPlans({
   // Plan stays offered — under #956 picking one replaces the live plan, which
   // is what the confirmation dialog is for.
   const activePlanIds = new Set(live.map((p) => p.membership_plan_id).filter((id): id is number => id != null));
-  // #1533: a plan taking more than one Member cannot be drafted for this Member
-  // alone (the server wants the exact count), so those stay on the Plans page's Assign.
-  const selectable = options.filter((o) => !activePlanIds.has(o.id) && o.member_limit !== '2');
-
-  async function createDraft(planId: number) {
-    setCreating(true);
-    setCreateError(null);
-    try {
-      const row = await apiFetch<{ id: number }>(`/membership-plans/${planId}/assign`, {
-        method: 'POST',
-        body: JSON.stringify({
-          member_ids: [memberId],
-          owner_member_id: memberId,
-          starts_at: new Date().toISOString().slice(0, 10),
-        }),
-      });
-      setNewDraftId(row.id);
-      setAdding(false);
-      onChanged();
-    } catch (err: any) {
-      setCreateError(apiErrorMessage(err) ?? t('add_membership_plan_error'));
-    } finally {
-      setCreating(false);
-    }
-  }
+  const selectable = options.filter((o) => !activePlanIds.has(o.id));
 
   // #1538 stage 3: `⋮ → Edit` on the running plan. Editing never touches the
   // Active version: it starts a Draft of the same plan (the existing Assign New
@@ -255,29 +237,27 @@ export function MemberMembershipPlans({
           inline editor), launched with this Member selected. It creates a Draft, which
           appears in the list above and is configured and paid from its card. */}
       {adding && (
-        <div style={{ ...inlineEditorStyle, margin: '10px 0' }}>
-          <select
-            value=""
-            disabled={creating || optionsLoading}
-            onChange={(e) => { if (e.target.value) void createDraft(parseInt(e.target.value, 10)); }}
-            style={formControlStyle}
-            aria-label={t('assign_new_plan_label_plan')}
-          >
-            <option value="">{creating || optionsLoading ? t('add_membership_plan_loading') : t('assign_new_plan_pick_plan')}</option>
-            {selectable.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+        <>
+          {optionsLoading && <p style={{ margin: '8px 0' }}>{t('add_membership_plan_loading')}</p>}
           {!optionsLoading && selectable.length === 0 && (
-            <p style={{ ...formErrorStyle, margin: '8px 0 0' }}>
-              {t(optionsError ? 'add_membership_plan_options_error' : 'no_assignable_membership_plans')}
-            </p>
+            <div style={{ ...inlineEditorStyle, margin: '10px 0' }}>
+              <p style={{ ...formErrorStyle, margin: 0 }}>
+                {t(optionsError ? 'add_membership_plan_options_error' : 'no_assignable_membership_plans')}
+              </p>
+              <div style={{ marginTop: 10 }}>
+                <button onClick={() => setAdding(false)} style={secondaryBtnSmall}>{t('add_membership_plan_cancel')}</button>
+              </div>
+            </div>
           )}
-          {createError && <p style={{ ...formErrorStyle, margin: '8px 0 0' }}>{createError}</p>}
-          <div style={{ marginTop: 10 }}>
-            <button onClick={() => { setAdding(false); setCreateError(null); }} disabled={creating} style={secondaryBtnSmall}>
-              {t('add_membership_plan_cancel')}
-            </button>
-          </div>
-        </div>
+          {!optionsLoading && selectable.length > 0 && (
+            <AssignPlanToMembersEditor
+              planOptions={selectable}
+              initialMember={{ id: memberId, name: memberName, email: memberEmail }}
+              onCancel={() => setAdding(false)}
+              onAssigned={() => { setAdding(false); onChanged(); }}
+            />
+          )}
+        </>
       )}
 
       {/* PAST — the same table, so a terminated assignment reads exactly as a
