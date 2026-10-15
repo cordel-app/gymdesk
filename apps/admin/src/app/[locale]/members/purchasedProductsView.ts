@@ -50,6 +50,8 @@ export interface PurchasedProduct {
   payment_status?: string | null;
   /** #1521 — the Billing Event the purchase's payment settles, if any. */
   billing_event_id?: number | null;
+  /** #1661 — `recurring` for a line of the member's ProductSet (negative `id`). */
+  source?: 'one_off' | 'recurring';
 }
 
 /** The statuses `payment_requests.status` can hold (chk_payment_requests_status). */

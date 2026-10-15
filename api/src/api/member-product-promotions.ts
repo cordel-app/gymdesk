@@ -327,6 +327,13 @@ export interface MemberPurchasedProduct {
    * none exists.
    */
   billing_event_id: number | null;
+  /**
+   * #1661 — where the row comes from: a one-time purchase snapshot, or a
+   * recurring Product line of the member's Active / Pending Payment ProductSet.
+   * A recurring row's `id` is the negative of the line id so it can never
+   * collide with a purchase id in a list keyed on `id`.
+   */
+  source?: 'one_off' | 'recurring';
 }
 
 /**
@@ -361,7 +368,7 @@ export async function loadMemberPurchases(
     [gymId, memberId],
   );
   const promotions = await loadAppliedPromotionLists(gymId, rows.map((r: any) => Number(r.id)));
-  return rows.map((row: any) => {
+  const oneOff: MemberPurchasedProduct[] = rows.map((row: any) => {
     const applied = promotions.get(Number(row.id)) ?? [];
     const promotion = applied[0] ?? null;
     const amount = Number(row.amount);
@@ -394,6 +401,73 @@ export async function loadMemberPurchases(
       tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
       payment_status: row.payment_status ?? null,
       billing_event_id: row.billing_event_id == null ? null : Number(row.billing_event_id),
+    };
+  });
+  const recurring = await loadRecurringPurchases(gymId, memberId);
+  return [...oneOff, ...recurring].sort(
+    (a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')),
+  );
+}
+
+/**
+ * #1661 — the recurring Products of the member's Active (or Pending Payment)
+ * ProductSet, in the purchase shape. A recurring purchase writes no
+ * `member_products_oneoff_snapshot` row: it is a line of a ProductSet version,
+ * whose own frozen columns (`unit_price`, `list_unit_price`,
+ * `direct_discount_percent`) are what is read — never the live catalogue.
+ * Nothing is written; this is a projection.
+ */
+async function loadRecurringPurchases(
+  gymId: string,
+  memberId: number,
+): Promise<MemberPurchasedProduct[]> {
+  const { rows } = await db.query<any>(
+    `SELECT s.id, s.product_id, s.quantity, s.item_name, s.item_type, s.unit_price,
+            s.list_unit_price, s.direct_discount_percent, s.item_billing_frequency,
+            s.currency, s.starts_at, s.created_at, ps.status AS set_status,
+            ps.created_by AS set_created_by,
+            pr.status AS payment_status, pr.billing_event_id AS billing_event_id
+       FROM product_sets ps
+       JOIN member_products_recurrent_snapshot s
+         ON s.product_set_id = ps.id AND s.gym_id = ps.gym_id
+       LEFT JOIN payment_requests pr
+              ON pr.id = ps.payment_request_id AND pr.gym_id = ps.gym_id
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ?
+        AND ps.status IN ('active', 'pending_payment')
+        AND (s.ends_at IS NULL OR s.ends_at >= CURDATE())
+      ORDER BY s.created_at DESC, s.id DESC`,
+    [gymId, memberId],
+  );
+  return rows.map((row: any) => {
+    const quantity = Number(row.quantity) || 1;
+    const unit = Number(row.unit_price);
+    const amount = Math.round(unit * quantity * 100) / 100;
+    const listUnit = row.list_unit_price == null ? null : Number(row.list_unit_price);
+    const listPrice = listUnit == null ? null : Math.round(listUnit * quantity * 100) / 100;
+    const pct = row.direct_discount_percent == null ? null : Number(row.direct_discount_percent);
+    return {
+      id: -Number(row.id),
+      product_id: Number(row.product_id),
+      status: row.set_status === 'active' ? 'active' : 'pending_payment',
+      product_name: row.item_name,
+      product_type: row.item_type,
+      billing_frequency: row.item_billing_frequency ?? null,
+      units: null,
+      amount,
+      currency: row.currency ?? 'EUR',
+      purchased_at: row.starts_at ?? null,
+      created_at: row.created_at ?? null,
+      created_by: row.set_created_by ?? null,
+      regular_amount: listPrice ?? amount,
+      promotion: null,
+      promotions: [],
+      list_price: listPrice,
+      direct_discount_percent: pct,
+      direct_discount_amount: pct != null && listPrice != null ? Math.round((listPrice - amount) * 100) / 100 : null,
+      tax_rate_percent: null,
+      payment_status: row.payment_status ?? null,
+      billing_event_id: row.billing_event_id == null ? null : Number(row.billing_event_id),
+      source: 'recurring' as const,
     };
   });
 }
