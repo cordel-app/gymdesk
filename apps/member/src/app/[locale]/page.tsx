@@ -20,7 +20,7 @@ import {
   statusPillStyle,
   statusTone,
 } from '@/lib/memberChrome';
-import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
+import { BOOKED_ON_KEY, type CancellationBlock } from '@/lib/bookingCancellation';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
 import { goalDetail, goalLabel, mealTitle, type NutritionGoalItem } from '@/lib/nutritionFood';
@@ -286,12 +286,6 @@ export default function HomePage() {
                   {cancelPending ? '…' : t('member_schedule.cancel_booking')}
                 </button>
               )}
-              {nextBooking.my_booking_id && nextBooking.my_booking_status === 'booked' && cancellationNoticeKey(nextBooking) && (
-                /* #1162 §5 — the explanation stands where the action was. */
-                <div style={styles.cancelNotice} onClick={(e) => e.stopPropagation()}>
-                  <strong>{t(CANCELLATION_NOTICE_TITLE_KEY)}</strong> {t(cancellationNoticeKey(nextBooking)!)}
-                </div>
-              )}
               {sameDayMore > 0 && (
                 <p style={styles.bookingSub}>{t('home.more_bookings_that_day', { count: sameDayMore })}</p>
               )}
@@ -443,7 +437,6 @@ const styles: Record<string, React.CSSProperties> = {
   bookingSub:      { margin: '4px 0 0', fontSize: 13, color: memberTheme.textMuted },
   planName:        { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
   messageBanner:   { ...noticeStyle('success'), marginBottom: 16 },
-  cancelNotice:    { ...noticeStyle('warning'), fontSize: 13, marginTop: 8 },
   pillWait:        statusPillStyle('warning'),
   hint:            { color: memberTheme.textMuted, fontSize: 14, margin: '4px 0 12px' },
   btnPrimary:      { ...primaryButtonStyle, display: 'block', width: '100%', padding: '14px 0', fontSize: 16, fontWeight: 600, marginBottom: 16 },
