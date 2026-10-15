@@ -39,6 +39,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "exercise_muscles": ["parent", "exercises"],
   "exercise_translations": ["parent", "exercises"],
   "exercise_description_translations": ["parent", "exercises"],
+  "nutrition_goal_translations": ["parent", "nutrition_goals"],
   "gym_memberships": ["technical", "login grant; the actor is recorded on the staff / member row that caused it"],
   "member_device_tokens": ["technical", "push registration of an installation, upserted by the app"],
   "member_notifications": ["ledger", "system-written alerts; the member is the owner"],
