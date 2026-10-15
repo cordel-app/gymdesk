@@ -2052,7 +2052,7 @@ business logic and belongs on the API. Hardcoding it in the page puts a second
 copy of the constraint in the frontend, and the two drift silently: the UI
 offers a value the database refuses, or hides one it would accept.
 
-- **One declaration per surface, beside the CHECK it mirrors.** `api/src/domain/nutritionComponentTypes.ts` holds `TEMPLATE_COMPONENT_TYPES` (seven, `chk_nptmi_component_type`) and `MEMBER_PLAN_COMPONENT_TYPES` (four, `chk_mnpmi_comp`) with the migration named in the comment. Adding a value takes **two** places, like every other CHECK-backed set in `CLAUDE.md`.
+- **One declaration per surface, beside the CHECK it mirrors.** `api/src/domain/nutritionComponentTypes.ts` holds `TEMPLATE_COMPONENT_TYPES` (seven, `chk_nptmi_component_type`) and `MEMBER_PLAN_COMPONENT_TYPES` (the same list, `chk_mnpmi_comp`, migration 283) with the migration named in the comment. Adding a value takes **two** places, like every other CHECK-backed set in `CLAUDE.md`.
 - **Validate and advertise from the same constant.** The write routes call `isComponentType(SET, value)` and `GET …/component-types` returns `SET`, so what a caller may send and what the UI is offered cannot disagree.
 - **Register the collection route before `/:id`.** Express reads `component-types` as an id otherwise — the same trap as `GET /platform/exercises/lookups` (#806). Pin it with a test that asserts a 200 and not an id lookup's 400/404.
 - **Two surfaces over one component means the component asks.** `NutritionPlanTree` serves templates and assigned plans, whose sets differ, so it fetches `${apiBase}/component-types` rather than branching on which page mounted it. The prop that already distinguishes them is the one to key off.

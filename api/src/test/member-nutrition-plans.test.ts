@@ -1070,12 +1070,12 @@ describe('meal items', () => {
     expect(typeof res.body.item_name).toBe('string');
   });
 
-  it('returns 400 for a component_type not in the narrower member-plan list (e.g. drink)', async () => {
+  it('returns 400 for a component_type outside the supported list', async () => {
     const res = await request
       .post(`/member-nutrition-plans/${plan.id}/days/${dayId}/meals/${mealId}/items`)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ nutrition_library_item_id: libraryItemId, component_type: 'drink' });
+      .send({ nutrition_library_item_id: libraryItemId, component_type: 'starter' });
     expect(res.status).toBe(400);
   });
 
@@ -1241,18 +1241,16 @@ describe('GET /member-nutrition-plans/component-types', () => {
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
     expect(res.status).toBe(200);
-    expect(res.body.component_types).toEqual(['main_dish', 'side', 'sauce', 'additional']);
+    expect(res.body.component_types).toEqual(['main_dish', 'side', 'sauce', 'drink', 'dessert', 'other', 'additional']);
   });
 
-  it('omits drink/dessert/other — chk_mnpmi_comp refuses them here', async () => {
-    // #294 widened the template table's CHECK only, so the Food Type selector on
-    // an assigned plan must offer a narrower set than on a template.
+  it('offers drink/dessert/other, like a template (#1624)', async () => {
     const res = await request
       .get('/member-nutrition-plans/component-types')
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId);
-    for (const templateOnly of ['drink', 'dessert', 'other']) {
-      expect(res.body.component_types).not.toContain(templateOnly);
+    for (const type of ['drink', 'dessert', 'other']) {
+      expect(res.body.component_types).toContain(type);
     }
   });
 
@@ -1261,7 +1259,7 @@ describe('GET /member-nutrition-plans/component-types', () => {
     expect(res.status).toBe(401);
   });
 
-  it('every returned type is accepted by POST …/items, and a template-only one is not', async () => {
+  it('every returned type is accepted by POST …/items, and an unknown one is not', async () => {
     const optionsRes = await request
       .get('/member-nutrition-plans/component-types')
       .set('Authorization', TEST_AUTH_HEADER)
@@ -1299,7 +1297,7 @@ describe('GET /member-nutrition-plans/component-types', () => {
       .post(itemsUrl)
       .set('Authorization', TEST_AUTH_HEADER)
       .set('x-gym-id', gymId)
-      .send({ nutrition_library_item_id: libraryItemId, component_type: 'dessert' });
+      .send({ nutrition_library_item_id: libraryItemId, component_type: 'starter' });
     expect(rejected.status).toBe(400);
   });
 });
