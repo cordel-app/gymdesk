@@ -22,6 +22,8 @@ export interface AssignablePlan {
   id: number;
   name: string;
   member_limit: '1' | '2' | 'family';
+  /** #1659: a Draft plan is listed (with its status) but cannot be assigned until it is Active. */
+  lifecycle_status?: string;
 }
 type Plan = AssignablePlan;
 
@@ -137,7 +139,14 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
             style={{ ...formControlStyle, margin: '6px 0 12px' }}
           >
             <option value="">{t('members.assign_new_plan_pick_plan')}</option>
-            {(planOptions ?? []).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {(planOptions ?? []).map((p) => {
+              const notAssignable = p.lifecycle_status != null && p.lifecycle_status !== 'active';
+              return (
+                <option key={p.id} value={p.id} disabled={notAssignable}>
+                  {notAssignable ? `${p.name} (${t('members.product_set_status_draft')})` : p.name}
+                </option>
+              );
+            })}
           </select>
         </>
       )}
