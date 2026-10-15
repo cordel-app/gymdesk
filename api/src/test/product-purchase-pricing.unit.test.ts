@@ -105,3 +105,15 @@ describe('oneTimeProductAlreadyOwned', () => {
     expect(oneTimeProductAlreadyOwned([])).toBe(false);
   });
 });
+
+describe('vatPortion (#1656)', () => {
+  it('splits the VAT out of a VAT-inclusive amount, to the cent', async () => {
+    const { vatPortion } = await import('../domain/productPurchasePricing');
+    expect(vatPortion(121, 21)).toBe(21);
+    expect(vatPortion(15, 21)).toBe(2.6);
+  });
+  it('answers null where the Product has no tax rate', async () => {
+    const { vatPortion } = await import('../domain/productPurchasePricing');
+    expect(vatPortion(15, null)).toBeNull();
+  });
+});
