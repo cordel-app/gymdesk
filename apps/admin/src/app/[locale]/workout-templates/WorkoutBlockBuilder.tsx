@@ -477,6 +477,12 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
       )}
 
       <td style={treeTdStyle}>
+        {/* #1647 — the exercise image leads the name as a circle; the slot is
+            reserved so rows without an image keep the same alignment. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 28, height: 28, flex: '0 0 auto', display: 'inline-flex' }}>
+            <ExerciseMediaThumbnails exercise={exercise} part="image" />
+          </span>
         {canWrite ? (
           <ExerciseCombobox
             value={exerciseId}
@@ -487,6 +493,7 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
         ) : (
           <span style={{ fontSize: 13.5 }}>{exercise.exercise_name}</span>
         )}
+        </div>
       </td>
 
       <td style={treeTdStyle}>{numInput(sets, setSets, () => persist(buildBody({ sets: sets ? parseInt(sets, 10) : null })))}</td>
@@ -523,9 +530,9 @@ function ExerciseRow({ workoutKey, blocksUrl, block, exercise, canWrite, exercis
         </div>
       </td>
 
-      {/* Media (#720) — whatever image/video the exercise carries, at the right of the row. */}
+      {/* Media (#720) — the video tile stays at the right; the image leads the name (#1647). */}
       <td style={{ ...treeTdStyle, textAlign: 'right' }}>
-        <ExerciseMediaThumbnails exercise={exercise} />
+        <ExerciseMediaThumbnails exercise={exercise} part="video" />
       </td>
 
       {canWrite && (

@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1647 (Admin → Assigned Training Plans: an exercise's image is a circular thumbnail before its name instead of a tile at the far right of the row, with the slot reserved so rows without an image align; the video tile stays at the right. `ExerciseMediaThumbnails` gains a `part` prop. Frontend only)
 - **Done**: #1646 (Admin → Members → Products → `+ Add Membership Plan`: the plan picker no longer stays silently empty — it shows a loading state, retries after a failed load instead of remembering it as loaded, and says so when no active public plan is available; the Active + Public rule is still the server's `planAssignabilityError()`. No API or schema change.)
 - **Done**: #1640 (Admin → Members → Products: the section appears once and is no longer collapsible, the table gains a *Direct Discount* column from the purchase's stored `direct_discount_percent`, and `+ Add Product` sits below the list. Frontend only)
 - **Done**: #1638 (Members App: a subsection's title in the top bar is clickable and navigates exactly like the back arrow, through the one `goBack` handler in `TopBar`; the title looks unchanged. Frontend only)
