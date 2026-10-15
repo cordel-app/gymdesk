@@ -91,6 +91,7 @@ export const MEMBERS_APP_SETTING_TYPES: Record<string, MembersAppSettingType> = 
   secondaryButtonTextColor:          'color',
   calendarBackgroundColor:           'color',
   calendarHeaderColor:               'color',
+  calendarHeaderTextColor:           'color',
   calendarButtonsColor:              'color',
   calendarActiveAreaColor:           'color',
   calendarInactiveAreaColor:         'color',
