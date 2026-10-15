@@ -107,6 +107,7 @@ export interface PurchasableProductOption {
   currency: string;
   price_incl_tax: number | null;
   tax_included: boolean;
+  tax_rate_percent?: number | null;
   recurring: boolean;
   promotions: PurchasableProductPromotion[];
 }
@@ -134,6 +135,9 @@ export interface PurchaseQuote {
   direct_discount_percent: number | null;
   direct_discount_amount: number | null;
   final_price: number;
+  /** #1656 — the server's VAT breakdown of the final price; null with no tax rate. */
+  tax_rate_percent?: number | null;
+  tax_amount?: number | null;
 }
 
 /** The error codes the purchase routes answer with, each with a locale key suffix. */

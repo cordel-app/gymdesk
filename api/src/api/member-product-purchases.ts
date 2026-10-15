@@ -37,6 +37,7 @@ import {
   parseDirectDiscountPercent,
   priceProductPurchase,
   pricingRefusalResponse,
+  vatPortion,
 } from '../domain/productPurchasePricing';
 import { purchaseBlockResponse } from '../domain/memberProductPurchase';
 import { startRecurringPurchaseDraft } from './recurring-purchase-draft';
@@ -115,7 +116,10 @@ async function staffCatalogue(gymId: string, memberId: number) {
   );
   const owned = await ownedOneTimeProductIds(gymId, memberId);
   const items = rows
-    .map((row: any) => shapeMemberProduct(row, grossPrice(row)))
+    .map((row: any) => ({
+      ...shapeMemberProduct(row, grossPrice(row)),
+      tax_rate_percent: row.tax_rate_percent == null ? null : Number(row.tax_rate_percent),
+    }))
     // A Product with no price has nothing to charge or to simulate.
     .filter((item) => item.price_incl_tax != null && item.price_incl_tax > 0)
     // #1521 (decision 3): a one-time Product already held is not offered again;
@@ -182,6 +186,8 @@ memberProductPurchasesRouter.post('/quote', async (req, res, next) => {
       billing_frequency: item.billing_frequency,
       currency: item.currency,
       tax_included: item.tax_included,
+      tax_rate_percent: item.tax_rate_percent,
+      tax_amount: vatPortion(priced.price.final_price, item.tax_rate_percent),
       ...priced.price,
     });
   } catch (err) { next(err); }
