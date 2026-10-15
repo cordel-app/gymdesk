@@ -39,6 +39,8 @@ export function TopBar() {
   if (!isLinked) return null;
 
   const homePath = `/${locale}`;
+  // #1638: the back arrow and the section title are one control's two faces — both call this.
+  const goBack = () => router.push(homePath);
   const isHome = pathname === homePath;
   const isNotifications = pathname.startsWith(`${homePath}/notifications`);
 
@@ -102,7 +104,7 @@ export function TopBar() {
       ) : (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
           <button
-            onClick={() => router.push(homePath)}
+            onClick={goBack}
             aria-label={t('nav.back_home')}
             style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4, color: 'inherit', fontFamily: 'inherit', fontSize: 24, lineHeight: 1, flexShrink: 0 }}
           >
@@ -110,7 +112,13 @@ export function TopBar() {
           </button>
           {sectionTitleKey && (
             <h1 style={{ margin: 0, fontSize: 24, fontWeight: 700, lineHeight: 1.2, color: 'inherit', fontFamily: 'inherit', minWidth: 0, overflowWrap: 'anywhere' }}>
-              {t(sectionTitleKey)}
+              <button
+                onClick={goBack}
+                aria-label={t('nav.back_home')}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, margin: 0, color: 'inherit', fontFamily: 'inherit', fontSize: 'inherit', fontWeight: 'inherit', lineHeight: 'inherit', textAlign: 'inherit', overflowWrap: 'anywhere' }}
+              >
+                {t(sectionTitleKey)}
+              </button>
             </h1>
           )}
         </div>
