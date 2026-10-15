@@ -615,6 +615,8 @@ describe('hierarchy', () => {
       .set('x-gym-id', gymId)
       .send({ item_name: 'protein', quantity: 150, unit: 'g', frequency: 'daily' });
 
+    await db.query('UPDATE nutrition_library_items SET image_url = ? WHERE id = ?', ['https://img.test/food.webp', libraryItemId]);
+
     const hierRes = await request
       .get(`/nutrition-plan-templates/${tplId}/hierarchy`)
       .set('Authorization', TEST_AUTH_HEADER)
@@ -634,6 +636,9 @@ describe('hierarchy', () => {
     expect(meal.items[0].nutrition_library_item_id).toBe(libraryItemId);
     expect(meal.items[0].component_type).toBe('main_dish');
     expect(Number(meal.items[0].quantity)).toBe(200);
+    // #1625: the food's image rides along for the meal / restriction avatars.
+    expect(meal.items[0].item_image_url).toBe('https://img.test/food.webp');
+    expect(hierRes.body.restrictions[0].item_image_url).toBe('https://img.test/food.webp');
 
     expect(Array.isArray(hierRes.body.restrictions)).toBe(true);
     expect(hierRes.body.restrictions).toHaveLength(1);

@@ -17,6 +17,7 @@ import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu } from '@/components/ContextMenu';
 import { btnStyle, btnSmall } from '@/components/ui';
 import { inlineActionsRowStyle } from '@/components/formChrome';
+import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
 
 /**
  * A Nutrition Library food as the food pickers need it. `categories` is a list
@@ -100,6 +101,8 @@ export interface MealItem {
   nutrition_library_item_id: number;
   item_name: string;
   component_type: string;
+  /** The food's image, used for the meal's circular avatar (#1625). */
+  item_image_url?: string | null;
   quantity: number | null;
   unit: string | null;
   position: number;
@@ -121,6 +124,7 @@ export interface HierRestriction {
   id: number; position: number;
   nutrition_library_item_id: number; item_name: string; item_category: string;
   applies_all_days: number;
+  item_image_url?: string | null;
 }
 export interface HierGoal {
   id: number; position: number;
@@ -137,6 +141,9 @@ export interface Hierarchy {
   restrictions: HierRestriction[];
   goals: HierGoal[];
 }
+
+/** #1625: one diameter for the meal and restriction avatars, in both the template and assigned-plan trees. */
+const TREE_AVATAR_SIZE = 36;
 
 const MEAL_TYPES = [
   'recien_levantado', 'breakfast', 'media_manana',
@@ -578,6 +585,8 @@ function MealRow({
           >⠿</span>
         )}
         <span style={{ color: '#9ca3af', fontSize: 11, flexShrink: 0 }}>{expanded ? '▼' : '▶'}</span>
+        {/* #1625: a meal has no image of its own; its avatar is the first food that has one. */}
+        <FoodThumbnail imageUrl={meal.items.find((i) => i.item_image_url)?.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
         <span style={{ fontWeight: 600, fontSize: 14, flexShrink: 0 }}>
           {/* A meal saved with no name stores its type's slug as display_name:
               that is an identifier, so the translated type is shown instead. */}
@@ -1127,7 +1136,8 @@ function RestrictionsSection({
         <p style={{ color: '#aaa', fontSize: 13, margin: '0 0 8px' }}>{t('nutrition_plan_templates.tree_no_restrictions')}</p>
       )}
       {restrictions.map((r) => (
-        <div key={r.id} style={tagRowStyle}>
+        <div key={r.id} style={{ ...tagRowStyle, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <FoodThumbnail imageUrl={r.item_image_url ?? null} size={TREE_AVATAR_SIZE} />
           <span style={{ fontSize: 13.5, fontWeight: 500 }}>{r.item_name}</span>
           <span style={{ fontSize: 11.5, color: '#9ca3af', marginLeft: 6 }}>{r.item_category}</span>
           {canWrite && (
