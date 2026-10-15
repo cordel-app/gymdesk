@@ -42,9 +42,14 @@ import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import { cardMutedTextStyle } from '@/components/formChrome';
+import { StatusFilter } from '@/components/StatusFilter';
+import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import { AddProductPurchase } from './AddProductPurchase';
 import {
   billingEventPath,
+  filterPurchasesByStatus,
+  PURCHASE_STATUS_FILTER_DEFAULT,
+  PURCHASE_STATUS_FILTER_VALUES,
   formatAppliedTax,
   formatDirectDiscount,
   hasBillingEvent,
@@ -78,6 +83,7 @@ export function MemberPurchasedProducts({
   const gymFmt = useGymFormatSettings();
 
   const [adding, setAdding] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>(PURCHASE_STATUS_FILTER_DEFAULT);
   const [detail, setDetail] = useState<PurchasedProduct | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
@@ -191,9 +197,21 @@ export function MemberPurchasedProducts({
           onChanged={onChanged}
         />
       )}
+      <FilterBar style={{ marginBottom: 8 }}>
+        <FilterField label={t('purchase_col_status')} htmlFor="purchase-status-filter">
+          <StatusFilter
+            id="purchase-status-filter"
+            value={statusFilter}
+            onChange={setStatusFilter}
+            allLabel={t('purchase_filter_all')}
+            options={PURCHASE_STATUS_FILTER_VALUES.map((v) => ({ value: v, label: t(`purchase_filter_${v}` as any) }))}
+            style={filterControlStyle}
+          />
+        </FilterField>
+      </FilterBar>
       <DataTable
           columns={columns}
-          rows={items}
+          rows={filterPurchasesByStatus(items, statusFilter)}
           rowKey={(item) => item.id}
           loadingText=""
           emptyText={t('purchased_products_none')}

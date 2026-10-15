@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   billingEventPath,
+  filterPurchasesByStatus,
   formatAppliedTax,
   hasBillingEvent,
   paymentStatusKey,
@@ -37,5 +38,16 @@ describe('purchased products view (#1521)', () => {
     expect(billingEventPath('es', {})).toBeNull();
     expect(hasBillingEvent({ billing_event_id: 0 })).toBe(false);
     expect(hasBillingEvent({ billing_event_id: 7 })).toBe(true);
+  });
+});
+
+describe('filterPurchasesByStatus (#1654)', () => {
+  const rows = [{ status: 'active' }, { status: 'pending_payment' }, { status: 'cancelled' }];
+  it('defaults to active + pending payment', () => {
+    expect(filterPurchasesByStatus(rows, 'open').map((r) => r.status)).toEqual(['active', 'pending_payment']);
+  });
+  it('shows everything for all and one status when chosen', () => {
+    expect(filterPurchasesByStatus(rows, '')).toHaveLength(3);
+    expect(filterPurchasesByStatus(rows, 'cancelled')).toEqual([{ status: 'cancelled' }]);
   });
 });
