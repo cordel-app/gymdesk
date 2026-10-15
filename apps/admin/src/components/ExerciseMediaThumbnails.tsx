@@ -19,9 +19,14 @@ import {
  * a row (§3, §10). A thumbnail that fails to load hides itself and leaves the
  * other one alone (§13).
  */
-export function ExerciseMediaThumbnails({ exercise, size = 28 }: {
+export function ExerciseMediaThumbnails({ exercise, size = 28, part = 'all' }: {
   exercise: ExerciseMedia;
   size?: number;
+  /**
+   * `image` renders only the exercise image as a circular avatar (the workout
+   * row puts it before the exercise name, #1647); `video` only the video tile.
+   */
+  part?: 'all' | 'image' | 'video';
 }) {
   const t = useTranslations();
   const [imageBroken, setImageBroken] = useState(false);
@@ -29,8 +34,8 @@ export function ExerciseMediaThumbnails({ exercise, size = 28 }: {
 
   if (!hasExerciseMedia(exercise)) return null;
 
-  const imageSrc = exerciseImageSrc(exercise);
-  const videoUrl = exercise.exercise_video_url ?? null;
+  const imageSrc = part === 'video' ? null : exerciseImageSrc(exercise);
+  const videoUrl = part === 'image' ? null : (exercise.exercise_video_url ?? null);
   const posterSrc = exerciseVideoPosterUrl(exercise);
   const name = exercise.exercise_name ?? '';
 
@@ -38,6 +43,9 @@ export function ExerciseMediaThumbnails({ exercise, size = 28 }: {
     width: size, height: size, borderRadius: 5, border: '1px solid #eee',
     background: '#fafafa', objectFit: 'contain', display: 'block', flex: '0 0 auto',
   };
+  const imageTile: React.CSSProperties = part === 'image'
+    ? { ...tile, borderRadius: '50%', objectFit: 'cover' }
+    : tile;
 
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, justifyContent: 'flex-end' }}>
@@ -47,7 +55,7 @@ export function ExerciseMediaThumbnails({ exercise, size = 28 }: {
           alt={name ? t('exercise_media.image_alt', { name }) : t('exercise_media.image')}
           title={name}
           loading="lazy"
-          style={tile}
+          style={imageTile}
           onError={() => setImageBroken(true)}
         />
       )}
