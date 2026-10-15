@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { memberTheme } from '@/lib/memberChrome';
+import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
 
 /**
  * #932 §4 — one image-plus-name row of My Nutrition, shared by the plan's
@@ -26,7 +26,7 @@ export function NutritionItemRow({ name, imageUrl = null, detail = null, actions
   name: string;
   imageUrl?: string | null;
   detail?: string | null;
-  /** Rendered under the item, above the divider, so the divider closes the whole item and never touches the buttons. */
+  /** Rendered under the card's text (mark-done buttons). */
   actions?: React.ReactNode;
 }) {
   const t = useTranslations();
@@ -35,8 +35,7 @@ export function NutritionItemRow({ name, imageUrl = null, detail = null, actions
   const imageSrc = imageBroken ? null : imageUrl;
 
   return (
-    <div style={styles.item}>
-    <div style={styles.row}>
+    <article style={styles.card}>
       <div style={styles.imageBox}>
         {imageSrc ? (
           <img
@@ -55,20 +54,26 @@ export function NutritionItemRow({ name, imageUrl = null, detail = null, actions
         <p style={styles.name}>{name}</p>
         {detail && <p style={styles.detail}>{detail}</p>}
       </div>
-    </div>
-    {actions && <div style={styles.actions}>{actions}</div>}
-    </div>
+      {actions && <div style={styles.actions}>{actions}</div>}
+    </article>
   );
 }
 
+/** #1602 — the grid both sections lay their cards out in (like My Training Plan). */
+export const nutritionItemGridStyle: React.CSSProperties = {
+  display: 'grid',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+  gap: 12,
+  padding: '14px 0',
+};
+
 const styles: Record<string, React.CSSProperties> = {
-  item:        { padding: '10px 0 12px', borderBottom: `1px solid ${memberTheme.separator}` },
-  row:         { display: 'flex', alignItems: 'center', gap: 12 },
-  actions:     { marginTop: 10 },
-  imageBox:    { flex: '0 0 auto', width: 44, aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', background: memberTheme.pageBackground, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  card:        { ...sectionCardStyle, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
+  imageBox:    { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground },
   image:       { width: '100%', height: '100%', objectFit: 'contain', display: 'block' },
-  placeholder: { color: memberTheme.textMuted, fontSize: 9, lineHeight: 1.2, textAlign: 'center', padding: '0 4px' },
-  body:        { minWidth: 0 },
-  name:        { margin: 0, fontSize: 14, fontWeight: 500, color: memberTheme.text },
+  placeholder: { color: memberTheme.textMuted, fontSize: 12, textAlign: 'center', padding: '0 12px' },
+  body:        { padding: '10px 12px 12px', minWidth: 0 },
+  name:        { margin: 0, fontSize: 14, fontWeight: 700, color: memberTheme.text },
   detail:      { margin: '2px 0 0', fontSize: 12, color: memberTheme.textMuted },
+  actions:     { padding: '0 12px 12px' },
 };

@@ -9,7 +9,7 @@ import { useImpersonation } from '@/context/ImpersonationContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { NutritionFoodCarousel } from '@/components/NutritionFoodCarousel';
-import { NutritionItemRow } from '@/components/NutritionItemRow';
+import { NutritionItemRow, nutritionItemGridStyle } from '@/components/NutritionItemRow';
 import { TrainingSummaryCards } from '@/components/TrainingSummaryCards';
 import { TrainingStatusLegend, DAY_STATUS_COLOR } from '@/components/TrainingStatusLegend';
 import { NUTRITION_DAY_STATUSES, type NutritionDayStatus } from '@/lib/trainingDayStatus';
@@ -264,7 +264,7 @@ export default function NutritionPage() {
               {goals.length === 0 ? (
                 <p style={styles.sectionEmpty}>{t('nutrition.goals_empty')}</p>
               ) : (
-                goals.map((g) => (
+                <div style={nutritionItemGridStyle}>{goals.map((g) => (
                   <NutritionItemRow
                     key={g.id}
                     name={goalLabel(t, g.item_name)}
@@ -272,7 +272,7 @@ export default function NutritionPage() {
                     imageUrl={g.image_url ?? null}
                     actions={requirementActions('goal', g.id)}
                   />
-                ))
+                ))}</div>
               )}
             </div>
           </section>
@@ -283,10 +283,10 @@ export default function NutritionPage() {
               {restrictions.length === 0 ? (
                 <p style={styles.sectionEmpty}>{t('nutrition.restrictions_empty')}</p>
               ) : (
-                restrictions.map((r) => (
+                <div style={nutritionItemGridStyle}>{restrictions.map((r) => (
                   <NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url}
                     actions={requirementActions('restriction', r.id)} />
-                ))
+                ))}</div>
               )}
             </div>
           </section>
