@@ -22,10 +22,12 @@ import { memberTheme } from '@/lib/memberChrome';
  * the follow-up work tracked on the issue. When that link lands, this row fills
  * itself with no change here.
  */
-export function NutritionItemRow({ name, imageUrl = null, detail = null }: {
+export function NutritionItemRow({ name, imageUrl = null, detail = null, actions = null }: {
   name: string;
   imageUrl?: string | null;
   detail?: string | null;
+  /** Rendered under the item, above the divider, so the divider closes the whole item and never touches the buttons. */
+  actions?: React.ReactNode;
 }) {
   const t = useTranslations();
   const [imageBroken, setImageBroken] = useState(false);
@@ -33,6 +35,7 @@ export function NutritionItemRow({ name, imageUrl = null, detail = null }: {
   const imageSrc = imageBroken ? null : imageUrl;
 
   return (
+    <div style={styles.item}>
     <div style={styles.row}>
       <div style={styles.imageBox}>
         {imageSrc ? (
@@ -53,12 +56,16 @@ export function NutritionItemRow({ name, imageUrl = null, detail = null }: {
         {detail && <p style={styles.detail}>{detail}</p>}
       </div>
     </div>
+    {actions && <div style={styles.actions}>{actions}</div>}
+    </div>
   );
 }
 
 const styles: Record<string, React.CSSProperties> = {
-  row:         { display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: `1px solid ${memberTheme.separator}` },
-  imageBox:    { flex: '0 0 auto', width: 52, aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', background: memberTheme.pageBackground, display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  item:        { padding: '10px 0 12px', borderBottom: `1px solid ${memberTheme.separator}` },
+  row:         { display: 'flex', alignItems: 'center', gap: 12 },
+  actions:     { marginTop: 10 },
+  imageBox:    { flex: '0 0 auto', width: 44, aspectRatio: '1 / 1', borderRadius: 10, overflow: 'hidden', background: memberTheme.pageBackground, display: 'flex', alignItems: 'center', justifyContent: 'center' },
   image:       { width: '100%', height: '100%', objectFit: 'contain', display: 'block' },
   placeholder: { color: memberTheme.textMuted, fontSize: 9, lineHeight: 1.2, textAlign: 'center', padding: '0 4px' },
   body:        { minWidth: 0 },
