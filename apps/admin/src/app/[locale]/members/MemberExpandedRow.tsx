@@ -35,7 +35,7 @@ import { useProductSetDetail } from './MemberProductSet';
 import { ProposedSetForecast } from './ProposedSetForecast';
 import { ProductsWorkflowBar, useDraftReview } from './MemberProductsWorkflow';
 import { billingMode, pendingOneOffCount, saveAndPayTarget } from './productsWorkflowView';
-import { MemberRecurringProducts } from './MemberRecurringProducts';
+import { ReviewChangesModal } from './ReviewChangesModal';
 import { MemberProgress } from './MemberProgress';
 import { MemberPersonalGoals } from '@/components/personalGoals/MemberPersonalGoals';
 import { EMPTY_CONFIGURATION, type MemberConfiguration, type MemberPlanRow } from './membershipConfiguration';
@@ -503,21 +503,19 @@ export function MemberExpandedRow({
             />
           </Section>
 
-          {/* 2. RECURRING PRODUCTS (#1537) — the member's recurring
-              configuration: Active or Draft, edited as one Draft and committed
-              by the one global Save & Pay (behind Review your changes). */}
+          {/* 2. The Recurring Products card is gone from this tab (#1613
+              follow-up). The global Save & Pay still reviews a Draft through
+              the Review modal; the recurring routes are untouched. */}
+          {inFlightSetId != null && (
+            <ReviewChangesModal
+              productSetId={inFlightSetId}
+              open={reviewOpen}
+              onClose={() => setReviewOpen(false)}
+              onCommitted={() => { setReviewOpen(false); reloadProducts(); }}
+            />
+          )}
           <Section label={t('members.section_additional_services')}>
             <span id="member-products-section" />
-            <MemberRecurringProducts
-              reviewing={reviewOpen}
-              onReviewingChange={setReviewOpen}
-              memberId={memberId}
-              current={configuration.current_product_set}
-              reloadKey={configuration}
-              canWrite={canWriteMembers && canManagePackages}
-              isAdmin={isAdmin}
-              onChanged={reloadProducts}
-            />
 
           {/* 3. PRODUCTS (#1521) — the Products this Member purchased, as one
               collapsible card: what they bought, under which price, tax and
