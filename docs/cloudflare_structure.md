@@ -1,12 +1,16 @@
 {bucket}/
 ├── cordel/
-│   ├── nutrition
+│   ├── nutrition/
 │   │   ├── {food_id}-{food_name}.webp                              — 1080 × 1080 px
 │   │   └── {food_id}-{food_name}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── goals/
 │   │   ├── {goal_id}-{goal_name}.webp                              — 1080 × 1080 px
 │   │   └── {goal_id}-{goal_name}-thumbnail.webp                    — 256 × 256 px
+│   │
+│   ├── nutrition_goals/
+│   │   ├── {nutrition_goal_id}-{nutrition_goal_name}.webp                              — 1080 × 1080 px
+│   │   └── {nutrition_goal_id}-{nutrition_goal_name}-thumbnail.webp                    — 256 × 256 px
 │   │
 │   ├── muscles/
 │   │   └── images/
@@ -54,6 +58,10 @@
         ├── goals
         │   ├── {goal_id}-{goal_name}-.webp                                   — 1080 × 1080 px
         │   └── {goal_id}-{goal_name}-thumbnail.webp                          — 256 × 256 px
+        │        
+        ├── nutrition_goals
+        │   ├── {nutrition_goal_id}-{nutrition_goal_name}.webp               — 1080 × 1080 px
+        │   └── {nutrition_goal_id}-{nutrition_goal_name}-thumbnail.webp      — 256 × 256 px      
         │        
         ├── activities
         │   ├── {activity_id}-{activity_name}.webp                            — 1080 × 1080 px

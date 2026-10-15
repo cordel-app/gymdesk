@@ -197,16 +197,13 @@ jobs:
               echo "WARNING: BOOKING_REMINDERS_INTERNAL_SECRET is empty — POST /booking-reminders/run will answer 401 (#1113)"
             fi
 
-            # The values go into an env file only the `podman` user can read, and
-            # the unit carries one `EnvironmentFile=` line pointing at it, which
-            # quadlet turns into `podman run --env-file <path>`. Never inline
-            # `Environment=KEY=value` lines (the pre-#1192 shape): quadlet passes
-            # those as `--env KEY=value` on podman's command line, journald
-            # records that command line in the `_CMDLINE` field of podman's own
-            # log entries, and the host's log shipper sends it to Grafana Cloud
-            # Loki — every secret below was readable there. GitHub stays the
-            # single source of truth: the file is regenerated on every deploy and
-            # is never hand-edited on the VPS.
+            # Each variable is one `Environment=KEY=value` line in the unit, one
+            # under the other, exactly as corfront's units are written. GitHub
+            # stays the single source of truth: the block is regenerated on every
+            # deploy and is never hand-edited on the VPS. Quadlet turns each line
+            # into `--env KEY=value` on podman's command line, so the values are
+            # visible to journald (`_CMDLINE`) and the host's log shipper — this
+            # is the pre-#1192 shape, restored on purpose to match corfront.
             CF="$HOME/.config/containers/systemd/fitness-api.container"
             if [ ! -f "$CF" ]; then echo "ERROR: quadlet $CF not found"; exit 1; fi
             if ! grep -q '^\[Container\]$' "$CF"; then
@@ -219,16 +216,11 @@ jobs:
             # inline secrets of the pre-#1192 shape.
             ls -t "$CF".bak.* 2>/dev/null | tail -n +4 | xargs -r rm -f
 
-            ENV_DIR="$HOME/.config/fitness-api"
-            ENV_FILE="$ENV_DIR/api.env"
-            mkdir -p "$ENV_DIR"
-            chmod 700 "$ENV_DIR"
-            # podman's --env-file format: one KEY=value per line, the value taken
-            # literally to the end of the line (no quoting, no expansion), so a
+            # One KEY=value per line, taken literally to the end of the line, so a
             # multi-line value must be base64-encoded first (FCM_SERVICE_ACCOUNTS
-            # already is). Written to a temporary file and moved into place, so a
-            # failed write never leaves the API with half an environment.
-            ENV_TMP="$(mktemp "$ENV_DIR/api.env.XXXXXX")"
+            # already is). Built in a temporary file first, so a failed write
+            # never leaves the unit with half an environment.
+            ENV_TMP="$(mktemp)"
             cat > "$ENV_TMP" <<ENVEOF
             NODE_ENV=${APP_NODE_ENV}
             PORT=${APP_PORT}
@@ -268,14 +260,19 @@ jobs:
             PUBLIC_REGISTRATION_RELAY_HOPS=${PUBLIC_REGISTRATION_RELAY_HOPS:-}
             MOBILE_TESTFLIGHT_URL=${MOBILE_TESTFLIGHT_URL:-}
             ENVEOF
-            chmod 600 "$ENV_TMP"
-            mv -f "$ENV_TMP" "$ENV_FILE"
+            # `%` is a systemd specifier, so it is doubled; each line becomes an
+            # `Environment=` line.
+            UNIT_ENV="$(mktemp)"
+            sed 's/%/%%/g; s/^/Environment=/' "$ENV_TMP" > "$UNIT_ENV"
+            rm -f "$ENV_TMP"
 
-            # Drop this unit's previous Environment=/EnvironmentFile= lines —
-            # including any inline secrets a pre-#1192 deploy left there — then
-            # point it at the file, right after [Container].
+            # Drop this unit's previous Environment=/EnvironmentFile= lines, then
+            # insert the block right after [Container].
             sed -i '/^Environment=/d; /^EnvironmentFile=/d' "$CF"
-            sed -i "/^\[Container\]$/a EnvironmentFile=$ENV_FILE" "$CF"
+            sed -i "/^\[Container\]$/r $UNIT_ENV" "$CF"
+            rm -f "$UNIT_ENV"
+            # The EnvironmentFile of the #1192 shape is retired.
+            rm -f "$HOME/.config/fitness-api/api.env"
 
             # #1186: the API's output goes to journald, where the hosts' log
             # collector reads it, exactly as corfront's three units already do

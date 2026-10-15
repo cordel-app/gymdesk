@@ -1,5 +1,6 @@
 'use client';
 
+import { completionActions } from '@/lib/nutritionCompletion';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -156,13 +157,14 @@ export default function NutritionPage() {
     if (level === 'done') {
       return <span style={{ ...statusPillStyle(statusTone('completed')), fontSize: 11, padding: '2px 8px', alignSelf: 'flex-start' }}>✓ {t('nutrition.meal_done')}</span>;
     }
-    if (selectedDate > today) return null;
+    const actions = completionActions(kind, level, selectedDate, today);
+    if (!actions.showMarkDone) return null;
     const busy = pendingReq === `${kind}|${id}|${selectedDate}`;
     return (
       <div style={styles.reqActions}>
         {level === 'partial' && <span style={{ ...statusPillStyle(statusTone('scheduled')), fontSize: 11, padding: '2px 8px' }}>{t('nutrition.partially_done_state')}</span>}
         <button type="button" onClick={() => markRequirement(kind, id, 'done')} disabled={busy} style={styles.reqBtn}>{t('nutrition.mark_done')}</button>
-        {kind === 'restriction' && level !== 'partial' && (
+        {actions.showPartiallyDone && (
           <button type="button" onClick={() => markRequirement(kind, id, 'partial')} disabled={busy} style={styles.reqBtn}>{t('nutrition.partially_done')}</button>
         )}
       </div>
@@ -307,18 +309,19 @@ export default function NutritionPage() {
                           {title.suffix && <span style={styles.mealType}> · {title.suffix}</span>}
                         </p>
                         {done && <span style={{ ...statusPillStyle(statusTone('completed')), fontSize: 11, padding: '2px 8px' }}>✓ {t('nutrition.meal_done')}</span>}
+                        {/* #1580: completion belongs to the whole meal, so its action sits in the meal's own header. */}
+                        {completionActions('meal', done ? 'done' : undefined, selectedDate, today).showMarkDone && (
+                          <button type="button" onClick={() => markMealDone(meal)} disabled={pendingMeal === meal.id}
+                                  aria-label={t('nutrition.mark_done_aria', { name: title.title })} style={styles.reqBtn}>
+                            {t('nutrition.mark_done')}
+                          </button>
+                        )}
                       </div>
                       {/* #722: the meal's foods are swipeable image cards, one
                           carousel per meal — the items of a meal are the
                           alternatives the member chooses between. */}
                       <NutritionFoodCarousel items={meal.items} label={title.title} />
                       {meal.notes && <p style={styles.mealNotes}>{meal.notes}</p>}
-                      {!done && selectedDate <= today && (
-                        <button type="button" onClick={() => markMealDone(meal)} disabled={pendingMeal === meal.id}
-                                aria-label={t('nutrition.mark_done_aria', { name: title.title })} style={styles.markDoneBtn}>
-                          {t('nutrition.mark_done')}
-                        </button>
-                      )}
                     </div>
                   );
                 })}
