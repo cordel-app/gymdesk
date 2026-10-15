@@ -389,7 +389,8 @@ export default function ActivityTypesPage() {
   // ─── Edit ─────────────────────────────────────────────────────────────────
 
   async function openEdit(row: ActivityType) {
-    setView('cards');
+    // Editing happens in the List view only; Cards are read-only (#1573).
+    setView('list');
     setEditingId(row.id);
     resetScheduleEditing();
     setEditForm({
@@ -411,7 +412,7 @@ export default function ActivityTypesPage() {
     if (!rulesMap.has(row.id)) await fetchRules(row.id);
     const services = eligibleServicesMap.get(row.id) ?? (await fetchEligibleServices(row.id));
     setEditSelectedServices(new Set(services.map((p) => p.id)));
-    // The card is rendered by now (Cards view, expanded, editing): bring it into view.
+    // The row is rendered by now (List view, expanded, editing): bring it into view.
     requestAnimationFrame(() => {
       document.getElementById(`activity-card-${row.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
@@ -1037,7 +1038,7 @@ export default function ActivityTypesPage() {
 
     return (
       <div key={row.id} id={`activity-card-${row.id}`} style={isEditing && view === 'cards' ? { ...cardStyle, gridColumn: '1 / -1' } : cardStyle}>
-        {view === 'cards' ? renderCardHeader(row, isExpanded, menuItems) : (
+        {view === 'cards' ? renderCardHeader(row, isExpanded, menuItems.filter((m) => m.label !== t('edit'))) : (
         /* Collapsed header */
         <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(row.id)}>
           <div className={CELL_CLASS.name} title={row.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
