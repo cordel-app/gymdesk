@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1653 (Admin → Promotions: the Session, One-off and Periodical benefit editors share one grid whose Product track has a real minimum width and wider fixed tracks, with consistent spacing; when the screen is too narrow the grid scrolls inside its wrapper instead of overlapping. Fields, validation and behaviour unchanged. Frontend only)
 - **Done**: #1656 (Admin → Members → Products → `+ Add Product`: the form is one compact row — product with price and frequency, direct discount, VAT rate and amount, final VAT-inclusive price at the far right — wrapping cleanly on narrow screens. The VAT breakdown is the server's: the staff catalogue and quote now report `tax_rate_percent` and `tax_amount` (`vatPortion()`); pricing, promotions and billing are unchanged)
 - **Done**: #1648 (Admin → Membership Plans: `⋮ → Assign Plan to Member` now works from the Cards view — it switches to the List view, opens the inline assignment editor for that exact plan and scrolls it into view; List view behaviour and the assignment logic are unchanged. Frontend only)
 - **Done**: #1647 (Admin → Assigned Training Plans: an exercise's image is a circular thumbnail before its name instead of a tile at the far right of the row, with the slot reserved so rows without an image align; the video tile stays at the right. `ExerciseMediaThumbnails` gains a `part` prop. Frontend only)

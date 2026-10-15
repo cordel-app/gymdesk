@@ -610,23 +610,29 @@ export function ProductBenefitEditor({
   // The action column and the value beside it are one unit: both appear only
   // when the caller named a context, so the grid is the same three or four
   // columns it has always been for a caller that did not.
-  const columns = [
-    // #1135: a Duration cell carries its derived `3 months` under the input, so
-    // its track is a little wider than a bare quantity's.
-    '1.3fr', quantityColumn === 'duration' ? '110px' : '80px',
-    ...(showFrequency ? ['100px'] : []),
-    ...(benefitContext ? ['130px', '110px'] : []),
-    ...(showRequirement ? ['130px'] : []),
-    ...(showPlanMandatory ? ['90px'] : []),
-    '28px',
-  ].join(' ');
+  // #1653: fixed tracks are wide enough for their control and the product
+  // track has a real minimum (`minmax(0, …)` is not one: it let the name
+  // select shrink under the neighbours). When the sum does not fit, the grid
+  // scrolls inside its wrapper instead of overlapping.
+  const PRODUCT_MIN = 200;
+  const fixedTracks = [
+    quantityColumn === 'duration' ? 120 : 90,
+    ...(showFrequency ? [130] : []),
+    ...(benefitContext ? [160, 120] : []),
+    ...(showRequirement ? [130] : []),
+    ...(showPlanMandatory ? [110] : []),
+    32,
+  ];
+  const columns = [`minmax(${PRODUCT_MIN}px, 1.6fr)`, ...fixedTracks.map((w) => `${w}px`)].join(' ');
+  const gridMinWidth = PRODUCT_MIN + fixedTracks.reduce((a, b) => a + b, 0) + fixedTracks.length * 12;
   return (
     <>
       {draft.length > 0 && (
+        <div style={{ overflowX: 'auto', marginBottom: 8 }}>
         <div
           style={{
-            display: 'grid', gridTemplateColumns: columns,
-            gap: '3px 8px', alignItems: 'center', marginBottom: 8,
+            display: 'grid', gridTemplateColumns: columns, minWidth: gridMinWidth,
+            gap: '6px 12px', alignItems: 'center',
           }}
         >
           <span style={colHeaderSt}>{t('col_product')}</span>
@@ -795,6 +801,7 @@ export function ProductBenefitEditor({
               </div>
             );
           })}
+        </div>
         </div>
       )}
       {hasMandatory && <p style={{ ...hintSt, marginBottom: 8 }}>{t('mandatory_benefit_hint')}</p>}
