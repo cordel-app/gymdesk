@@ -66,7 +66,8 @@
     "collapse_sidebar": "Contraer menú lateral",
     "expand_sidebar": "Expandir menú lateral",
     "localization": "Hora y localización",
-    "home": "Inicio"
+    "home": "Inicio",
+    "base_payment_methods": "Métodos de pago base"
   },
   "dashboard": {
     "title": "Panel",
@@ -4908,5 +4909,33 @@
     "pending_sub": "{count, plural, =0 {Ningún miembro requiere seguimiento de pago} one {miembro requiere seguimiento de pago} other {miembros requieren seguimiento de pago}}",
     "pending_empty": "Ningún miembro tiene un pago pendiente.",
     "pending_view_all": "Ver los {count} en Pagos"
+  },
+  "base_payment_methods": {
+    "title": "Métodos de pago base",
+    "add": "+ Nuevo método de pago",
+    "empty": "No hay métodos de pago.",
+    "search": "Buscar…",
+    "col_name": "Nombre",
+    "col_code": "Código",
+    "col_status": "Estado",
+    "col_description": "Descripción",
+    "edit": "Editar",
+    "delete": "Eliminar",
+    "details": "Detalles",
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "close": "Cerrar",
+    "code": "Código (identificador estable)",
+    "status": "Estado",
+    "active": "Activo",
+    "inactive": "Inactivo",
+    "all_statuses": "Todos los estados",
+    "name_in": "Nombre ({locale})",
+    "description_in": "Descripción ({locale})",
+    "delete_title": "Eliminar método de pago",
+    "delete_confirm": "¿Eliminar \"{name}\"? Se conserva para el historial y ya no se podrá seleccionar.",
+    "error_load": "No se pudieron cargar los métodos de pago.",
+    "error_generic": "Algo salió mal.",
+    "error_required": "El código y un nombre en cada idioma son obligatorios."
   }
 }
