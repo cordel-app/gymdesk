@@ -1214,9 +1214,9 @@ meRouter.get('/training-plans', requireRole('member'), requireFeatureEnabled('tr
     const { rows: gRows } = await db.query('SELECT gender FROM members WHERE id = ? AND gym_id = ?', [memberId, gymId]);
     const { rows } = await db.query(
       `${planTreeSelect(getRequestLocale(req), imageSexForGender(gRows[0]?.gender))}
-       JOIN member_training_plans mtp ON mtp.training_plan_id = tp.id
-       WHERE tp.gym_id = ? AND tp.member_id = ? AND mtp.status = 'active' AND tp.status != 'deleted'
-       ORDER BY mtp.created_at DESC`,
+       WHERE tp.gym_id = ? AND tp.member_id = ? AND tp.status = 'active'
+         AND EXISTS (SELECT 1 FROM member_training_plans mtp WHERE mtp.training_plan_id = tp.id AND mtp.status = 'active')
+       ORDER BY tp.created_at DESC, tp.id DESC`,
       [gymId, memberId],
     );
     res.json(rows);
@@ -1239,9 +1239,9 @@ meRouter.get('/training-progress', requireRole('member'), requireFeatureEnabled(
       `SELECT w.id AS workout_id, w.scheduled_weekday, wb.id AS block_id
        FROM workouts w
        JOIN training_plans tp ON tp.id = w.training_plan_id
-       JOIN member_training_plans mtp ON mtp.training_plan_id = tp.id
        LEFT JOIN workout_blocks wb ON wb.workout_id = w.id AND wb.deleted_at IS NULL
-       WHERE tp.gym_id = ? AND tp.member_id = ? AND mtp.status = 'active' AND tp.status != 'deleted'
+       WHERE tp.gym_id = ? AND tp.member_id = ? AND tp.status = 'active'
+         AND EXISTS (SELECT 1 FROM member_training_plans mtp WHERE mtp.training_plan_id = tp.id AND mtp.status = 'active')
          AND w.deleted_at IS NULL`,
       [gymId, memberId],
     );
