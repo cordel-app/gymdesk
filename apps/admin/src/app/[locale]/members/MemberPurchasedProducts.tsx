@@ -1,8 +1,8 @@
 'use client';
 
 // #1521 — the Member card's **Products** card: the Products this Member
-// purchased, as one collapsible card with `+ Add Product` in its header, a list
-// of eight columns and a `⋮` per row (Details · View billing event).
+// purchased, as an always-open section (#1640) with `+ Add Product` below the list, a list
+// of nine columns and a `⋮` per row (Details · View billing event).
 //
 // What it replaced: #1118 §12's three-column list under *Additional Products*
 // and #1463's One-off Products / Current Product Set cards, which showed the
@@ -37,7 +37,6 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
 import { CardDetailRow } from '@/components/CardDetailRow';
-import { CardSectionHeader } from '@/components/CardSectionHeader';
 import { primaryBtnSmall } from '@/components/ui';
 import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -47,6 +46,7 @@ import { AddProductPurchase } from './AddProductPurchase';
 import {
   billingEventPath,
   formatAppliedTax,
+  formatDirectDiscount,
   hasBillingEvent,
   paymentStatusKey,
   purchaseDate,
@@ -77,7 +77,6 @@ export function MemberPurchasedProducts({
   const router = useRouter();
   const gymFmt = useGymFormatSettings();
 
-  const [open, setOpen] = useState(true);
   const [adding, setAdding] = useState(false);
   const [detail, setDetail] = useState<PurchasedProduct | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
@@ -136,6 +135,11 @@ export function MemberPurchasedProducts({
       render: (item) => (item.promotion ? item.promotion.promotion_name : dash),
     },
     {
+      header: t('purchase_col_direct_discount'),
+      mobile: 'secondary',
+      render: (item) => formatDirectDiscount(item.direct_discount_percent) ?? dash,
+    },
+    {
       header: t('purchase_col_final_price'),
       mobile: 'secondary',
       render: (item) => <span style={{ whiteSpace: 'nowrap' }}>{money(item.amount, item.currency)}</span>,
@@ -178,36 +182,7 @@ export function MemberPurchasedProducts({
 
   return (
     <div>
-      <CardSectionHeader
-        title={t('section_additional_services')}
-        actions={(
-          <>
-            <button
-              type="button"
-              onClick={() => setOpen((o) => !o)}
-              aria-expanded={open}
-              aria-label={open ? t('products_card_collapse') : t('products_card_expand')}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: '2px 6px' }}
-            >
-              {open ? '▾' : '▸'}
-            </button>
-          </>
-        )}
-      />
-      {/* #1532: the action sits below the heading, left-aligned, as
-          `+ Add Membership Plan` does; the empty state stays under it. */}
-      <div style={{ marginBottom: 8 }}>
-        <button
-          type="button"
-          disabled={!canWrite || adding}
-          title={canWrite ? undefined : t('products_add_read_only')}
-          onClick={() => { setOpen(true); setAdding(true); }}
-          style={{ ...primaryBtnSmall(), opacity: !canWrite || adding ? 0.5 : 1, cursor: !canWrite || adding ? 'not-allowed' : 'pointer' }}
-        >
-          {t('products_add')}
-        </button>
-      </div>
-      {open && adding && (
+      {adding && (
         <AddProductPurchase
           memberId={memberId}
           isAdmin={isAdmin}
@@ -216,8 +191,7 @@ export function MemberPurchasedProducts({
           onChanged={onChanged}
         />
       )}
-      {open && (
-        <DataTable
+      <DataTable
           columns={columns}
           rows={items}
           rowKey={(item) => item.id}
@@ -226,8 +200,19 @@ export function MemberPurchasedProducts({
           expandedRowKeys={expandedIds}
           onToggleExpand={toggleExpand}
           renderExpanded={(item) => <PurchaseFacts item={item} gymFmt={gymFmt} promotionLabel={promotionLabel} />}
-        />
-      )}
+      />
+      {/* #1640: the action sits below the list, at the bottom of the section. */}
+      <div style={{ marginTop: 8 }}>
+        <button
+          type="button"
+          disabled={!canWrite || adding}
+          title={canWrite ? undefined : t('products_add_read_only')}
+          onClick={() => setAdding(true)}
+          style={{ ...primaryBtnSmall(), opacity: !canWrite || adding ? 0.5 : 1, cursor: !canWrite || adding ? 'not-allowed' : 'pointer' }}
+        >
+          {t('products_add')}
+        </button>
+      </div>
 
       <CrudModal
         open={detail !== null}
@@ -265,6 +250,7 @@ function PurchaseFacts({
         label={t('purchase_col_applied_promotion')}
         value={item.promotion ? promotionLabel(item.promotion) : dash}
       />
+      <CardDetailRow label={t('purchase_col_direct_discount')} value={formatDirectDiscount(item.direct_discount_percent) ?? dash} />
       <CardDetailRow label={t('purchase_col_final_price')} value={money(item.amount, item.currency)} />
       <CardDetailRow
         label={t('purchase_col_payment_status')}
