@@ -20,6 +20,7 @@ import {
   memberTheme,
   primaryButtonStyle,
   secondaryButtonStyle,
+  destructiveButtonStyle,
   statusPillStyle,
   noticeStyle,
 } from '@/lib/memberChrome';
@@ -620,7 +621,7 @@ export default function MemberCalendarPage() {
                 </button>
               )}
               {selected.availability_state === 'BOOKED_BY_MEMBER' && selected.can_cancel && (
-                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={actionBtn(memberTheme.statusError)}>
+                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={{ ...destructiveButtonStyle, padding: '12px', fontWeight: 600, fontSize: 15, width: '100%' }}>
                   {t('action_cancel_booking')}
                 </button>
               )}
