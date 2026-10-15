@@ -232,6 +232,8 @@
     "unsaved_discard": "Descartar canvis",
     "action_cancel_plan": "Cancel·lar pla",
     "action_assign_new_plan": "Assignar nou pla",
+    "action_edit_plan": "Editar",
+    "edit_plan_error": "No s'ha pogut iniciar l'edició del pla.",
     "confirm_cancel_plan": "Vols cancel·lar aquest pla? El moviment es conservarà.",
     "assign_new_plan_title": "Assignar nou pla",
     "assign_new_plan_label_plan": "Nou pla",
