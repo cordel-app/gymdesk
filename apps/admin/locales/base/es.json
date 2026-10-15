@@ -458,6 +458,8 @@
     "membership_plans_history": "Planes anteriores",
     "add_membership_plan": "+ Añadir Plan de Membresía",
     "add_membership_plan_error": "No se pudo crear el borrador.",
+    "no_assignable_membership_plans": "No hay planes de membresía activos disponibles para añadir.",
+    "add_membership_plan_options_error": "No se pudieron cargar los planes de membresía. Ciérralo e inténtalo de nuevo.",
     "add_membership_plan_cancel": "Cancelar",
     "add_membership_plan_title": "Añadir Plan de Membresía",
     "add_membership_plan_submit": "Añadir plan",
