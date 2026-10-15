@@ -9,12 +9,12 @@ export const FOOD_THUMBNAIL_SIZE = 32;
  * (Gym and Cordel Base). A food with no image, or one that fails to load,
  * renders a neutral placeholder of the same size so rows stay aligned.
  */
-export function FoodThumbnail({ imageUrl, version }: { imageUrl: string | null; version?: string | null }) {
+export function FoodThumbnail({ imageUrl, version, size = FOOD_THUMBNAIL_SIZE }: { imageUrl: string | null; version?: string | null; size?: number }) {
   const [failed, setFailed] = useState(false);
   const box = {
-    width: FOOD_THUMBNAIL_SIZE,
-    height: FOOD_THUMBNAIL_SIZE,
-    minWidth: FOOD_THUMBNAIL_SIZE,
+    width: size,
+    height: size,
+    minWidth: size,
     borderRadius: '50%',
     flexShrink: 0,
     display: 'inline-block',
