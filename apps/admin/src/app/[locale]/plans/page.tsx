@@ -970,11 +970,21 @@ export default function PlansPage() {
     );
   }
 
+  // #1648: the inline assignment editor lives in the List body, so from Card
+  // View switch to the List first, then open it for this exact plan.
+  function openAssign(plan: Plan) {
+    if (viewMode !== 'list') setViewMode('list');
+    setAssigningPlan(plan);
+    setTimeout(() => {
+      document.getElementById(`plan-row-${plan.id}`)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    }, 50);
+  }
+
   function planMenuItems(plan: Plan): ContextMenuItem[] {
     return [
         { label: t('plans.details'), onClick: () => setDetailFor(plan) },
         { label: t('plans.edit'), onClick: () => openInlineEdit(plan), disabled: !canWrite, title: readOnlyTitle },
-        { label: t('plans.assign_to_member'), onClick: () => setAssigningPlan(plan), disabled: !canAssign, title: assignReadOnlyTitle },
+        { label: t('plans.assign_to_member'), onClick: () => openAssign(plan), disabled: !canAssign, title: assignReadOnlyTitle },
         { label: t('plans.duplicate'), onClick: () => handleDuplicate(plan), disabled: !canWrite, title: readOnlyTitle },
         { label: t('plans.delete'), onClick: () => setDeleting(plan), danger: true, disabled: !canWrite, title: readOnlyTitle },
       ];
@@ -1076,7 +1086,7 @@ export default function PlansPage() {
             const menuItems = planMenuItems(plan);
 
             return (
-              <div key={plan.id} style={cardStyle(false)}>
+              <div key={plan.id} id={`plan-row-${plan.id}`} style={cardStyle(false)}>
                 {/* Row header */}
                 <div className={LIST_GRID_ROW_CLASS} style={rowStyle} onClick={() => toggleExpand(plan.id)}>
                   <div className={CELL_CLASS.name} title={plan.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
