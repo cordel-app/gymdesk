@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1573 (follow-up: Activities `⋮ → Edit` now switches to the **List** view and opens that activity in Edit mode, scrolled into view; the Cards view is read-only and its `⋮` menu offers no Edit. Frontend only)
 - **Done**: #1538 (stage 3: **`⋮ → Edit` on the Member's running Membership Plan** (Members → Products). It starts a Draft of the same plan through the existing `POST /user-memberships/:id/assign-new-plan`, which replaces the Active row in the view (#1538 stage 1) and opens in Edit mode; Cancel deletes the Draft and the Active plan is untouched, Save & Pay commits it. Offered by `canEditLivePlan()` only on a live, non-in-flight, non-linked plan. Frontend only, no migration or API change)
 - **Done**: #1631 (Members App → My Training shows only plans that are `active` in the admin panel with an active assignment, each once: `GET /me/training-plans` and `/me/training-progress` now check `training_plans.status = 'active'` and use an `EXISTS` on `member_training_plans` instead of a join, because staff complete/expire a plan on `training_plans` without touching the assignment row. No schema change)
 - **Done**: #1602 (My Nutrition's Nutrition Goals and Dietary Restrictions are square image cards in a grid, like the Meals and My Training Plan: the full image on top, name and detail below, the mark-done buttons under the card; replaces #1620's compact 44px rows. Members App display only, no API or data change)
