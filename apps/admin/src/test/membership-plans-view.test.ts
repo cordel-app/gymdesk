@@ -35,3 +35,20 @@ describe('#1538 visiblePlans — one version of the plan at a time', () => {
     expect(v.rows).toEqual([]);
   });
 });
+
+describe('#1538 stage 3 canEditLivePlan', () => {
+  const base = { status: 'active', is_live: true, assignment_relationship: 'primary' as const, membership_plan_id: 5 };
+  it('is offered on the running plan', async () => {
+    const { canEditLivePlan } = await import('../app/[locale]/members/membershipPlansView');
+    expect(canEditLivePlan(base)).toBe(true);
+    expect(canEditLivePlan({ ...base, status: 'paused' })).toBe(true);
+  });
+  it('is not offered on an in-flight, linked, past or plan-less row', async () => {
+    const { canEditLivePlan } = await import('../app/[locale]/members/membershipPlansView');
+    expect(canEditLivePlan({ ...base, status: 'draft' })).toBe(false);
+    expect(canEditLivePlan({ ...base, status: 'pending_payment' })).toBe(false);
+    expect(canEditLivePlan({ ...base, assignment_relationship: 'linked' })).toBe(false);
+    expect(canEditLivePlan({ ...base, is_live: false })).toBe(false);
+    expect(canEditLivePlan({ ...base, membership_plan_id: null })).toBe(false);
+  });
+});

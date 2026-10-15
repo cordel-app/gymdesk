@@ -28,3 +28,16 @@ export function visiblePlans(plans: readonly MemberPlanRow[]): VisiblePlans {
   if (inFlight.length > 0) return { rows: inFlight, heading: 'draft', showInFlightList: false };
   return { rows: live, heading: 'active', showInFlightList: true };
 }
+
+/**
+ * #1538 stage 3 — whether `⋮ → Edit` is offered on a plan row. Only the Member's
+ * own, running plan can start a replacement Draft: a Draft or a Pending Payment
+ * version is already the in-flight version (it is configured in place), a plan
+ * covered through someone else's Membership is read-only (#1191) and a plan with
+ * no Membership Plan has nothing to re-freeze.
+ */
+export function canEditLivePlan(
+  p: Pick<MemberPlanRow, 'status' | 'is_live' | 'assignment_relationship' | 'membership_plan_id'>,
+): boolean {
+  return p.is_live && !isInFlightPlan(p) && p.assignment_relationship !== 'linked' && p.membership_plan_id != null;
+}

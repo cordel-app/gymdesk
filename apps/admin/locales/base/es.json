@@ -231,6 +231,8 @@
     "unsaved_discard": "Descartar cambios",
     "action_cancel_plan": "Cancelar plan",
     "action_assign_new_plan": "Asignar nuevo plan",
+    "action_edit_plan": "Editar",
+    "edit_plan_error": "No se pudo iniciar la edición del plan.",
     "confirm_cancel_plan": "¿Cancelar este plan? El movimiento quedará registrado.",
     "assign_new_plan_title": "Asignar nuevo plan",
     "assign_new_plan_label_plan": "Nuevo plan",

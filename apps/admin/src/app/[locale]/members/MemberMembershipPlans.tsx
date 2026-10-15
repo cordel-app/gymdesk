@@ -59,7 +59,7 @@ import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
 import { ProductSetsInFlight } from './ProductSetsInFlight';
-import { visiblePlans } from './membershipPlansView';
+import { canEditLivePlan, visiblePlans } from './membershipPlansView';
 
 
 interface Props {
@@ -146,6 +146,32 @@ export function MemberMembershipPlans({
     }
   }
 
+  // #1538 stage 3: `⋮ → Edit` on the running plan. Editing never touches the
+  // Active version: it starts a Draft of the same plan (the existing Assign New
+  // Plan route, frozen from the Plan as it stands today), which replaces the
+  // Active row in the view and is opened in Edit mode. Cancel on the Draft
+  // deletes it and the Active plan is back; Save & Pay commits it.
+  async function editPlan(plan: MemberPlanRow) {
+    if (plan.membership_plan_id == null) return;
+    setCreating(true);
+    setCreateError(null);
+    try {
+      const row = await apiFetch<{ id: number }>(`/user-memberships/${plan.id}/assign-new-plan`, {
+        method: 'POST',
+        body: JSON.stringify({
+          membership_plan_id: plan.membership_plan_id,
+          starts_at: new Date().toISOString().slice(0, 10),
+        }),
+      });
+      setNewDraftId(row.id);
+      onChanged();
+    } catch (err: any) {
+      setCreateError(apiErrorMessage(err) ?? t('edit_plan_error'));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   function startAdding() {
     setAdding(true);
   }
@@ -162,6 +188,9 @@ export function MemberMembershipPlans({
     // it offers no Assign New Plan or Cancel Plan, only Details.
     const lifecycleItems: ContextMenuItem[] = canWrite && plan.is_live && plan.assignment_relationship !== 'linked'
       ? [
+        ...(canEditLivePlan(plan)
+          ? [{ label: t('action_edit_plan'), onClick: () => void editPlan(plan), disabled: creating || assignBusy }]
+          : []),
         {
           label: t('action_assign_new_plan'),
           onClick: () => onAssignNewPlan(plan),
@@ -198,6 +227,8 @@ export function MemberMembershipPlans({
         rowActions={rowActions}
         openInEditId={newDraftId}
       />
+
+      {createError && !adding && <p style={{ ...formErrorStyle, margin: '8px 0' }}>{createError}</p>}
 
       {/* #628: the inline Assign New Plan editor for whichever plan raised it —
           under the list it acts on, since a table row is not a card to nest it
