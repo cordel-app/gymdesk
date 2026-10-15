@@ -7,6 +7,8 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import esLocale from '@fullcalendar/core/locales/es';
+import caLocale from '@fullcalendar/core/locales/ca';
 import { useApp } from '@/context/AppContext';
 import { useApiClient } from '@/lib/apiClient';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
@@ -443,6 +445,16 @@ export default function MemberCalendarPage() {
           ref={calendarRef}
           plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
           initialView="timeGridDay"
+          // #1622 — the page's own language (the first URL segment, which the
+          // stored profile language drives, #1039) names months, weekdays and the
+          // toolbar buttons; the gym's Time & Localization settings (#1246) decide
+          // the first weekday and the 12h/24h clock. Display only: event
+          // timestamps and the browser-zone grid are untouched.
+          locales={[esLocale, caLocale]}
+          locale={locale}
+          firstDay={gymFormat.first_day_of_week}
+          slotLabelFormat={{ hour: '2-digit', minute: '2-digit', hour12: gymFormat.time_format === '12h' }}
+          eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: gymFormat.time_format === '12h' }}
           eventDisplay="block"
           headerToolbar={{ left: 'prev,next today', center: 'title', right: 'dayGridMonth,timeGridWeek,timeGridDay' }}
           height="100%"

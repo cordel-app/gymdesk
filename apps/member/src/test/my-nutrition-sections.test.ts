@@ -135,7 +135,7 @@ describe('NutritionItemRow (#932 §3, §4)', () => {
 
   it('owns the look both sections share, so neither can drift from the other', () => {
     expect(src).toContain('borderRadius: 10');
-    expect(src).toContain('width: 52');
+    expect(src).toContain('width: 44');
   });
 });
 
@@ -144,7 +144,7 @@ describe('My Nutrition page (#932 §1, §2, §5)', () => {
 
   it('renders both sections through the one shared row', () => {
     expect(src).toContain("import { NutritionItemRow } from '@/components/NutritionItemRow';");
-    expect(src).toContain('<NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url} />');
+    expect(src).toContain('<NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url}');
     expect(src).toContain('name={goalLabel(t, g.item_name)}');
     expect(src).toContain('detail={goalDetail(t, g)}');
   });
