@@ -362,6 +362,7 @@
     "purchase_col_price_incl_vat": "Preu amb IVA",
     "purchase_col_applied_tax": "Impost aplicat",
     "purchase_col_applied_promotion": "Promoció aplicada",
+    "purchase_col_direct_discount": "Descompte directe",
     "purchase_col_final_price": "Preu final",
     "purchase_col_payment_status": "Estat del pagament",
     "purchase_col_status": "Estat",

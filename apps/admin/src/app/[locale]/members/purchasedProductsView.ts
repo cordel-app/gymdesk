@@ -42,6 +42,8 @@ export interface PurchasedProduct {
   /** The price before the Promotion, VAT included. */
   regular_amount: number;
   promotion: PurchasedProductPromotion | null;
+  /** #1640 — the Admin's direct discount percentage, if one was applied. */
+  direct_discount_percent?: number | null;
   /** #1521 — the VAT percentage the purchase was charged under, if stored. */
   tax_rate_percent?: number | null;
   /** #1521 — the purchase's payment request status, if it has one. */
@@ -63,6 +65,11 @@ export function formatAppliedTax(percent: number | null | undefined): string | n
   if (percent == null || !Number.isFinite(Number(percent))) return null;
   const n = Number(percent);
   return `${Number.isInteger(n) ? n : Number(n.toFixed(2))}%`;
+}
+
+/** `10` → `10%`; `null` when the purchase carries no direct discount. */
+export function formatDirectDiscount(percent: number | null | undefined): string | null {
+  return formatAppliedTax(percent);
 }
 
 /**
