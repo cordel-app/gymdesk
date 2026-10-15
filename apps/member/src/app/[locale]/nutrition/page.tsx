@@ -1,5 +1,6 @@
 'use client';
 
+import { completionActions } from '@/lib/nutritionCompletion';
 import { useEffect, useState } from 'react';
 import { useTranslations, useLocale } from 'next-intl';
 import { useRouter } from 'next/navigation';
@@ -156,13 +157,14 @@ export default function NutritionPage() {
     if (level === 'done') {
       return <span style={{ ...statusPillStyle(statusTone('completed')), fontSize: 11, padding: '2px 8px', alignSelf: 'flex-start' }}>✓ {t('nutrition.meal_done')}</span>;
     }
-    if (selectedDate > today) return null;
+    const actions = completionActions(kind, level, selectedDate, today);
+    if (!actions.showMarkDone) return null;
     const busy = pendingReq === `${kind}|${id}|${selectedDate}`;
     return (
       <div style={styles.reqActions}>
         {level === 'partial' && <span style={{ ...statusPillStyle(statusTone('scheduled')), fontSize: 11, padding: '2px 8px' }}>{t('nutrition.partially_done_state')}</span>}
         <button type="button" onClick={() => markRequirement(kind, id, 'done')} disabled={busy} style={styles.reqBtn}>{t('nutrition.mark_done')}</button>
-        {kind === 'restriction' && level !== 'partial' && (
+        {actions.showPartiallyDone && (
           <button type="button" onClick={() => markRequirement(kind, id, 'partial')} disabled={busy} style={styles.reqBtn}>{t('nutrition.partially_done')}</button>
         )}
       </div>
@@ -263,14 +265,13 @@ export default function NutritionPage() {
                 <p style={styles.sectionEmpty}>{t('nutrition.goals_empty')}</p>
               ) : (
                 goals.map((g) => (
-                  <div key={g.id}>
-                    <NutritionItemRow
-                      name={goalLabel(t, g.item_name)}
-                      detail={goalDetail(t, g)}
-                      imageUrl={g.image_url ?? null}
-                    />
-                    {requirementActions('goal', g.id)}
-                  </div>
+                  <NutritionItemRow
+                    key={g.id}
+                    name={goalLabel(t, g.item_name)}
+                    detail={goalDetail(t, g)}
+                    imageUrl={g.image_url ?? null}
+                    actions={requirementActions('goal', g.id)}
+                  />
                 ))
               )}
             </div>
@@ -283,10 +284,8 @@ export default function NutritionPage() {
                 <p style={styles.sectionEmpty}>{t('nutrition.restrictions_empty')}</p>
               ) : (
                 restrictions.map((r) => (
-                  <div key={r.id}>
-                    <NutritionItemRow name={r.item_name} imageUrl={r.image_url} />
-                    {requirementActions('restriction', r.id)}
-                  </div>
+                  <NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url}
+                    actions={requirementActions('restriction', r.id)} />
                 ))
               )}
             </div>
@@ -310,18 +309,19 @@ export default function NutritionPage() {
                           {title.suffix && <span style={styles.mealType}> · {title.suffix}</span>}
                         </p>
                         {done && <span style={{ ...statusPillStyle(statusTone('completed')), fontSize: 11, padding: '2px 8px' }}>✓ {t('nutrition.meal_done')}</span>}
+                        {/* #1580: completion belongs to the whole meal, so its action sits in the meal's own header. */}
+                        {completionActions('meal', done ? 'done' : undefined, selectedDate, today).showMarkDone && (
+                          <button type="button" onClick={() => markMealDone(meal)} disabled={pendingMeal === meal.id}
+                                  aria-label={t('nutrition.mark_done_aria', { name: title.title })} style={styles.reqBtn}>
+                            {t('nutrition.mark_done')}
+                          </button>
+                        )}
                       </div>
                       {/* #722: the meal's foods are swipeable image cards, one
                           carousel per meal — the items of a meal are the
                           alternatives the member chooses between. */}
                       <NutritionFoodCarousel items={meal.items} label={title.title} />
                       {meal.notes && <p style={styles.mealNotes}>{meal.notes}</p>}
-                      {!done && selectedDate <= today && (
-                        <button type="button" onClick={() => markMealDone(meal)} disabled={pendingMeal === meal.id}
-                                aria-label={t('nutrition.mark_done_aria', { name: title.title })} style={styles.markDoneBtn}>
-                          {t('nutrition.mark_done')}
-                        </button>
-                      )}
                     </div>
                   );
                 })}
@@ -341,7 +341,7 @@ const styles: Record<string, React.CSSProperties> = {
   h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:       { ...sectionCardStyle, padding: '4px 18px' },
   mealHead:   { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  reqActions: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '0 0 10px' },
+  reqActions: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
   reqBtn:     { ...primaryButtonStyle, padding: '6px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600 },
   markDoneBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '10px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   weekCard:   { ...sectionCardStyle, padding: 10, marginBottom: 20 },
