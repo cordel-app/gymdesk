@@ -3817,7 +3817,14 @@
     "activated": "Meta activada para este gimnasio.",
     "deactivated": "Meta desactivada para este gimnasio.",
     "status_inactive": "Inactivo",
-    "inactive_assign_hint": "Esta meta está inactiva en este gimnasio. Actívala para asignarla."
+    "inactive_assign_hint": "Esta meta está inactiva en este gimnasio. Actívala para asignarla.",
+    "label_translations": "Traducciones",
+    "help_translations": "Nombre y descripción en cada idioma. Un idioma sin nombre usa el texto base de arriba.",
+    "translation_missing": "Falta",
+    "error_translation_name": "Una descripción traducida necesita un nombre traducido.",
+    "image_requirements_webp": "Cualquier imagen JPEG, PNG, WebP o GIF. El servidor la ajusta a un WebP de 1080 × 1080 con una miniatura de 256 × 256.",
+    "image_staged": "Se subirá cuando se guarde el objetivo.",
+    "image_retry": "Reintentar subida"
   },
   "assigned_personal_goals": {
     "title": "Objetivos Personales Asignados",

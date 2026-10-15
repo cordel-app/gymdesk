@@ -73,11 +73,17 @@ export type MemberImageTarget =
     };
 
 export function MemberImageField({
-  target, disabled, disabledTitle, label,
+  target, disabled, disabledTitle, label, requiresGymStorage = true,
 }: {
   target: MemberImageTarget;
   disabled?: boolean;
   disabledTitle?: string;
+  /**
+   * Whether the *gym's* own bucket has to be ready (#823). `false` for an object
+   * under the platform root (a System Nutrition Goal's, #1623), which no gym's
+   * storage settings gate.
+   */
+  requiresGymStorage?: boolean;
   /** Resolves a key in the `members` namespace (#901). */
   label: (key: string) => string;
 }) {
@@ -88,7 +94,7 @@ export function MemberImageField({
   const [error, setError] = useState<string | null>(null);
   const [confirmingRemove, setConfirmingRemove] = useState(false);
 
-  const storageBlock = gymStorageBlock(activeGym, true);
+  const storageBlock = gymStorageBlock(activeGym, requiresGymStorage);
   const notConfigured = storageBlock === 'not_configured';
   const notInitialized = storageBlock === 'not_initialized';
   const blocked = disabled || notConfigured || notInitialized;
