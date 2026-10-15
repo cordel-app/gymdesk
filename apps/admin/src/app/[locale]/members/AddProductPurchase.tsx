@@ -28,6 +28,10 @@ import {
 
 const money = (n: number, currency = 'EUR') => (currency === 'EUR' ? `${n.toFixed(2)}€` : `${n.toFixed(2)} ${currency}`);
 
+// #1656 — one compact row on wide screens; the flex-wrap makes it a clean stack on narrow ones.
+const rowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'flex-end' };
+const valueCellStyle: React.CSSProperties = { padding: '8px 0', fontSize: 14, whiteSpace: 'nowrap' };
+
 type Outcome =
   | { kind: 'one_time'; checkoutUrl: string }
   | { kind: 'draft_updated' };
@@ -130,21 +134,51 @@ export function AddProductPurchase({
 
   return (
     <div style={{ ...innerCardStyle, marginBottom: 12 }} data-add-product-form>
-      <label style={formFieldLabelStyle} htmlFor="add-product-select">{t('add_product_select')}</label>
-      <select
-        id="add-product-select"
-        style={formControlStyle}
-        value={productId ?? ''}
-        disabled={!!outcome || catalogue == null}
-        onChange={(e) => pickProduct(e.target.value === '' ? null : Number(e.target.value))}
-      >
-        <option value="">{t('add_product_select_placeholder')}</option>
-        {(catalogue ?? []).map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name} · {p.price_incl_tax != null ? money(p.price_incl_tax, p.currency) : '—'} · {p.recurring ? t('add_product_recurring') : t('add_product_one_time')}
-          </option>
-        ))}
-      </select>
+      <div style={rowStyle} data-add-product-row>
+        <div style={{ flex: '2 1 280px', minWidth: 0 }}>
+          <label style={formFieldLabelStyle} htmlFor="add-product-select">{t('add_product_select')}</label>
+          <select
+            id="add-product-select"
+            style={formControlStyle}
+            value={productId ?? ''}
+            disabled={!!outcome || catalogue == null}
+            onChange={(e) => pickProduct(e.target.value === '' ? null : Number(e.target.value))}
+          >
+            <option value="">{t('add_product_select_placeholder')}</option>
+            {(catalogue ?? []).map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name} · {p.price_incl_tax != null ? money(p.price_incl_tax, p.currency) : '—'} · {p.recurring ? t('add_product_recurring') : t('add_product_one_time')}
+              </option>
+            ))}
+          </select>
+        </div>
+        {isAdmin && (
+          <div style={{ flex: '0 0 110px' }}>
+            <label style={formFieldLabelStyle} htmlFor="add-product-discount">{t('add_product_direct_discount')}</label>
+            <input
+              id="add-product-discount"
+              style={{ ...formControlStyle, width: '100%' }}
+              inputMode="decimal"
+              value={discount}
+              disabled={!product || !!outcome}
+              onChange={(e) => setDiscount(e.target.value)}
+              title={t('add_product_direct_discount_help')}
+            />
+          </div>
+        )}
+        <div style={{ flex: '1 1 130px', minWidth: 0 }} data-purchase-vat>
+          <div style={formFieldLabelStyle}>{t('quote_vat')}</div>
+          <div style={valueCellStyle}>
+            {quote && quote.tax_rate_percent != null && quote.tax_amount != null
+              ? `${quote.tax_rate_percent}% · ${money(quote.tax_amount, quote.currency)}`
+              : '—'}
+          </div>
+        </div>
+        <div style={{ flex: '0 1 130px', textAlign: 'right' }} data-purchase-quote>
+          <div style={formFieldLabelStyle}>{t('quote_final_price')}</div>
+          <div style={{ ...valueCellStyle, fontWeight: 700 }}>{quote ? money(quote.final_price, quote.currency) : '—'}</div>
+        </div>
+      </div>
       {catalogue != null && catalogue.length === 0 && <p style={cardHintStyle}>{t('add_product_none_available')}</p>}
 
       {product && !outcome && (
@@ -166,38 +200,23 @@ export function AddProductPurchase({
             emptyText={t('add_product_no_promotions')}
           />
 
-          {isAdmin && (
-            <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 12 }}>
-              <label style={{ ...formFieldLabelStyle, margin: 0 }} htmlFor="add-product-discount">{t('add_product_direct_discount')}</label>
-              <input
-                id="add-product-discount"
-                style={{ ...formControlStyle, width: 90 }}
-                inputMode="decimal"
-                value={discount}
-                onChange={(e) => setDiscount(e.target.value)}
-              />
-              <span style={cardHintStyle}>{t('add_product_direct_discount_help')}</span>
-            </div>
-          )}
         </>
       )}
 
-      {quote && (
-        <div style={{ marginTop: 12, fontSize: 14 }} data-purchase-quote>
-          <div>{t('quote_list_price')}: {money(quote.list_price, quote.currency)}</div>
-          {quote.promotions.map((s) => (
-            <div key={s.promotion_id}>{t('quote_promotion', { name: s.promotion_name })}: −{money(s.regular_amount - s.final_amount, quote.currency)}</div>
+      {quote && (quote.promotions.length > 0 || quote.direct_discount_percent != null) && (
+        <div style={{ marginTop: 8, fontSize: 13 }}>
+          {quote.promotions.map((p) => (
+            <div key={p.promotion_id}>{t('quote_promotion', { name: p.promotion_name })}: −{money(p.regular_amount - p.final_amount, quote.currency)}</div>
           ))}
           {quote.direct_discount_percent != null && (
-            <div>
-              {t('quote_direct_discount', { percent: quote.direct_discount_percent })}: −{money(quote.direct_discount_amount ?? 0, quote.currency)}
-            </div>
+            <div>{t('quote_direct_discount', { percent: quote.direct_discount_percent })}: −{money(quote.direct_discount_amount ?? 0, quote.currency)}</div>
           )}
-          <div style={{ fontWeight: 600 }}>{t('quote_final_price')}: {money(quote.final_price, quote.currency)}</div>
-          <p style={cardHintStyle}>
-            {quote.recurring ? t('add_product_simulation_recurring_hint') : t('add_product_simulation_one_time', { amount: money(quote.final_price, quote.currency) })}
-          </p>
         </div>
+      )}
+      {quote && (
+        <p style={cardHintStyle}>
+          {quote.recurring ? t('add_product_simulation_recurring_hint') : t('add_product_simulation_one_time', { amount: money(quote.final_price, quote.currency) })}
+        </p>
       )}
 
       {outcome?.kind === 'one_time' && (

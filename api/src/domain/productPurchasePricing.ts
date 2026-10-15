@@ -163,6 +163,16 @@ export function priceProductPurchase(input: {
  * was agreed: a percentage is proportional, so it holds whichever way the
  * Product's tax behaviour stores its amount.
  */
+/**
+ * The VAT contained in a VAT-inclusive amount (#1656). The server's, so the
+ * Admin's breakdown does no tax arithmetic of its own; `null` where the Product
+ * has no tax rate configured.
+ */
+export function vatPortion(grossAmount: number, ratePercent: number | null | undefined): number | null {
+  if (ratePercent == null || !Number.isFinite(ratePercent) || ratePercent < 0) return null;
+  return round2(grossAmount - grossAmount / (1 + ratePercent / 100));
+}
+
 export function discountedUnitPrice(unitPrice: number, percent: number | null): number {
   if (percent == null) return round2(unitPrice);
   return round2(unitPrice * (1 - percent / 100));

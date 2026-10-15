@@ -405,6 +405,7 @@
     "quote_list_price": "Preu original (IVA incl.)",
     "quote_promotion": "Promoció: {name}",
     "quote_direct_discount": "Descompte directe ({percent}%)",
+    "quote_vat": "IVA",
     "quote_final_price": "Preu final (IVA incl.)",
     "add_product_simulation_recurring_hint": "Crea l'esborrany per veure els períodes de facturació resultants.",
     "add_product_simulation_one_time": "Pagament únic: {amount}. Sense càrrecs recurrents.",

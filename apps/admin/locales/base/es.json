@@ -404,6 +404,7 @@
     "quote_list_price": "Precio original (IVA incl.)",
     "quote_promotion": "Promoción: {name}",
     "quote_direct_discount": "Descuento directo ({percent}%)",
+    "quote_vat": "IVA",
     "quote_final_price": "Precio final (IVA incl.)",
     "add_product_simulation_recurring_hint": "Crea el borrador para ver los periodos de facturación resultantes.",
     "add_product_simulation_one_time": "Pago único: {amount}. Sin cargos recurrentes.",

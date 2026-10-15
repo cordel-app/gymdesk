@@ -404,6 +404,7 @@
     "quote_list_price": "Original price (incl. VAT)",
     "quote_promotion": "Promotion: {name}",
     "quote_direct_discount": "Direct discount ({percent}%)",
+    "quote_vat": "VAT",
     "quote_final_price": "Final price (incl. VAT)",
     "add_product_simulation_recurring_hint": "Create the draft to see the resulting billing periods.",
     "add_product_simulation_one_time": "One-time payment: {amount}. No recurring charges.",
