@@ -459,6 +459,8 @@
     "membership_plans_history": "Plans anteriors",
     "add_membership_plan": "+ Afegir Pla de Membresia",
     "add_membership_plan_error": "No s'ha pogut crear l'esborrany.",
+    "no_assignable_membership_plans": "No hi ha plans de membresia actius disponibles per afegir.",
+    "add_membership_plan_options_error": "No s'han pogut carregar els plans de membresia. Tanca-ho i torna-ho a provar.",
     "add_membership_plan_cancel": "Cancel·lar",
     "add_membership_plan_title": "Afegir Pla de Membresia",
     "add_membership_plan_submit": "Afegir pla",

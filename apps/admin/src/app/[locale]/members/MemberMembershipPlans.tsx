@@ -93,6 +93,8 @@ export function MemberMembershipPlans({
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [options, setOptions] = useState<AssignablePlan[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState(false);
+  const [optionsError, setOptionsError] = useState(false);
   // #958: the Assigned Plan whose Details are open, if any — one dialog for the
   // whole section rather than one mounted per row.
   const [detailsPlanId, setDetailsPlanId] = useState<number | null>(null);
@@ -105,9 +107,17 @@ export function MemberMembershipPlans({
   useEffect(() => {
     if (!adding || optionsLoadedRef.current) return;
     optionsLoadedRef.current = true;
+    setOptionsLoading(true);
+    setOptionsError(false);
     apiFetch<AssignablePlan[]>('/membership-plans?lifecycle_status=active&enrollment_status=public')
-      .then(setOptions)
-      .catch(() => setOptions([]));
+      .then((rows) => setOptions(Array.isArray(rows) ? rows : []))
+      .catch(() => {
+        // A failed load must not be remembered as "loaded": reopening retries.
+        optionsLoadedRef.current = false;
+        setOptions([]);
+        setOptionsError(true);
+      })
+      .finally(() => setOptionsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adding]);
 
@@ -248,14 +258,19 @@ export function MemberMembershipPlans({
         <div style={{ ...inlineEditorStyle, margin: '10px 0' }}>
           <select
             value=""
-            disabled={creating}
+            disabled={creating || optionsLoading}
             onChange={(e) => { if (e.target.value) void createDraft(parseInt(e.target.value, 10)); }}
             style={formControlStyle}
             aria-label={t('assign_new_plan_label_plan')}
           >
-            <option value="">{creating ? t('add_membership_plan_loading') : t('assign_new_plan_pick_plan')}</option>
+            <option value="">{creating || optionsLoading ? t('add_membership_plan_loading') : t('assign_new_plan_pick_plan')}</option>
             {selectable.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
+          {!optionsLoading && selectable.length === 0 && (
+            <p style={{ ...formErrorStyle, margin: '8px 0 0' }}>
+              {t(optionsError ? 'add_membership_plan_options_error' : 'no_assignable_membership_plans')}
+            </p>
+          )}
           {createError && <p style={{ ...formErrorStyle, margin: '8px 0 0' }}>{createError}</p>}
           <div style={{ marginTop: 10 }}>
             <button onClick={() => { setAdding(false); setCreateError(null); }} disabled={creating} style={secondaryBtnSmall}>

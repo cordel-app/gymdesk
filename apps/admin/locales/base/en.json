@@ -458,6 +458,8 @@
     "membership_plans_history": "Past plans",
     "add_membership_plan": "+ Add Membership Plan",
     "add_membership_plan_error": "Could not create the draft.",
+    "no_assignable_membership_plans": "No active Membership Plans are available to add.",
+    "add_membership_plan_options_error": "The Membership Plans could not be loaded. Close and try again.",
     "add_membership_plan_cancel": "Cancel",
     "add_membership_plan_title": "Add Membership Plan",
     "add_membership_plan_submit": "Add plan",
