@@ -265,14 +265,13 @@ export default function NutritionPage() {
                 <p style={styles.sectionEmpty}>{t('nutrition.goals_empty')}</p>
               ) : (
                 goals.map((g) => (
-                  <div key={g.id}>
-                    <NutritionItemRow
-                      name={goalLabel(t, g.item_name)}
-                      detail={goalDetail(t, g)}
-                      imageUrl={g.image_url ?? null}
-                    />
-                    {requirementActions('goal', g.id)}
-                  </div>
+                  <NutritionItemRow
+                    key={g.id}
+                    name={goalLabel(t, g.item_name)}
+                    detail={goalDetail(t, g)}
+                    imageUrl={g.image_url ?? null}
+                    actions={requirementActions('goal', g.id)}
+                  />
                 ))
               )}
             </div>
@@ -285,10 +284,8 @@ export default function NutritionPage() {
                 <p style={styles.sectionEmpty}>{t('nutrition.restrictions_empty')}</p>
               ) : (
                 restrictions.map((r) => (
-                  <div key={r.id}>
-                    <NutritionItemRow name={r.item_name} imageUrl={r.image_url} />
-                    {requirementActions('restriction', r.id)}
-                  </div>
+                  <NutritionItemRow key={r.id} name={r.item_name} imageUrl={r.image_url}
+                    actions={requirementActions('restriction', r.id)} />
                 ))
               )}
             </div>
@@ -344,7 +341,7 @@ const styles: Record<string, React.CSSProperties> = {
   h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:       { ...sectionCardStyle, padding: '4px 18px' },
   mealHead:   { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  reqActions: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '0 0 10px' },
+  reqActions: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
   reqBtn:     { ...primaryButtonStyle, padding: '6px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600 },
   markDoneBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '10px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   weekCard:   { ...sectionCardStyle, padding: 10, marginBottom: 20 },
