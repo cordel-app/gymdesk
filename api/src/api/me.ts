@@ -785,6 +785,8 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
               ce.status AS event_status,
               ce.allows_shared_booking,
               at.name AS class_type_name, at.description AS class_type_description,
+              -- #1637: the event's own image (#1382), else the Activity Type's.
+              COALESCE(ce.image_url, at.image_url) AS class_type_image_url,
               at.is_shareable,
               -- #976: the event's own colour, which is what the member
               -- calendar paints the event box with now. calendar_events.color

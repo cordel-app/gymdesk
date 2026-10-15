@@ -20,10 +20,12 @@ import {
   memberTheme,
   primaryButtonStyle,
   secondaryButtonStyle,
+  destructiveButtonStyle,
   statusPillStyle,
   noticeStyle,
 } from '@/lib/memberChrome';
-import { BOOKED_ON_KEY, CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
+import { CANCELLATION_NOTICE_TITLE_KEY, cancellationNoticeKey, type CancellationBlock } from '@/lib/bookingCancellation';
+import { ActivityMetaIcon } from '@/components/ActivityMetaIcon';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import {
   EVENT_STATUS_CHIP_STYLE,
@@ -45,6 +47,9 @@ interface ScheduleSession {
   id: number;
   activity_type_id: number;
   class_type_name: string;
+  /** #1637 — the activity's description and image (event override, else the Activity Type's). */
+  class_type_description?: string | null;
+  class_type_image_url?: string | null;
   starts_at: string;
   ends_at: string;
   center_id: number | null;
@@ -123,6 +128,9 @@ export default function MemberCalendarPage() {
   const [pendingTrainerId, setPendingTrainerId] = useState('');
 
   const [selected, setSelected] = useState<ScheduleSession | null>(null);
+  // #1637 — the activity image opens uncropped in place on click.
+  const [imageExpanded, setImageExpanded] = useState(false);
+  useEffect(() => { setImageExpanded(false); }, [selected?.id]);
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
@@ -521,22 +529,49 @@ export default function MemberCalendarPage() {
             }}
           >
             <div style={{ width: 36, height: 4, background: memberTheme.inputBorder, borderRadius: 2, margin: '0 auto 16px' }} />
+            {selected.class_type_image_url && (
+              <button
+                type="button"
+                onClick={() => setImageExpanded((v) => !v)}
+                aria-label={selected.class_type_name}
+                aria-expanded={imageExpanded}
+                style={{ display: 'block', width: '100%', padding: 0, margin: '0 0 12px', border: 'none', background: 'none', cursor: 'pointer' }}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={selected.class_type_image_url}
+                  alt=""
+                  style={{
+                    display: 'block', width: '100%', borderRadius: 8,
+                    ...(imageExpanded
+                      ? { height: 'auto', maxHeight: '70vh', objectFit: 'contain' as const }
+                      : { maxHeight: 540, aspectRatio: '1 / 1', objectFit: 'cover' as const }),
+                  }}
+                />
+              </button>
+            )}
             <h3 style={{ margin: '0 0 4px', fontSize: 16, color: memberTheme.title3, fontFamily: memberTheme.title3Font }}>{selected.class_type_name}</h3>
-            <p style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
+            <p style={{ margin: '0 0 6px', fontSize: 13, color: memberTheme.textMuted }}>
               {formatGymDateTime(selected.starts_at, gymFormat)}
             </p>
             {([
-              ['filter_trainer_label', selected.trainer_name],
-              ['detail_space_label', selected.space_name],
-              ['filter_center_label', selected.center_name],
-            ] as const).map(([key, value]) => (value && value.trim() ? (
-              <p key={key} style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
-                {t(key)}: <strong>{value.trim()}</strong>
+              ['center', selected.center_name],
+              ['space', selected.space_name],
+              ['trainer', selected.trainer_name],
+            ] as const).map(([icon, value]) => (value && value.trim() ? (
+              <p key={icon} style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted, display: 'flex', alignItems: 'center', gap: 6 }}>
+                <ActivityMetaIcon name={icon} />
+                <span>{value.trim()}</span>
               </p>
             ) : null))}
-            {selected.my_booking_id && selected.booked_on && (
-              <p style={{ margin: '0 0 2px', fontSize: 13, color: memberTheme.textMuted }}>
-                {tRoot(BOOKED_ON_KEY, { date: formatGymDateTime(selected.booked_on, gymFormat) })}
+            {selected.class_type_description && selected.class_type_description.trim() && (
+              <p
+                style={{
+                  margin: '6px 0 0', fontSize: 13, color: memberTheme.textSecondary,
+                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden',
+                }}
+              >
+                {selected.class_type_description.trim()}
               </p>
             )}
 
@@ -586,7 +621,7 @@ export default function MemberCalendarPage() {
                 </button>
               )}
               {selected.availability_state === 'BOOKED_BY_MEMBER' && selected.can_cancel && (
-                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={actionBtn(memberTheme.statusError)}>
+                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={{ ...destructiveButtonStyle, padding: '12px', fontWeight: 600, fontSize: 15, width: '100%' }}>
                   {t('action_cancel_booking')}
                 </button>
               )}
