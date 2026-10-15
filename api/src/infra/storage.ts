@@ -127,6 +127,14 @@ export const ACTIVITIES_FOLDER = 'activities';
  */
 export const PLANS_FOLDER = 'plans';
 
+/**
+ * `nutrition_goals` — a Nutrition Goal's image (#1623), under the gym's own
+ * prefix and under {@link PLATFORM_STORAGE_ROOT} for a System goal. Distinct from
+ * `nutrition/` (foods) and `goals/` (Personal Goals). Declared here for
+ * {@link GOALS_FOLDER}'s reason; `domain/nutritionGoalImages.ts` re-exports it.
+ */
+export const NUTRITION_GOALS_FOLDER = 'nutrition_goals';
+
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 //
@@ -188,6 +196,9 @@ const GYM_FOLDERS = [
   // #1514: the gym-level `plans/` root, holding a Membership Plan's image.
   // Appended last, with its writer (`POST /membership-plans/:id/image`).
   `${PLANS_FOLDER}/`,
+  // #1623: the gym-level `nutrition_goals/` root, holding a Nutrition Goal's
+  // image. Appended last, with its writer (`POST /nutrition-goals/:id/image`).
+  `${NUTRITION_GOALS_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;

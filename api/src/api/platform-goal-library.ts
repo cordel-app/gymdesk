@@ -9,6 +9,8 @@ import {
   GoalLibraryKind,
   buildGoalListWhere,
   goalKindHasImage,
+  goalKindHasWebpImage,
+  goalKindIsTranslated,
   isMeasurableGoalKind,
   normalizeGoalName,
 } from '../domain/goalLibrary';
@@ -36,6 +38,26 @@ import {
   uploadStorageObject,
 } from '../infra/storage';
 import { logger } from '../lib/logger';
+import { BASE_LOCALE, SUPPORTED_LOCALES, TRANSLATABLE_LOCALES, getRequestLocale, SupportedLocale } from '../infra/locale';
+import { PLATFORM_STORAGE_ROOT } from '../infra/storage';
+import {
+  goalTranslationsExpr,
+  localizedGoalExprs,
+  parseGoalTranslations,
+  replaceGoalTranslations,
+  withGoalTranslations,
+} from '../domain/nutritionGoalTranslations';
+import {
+  clearNutritionGoalImage,
+  migrateNutritionGoalImageOnRename,
+  storeNutritionGoalImage,
+} from './nutrition-goal-image-storage';
+import {
+  isMemberImageRefusal,
+  memberImageBodyParser,
+  memberImageUploadRateLimit,
+  parseMemberImageRequest,
+} from './member-image-storage';
 // What a goal **target** is lives in one module, shared with the gym-facing
 // router and the assignment side (#1034 §1).
 import { normalizeTargetType, normalizeTargetUnit, normalizeTargetValue, targetPairError } from '../domain/goalTarget';
@@ -66,13 +88,17 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
   // and it also decides whether the two image routes exist at all — a Nutrition
   // Goal's `/:id/image` is a 404 rather than a write to a missing column.
   const hasImage = goalKindHasImage(kind);
+  // #1623: the WebP pair and the translated name/description (one declaration each).
+  const hasWebpImage = goalKindHasWebpImage(kind);
+  const translated = goalKindIsTranslated(kind);
 
-  const COLUMNS = `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasImage ? ' g.image_url,' : ''}
+  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasImage ? ' g.image_url,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale)}, ${goalTranslationsExpr('g')},` : ''}
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g')}`;
 
   /** A DECIMAL comes back from mysql2 as a string; reported as the number it is. */
-  function shapeGoal<T extends Record<string, unknown>>(row: T) {
+  function shapeGoal<T extends Record<string, unknown>>(input: T) {
+    const row = translated ? withGoalTranslations(input as any) as T : input;
     if (!row || !measurable) return row;
     return {
       ...row,
@@ -102,9 +128,19 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
     return resolvePlatformActor(req.superadminName);
   }
 
-  async function loadGoal(id: unknown) {
-    const { rows } = await db.query(`SELECT ${COLUMNS} FROM ${table} g WHERE g.id = ?`, [id]);
+  async function loadGoal(id: unknown, locale: SupportedLocale = BASE_LOCALE) {
+    const { rows } = await db.query(`SELECT ${columnsFor(locale)} FROM ${table} g WHERE g.id = ?`, [id]);
     return rows[0] ? shapeGoal(rows[0]) : undefined;
+  }
+
+  /* ── Supported locales (#1623) ──────────────────────────────────────────── */
+  // Lets the editor render one name/description pair per translatable locale
+  // instead of keeping the list a second time in the frontend. Registered only
+  // for a translated kind, and before any `/:id` route.
+  if (translated) {
+    router.get('/locales', requireSuperadmin, (_req, res) => {
+      res.json({ locales: SUPPORTED_LOCALES, base_locale: BASE_LOCALE, translatable: TRANSLATABLE_LOCALES });
+    });
   }
 
   /* ── List ───────────────────────────────────────────────────────────────── */
@@ -115,6 +151,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       req.query.search,
       ['g.gym_id IS NULL', status ? 'g.status = ?' : "g.status != 'deleted'"],
       status ? [status] : [],
+      { searchTranslations: translated },
     );
     const limit = clampLimit(req.query.limit);
     const offset = clampOffset(req.query.offset);
@@ -130,7 +167,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // `display_name` is). LIMIT/OFFSET are interpolated because MySQL 8
       // rejects a parameterised LIMIT; both are already validated integers.
       const { rows } = await db.query(
-        `SELECT ${COLUMNS} FROM ${table} g WHERE ${where} ORDER BY g.name ASC LIMIT ${limit} OFFSET ${offset}`,
+        `SELECT ${columnsFor(getRequestLocale(req))} FROM ${table} g WHERE ${where} ORDER BY g.name ASC LIMIT ${limit} OFFSET ${offset}`,
         params,
       );
       res.json({ items: rows.map(shapeGoal), total: countRows[0]?.total ?? 0, limit, offset });
@@ -152,6 +189,8 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       targetType: target.value.type ?? 'absolute',
     });
     if (createPairError) return res.status(400).json({ error: createPairError });
+    const goalTranslations = translated ? parseGoalTranslations(req.body) : {};
+    if (goalTranslations.error) return res.status(400).json({ error: goalTranslations.error });
 
     try {
       const { rows: existing } = await db.query(
@@ -165,17 +204,22 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // name entered here (shown in every locale), exactly as a gym's own does.
       // Inventing a slug for it would promise a translation key nothing holds.
       const actor = platformActor(req);
-      const { insertId } = await db.query(
-        `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
-           status, created_by)
-         VALUES (NULL, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?)`,
-        [
-          name.value, description.value ?? null,
-          ...(measurable ? [target.value.value ?? null, target.value.unit ?? null, target.value.type ?? 'absolute'] : []),
-          actor,
-        ],
-      );
-      const goal = await loadGoal(insertId);
+      const insertId = await db.transaction(async (tx) => {
+        const { insertId: goalId } = await tx.query(
+          `INSERT INTO ${table} (gym_id, name, description,${measurable ? ' target_value, target_unit, target_type,' : ''}
+             status, created_by)
+           VALUES (NULL, ?, ?,${measurable ? ' ?, ?, ?,' : ''} 'active', ?)`,
+          [
+            name.value, description.value ?? null,
+            ...(measurable ? [target.value.value ?? null, target.value.unit ?? null, target.value.type ?? 'absolute'] : []),
+            actor,
+          ],
+        );
+        // #1623 — the translated name and description commit with the goal.
+        if (goalTranslations.translations) await replaceGoalTranslations(tx, goalId, goalTranslations.translations);
+        return goalId as number;
+      });
+      const goal = await loadGoal(insertId, getRequestLocale(req));
       recordAudit(req, { action: 'create', entityType, entityId: insertId, next: goal });
       res.status(201).json(goal);
     } catch (err) { next(err); }
@@ -191,10 +235,12 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
     if ('error' in description) return res.status(400).json({ error: description.error });
     const target = readTarget(req.body);
     if ('error' in target) return res.status(400).json({ error: target.error });
+    const goalTranslations = translated ? parseGoalTranslations(req.body) : {};
+    if (goalTranslations.error) return res.status(400).json({ error: goalTranslations.error });
 
     try {
       const { rows: existing } = await db.query(
-        `SELECT id, name, description, status, slug${measurable ? ', target_value, target_unit, target_type' : ''}
+        `SELECT id, name, description, status, slug${hasWebpImage ? ', image_url, image_thumbnail_url' : ''}${measurable ? ', target_value, target_unit, target_type' : ''}
          FROM ${table} WHERE id = ? AND gym_id IS NULL`,
         [id],
       );
@@ -233,9 +279,23 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
         if (target.value.type !== undefined) { updates.push('target_type = ?'); params.push(target.value.type); }
       }
       params.push(id);
-      await db.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`, params);
+      await db.transaction(async (tx) => {
+        await tx.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`, params);
+        if (goalTranslations.translations) await replaceGoalTranslations(tx, id, goalTranslations.translations);
+      });
 
-      const goal = await loadGoal(id);
+      // #1623: the image key carries the goal's name, so a rename moves it.
+      if (hasWebpImage && name.value !== undefined && name.value !== existing[0].name && existing[0].image_url) {
+        await migrateNutritionGoalImageOnRename(
+          { gymId: null, prefix: PLATFORM_STORAGE_ROOT },
+          {
+            id: existing[0].id, name: name.value,
+            image_url: existing[0].image_url, image_thumbnail_url: existing[0].image_thumbnail_url ?? null,
+          },
+        );
+      }
+
+      const goal = await loadGoal(id, getRequestLocale(req));
       recordAudit(req, {
         action: 'update', entityType, entityId: id,
         previous: shapeGoal(existing[0]), next: goal,
@@ -244,6 +304,59 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
     } catch (err) { next(err); }
   });
 
+
+  /* ── Image (#1623 — a System Nutrition Goal's artwork, WebP master + thumbnail) ── */
+  //
+  // The gym route's mirror image, one root over: `cordel/nutrition_goals/`. There
+  // is no per-gym bucket to initialize, so no 409; the folder markers are written
+  // on demand. This router answers for System rows only (404 for a gym's goal).
+  if (hasWebpImage) {
+    async function loadSystemGoalForImage(req: any, res: any) {
+      const { rows } = await db.query<{ id: number; name: string; status: string; image_url: string | null; image_thumbnail_url: string | null }>(
+        `SELECT id, name, status, image_url, image_thumbnail_url FROM ${table} WHERE id = ? AND gym_id IS NULL`,
+        [req.params.id],
+      );
+      const row = rows[0];
+      if (!row) { res.status(404).json({ error: 'Goal not found' }); return null; }
+      if (row.status === 'deleted') { res.status(409).json({ error: 'Goal is deleted' }); return null; }
+      return { id: row.id, name: row.name, image_url: row.image_url, image_thumbnail_url: row.image_thumbnail_url };
+    }
+
+    router.post('/:id/image', requireSuperadmin, memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
+      try {
+        const parsed = await parseMemberImageRequest(req);
+        if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+        const goal = await loadSystemGoalForImage(req, res);
+        if (!goal) return;
+        const stored = await storeNutritionGoalImage({
+          scope: { gymId: null, prefix: PLATFORM_STORAGE_ROOT },
+          goal, images: parsed, modifiedBy: platformActor(req),
+        });
+        if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+        recordAudit(req, {
+          action: 'update', entityType, entityId: goal.id,
+          previous: { image_url: goal.image_url }, next: { image_url: stored.image_url },
+        });
+        res.json(await loadGoal(goal.id, getRequestLocale(req)));
+      } catch (err) { next(err); }
+    });
+
+    router.delete('/:id/image', requireSuperadmin, async (req, res, next) => {
+      try {
+        const goal = await loadSystemGoalForImage(req, res);
+        if (!goal) return;
+        await clearNutritionGoalImage({
+          scope: { gymId: null, prefix: PLATFORM_STORAGE_ROOT },
+          goal, modifiedBy: platformActor(req),
+        });
+        recordAudit(req, {
+          action: 'update', entityType, entityId: goal.id,
+          previous: { image_url: goal.image_url }, next: { image_url: null },
+        });
+        res.json(await loadGoal(goal.id, getRequestLocale(req)));
+      } catch (err) { next(err); }
+    });
+  }
 
   /* ── Image (#1035 stage 2 — a System goal's artwork) ───────────────────── */
   //
@@ -389,7 +502,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
           // renamed since its last upload, or its image predates this shape.
           await sweepReplacedImage(goal.id, goal.image_url, url);
 
-          const updated = await loadGoal(goal.id);
+          const updated = await loadGoal(goal.id, getRequestLocale(req));
           recordAudit(req, {
             action: 'update', entityType, entityId: goal.id,
             previous: { image_url: goal.image_url }, next: { image_url: url },
@@ -415,7 +528,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
 
         await sweepReplacedImage(goal.id, goal.image_url, null);
 
-        const updated = await loadGoal(goal.id);
+        const updated = await loadGoal(goal.id, getRequestLocale(req));
         recordAudit(req, {
           action: 'update', entityType, entityId: goal.id,
           previous: { image_url: goal.image_url }, next: { image_url: null },

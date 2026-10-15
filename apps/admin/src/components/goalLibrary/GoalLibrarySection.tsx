@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
@@ -19,11 +20,14 @@ import {
   IMAGE_PREVIEW_THUMBNAIL_SIZE, imagePreviewFrameStyle, imagePreviewImageStyle,
 } from '@/components/imagePreviewFrame';
 import { SAFE_IMAGE_SRC } from '@/lib/exerciseImageUpload';
+import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
+import { localeLabel } from '@/lib/localeLabels';
 import { GoalDetailsModal } from './GoalDetailsModal';
 import { GoalImageField } from './GoalImageField';
 import {
   GOAL_API_ROOTS, GoalFormValues, GoalKind, GoalListResponse, GoalRow, GoalScope,
-  emptyGoalForm, formatGoalTarget, goalAvailability, goalDisplayName, goalFormError, goalKindHasImage,
+  emptyGoalForm, formatGoalTarget, goalAvailability, goalFormError, goalKindHasImage,
+  goalKindHasWebpImage, goalKindIsTranslated, goalListName,
   goalKindIsGymConfigurable, isMeasurableGoalKind, isSystemGoal, toGoalFormValues, toGoalPayload,
   truncateDescription,
 } from './goalProfile';
@@ -86,6 +90,11 @@ export function GoalLibrarySection({
   // configures — and only a gym's own library configures anything: the
   // platform list has no gym whose state it could hold.
   const configurable = scope === 'gym' && goalKindIsGymConfigurable(kind);
+  // #1623: the WebP pair and the translated name/description, asked once each so
+  // the list, the read-only view and both halves of the form cannot disagree.
+  const hasWebpImage = goalKindHasWebpImage(kind);
+  const translated = goalKindIsTranslated(kind);
+  const tRoot = useTranslations();
   const { apiFetch } = useApiClient();
   const { toast } = useToast();
 
@@ -113,7 +122,22 @@ export function GoalLibrarySection({
   const newNameRef = useRef<HTMLInputElement>(null);
 
   /** The label of a goal — a System slug's locale key, else the stored name. */
-  const nameOf = useCallback((goal: GoalRow) => goalDisplayName(goal, kind, label), [kind, label]);
+  const nameOf = useCallback((goal: GoalRow) => goalListName(goal, kind, label), [kind, label]);
+
+  /**
+   * The translatable locales — the API's answer (`GET <root>/locales`), never a
+   * list in this component — so the editor renders exactly one name and
+   * description pair per locale the deployment supports.
+   */
+  const [translatableLocales, setTranslatableLocales] = useState<string[]>([]);
+  useEffect(() => {
+    if (!translated || !ready) return;
+    let cancelled = false;
+    apiFetch<{ translatable: string[] }>(`${basePath}/locales`)
+      .then((data) => { if (!cancelled) setTranslatableLocales(data.translatable); })
+      .catch(() => { /* the editor then offers the base fields alone */ });
+    return () => { cancelled = true; };
+  }, [apiFetch, basePath, ready, translated]);
 
   /**
    * The three labels that name the catalogue rather than the action — the `+ Add`
@@ -164,7 +188,7 @@ export function GoalLibrarySection({
   /* ── Inline create (#805: the same form body, at the top of the list) ────── */
 
   function openInlineNew() {
-    setNewForm(emptyGoalForm());
+    setNewForm(translated ? { ...emptyGoalForm(), translations: {} } : emptyGoalForm());
     setNewError(null);
     setCreating(true);
     setTimeout(() => newNameRef.current?.focus(), 50);
@@ -360,6 +384,34 @@ export function GoalLibrarySection({
             )}
           </div>
         )}
+        {/* #1623 — a Nutrition Goal's WebP image: the same control a Membership
+            Plan uses, acting on the server straight away (`POST`/`DELETE
+            <root>/:id/image`), so Save and Cancel neither carry nor undo it. A
+            System goal's object lives under `cordel/`, which no gym's bucket gates. */}
+        {hasWebpImage && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={formFieldLabelStyle}>{label('label_image')}</label>
+            {goal ? (
+              <MemberImageField
+                target={{
+                  kind: 'immediate',
+                  memberId: goal.id,
+                  basePath,
+                  imageUrl: goal.image_url ?? null,
+                  stamp: goal.modified_at,
+                  onChanged: (updated) => applyGoalChange({ ...goal, ...(updated as GoalRow) }),
+                }}
+                requiresGymStorage={scope !== 'platform'}
+                disabled={!canWrite}
+                disabledTitle={readOnlyTitle}
+                // The Personal Goals' PNG sentence is a different pipeline's.
+                label={(key) => label(key === 'image_requirements' ? 'image_requirements_webp' : key)}
+              />
+            ) : (
+              <span style={formHelpTextStyle}>{label('image_after_create')}</span>
+            )}
+          </div>
+        )}
         <div style={{ marginBottom: 12 }}>
           <label style={formFieldLabelStyle}>{label('label_description')}</label>
           <textarea
@@ -369,6 +421,41 @@ export function GoalLibrarySection({
             style={{ ...formControlStyle, resize: 'vertical' }}
           />
         </div>
+        {/* #1623 — one name and description per translatable locale. A blank
+            name reads "not translated" (the base text is the fallback), which is
+            made visible beside the field rather than left to be discovered. */}
+        {translated && translatableLocales.length > 0 && (
+          <div style={{ marginBottom: 12 }}>
+            <label style={formFieldLabelStyle}>{label('label_translations')}</label>
+            <span style={formHelpTextStyle}>{label('help_translations')}</span>
+            {translatableLocales.map((loc) => {
+              const entry = form.translations?.[loc] ?? { name: '', description: '' };
+              const setEntry = (next: { name: string; description: string }) =>
+                setForm({ ...form, translations: { ...(form.translations ?? {}), [loc]: next } });
+              return (
+                <div key={loc} style={{ marginTop: 8 }}>
+                  <span style={{ ...formFieldLabelStyle, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {localeLabel(loc, (key) => tRoot(key as any))}
+                    {!entry.name.trim() && <span style={listNameBadgeStyle}>{label('translation_missing')}</span>}
+                  </span>
+                  <input
+                    value={entry.name}
+                    placeholder={label('label_name')}
+                    onChange={(e) => setEntry({ ...entry, name: e.target.value })}
+                    style={formControlStyle}
+                  />
+                  <textarea
+                    value={entry.description}
+                    placeholder={label('label_description')}
+                    onChange={(e) => setEntry({ ...entry, description: e.target.value })}
+                    rows={2}
+                    style={{ ...formControlStyle, resize: 'vertical', marginTop: 6 }}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
         {error && <p style={formErrorStyle}>{error}</p>}
         <div style={inlineActionsRowStyle}>
           <button type="button" onClick={onCancel} style={secondaryBtnSmall}>{label('cancel')}</button>
@@ -395,7 +482,30 @@ export function GoalLibrarySection({
             emptyText={label('image_none')}
           />
         )}
-        <ReadOnlyField label={label('label_description')} value={displayValue(goal.description)} wrap />
+        {hasWebpImage && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span style={formFieldLabelStyle}>{label('label_image')}</span>
+            <MemberImagePreview
+              src={memberImagePreviewSrc(goal.image_url ?? null, goal.modified_at ?? goal.created_at)}
+              emptyLabel={label('image_none')}
+              size={IMAGE_PREVIEW_THUMBNAIL_SIZE}
+            />
+          </div>
+        )}
+        <ReadOnlyField
+          label={label('label_description')}
+          value={displayValue(translated ? (goal.display_description ?? goal.description) : goal.description)}
+          wrap
+        />
+        {translated && Object.keys(goal.translations ?? {}).length + translatableLocales.length > 0 && (
+          <ReadOnlyField
+            label={label('label_translations')}
+            value={(translatableLocales.length > 0 ? translatableLocales : Object.keys(goal.translations ?? {}).sort())
+              .map((loc) => `${localeLabel(loc, (key) => tRoot(key as any))}: ${goal.translations?.[loc]?.name || '—'}`)
+              .join('\n')}
+            wrap
+          />
+        )}
         <ReadOnlyField
           label={label('ownership')}
           value={goal.gym_id === null ? label('ownership_system') : label('ownership_gym')}
@@ -405,6 +515,20 @@ export function GoalLibrarySection({
   }
 
   const columns: Column<GoalRow>[] = [
+    // #1623 — the 256 × 256 thumbnail in lists, in the app's one 1:1 frame; a goal
+    // with none reads the frame's own empty state, never a placeholder asset.
+    ...(hasWebpImage ? [{
+      header: label('label_image'),
+      width: 64,
+      mobile: 'secondary' as const,
+      render: (goal: GoalRow) => (
+        <MemberImagePreview
+          src={memberImagePreviewSrc(goal.image_thumbnail_url ?? goal.image_url ?? null, goal.modified_at ?? goal.created_at)}
+          emptyLabel="—"
+          size={40}
+        />
+      ),
+    }] : []),
     {
       header: label('label_name'),
       mobile: 'name',
@@ -425,8 +549,9 @@ export function GoalLibrarySection({
       header: label('label_description'),
       mobile: 'secondary',
       render: (goal) => (
-        <span style={{ fontSize: 13 }} title={goal.description ?? undefined}>
-          {goal.description ? truncateDescription(goal.description) : '—'}
+        <span style={{ fontSize: 13 }} title={(translated ? (goal.display_description ?? goal.description) : goal.description) ?? undefined}>
+          {(translated ? (goal.display_description ?? goal.description) : goal.description)
+            ? truncateDescription(translated ? (goal.display_description ?? goal.description) : goal.description) : '—'}
         </span>
       ),
     },

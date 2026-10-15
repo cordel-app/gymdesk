@@ -3844,7 +3844,14 @@
     "activated": "Fita activada per a aquest gimnàs.",
     "deactivated": "Fita desactivada per a aquest gimnàs.",
     "status_inactive": "Inactiu",
-    "inactive_assign_hint": "Aquesta fita està inactiva en aquest gimnàs. Activa-la per assignar-la."
+    "inactive_assign_hint": "Aquesta fita està inactiva en aquest gimnàs. Activa-la per assignar-la.",
+    "label_translations": "Traduccions",
+    "help_translations": "Nom i descripció en cada idioma. Un idioma sense nom utilitza el text base de dalt.",
+    "translation_missing": "Falta",
+    "error_translation_name": "Una descripció traduïda necessita un nom traduït.",
+    "image_requirements_webp": "Qualsevol imatge JPEG, PNG, WebP o GIF. El servidor l'ajusta a un WebP de 1080 × 1080 amb una miniatura de 256 × 256.",
+    "image_staged": "Es pujarà quan es desi l'objectiu.",
+    "image_retry": "Reintenta la pujada"
   },
   "assigned_personal_goals": {
     "title": "Objectius Personals Assignats",

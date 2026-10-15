@@ -115,6 +115,32 @@ export function goalKindHasImage(kind: GoalLibraryKind): boolean {
 }
 
 /**
+ * #1623 — which kinds carry the **WebP** image pair (`image_url` +
+ * `image_thumbnail_url`, migration 282), made by the server from one original
+ * (`api/src/api/nutrition-goal-image-storage.ts`). Exactly one does. It is a
+ * separate declaration from {@link IMAGE_GOAL_KINDS} because the two pipelines
+ * differ (a Personal Goal's is the PNG-signature one, #1035) and a kind has one.
+ * Mirrored in the admin's `WEBP_IMAGE_GOAL_KINDS`.
+ */
+export const WEBP_IMAGE_GOAL_KINDS: readonly GoalLibraryKind[] = ['nutrition'];
+
+export function goalKindHasWebpImage(kind: GoalLibraryKind): boolean {
+  return WEBP_IMAGE_GOAL_KINDS.includes(kind);
+}
+
+/**
+ * #1623 — which kinds carry a translated name and description
+ * (`nutrition_goal_translations`, migration 282). Exactly one does; Personal
+ * Goals keep their label-key mechanism for the System rows. Mirrored in the
+ * admin's `TRANSLATED_GOAL_KINDS`.
+ */
+export const TRANSLATED_GOAL_KINDS: readonly GoalLibraryKind[] = ['nutrition'];
+
+export function goalKindIsTranslated(kind: GoalLibraryKind): boolean {
+  return TRANSLATED_GOAL_KINDS.includes(kind);
+}
+
+/**
  * #1181 — which kinds a gym **configures** rather than only reads: a per-gym
  * availability state (`gym_personal_goals`, migration 236; Activate /
  * Deactivate) and a Duplicate that copies any visible goal, a System one
@@ -247,22 +273,32 @@ export function normalizeGoalName(
 }
 
 /**
- * The search predicate the two list endpoints share. A goal has no translation
- * junction table (see the slug note above), so there is one name to match —
- * unlike the Foods library's `buildListWhere`, which also searches the locale's
- * translated name.
+ * The search predicate the two list endpoints share. A Personal Goal has no
+ * translation junction table (see the slug note above), so there is one name to
+ * match; a Nutrition Goal's translated names are matched too (#1623,
+ * `searchTranslations`).
  */
 export function buildGoalListWhere(
   search: unknown,
   base: string[],
   baseParams: unknown[] = [],
+  { searchTranslations = false }: { searchTranslations?: boolean } = {},
 ): { where: string; params: unknown[] } {
   const term = typeof search === 'string' ? search.trim() : '';
   const where = [...base];
   const params = [...baseParams];
   if (term) {
-    where.push('(g.name LIKE ? OR g.slug LIKE ?)');
-    params.push(`%${term}%`, `%${term}%`);
+    if (searchTranslations) {
+      // #1623 — the base name, the slug **or any** stored translated name, so a
+      // search in one language finds the goal whatever language the screen is in.
+      where.push(`(g.name LIKE ? OR g.slug LIKE ? OR EXISTS (
+        SELECT 1 FROM nutrition_goal_translations ngts
+         WHERE ngts.nutrition_goal_id = g.id AND ngts.name LIKE ?))`);
+      params.push(`%${term}%`, `%${term}%`, `%${term}%`);
+    } else {
+      where.push('(g.name LIKE ? OR g.slug LIKE ?)');
+      params.push(`%${term}%`, `%${term}%`);
+    }
   }
   return { where: where.join(' AND '), params };
 }

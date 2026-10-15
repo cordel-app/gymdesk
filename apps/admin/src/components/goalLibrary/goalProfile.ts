@@ -80,6 +80,41 @@ export function goalKindHasImage(kind: GoalKind): boolean {
 }
 
 /**
+ * #1623 — which kinds carry the **WebP** image pair (`image_url` +
+ * `image_thumbnail_url`), mirroring `WEBP_IMAGE_GOAL_KINDS` in
+ * `api/src/domain/goalLibrary.ts`. Exactly one does (Nutrition Goals); a Personal
+ * Goal's image is the PNG one above. `goal-library-ui.test.ts` asserts the two
+ * declarations agree.
+ */
+export const WEBP_IMAGE_GOAL_KINDS: readonly GoalKind[] = ['nutrition'];
+
+export function goalKindHasWebpImage(kind: GoalKind): boolean {
+  return WEBP_IMAGE_GOAL_KINDS.includes(kind);
+}
+
+/**
+ * #1623 — which kinds carry a translated name and description, mirroring
+ * `TRANSLATED_GOAL_KINDS` in `api/src/domain/goalLibrary.ts`. Exactly one does
+ * (Nutrition Goals). For such a kind the API reports `display_name` /
+ * `display_description` in the caller's language and a `translations` map the
+ * Edit form is seeded from.
+ */
+export const TRANSLATED_GOAL_KINDS: readonly GoalKind[] = ['nutrition'];
+
+export function goalKindIsTranslated(kind: GoalKind): boolean {
+  return TRANSLATED_GOAL_KINDS.includes(kind);
+}
+
+/** One locale's name and description as the form holds them (`''` = not translated). */
+export interface GoalTranslationForm {
+  name: string;
+  description: string;
+}
+
+/** `{ locale: { name, description } }`, as the API reports and accepts it. */
+export type GoalTranslationsMap = Record<string, { name?: string | null; description?: string | null }>;
+
+/**
  * #1181 — which kinds a gym **configures** rather than only reads, mirroring
  * `GYM_CONFIGURABLE_GOAL_KINDS` in `api/src/domain/goalLibrary.ts`: a per-gym
  * availability state (Activate / Deactivate, `gym_status` on the row) and a
@@ -205,6 +240,16 @@ export interface GoalRow {
    * asked before the preview or the control is rendered.
    */
   image_url?: string | null;
+  /** #1623 — the 256 × 256 WebP beside `image_url` (a Nutrition Goal's), for lists and compact UI. */
+  image_thumbnail_url?: string | null;
+  /**
+   * #1623 — the name and description in the caller's language, with the base
+   * value as the fallback. **Absent for a kind with no translations**; `name`
+   * and `description` stay the base values an edit form submits back.
+   */
+  display_name?: string;
+  display_description?: string | null;
+  translations?: GoalTranslationsMap;
   status: 'active' | 'deleted';
   /**
    * #1181 — this gym's availability state for the goal (`gym_personal_goals`),
@@ -243,6 +288,12 @@ export interface GoalFormValues {
   target_value: string;
   target_unit: string;
   target_type: 'absolute' | 'relative';
+  /**
+   * #1623 — per-locale name and description, **present only for a translated
+   * kind** (so a Personal Goal's form is exactly what it was). A blank name means
+   * "not translated": the locale falls back to the base text.
+   */
+  translations?: Record<string, GoalTranslationForm>;
 }
 
 export function emptyGoalForm(): GoalFormValues {
@@ -251,7 +302,13 @@ export function emptyGoalForm(): GoalFormValues {
 
 /** Persisted row → Edit form values: the single mapping both pages seed from. */
 export function toGoalFormValues(goal: GoalRow): GoalFormValues {
+  const translations = goal.translations === undefined ? undefined : Object.fromEntries(
+    Object.entries(goal.translations).map(([locale, entry]) => [
+      locale, { name: entry?.name ?? '', description: entry?.description ?? '' },
+    ]),
+  );
   return {
+    ...(translations ? { translations } : {}),
     name: goal.name,
     description: goal.description ?? '',
     target_value: goal.target_value === null || goal.target_value === undefined
@@ -278,8 +335,14 @@ export function toGoalPayload(form: GoalFormValues, kind: GoalKind): {
   target_value?: number | null;
   target_unit?: string | null;
   target_type?: 'absolute' | 'relative';
+  translations?: GoalTranslationsMap;
 } {
-  const base = { name: form.name.trim(), description: form.description.trim() };
+  const base: { name: string; description: string; translations?: GoalTranslationsMap } = {
+    name: form.name.trim(), description: form.description.trim(),
+  };
+  // #1623: the map is the complete set (replace-all), so a locale left blank is
+  // omitted and loses its row; sent only for a kind that has translations.
+  if (goalKindIsTranslated(kind) && form.translations) base.translations = toTranslationsPayload(form.translations);
   if (!isMeasurableGoalKind(kind)) return base;
   const value = form.target_value.trim();
   return {
@@ -288,6 +351,33 @@ export function toGoalPayload(form: GoalFormValues, kind: GoalKind): {
     target_unit: form.target_unit.trim() || null,
     target_type: form.target_type,
   };
+}
+
+/** The translations the API takes: only locales with a name, the description `''`-free. */
+export function toTranslationsPayload(
+  translations: Record<string, GoalTranslationForm>,
+): GoalTranslationsMap {
+  const out: GoalTranslationsMap = {};
+  for (const [locale, entry] of Object.entries(translations)) {
+    const name = entry.name.trim();
+    if (!name) continue;
+    out[locale] = { name, description: entry.description.trim() || null };
+  }
+  return out;
+}
+
+/**
+ * The name to show in a list: the API's `display_name` for a translated kind (a
+ * System goal's seeded translations included), else `goalDisplayName()`'s slug
+ * rule. Decided here so every surface answers the same.
+ */
+export function goalListName(
+  goal: Pick<GoalRow, 'slug' | 'name' | 'display_name'>,
+  kind: GoalKind,
+  translate: (key: string) => string,
+): string {
+  if (goalKindIsTranslated(kind)) return goal.display_name || goal.name;
+  return goalDisplayName(goal, kind, translate);
 }
 
 /**
@@ -302,6 +392,10 @@ export function toGoalPayload(form: GoalFormValues, kind: GoalKind): {
  */
 export function goalFormError(form: GoalFormValues, kind: GoalKind): string | null {
   if (!form.name.trim()) return 'error_required';
+  // #1623: a description with no name has nothing to hang off (the API's rule).
+  for (const entry of Object.values(form.translations ?? {})) {
+    if (entry.description.trim() && !entry.name.trim()) return 'error_translation_name';
+  }
   if (!isMeasurableGoalKind(kind)) return null;
   const value = form.target_value.trim();
   if (value !== '' && !(Number.isFinite(Number(value)) && (form.target_type === 'relative' || Number(value) >= 0))) {

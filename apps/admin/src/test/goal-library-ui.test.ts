@@ -7,6 +7,11 @@ import {
   GOAL_KINDS,
   GYM_CONFIGURABLE_GOAL_KINDS,
   IMAGE_GOAL_KINDS,
+  TRANSLATED_GOAL_KINDS,
+  WEBP_IMAGE_GOAL_KINDS,
+  goalKindIsTranslated,
+  goalListName,
+  toTranslationsPayload,
   LIBRARY_TABS,
   MEASURABLE_GOAL_KINDS,
   PERSONAL_GOAL_IMAGE_MAX_SIZE,
@@ -32,6 +37,8 @@ import {
   GOAL_LIBRARY_KINDS,
   GYM_CONFIGURABLE_GOAL_KINDS as API_GYM_CONFIGURABLE_GOAL_KINDS,
   IMAGE_GOAL_KINDS as API_IMAGE_GOAL_KINDS,
+  TRANSLATED_GOAL_KINDS as API_TRANSLATED_GOAL_KINDS,
+  WEBP_IMAGE_GOAL_KINDS as API_WEBP_IMAGE_GOAL_KINDS,
   MEASURABLE_GOAL_KINDS as API_MEASURABLE_GOAL_KINDS,
   SYSTEM_GOALS,
   SYSTEM_PERSONAL_GOAL_TARGETS,
@@ -757,5 +764,54 @@ describe('a Personal Goal has an image, a Nutrition Goal does not (#1035 stage 2
     // A goal with none reads as `null`, never as a placeholder asset (#716's
     // no-fallback rule).
     expect({ ...goal, image_url: null }.image_url).toBeNull();
+  });
+});
+
+/**
+ * #1623 — a Nutrition Goal carries a WebP image and a translated name and
+ * description, and each declaration is mirrored from the API's.
+ */
+describe('a Nutrition Goal is translated and carries a WebP image (#1623)', () => {
+  it("mirrors the API's declarations", () => {
+    expect([...WEBP_IMAGE_GOAL_KINDS]).toEqual([...API_WEBP_IMAGE_GOAL_KINDS]);
+    expect([...TRANSLATED_GOAL_KINDS]).toEqual([...API_TRANSLATED_GOAL_KINDS]);
+    expect(goalKindIsTranslated('nutrition')).toBe(true);
+    expect(goalKindIsTranslated('personal')).toBe(false);
+  });
+
+  const row: GoalRow = {
+    id: 1, gym_id: null, slug: 'protein', name: 'Protein', description: 'Base', status: 'active',
+    created_at: '2026-01-01T00:00:00Z', created_by: null, modified_at: null, modified_by: null, deleted_at: null, deleted_by: null,
+  };
+
+  it('shows the API\'s display_name for a translated kind, the slug rule for the other', () => {
+    const translate = (key: string) => `T:${key}`;
+    expect(goalListName({ ...row, display_name: 'Proteínas' }, 'nutrition', translate)).toBe('Proteínas');
+    expect(goalListName(row, 'nutrition', translate)).toBe('Protein');
+    expect(goalListName({ ...row, slug: 'weight_loss', name: 'Weight Loss' }, 'personal', translate)).toBe('T:personal_goal_weight_loss');
+  });
+
+  it('seeds the form from the row\'s translations and submits only locales with a name', () => {
+    const form = toGoalFormValues({
+      ...row, translations: { es: { name: 'Proteínas', description: null }, ca: { name: '', description: null } },
+    });
+    expect(form.translations).toEqual({
+      es: { name: 'Proteínas', description: '' }, ca: { name: '', description: '' },
+    });
+    expect(toGoalPayload({ ...form, name: 'Protein' }, 'nutrition').translations)
+      .toEqual({ es: { name: 'Proteínas', description: null } });
+    expect(toTranslationsPayload({ es: { name: ' ', description: 'x' } })).toEqual({});
+  });
+
+  it('leaves a Personal Goal\'s form and payload exactly as they were', () => {
+    expect(toGoalFormValues({ ...row, slug: null }).translations).toBeUndefined();
+    expect(toGoalPayload({ ...emptyGoalForm(), name: 'x', translations: { es: { name: 'y', description: '' } } }, 'personal').translations)
+      .toBeUndefined();
+  });
+
+  it('refuses a translated description without a translated name', () => {
+    expect(goalFormError({
+      ...emptyGoalForm(), name: 'x', translations: { es: { name: '', description: 'sin nombre' } },
+    }, 'nutrition')).toBe('error_translation_name');
   });
 });
