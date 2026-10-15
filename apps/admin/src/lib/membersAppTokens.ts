@@ -578,6 +578,14 @@ export const MEMBERS_APP_SETTINGS: MembersAppSetting[] = [
     cssVar: '--gd-calendar-header-bg',
   },
   {
+    key: 'calendarHeaderTextColor',
+    section: 'group_members_calendar',
+    labelKey: 'label_members_calendar_header_text_color',
+    type: 'color',
+    source: { kind: 'color', key: 'calendarHeaderText', labelKey: 'label_calendar_header_text' },
+    cssVar: '--gd-calendar-header-text',
+  },
+  {
     key: 'calendarButtonsColor',
     section: 'group_members_calendar',
     labelKey: 'label_members_calendar_buttons_color',
