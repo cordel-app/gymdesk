@@ -66,7 +66,8 @@
     "collapse_sidebar": "Collapse sidebar",
     "expand_sidebar": "Expand sidebar",
     "localization": "Time & Localization",
-    "home": "Home"
+    "home": "Home",
+    "base_payment_methods": "Base Payment Methods"
   },
   "dashboard": {
     "title": "Dashboard",
@@ -4922,5 +4923,33 @@
     "pending_sub": "{count, plural, =0 {No members need payment follow-up} one {member needs payment follow-up} other {members need payment follow-up}}",
     "pending_empty": "No member has an outstanding payment.",
     "pending_view_all": "View all {count} in Payments"
+  },
+  "base_payment_methods": {
+    "title": "Base Payment Methods",
+    "add": "+ New Payment Method",
+    "empty": "No payment methods.",
+    "search": "Search…",
+    "col_name": "Name",
+    "col_code": "Code",
+    "col_status": "Status",
+    "col_description": "Description",
+    "edit": "Edit",
+    "delete": "Delete",
+    "details": "Details",
+    "save": "Save",
+    "cancel": "Cancel",
+    "close": "Close",
+    "code": "Code (stable identifier)",
+    "status": "Status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "all_statuses": "All statuses",
+    "name_in": "Name ({locale})",
+    "description_in": "Description ({locale})",
+    "delete_title": "Delete payment method",
+    "delete_confirm": "Delete \"{name}\"? It is kept for historical records and can no longer be selected.",
+    "error_load": "Could not load payment methods.",
+    "error_generic": "Something went wrong.",
+    "error_required": "Code and a name in every language are required."
   }
 }

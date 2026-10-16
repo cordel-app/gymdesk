@@ -105,6 +105,7 @@ import { recycleBinRouter } from './api/recycle-bin';
 import { platformFeatureFlagsRouter, featureFlagsPublicRouter } from './api/platform-feature-flags';
 import { platformMobileBuildsRouter } from './api/platform-mobile-builds';
 import { paymentProvidersRouter } from './api/payment-providers';
+import { platformBasePaymentMethodsRouter } from './api/platform-base-payment-methods';
 import { requireFeatureEnabled } from './infra/featureFlags';
 import { clerkWebhookRouter, paymentWebhookRouter } from './api/webhooks';
 import { paymentRequestsRouter } from './api/payment-requests';
@@ -298,6 +299,8 @@ app.use('/platform/mobile-builds', requireAuth(), platformMobileBuildsRouter);
 // #636: Payment Providers are Cordel-level configuration — no tenantContext,
 // guarded per-route by requireSuperadmin, like the other platform catalogues.
 app.use('/platform/payment-providers', requireAuth(), paymentProvidersRouter);
+// #1663: the Base Payment Methods catalogue, superadmin-only per route.
+app.use('/platform/base-payment-methods', requireAuth(), platformBasePaymentMethodsRouter);
 
 // Feature flags public read — any authenticated user (used by frontend sidebar)
 app.use('/feature-flags', requireAuth(), featureFlagsPublicRouter);

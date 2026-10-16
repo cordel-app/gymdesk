@@ -67,7 +67,8 @@
     "collapse_sidebar": "Replegar menú lateral",
     "expand_sidebar": "Desplegar menú lateral",
     "localization": "Hora i localització",
-    "home": "Inici"
+    "home": "Inici",
+    "base_payment_methods": "Mètodes de pagament base"
   },
   "dashboard": {
     "title": "Tauler",
@@ -4935,5 +4936,33 @@
     "pending_sub": "{count, plural, =0 {Cap membre requereix seguiment de pagament} one {membre requereix seguiment de pagament} other {membres requereixen seguiment de pagament}}",
     "pending_empty": "Cap membre té un pagament pendent.",
     "pending_view_all": "Veure els {count} a Pagaments"
+  },
+  "base_payment_methods": {
+    "title": "Mètodes de pagament base",
+    "add": "+ Nou mètode de pagament",
+    "empty": "No hi ha mètodes de pagament.",
+    "search": "Cerca…",
+    "col_name": "Nom",
+    "col_code": "Codi",
+    "col_status": "Estat",
+    "col_description": "Descripció",
+    "edit": "Edita",
+    "delete": "Elimina",
+    "details": "Detalls",
+    "save": "Desa",
+    "cancel": "Cancel·la",
+    "close": "Tanca",
+    "code": "Codi (identificador estable)",
+    "status": "Estat",
+    "active": "Actiu",
+    "inactive": "Inactiu",
+    "all_statuses": "Tots els estats",
+    "name_in": "Nom ({locale})",
+    "description_in": "Descripció ({locale})",
+    "delete_title": "Elimina el mètode de pagament",
+    "delete_confirm": "Eliminar \"{name}\"? Es conserva per a l'historial i ja no es podrà seleccionar.",
+    "error_load": "No s'han pogut carregar els mètodes de pagament.",
+    "error_generic": "Alguna cosa ha anat malament.",
+    "error_required": "El codi i un nom en cada idioma són obligatoris."
   }
 }
