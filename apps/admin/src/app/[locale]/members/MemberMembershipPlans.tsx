@@ -248,7 +248,12 @@ export function MemberMembershipPlans({
               planOptions={selectable}
               initialMember={{ id: memberId, name: memberName, email: memberEmail }}
               onCancel={() => setAdding(false)}
-              onAssigned={() => { setAdding(false); onChanged(); }}
+              onAssigned={(created) => {
+                setAdding(false);
+                // #1692: open the card of the plan just assigned.
+                if (created) setNewDraftId(created.id);
+                onChanged();
+              }}
             />
           )}
         </>

@@ -38,7 +38,8 @@ interface Props {
   /** #1450: the Member the workflow was launched from — selected, and the owner. */
   initialMember?: MemberResult;
   onCancel: () => void;
-  onAssigned: () => void;
+  /** `created` is the assignment the API returned (#1692) — used to open its card. */
+  onAssigned: (created?: { id: number }) => void;
 }
 
 function todayISO() {
@@ -100,7 +101,7 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
 
     setSaving(true);
     try {
-      await apiFetch(`/membership-plans/${plan.id}/assign`, {
+      const created = await apiFetch<{ id?: number }>(`/membership-plans/${plan.id}/assign`, {
         method: 'POST',
         body: JSON.stringify({
           member_ids: members.map((m) => m.id),
@@ -110,7 +111,7 @@ export function AssignPlanToMembersEditor({ plan: fixedPlan, planOptions, initia
         }),
       });
       setConflict(null);
-      onAssigned();
+      onAssigned(typeof created?.id === 'number' ? { id: created.id } : undefined);
     } catch (err: any) {
       const replacement = confirmReplacement ? null : activePlanConflict(err);
       if (replacement) {
