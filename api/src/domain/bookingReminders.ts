@@ -73,6 +73,29 @@ export const BOOKING_REMINDER_LEAD_MINUTES = 120;
  */
 export const BOOKING_REMINDER_MAX_PER_RUN = 500;
 
+/**
+ * #1698: a reminder is shown only while its session is still upcoming or in
+ * progress. This is the one place that decides it; the member's alert reads
+ * (list, unread count, so the dashboard and the Alerts page) append it to their
+ * `WHERE`, with `member_notifications` aliased `mn`.
+ *
+ * The row is filtered on read rather than deleted or flagged, so the dedupe
+ * above (`NOT EXISTS` on the row) is untouched and a late pass never re-raises
+ * a hidden reminder. It reads the occurrence's **current** `ends_at`/`status`,
+ * so a rescheduled session follows its new time, and a cancelled or deleted one
+ * drops its reminder (it has its own `event_cancelled` alert). `ends_at` is a
+ * UTC `DATETIME` compared against `UTC_TIMESTAMP()` in SQL, like `starts_at`.
+ * Every other alert type passes through untouched.
+ */
+export const ACTIVE_REMINDER_ONLY_SQL = `
+  (mn.type <> '${BOOKING_REMINDER_TYPE}' OR EXISTS (
+     SELECT 1 FROM calendar_events rce
+      WHERE rce.id = mn.entity_id
+        AND rce.gym_id = mn.gym_id
+        AND rce.deleted_at IS NULL
+        AND rce.status = 'scheduled'
+        AND rce.ends_at > UTC_TIMESTAMP()))`;
+
 /** One row of the candidate query. */
 export interface ReminderCandidate {
   gym_id: string;
