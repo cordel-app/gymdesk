@@ -561,6 +561,8 @@
     "recurring_quantity": "Quantity of {name}",
     "recurring_cancel": "Cancel draft",
     "recurring_cancel_confirm": "Discard the draft? The current configuration stays as it is.",
+    "add_product_draft_badge": "Draft",
+    "add_product_save_draft": "Save",
     "recurring_add_to_draft": "Add to draft",
     "recurring_error_in_flight": "A payment is already pending for this member.",
     "add_product_draft_updated": "Added to the draft. Review and pay it with Save & Pay.",
