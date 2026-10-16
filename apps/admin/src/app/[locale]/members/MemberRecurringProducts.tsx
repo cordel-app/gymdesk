@@ -149,6 +149,17 @@ export function MemberRecurringProducts({
       {state.chip != null && loading && <p style={cardHintStyle}>{t('product_set_loading')}</p>}
       {state.chip != null && !loading && lines.length === 0 && <p style={cardHintStyle}>{t('product_set_no_products')}</p>}
 
+      {adding && (
+        <AddProductPurchase
+          memberId={memberId}
+          isAdmin={isAdmin}
+          canPay={canWrite}
+          recurringOnly
+          onClose={() => setAdding(false)}
+          onChanged={onChanged}
+        />
+      )}
+
       {lines.map((l) => {
         const freq = billingFrequencyLabel(l.billingFrequency, (k) => tFreq(k as any));
         const editableLine = state.editing && l.serviceId != null;
@@ -184,17 +195,6 @@ export function MemberRecurringProducts({
           </div>
         );
       })}
-
-      {adding && (
-        <AddProductPurchase
-          memberId={memberId}
-          isAdmin={isAdmin}
-          canPay={canWrite}
-          recurringOnly
-          onClose={() => setAdding(false)}
-          onChanged={onChanged}
-        />
-      )}
 
       {checkoutUrl && (
         <p style={{ fontSize: 14 }}>
