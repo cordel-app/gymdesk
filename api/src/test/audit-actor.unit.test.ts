@@ -119,6 +119,7 @@ describe('gate: audited tables', () => {
     { file: 'infra/clerk-account-links.ts', table: 'members', why: 'clerk_user_id = NULL on a Clerk account unlink: a cleanup path with no request actor' },
     { file: 'api/product-sets.ts', table: 'product_sets', why: 'root_product_set_id, last_activity_at and status moves of a version; product_sets keeps only created_by (a version is replaced, never edited)' },
     { file: 'api/product-set-bridge.ts', table: 'product_sets', why: 'user_membership_id pointer relink between the version and the assignment projection' },
+    { file: 'api/product-sets-router.ts', table: 'product_sets', why: 'payment_request_id pointer written with the attempt in the transaction that already moved the version (#1664)' },
     { file: 'api/product-set-projection.ts', table: 'product_sets', why: 'user_membership_id link written by the projection' },
     { file: 'api/product-set-checkout.ts', table: 'product_sets', why: 'payment_request_id link of the checkout' },
     { file: 'api/recurring-purchase-draft.ts', table: 'product_sets', why: 'ends_at carried onto the Draft just created in the same transaction (created_by is recorded by createDraft)' },
