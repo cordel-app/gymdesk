@@ -19,6 +19,7 @@ import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
 import { cardHintStyle, formControlStyle, formErrorStyle, formFieldLabelStyle, inlineActionsRowStyle, innerCardStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
+import { StatusBadge } from '@/components/StatusBadge';
 import { PromotionPicker } from '@/components/PromotionPicker';
 import { promotionBenefitDescription } from '@/lib/promotionSelection';
 import {
@@ -134,6 +135,12 @@ export function AddProductPurchase({
 
   return (
     <div style={{ ...innerCardStyle, marginBottom: 12 }} data-add-product-form>
+      {/* #1657 — a recurring Product being configured is a Draft line until the one global Save & Pay. */}
+      {(product?.recurring || recurringOnly) && (
+        <div style={{ marginBottom: 8 }} data-add-product-draft-badge>
+          <StatusBadge status="draft" label={t('add_product_draft_badge')} />
+        </div>
+      )}
       <div style={rowStyle} data-add-product-row>
         <div style={{ flex: '2 1 280px', minWidth: 0 }}>
           <label style={formFieldLabelStyle} htmlFor="add-product-select">{t('add_product_select')}</label>
@@ -235,7 +242,7 @@ export function AddProductPurchase({
       <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
         {!outcome && (
           <button type="button" style={{ ...primaryBtnSmall(), opacity: canCreate ? 1 : 0.5 }} disabled={!canCreate} onClick={create}>
-            {product?.recurring ? t('recurring_add_to_draft') : t('add_product_create_purchase')}
+            {product?.recurring ? t('add_product_save_draft') : t('add_product_create_purchase')}
           </button>
         )}
         {(
