@@ -617,7 +617,17 @@
     "progress_invalid": "Introdueix nombres vàlids no negatius.",
     "progress_save_error": "No s'ha pogut desar el registre.",
     "progress_delete_error": "No s'ha pogut eliminar el registre.",
-    "progress_delete_confirm": "Vols eliminar aquest registre definitivament? No es pot desfer."
+    "progress_delete_confirm": "Vols eliminar aquest registre definitivament? No es pot desfer.",
+    "purchase_cancelled_on": "Cancel·lat el",
+    "purchase_valid_until": "Vàlid fins a",
+    "purchase_validity": "Validesa",
+    "purchase_validity_pending": "Pagament pendent",
+    "purchase_validity_failed": "No completat",
+    "purchase_validity_active": "Actiu",
+    "purchase_validity_cancelled": "Cancel·lat (vàlid fins a la data de fi)",
+    "purchase_validity_expired": "Caducat",
+    "purchase_cancel_action": "Cancel·lar compra",
+    "purchase_cancel_confirm": "Cancel·lar {product}? El membre el conserva fins a la data de fi."
   },
   "member_payments": {
     "title": "Pagaments del membre",

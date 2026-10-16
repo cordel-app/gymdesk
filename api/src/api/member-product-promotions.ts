@@ -1,3 +1,6 @@
+import { DateTime } from 'luxon';
+import { purchaseValidityState } from '../domain/productValidity';
+import { resolveTimeZone } from '../domain/homeDashboard';
 // #1118 — the I/O half of a Promotion on a member's Product: which offers a
 // catalogue read carries, what an applied one reads back as, and the write that
 // freezes one onto a purchase.
@@ -296,6 +299,10 @@ export interface MemberPurchasedProduct {
   amount: number;
   currency: string;
   purchased_at: string | null;
+  /** #1693 — last valid day (inclusive), the day a cancellation was recorded, and the derived state. */
+  valid_until?: string | null;
+  cancelled_on?: string | null;
+  validity_state?: string | null;
   created_at: string | null;
   /** The plain-text actor snapshot (#1182): the member, or `Staff (impersonating …)`. */
   created_by: string | null;
@@ -357,6 +364,8 @@ export async function loadMemberPurchases(
     `SELECT mp.id, mp.product_id, mp.status, mp.product_name, mp.product_type,
             mp.billing_frequency, mp.units, mp.amount, mp.currency,
             mp.purchased_at, mp.created_at, mp.created_by,
+            DATE_FORMAT(mp.valid_until, '%Y-%m-%d') AS valid_until,
+            DATE_FORMAT(mp.cancelled_on, '%Y-%m-%d') AS cancelled_on,
             mp.tax_rate_percent, mp.list_price,
             mp.direct_discount_percent, mp.direct_discount_amount,
             pr.status AS payment_status, pr.billing_event_id AS billing_event_id
@@ -367,6 +376,8 @@ export async function loadMemberPurchases(
       ORDER BY mp.created_at DESC, mp.id DESC`,
     [gymId, memberId],
   );
+  const { rows: gymRows } = await db.query<any>('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+  const today = DateTime.now().setZone(resolveTimeZone(gymRows[0]?.time_zone)).toISODate()!;
   const promotions = await loadAppliedPromotionLists(gymId, rows.map((r: any) => Number(r.id)));
   const oneOff: MemberPurchasedProduct[] = rows.map((row: any) => {
     const applied = promotions.get(Number(row.id)) ?? [];
@@ -384,6 +395,9 @@ export async function loadMemberPurchases(
       amount,
       currency: row.currency ?? 'EUR',
       purchased_at: row.purchased_at ?? null,
+      valid_until: row.valid_until ?? null,
+      cancelled_on: row.cancelled_on ?? null,
+      validity_state: purchaseValidityState(row, today),
       created_at: row.created_at ?? null,
       created_by: row.created_by ?? null,
       // With no Promotion the two figures are the same number: the purchase was
