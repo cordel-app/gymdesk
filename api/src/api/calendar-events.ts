@@ -933,10 +933,10 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (r
   const { gymId } = ctx;
   const actor = resolveRequestActor(ctx);
   const reason = String(req.body?.cancellation_reason ?? '').trim();
-  if (!reason) return res.status(400).json({ error: 'cancellation_reason is required' });
 
   const { rows: sessionRows } = await db.query(
-    `SELECT ce.id, ce.status, ce.starts_at, at.name AS title
+    `SELECT ce.id, ce.status, ce.starts_at, at.name AS title,
+            (ce.ends_at <= UTC_TIMESTAMP()) AS has_ended
      FROM calendar_events ce
      JOIN activity_types at ON at.id = ce.activity_type_id
      WHERE ce.id = ? AND ce.gym_id = ? AND ce.status <> 'cancelled' AND ce.deleted_at IS NULL`,
@@ -945,24 +945,31 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (r
   if (sessionRows.length === 0) return res.status(404).json({ error: 'Session not found or already cancelled' });
 
   const session = sessionRows[0];
+  // #1666: an event that has already ended (by its end time, so one in progress
+  // is not past) is only re-statused: no reason is needed and nobody is told.
+  const pastEvent = Number(session.has_ended) === 1;
+  if (!pastEvent && !reason) return res.status(400).json({ error: 'cancellation_reason is required' });
+  const storedReason = reason || null;
   const { rowCount } = await db.query(
     `UPDATE calendar_events SET status = 'cancelled', cancellation_reason = ?,
             modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ? AND activity_type_id IS NOT NULL`,
-    [reason, actor, req.params.id, gymId],
+    [storedReason, actor, req.params.id, gymId],
   );
   if (rowCount === 0) return res.status(404).json({ error: 'Session not found or already cancelled' });
 
-  const { rows: bookedRows } = await db.query(
-    "SELECT member_id FROM calendar_event_bookings WHERE calendar_event_id = ? AND gym_id = ? AND status = 'booked'",
-    [req.params.id, gymId],
-  );
-  const memberIds = bookedRows.map((r: any) => r.member_id);
-  sendBulkNotification(gymId, memberIds, 'event_cancelled', 'session', Number(req.params.id), {
-    title: session.title,
-    starts_at: session.starts_at,
-    reason,
-  });
+  if (!pastEvent) {
+    const { rows: bookedRows } = await db.query(
+      "SELECT member_id FROM calendar_event_bookings WHERE calendar_event_id = ? AND gym_id = ? AND status = 'booked'",
+      [req.params.id, gymId],
+    );
+    const memberIds = bookedRows.map((r: any) => r.member_id);
+    sendBulkNotification(gymId, memberIds, 'event_cancelled', 'session', Number(req.params.id), {
+      title: session.title,
+      starts_at: session.starts_at,
+      reason,
+    });
+  }
 
   // #977 §14: the audit row names the transition, not just its destination —
   // `previous`/`next` are what make `Scheduled → Cancelled` readable in the
@@ -972,7 +979,7 @@ classSessionsRouter.post('/:id/cancel', requireModuleWrite('CALENDAR'), async (r
     entityType: 'class_session',
     entityId: req.params.id,
     previous: { status: session.status },
-    next: { status: 'cancelled', cancellation_reason: reason },
+    next: { status: 'cancelled', cancellation_reason: storedReason },
   });
   res.status(204).send();
 });
