@@ -32,6 +32,8 @@ import {
   eventBackgroundColor,
   memberEventMetaLine,
   memberEventStatusLine,
+  eventStatusChip,
+  memberStatusChip,
   readableEventTextColor,
 } from '@/lib/calendarEventDisplay';
 
@@ -579,7 +581,10 @@ export default function MemberCalendarPage() {
                 lifecycle status, occupancy status (+ aggregate count), and waitlist
                 (aggregate count only; never member identities), each independent. */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0 12px' }}>
-              <span style={statusPillStyle('neutral')}>{t(`status_${selected.status}`)}</span>
+              <span style={statusPillStyle(eventStatusChip(selected.status).tone)}>{t(eventStatusChip(selected.status).key)}</span>
+              {memberStatusChip(selected) && (
+                <span style={statusPillStyle(memberStatusChip(selected)!.tone)}>{t(memberStatusChip(selected)!.key)}</span>
+              )}
               <span style={badgeStyle(OCCUPANCY_BADGE_COLORS[selected.occupancy_status])}>
                 {t(`occupancy_${selected.occupancy_status}`)} · {t('occupancy_count', { booked: selected.booked_count, capacity: selected.effective_capacity })}
               </span>

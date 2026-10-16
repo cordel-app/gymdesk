@@ -22,6 +22,8 @@
  * pill badge (#559 stage 3).
  */
 
+import type { StatusTone } from './memberChrome';
+
 export interface MemberEventDisplayInput {
   /** `COALESCE(calendar_events.color, activity_types.color)` from `GET /me/schedule`. */
   color: string | null;
@@ -246,3 +248,33 @@ export const EVENT_STATUS_CHIP_STYLE = {
   textOverflow: 'ellipsis',
   whiteSpace: 'nowrap',
 } as const;
+
+/** A chip for the event detail: a locale key (page namespace) plus the tone it reads in. */
+export interface MemberStatusChip {
+  key: string;
+  tone: StatusTone;
+}
+
+/** #1669 — the event's own status chip; independent of the member's. */
+export function eventStatusChip(status: MemberEventDisplayInput['status']): MemberStatusChip {
+  const tone: StatusTone =
+    status === 'completed' ? 'success' : status === 'cancelled' ? 'error' : status === 'running' ? 'warning' : 'info';
+  return { key: `status_${status}`, tone };
+}
+
+/**
+ * #1669 — the member's own status chip, or `null` for an event they hold no
+ * booking on. Its tone follows its own status, never the event's.
+ */
+export function memberStatusChip(session: {
+  my_booking_status: 'booked' | 'waitlisted' | null;
+  my_attendance_status?: 'pending' | 'present' | 'absent' | null;
+  status: MemberEventDisplayInput['status'];
+}): MemberStatusChip | null {
+  if (session.my_booking_status === 'waitlisted') return { key: 'event_status_waitlist', tone: 'warning' };
+  if (session.my_booking_status !== 'booked') return null;
+  if (session.status === 'cancelled') return { key: 'status_cancelled', tone: 'error' };
+  if (session.my_attendance_status === 'present') return { key: 'my_attendance_present', tone: 'success' };
+  if (session.my_attendance_status === 'absent') return { key: 'my_attendance_absent', tone: 'error' };
+  return { key: 'event_status_booked', tone: 'info' };
+}

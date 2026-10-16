@@ -236,3 +236,21 @@ describe('the status labels are translated everywhere (#976 §11)', () => {
     }
   });
 });
+
+import { eventStatusChip, memberStatusChip } from '../lib/calendarEventDisplay';
+
+describe('#1669 separate event and member chips', () => {
+  it('colours each chip by its own status', () => {
+    expect(eventStatusChip('completed').tone).toBe('success');
+    expect(memberStatusChip({ my_booking_status: 'booked', my_attendance_status: 'absent', status: 'completed' })).toEqual({
+      key: 'my_attendance_absent',
+      tone: 'error',
+    });
+    expect(memberStatusChip({ my_booking_status: 'booked', my_attendance_status: 'present', status: 'completed' })?.tone).toBe('success');
+    expect(memberStatusChip({ my_booking_status: 'booked', status: 'cancelled' })?.key).toBe('status_cancelled');
+    expect(memberStatusChip({ my_booking_status: 'booked', status: 'scheduled' })?.key).toBe('event_status_booked');
+  });
+  it('shows no member chip without a booking', () => {
+    expect(memberStatusChip({ my_booking_status: null, status: 'scheduled' })).toBeNull();
+  });
+});
