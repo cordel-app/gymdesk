@@ -62,7 +62,7 @@ exports.down = async (knex) => {
   // A draft has no meaning in the narrow set, so a rollback with drafts on file
   // is refused rather than deleting a staff member's configured purchase.
   const rows = await knex.raw(`SELECT COUNT(*) AS n FROM ${TABLE} WHERE status = 'draft'`);
-  if (Number(rows[0][0].n) > 0) return;
+  if (Number(rows[0][0].n) > 0) throw new Error('Refusing rollback: draft member product purchases exist');
   if (await checkAllows(knex, 'draft')) await setCheck(knex, STATUSES.filter((s) => s !== 'draft'));
 };
 
