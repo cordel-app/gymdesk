@@ -80,6 +80,10 @@ export interface ReminderCandidate {
   calendar_event_id: number;
   title: string;
   starts_at: string | Date;
+  /** #1665: the occurrence's own place and trainer; null when unassigned. */
+  center_name?: string | null;
+  space_name?: string | null;
+  trainer_name?: string | null;
 }
 
 /**
@@ -109,9 +113,13 @@ export interface ReminderCandidate {
  */
 export function reminderCandidatesSql(limit: number = BOOKING_REMINDER_MAX_PER_RUN): string {
   return `
-    SELECT ce.gym_id, ceb.member_id, ce.id AS calendar_event_id, ce.title, ce.starts_at
+    SELECT ce.gym_id, ceb.member_id, ce.id AS calendar_event_id, ce.title, ce.starts_at,
+           c.name AS center_name, sp.name AS space_name, tm.name AS trainer_name
       FROM calendar_event_bookings ceb
       JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
+      LEFT JOIN centers c ON c.id = ce.center_id AND c.gym_id = ce.gym_id
+      LEFT JOIN spaces sp ON sp.id = ce.space_id AND sp.gym_id = ce.gym_id
+      LEFT JOIN gym_memberships tm ON tm.id = ce.trainer_membership_id AND tm.gym_id = ce.gym_id
       JOIN members m ON m.id = ceb.member_id AND m.gym_id = ceb.gym_id
      WHERE ceb.status = 'booked'
        AND ce.status = 'scheduled'
@@ -171,6 +179,10 @@ export function reminderNotificationRow(candidate: ReminderCandidate): Notificat
       starts_at: candidate.starts_at instanceof Date
         ? candidate.starts_at.toISOString()
         : candidate.starts_at,
+      // #1665: only what is known, so the Home never shows a blank or invented detail.
+      ...(candidate.center_name ? { center_name: candidate.center_name } : {}),
+      ...(candidate.space_name ? { space_name: candidate.space_name } : {}),
+      ...(candidate.trainer_name ? { trainer_name: candidate.trainer_name } : {}),
     },
   };
 }

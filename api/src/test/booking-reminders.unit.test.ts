@@ -220,6 +220,17 @@ describe('the notification row (#1113 §2)', () => {
     expect(JSON.stringify(payload)).not.toMatch(/2 hours|2 horas|2 hores/);
   });
 
+  it('carries the center, space and trainer only when they are known (#1665)', () => {
+    const full = reminderNotificationRow(
+      candidate({ center_name: 'Downtown', space_name: 'Room 2', trainer_name: 'Ana' }),
+    ).payload;
+    expect(full).toMatchObject({ center_name: 'Downtown', space_name: 'Room 2', trainer_name: 'Ana' });
+    const partial = reminderNotificationRow(candidate({ center_name: 'Downtown', space_name: null })).payload;
+    expect(partial).toMatchObject({ center_name: 'Downtown' });
+    expect(partial).not.toHaveProperty('space_name');
+    expect(partial).not.toHaveProperty('trainer_name');
+  });
+
   it('serialises a driver Date to an ISO string', () => {
     const row = reminderNotificationRow(
       candidate({ starts_at: new Date('2026-10-06T09:00:00.000Z') }),
