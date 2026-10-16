@@ -30,6 +30,7 @@ import { planTreeSelect } from './training-plans';
 import { imageSexForGender } from '../domain/effectiveExerciseImage';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
+import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
@@ -2135,14 +2136,14 @@ meRouter.get('/notifications', requireRole('member'), async (req: Request, res: 
     const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? 50), 10) || 50, 1), 100);
     const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
     const { rows } = await db.query(
-      `SELECT id, type, entity_type, entity_id, payload, read_at, created_at
-       FROM member_notifications
-       WHERE gym_id = ? AND member_id = ?
-       ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      `SELECT mn.id, mn.type, mn.entity_type, mn.entity_id, mn.payload, mn.read_at, mn.created_at
+       FROM member_notifications mn
+       WHERE mn.gym_id = ? AND mn.member_id = ? AND ${ACTIVE_REMINDER_ONLY_SQL}
+       ORDER BY mn.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       [gymId, memberId],
     );
     const { rows: countRows } = await db.query(
-      'SELECT COUNT(*) AS unread FROM member_notifications WHERE gym_id = ? AND member_id = ? AND read_at IS NULL',
+      `SELECT COUNT(*) AS unread FROM member_notifications mn WHERE mn.gym_id = ? AND mn.member_id = ? AND mn.read_at IS NULL AND ${ACTIVE_REMINDER_ONLY_SQL}`,
       [gymId, memberId],
     );
     // #1391: Staff vs Auto is derived from the type, never stored.
@@ -2163,7 +2164,7 @@ meRouter.get('/notifications/count', requireRole('member'), async (req: Request,
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      'SELECT COUNT(*) AS unread FROM member_notifications WHERE gym_id = ? AND member_id = ? AND read_at IS NULL',
+      `SELECT COUNT(*) AS unread FROM member_notifications mn WHERE mn.gym_id = ? AND mn.member_id = ? AND mn.read_at IS NULL AND ${ACTIVE_REMINDER_ONLY_SQL}`,
       [gymId, memberId],
     );
     res.json({ unread: Number(rows[0].unread) });

@@ -8,6 +8,10 @@
 │   │   ├── {payment_method_id}-{payment_method_name}.webp                              — 1080 × 1080 px
 │   │   └── {payment_method_id}-{payment_method_name}-thumbnail.webp                    — 256 × 256 px
 │   │
+│   ├── products/
+│   │   ├── {product_id}-{product_name}.webp                              — 1080 × 1080 px
+│   │   └── {product_id}-{product_name}-thumbnail.webp                    — 256 × 256 px
+│   │
 │   ├── goals/
 │   │   ├── {goal_id}-{goal_name}.webp                              — 1080 × 1080 px
 │   │   └── {goal_id}-{goal_name}-thumbnail.webp                    — 256 × 256 px
@@ -59,6 +63,10 @@
         │   ├── {food_id}-{food_name}.webp                                    — 1080 × 1080 px
         │   └── {food_id}-{food_name}-thumbnail.webp                          — 256 × 256 px
         │        
+        ├── products
+        │   ├── {product_id}-{product_name}.webp                              — 1080 × 1080 px
+        │   └── {product_id}-{product_name}-thumbnail.webp                    — 256 × 256 px
+        │  
         ├── goals
         │   ├── {goal_id}-{goal_name}-.webp                                   — 1080 × 1080 px
         │   └── {goal_id}-{goal_name}-thumbnail.webp                          — 256 × 256 px
@@ -74,6 +82,10 @@
         ├── plans
         │   ├── {plan_id}-{plan_name}.webp                                    — 1080 × 1080 px
         │   └── {plan_id}-{plan_name}-thumbnail.webp                          — 256 × 256 px
+        │        
+        ├── promotions
+        │   ├── {promotion_id}-{promotion_name}.webp                           — 1080 × 1080 px
+        │   └── {promotion_id}-{promotion_name}-thumbnail.webp                 — 256 × 256 px        
         │        
         ├── members
         │   ├── {member_id}-{member_name}.webp                                — 1080 × 1080 px

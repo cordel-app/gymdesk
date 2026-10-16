@@ -424,11 +424,14 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
                 tFreq,
               ),
             },
+            !!detail.purchased_at && {
+              key: 'purchased_at', label: t('label_purchase_date'), value: fmtDate(detail.purchased_at, gymFmt),
+            },
             { key: 'starts_at', label: t('label_start_date'), value: fmtDay(detail.starts_at, gymFmt) },
             {
               key: 'ends_at',
               label: t('label_end_date'),
-              value: detail.ends_at ? fmtDay(detail.ends_at, gymFmt) : t('open_ended'),
+              value: detail.ends_at ? fmtDay(detail.ends_at, gymFmt) : detail.lifecycle_status === 'cancelled' ? '—' : t('open_ended'),
             },
             !!detail.closed_at && {
               key: 'closed_at', label: t('label_closure_date'), value: fmtDate(detail.closed_at, gymFmt),
