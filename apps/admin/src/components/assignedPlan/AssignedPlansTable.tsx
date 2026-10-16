@@ -121,7 +121,7 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
   );
   const endsCell = (row: T) => (
     <span style={{ whiteSpace: 'nowrap' }}>
-      {row.ends_at ? fmtDate(row.ends_at, gymFmt) : t('open_ended')}
+      {row.ends_at ? fmtDate(row.ends_at, gymFmt) : row.lifecycle_status === 'cancelled' ? '—' : t('open_ended')}
     </span>
   );
   const relationshipCell = (row: T) => (

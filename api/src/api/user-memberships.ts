@@ -1003,7 +1003,8 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     if (current.length === 0) return false;
     await tx.query(
       `UPDATE user_memberships
-          SET status = 'cancelled', modified_at = UTC_TIMESTAMP(), modified_by = ?
+          SET status = 'cancelled', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
+            modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ?`,
       [resolveRequestActor(getTenantContext(req)), req.params.id, gymId],
     );
@@ -1568,7 +1569,8 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
     }
     await tx.query(
       `UPDATE user_memberships
-          SET status = 'cancelled', closed_at = UTC_TIMESTAMP(), modified_at = UTC_TIMESTAMP(), modified_by = ?
+          SET status = 'cancelled', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ?`,
       [resolveRequestActor(getTenantContext(req)), prev.id, gymId],
     );
