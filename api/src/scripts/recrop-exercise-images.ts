@@ -10,7 +10,10 @@
  * the transparent bands `containedPictureBox()` finds (`domain/exerciseImageRecrop.ts`)
  * and runs the result through the same `processExerciseImage(…, { fit: 'cover' })`
  * an upload uses, overwriting the master and its 256 thumbnail **under the same
- * keys** — no row is written and no URL changes. A master with no bands (already
+ * keys** — no row is written and no URL changes. Since the muscle follow-up it
+ * does the same for every muscle image (`muscles.image_male_url` /
+ * `image_female_url`), through `processMuscleImage()`, which centre-crops too: a
+ * muscle image stands in for an exercise with none in My Training. A master with no bands (already
  * square, already re-cropped, or a cutout figure) is left alone, so a second run
  * finds nothing. It keeps going after a failure; the exit code is non-zero if any
  * object could not be re-cropped.
@@ -38,9 +41,12 @@ import {
 } from '../domain/exerciseGenderMedia';
 import { processExerciseImage } from '../domain/exerciseImageProcessing';
 import { containedPictureBox } from '../domain/exerciseImageRecrop';
+import { MUSCLE_IMAGE_COLUMNS, MUSCLE_IMAGE_MIME } from '../domain/muscleImages';
+import { processMuscleImage } from '../domain/muscleImageProcessing';
 
 export interface RecropReport {
   exercises: number;
+  muscles: number;
   masters: number;
   recropped: number;
   unchanged: number;
@@ -61,7 +67,7 @@ export function masterKeysOf(row: Record<string, string | null>): string[] {
 
 export async function recropExerciseImages(options: { execute: boolean; log?: (line: string) => void }): Promise<RecropReport> {
   const log = options.log ?? (() => {});
-  const report: RecropReport = { exercises: 0, masters: 0, recropped: 0, unchanged: 0, failed: [] };
+  const report: RecropReport = { exercises: 0, muscles: 0, masters: 0, recropped: 0, unchanged: 0, failed: [] };
   const columns = (['male', 'female'] as const)
     .flatMap((g) => [EXERCISE_GENDER_MEDIA_COLUMNS[g].image, EXERCISE_GENDER_MEDIA_COLUMNS[g].video]);
   const { rows } = await db.query<Record<string, string | null>>(
@@ -69,35 +75,53 @@ export async function recropExerciseImages(options: { execute: boolean; log?: (l
   );
   report.exercises = rows.length;
 
-  const seen = new Set<string>();
+  const muscleColumns = (['male', 'female'] as const).map((sex) => MUSCLE_IMAGE_COLUMNS[sex].image);
+  const { rows: muscleRows } = await db.query<Record<string, string | null>>(
+    `SELECT id, ${muscleColumns.join(', ')} FROM muscles WHERE ${muscleColumns.map((c) => `${c} IS NOT NULL`).join(' OR ')}`,
+  );
+  report.muscles = muscleRows.length;
+
+  type Recrop = (picture: Buffer) => Promise<{ image: Buffer; thumbnail: Buffer } | { rejection: string }>;
+  const targets: { key: string; mime: string; recrop: Recrop }[] = [];
   for (const row of rows) {
     for (const key of masterKeysOf(row)) {
-      if (seen.has(key)) continue; // a copied reference shares its objects
-      seen.add(key);
-      report.masters += 1;
-      try {
-        const { body } = await getStorageObject(key);
-        const { data, info } = await sharp(body).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
-        const box = containedPictureBox(data, info.width, info.height);
-        if (!box) {
-          report.unchanged += 1;
-          continue;
-        }
-        if (!options.execute) {
-          report.recropped += 1;
-          log(`would re-crop ${key} (picture ${box.width}×${box.height})`);
-          continue;
-        }
-        const picture = await sharp(body).extract(box).png().toBuffer();
-        const processed = await processExerciseImage(picture, { fit: 'cover' });
-        if ('rejection' in processed) throw new Error(processed.rejection);
-        await uploadStorageObject(key, EXERCISE_GENDER_IMAGE_MIME, processed.image);
-        await uploadStorageObject(thumbnailKeyFor(key), EXERCISE_GENDER_IMAGE_MIME, processed.thumbnail);
-        report.recropped += 1;
-        log(`re-cropped ${key}`);
-      } catch (err: any) {
-        report.failed.push({ key, error: String(err?.message ?? err) });
+      targets.push({ key, mime: EXERCISE_GENDER_IMAGE_MIME, recrop: (picture) => processExerciseImage(picture, { fit: 'cover' }) });
+    }
+  }
+  for (const row of muscleRows) {
+    for (const column of muscleColumns) {
+      const key = storageKeyFromObjectUrl(row[column]);
+      if (key && key.endsWith('.webp')) targets.push({ key, mime: MUSCLE_IMAGE_MIME, recrop: processMuscleImage });
+    }
+  }
+
+  const seen = new Set<string>();
+  for (const { key, mime, recrop } of targets) {
+    if (seen.has(key)) continue; // a copied reference shares its objects
+    seen.add(key);
+    report.masters += 1;
+    try {
+      const { body } = await getStorageObject(key);
+      const { data, info } = await sharp(body).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+      const box = containedPictureBox(data, info.width, info.height);
+      if (!box) {
+        report.unchanged += 1;
+        continue;
       }
+      if (!options.execute) {
+        report.recropped += 1;
+        log(`would re-crop ${key} (picture ${box.width}×${box.height})`);
+        continue;
+      }
+      const picture = await sharp(body).extract(box).png().toBuffer();
+      const processed = await recrop(picture);
+      if ('rejection' in processed) throw new Error(processed.rejection);
+      await uploadStorageObject(key, mime, processed.image);
+      await uploadStorageObject(thumbnailKeyFor(key), mime, processed.thumbnail);
+      report.recropped += 1;
+      log(`re-cropped ${key}`);
+    } catch (err: any) {
+      report.failed.push({ key, error: String(err?.message ?? err) });
     }
   }
   return report;
@@ -112,7 +136,7 @@ async function main() {
   }
   const report = await recropExerciseImages({ execute, log: (line) => console.log(line) });
   console.log(
-    `${execute ? 'Re-cropped' : 'Dry run —'} ${report.exercises} exercises, ${report.masters} masters, ` +
+    `${execute ? 'Re-cropped' : 'Dry run —'} ${report.exercises} exercises, ${report.muscles} muscles, ${report.masters} masters, ` +
     `${report.recropped} ${execute ? 're-cropped' : 'to re-crop'}, ${report.unchanged} unchanged, ${report.failed.length} failed.`,
   );
   for (const failure of report.failed) console.error(`FAILED ${failure.key}: ${failure.error}`);
