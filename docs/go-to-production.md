@@ -1228,6 +1228,13 @@ runbook is how.
       decides from object keys alone, so it does not matter whether it runs before or after the
       deploy that applies migration 277, a second run finds nothing, and it never touches a
       `-male`/`-female` WebP or MP4 or a folder marker.
+- [ ] **Re-crop the exercise images stored before #1527's crop** (#1527 follow-up). Exercise
+      uploads now centre-crop to the square; masters stored earlier still carry the transparent
+      bands My Training shows as a grey strip. Run **Re-crop exercise images**
+      (`.github/workflows/exercises-recrop-images.yml`) once per environment: a dry run first
+      (the default), then with `dry_run` off. It overwrites each master and thumbnail under the
+      same key and writes no row, so a browser may show a cached copy until it refreshes; a
+      second run finds nothing.
 - [ ] **An exercise video upload is buffered in the API process** (#719 part 2):
       `EXERCISE_VIDEO_MAX_MB` (default 50, clamped at 200) is what bounds that memory,
       and the request body is base64, so peak usage is roughly 1.4× the cap per

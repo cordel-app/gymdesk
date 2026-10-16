@@ -1,13 +1,15 @@
 // #1420 — what the **server** does to the one picture a client sends for an
-// exercise: orient it, fit it **whole** in a 1080 × 1080 canvas and encode the
+// exercise: orient it, make it a 1080 × 1080 square and encode the
 // two WebP files an exercise's gender-specific image is stored as (1080 × 1080
 // master and 256 × 256 thumbnail). A video's frame goes through the same function.
 //
-// It is the Member photo's discipline (`memberImageProcessing.ts`, #1449) with
-// one deliberate difference: a Member's photo is a face and is centre-**cropped**;
-// an exercise picture is an instruction and must show everything in it, so a
-// non-square source is *contained* and the rest of the square is transparent. It
-// is never stretched and never cropped.
+// It is the Member photo's discipline (`memberImageProcessing.ts`, #1449). Since
+// the #1527 follow-up an exercise picture is centre-**cropped** to the square
+// too (`fit: 'cover'`): a contained, non-square photo kept transparent bands
+// that My Training showed as a grey strip between the photo and the card edge,
+// and the owner chose filling the card over keeping the photo's edges. It is
+// never stretched. Other callers (a Nutrition Library food, #1562) still pass
+// `fit: 'contain'`, the default, and keep the transparent padding.
 //
 // Everything is in memory, the input is judged from its decoded bytes (never
 // `Content-Type` or a file name), the outputs carry no metadata, and the two
@@ -27,7 +29,7 @@ import { withImageProcessingSlot } from './imageProcessingSlot';
 import { readWebpMetadata } from './webpImage';
 
 export interface ProcessedExerciseImage {
-  /** 1080 × 1080 WebP, the source contained and padded with transparency. */
+  /** 1080 × 1080 WebP: the source centre-cropped (`cover`) or contained and padded with transparency. */
   image: Buffer;
   /** 256 × 256 WebP, made from the processed master. */
   thumbnail: Buffer;
@@ -41,10 +43,15 @@ function hasExactSize(buffer: Buffer, size: number): boolean {
   return !!meta && meta.width === size && meta.height === size;
 }
 
+/** How a non-square source becomes the square: cropped to it, or fitted whole with transparent padding. */
+export type SquareFit = 'cover' | 'contain';
+
 /** The two WebP files for `input`, or why there are none. */
 export async function processExerciseImage(
   input: Buffer,
+  options: { fit?: SquareFit } = {},
 ): Promise<ProcessedExerciseImage | { rejection: ExerciseImageRejection }> {
+  const fit = options.fit ?? 'contain';
   return withImageProcessingSlot(async () => {
     try {
       const probe = sharp(input, { limitInputPixels: EXERCISE_IMAGE_MAX_PIXELS, failOn: 'error' });
@@ -61,7 +68,7 @@ export async function processExerciseImage(
       const image = await sharp(input, { limitInputPixels: EXERCISE_IMAGE_MAX_PIXELS, failOn: 'error' })
         .rotate()
         .resize(EXERCISE_GENDER_IMAGE_MASTER_SIZE, EXERCISE_GENDER_IMAGE_MASTER_SIZE, {
-          fit: 'contain',
+          fit,
           position: 'centre',
           background: TRANSPARENT,
         })
