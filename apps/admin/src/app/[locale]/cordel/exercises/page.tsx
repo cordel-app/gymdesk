@@ -63,6 +63,8 @@ interface Exercise {
   video_male_url: string | null;
   video_female_url: string | null;
   image_male_thumbnail_url: string | null;
+  effective_image_url?: string | null;
+  effective_image_thumbnail_url?: string | null;
   image_female_thumbnail_url: string | null;
   video_male_preview_url: string | null;
   video_male_preview_thumbnail_url: string | null;

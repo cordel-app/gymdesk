@@ -132,7 +132,7 @@ const row = async (id: number) => (await db.query<any>(
 describe('purchase, cancellation and end dates (#1693)', () => {
   it('a pending purchase has no purchase or end date; the webhook stamps both once', async () => {
     const m = await member();
-    const { purchaseId, prId } = await buy(m, 'month');
+    const { purchaseId, prId } = await buy(m, 'once', 30);
     expect(await row(purchaseId)).toMatchObject({ status: 'pending_payment', purchased_at: null, valid_until: null });
     expect((await pay(prId)).status).toBeLessThan(300);
     const first = await row(purchaseId);
@@ -145,7 +145,7 @@ describe('purchase, cancellation and end dates (#1693)', () => {
 
   it('cancelling records its day, keeps the paid end date, and is idempotent', async () => {
     const m = await member();
-    const { purchaseId, prId } = await buy(m, 'month');
+    const { purchaseId, prId } = await buy(m, 'once', 30);
     await pay(prId);
     const before = await row(purchaseId);
     const res = await auth(request.post(`${base(m)}/${purchaseId}/cancel`));
@@ -173,7 +173,7 @@ describe('purchase, cancellation and end dates (#1693)', () => {
   it('refuses a pending purchase, another member\'s purchase and anonymous callers', async () => {
     const m = await member();
     const other = await member();
-    const { purchaseId, prId } = await buy(m, 'month');
+    const { purchaseId, prId } = await buy(m, 'once', 30);
     expect((await auth(request.post(`${base(m)}/${purchaseId}/cancel`))).status).toBe(409);
     await pay(prId);
     expect((await auth(request.post(`${base(other)}/${purchaseId}/cancel`))).status).toBe(404);
