@@ -414,7 +414,8 @@ describe('the Admin half (§11, §12, §13)', () => {
     // A purchase is money that moved and no route edits one. #1521: the card's
     // buttons are the collapse toggle and `+ Add Product` (which opens the
     // inline form that *creates* a new purchase); the list itself carries no
-    // control and the card writes nothing.
+    // control and the card writes nothing itself — the only writes it reaches
+    // are #1657's Pay / Cancel of a *draft*, through `usePurchaseDraftActions`.
     expect(src).not.toContain('<select');
     expect(src).not.toContain('<input');
     expect(src).not.toMatch(/method:\s*'(POST|PUT|PATCH|DELETE)'/);

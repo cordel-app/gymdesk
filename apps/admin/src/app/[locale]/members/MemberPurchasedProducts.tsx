@@ -41,7 +41,9 @@ import { primaryBtnSmall } from '@/components/ui';
 import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
-import { cardMutedTextStyle } from '@/components/formChrome';
+import { cardMutedTextStyle, formErrorStyle } from '@/components/formChrome';
+import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { usePurchaseDraftActions } from './usePurchaseDraftActions';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import { AddProductPurchase } from './AddProductPurchase';
@@ -83,6 +85,13 @@ export function MemberPurchasedProducts({
   const gymFmt = useGymFormatSettings();
 
   const [adding, setAdding] = useState(false);
+  // #1657 stage 2 — a saved one-time draft: Pay promotes it, Cancel hard-deletes it.
+  const [discarding, setDiscarding] = useState<PurchasedProduct | null>(null);
+  const draft = usePurchaseDraftActions(memberId, onChanged, t('purchase_draft_action_error'));
+  const draftBusy = draft.busy;
+  const draftError = draft.error;
+  const payDraft = (item: PurchasedProduct) => draft.pay(item.id);
+  const discardDraft = async (item: PurchasedProduct) => { if (await draft.discard(item.id)) setDiscarding(null); };
   const [statusFilter, setStatusFilter] = useState<string>(PURCHASE_STATUS_FILTER_DEFAULT);
   const [detail, setDetail] = useState<PurchasedProduct | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
@@ -168,10 +177,26 @@ export function MemberPurchasedProducts({
       mobile: 'actions',
       render: (item) => {
         const billingPath = billingEventPath(locale, item);
+        const isOneTimeDraft = item.status === 'draft' && item.source !== 'recurring';
         return (
           <ContextMenu
             ariaLabel={t('purchase_actions_for', { product: item.product_name })}
             items={[
+              ...(isOneTimeDraft ? [
+                {
+                  label: t('purchase_action_pay_draft'),
+                  onClick: () => { void payDraft(item); },
+                  disabled: !canWrite || draftBusy,
+                  title: canWrite ? undefined : t('products_add_read_only'),
+                },
+                {
+                  label: t('purchase_action_discard_draft'),
+                  onClick: () => setDiscarding(item),
+                  disabled: !canWrite || draftBusy,
+                  danger: true,
+                  title: canWrite ? undefined : t('products_add_read_only'),
+                },
+              ] : []),
               { label: t('action_details'), onClick: () => setDetail(item) },
               {
                 label: t('action_view_billing_event'),
@@ -197,6 +222,7 @@ export function MemberPurchasedProducts({
           onChanged={onChanged}
         />
       )}
+      {draftError && <p role="alert" style={formErrorStyle}>{draftError}</p>}
       <FilterBar style={{ marginBottom: 8 }}>
         <FilterField label={t('purchase_col_status')} htmlFor="purchase-status-filter">
           <StatusFilter
@@ -231,6 +257,16 @@ export function MemberPurchasedProducts({
           {t('products_add')}
         </button>
       </div>
+
+      <ConfirmDialog
+        open={discarding !== null}
+        message={t('purchase_discard_draft_confirm')}
+        confirmLabel={t('purchase_discard_draft_confirm_button')}
+        cancelLabel={t('add_product_cancel')}
+        busy={draftBusy}
+        onConfirm={() => { if (discarding) void discardDraft(discarding); }}
+        onCancel={() => setDiscarding(null)}
+      />
 
       <CrudModal
         open={detail !== null}

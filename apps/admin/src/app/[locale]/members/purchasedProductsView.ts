@@ -187,18 +187,18 @@ export function forecastForProduct<
 
 /** #1654 — the Products card's status filter; `''` is "All". */
 export const PURCHASE_STATUS_FILTER_DEFAULT = 'open';
-export const PURCHASE_STATUS_FILTER_VALUES = ['open', 'active', 'pending_payment', 'cancelled'] as const;
+export const PURCHASE_STATUS_FILTER_VALUES = ['open', 'draft', 'active', 'pending_payment', 'cancelled'] as const;
 
 /**
- * Which purchases a filter value shows. The default, `open`, is Active plus
- * Pending payment (a purchase not yet paid is the pre-active state a Draft is
+ * Which purchases a filter value shows. The default, `open`, is Draft (#1657: a saved
+ * one-time purchase stays in the list), Active plus Pending payment (a purchase not yet paid is the pre-active state a Draft is
  * for a recurring Product); `''` shows every status. Presentation only — the
  * status is the purchase's own stored value.
  */
 export function filterPurchasesByStatus<T extends { status: string }>(items: T[], filter: string): T[] {
   if (filter === '') return items;
   if (filter === PURCHASE_STATUS_FILTER_DEFAULT) {
-    return items.filter((i) => i.status === 'active' || i.status === 'pending_payment');
+    return items.filter((i) => i.status === 'draft' || i.status === 'active' || i.status === 'pending_payment');
   }
   return items.filter((i) => i.status === filter);
 }

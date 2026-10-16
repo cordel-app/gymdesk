@@ -42,12 +42,12 @@ describe('purchased products view (#1521)', () => {
 });
 
 describe('filterPurchasesByStatus (#1654)', () => {
-  const rows = [{ status: 'active' }, { status: 'pending_payment' }, { status: 'cancelled' }];
-  it('defaults to active + pending payment', () => {
-    expect(filterPurchasesByStatus(rows, 'open').map((r) => r.status)).toEqual(['active', 'pending_payment']);
+  const rows = [{ status: 'draft' }, { status: 'active' }, { status: 'pending_payment' }, { status: 'cancelled' }];
+  it('defaults to draft + active + pending payment (#1657)', () => {
+    expect(filterPurchasesByStatus(rows, 'open').map((r) => r.status)).toEqual(['draft', 'active', 'pending_payment']);
   });
   it('shows everything for all and one status when chosen', () => {
-    expect(filterPurchasesByStatus(rows, '')).toHaveLength(3);
+    expect(filterPurchasesByStatus(rows, '')).toHaveLength(4);
     expect(filterPurchasesByStatus(rows, 'cancelled')).toEqual([{ status: 'cancelled' }]);
   });
 });

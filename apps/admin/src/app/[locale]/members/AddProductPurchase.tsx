@@ -8,8 +8,8 @@
 // the UI re-asks them on every change; the direct-discount control exists only
 // for an Admin, and the server refuses it for anyone else regardless.
 //
-// A one-time Product becomes a pending purchase with a payment link. A
-// recurring one is added to the member's **Draft** (#1537: created on first
+// A one-time Product is saved as a **draft** purchase (#1657 stage 2: unpaid,
+// paid later from the Products list's row menu). A recurring one is added to the member's **Draft** (#1537: created on first
 // use, the same Draft for every later edit — there is no "create draft" step).
 // Committing it is the recurring section's one global Save & Pay, never a
 // payment of this form.
@@ -34,7 +34,7 @@ const rowStyle: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 
 const valueCellStyle: React.CSSProperties = { padding: '8px 0', fontSize: 14, whiteSpace: 'nowrap' };
 
 type Outcome =
-  | { kind: 'one_time'; checkoutUrl: string }
+  | { kind: 'one_time_draft' }
   | { kind: 'draft_updated' };
 
 export function AddProductPurchase({
@@ -114,10 +114,13 @@ export function AddProductPurchase({
     try {
       const res = await apiFetch<any>(base, {
         method: 'POST',
-        body: JSON.stringify({ product_id: productId, promotion_ids: promotionIds, direct_discount_percent: discountValue }),
+        body: JSON.stringify({
+          product_id: productId, promotion_ids: promotionIds, direct_discount_percent: discountValue,
+          ...(product.recurring ? {} : { draft: true }),
+        }),
       });
-      if (res.kind === 'one_time') {
-        setOutcome({ kind: 'one_time', checkoutUrl: res.checkoutUrl });
+      if (res.kind === 'one_time_draft') {
+        setOutcome({ kind: 'one_time_draft' });
         onChanged();
       } else {
         // The Draft was created on first use or reused; the section reflects it.
@@ -136,7 +139,7 @@ export function AddProductPurchase({
   return (
     <div style={{ ...innerCardStyle, marginBottom: 12 }} data-add-product-form>
       {/* #1657 — a recurring Product being configured is a Draft line until the one global Save & Pay. */}
-      {(product?.recurring || recurringOnly) && (
+      {(product != null || recurringOnly) && (
         <div style={{ marginBottom: 8 }} data-add-product-draft-badge>
           <StatusBadge status="draft" label={t('add_product_draft_badge')} />
         </div>
@@ -226,11 +229,8 @@ export function AddProductPurchase({
         </p>
       )}
 
-      {outcome?.kind === 'one_time' && (
-        <p style={{ fontSize: 14 }}>
-          {t('add_product_purchase_created')}{' '}
-          <a href={outcome.checkoutUrl} target="_blank" rel="noreferrer">{t('add_product_payment_link')}</a>
-        </p>
+      {outcome?.kind === 'one_time_draft' && (
+        <p style={{ fontSize: 14 }}>{t('add_product_purchase_draft_saved')}</p>
       )}
 
       {outcome?.kind === 'draft_updated' && (
@@ -242,7 +242,7 @@ export function AddProductPurchase({
       <div style={{ ...inlineActionsRowStyle, marginTop: 12 }}>
         {!outcome && (
           <button type="button" style={{ ...primaryBtnSmall(), opacity: canCreate ? 1 : 0.5 }} disabled={!canCreate} onClick={create}>
-            {product?.recurring ? t('add_product_save_draft') : t('add_product_create_purchase')}
+            {t('add_product_save_draft')}
           </button>
         )}
         {(
