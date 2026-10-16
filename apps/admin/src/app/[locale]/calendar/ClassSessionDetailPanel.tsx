@@ -395,12 +395,13 @@ export function ClassSessionDetailPanel({
 
   // ── Cancel event ──────────────────────────────────────────────────────────
   async function handleCancel() {
-    if (!cancelReason.trim()) return;
+    // #1666: an ended event is only re-statused — no reason, no notification.
+    if (!hasEnded && !cancelReason.trim()) return;
     setCancelling(true);
     try {
       await apiFetch(`/class-sessions/${sessionId}/cancel`, {
         method: 'POST',
-        body: JSON.stringify({ cancellation_reason: cancelReason }),
+        body: JSON.stringify(hasEnded ? {} : { cancellation_reason: cancelReason }),
       });
       onMutated();
       onClose();
@@ -1308,16 +1309,20 @@ export function ClassSessionDetailPanel({
                 onClick={() => setShowCancelConfirm(true)}
                 style={{ ...btnBase, background: '#fef2f2', color: '#dc2626', textAlign: 'left' }}
               >
-                Cancel event
+                {hasEnded ? 'Mark as cancelled' : 'Cancel event'}
               </button>
             ) : (
               <div style={{ ...cardStyle, border: '1px solid #fecaca', display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#dc2626' }}>Cancel this event?</div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>
-                  This will cancel this event only. Future events in the series will not be affected.
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#dc2626' }}>
+                  {hasEnded ? 'Mark this event as cancelled?' : 'Cancel this event?'}
                 </div>
-                <div style={{ fontSize: 12, color: '#6b7280' }}>{t('cancel_reason_note')}</div>
-                <textarea
+                <div style={{ fontSize: 12, color: '#6b7280' }}>
+                  {hasEnded
+                    ? 'This event has already ended. Its status will change to Cancelled; members will not be notified.'
+                    : 'This will cancel this event only. Future events in the series will not be affected.'}
+                </div>
+                {!hasEnded && <div style={{ fontSize: 12, color: '#6b7280' }}>{t('cancel_reason_note')}</div>}
+                {!hasEnded && <textarea
                   value={cancelReason}
                   onChange={(e) => setCancelReason(e.target.value)}
                   placeholder="Reason for cancellation…"
@@ -1326,14 +1331,14 @@ export function ClassSessionDetailPanel({
                     width: '100%', boxSizing: 'border-box', padding: '6px 8px',
                     borderRadius: 4, border: '1px solid #d1d5db', fontSize: 13, resize: 'vertical',
                   }}
-                />
+                />}
                 <div style={{ display: 'flex', gap: 8 }}>
                   <button
                     onClick={handleCancel}
-                    disabled={!cancelReason.trim() || cancelling}
-                    style={{ ...btnBase, background: '#dc2626', color: '#fff', flex: 1, opacity: (!cancelReason.trim() || cancelling) ? 0.6 : 1 }}
+                    disabled={(!hasEnded && !cancelReason.trim()) || cancelling}
+                    style={{ ...btnBase, background: '#dc2626', color: '#fff', flex: 1, opacity: ((!hasEnded && !cancelReason.trim()) || cancelling) ? 0.6 : 1 }}
                   >
-                    {cancelling ? 'Cancelling…' : 'Cancel event'}
+                    {cancelling ? 'Cancelling…' : hasEnded ? 'Mark as cancelled' : 'Cancel event'}
                   </button>
                   <button
                     onClick={() => { setShowCancelConfirm(false); setCancelReason(''); }}
