@@ -36,9 +36,10 @@ import { DataTable, type Column } from '@/components/DataTable';
 import { StatusBadge } from '@/components/StatusBadge';
 import { ContextMenu } from '@/components/ContextMenu';
 import { CrudModal } from '@/components/CrudModal';
+import { usePurchaseCancel } from './usePurchaseCancel';
 import { CardDetailRow } from '@/components/CardDetailRow';
 import { primaryBtnSmall } from '@/components/ui';
-import { formatGymDate, type GymFormatSettings } from '@/lib/gymFormat';
+import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { benefitTreatmentLabel } from '@/components/ProductBenefits';
 import { cardMutedTextStyle } from '@/components/formChrome';
@@ -85,6 +86,7 @@ export function MemberPurchasedProducts({
   const [adding, setAdding] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>(PURCHASE_STATUS_FILTER_DEFAULT);
   const [detail, setDetail] = useState<PurchasedProduct | null>(null);
+  const cancelRequest = usePurchaseCancel(memberId, onChanged);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   function toggleExpand(item: PurchasedProduct) {
@@ -93,6 +95,13 @@ export function MemberPurchasedProducts({
       if (next.has(item.id)) next.delete(item.id); else next.add(item.id);
       return next;
     });
+  }
+
+  // #1693 — records the cancellation day; the paid period (Valid until) is untouched.
+  async function cancelPurchase(item: PurchasedProduct) {
+    if (!window.confirm(t('purchase_cancel_confirm', { product: item.product_name }))) return;
+    const error = await cancelRequest(item.id);
+    if (error) window.alert(error);
   }
 
   const dash = '—';
@@ -173,6 +182,15 @@ export function MemberPurchasedProducts({
             ariaLabel={t('purchase_actions_for', { product: item.product_name })}
             items={[
               { label: t('action_details'), onClick: () => setDetail(item) },
+              ...(item.source !== 'recurring' && item.status === 'active' && !item.cancelled_on
+                ? [{
+                    label: t('purchase_cancel_action'),
+                    danger: true,
+                    onClick: () => { void cancelPurchase(item); },
+                    disabled: !canWrite,
+                    title: canWrite ? undefined : t('products_add_read_only'),
+                  }]
+                : []),
               {
                 label: t('action_view_billing_event'),
                 onClick: () => { if (billingPath) router.push(billingPath); },
@@ -262,6 +280,12 @@ function PurchaseFacts({
     <div style={{ padding: '8px 0' }}>
       <CardDetailRow label={t('purchase_col_product')} value={item.product_name} />
       <CardDetailRow label={t('purchase_col_date')} value={date(purchaseDate(item), gymFmt)} />
+      <CardDetailRow label={t('purchase_cancelled_on')} value={formatGymDateOnly(item.cancelled_on, gymFmt)} />
+      <CardDetailRow label={t('purchase_valid_until')} value={formatGymDateOnly(item.valid_until, gymFmt)} />
+      <CardDetailRow
+        label={t('purchase_validity')}
+        value={item.validity_state ? t(`purchase_validity_${item.validity_state}` as any) : dash}
+      />
       <CardDetailRow label={t('purchase_col_price_incl_vat')} value={money(item.regular_amount, item.currency)} />
       <CardDetailRow label={t('purchase_col_applied_tax')} value={formatAppliedTax(item.tax_rate_percent) ?? dash} />
       <CardDetailRow

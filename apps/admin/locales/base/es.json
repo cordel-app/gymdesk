@@ -616,7 +616,17 @@
     "progress_invalid": "Introduce números válidos no negativos.",
     "progress_save_error": "No se pudo guardar el registro.",
     "progress_delete_error": "No se pudo eliminar el registro.",
-    "progress_delete_confirm": "¿Eliminar este registro definitivamente? No se puede deshacer."
+    "progress_delete_confirm": "¿Eliminar este registro definitivamente? No se puede deshacer.",
+    "purchase_cancelled_on": "Cancelado el",
+    "purchase_valid_until": "Válido hasta",
+    "purchase_validity": "Validez",
+    "purchase_validity_pending": "Pago pendiente",
+    "purchase_validity_failed": "No completado",
+    "purchase_validity_active": "Activo",
+    "purchase_validity_cancelled": "Cancelado (válido hasta la fecha de fin)",
+    "purchase_validity_expired": "Caducado",
+    "purchase_cancel_action": "Cancelar compra",
+    "purchase_cancel_confirm": "¿Cancelar {product}? El miembro lo conserva hasta su fecha de fin."
   },
   "member_payments": {
     "title": "Pagos del miembro",
@@ -4339,7 +4349,8 @@
     "label_owner": "Titular",
     "section_pricing": "Precio y Facturación",
     "label_billing_frequency": "Frecuencia de Facturación",
-    "label_closure_date": "Fecha de Cierre",
+    "label_closure_date": "Fecha de Cancelación",
+    "label_purchase_date": "Fecha de Compra",
     "label_next_billing_date": "Próxima Fecha de Facturación",
     "section_benefits": "Beneficios",
     "benefits_oneoff": "Beneficios puntuales",

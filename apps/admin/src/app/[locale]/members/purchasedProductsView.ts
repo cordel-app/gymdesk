@@ -37,6 +37,10 @@ export interface PurchasedProduct {
   amount: number;
   currency: string;
   purchased_at: string | null;
+  /** #1693 — last valid day (inclusive), cancellation day and derived state. */
+  valid_until?: string | null;
+  cancelled_on?: string | null;
+  validity_state?: string | null;
   created_at: string | null;
   created_by: string | null;
   /** The price before the Promotion, VAT included. */

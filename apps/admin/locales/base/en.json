@@ -616,7 +616,17 @@
     "progress_invalid": "Enter valid non-negative numbers.",
     "progress_save_error": "Could not save the reading.",
     "progress_delete_error": "Could not delete the reading.",
-    "progress_delete_confirm": "Permanently delete this reading? This cannot be undone."
+    "progress_delete_confirm": "Permanently delete this reading? This cannot be undone.",
+    "purchase_cancelled_on": "Cancelled on",
+    "purchase_valid_until": "Valid until",
+    "purchase_validity": "Validity",
+    "purchase_validity_pending": "Pending payment",
+    "purchase_validity_failed": "Not completed",
+    "purchase_validity_active": "Active",
+    "purchase_validity_cancelled": "Cancelled (valid until end date)",
+    "purchase_validity_expired": "Expired",
+    "purchase_cancel_action": "Cancel purchase",
+    "purchase_cancel_confirm": "Cancel {product}? The member keeps it until its end date."
   },
   "member_payments": {
     "title": "Member Payments",
@@ -4353,7 +4363,8 @@
     "label_owner": "Owner",
     "section_pricing": "Pricing & Billing",
     "label_billing_frequency": "Billing Frequency",
-    "label_closure_date": "Closure Date",
+    "label_closure_date": "Cancellation Date",
+    "label_purchase_date": "Purchase Date",
     "label_next_billing_date": "Next Billing Date",
     "section_benefits": "Benefits",
     "benefits_oneoff": "One-off Benefits",
