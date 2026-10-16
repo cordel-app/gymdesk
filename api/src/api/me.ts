@@ -738,8 +738,20 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     const to = req.query.to as string | undefined;
     const activityTypeId = req.query.activity_type_id as string | undefined;
     const trainerMembershipId = req.query.trainer_membership_id as string | undefined;
-    const where: string[] = ["ce.gym_id = ?", "ce.status = 'scheduled'", "ce.deleted_at IS NULL", "ce.starts_at >= ?"];
-    const params: any[] = [gymId, from];
+    // #1667: every future event is visible; an event that has already ended is
+    // visible only to a member who was enrolled (a `booked` row), whatever the
+    // attendance or the event's final status (completed, cancelled, ...). The
+    // boundary is the end time so a class in progress stays on the calendar.
+    const where: string[] = [
+      "ce.gym_id = ?",
+      `((ce.ends_at > UTC_TIMESTAMP() AND ce.status = 'scheduled')
+        OR (ce.ends_at <= UTC_TIMESTAMP() AND EXISTS (
+          SELECT 1 FROM calendar_event_bookings pb
+          WHERE pb.calendar_event_id = ce.id AND pb.member_id = ? AND pb.status = 'booked')))`,
+      "ce.deleted_at IS NULL",
+      "ce.starts_at >= ?",
+    ];
+    const params: any[] = [gymId, memberId, from];
     if (to) { where.push('ce.starts_at <= ?'); params.push(to); }
     if (activityTypeId) { where.push('ce.activity_type_id = ?'); params.push(activityTypeId); }
     if (trainerMembershipId) { where.push('ce.trainer_membership_id = ?'); params.push(trainerMembershipId); }

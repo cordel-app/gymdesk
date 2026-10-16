@@ -15,15 +15,18 @@ import { commitProductSetVersion } from '@/lib/productSetCommit';
 import { cardHintStyle, cardSubLabelStyle, formErrorStyle, secondaryBtnSmall } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { ProductSetRow } from './membershipConfiguration';
+import { changeMessage, type ChangeLike } from './recurringProductsView';
 
 interface Props {
   productSets: ProductSetRow[];
   canWrite: boolean;
+  /** The Draft's review diff (#1660): what the Summary lists as added / removed. */
+  changes?: unknown[];
   /** Re-reads the Member's configuration after an action. */
   onChanged: () => void;
 }
 
-export function ProductSetsInFlight({ productSets, canWrite, onChanged }: Props) {
+export function ProductSetsInFlight({ productSets, canWrite, changes = [], onChanged }: Props) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
   const [busyId, setBusyId] = useState<number | null>(null);
@@ -48,7 +51,6 @@ export function ProductSetsInFlight({ productSets, canWrite, onChanged }: Props)
 
   return (
     <div style={{ marginBottom: 12 }}>
-      <div style={cardSubLabelStyle}>{t('product_sets_in_flight')}</div>
       {inFlight.map((ps) => (
         <div key={ps.id} style={row} data-product-set-id={ps.id}>
           <div style={{ flex: 1, minWidth: 0 }}>
@@ -60,6 +62,17 @@ export function ProductSetsInFlight({ productSets, canWrite, onChanged }: Props)
                 : t(ps.status === 'pending_payment' ? 'product_set_status_pending_payment' : 'product_set_status_draft')}
               {ps.amount_due != null ? ` · ${ps.amount_due.toFixed(2)} €` : ''}
             </span>
+            {ps.status === 'draft' && changes.length > 0 && (
+              <ul data-summary-changes style={{ margin: '6px 0 0', paddingLeft: 18, fontSize: 13 }}>
+                {(changes as ChangeLike[]).map((c, i) => {
+                  const m = changeMessage(c);
+                  const tone = c.kind === 'added' || c.kind === 'promotion_added'
+                    ? '#15803d'
+                    : c.kind === 'removed' || c.kind === 'promotion_removed' ? '#b91c1c' : undefined;
+                  return <li key={i} data-change-kind={c.kind} style={tone ? { color: tone } : undefined}>{t(m.key as any, m.values as any)}</li>;
+                })}
+              </ul>
+            )}
             {link?.id === ps.id && (
               <div style={cardHintStyle}>{t('product_set_payment_link')}: <code>{link.url}</code></div>
             )}

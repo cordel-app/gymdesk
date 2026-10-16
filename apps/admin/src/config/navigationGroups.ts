@@ -351,6 +351,11 @@ export const navigationGroups: NavGroup[] = [
         labelKey: 'nav.payment_providers',
       },
       {
+        // #1663: the platform's catalogue of payment methods.
+        href: '/{{locale}}/cordel/base-payment-methods',
+        labelKey: 'nav.base_payment_methods',
+      },
+      {
         href: '/{{locale}}/cordel/feature-flags',
         labelKey: 'nav.feature_flags',
         separatorAbove: true,

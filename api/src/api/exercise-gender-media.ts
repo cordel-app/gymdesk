@@ -308,7 +308,9 @@ export function createExerciseGenderMediaRouter(options: ExerciseGenderMediaOpti
   async function processPicture(res: Response, body: unknown, file: 'image' | 'frame') {
     const problem = validateGenderImageInput(body, file);
     if (problem) return rejected(res, problem);
-    const processed = await processExerciseImage(body as Buffer);
+    // #1527: an exercise picture fills its square (centre-crop), so a card shows
+    // no transparent band between the photo and its edge.
+    const processed = await processExerciseImage(body as Buffer, { fit: 'cover' });
     if ('rejection' in processed) {
       res.status(400).json({
         error: EXERCISE_IMAGE_REJECTION_MESSAGES[processed.rejection],

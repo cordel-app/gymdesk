@@ -389,6 +389,18 @@ describe('translated names', () => {
     expect(item.translations.ca).toBe('NL Pollastre de Prova');
   });
 
+  it('finds an item by its name in any locale, not only the displayed one (#1674)', async () => {
+    const res = await request
+      .get('/nutrition-library?search=NL Pollastre de Prova')
+      .set('Authorization', TEST_AUTH_HEADER)
+      .set('x-gym-id', gymId)
+      .set('x-locale', 'es');
+    expect(res.status).toBe(200);
+    const item = res.body.items.find((i: any) => i.id === libraryItemId);
+    expect(item).toBeTruthy();
+    expect(item.display_name).toBe('NL Pollo de Prueba');
+  });
+
   it('leaves gym-owned items showing their single entered name in every locale', async () => {
     const res = await request
       .get('/nutrition-library?limit=200')
