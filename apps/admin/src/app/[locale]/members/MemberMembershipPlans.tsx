@@ -59,7 +59,6 @@ import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPla
 import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
 import type { MemberPlanRow, ProductSetRow } from './membershipConfiguration';
-import { ProductSetsInFlight } from './ProductSetsInFlight';
 import { canEditLivePlan, visiblePlans } from './membershipPlansView';
 
 
@@ -201,11 +200,6 @@ export function MemberMembershipPlans({
 
   return (
     <div>
-      {/* #1325 PR 3b — versions still in flight (no assignment until activation). */}
-      {visible.showInFlightList && (
-        <ProductSetsInFlight productSets={productSets} canWrite={canWrite} onChanged={onChanged} />
-      )}
-
       {/* ACTIVE — the ticket's §4 split, over the Assigned Plans page's table. */}
       <div style={subLabel}>{t(visible.heading === 'draft' ? 'membership_plans_draft' : 'membership_plans_active')}</div>
       <AssignedPlansTable

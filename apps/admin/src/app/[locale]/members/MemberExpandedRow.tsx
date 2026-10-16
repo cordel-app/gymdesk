@@ -32,6 +32,7 @@ import {
 import { MemberPersonalTrainingSlots } from './MemberPersonalTrainingSlots';
 import { MemberMembershipPlans } from './MemberMembershipPlans';
 import { useProductSetDetail } from './MemberProductSet';
+import { ProductSetsInFlight } from './ProductSetsInFlight';
 import { ProposedSetForecast } from './ProposedSetForecast';
 import { ProductsWorkflowBar, useDraftReview } from './MemberProductsWorkflow';
 import { billingMode, pendingOneOffCount, saveAndPayTarget } from './productsWorkflowView';
@@ -615,6 +616,19 @@ export function MemberExpandedRow({
           <Section label={t('members.section_billing_simulation')}>
             <MemberBillingSimulation key={simulationKey} memberId={memberId} />
           </Section>
+
+          {/* #1660 — Summary: the pending draft's additions and removals, last on
+              the tab, with Save & Pay / Cancel directly beneath. */}
+          {(configuration.product_sets ?? []).some((p: any) => p.status === 'draft' || p.status === 'pending_payment') && (
+            <Section label={t('members.section_summary')}>
+              <ProductSetsInFlight
+                productSets={configuration.product_sets}
+                canWrite={canWriteMembers && canManagePackages}
+                changes={draftReview?.changes}
+                onChanged={reloadConfiguration}
+              />
+            </Section>
+          )}
 
 
         </>
