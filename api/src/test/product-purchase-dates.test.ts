@@ -4,7 +4,9 @@
 
 import crypto from 'crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { DateTime } from 'luxon';
 import { db } from '../infra/db';
+import { resolveTimeZone } from '../domain/homeDashboard';
 
 vi.mock('../payments', async (importOriginal) => {
   const mod = await importOriginal<typeof import('../payments')>();
@@ -28,7 +30,8 @@ let gymId: string;
 let seq = 0;
 const uniq = () => `${Date.now()}-${(seq += 1)}-${Math.random().toString(36).slice(2, 6)}`;
 const day = (n: number) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
-const TODAY = day(0);
+// The route works in the gym's own calendar, which is not the UTC date for part of every day.
+let TODAY = day(0);
 
 const auth = (r: any) => r.set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
 
@@ -106,6 +109,8 @@ beforeAll(async () => {
   process.env.MONEI_WEBHOOK_SECRET = SECRET;
   gymId = await createTestGym('Staff Purchase Gym');
   await createTestMembership(gymId, 'admin');
+  const { rows: gz } = await db.query<any>('SELECT time_zone FROM gyms WHERE id = ?', [gymId]);
+  TODAY = DateTime.now().setZone(resolveTimeZone(gz[0].time_zone)).toISODate()!;
 });
 afterAll(async () => {
   delete process.env.MONEI_API_KEY;
