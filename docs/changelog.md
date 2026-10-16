@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1670 (Members App → Calendar event window: every action button takes the shared theme styles through one local `actionBtn(base)` — Book / Join waitlist / Request shared training are primary, Cancel booking / Leave waitlist / Cancel request destructive, Close secondary — replacing the status-colour backgrounds that bypassed the Buttons settings; behaviour unchanged, hover/focus/disabled come from `buttonStates.ts`)
 - **Done**: #1666 (an event that has already ended can only be marked Cancelled: `POST /class-sessions/:id/cancel` takes no reason and notifies nobody once `ends_at` has passed, an event in progress is not past, and future events keep the reason and the `event_cancelled` alert; the Admin panel offers "Mark as cancelled" for ended events; regression `past-event-cancel.test.ts`)
 
 - **Done**: #1665 (Members App Home: the Training reminder (`booking_reminder_2h`) now shows the session time, center, space and trainer under its title, keeping the title and *View alerts* link. The reminder payload gains optional `center_name`, `space_name` and `trainer_name` (written only when known, no migration), read from the occurrence's own columns; reminders created before this show whatever their payload holds, an absent detail is simply omitted)

@@ -603,7 +603,7 @@ export default function MemberCalendarPage() {
             {unlockServiceIds.length > 0 && (
               <button
                 onClick={() => router.push(`/${locale}${productsPathForServices(unlockServiceIds)}`)}
-                style={{ ...actionBtn(memberTheme.primaryButton), marginBottom: 12 }}
+                style={{ ...actionBtn(), marginBottom: 12 }}
               >
                 {t('buy_sessions_cta')}
               </button>
@@ -611,17 +611,17 @@ export default function MemberCalendarPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selected.availability_state === 'AVAILABLE' && (
-                <button onClick={book} disabled={actionLoading} style={actionBtn(memberTheme.primaryButton)}>
+                <button onClick={book} disabled={actionLoading} style={actionBtn()}>
                   {t('action_book')}
                 </button>
               )}
               {(selected.availability_state === 'WAITLIST_AVAILABLE') && (
-                <button onClick={book} disabled={actionLoading} style={actionBtn(memberTheme.statusWarning)}>
+                <button onClick={book} disabled={actionLoading} style={actionBtn()}>
                   {t('action_join_waitlist')}
                 </button>
               )}
               {selected.availability_state === 'BOOKED_BY_MEMBER' && selected.can_cancel && (
-                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={{ ...destructiveButtonStyle, padding: '12px', fontWeight: 600, fontSize: 15, width: '100%' }}>
+                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={actionBtn(destructiveButtonStyle)}>
                   {t('action_cancel_booking')}
                 </button>
               )}
@@ -632,12 +632,12 @@ export default function MemberCalendarPage() {
                 </div>
               )}
               {selected.availability_state === 'WAITLISTED_BY_MEMBER' && selected.can_cancel && (
-                <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn(memberTheme.textMuted)}>
+                <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn(destructiveButtonStyle)}>
                   {t('action_leave_waitlist')}
                 </button>
               )}
               {selected.availability_state === 'SHARED_REQUEST_AVAILABLE' && (
-                <button onClick={requestSharedTraining} disabled={actionLoading} style={actionBtn(memberTheme.statusInfo)}>
+                <button onClick={requestSharedTraining} disabled={actionLoading} style={actionBtn()}>
                   {t('action_request_shared')}
                 </button>
               )}
@@ -647,7 +647,7 @@ export default function MemberCalendarPage() {
                     {t('shared_request_status', { status: selected.my_shared_request_status ?? '' })}
                   </p>
                   {selected.my_shared_request_status === 'pending' && (
-                    <button onClick={cancelSharedRequest} disabled={actionLoading} style={actionBtn(memberTheme.textMuted)}>
+                    <button onClick={cancelSharedRequest} disabled={actionLoading} style={actionBtn(destructiveButtonStyle)}>
                       {t('action_cancel_shared_request')}
                     </button>
                   )}
@@ -655,7 +655,7 @@ export default function MemberCalendarPage() {
               )}
               <button
                 onClick={() => { setSelected(null); setActionMsg(null); }}
-                style={{ ...secondaryButtonStyle, padding: '10px', fontSize: 14 }}
+                style={actionBtn(secondaryButtonStyle)}
               >
                 {t('action_close')}
               </button>
@@ -708,10 +708,10 @@ function badgeStyle(bg: string): React.CSSProperties {
   };
 }
 
-function actionBtn(bg: string): React.CSSProperties {
-  return {
-    ...primaryButtonStyle,
-    padding: '12px', background: bg,
-    color: memberTheme.primaryButtonText, fontWeight: 600, fontSize: 15, width: '100%',
-  };
+/**
+ * #1670 — every action in the event window takes its look from the shared
+ * theme styles (primary, secondary or destructive); only the geometry is local.
+ */
+function actionBtn(base: React.CSSProperties = primaryButtonStyle): React.CSSProperties {
+  return { ...base, padding: '12px', fontWeight: 600, fontSize: 15, width: '100%' };
 }
