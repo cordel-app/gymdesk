@@ -2,7 +2,9 @@ name: Re-crop exercise images
 
 # #1527 follow-up — re-crops the exercise images stored before exercise uploads
 # switched from `contain` (whole picture, transparent bands) to `cover`
-# (centre-cropped to the square), so My Training shows no grey band between the
+# (centre-cropped to the square), and the muscle images stored before muscle
+# uploads did the same (a muscle image stands in for an exercise with none of
+# its own), so My Training shows no grey band between the
 # photo and the card edge. Masters and thumbnails are overwritten under the same
 # keys; no row changes, and a second run finds nothing.
 #

@@ -1,7 +1,7 @@
 /**
  * #1413 — what the browser does to a picked file before
  * `POST /platform/muscles/:id/image/:sex`: **nothing but check it**. The server
- * orients the picture, fits it into a 1080 × 1080 transparent square and encodes
+ * orients the picture, centre-crops it to a 1080 × 1080 square and encodes
  * the WebP master and its 256 × 256 thumbnail
  * (`api/src/domain/muscleImageProcessing.ts`), so no browser crops, scales or
  * encodes anything — what a user's browser can encode never decides the result.

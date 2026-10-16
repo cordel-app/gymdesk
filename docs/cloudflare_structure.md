@@ -196,8 +196,9 @@ gym's first-level markers with its writer.
 `cordel/muscles/images/{muscle_name}-{male|female}.webp` (1080 × 1080) and
 `…-thumbnail.webp` (256 × 256), written only by `POST /platform/muscles/:id/image/:sex`
 and cleared by its `DELETE`. The client sends **one** picture as it is (JPEG, PNG,
-WebP or GIF, up to `MUSCLE_IMAGE_MAX_MB`); the **server** fits it into a transparent
-1080 × 1080 square without distortion or cropping and encodes both WebP files in
+WebP or GIF, up to `MUSCLE_IMAGE_MAX_MB`); the **server** centre-crops it to a
+1080 × 1080 square without distortion (since the #1527 follow-up; before it the
+picture was contained with transparent padding) and encodes both WebP files in
 memory (`api/src/domain/muscleImageProcessing.ts`), so no dimension is required of
 the upload and no browser-side processing exists. A rename of the muscle moves the
 objects (copy, re-point, delete).
