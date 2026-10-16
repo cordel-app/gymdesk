@@ -300,7 +300,7 @@ describe('Gym Exercise gender videos', () => {
     expect(res.status).toBe(200);
     const video = `${gymPrefix}/exercises/videos/${exerciseId}-Test-Gender-Media-Press-male.mp4`;
     expect(await sharp(uploadedBody(video.replace('.mp4', '.webp'))).metadata()).toMatchObject({
-      format: 'webp', width: 1080, height: 1080, hasAlpha: true,
+      format: 'webp', width: 1080, height: 1080, hasAlpha: false,
     });
     expect(await sharp(uploadedBody(video.replace('.mp4', '-thumbnail.webp'))).metadata()).toMatchObject({
       format: 'webp', width: 256, height: 256,
