@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1700 (My Nutrition's goal and dietary-restriction cards now share My Training's exercise-card look: the 12px separator-bordered surface frame, the image filling the card edge to edge (`cover`), 15px/600 title and 12px detail, full-width 10px/14px primary action buttons stacked inside the card, and the same 300px-at-most card width via a start-aligned grid. UI only: completion actions, progress and data loading are untouched)
 - **Done**: #1710 (the Members App's My Goals page no longer shows the PAST GOALS section; the `past_goals` the API returns, goal tracking, progress and management are untouched. UI only)
 - **Done**: #1703 (the Member card's Membership Plan section no longer prints the "Draft plan" sub-label above an in-flight plan; the `membership_plans_draft` locale key is removed and the Active sub-label and status badge are unchanged. UI only)
 - **Done**: #1706 (the Member card's `Cancel Plan` on a plan whose stored status is `draft` now discards it through the existing `DELETE /user-memberships/:id/draft` (#1240; backend refuses any non-draft with `409 not_draft`) instead of the ledger-preserving cancel, with the draft-specific confirmation *Discard this draft Membership Plan?* and `Discard Draft` / `Keep Editing` buttons (en/es/ca). Non-draft plans keep the cancel path and copy. No API or schema change)
