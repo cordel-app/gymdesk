@@ -23,6 +23,8 @@ import {
 import { BOOKED_ON_KEY, type CancellationBlock } from '@/lib/bookingCancellation';
 import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
+import { formatGymTime } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { goalDetail, goalLabel, mealTitle, type NutritionGoalItem } from '@/lib/nutritionFood';
 
 interface UpcomingBooking {
@@ -52,6 +54,7 @@ interface NotificationItem {
   id: number;
   type: string;
   read_at: string | null;
+  payload?: { starts_at?: string; center_name?: string; space_name?: string; trainer_name?: string } | null;
 }
 
 interface MealItem { id: number; item_name: string; component_type: string; quantity: number | null; unit: string | null }
@@ -78,6 +81,7 @@ export default function HomePage() {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations();
+  const gymFormat = useGymFormatSettings();
   const hasProductsImage = useSectionImageUrl('membership') !== null;
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, member, isSuperadmin } = useApp();
@@ -238,6 +242,16 @@ export default function HomePage() {
         <section style={styles.section}>
           <div style={styles.alertCard} onClick={() => router.push(`/${locale}/notifications`)}>
             <p style={styles.alertTitle}>⚠️ {alertTypeLabel(t, alert.type)}</p>
+            {alert.type === 'booking_reminder_2h' && (() => {
+              const p = alert.payload;
+              const parts = [
+                p?.starts_at ? formatGymTime(p.starts_at, gymFormat) : null,
+                p?.center_name,
+                p?.space_name,
+                p?.trainer_name ? t('home.reminder_trainer', { name: p.trainer_name }) : null,
+              ].filter(Boolean);
+              return parts.length > 0 ? <p style={styles.alertDetail}>{parts.join(' · ')}</p> : null;
+            })()}
             <p style={styles.alertLink}>{t('home.alerts_view_all')} →</p>
           </div>
         </section>
@@ -444,6 +458,7 @@ const styles: Record<string, React.CSSProperties> = {
   btnCancel:       { ...destructiveButtonStyle, width: '100%', padding: '10px 0', fontSize: 15, fontWeight: 600, marginTop: 4 },
   alertCard:       { ...noticeStyle('warning'), borderRadius: 12, padding: '14px 18px', cursor: 'pointer' },
   alertTitle:      { margin: 0, fontSize: 15, fontWeight: 700, color: 'inherit' },
+  alertDetail:     { margin: '4px 0 0', fontSize: 13, color: 'inherit' },
   alertLink:       { margin: '6px 0 0', fontSize: 13, fontWeight: 600, color: 'inherit' },
   mealRow:         { ...rowDividerStyle, padding: '6px 0' },
   mealName:        { margin: 0, fontSize: 14, fontWeight: 700, color: memberTheme.text },
