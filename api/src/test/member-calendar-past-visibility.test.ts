@@ -37,6 +37,9 @@ beforeAll(async () => {
     `INSERT INTO members (gym_id, name, email) VALUES (?, 'Other', ?)`,
     [gymId, `pv-other-${Date.now()}@test.com`],
   )).insertId;
+  // A member of a gym with no center at all is scoped to nothing (empty schedule);
+  // the sole-center fallback in centerContext.ts is what makes events visible.
+  await db.query('INSERT INTO centers (gym_id, name) VALUES (?, ?)', [gymId, `Center-${Date.now()}`]);
   ids.at = (await db.query(
     `INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, ?, 10, 'active')`,
     [gymId, `AT-${Date.now()}`],
