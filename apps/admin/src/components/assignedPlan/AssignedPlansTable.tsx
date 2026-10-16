@@ -41,7 +41,7 @@
  * second place deciding what a column is called.
  */
 
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymDate, formatGymDateOnly, type GymFormatSettings } from '@/lib/gymFormat';
@@ -105,7 +105,15 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
   const t = useTranslations('assigned_plans_page');
   const tStatus = useTranslations('status');
   const gymFmt = useGymFormatSettings();
+  const focusedRowRef = useRef<number | null>(null);
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set(openInEditId != null ? [openInEditId] : []));
+
+  // #1692: a row opened from outside (a plan just assigned) expands even though
+  // the table was already mounted when its id arrived.
+  useEffect(() => {
+    if (openInEditId == null) return;
+    setExpandedIds((prev) => (prev.has(openInEditId) ? prev : new Set(prev).add(openInEditId)));
+  }, [openInEditId]);
 
   function toggleExpand(row: T) {
     setExpandedIds((prev) => {
@@ -187,7 +195,20 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
       expandedRowKeys={expandedIds}
       onToggleExpand={toggleExpand}
       renderExpanded={(row) => (
-        <AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} startEditing={row.id === openInEditId} />
+        <div
+          tabIndex={-1}
+          style={{ outline: 'none' }}
+          // #1692: bring the card opened from outside into view and focus it.
+          ref={row.id === openInEditId ? (el) => {
+            if (el && focusedRowRef.current !== row.id) {
+              focusedRowRef.current = row.id;
+              el.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+              el.focus({ preventScroll: true });
+            }
+          } : undefined}
+        >
+          <AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} startEditing={row.id === openInEditId} />
+        </div>
       )}
     />
   );
