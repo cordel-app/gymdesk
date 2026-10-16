@@ -25,7 +25,7 @@ export function ExerciseDetailsDialog({ exercise, description, onClose }: {
       onClose={onClose}
       actions={<button type="button" onClick={onClose} style={{ ...secondaryButtonStyle, padding: '10px 14px', borderRadius: 8 }}>{t('exercise_media.close')}</button>}
     >
-      {src && <img src={src} alt={t('exercise_media.image_alt', { name })} style={{ display: 'block', width: '100%', maxHeight: '50vh', objectFit: 'contain' }} />}
+      {src && <img src={src} alt={t('exercise_media.image_alt', { name })} style={{ display: 'block', width: '100%', maxHeight: '50vh', objectFit: 'contain', background: memberTheme.exerciseImageBackdrop }} />}
       <p style={{ margin: 0, fontSize: 14, lineHeight: 1.5, color: memberTheme.text, whiteSpace: 'pre-wrap' }}>
         {description && description.trim() ? description : t('training.no_description')}
       </p>
