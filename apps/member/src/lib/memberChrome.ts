@@ -97,13 +97,6 @@ export const memberTheme = {
   statusWarning: 'var(--gd-status-warning, #d97706)',
   statusError: 'var(--gd-status-error, #dc2626)',
   statusInfo: 'var(--gd-status-info, #2563eb)',
-  // #1527 — the backdrop behind an exercise image. The server contains a
-  // non-square photo in a 1080 square padded with *transparency*
-  // (`exerciseImageProcessing.ts`), so on a themed (dark) card that padding
-  // read as a grey band between the photo and the card edge. It is the
-  // photo's colour, not the gym's — exercise photos are shot on white, and the
-  // Admin's image frame is white for the same reason — so it is no theme setting.
-  exerciseImageBackdrop: '#ffffff',
   // Calendar (§5). The grid itself is painted by the FullCalendar sheet
   // (`components/CalendarThemeStyles.tsx`, which is the only reader of the
   // `--gd-calendar-*` set); these are the Calendar *page*'s own chrome — its

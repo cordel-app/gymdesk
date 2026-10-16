@@ -52,7 +52,7 @@ export function ExerciseMedia({ exercise, size = 52, fill = false }: {
   if (fill) {
     if (!thumbSrc) return null;
     return (
-      <span style={{ display: 'block', width: '100%', aspectRatio: '1 / 1', lineHeight: 0, background: memberTheme.exerciseImageBackdrop }}>
+      <span style={{ display: 'block', width: '100%', aspectRatio: '1 / 1', lineHeight: 0 }}>
         <img
           src={thumbSrc}
           alt={name ? t('exercise_media.image_alt', { name }) : t('exercise_media.image')}

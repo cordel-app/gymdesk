@@ -22,7 +22,4 @@ describe('My Training exercise card layout (#1527)', () => {
     expect(page).toMatch(/<ExerciseMedia exercise=\{we\} fill \/>/);
     expect(page).toMatch(/exerciseCard: \{[^}]*padding: 0/);
   });
-  it('the transparent padding of a non-square photo shows the image backdrop, not the card', () => {
-    expect(media).toMatch(/aspectRatio: '1 \/ 1', lineHeight: 0, background: memberTheme\.exerciseImageBackdrop/);
-  });
 });
