@@ -927,9 +927,10 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
       // #1694: a cancelled assignment always carries an end date, whatever the
       // body set (status flip, or an explicit ends_at: null on a cancelled row).
       await tx.query(
-        `UPDATE user_memberships SET ends_at = UTC_DATE()
+        `UPDATE user_memberships
+            SET ends_at = UTC_DATE(), modified_at = UTC_TIMESTAMP(), modified_by = ?
           WHERE id = ? AND gym_id = ? AND status = 'cancelled' AND ends_at IS NULL`,
-        [req.params.id, gymId],
+        [resolveRequestActor(getTenantContext(req)), req.params.id, gymId],
       );
       if (status && status !== current[0].status) {
         await recordStatusChange(tx, {
