@@ -480,7 +480,9 @@ Tick items off in the PR that completes them.
       is what picks it up, and it is what a System poster comes from.
 - [ ] **Re-crop exercise images stored before the centre-crop** (#1527, follow-up of #1420). Since
       #1687 an exercise image is centre-cropped to the 1080×1080 square; one uploaded earlier was
-      contained with transparent bands, which My Training shows as a grey band. An image uploaded
+      contained with transparent bands, which My Training shows as a grey band. Muscle images
+      are re-cropped by the same run (a muscle image stands in for an exercise with none of its
+      own). An image uploaded
       on production after go-live is already cropped, so this matters only for objects copied in
       from dev or uploaded by an older build: run **Re-crop exercise images**
       (`.github/workflows/exercises-recrop-images.yml`) with `environment: pro`, first as the
