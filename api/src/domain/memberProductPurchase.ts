@@ -58,12 +58,18 @@ import { isRecurringFrequency } from './productClassification';
 export const PRODUCT_PURCHASE_SOURCE = 'product_purchase';
 
 /** What `member_products_oneoff_snapshot.status` may hold, mirrored by `chk_mprod_status`. */
-export const MEMBER_PRODUCT_STATUSES = ['pending_payment', 'active', 'cancelled'] as const;
+export const MEMBER_PRODUCT_STATUSES = ['pending_payment', 'active', 'cancelled', 'draft'] as const;
 export type MemberProductStatus = (typeof MEMBER_PRODUCT_STATUSES)[number];
 
 /** #799's actor snapshot, mirrored by `chk_mprod_created_by_type`. */
 export const PURCHASE_ACTOR_TYPES = ['staff', 'superadmin', 'member'] as const;
 export type PurchaseActorType = (typeof PURCHASE_ACTOR_TYPES)[number];
+
+/**
+ * #1657 stage 2 — a one-time Product staff saved without paying. It has no
+ * payment request, never blocks the pending key and is invisible to the member.
+ */
+export const DRAFT_PURCHASE_STATUS: MemberProductStatus = 'draft';
 
 /** The status a purchase is created with: paid for, or it never happened. */
 export const PENDING_PURCHASE_STATUS: MemberProductStatus = 'pending_payment';
@@ -83,7 +89,9 @@ export type PurchaseBlock =
   | 'recurring_not_supported'
   | 'purchase_pending'
   // #1521: a one-time Product the member already holds is not sold again.
-  | 'already_owned';
+  | 'already_owned'
+  // #1657: staff already hold an unsaved-for-payment draft of this Product.
+  | 'draft_exists';
 
 /** The columns a purchase decision needs from a catalogue row. */
 export interface PurchasableProduct {
@@ -226,6 +234,12 @@ export function purchaseBlockResponse(block: PurchaseBlock): { status: number; e
         status: 409,
         error: block,
         message: 'This one-time product has already been purchased',
+      };
+    case 'draft_exists':
+      return {
+        status: 409,
+        error: block,
+        message: 'This product already has a draft for this member',
       };
     case 'recurring_not_supported':
       return {

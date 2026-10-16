@@ -27,9 +27,11 @@ import {
   PromotionRefused,
   PurchaseRefused,
   grossPrice,
+  deletePurchaseDraft,
+  saveProductPurchaseDraft,
   startProductPurchase,
 } from './me-products';
-import { loadPromotionOffers } from './member-product-promotions';
+import { loadAppliedPromotionLists, loadPromotionOffers } from './member-product-promotions';
 import { shapeMemberProduct, staffProductCatalogueSql } from '../domain/memberProductCatalogue';
 import { isRecurringFrequency } from '../domain/productClassification';
 import {
@@ -64,7 +66,7 @@ async function loadMember(gymId: string, memberId: number) {
 async function ownedOneTimeProductIds(gymId: string, memberId: number): Promise<Set<number>> {
   const { rows } = await db.query<{ product_id: number; status: string }>(
     `SELECT product_id, status FROM member_products_oneoff_snapshot
-      WHERE gym_id = ? AND member_id = ? AND status IN ('active', 'pending_payment')`,
+      WHERE gym_id = ? AND member_id = ? AND status IN ('active', 'pending_payment', 'draft')`,
     [gymId, memberId],
   );
   const byProduct = new Map<number, string[]>();
@@ -216,6 +218,24 @@ memberProductPurchasesRouter.post('/', requireModuleWrite('MEMBERS'), async (req
     if (!productRows[0]) return res.status(404).json({ error: 'Product not found' });
 
     if (!isRecurringFrequency(productRows[0].billing_frequency)) {
+      // #1657 stage 2 — Save: the purchase persists as a `draft`, unpaid.
+      if ((req.body ?? {}).draft === true) {
+        const saved = await saveProductPurchaseDraft({
+          gymId,
+          memberId,
+          memberName: member.name,
+          memberEmail: member.email ?? '',
+          productId,
+          promotionIds,
+          directDiscountPercent: discount.percent,
+          staff: { actorName },
+        });
+        recordAudit(req, {
+          action: 'create', entityType: 'member', entityId: memberId,
+          next: { product_purchase_draft: saved.purchaseId, product_id: productId, direct_discount_percent: discount.percent },
+        });
+        return res.status(201).json({ kind: 'one_time_draft', purchaseId: saved.purchaseId, amount: saved.amount, currency: saved.currency });
+      }
       const result = await startProductPurchase({
         gymId,
         memberId,
@@ -290,4 +310,77 @@ memberProductPurchasesRouter.post('/', requireModuleWrite('MEMBERS'), async (req
     if (err?.status === 404) return res.status(404).json({ error: err.message });
     next(err);
   }
+});
+
+/**
+ * #1657 stage 2 — pay a saved draft: it is re-resolved and re-priced through the
+ * same loader as a fresh purchase (a Promotion that lapsed refuses it, leaving
+ * the draft untouched) and promoted to the pending purchase in one transaction.
+ */
+memberProductPurchasesRouter.post('/:purchaseId/pay', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const tenantCtx = getTenantContext(req);
+  const { gymId } = tenantCtx;
+  const memberId = memberIdOf(req);
+  const purchaseId = parseInt(String(req.params.purchaseId), 10);
+  try {
+    const member = await loadMember(gymId, memberId);
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+    if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'Draft not found' });
+    const { rows } = await db.query<any>(
+      `SELECT id, product_id, direct_discount_percent FROM member_products_oneoff_snapshot
+        WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
+      [purchaseId, gymId, memberId],
+    );
+    const draft = rows[0];
+    if (!draft) return res.status(404).json({ error: 'Draft not found' });
+    const applied = (await loadAppliedPromotionLists(gymId, [purchaseId])).get(purchaseId) ?? [];
+    const result = await startProductPurchase({
+      gymId,
+      memberId,
+      memberName: member.name,
+      memberEmail: member.email ?? '',
+      productId: Number(draft.product_id),
+      promotionIds: applied.map((p) => p.promotion_id),
+      directDiscountPercent: draft.direct_discount_percent == null ? null : Number(draft.direct_discount_percent),
+      staff: { actorName: resolveRequestActor(tenantCtx) ?? member.name },
+      fromDraftId: purchaseId,
+    });
+    recordAudit(req, {
+      action: 'update', entityType: 'member', entityId: memberId,
+      next: { product_purchase: result.purchaseId, from_draft: purchaseId, product_id: Number(draft.product_id) },
+    });
+    res.status(201).json({ kind: 'one_time', ...result });
+  } catch (err: any) {
+    if (err instanceof PurchaseRefused) {
+      const { status, ...body } = purchaseBlockResponse(err.block);
+      return res.status(status).json(body);
+    }
+    if (err instanceof PricingRefused) {
+      const { status, ...body } = pricingRefusalResponse(err.refusal);
+      return res.status(status).json(body);
+    }
+    if (err instanceof PromotionRefused) {
+      return res.status(409).json({ error: 'promotion_not_applicable', message: 'This promotion is not available for this product' });
+    }
+    if (err?.status === 404) return res.status(404).json({ error: err.message });
+    next(err);
+  }
+});
+
+/** #1657 stage 2 — Cancel: a hard delete of this member's own draft, nothing else. */
+memberProductPurchasesRouter.delete('/:purchaseId', requireModuleWrite('MEMBERS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  const memberId = memberIdOf(req);
+  const purchaseId = parseInt(String(req.params.purchaseId), 10);
+  try {
+    if (!(await loadMember(gymId, memberId))) return res.status(404).json({ error: 'Member not found' });
+    if (!Number.isInteger(purchaseId) || purchaseId <= 0) return res.status(404).json({ error: 'Draft not found' });
+    const removed = await deletePurchaseDraft(gymId, memberId, purchaseId);
+    if (!removed) return res.status(404).json({ error: 'Draft not found' });
+    recordAudit(req, {
+      action: 'delete', entityType: 'member', entityId: memberId,
+      previous: { product_purchase_draft: purchaseId },
+    });
+    res.json({ id: purchaseId, deleted: true });
+  } catch (err) { next(err); }
 });

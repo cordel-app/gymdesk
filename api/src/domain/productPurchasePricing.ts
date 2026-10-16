@@ -178,7 +178,7 @@ export function discountedUnitPrice(unitPrice: number, percent: number | null): 
   return round2(unitPrice * (1 - percent / 100));
 }
 
-/** Whether a one-time Product may be bought again: not when it is held or pending. */
+/** Whether a one-time Product may be bought again: not when it is held, pending or a staff draft (#1657). */
 export function oneTimeProductAlreadyOwned(statuses: ReadonlyArray<string | null | undefined>): boolean {
-  return statuses.some((s) => s === 'active' || s === 'pending_payment');
+  return statuses.some((s) => s === 'active' || s === 'pending_payment' || s === 'draft');
 }
