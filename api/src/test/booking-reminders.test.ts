@@ -180,7 +180,8 @@ describe('the reminder the run raises (#1113 §2)', () => {
     const payload = typeof rows[0].payload === 'string' ? JSON.parse(rows[0].payload) : rows[0].payload;
     expect(payload.title).toBe('Morning Spin');
     expect(payload.starts_at).toBeTruthy();
-    expect(Object.keys(payload).sort()).toEqual(['starts_at', 'title']);
+    // #1665: the occurrence's own center/space/trainer ride along when known.
+    expect(Object.keys(payload).sort()).toEqual(['center_name', 'starts_at', 'title']);
   });
 
   it('raises exactly one reminder however often it runs (§5)', async () => {
