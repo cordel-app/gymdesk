@@ -106,6 +106,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const translateItem = (item: NavItemType): NavItemType => ({
     ...item,
     href: replaceLocale(item.href),
+    alsoActiveFor: item.alsoActiveFor?.map(replaceLocale),
     children: item.children?.map(child => translateItem(child)),
   });
 

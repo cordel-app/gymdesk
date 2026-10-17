@@ -30,6 +30,7 @@ import { planTreeSelect } from './training-plans';
 import { imageSexForGender } from '../domain/effectiveExerciseImage';
 import { insertAndFetch } from '../infra/db-helpers';
 import { sendNotification } from '../infra/notifications';
+import { ACTIVE_REMINDER_ONLY_SQL } from '../domain/bookingReminders';
 import { notificationCategory } from '../domain/notificationCategory';
 import { getPaymentProvider } from '../payments';
 import { toMinorUnits } from '../payments/money';
@@ -80,6 +81,7 @@ import {
   resolveCardUpdateMembership,
 } from './card-updates';
 import type { ProductBenefitCategory } from '../domain/productClassification';
+import { NUTRITION_GOAL_IMAGE_JOIN_SQL } from './nutrition-goal-illustration';
 
 const clerkClient = createClerkClient({ secretKey: process.env.CLERK_SECRET_KEY! });
 
@@ -738,8 +740,20 @@ meRouter.get('/schedule', requireRole('member'), requireFeatureEnabled('calendar
     const to = req.query.to as string | undefined;
     const activityTypeId = req.query.activity_type_id as string | undefined;
     const trainerMembershipId = req.query.trainer_membership_id as string | undefined;
-    const where: string[] = ["ce.gym_id = ?", "ce.status = 'scheduled'", "ce.deleted_at IS NULL", "ce.starts_at >= ?"];
-    const params: any[] = [gymId, from];
+    // #1667: every future event is visible; an event that has already ended is
+    // visible only to a member who was enrolled (a `booked` row), whatever the
+    // attendance or the event's final status (completed, cancelled, ...). The
+    // boundary is the end time so a class in progress stays on the calendar.
+    const where: string[] = [
+      "ce.gym_id = ?",
+      `((ce.ends_at > UTC_TIMESTAMP() AND ce.status = 'scheduled')
+        OR (ce.ends_at <= UTC_TIMESTAMP() AND EXISTS (
+          SELECT 1 FROM calendar_event_bookings pb
+          WHERE pb.calendar_event_id = ce.id AND pb.member_id = ? AND pb.status = 'booked')))`,
+      "ce.deleted_at IS NULL",
+      "ce.starts_at >= ?",
+    ];
+    const params: any[] = [gymId, memberId, from];
     if (to) { where.push('ce.starts_at <= ?'); params.push(to); }
     if (activityTypeId) { where.push('ce.activity_type_id = ?'); params.push(activityTypeId); }
     if (trainerMembershipId) { where.push('ce.trainer_membership_id = ?'); params.push(trainerMembershipId); }
@@ -1356,9 +1370,11 @@ meRouter.get('/nutrition-plan', requireRole('member'), requireFeatureEnabled('nu
     // `null`, which the page renders as the standard fallback.
     const { rows: goalRows } = await db.query(
       `SELECT g.id, g.item_name, g.quantity, g.unit, g.frequency, g.applies_all_days,
-              g.nutrition_library_item_id, nli.image_url
+              g.nutrition_library_item_id,
+              COALESCE(ng.image_thumbnail_url, ng.image_url, nli.image_url) AS image_url
        FROM member_nutrition_plan_goals g
        LEFT JOIN nutrition_library_items nli ON nli.id = g.nutrition_library_item_id
+       ${NUTRITION_GOAL_IMAGE_JOIN_SQL}
        WHERE g.member_nutrition_plan_id = ? AND g.gym_id = ?
        ORDER BY g.position ASC`,
       [plan.id, gymId],
@@ -2123,14 +2139,14 @@ meRouter.get('/notifications', requireRole('member'), async (req: Request, res: 
     const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? 50), 10) || 50, 1), 100);
     const offset = Math.max(parseInt(String(req.query.offset ?? 0), 10) || 0, 0);
     const { rows } = await db.query(
-      `SELECT id, type, entity_type, entity_id, payload, read_at, created_at
-       FROM member_notifications
-       WHERE gym_id = ? AND member_id = ?
-       ORDER BY created_at DESC LIMIT ${limit} OFFSET ${offset}`,
+      `SELECT mn.id, mn.type, mn.entity_type, mn.entity_id, mn.payload, mn.read_at, mn.created_at
+       FROM member_notifications mn
+       WHERE mn.gym_id = ? AND mn.member_id = ? AND ${ACTIVE_REMINDER_ONLY_SQL}
+       ORDER BY mn.created_at DESC LIMIT ${limit} OFFSET ${offset}`,
       [gymId, memberId],
     );
     const { rows: countRows } = await db.query(
-      'SELECT COUNT(*) AS unread FROM member_notifications WHERE gym_id = ? AND member_id = ? AND read_at IS NULL',
+      `SELECT COUNT(*) AS unread FROM member_notifications mn WHERE mn.gym_id = ? AND mn.member_id = ? AND mn.read_at IS NULL AND ${ACTIVE_REMINDER_ONLY_SQL}`,
       [gymId, memberId],
     );
     // #1391: Staff vs Auto is derived from the type, never stored.
@@ -2151,7 +2167,7 @@ meRouter.get('/notifications/count', requireRole('member'), async (req: Request,
   try {
     const memberId = await resolveMemberId(gymId, ctx);
     const { rows } = await db.query(
-      'SELECT COUNT(*) AS unread FROM member_notifications WHERE gym_id = ? AND member_id = ? AND read_at IS NULL',
+      `SELECT COUNT(*) AS unread FROM member_notifications mn WHERE mn.gym_id = ? AND mn.member_id = ? AND mn.read_at IS NULL AND ${ACTIVE_REMINDER_ONLY_SQL}`,
       [gymId, memberId],
     );
     res.json({ unread: Number(rows[0].unread) });

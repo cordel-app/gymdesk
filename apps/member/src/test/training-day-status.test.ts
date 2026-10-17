@@ -28,12 +28,18 @@ describe('dayStatus (#1527)', () => {
     expect(dayStatus('2026-10-13', 2, today, two, logs)).toBe('pending');
     expect(dayStatus('2026-10-13', 2, today, [{ scheduled_weekday: 2, blocks: [] }], [])).toBe('pending');
   });
-  it('#1554: a weekday-less workout listed that day must be done too, and never makes a rest day', () => {
+  it('#1554/#1709: a weekday-less workout listed that day must be done too', () => {
     const w = [...workouts, { scheduled_weekday: null, blocks: [{ id: 7 }] }];
     const logs = [1, 2].map((id) => ({ workout_block_id: id, logged_date: '2026-10-13' }));
     expect(dayStatus('2026-10-13', 2, today, w, logs)).toBe('pending');
     expect(dayStatus('2026-10-13', 2, today, w, [...logs, { workout_block_id: 7, logged_date: '2026-10-13' }])).toBe('completed');
-    expect(dayStatus('2026-10-15', 4, today, [{ scheduled_weekday: null, blocks: [{ id: 7 }] }], [])).toBe('rest');
+  });
+  it('#1709: a day that lists only a weekday-less workout is not a rest day, whatever its completion', () => {
+    const only = [{ scheduled_weekday: null, blocks: [{ id: 7 }] }];
+    expect(dayStatus('2026-10-15', 4, today, only, [])).toBe('scheduled');
+    expect(dayStatus('2026-10-14', 3, today, only, [])).toBe('pending');
+    expect(dayStatus('2026-10-13', 2, today, only, [{ workout_block_id: 7, logged_date: '2026-10-13' }])).toBe('completed');
+    expect(dayStatus('2026-10-15', 4, today, [], [])).toBe('rest');
   });
   it('clamps the carousel position', () => {
     expect(clampIndex(-1, 3)).toBe(0);

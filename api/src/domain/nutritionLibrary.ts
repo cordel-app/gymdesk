@@ -3,7 +3,6 @@ import { BASE_LOCALE, SupportedLocale } from '../infra/locale';
 import {
   TranslatedNameConfig,
   loadTranslationsMapFor,
-  localeLiteral,
   replaceTranslationsFor,
   translatedNameExpr,
   translatedNameSql,
@@ -223,9 +222,8 @@ export function clampOffset(value: unknown): number {
  * of the selected categories), quality filter (AND — item must have every
  * selected quality), plus a caller-supplied base predicate (e.g. `gym_id IS NULL`).
  *
- * Search matches the base name *or* the name shown in `locale` (#643), so
- * searching for what is on screen finds it. Untranslated locales match on the
- * base name alone, which is also what they render.
+ * Search matches the base name *or* a translation in any locale (#1674); `locale`
+ * only affects the displayed name, never what a search finds.
  */
 export function buildListWhere(
   req: { query: Record<string, unknown> },
@@ -248,17 +246,11 @@ export function buildListWhere(
   const params: any[] = [...baseParams];
 
   if (search) {
-    const literal = localeLiteral(locale);
-    if (!literal) {
-      where.push('name LIKE ?');
-      params.push(`%${search}%`);
-    } else {
-      where.push(`(name LIKE ? OR id IN (
-        SELECT nlit.item_id FROM ${ITEM_TRANSLATIONS.table} nlit
-        WHERE nlit.locale = ${literal} AND nlit.name LIKE ?
-      ))`);
-      params.push(`%${search}%`, `%${search}%`);
-    }
+    where.push(`(name LIKE ? OR id IN (
+      SELECT nlit.item_id FROM ${ITEM_TRANSLATIONS.table} nlit
+      WHERE nlit.name LIKE ?
+    ))`);
+    params.push(`%${search}%`, `%${search}%`);
   }
   if (categoryIds.length) {
     where.push(`id IN (

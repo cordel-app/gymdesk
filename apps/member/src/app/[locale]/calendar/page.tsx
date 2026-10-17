@@ -32,6 +32,8 @@ import {
   eventBackgroundColor,
   memberEventMetaLine,
   memberEventStatusLine,
+  eventStatusChip,
+  memberStatusChip,
   readableEventTextColor,
 } from '@/lib/calendarEventDisplay';
 
@@ -130,7 +132,18 @@ export default function MemberCalendarPage() {
   const [selected, setSelected] = useState<ScheduleSession | null>(null);
   // #1637 — the activity image opens uncropped in place on click.
   const [imageExpanded, setImageExpanded] = useState(false);
-  useEffect(() => { setImageExpanded(false); }, [selected?.id]);
+  // #1746 — a swipe up on the sheet's drag handle expands the description.
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  useEffect(() => { setImageExpanded(false); setSheetExpanded(false); }, [selected?.id]);
+  const handleSwipeStartY = useRef<number | null>(null);
+  function handleSwipeEnd(clientY: number) {
+    const start = handleSwipeStartY.current;
+    handleSwipeStartY.current = null;
+    if (start === null) return;
+    const dy = clientY - start;
+    if (dy > SHEET_SWIPE_THRESHOLD) { setSelected(null); setActionMsg(null); }
+    else if (dy < -SHEET_SWIPE_THRESHOLD) setSheetExpanded(true);
+  }
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
@@ -329,7 +342,7 @@ export default function MemberCalendarPage() {
           <button
             onClick={() => (showFilterPanel ? setShowFilterPanel(false) : openFilterPanel())}
             style={{
-              padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+              padding: '4px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
               border: `1px solid ${memberTheme.inputBorder}`,
               // #983 §5 — a control in the Calendar's own filter bar takes the
               // Calendar Buttons Colour, the setting FullCalendar's navigation
@@ -411,38 +424,19 @@ export default function MemberCalendarPage() {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
-          <button
-            onClick={() => { setFilterAtId(''); }}
-            style={{
-              padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-              border: `1px solid ${memberTheme.inputBorder}`,
-              background: !filterAtId ? memberTheme.calendarButton : 'transparent',
-              color:      !filterAtId ? memberTheme.calendarButtonText : 'inherit',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {t('filter_all')}
-          </button>
+        {/* #1740 — one compact dropdown instead of a chip per activity; the API
+            list (`/me/activity-types`) already holds active activities only. */}
+        <select
+          aria-label={t('filter_activity_label')}
+          value={filterAtId}
+          onChange={(e) => setFilterAtId(e.target.value)}
+          style={{ ...modalInputStyle, flex: 1, minWidth: 0, width: 'auto' }}
+        >
+          <option value="">{t('filter_all')}</option>
           {activityTypes.map((at) => (
-            <button
-              key={at.id}
-              onClick={() => setFilterAtId(String(at.id))}
-              style={{
-                padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-                border: `1px solid ${memberTheme.inputBorder}`,
-                // The Activity Type's own colour stays its own (#975): only the
-                // chip for an Activity Type that configures none falls back to
-                // the Calendar Buttons Colour.
-                background: filterAtId === String(at.id) ? (at.color ?? memberTheme.calendarButton) : 'transparent',
-                color:      filterAtId === String(at.id) ? memberTheme.calendarButtonText : 'inherit',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {at.name}
-            </button>
+            <option key={at.id} value={String(at.id)}>{at.name}</option>
           ))}
-        </div>
+        </select>
       </div>
 
       {/* Calendar — `gd-calendar` scopes the theme's Calendar tokens to
@@ -524,11 +518,22 @@ export default function MemberCalendarPage() {
               // #833 §7 — the event window's own surface setting. It used to
               // borrow the Admin sidebar's colour, which was never its own.
               width: '100%', background: memberTheme.calendarModalBackground,
+              color: memberTheme.text,
               borderRadius: '16px 16px 0 0', padding: '20px 16px',
+              maxHeight: '90vh', overflowY: 'auto',
               boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
             }}
           >
-            <div style={{ width: 36, height: 4, background: memberTheme.inputBorder, borderRadius: 2, margin: '0 auto 16px' }} />
+            {/* #1746 — the handle is the swipe target: down closes, up expands. */}
+            <div
+              data-testid="sheet-handle"
+              onPointerDown={(e) => { handleSwipeStartY.current = e.clientY; e.currentTarget.setPointerCapture?.(e.pointerId); }}
+              onPointerUp={(e) => handleSwipeEnd(e.clientY)}
+              onPointerCancel={() => { handleSwipeStartY.current = null; }}
+              style={{ padding: '4px 0 16px', margin: '-4px 0 0', touchAction: 'none', cursor: 'grab' }}
+            >
+              <div style={{ width: 36, height: 4, background: memberTheme.inputBorder, borderRadius: 2, margin: '0 auto' }} />
+            </div>
             {selected.class_type_image_url && (
               <button
                 type="button"
@@ -568,7 +573,9 @@ export default function MemberCalendarPage() {
               <p
                 style={{
                   margin: '6px 0 0', fontSize: 13, color: memberTheme.textSecondary,
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden',
+                  ...(sheetExpanded
+                    ? { whiteSpace: 'pre-wrap' as const, overflowWrap: 'anywhere' as const }
+                    : { display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }),
                 }}
               >
                 {selected.class_type_description.trim()}
@@ -579,7 +586,10 @@ export default function MemberCalendarPage() {
                 lifecycle status, occupancy status (+ aggregate count), and waitlist
                 (aggregate count only; never member identities), each independent. */}
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '8px 0 12px' }}>
-              <span style={statusPillStyle('neutral')}>{t(`status_${selected.status}`)}</span>
+              <span style={statusPillStyle(eventStatusChip(selected.status).tone)}>{t(eventStatusChip(selected.status).key)}</span>
+              {memberStatusChip(selected) && (
+                <span style={statusPillStyle(memberStatusChip(selected)!.tone)}>{t(memberStatusChip(selected)!.key)}</span>
+              )}
               <span style={badgeStyle(OCCUPANCY_BADGE_COLORS[selected.occupancy_status])}>
                 {t(`occupancy_${selected.occupancy_status}`)} · {t('occupancy_count', { booked: selected.booked_count, capacity: selected.effective_capacity })}
               </span>
@@ -603,7 +613,7 @@ export default function MemberCalendarPage() {
             {unlockServiceIds.length > 0 && (
               <button
                 onClick={() => router.push(`/${locale}${productsPathForServices(unlockServiceIds)}`)}
-                style={{ ...actionBtn(memberTheme.primaryButton), marginBottom: 12 }}
+                style={{ ...actionBtn(), marginBottom: 12 }}
               >
                 {t('buy_sessions_cta')}
               </button>
@@ -611,17 +621,17 @@ export default function MemberCalendarPage() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {selected.availability_state === 'AVAILABLE' && (
-                <button onClick={book} disabled={actionLoading} style={actionBtn(memberTheme.primaryButton)}>
+                <button onClick={book} disabled={actionLoading} style={actionBtn()}>
                   {t('action_book')}
                 </button>
               )}
               {(selected.availability_state === 'WAITLIST_AVAILABLE') && (
-                <button onClick={book} disabled={actionLoading} style={actionBtn(memberTheme.statusWarning)}>
+                <button onClick={book} disabled={actionLoading} style={actionBtn()}>
                   {t('action_join_waitlist')}
                 </button>
               )}
               {selected.availability_state === 'BOOKED_BY_MEMBER' && selected.can_cancel && (
-                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={{ ...destructiveButtonStyle, padding: '12px', fontWeight: 600, fontSize: 15, width: '100%' }}>
+                <button onClick={() => setConfirmCancelOpen(true)} disabled={actionLoading} style={actionBtn(destructiveButtonStyle)}>
                   {t('action_cancel_booking')}
                 </button>
               )}
@@ -632,12 +642,12 @@ export default function MemberCalendarPage() {
                 </div>
               )}
               {selected.availability_state === 'WAITLISTED_BY_MEMBER' && selected.can_cancel && (
-                <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn(memberTheme.textMuted)}>
+                <button onClick={cancelBooking} disabled={actionLoading} style={actionBtn(destructiveButtonStyle)}>
                   {t('action_leave_waitlist')}
                 </button>
               )}
               {selected.availability_state === 'SHARED_REQUEST_AVAILABLE' && (
-                <button onClick={requestSharedTraining} disabled={actionLoading} style={actionBtn(memberTheme.statusInfo)}>
+                <button onClick={requestSharedTraining} disabled={actionLoading} style={actionBtn()}>
                   {t('action_request_shared')}
                 </button>
               )}
@@ -647,7 +657,7 @@ export default function MemberCalendarPage() {
                     {t('shared_request_status', { status: selected.my_shared_request_status ?? '' })}
                   </p>
                   {selected.my_shared_request_status === 'pending' && (
-                    <button onClick={cancelSharedRequest} disabled={actionLoading} style={actionBtn(memberTheme.textMuted)}>
+                    <button onClick={cancelSharedRequest} disabled={actionLoading} style={actionBtn(destructiveButtonStyle)}>
                       {t('action_cancel_shared_request')}
                     </button>
                   )}
@@ -655,7 +665,7 @@ export default function MemberCalendarPage() {
               )}
               <button
                 onClick={() => { setSelected(null); setActionMsg(null); }}
-                style={{ ...secondaryButtonStyle, padding: '10px', fontSize: 14 }}
+                style={actionBtn(secondaryButtonStyle)}
               >
                 {t('action_close')}
               </button>
@@ -676,6 +686,9 @@ export default function MemberCalendarPage() {
     </div>
   );
 }
+
+/** #1746 — minimum vertical travel (px) for a handle swipe to count. */
+const SHEET_SWIPE_THRESHOLD = 40;
 
 const OCCUPANCY_BADGE_COLORS: Record<OccupancyStatus, string> = {
   available:       memberTheme.statusInfo,
@@ -708,10 +721,10 @@ function badgeStyle(bg: string): React.CSSProperties {
   };
 }
 
-function actionBtn(bg: string): React.CSSProperties {
-  return {
-    ...primaryButtonStyle,
-    padding: '12px', background: bg,
-    color: memberTheme.primaryButtonText, fontWeight: 600, fontSize: 15, width: '100%',
-  };
+/**
+ * #1670 — every action in the event window takes its look from the shared
+ * theme styles (primary, secondary or destructive); only the geometry is local.
+ */
+function actionBtn(base: React.CSSProperties = primaryButtonStyle): React.CSSProperties {
+  return { ...base, padding: '12px', fontWeight: 600, fontSize: 15, width: '100%' };
 }

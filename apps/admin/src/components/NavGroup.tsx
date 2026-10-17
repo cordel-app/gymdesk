@@ -89,7 +89,7 @@ export function NavGroup({
   const [headerHovered, setHeaderHovered] = useState(false);
 
   function renderNavItem(item: NavItemType) {
-    const active = pathname === item.href;
+    const active = pathname === item.href || !!item.alsoActiveFor?.includes(pathname);
     const isParentOfActive = !!item.children && pathname.startsWith(item.href);
     const hovered = hoveredHref === item.href && !active;
 
@@ -133,7 +133,7 @@ export function NavGroup({
   }
 
   function renderChildNavItem(item: NavItemType) {
-    const active = pathname === item.href;
+    const active = pathname === item.href || !!item.alsoActiveFor?.includes(pathname);
     const isParentOfActive = !!item.children && pathname.startsWith(item.href);
     const hovered = hoveredHref === item.href && !active;
 

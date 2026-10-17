@@ -5,6 +5,7 @@ import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
+import { DescriptionTranslationsField } from '@/components/nutritionLibrary/DescriptionTranslationsField';
 import { localeLabel as localeLabelFor } from '@/lib/localeLabels';
 import { useToast } from '@/components/Toast';
 import { ContextMenu } from '@/components/ContextMenu';
@@ -19,6 +20,7 @@ import {
   NutritionLibraryItemRow,
   emptyNutritionItemForm,
   toNutritionItemFormValues,
+  trimmedDescriptionTranslations,
 } from '@/components/nutritionLibrary/nutritionItemProfile';
 import { btnStyle, btnSmall, primaryBtnSmall, cardSurfaceStyle } from '@/components/ui';
 // #947: the Base library is three tabs too, and they are the same three — the tab
@@ -209,6 +211,7 @@ export default function CordelNutritionLibraryPage() {
           category_ids: newForm.categoryIds,
           quality_ids: newForm.qualityIds,
           translations: trimmedTranslations(newForm.translations),
+          description_translations: trimmedDescriptionTranslations(newForm.descriptionTranslations),
         }),
       });
       setCreating(false);
@@ -249,6 +252,7 @@ export default function CordelNutritionLibraryPage() {
           category_ids: editForm.categoryIds,
           quality_ids: editForm.qualityIds,
           translations: trimmedTranslations(editForm.translations),
+          description_translations: trimmedDescriptionTranslations(editForm.descriptionTranslations),
         }),
       });
       setEditingId(null);
@@ -389,6 +393,17 @@ export default function CordelNutritionLibraryPage() {
             style={{ ...inlineInputStyle, resize: 'vertical' }}
           />
         </div>
+        <DescriptionTranslationsField
+          locales={translatableLocales}
+          values={form.descriptionTranslations}
+          onChange={(next) => setForm({ ...form, descriptionTranslations: next })}
+          localeLabel={localeLabel}
+          label={t('label_description_translations')}
+          hint={t('description_translations_hint')}
+          placeholderFor={(language) => t('description_in', { language })}
+          labelStyle={inlineLabelStyle}
+          inputStyle={inlineInputStyle}
+        />
         {translatableLocales.length > 0 && (
           <div style={{ marginBottom: 12 }}>
             <label style={inlineLabelStyle}>{t('label_translations')}</label>
@@ -432,7 +447,7 @@ export default function CordelNutritionLibraryPage() {
                     // The key is deterministic, so a replacement reuses the
                     // URL — `modified_at` busts the browser's cache.
                     src={`${item.image_url}?v=${encodeURIComponent(item.modified_at ?? item.created_at)}`}
-                    alt={item.name}
+                    alt={item.display_name ?? item.name}
                     style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                   />
                 ) : (
@@ -472,10 +487,10 @@ export default function CordelNutritionLibraryPage() {
   }
 
   const columns: Column<LibraryItem>[] = [
-    { header: t('label_name'), mobile: 'name', title: (item) => item.name, render: (item) => (
+    { header: t('label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           <FoodThumbnail imageUrl={item.image_url} version={item.modified_at ?? item.created_at} />
-          <strong>{item.name}</strong>
+          <strong>{item.display_name ?? item.name}</strong>
         </span>
       ) },
     {

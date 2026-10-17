@@ -12,6 +12,8 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ContextMenu, ContextMenuItem } from '@/components/ContextMenu';
 import { StatusBadge } from '@/components/StatusBadge';
+import { MemberImageField, MemberImagePreview, memberImagePreviewSrc } from '@/components/MemberImageField';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import { StatusFilter } from '@/components/StatusFilter';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { SectionEditButton } from '@/components/SectionEditButton';
@@ -117,6 +119,10 @@ interface Promo {
   paid_months: number | null;
   bonus_months: number | null;
   pay_beforehand_months: number | null;
+  // #1711: the promotion's image (1080 WebP) and its 256 thumbnail.
+  image_url?: string | null;
+  image_thumbnail_url?: string | null;
+  modified_at?: string | null;
 }
 
 type PromotionTimelineStatus = 'free_promotion' | 'pay_promotion' | 'prepaid_promotion' | 'bonus_promotion' | 'pay_regular';
@@ -311,11 +317,16 @@ export default function PromotionsPage() {
   const tStatus = useTranslations('status');
   const locale = useLocale();
   const router = useRouter();
-  const { apiFetch } = useApiClient();
+  const { apiFetch, uploadFetch } = useApiClient();
   const { activeGymId, activeGym, loading: gymLoading, isSuperadmin } = useGym();
   const { toast } = useToast();
 
   const [rows, setRows] = useState<Promo[]>([]);
+  // #1711: the image picked in the create form is held until the Promotion has
+  // an id (the object key carries it); a failed post-create upload is kept with
+  // its error and a Retry in the new Promotion's Edit mode.
+  const [stagedImage, setStagedImage] = useState<Blob | null>(null);
+  const [imageRetry, setImageRetry] = useState<{ promotionId: number; file: Blob; error: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasNewRow, setHasNewRow] = useState(false);
 
@@ -680,6 +691,7 @@ export default function PromotionsPage() {
     setSessionDraft([]);
     setOneoffDraft([]);
     setPeriodicalDraft([]);
+    setStagedImage(null);
     setEditError(null);
     setTimeout(() => nameInputRef.current?.focus(), 60);
   }
@@ -743,6 +755,18 @@ export default function PromotionsPage() {
       const id = created.id;
       setHasNewRow(false);
 
+      // #1711: the key carries the new Promotion's id, so a staged image is
+      // uploaded now. A failed upload never discards the Promotion: it is
+      // opened in Edit mode with the error and a Retry.
+      let imageFailure: string | null = null;
+      if (stagedImage) {
+        try {
+          await uploadFetch(`/promotions/${id}/image`, stagedImage);
+        } catch (err: any) {
+          imageFailure = err.message ?? t('image_error_upload_failed');
+        }
+      }
+
       // #926: the two Membership-Plan-specific sub-resources are written only
       // while the Promotion targets a Membership Plan — the sections the form
       // did not show are not configuration the save may invent.
@@ -779,7 +803,12 @@ export default function PromotionsPage() {
       }
 
       finishEdit();
-      load();
+      await load();
+      if (imageFailure && stagedImage) {
+        setImageRetry({ promotionId: id, file: stagedImage, error: `${t('image_error_upload_failed')} ${imageFailure}` });
+        await enterEdit(created);
+      }
+      setStagedImage(null);
     } catch (err: any) {
       setEditError(err.message ?? t('error_generic'));
     } finally {
@@ -1602,6 +1631,49 @@ export default function PromotionsPage() {
     );
   }
 
+  // #1711 — the Promotion's image. Read-only outside Edit mode; in it the
+  // control acts on the server straight away (`POST`/`DELETE
+  // /promotions/:id/image`), so the surrounding PUT neither carries nor can
+  // undo it. The create form holds the picked file until the Promotion exists.
+  function renderMediaSection(promo: Promo | null) {
+    return (
+      <>
+        <CardSectionHeader title={t('section_media')} />
+        <div style={{ margin: '6px 0 10px' }}>
+          {promo === null ? (
+            <MemberImageField
+              target={{ kind: 'staged', file: stagedImage, onFile: setStagedImage }}
+              label={(key) => t(key as any)}
+            />
+          ) : isEditingCard(promo.id) ? (
+            <MemberImageField
+              target={{
+                kind: 'immediate',
+                memberId: promo.id,
+                basePath: '/promotions',
+                imageUrl: promo.image_url ?? null,
+                stamp: promo.modified_at,
+                onChanged: (updated) => {
+                  setRows((prev) => prev.map((p) => (p.id === promo.id ? { ...p, ...(updated as Promo) } : p)));
+                },
+                retry: imageRetry?.promotionId === promo.id ? imageRetry : null,
+                onRetryConsumed: () => setImageRetry(null),
+              }}
+              disabled={!canWrite}
+              disabledTitle={readOnlyTitle}
+              label={(key) => t(key as any)}
+            />
+          ) : (
+            <MemberImagePreview
+              src={memberImagePreviewSrc(promo.image_url ?? null, promo.modified_at)}
+              emptyLabel={t('image_none')}
+            />
+          )}
+        </div>
+      </>
+    );
+  }
+
   // ─── Expanded card (#627, #897) ───────────────────────────────────────────
   // One body for both states: each section renders itself either read-only or
   // in edit mode, so the Promotion is never editable as a whole. Expanding the
@@ -1614,6 +1686,8 @@ export default function PromotionsPage() {
         {editing
           ? <>{renderMainFields()}{!cardTargetsMembershipPlan(promo) && renderSectionActions(() => handleSaveMain(promo.id))}</>
           : renderMainView(promo)}
+
+        {renderMediaSection(promo)}
 
         {/* #626: the Charge Benefits section was removed from the Promotion
             editor. Promotion benefits are configured only through the
@@ -1650,6 +1724,7 @@ export default function PromotionsPage() {
     return (
       <div style={{ padding: '16px 20px', borderTop: '1px solid var(--gd-card-border, #eee)' }}>
         {renderMainFields()}
+        {renderMediaSection(null)}
         {PRODUCT_BENEFIT_SECTIONS.map((cfg) => (
           <Fragment key={cfg.section}>
             <div style={subSectionSt}>
@@ -1779,6 +1854,11 @@ export default function PromotionsPage() {
       <div key={promo.id} style={cardSt}>
         <div className={LIST_GRID_ROW_CLASS} style={rowSt} onClick={() => toggleExpand(promo.id)}>
           <div className={CELL_CLASS.name} title={promo.name} style={{ fontWeight: 600, fontSize: 15, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {(promo.image_thumbnail_url || promo.image_url) && (
+              <span style={{ display: 'inline-flex', verticalAlign: 'middle', marginRight: 8 }}>
+                <MemberAvatar name={promo.name} imageUrl={promo.image_thumbnail_url ?? promo.image_url} stamp={promo.modified_at} size={28} />
+              </span>
+            )}
             {promo.name}
           </div>
           <div className={CELL_CLASS.description} style={{ fontSize: 13, color: '#666', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

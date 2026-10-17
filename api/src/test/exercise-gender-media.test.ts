@@ -183,28 +183,22 @@ describe('Gym Exercise gender images', () => {
     expect(media.image_female_url).toMatch(/-female\.webp$/);
   });
 
-  it('converts a non-square picture to a 1080 master and a 256 thumbnail without stretching or cropping', async () => {
-    // 1600x900 JPEG, fully opaque: contained at 1080x607, centred, padded with transparency.
+  it('centre-crops a non-square picture to a 1080 master and a 256 thumbnail, with no transparent band (#1527)', async () => {
+    // 1600x900 JPEG, fully opaque: cropped to its middle 900x900, then 1080x1080 —
+    // every row is picture, so My Training shows no band between photo and card.
     const res = await gymPost('image/male', IMAGE_BODY);
     expect(res.status).toBe(200);
     const master = `${gymPrefix}/exercises/images/${exerciseId}-Test-Gender-Media-Press-male.webp`;
     const thumb = master.replace('.webp', '-thumbnail.webp');
 
     const m = await sharp(uploadedBody(master)).metadata();
-    expect(m).toMatchObject({ format: 'webp', width: 1080, height: 1080, hasAlpha: true });
+    expect(m).toMatchObject({ format: 'webp', width: 1080, height: 1080 });
     const t = await sharp(uploadedBody(thumb)).metadata();
-    expect(t).toMatchObject({ format: 'webp', width: 256, height: 256, hasAlpha: true });
+    expect(t).toMatchObject({ format: 'webp', width: 256, height: 256 });
 
-    const { data, info } = await sharp(uploadedBody(master)).raw().toBuffer({ resolveWithObject: true });
+    const { data, info } = await sharp(uploadedBody(master)).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
     const alphaAt = (y: number) => data[(y * info.width + 540) * info.channels + 3];
-    expect(alphaAt(10)).toBe(0); // top padding
-    expect(alphaAt(1070)).toBe(0); // bottom padding
-    expect(alphaAt(540)).toBe(255); // the picture is in the middle
-    // The 16:9 source is fitted whole: about 607 rows of picture, not 1080.
-    let opaqueRows = 0;
-    for (let y = 0; y < info.height; y++) if (alphaAt(y) === 255) opaqueRows++;
-    expect(opaqueRows).toBeGreaterThan(590);
-    expect(opaqueRows).toBeLessThan(625);
+    for (const y of [0, 10, 540, 1070, 1079]) expect(alphaAt(y)).toBe(255);
   });
 
   it('converts PNG and WebP uploads too', async () => {
@@ -301,12 +295,12 @@ describe('Gym Exercise gender videos', () => {
     });
   });
 
-  it('makes the preview and its thumbnail from the frame, contained and padded', async () => {
+  it('makes the preview and its thumbnail from the frame', async () => {
     const res = await gymPost('video/male', VIDEO_BODY);
     expect(res.status).toBe(200);
     const video = `${gymPrefix}/exercises/videos/${exerciseId}-Test-Gender-Media-Press-male.mp4`;
     expect(await sharp(uploadedBody(video.replace('.mp4', '.webp'))).metadata()).toMatchObject({
-      format: 'webp', width: 1080, height: 1080, hasAlpha: true,
+      format: 'webp', width: 1080, height: 1080, hasAlpha: false,
     });
     expect(await sharp(uploadedBody(video.replace('.mp4', '-thumbnail.webp'))).metadata()).toMatchObject({
       format: 'webp', width: 256, height: 256,

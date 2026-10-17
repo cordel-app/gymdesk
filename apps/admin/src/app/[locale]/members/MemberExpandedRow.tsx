@@ -287,7 +287,9 @@ export function MemberExpandedRow({
   async function handleCancelPlan() {
     if (!cancelling) return;
     try {
-      await apiFetch(`/user-memberships/${cancelling.id}`, { method: 'DELETE' });
+      // #1706: a Draft is discarded (hard delete, nothing billed); any other status keeps the cancel path.
+      const isDraft = cancelling.status === 'draft';
+      await apiFetch(`/user-memberships/${cancelling.id}${isDraft ? '/draft' : ''}`, { method: 'DELETE' });
       setCancelling(null);
       reloadConfiguration();
     } catch (err: any) {
@@ -759,9 +761,9 @@ export function MemberExpandedRow({
 
       <ConfirmDialog
         open={cancelling !== null}
-        message={t('members.confirm_cancel_plan')}
-        confirmLabel={t('members.action_cancel_plan')}
-        cancelLabel={t('members.cancel')}
+        message={cancelling?.status === 'draft' ? t('members.confirm_discard_draft') : t('members.confirm_cancel_plan')}
+        confirmLabel={cancelling?.status === 'draft' ? t('members.action_discard_draft_confirm') : t('members.action_cancel_plan')}
+        cancelLabel={cancelling?.status === 'draft' ? t('members.action_discard_draft_dismiss') : t('members.cancel')}
         onConfirm={handleCancelPlan}
         onCancel={() => setCancelling(null)}
       />

@@ -13,6 +13,7 @@ import { useToast } from '@/components/Toast';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { inlineActionsRowStyle } from '@/components/formChrome';
+import { CalendarSectionTabs } from '@/components/CalendarSectionTabs';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -262,6 +263,7 @@ export default function OperatingHoursPage() {
 
   return (
     <div>
+      <CalendarSectionTabs active="operating_hours" />
       <h1 style={{ margin: '0 0 16px' }}>{t('title')}</h1>
 
       {loading ? (

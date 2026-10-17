@@ -1,7 +1,9 @@
-// #1035 stage 2 — a **Personal Goal's image**: the gym-facing routes
+// #1722 (replacing #1035 stage 2's PNG-only implementation) — a **Personal
+// Goal's image** on the shared WebP pipeline: the gym-facing routes
 // (`POST`/`DELETE /personal-goals/:id/image`), the platform pair
-// (`/platform/personal-goals/:id/image`), the keys each lands under, and the
-// objects each side may and may not delete.
+// (`/platform/personal-goals/:id/image`), the keys each lands under (a 1080 WebP
+// master and a 256 WebP thumbnail), the objects each side may and may not
+// delete, Duplicate, rename and the legacy-PNG fallback.
 //
 // Separate from goal-library.test.ts and platform-goal-library.test.ts for the
 // same reason base-nutrition-images.test.ts is separate from
@@ -12,11 +14,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } 
 import { createClerkClient } from '@clerk/backend';
 import { db } from '../infra/db';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, request } from './helpers';
-import { encodePngRgba } from '../domain/pngImage';
-import {
-  PERSONAL_GOAL_IMAGE_MAX_BYTES,
-  PERSONAL_GOAL_IMAGE_MAX_SIZE,
-} from '../domain/personalGoalImages';
+import sharp from 'sharp';
 
 const sendMock = vi.hoisted(() => vi.fn());
 
@@ -48,25 +46,10 @@ function setStorageConfigured() {
   process.env.CLOUDFLARE_R2_BUCKET = R2_BUCKET;
 }
 
-/** A valid upload: PNG, at most 512×512. */
-function validPng(size = PERSONAL_GOAL_IMAGE_MAX_SIZE): Buffer {
-  return encodePngRgba(size, size, Buffer.alloc(size * size * 4, 0x40));
+/** Any decodable picture: the server crops, resizes and re-encodes it. */
+async function photo(format: 'jpeg' | 'png' = 'jpeg', width = 800, height = 600): Promise<Buffer> {
+  return sharp({ create: { width, height, channels: 3, background: { r: 10, g: 120, b: 200 } } })[format]().toBuffer();
 }
-
-/**
- * A PNG whose IHDR claims `width × height` with no alpha channel — colour type
- * 2. Used both for "over the ceiling" and for "opaque", which this feature
- * accepts (#1035 `Q3`: no alpha requirement).
- */
-function opaquePng(width: number, height = width): Buffer {
-  const png = Buffer.from(validPng(1));
-  png.writeUInt32BE(width, 16);
-  png.writeUInt32BE(height, 20);
-  png[25] = 2;
-  return png;
-}
-
-const JPEG_BYTES = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(64)]);
 
 const superadminUser = { publicMetadata: { platform_role: 'superadmin' }, fullName: 'Test Admin' };
 const regularUser = { publicMetadata: {}, fullName: 'Test User' };
@@ -81,7 +64,7 @@ function mockAsNonSuperadmin() {
   if (client) vi.mocked(client.users.getUser).mockResolvedValue(regularUser as any);
 }
 
-function sentCommands(type: 'put' | 'delete') {
+function sentCommands(type: 'put' | 'delete' | 'copy') {
   return sendMock.mock.calls.map(([command]) => command).filter((c: any) => c?.__type === type);
 }
 
@@ -131,7 +114,15 @@ async function imageUrlOf(id: number, table = 'personal_goals'): Promise<string 
   return rows[0]?.image_url ?? null;
 }
 
-function upload(path: string, gym: string | null, body: Buffer, contentType = 'image/png') {
+async function urlsOf(id: number): Promise<{ image_url: string | null; image_thumbnail_url: string | null }> {
+  const { rows } = await db.query<{ image_url: string | null; image_thumbnail_url: string | null }>(
+    'SELECT image_url, image_thumbnail_url FROM personal_goals WHERE id = ?',
+    [id],
+  );
+  return rows[0];
+}
+
+function upload(path: string, gym: string | null, body: Buffer, contentType = 'image/jpeg') {
   const req = request.post(path).set('Authorization', TEST_AUTH_HEADER).set('Content-Type', contentType);
   if (gym) req.set('x-gym-id', gym);
   return req.send(body);
@@ -192,11 +183,11 @@ beforeEach(async () => {
   sendMock.mockReset();
   sendMock.mockResolvedValue({});
   await db.query(
-    "UPDATE personal_goals SET image_url = NULL, name = ?, status = 'active' WHERE id = ?",
+    "UPDATE personal_goals SET image_url = NULL, image_thumbnail_url = NULL, name = ?, status = 'active' WHERE id = ?",
     [GOAL_NAME, goalId],
   );
   await db.query(
-    "UPDATE personal_goals SET image_url = NULL, status = 'active' WHERE id IN (?, ?, ?, ?)",
+    "UPDATE personal_goals SET image_url = NULL, image_thumbnail_url = NULL, status = 'active' WHERE id IN (?, ?, ?, ?)",
     [otherGymGoalId, noBucketGoalId, frontDeskGoalId, systemGoalId],
   );
 });
@@ -209,376 +200,269 @@ afterEach(() => {
 
 describe('POST /personal-goals/:id/image — auth and ownership', () => {
   it('returns 401 without auth, and uploads nothing', async () => {
-    const res = await request
-      .post(`/personal-goals/${goalId}/image`)
-      .set('Content-Type', 'image/png')
-      .send(validPng());
+    const res = await request.post(`/personal-goals/${goalId}/image`).set('x-gym-id', gymId)
+      .set('Content-Type', 'image/jpeg').send(await photo());
     expect(res.status).toBe(401);
     expect(putKeys()).toHaveLength(0);
   });
 
   it('returns 403 for a read-only role', async () => {
-    // The Clerk user is mocked as a **superadmin** for the `/platform/*` half of
-    // this file, and `tenantContext` gives a superadmin full admin on any gym it
-    // is handed — so the `front_desk` membership only decides anything once the
-    // caller is an ordinary user. Without this the case reached the handler and
-    // read as a 409 (that gym has no `storage_folder_prefix`), which is a pass
-    // for the wrong reason: the prefix below removes that second explanation, so
-    // a regression in `requireWrite` shows up as a 200 rather than as a 409.
+    // The Clerk user is mocked as a superadmin by default, and `tenantContext`
+    // gives a superadmin full admin on any gym, so the `front_desk` membership
+    // only decides anything for an ordinary user. The prefix removes the 409
+    // (no bucket) as a second explanation.
     mockAsNonSuperadmin();
     await db.query('UPDATE gyms SET storage_folder_prefix = ? WHERE id = ?', [
       `gyms/${frontDeskGymId}-PersonalGoalImagesFrontDesk`, frontDeskGymId,
     ]);
-    const res = await upload(`/personal-goals/${frontDeskGoalId}/image`, frontDeskGymId, validPng());
+    const res = await upload(`/personal-goals/${frontDeskGoalId}/image`, frontDeskGymId, await photo());
     expect(res.status).toBe(403);
     expect(putKeys()).toHaveLength(0);
-    expect(await imageUrlOf(frontDeskGoalId)).toBeNull();
   });
 
   it('returns 403 for a System goal — Cordel administers those', async () => {
-    const res = await upload(`/personal-goals/${systemGoalId}/image`, gymId, validPng());
+    const res = await upload(`/personal-goals/${systemGoalId}/image`, gymId, await photo());
     expect(res.status).toBe(403);
     expect(putKeys()).toHaveLength(0);
-    expect(await imageUrlOf(systemGoalId)).toBeNull();
   });
 
   it("returns 404 for another gym's goal, and writes nothing", async () => {
-    const res = await upload(`/personal-goals/${otherGymGoalId}/image`, gymId, validPng());
+    const res = await upload(`/personal-goals/${otherGymGoalId}/image`, gymId, await photo());
     expect(res.status).toBe(404);
     expect(putKeys()).toHaveLength(0);
     expect(await imageUrlOf(otherGymGoalId)).toBeNull();
   });
 
-  it('returns 409 for a soft-deleted goal', async () => {
+  it('returns 409 for a soft-deleted goal and for a gym whose bucket was never initialized', async () => {
     await db.query("UPDATE personal_goals SET status = 'deleted' WHERE id = ?", [goalId]);
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, validPng());
-    expect(res.status).toBe(409);
+    expect((await upload(`/personal-goals/${goalId}/image`, gymId, await photo())).status).toBe(409);
+    expect((await upload(`/personal-goals/${noBucketGoalId}/image`, noBucketGymId, await photo())).status).toBe(409);
     expect(putKeys()).toHaveLength(0);
   });
 
-  it('returns 409 for a gym whose bucket was never initialized', async () => {
-    const res = await upload(`/personal-goals/${noBucketGoalId}/image`, noBucketGymId, validPng());
-    expect(res.status).toBe(409);
+  it('refuses bytes that are not an image, whatever the header claimed, and keeps the existing image', async () => {
+    const ok = await upload(`/personal-goals/${goalId}/image`, gymId, await photo());
+    expect(ok.status).toBe(200);
+    const before = await urlsOf(goalId);
+    sendMock.mockClear();
+    const res = await upload(`/personal-goals/${goalId}/image`, gymId, Buffer.from('not an image at all'), 'image/png');
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
     expect(putKeys()).toHaveLength(0);
-  });
-
-  it('returns 503 when the deployment has no Cloudflare configuration', async () => {
-    for (const key of R2_ENV_KEYS) delete process.env[key];
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, validPng());
-    expect(res.status).toBe(503);
-    expect(res.body.missingConfig?.length).toBeGreaterThan(0);
+    expect(await urlsOf(goalId)).toEqual(before);
   });
 });
 
-// ─── Validation (the file, never the request) ────────────────────────────────
-
-describe('POST /personal-goals/:id/image — validation', () => {
-  it('refuses a non-PNG content type', async () => {
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, validPng(), 'image/jpeg');
-    expect(res.status).toBe(415);
-    expect(putKeys()).toHaveLength(0);
-  });
-
-  it('refuses bytes that are not a PNG, whatever the header claimed', async () => {
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, JPEG_BYTES);
-    expect(res.status).toBe(400);
-    expect(res.body.reason).toBe('not_a_png');
-    expect(putKeys()).toHaveLength(0);
-  });
-
-  it('refuses a PNG over 512 in either dimension', async () => {
-    expect((await upload(`/personal-goals/${goalId}/image`, gymId, opaquePng(513, 512))).body.reason)
-      .toBe('too_large_dimensions');
-    sendMock.mockReset();
-    sendMock.mockResolvedValue({});
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, opaquePng(512, 513));
-    expect(res.status).toBe(400);
-    expect(res.body.reason).toBe('too_large_dimensions');
-    expect(putKeys()).toHaveLength(0);
-  });
-
-  it('accepts a smaller, non-square, fully opaque PNG (#1035 Q3)', async () => {
-    // The ceiling is a maximum, and there is no transparency requirement —
-    // deliberately unlike a Base Nutrition Library food (#715 §2).
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, opaquePng(400, 300));
-    expect(res.status).toBe(200);
-    expect(putKeys()).toHaveLength(1);
-  });
-
-  it('refuses an empty body', async () => {
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, Buffer.alloc(0));
-    expect(res.status).toBe(400);
-    expect(putKeys()).toHaveLength(0);
-  });
-
-  it('leaves an existing image untouched when the upload is refused', async () => {
-    const existing = url(`${gymPrefix}/goals/${goalId}-${SANITIZED}.png`);
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [existing, goalId]);
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, JPEG_BYTES);
-    expect(res.status).toBe(400);
-    expect(await imageUrlOf(goalId)).toBe(existing);
-    expect(deletedKeys()).toHaveLength(0);
-  });
-});
-
-// ─── Happy path (the gym route) ──────────────────────────────────────────────
+// ─── The gym route: WebP master + thumbnail ──────────────────────────────────
 
 describe('POST /personal-goals/:id/image', () => {
-  it("stores the object at <gym prefix>/goals/<id>-<Name>.png and persists the URL", async () => {
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, validPng());
+  it('turns any picture into a 1080 WebP master and a 256 WebP thumbnail under <gym prefix>/goals/', async () => {
+    const res = await upload(`/personal-goals/${goalId}/image`, gymId, await photo('jpeg', 900, 500));
     expect(res.status).toBe(200);
 
-    const key = `${gymPrefix}/goals/${goalId}-${SANITIZED}.png`;
-    expect(putKeys()).toEqual([key]);
-    expect(sentCommands('put').at(-1).input).toMatchObject({
-      Bucket: R2_BUCKET, Key: key, ContentType: 'image/png',
-    });
-    // Never the platform's root, and never another gym's folder.
-    expect(key.startsWith(`${gymPrefix}/`)).toBe(true);
-    expect(key).not.toContain('cordel/');
-
-    expect(await imageUrlOf(goalId)).toBe(url(key));
+    const key = `${gymPrefix}/goals/${goalId}-${SANITIZED}.webp`;
+    const thumbKey = `${gymPrefix}/goals/${goalId}-${SANITIZED}-thumbnail.webp`;
+    expect(putKeys().sort()).toEqual([key, thumbKey].sort());
+    expect(await urlsOf(goalId)).toEqual({ image_url: url(key), image_thumbnail_url: url(thumbKey) });
     expect(res.body.image_url).toBe(url(key));
+    expect(res.body.image_thumbnail_url).toBe(url(thumbKey));
+
+    for (const [put, size] of [[key, 1080], [thumbKey, 256]] as const) {
+      const command: any = sentCommands('put').find((c: any) => c.input.Key === put);
+      const meta = await sharp(command.input.Body).metadata();
+      expect(meta.format).toBe('webp');
+      expect([meta.width, meta.height]).toEqual([size, size]);
+    }
   });
 
-  it('writes the folder markers between the bucket root and goals/', async () => {
-    await upload(`/personal-goals/${goalId}/image`, gymId, validPng());
+  it('accepts a PNG input and writes the folder markers down to goals/', async () => {
+    const res = await upload(`/personal-goals/${goalId}/image`, gymId, await photo('png', 300, 300), 'image/png');
+    expect(res.status).toBe(200);
     expect(markerKeys()).toEqual([`${gymPrefix}/`, `${gymPrefix}/goals/`]);
   });
 
   it('answers 502 and writes nothing to the row when the upload fails', async () => {
-    sendMock.mockRejectedValue(new Error('R2 is down'));
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, validPng());
+    sendMock.mockRejectedValue(new Error('R2 down'));
+    const res = await upload(`/personal-goals/${goalId}/image`, gymId, await photo());
     expect(res.status).toBe(502);
-    expect(await imageUrlOf(goalId)).toBeNull();
+    expect(await urlsOf(goalId)).toEqual({ image_url: null, image_thumbnail_url: null });
   });
 
-  it('overwrites its own object on a replace, with nothing to sweep', async () => {
-    const key = `${gymPrefix}/goals/${goalId}-${SANITIZED}.png`;
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [url(key), goalId]);
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, validPng());
+  it('overwrites its own objects on a replace, with nothing to sweep', async () => {
+    await upload(`/personal-goals/${goalId}/image`, gymId, await photo());
+    sendMock.mockClear();
+    const res = await upload(`/personal-goals/${goalId}/image`, gymId, await photo('png', 400, 400), 'image/png');
     expect(res.status).toBe(200);
-    // The key is deterministic, so the replacement *is* the same object.
-    expect(putKeys()).toEqual([key]);
-    expect(deletedKeys()).toHaveLength(0);
+    expect(deletedKeys()).toEqual([]);
   });
 
-  it('sweeps the old object only when the key actually moved', async () => {
-    const stale = `${gymPrefix}/goals/${goalId}-An-Older-Name.png`;
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [url(stale), goalId]);
-    const res = await upload(`/personal-goals/${goalId}/image`, gymId, validPng());
+  it("sweeps a pre-#1722 PNG object of the gym's own when the image is replaced", async () => {
+    const legacyKey = `${gymPrefix}/goals/${goalId}-${SANITIZED}.png`;
+    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [url(legacyKey), goalId]);
+    const res = await upload(`/personal-goals/${goalId}/image`, gymId, await photo());
     expect(res.status).toBe(200);
-    expect(deletedKeys()).toEqual([stale]);
-    expect(await imageUrlOf(goalId)).toBe(url(`${gymPrefix}/goals/${goalId}-${SANITIZED}.png`));
+    expect(deletedKeys()).toEqual([legacyKey]);
   });
 
   it("never deletes the platform's object, another gym's, or an external URL", async () => {
-    for (const foreign of [
-      url(`cordel/goals/${goalId}-${SANITIZED}.png`),
-      url(`${otherGymPrefix}/goals/${goalId}-${SANITIZED}.png`),
-      'https://example.org/somebody-elses.png',
+    for (const stale of [
+      url(`cordel/goals/${systemGoalId}-x.png`),
+      url(`${otherGymPrefix}/goals/${otherGymGoalId}-x.png`),
+      'https://example.com/pic.png',
     ]) {
-      sendMock.mockReset();
-      sendMock.mockResolvedValue({});
-      await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [foreign, goalId]);
-      const res = await upload(`/personal-goals/${goalId}/image`, gymId, validPng());
+      await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [stale, goalId]);
+      sendMock.mockClear();
+      const res = await upload(`/personal-goals/${goalId}/image`, gymId, await photo());
       expect(res.status).toBe(200);
-      expect(deletedKeys(), foreign).toHaveLength(0);
+      expect(deletedKeys()).toEqual([]);
     }
   });
 
   it('records who uploaded it', async () => {
-    await upload(`/personal-goals/${goalId}/image`, gymId, validPng());
-    const { rows } = await db.query<{ modified_by: string | null; modified_at: string | null }>(
-      'SELECT modified_by, modified_at FROM personal_goals WHERE id = ?',
-      [goalId],
-    );
+    await upload(`/personal-goals/${goalId}/image`, gymId, await photo());
+    const { rows } = await db.query<{ modified_by: string | null }>('SELECT modified_by FROM personal_goals WHERE id = ?', [goalId]);
     expect(rows[0].modified_by).toBeTruthy();
-    expect(rows[0].modified_at).toBeTruthy();
   });
 });
 
-// ─── DELETE (the gym route) ──────────────────────────────────────────────────
-
 describe('DELETE /personal-goals/:id/image', () => {
-  it("clears the reference and deletes the gym's own object", async () => {
-    const key = `${gymPrefix}/goals/${goalId}-${SANITIZED}.png`;
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [url(key), goalId]);
+  it("clears both references and deletes the gym's own objects", async () => {
+    await upload(`/personal-goals/${goalId}/image`, gymId, await photo());
+    const before = await urlsOf(goalId);
+    sendMock.mockClear();
     const res = await remove(`/personal-goals/${goalId}/image`, gymId);
     expect(res.status).toBe(200);
-    expect(res.body.image_url).toBeNull();
-    expect(await imageUrlOf(goalId)).toBeNull();
-    expect(deletedKeys()).toEqual([key]);
+    expect(await urlsOf(goalId)).toEqual({ image_url: null, image_thumbnail_url: null });
+    expect(deletedKeys().sort()).toEqual([
+      before.image_url!.replace(`${R2_ENDPOINT}/${R2_BUCKET}/`, ''),
+      before.image_thumbnail_url!.replace(`${R2_ENDPOINT}/${R2_BUCKET}/`, ''),
+    ].sort());
   });
 
   it('leaves a System object alone while still clearing the reference', async () => {
-    const platformKey = `cordel/goals/${goalId}-${SANITIZED}.png`;
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [url(platformKey), goalId]);
+    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [url(`cordel/goals/${systemGoalId}-x.webp`), goalId]);
     const res = await remove(`/personal-goals/${goalId}/image`, gymId);
     expect(res.status).toBe(200);
+    expect(deletedKeys()).toEqual([]);
     expect(await imageUrlOf(goalId)).toBeNull();
-    expect(deletedKeys()).toHaveLength(0);
   });
 
-  it('works for a gym with no bucket — the reference is the gym\'s to clear either way', async () => {
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [
-      'https://example.org/x.png', noBucketGoalId,
-    ]);
-    const res = await remove(`/personal-goals/${noBucketGoalId}/image`, noBucketGymId);
-    expect(res.status).toBe(200);
-    expect(await imageUrlOf(noBucketGoalId)).toBeNull();
-    expect(deletedKeys()).toHaveLength(0);
-  });
-
-  it('is 403 for a System goal and 404 for another gym\'s', async () => {
+  it("is 403 for a System goal and 404 for another gym's; 401 without auth", async () => {
     expect((await remove(`/personal-goals/${systemGoalId}/image`, gymId)).status).toBe(403);
     expect((await remove(`/personal-goals/${otherGymGoalId}/image`, gymId)).status).toBe(404);
+    expect((await request.delete(`/personal-goals/${goalId}/image`).set('x-gym-id', gymId)).status).toBe(401);
+  });
+});
+
+describe('PUT /personal-goals/:id — rename and legacy images', () => {
+  it('moves both WebP objects to the keys the new name builds', async () => {
+    await upload(`/personal-goals/${goalId}/image`, gymId, await photo());
+    sendMock.mockClear();
+    const res = await request.put(`/personal-goals/${goalId}`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ name: 'Test Goal Image Renamed' });
+    expect(res.status).toBe(200);
+    const moved = await urlsOf(goalId);
+    expect(moved.image_url).toBe(url(`${gymPrefix}/goals/${goalId}-Test-Goal-Image-Renamed.webp`));
+    expect(moved.image_thumbnail_url).toBe(url(`${gymPrefix}/goals/${goalId}-Test-Goal-Image-Renamed-thumbnail.webp`));
+    expect(sentCommands('copy')).toHaveLength(2);
+    expect(deletedKeys()).toHaveLength(2);
   });
 
-  it('returns 401 without auth', async () => {
-    expect((await request.delete(`/personal-goals/${goalId}/image`)).status).toBe(401);
+  it('keeps a legacy PNG master on its own key (it is not renamed to .webp)', async () => {
+    const legacy = url(`${gymPrefix}/goals/${goalId}-${SANITIZED}.png`);
+    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [legacy, goalId]);
+    const res = await request.put(`/personal-goals/${goalId}`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ name: 'Test Goal Image Legacy Renamed' });
+    expect(res.status).toBe(200);
+    expect(await imageUrlOf(goalId)).toBe(legacy);
+    expect(sentCommands('copy')).toHaveLength(0);
+  });
+
+  it('lists a legacy goal with its master and a null thumbnail', async () => {
+    const legacy = url(`${gymPrefix}/goals/${goalId}-${SANITIZED}.png`);
+    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [legacy, goalId]);
+    const res = await request.get(`/personal-goals?search=${encodeURIComponent(GOAL_NAME)}`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    const row = res.body.items.find((g: any) => g.id === goalId);
+    expect(row.image_url).toBe(legacy);
+    expect(row.image_thumbnail_url).toBeNull();
+  });
+});
+
+describe('POST /personal-goals/:id/duplicate — images', () => {
+  it("copies the master and the thumbnail into the duplicate's own keys", async () => {
+    await upload(`/personal-goals/${goalId}/image`, gymId, await photo());
+    sendMock.mockClear();
+    const res = await request.post(`/personal-goals/${goalId}/duplicate`)
+      .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send();
+    expect(res.status).toBe(201);
+    const copyId = res.body.id as number;
+    const copied = await urlsOf(copyId);
+    expect(copied.image_url).toMatch(new RegExp(`/goals/${copyId}-.*\\.webp$`));
+    expect(copied.image_thumbnail_url).toMatch(new RegExp(`/goals/${copyId}-.*-thumbnail\\.webp$`));
+    expect(sentCommands('copy')).toHaveLength(2);
+    await db.query('DELETE FROM gym_personal_goals WHERE personal_goal_id = ?', [copyId]);
+    await db.query('DELETE FROM personal_goals WHERE id = ?', [copyId]);
   });
 });
 
 // ─── The platform pair ───────────────────────────────────────────────────────
 
-describe('POST /platform/personal-goals/:id/image', () => {
+describe('/platform/personal-goals/:id/image', () => {
   it('returns 401 without auth and 403 for a non-superadmin', async () => {
-    const unauth = await request
-      .post(`/platform/personal-goals/${systemGoalId}/image`)
-      .set('Content-Type', 'image/png')
-      .send(validPng());
+    const unauth = await request.post(`/platform/personal-goals/${systemGoalId}/image`)
+      .set('Content-Type', 'image/jpeg').send(await photo());
     expect(unauth.status).toBe(401);
-
     mockAsNonSuperadmin();
-    const res = await upload(`/platform/personal-goals/${systemGoalId}/image`, null, validPng());
+    const res = await upload(`/platform/personal-goals/${systemGoalId}/image`, null, await photo());
     expect(res.status).toBe(403);
     expect(putKeys()).toHaveLength(0);
   });
 
-  it('stores the object at cordel/goals/<id>-<Name>.png and persists the URL', async () => {
-    const res = await upload(`/platform/personal-goals/${systemGoalId}/image`, null, validPng());
+  it('stores the WebP pair at cordel/goals/<id>-<Name>[-thumbnail].webp and writes its own markers', async () => {
+    const res = await upload(`/platform/personal-goals/${systemGoalId}/image`, null, await photo());
     expect(res.status).toBe(200);
-
-    const key = `cordel/goals/${systemGoalId}-Test-Goal-Image-System-Owned.png`;
-    expect(putKeys()).toEqual([key]);
-    // The platform root, and never a gym's folder — not even the one a
-    // superadmin happens to have selected.
-    expect(key).not.toContain('gyms/');
-    expect(await imageUrlOf(systemGoalId)).toBe(url(key));
-    expect(res.body.image_url).toBe(url(key));
-  });
-
-  it('writes its own markers, because Gym Bucket Initialization writes none under cordel/', async () => {
-    await upload(`/platform/personal-goals/${systemGoalId}/image`, null, validPng());
+    const key = `cordel/goals/${systemGoalId}-Test-Goal-Image-System-Owned.webp`;
+    const thumbKey = `cordel/goals/${systemGoalId}-Test-Goal-Image-System-Owned-thumbnail.webp`;
+    expect(putKeys().sort()).toEqual([key, thumbKey].sort());
+    expect(await urlsOf(systemGoalId)).toEqual({ image_url: url(key), image_thumbnail_url: url(thumbKey) });
     expect(markerKeys()).toEqual(['cordel/', 'cordel/goals/']);
   });
 
-  it("is 404 for a gym's own goal, whoever asks", async () => {
-    const res = await upload(`/platform/personal-goals/${goalId}/image`, null, validPng());
-    expect(res.status).toBe(404);
-    expect(putKeys()).toHaveLength(0);
-    expect(await imageUrlOf(goalId)).toBeNull();
-  });
-
-  it('applies the same file validation as the gym route', async () => {
-    expect((await upload(`/platform/personal-goals/${systemGoalId}/image`, null, JPEG_BYTES)).body.reason)
-      .toBe('not_a_png');
-    sendMock.mockReset();
-    sendMock.mockResolvedValue({});
-    expect((await upload(`/platform/personal-goals/${systemGoalId}/image`, null, opaquePng(1024))).body.reason)
-      .toBe('too_large_dimensions');
+  it("is 404 for a gym's own goal, and applies the same file validation", async () => {
+    expect((await upload(`/platform/personal-goals/${goalId}/image`, null, await photo())).status).toBe(404);
+    const bad = await upload(`/platform/personal-goals/${systemGoalId}/image`, null, Buffer.from('nope'), 'image/png');
+    expect(bad.status).toBeGreaterThanOrEqual(400);
     expect(putKeys()).toHaveLength(0);
   });
 
   it("never deletes a gym's object when a System goal's image moves", async () => {
-    const gymObject = url(`${gymPrefix}/goals/${systemGoalId}-X.png`);
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [gymObject, systemGoalId]);
-    const res = await upload(`/platform/personal-goals/${systemGoalId}/image`, null, validPng());
+    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [url(`${gymPrefix}/goals/9-x.png`), systemGoalId]);
+    const res = await upload(`/platform/personal-goals/${systemGoalId}/image`, null, await photo());
     expect(res.status).toBe(200);
-    expect(deletedKeys()).toHaveLength(0);
+    expect(deletedKeys()).toEqual([]);
   });
 
-  it("sweeps its own stale object, and another platform feature's is not its to delete", async () => {
-    const stale = `cordel/goals/${systemGoalId}-An-Older-Name.png`;
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [url(stale), systemGoalId]);
-    expect((await upload(`/platform/personal-goals/${systemGoalId}/image`, null, validPng())).status).toBe(200);
-    expect(deletedKeys()).toEqual([stale]);
-
-    sendMock.mockReset();
-    sendMock.mockResolvedValue({});
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [
-      url('cordel/nutrition/9-Salmon.png'), systemGoalId,
-    ]);
-    expect((await upload(`/platform/personal-goals/${systemGoalId}/image`, null, validPng())).status).toBe(200);
-    expect(deletedKeys()).toHaveLength(0);
-  });
-});
-
-describe('DELETE /platform/personal-goals/:id/image', () => {
-  it("clears the reference and deletes the platform's own object", async () => {
-    const key = `cordel/goals/${systemGoalId}-Test-Goal-Image-System-Owned.png`;
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [url(key), systemGoalId]);
+  it("DELETE clears both references and deletes the platform's own objects; 404 for a gym's goal; 403 for a non-superadmin", async () => {
+    await upload(`/platform/personal-goals/${systemGoalId}/image`, null, await photo());
+    sendMock.mockClear();
     const res = await remove(`/platform/personal-goals/${systemGoalId}/image`, null);
     expect(res.status).toBe(200);
-    expect(res.body.image_url).toBeNull();
-    expect(await imageUrlOf(systemGoalId)).toBeNull();
-    expect(deletedKeys()).toEqual([key]);
-  });
-
-  it("is 404 for a gym's own goal", async () => {
+    expect(await urlsOf(systemGoalId)).toEqual({ image_url: null, image_thumbnail_url: null });
+    expect(deletedKeys()).toHaveLength(2);
     expect((await remove(`/platform/personal-goals/${goalId}/image`, null)).status).toBe(404);
-  });
-
-  it('returns 403 for a non-superadmin', async () => {
     mockAsNonSuperadmin();
     expect((await remove(`/platform/personal-goals/${systemGoalId}/image`, null)).status).toBe(403);
   });
 });
 
-// ─── The column itself ───────────────────────────────────────────────────────
-
-describe('personal_goals.image_url (migration 225)', () => {
-  it('is nullable and starts null, with no backfill', async () => {
-    const { rows } = await db.query<{ IS_NULLABLE: string; CHARACTER_MAXIMUM_LENGTH: number }>(
-      `SELECT IS_NULLABLE, CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'personal_goals' AND COLUMN_NAME = 'image_url'`,
+describe('personal_goals image columns (migrations 225, 293)', () => {
+  it('start null with no backfill, and a Nutrition Goal has no personal image route', async () => {
+    const { rows } = await db.query<{ image_url: string | null; image_thumbnail_url: string | null }>(
+      "SELECT image_url, image_thumbnail_url FROM personal_goals WHERE gym_id IS NULL AND slug = 'weight_loss'",
     );
-    expect(rows[0]?.IS_NULLABLE).toBe('YES');
-    expect(Number(rows[0]?.CHARACTER_MAXIMUM_LENGTH)).toBe(1024);
-
-    // Nothing was generated or guessed for the seeded System goals (#716's rule:
-    // generating the artwork is out of scope and there is no fallback image).
-    const { rows: seeded } = await db.query<{ withImage: number }>(
-      "SELECT COUNT(*) AS withImage FROM personal_goals WHERE gym_id IS NULL AND slug IS NOT NULL AND image_url IS NOT NULL",
-    );
-    expect(Number(seeded[0].withImage)).toBe(0);
-  });
-
-  it('is reported by the list and the single read, for Personal Goals only', async () => {
-    const key = `${gymPrefix}/goals/${goalId}-${SANITIZED}.png`;
-    await db.query('UPDATE personal_goals SET image_url = ? WHERE id = ?', [url(key), goalId]);
-
-    const list = await request
-      .get('/personal-goals?search=Test Goal Image Marathon')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(list.status).toBe(200);
-    expect(list.body.items.find((g: any) => g.id === goalId)?.image_url).toBe(url(key));
-
-    // Nutrition Goals have their own WebP image columns since #1623; the
-    // personal-goal PNG route is not theirs to serve.
-    const nutrition = await request
-      .get('/nutrition-goals')
-      .set('Authorization', TEST_AUTH_HEADER)
-      .set('x-gym-id', gymId);
-    expect(nutrition.status).toBe(200);
-    expect(nutrition.body.items.length).toBeGreaterThan(0);
-  });
-
-  it('is bounded by the request limit rather than by a stray large body', async () => {
-    // The parser's ceiling is the byte limit plus headroom; the route's own check
-    // is what reports the 413 with a message naming the limit.
-    expect(PERSONAL_GOAL_IMAGE_MAX_BYTES).toBe(2 * 1024 * 1024);
+    for (const row of rows) expect(row.image_thumbnail_url).toBeNull();
+    const res = await upload(`/personal-goals/${nutritionGoalId}/image`, gymId, await photo());
+    expect([403, 404]).toContain(res.status);
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
 import { gymStorageBlock } from '@/lib/gymStorageReadiness';
@@ -19,8 +19,10 @@ import { ACTIVITY_IMAGE_ACCEPT, isPreparedActivityImage, prepareActivityImage } 
  */
 export function EventImageControl({
   sessionId, effectiveUrl, ownUrl, stamp, canEdit, onChanged, label,
+  basePath = '/class-sessions', staged, onStage, helpKey = 'event_image_help',
 }: {
-  sessionId: number;
+  /** Null while a standalone event is being created: the image is then held in `staged` (#1765). */
+  sessionId: number | null;
   effectiveUrl: string | null;
   /** The event's own override; Remove is offered only while there is one. */
   ownUrl: string | null;
@@ -30,6 +32,12 @@ export function EventImageControl({
   onChanged: () => void;
   /** Resolves a key in the `calendar` namespace. */
   label: (key: string) => string;
+  /** `/class-sessions` (a session) or `/calendar-events` (a standalone event, #1765). */
+  basePath?: string;
+  /** Create mode: the picked original, uploaded by the page once the event exists. */
+  staged?: Blob | null;
+  onStage?: (file: Blob | null) => void;
+  helpKey?: string;
 }) {
   const { apiFetch, uploadFetch } = useApiClient();
   const { activeGym } = useGym();
@@ -39,7 +47,15 @@ export function EventImageControl({
 
   const storageBlock = gymStorageBlock(activeGym, true);
   const blocked = storageBlock !== null;
-  const src = effectiveUrl
+  const [stagedPreview, setStagedPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!staged) { setStagedPreview(null); return; }
+    const url = URL.createObjectURL(staged);
+    setStagedPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [staged]);
+  const stagingOnly = onStage !== undefined && sessionId === null;
+  const src = stagingOnly && stagedPreview ? stagedPreview : effectiveUrl
     ? `${effectiveUrl}${stamp ? `${effectiveUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(String(stamp))}` : ''}`
     : null;
 
@@ -55,9 +71,10 @@ export function EventImageControl({
       setError(label(prepared));
       return;
     }
+    if (stagingOnly) { onStage!(prepared); setBusy(null); return; }
     setBusy('upload');
     try {
-      await uploadFetch(`/class-sessions/${sessionId}/image`, prepared);
+      await uploadFetch(`${basePath}/${sessionId}/image`, prepared);
       onChanged();
     } catch (err: any) {
       setError(err.message ?? label('image_error_upload_failed'));
@@ -68,9 +85,10 @@ export function EventImageControl({
 
   async function handleRemove() {
     setError(null);
+    if (stagingOnly) { onStage!(null); return; }
     setBusy('remove');
     try {
-      await apiFetch(`/class-sessions/${sessionId}/image`, { method: 'DELETE' });
+      await apiFetch(`${basePath}/${sessionId}/image`, { method: 'DELETE' });
       onChanged();
     } catch (err: any) {
       setError(err.message ?? label('image_error_remove_failed'));
@@ -118,7 +136,7 @@ export function EventImageControl({
             >
               {busy === 'prepare' || busy === 'upload' ? label('event_image_uploading') : label('event_image_upload')}
             </button>
-            {ownUrl && (
+            {(stagingOnly ? !!staged : !!ownUrl) && (
               <button
                 type="button"
                 onClick={handleRemove}
@@ -129,7 +147,7 @@ export function EventImageControl({
               </button>
             )}
           </div>
-          <p style={{ ...formHelpTextStyle, margin: '6px 0 0' }}>{label('event_image_help')}</p>
+          <p style={{ ...formHelpTextStyle, margin: '6px 0 0' }}>{label(helpKey)}</p>
           {error && <p style={{ margin: '6px 0 0', fontSize: 12, color: alertTextColor }} role="alert">{error}</p>}
         </div>
       )}

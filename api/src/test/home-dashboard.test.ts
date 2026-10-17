@@ -1,6 +1,7 @@
 // Integration tests for the Home dashboard (#1367) and the Welcomed route.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { db } from '../infra/db';
+import { dayWindow, todayInZone, resolveTimeZone, completedWeekWindows } from '../domain/homeDashboard';
 import { TEST_AUTH_HEADER, cleanupTestGyms, createTestGym, createTestMembership, ensureTestProductSet, request } from './helpers';
 
 let gymA: string;
@@ -41,8 +42,10 @@ describe('GET /dashboard/home', () => {
     expect(res.body.latest_members.map((m: any) => m.name)).toContain('Home Member');
   });
 
-  it('rejects a malformed date', async () => {
-    expect((await get(gymA, '/dashboard/home?date=2026-02-31')).status).toBe(400);
+  it('is always today: a date query is ignored (#1754)', async () => {
+    const res = await get(gymA, '/dashboard/home?date=2001-01-01');
+    expect(res.status).toBe(200);
+    expect(res.body.date).toBe(res.body.today);
   });
 
   it('never leaks another gym\'s members', async () => {
@@ -54,15 +57,16 @@ describe('GET /dashboard/home', () => {
 
 describe('classes_today card (#1510)', () => {
   it('counts classes with a booked member against all classes of the day', async () => {
-    const day = '2031-03-10';
+    const zone = resolveTimeZone((await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gymB])).rows[0]?.time_zone);
+    const dayStart = dayWindow(todayInZone(zone), zone).from;
     const at = await db.query(`INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Spin', 10, 'active')`, [gymB]);
     const m = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gymB, 'Booker', `bk-${Date.now()}@example.com`]);
     const ids: number[] = [];
-    for (const hour of ['10', '12', '14']) {
+    for (const hour of [1, 3, 5]) {
       const r = await db.query(
         `INSERT INTO calendar_events (gym_id, title, activity_type_id, starts_at, ends_at, status)
-         VALUES (?, 'Spin', ?, ?, ?, 'scheduled')`,
-        [gymB, at.insertId, `${day} ${hour}:00:00`, `${day} ${hour}:45:00`],
+         VALUES (?, 'Spin', ?, DATE_ADD(?, INTERVAL ? HOUR), DATE_ADD(?, INTERVAL ? MINUTE), 'scheduled')`,
+        [gymB, at.insertId, dayStart, hour, dayStart, hour * 60 + 45],
       );
       ids.push(r.insertId);
     }
@@ -70,7 +74,7 @@ describe('classes_today card (#1510)', () => {
       `INSERT INTO calendar_event_bookings (gym_id, calendar_event_id, member_id, status) VALUES (?, ?, ?, 'booked')`,
       [gymB, ids[0], m.insertId],
     );
-    const res = await get(gymB, `/dashboard/home?date=${day}`);
+    const res = await get(gymB);
     expect(res.status).toBe(200);
     expect(res.body.cards.classes_today.count).toBe(1);
     expect(res.body.cards.classes_today.total).toBe(3);
@@ -137,5 +141,49 @@ describe('GET /dashboard/home — pending payment members (#1466)', () => {
     const res = await get(gym);
     expect(res.status).toBe(200);
     expect(res.body.pending_payment_members).toBeUndefined();
+  });
+});
+
+describe('attendance KPIs (#1754)', () => {
+  it('counts only members with an attended session in each of the last four complete weeks', async () => {
+    const gym = await createTestGym('Home KPI');
+    await createTestMembership(gym, 'admin');
+    const zone = resolveTimeZone((await db.query('SELECT time_zone FROM gyms WHERE id = ?', [gym])).rows[0]?.time_zone);
+    const weeks = completedWeekWindows(todayInZone(zone), zone);
+    const at = await db.query(`INSERT INTO activity_types (gym_id, name, max_capacity, status) VALUES (?, 'Yoga', 10, 'active')`, [gym]);
+    const mk = async (name: string) => {
+      const m = await db.query('INSERT INTO members (gym_id, name, email) VALUES (?, ?, ?)', [gym, name, `${name}-${Date.now()}@example.com`]);
+      const ums = await db.query(
+        `INSERT INTO user_memberships (gym_id, member_id, status, starts_at) VALUES (?, ?, 'active', '2020-01-01')`,
+        [gym, m.insertId],
+      );
+      await ensureTestProductSet(gym, m.insertId, ums.insertId);
+      return m.insertId as number;
+    };
+    const attend = async (memberId: number, weekIdx: number, attendance: string, bookingStatus = 'booked') => {
+      const ev = await db.query(
+        `INSERT INTO calendar_events (gym_id, title, activity_type_id, starts_at, ends_at, status)
+         VALUES (?, 'Yoga', ?, DATE_ADD(?, INTERVAL 10 HOUR), DATE_ADD(?, INTERVAL 11 HOUR), 'scheduled')`,
+        [gym, at.insertId, weeks[weekIdx].from, weeks[weekIdx].from],
+      );
+      await db.query(
+        `INSERT INTO calendar_event_bookings (gym_id, calendar_event_id, member_id, status, attendance_status) VALUES (?, ?, ?, ?, ?)`,
+        [gym, ev.insertId, memberId, bookingStatus, attendance],
+      );
+    };
+    const full = await mk('Full');
+    const missing = await mk('Missing');
+    const absent = await mk('Absent');
+    for (let w = 0; w < 4; w++) await attend(full, w, 'present');
+    for (const w of [0, 1, 2]) await attend(missing, w, 'present');
+    await attend(missing, 3, 'absent');
+    for (let w = 0; w < 4; w++) await attend(absent, w, 'present', 'cancelled');
+
+    const res = await get(gym);
+    expect(res.status).toBe(200);
+    expect(res.body.cards.attendance.top_trainers).toBe(1);
+    // 4 + 3 attended sessions, over the gym's active members and 4 weeks.
+    const active = res.body.cards.active_members.count;
+    expect(res.body.cards.attendance.average_classes_per_member_per_week).toBeCloseTo(Math.round((7 / active / 4) * 100) / 100, 2);
   });
 });

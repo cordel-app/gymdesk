@@ -10,7 +10,6 @@ import { useApiClient } from '@/lib/apiClient';
 import { useFeatureFlags, isFeatureEnabled } from '@/context/FeatureFlagsContext';
 import { MembersSectionCard, useSectionImageUrl } from '@/components/MembersSectionCard';
 import {
-  destructiveButtonStyle,
   memberTheme,
   noticeStyle,
   primaryButtonStyle,
@@ -20,9 +19,9 @@ import {
   statusPillStyle,
   statusTone,
 } from '@/lib/memberChrome';
-import { BOOKED_ON_KEY, type CancellationBlock } from '@/lib/bookingCancellation';
-import { CancelBookingConfirmDialog } from '@/components/CancelBookingConfirmDialog';
 import type { MemberBackgroundSlot } from '@/lib/membersBackground';
+import { formatGymTime } from '@/lib/gymFormat';
+import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { goalDetail, goalLabel, mealTitle, type NutritionGoalItem } from '@/lib/nutritionFood';
 
 interface UpcomingBooking {
@@ -31,15 +30,14 @@ interface UpcomingBooking {
   class_type_name: string;
   starts_at: string;
   ends_at: string;
-  room_name: string | null;
+  /** The same read the Calendar uses: the Activity's description and the event's own image, else the Activity's. */
+  class_type_description?: string | null;
+  class_type_image_url?: string | null;
+  space_name: string | null;
+  trainer_name: string | null;
   center_name: string | null;
   my_booking_status: 'booked' | 'waitlisted' | 'attended' | 'no_show' | null;
   my_booking_id: number | null;
-  /** #1162 — when the booking was created, and whether it can still be cancelled. */
-  booked_on: string | null;
-  can_cancel: boolean;
-  cancellation_block: CancellationBlock;
-  professional_service: boolean;
 }
 
 interface Membership {
@@ -52,6 +50,7 @@ interface NotificationItem {
   id: number;
   type: string;
   read_at: string | null;
+  payload?: { starts_at?: string; center_name?: string; space_name?: string; trainer_name?: string } | null;
 }
 
 interface MealItem { id: number; item_name: string; component_type: string; quantity: number | null; unit: string | null }
@@ -78,6 +77,7 @@ export default function HomePage() {
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations();
+  const gymFormat = useGymFormatSettings();
   const hasProductsImage = useSectionImageUrl('membership') !== null;
   const { apiFetch } = useApiClient();
   const { isLinked, loading: appLoading, member, isSuperadmin } = useApp();
@@ -94,9 +94,6 @@ export default function HomePage() {
   const [nutritionPlan, setNutritionPlan] = useState<NutritionPlan | null>(null);
   const [alert, setAlert] = useState<NotificationItem | null>(null);
   const [loading, setLoading] = useState(true);
-  const [cancelPending, setCancelPending] = useState(false);
-  const [confirmCancelId, setConfirmCancelId] = useState<number | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   // The server renders this page with Clerk not loaded (`isLoaded` false), but by
   // the time the client hydrates Clerk's script may already have loaded, so the
   // first client render took the signed-in branch while the HTML on screen was
@@ -151,20 +148,6 @@ export default function HomePage() {
   }, [appLoading, isLinked]);
 
   function goToBookings() { router.push(`/${locale}/schedule`); }
-
-  async function cancelBooking(bookingId: number) {
-    setCancelPending(true);
-    setMessage(null);
-    try {
-      await apiFetch(`/me/bookings/${bookingId}`, { method: 'DELETE' });
-      setMessage(t('member_schedule.cancelled'));
-      setNextBooking(null);
-    } catch (err: any) {
-      setMessage(err.message ?? t('common.error'));
-    } finally {
-      setCancelPending(false);
-    }
-  }
 
   // Clerk's state is not known yet (always the case on the server and on the
   // first client render): a bare placeholder, never the signed-out landing. The
@@ -231,13 +214,22 @@ export default function HomePage() {
     <main style={styles.container}>
       <h1 style={styles.greeting}>{t(`home.${greetingKey()}`, { name: firstName })}</h1>
 
-      {message && <div style={styles.messageBanner}>{message}</div>}
 
       {/* Alerts */}
       {!loading && alert && (
         <section style={styles.section}>
           <div style={styles.alertCard} onClick={() => router.push(`/${locale}/notifications`)}>
             <p style={styles.alertTitle}>⚠️ {alertTypeLabel(t, alert.type)}</p>
+            {alert.type === 'booking_reminder_2h' && (() => {
+              const p = alert.payload;
+              const parts = [
+                p?.starts_at ? formatGymTime(p.starts_at, gymFormat) : null,
+                p?.center_name,
+                p?.space_name,
+                p?.trainer_name ? t('home.reminder_trainer', { name: p.trainer_name }) : null,
+              ].filter(Boolean);
+              return parts.length > 0 ? <p style={styles.alertDetail}>{parts.join(' · ')}</p> : null;
+            })()}
             <p style={styles.alertLink}>{t('home.alerts_view_all')} →</p>
           </div>
         </section>
@@ -257,38 +249,44 @@ export default function HomePage() {
             <MembersSectionCard slot="next_bookings" style={styles.nextBookingCard}><p style={styles.hint}>{t('home.loading')}</p></MembersSectionCard>
           ) : nextBooking ? (
             <MembersSectionCard slot="next_bookings" style={{ ...styles.nextBookingCard, cursor: 'pointer' }} onClick={goToBookings}>
-              <div style={styles.bookingRow}>
-                <div>
-                  <p style={styles.bookingName}>{nextBooking.class_type_name}</p>
-                  {nextBooking.room_name && (
-                    <p style={styles.bookingSub}>{nextBooking.room_name}</p>
-                  )}
-                  {nextBooking.center_name && (
-                    <p style={styles.bookingSub}>{nextBooking.center_name}</p>
+              {/* #1764 — one structure with or without an image: the image is an
+                  optional square column that stretches to the information's
+                  height; with none there is no empty column. */}
+              <div style={styles.bookingLayout}>
+                {nextBooking.class_type_image_url && (
+                  <div style={styles.bookingImageBox}>
+                    <img src={nextBooking.class_type_image_url} alt="" style={styles.bookingImage} />
+                  </div>
+                )}
+                <div style={styles.bookingInfo}>
+                  <div style={styles.bookingRow}>
+                    <p style={styles.bookingName}>{nextBooking.class_type_name}</p>
+                    {nextBooking.my_booking_status === 'waitlisted' && (
+                      <span style={styles.pillWait}>{t('home.waitlisted')}</span>
+                    )}
+                  </div>
+                  {nextBooking.class_type_description?.trim() && (
+                    <p style={styles.bookingSub}>{nextBooking.class_type_description.trim()}</p>
                   )}
                   <p style={styles.bookingSub}>
                     {dateOnly(nextBooking.starts_at)} · {timeOnly(nextBooking.starts_at)}–{timeOnly(nextBooking.ends_at)}
                   </p>
-                  {nextBooking.booked_on && (
-                    <p style={styles.bookingSub}>{t(BOOKED_ON_KEY, { date: `${dateOnly(nextBooking.booked_on)} · ${timeOnly(nextBooking.booked_on)}` })}</p>
+                  {([
+                    ['📍', nextBooking.center_name, t('home.booking_center')],
+                    ['🧑‍🏫', nextBooking.trainer_name, t('home.booking_trainer')],
+                    ['🚪', nextBooking.space_name, t('home.booking_space')],
+                  ] as const).map(([icon, value, label]) => value?.trim() ? (
+                    <p key={label} style={styles.bookingDetail} title={label}>
+                      <span aria-hidden="true">{icon}</span>
+                      <span className="sr-only" style={styles.srOnly}>{label}: </span>
+                      <span>{value.trim()}</span>
+                    </p>
+                  ) : null)}
+                  {sameDayMore > 0 && (
+                    <p style={styles.bookingSub}>{t('home.more_bookings_that_day', { count: sameDayMore })}</p>
                   )}
                 </div>
-                {nextBooking.my_booking_status === 'waitlisted' && (
-                  <span style={styles.pillWait}>{t('home.waitlisted')}</span>
-                )}
               </div>
-              {nextBooking.my_booking_id && nextBooking.my_booking_status === 'booked' && nextBooking.can_cancel && (
-                <button
-                  style={styles.btnCancel}
-                  disabled={cancelPending}
-                  onClick={(e) => { e.stopPropagation(); setConfirmCancelId(nextBooking.my_booking_id!); }}
-                >
-                  {cancelPending ? '…' : t('member_schedule.cancel_booking')}
-                </button>
-              )}
-              {sameDayMore > 0 && (
-                <p style={styles.bookingSub}>{t('home.more_bookings_that_day', { count: sameDayMore })}</p>
-              )}
             </MembersSectionCard>
           ) : (
             <MembersSectionCard slot="next_bookings" style={{ ...styles.nextBookingCard, cursor: 'pointer' }} onClick={goToBookings}>
@@ -375,17 +373,6 @@ export default function HomePage() {
           </MembersSectionCard>
         )}
       </section>
-      {confirmCancelId !== null && (
-        <CancelBookingConfirmDialog
-          busy={cancelPending}
-          onClose={() => setConfirmCancelId(null)}
-          onConfirm={async () => {
-            const id = confirmCancelId;
-            await cancelBooking(id);
-            setConfirmCancelId(null);
-          }}
-        />
-      )}
     </main>
   );
 }
@@ -432,18 +419,23 @@ const styles: Record<string, React.CSSProperties> = {
   h2:              { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:            { ...sectionCardStyle, padding: '16px 18px', cursor: 'default' },
   nextBookingCard: { ...sectionCardStyle, padding: '16px 18px', cursor: 'default', display: 'block', textAlign: 'left' },
-  bookingRow:      { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
+  bookingLayout:   { display: 'flex', alignItems: 'stretch', gap: 14 },
+  bookingImageBox: { flex: '0 0 auto', alignSelf: 'stretch', aspectRatio: '1 / 1', position: 'relative', borderRadius: 8, overflow: 'hidden' },
+  bookingImage:    { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
+  bookingInfo:     { flex: '1 1 0', minWidth: 0 },
+  bookingRow:      { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
+  bookingDetail:   { margin: '4px 0 0', fontSize: 13, color: memberTheme.textMuted, display: 'flex', gap: 6, alignItems: 'center' },
+  srOnly:          { position: 'absolute', width: 1, height: 1, overflow: 'hidden', clip: 'rect(0 0 0 0)', whiteSpace: 'nowrap' },
   bookingName:     { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
   bookingSub:      { margin: '4px 0 0', fontSize: 13, color: memberTheme.textMuted },
   planName:        { margin: 0, fontSize: 17, fontWeight: 700, color: memberTheme.text },
-  messageBanner:   { ...noticeStyle('success'), marginBottom: 16 },
   pillWait:        statusPillStyle('warning'),
   hint:            { color: memberTheme.textMuted, fontSize: 14, margin: '4px 0 12px' },
   btnPrimary:      { ...primaryButtonStyle, display: 'block', width: '100%', padding: '14px 0', fontSize: 16, fontWeight: 600, marginBottom: 16 },
   btnSecondary:    { ...secondaryButtonStyle, marginTop: 8, padding: '10px 18px', fontSize: 14, fontWeight: 600 },
-  btnCancel:       { ...destructiveButtonStyle, width: '100%', padding: '10px 0', fontSize: 15, fontWeight: 600, marginTop: 4 },
   alertCard:       { ...noticeStyle('warning'), borderRadius: 12, padding: '14px 18px', cursor: 'pointer' },
   alertTitle:      { margin: 0, fontSize: 15, fontWeight: 700, color: 'inherit' },
+  alertDetail:     { margin: '4px 0 0', fontSize: 13, color: 'inherit' },
   alertLink:       { margin: '6px 0 0', fontSize: 13, fontWeight: 600, color: 'inherit' },
   mealRow:         { ...rowDividerStyle, padding: '6px 0' },
   mealName:        { margin: 0, fontSize: 14, fontWeight: 700, color: memberTheme.text },

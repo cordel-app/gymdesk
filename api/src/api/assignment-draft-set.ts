@@ -46,6 +46,23 @@ export interface DraftSetInput {
  * a version in flight — the database's own one-in-flight rule, said in words.
  */
 export async function createDraftSetForAssignment(tx: Tx, input: DraftSetInput): Promise<number> {
+  // #1707: a Draft is editable until it is committed, so assigning (or
+  // re-assigning) a plan while the owner's Draft assignment is still open
+  // replaces that Draft — one Draft per owner stays true, and nothing was billed.
+  // A Pending Payment version, or a Draft that is not an assignment's (it holds
+  // product lines), is left alone and still answers `in_flight`.
+  const { rows: stale } = await tx.query<{ id: number; user_membership_id: number }>(
+    `SELECT ps.id, ps.user_membership_id
+       FROM product_sets ps JOIN user_memberships um ON um.id = ps.user_membership_id AND um.gym_id = ps.gym_id
+      WHERE ps.gym_id = ? AND ps.owner_member_id = ? AND ps.status = 'draft'
+        AND um.status = 'draft' AND ps.user_membership_id <> ? FOR UPDATE`,
+    [input.gymId, input.ownerMemberId, input.userMembershipId],
+  );
+  for (const old of stale) {
+    await tx.query(`DELETE FROM product_sets WHERE id = ? AND gym_id = ? AND status = 'draft'`, [old.id, input.gymId]);
+    await tx.query(`DELETE FROM user_memberships WHERE id = ? AND gym_id = ? AND status = 'draft'`,
+      [old.user_membership_id, input.gymId]);
+  }
   const created = await createDraft(tx, {
     gymId: input.gymId, ownerMemberId: input.ownerMemberId, membershipPlanId: input.membershipPlanId,
     startsAt: input.startsAt, actor: input.actor,

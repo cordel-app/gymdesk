@@ -1,5 +1,6 @@
 // The one place a Nutrition Goal's image is written to and cleared from
-// Cloudflare R2 (#1623), for both roots: a gym's own goal (`gymId` set, the
+// Cloudflare R2 (#1623, and since #1722 for a Personal Goal too — `scope.kind`
+// picks the table and the folder), for both roots: a gym's own goal (`gymId` set, the
 // gym's `storage_folder_prefix`) and a System goal (`gymId` null, `cordel`).
 // Request parsing, WebP processing, the upload limiter and the 409 for an
 // uninitialized bucket are the Member photo's (`member-image-storage.ts`) and are
@@ -7,7 +8,9 @@
 // around them, as `plan-image-storage.ts` is for a Membership Plan.
 
 import { db } from '../infra/db';
+import { GOAL_LIBRARY_TABLES, type GoalLibraryKind } from '../domain/goalLibrary';
 import {
+  GOAL_IMAGE_FOLDERS,
   buildNutritionGoalImageKey,
   buildNutritionGoalImageThumbnailKey,
   isOwnedNutritionGoalImageUrl,
@@ -41,6 +44,16 @@ export interface NutritionGoalImageRow {
 export interface NutritionGoalImageScope {
   gymId: string | null;
   prefix: string | null;
+  /** #1722: which catalogue the goal is in — its table and its folder. Defaults to Nutrition Goals. */
+  kind?: GoalLibraryKind;
+}
+
+function tableOf(scope: NutritionGoalImageScope): string {
+  return GOAL_LIBRARY_TABLES[scope.kind ?? 'nutrition'];
+}
+
+function folderOf(scope: NutritionGoalImageScope): string {
+  return GOAL_IMAGE_FOLDERS[scope.kind ?? 'nutrition'];
 }
 
 /** The ownership predicate of the row, so a gym write can never touch a System goal or another gym's. */
@@ -58,7 +71,7 @@ async function sweepReplacedImage(
   keepUrl: string | null,
 ): Promise<void> {
   if (!staleUrl || staleUrl === keepUrl) return;
-  if (!isOwnedNutritionGoalImageUrl(staleUrl, scope.prefix)) return;
+  if (!isOwnedNutritionGoalImageUrl(staleUrl, scope.prefix, folderOf(scope))) return;
   const staleKey = storageKeyFromObjectUrl(staleUrl);
   if (!staleKey) return;
   const keepKey = keepUrl ? storageKeyFromObjectUrl(keepUrl) : null;
@@ -84,14 +97,14 @@ export async function storeNutritionGoalImage(args: {
   modifiedBy: string | null;
 }): Promise<{ image_url: string; image_thumbnail_url: string } | MemberImageRefusal> {
   const { scope, goal, images, modifiedBy } = args;
-  const key = buildNutritionGoalImageKey(scope.prefix, goal.id, goal.name);
-  const thumbnailKey = buildNutritionGoalImageThumbnailKey(scope.prefix, goal.id, goal.name);
+  const key = buildNutritionGoalImageKey(scope.prefix, goal.id, goal.name, folderOf(scope));
+  const thumbnailKey = buildNutritionGoalImageThumbnailKey(scope.prefix, goal.id, goal.name, folderOf(scope));
   const url = buildStorageObjectUrl(key) as string;
   const thumbnailUrl = buildStorageObjectUrl(thumbnailKey) as string;
 
   let failingKey = key;
   try {
-    await ensureStorageFolders(nutritionGoalImageFolderKeys(scope.prefix));
+    await ensureStorageFolders(nutritionGoalImageFolderKeys(scope.prefix, folderOf(scope)));
     await uploadStorageObject(key, MEMBER_IMAGE_STORED_MIME, images.image);
     failingKey = thumbnailKey;
     await uploadStorageObject(thumbnailKey, MEMBER_IMAGE_STORED_MIME, images.thumbnail);
@@ -108,7 +121,7 @@ export async function storeNutritionGoalImage(args: {
 
   const owner = ownerWhere(scope);
   await db.query(
-    `UPDATE nutrition_goals SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+    `UPDATE ${tableOf(scope)} SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND ${owner.sql}`,
     [url, thumbnailUrl, modifiedBy, goal.id, ...owner.params],
   );
@@ -126,7 +139,7 @@ export async function clearNutritionGoalImage(args: {
   const { scope, goal, modifiedBy } = args;
   const owner = ownerWhere(scope);
   await db.query(
-    `UPDATE nutrition_goals SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
+    `UPDATE ${tableOf(scope)} SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND ${owner.sql}`,
     [modifiedBy, goal.id, ...owner.params],
   );
@@ -147,14 +160,17 @@ export async function migrateNutritionGoalImageOnRename(
 ): Promise<{ image_url: string; image_thumbnail_url: string | null } | null> {
   const prefix = scope.prefix;
   if (!goal.image_url || !prefix || !isStorageConfigured()) return null;
-  if (!isOwnedNutritionGoalImageUrl(goal.image_url, prefix)) return null;
+  if (!isOwnedNutritionGoalImageUrl(goal.image_url, prefix, folderOf(scope))) return null;
 
   const oldKey = storageKeyFromObjectUrl(goal.image_url);
-  const newKey = buildNutritionGoalImageKey(prefix, goal.id, goal.name);
-  const oldThumbKey = goal.image_thumbnail_url && isOwnedNutritionGoalImageUrl(goal.image_thumbnail_url, prefix)
+  // #1722: a pre-WebP (PNG) master keeps its key — moving it to a `.webp` name
+  // would claim a format it is not; replacing the image is what moves it.
+  if (!oldKey || !oldKey.endsWith('.webp')) return null;
+  const newKey = buildNutritionGoalImageKey(prefix, goal.id, goal.name, folderOf(scope));
+  const oldThumbKey = goal.image_thumbnail_url && isOwnedNutritionGoalImageUrl(goal.image_thumbnail_url, prefix, folderOf(scope))
     ? storageKeyFromObjectUrl(goal.image_thumbnail_url)
     : null;
-  const newThumbKey = oldThumbKey ? buildNutritionGoalImageThumbnailKey(prefix, goal.id, goal.name) : null;
+  const newThumbKey = oldThumbKey ? buildNutritionGoalImageThumbnailKey(prefix, goal.id, goal.name, folderOf(scope)) : null;
 
   const moves: Array<[string, string]> = [];
   if (oldKey && oldKey !== newKey) moves.push([oldKey, newKey]);
@@ -184,7 +200,7 @@ export async function migrateNutritionGoalImageOnRename(
     : goal.image_thumbnail_url;
   const owner = ownerWhere(scope);
   await db.query(
-    `UPDATE nutrition_goals SET image_url = ?, image_thumbnail_url = ? WHERE id = ? AND ${owner.sql}`,
+    `UPDATE ${tableOf(scope)} SET image_url = ?, image_thumbnail_url = ? WHERE id = ? AND ${owner.sql}`,
     [newUrl, newThumbUrl, goal.id, ...owner.params],
   );
   await sweepReplacedImage(scope, goal.id, goal.image_url, newUrl);

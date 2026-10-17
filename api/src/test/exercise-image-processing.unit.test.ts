@@ -1,10 +1,12 @@
-// #1420 stage 2 — what the server does to one exercise picture: contain it whole
-// in a 1080 square with transparent padding, never crop or stretch it, and make
-// the thumbnail from the processed master.
+// #1420 stage 2 — what the server does to one picture: contain it whole in a
+// 1080 square with transparent padding (the default, a Nutrition food's), or —
+// since the #1527 follow-up, for an exercise — centre-crop it to the square; never
+// stretch it, and make the thumbnail from the processed master.
 
 import sharp from 'sharp';
 import { describe, expect, it } from 'vitest';
 import { processExerciseImage } from '../domain/exerciseImageProcessing';
+import { containedPictureBox } from '../domain/exerciseImageRecrop';
 import { exerciseMediaUploadRateLimitMax } from '../domain/exerciseGenderMedia';
 
 const solid = (width: number, height: number, format: 'png' | 'jpeg' | 'webp' | 'gif' = 'png') =>
@@ -60,6 +62,14 @@ describe('processExerciseImage', () => {
     expect(column[128]).toBe(255);
   });
 
+  it('cover: crops a landscape picture to the square, no transparent band (#1527)', async () => {
+    const out = await processExerciseImage(await solid(2000, 1000), { fit: 'cover' });
+    if ('rejection' in out) throw new Error(out.rejection);
+    expect(await sharp(out.image).metadata()).toMatchObject({ width: 1080, height: 1080 });
+    expect((await alphaColumn(out.image, 540)).every((a) => a === 255)).toBe(true);
+    expect((await alphaColumn(out.thumbnail, 128)).every((a) => a === 255)).toBe(true);
+  });
+
   it('refuses a format outside the allow-list and bytes that are not a picture', async () => {
     const tiff = await sharp({ create: { width: 10, height: 10, channels: 3, background: '#000' } }).tiff().toBuffer();
     expect(await processExerciseImage(tiff)).toEqual({ rejection: 'unsupported_format' });
@@ -73,5 +83,28 @@ describe('exerciseMediaUploadRateLimitMax', () => {
     expect(exerciseMediaUploadRateLimitMax({ EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_MAX: '5' } as any)).toBe(5);
     expect(exerciseMediaUploadRateLimitMax({ EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_MAX: '0' } as any)).toBe(30);
     expect(exerciseMediaUploadRateLimitMax({ EXERCISE_MEDIA_UPLOAD_RATE_LIMIT_MAX: '2.5' } as any)).toBe(30);
+  });
+});
+
+describe('containedPictureBox (#1527 re-crop)', () => {
+  const raw = async (buffer: Buffer) => sharp(buffer).ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+
+  it('finds the picture inside a contained landscape master', async () => {
+    const out = await processExerciseImage(await solid(2000, 1000));
+    if ('rejection' in out) throw new Error(out.rejection);
+    const { data, info } = await raw(out.image);
+    const box = containedPictureBox(data, info.width, info.height);
+    expect(box?.left).toBe(0);
+    expect(box?.width).toBe(1080);
+    expect(box!.height).toBeGreaterThan(530);
+    expect(box!.height).toBeLessThan(550);
+  });
+
+  it('returns null for a square with no bands and for a cutout touching no edge pair', async () => {
+    const full = await raw(await solid(100, 100));
+    expect(containedPictureBox(full.data, full.info.width, full.info.height)).toBeNull();
+    const cutout = await raw(await sharp({ create: { width: 100, height: 100, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([{ input: await solid(40, 60), left: 30, top: 20 }]).png().toBuffer());
+    expect(containedPictureBox(cutout.data, cutout.info.width, cutout.info.height)).toBeNull();
   });
 });

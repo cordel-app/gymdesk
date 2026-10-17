@@ -22,6 +22,7 @@ import { WAITLIST_MODES } from '../domain/waitlistMode';
 import {
   ACTIVITY_STORAGE_NOT_INITIALIZED,
   activityImageBodyParser,
+  activityImageUploadRateLimit,
   clearActivityImage,
   gymStorageFolderPrefix,
   isActivityImageRefusal,
@@ -503,15 +504,15 @@ async function readActivityRow(gymId: string, id: number | string) {
   return rows[0];
 }
 
-activityTypesRouter.post('/:id/image', requireRole('admin'), activityImageBodyParser, async (req, res, next) => {
+activityTypesRouter.post('/:id/image', requireRole('admin'), activityImageUploadRateLimit, activityImageBodyParser, async (req, res, next) => {
   try {
-    const parsed = parseActivityImageRequest(req);
+    const parsed = await parseActivityImageRequest(req);
     if (isActivityImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
     const context = await loadActivityForImage(req, res, true);
     if (!context) return;
     const { gymId, activity } = context;
     const stored = await storeActivityImage({
-      gymId, folderPrefix: context.folderPrefix as string, activity, body: parsed,
+      gymId, folderPrefix: context.folderPrefix as string, activity, images: parsed,
       modifiedBy: resolveRequestActor(getTenantContext(req)),
     });
     if (isActivityImageRefusal(stored)) return res.status(stored.status).json(stored.body);

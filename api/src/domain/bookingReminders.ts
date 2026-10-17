@@ -73,6 +73,29 @@ export const BOOKING_REMINDER_LEAD_MINUTES = 120;
  */
 export const BOOKING_REMINDER_MAX_PER_RUN = 500;
 
+/**
+ * #1698: a reminder is shown only while its session is still upcoming or in
+ * progress. This is the one place that decides it; the member's alert reads
+ * (list, unread count, so the dashboard and the Alerts page) append it to their
+ * `WHERE`, with `member_notifications` aliased `mn`.
+ *
+ * The row is filtered on read rather than deleted or flagged, so the dedupe
+ * above (`NOT EXISTS` on the row) is untouched and a late pass never re-raises
+ * a hidden reminder. It reads the occurrence's **current** `ends_at`/`status`,
+ * so a rescheduled session follows its new time, and a cancelled or deleted one
+ * drops its reminder (it has its own `event_cancelled` alert). `ends_at` is a
+ * UTC `DATETIME` compared against `UTC_TIMESTAMP()` in SQL, like `starts_at`.
+ * Every other alert type passes through untouched.
+ */
+export const ACTIVE_REMINDER_ONLY_SQL = `
+  (mn.type <> '${BOOKING_REMINDER_TYPE}' OR EXISTS (
+     SELECT 1 FROM calendar_events rce
+      WHERE rce.id = mn.entity_id
+        AND rce.gym_id = mn.gym_id
+        AND rce.deleted_at IS NULL
+        AND rce.status = 'scheduled'
+        AND rce.ends_at > UTC_TIMESTAMP()))`;
+
 /** One row of the candidate query. */
 export interface ReminderCandidate {
   gym_id: string;
@@ -80,6 +103,10 @@ export interface ReminderCandidate {
   calendar_event_id: number;
   title: string;
   starts_at: string | Date;
+  /** #1665: the occurrence's own place and trainer; null when unassigned. */
+  center_name?: string | null;
+  space_name?: string | null;
+  trainer_name?: string | null;
 }
 
 /**
@@ -109,9 +136,13 @@ export interface ReminderCandidate {
  */
 export function reminderCandidatesSql(limit: number = BOOKING_REMINDER_MAX_PER_RUN): string {
   return `
-    SELECT ce.gym_id, ceb.member_id, ce.id AS calendar_event_id, ce.title, ce.starts_at
+    SELECT ce.gym_id, ceb.member_id, ce.id AS calendar_event_id, ce.title, ce.starts_at,
+           c.name AS center_name, sp.name AS space_name, tm.name AS trainer_name
       FROM calendar_event_bookings ceb
       JOIN calendar_events ce ON ce.id = ceb.calendar_event_id
+      LEFT JOIN centers c ON c.id = ce.center_id AND c.gym_id = ce.gym_id
+      LEFT JOIN spaces sp ON sp.id = ce.space_id AND sp.gym_id = ce.gym_id
+      LEFT JOIN gym_memberships tm ON tm.id = ce.trainer_membership_id AND tm.gym_id = ce.gym_id
       JOIN members m ON m.id = ceb.member_id AND m.gym_id = ceb.gym_id
      WHERE ceb.status = 'booked'
        AND ce.status = 'scheduled'
@@ -171,6 +202,10 @@ export function reminderNotificationRow(candidate: ReminderCandidate): Notificat
       starts_at: candidate.starts_at instanceof Date
         ? candidate.starts_at.toISOString()
         : candidate.starts_at,
+      // #1665: only what is known, so the Home never shows a blank or invented detail.
+      ...(candidate.center_name ? { center_name: candidate.center_name } : {}),
+      ...(candidate.space_name ? { space_name: candidate.space_name } : {}),
+      ...(candidate.trainer_name ? { trainer_name: candidate.trainer_name } : {}),
     },
   };
 }

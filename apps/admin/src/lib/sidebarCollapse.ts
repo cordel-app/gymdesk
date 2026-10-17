@@ -74,6 +74,7 @@ export function writeSidebarCollapsed(collapsed: boolean): void {
 /** Does this item, or anything nested under it, address the current path? */
 function itemContainsPath(item: NavItem, pathname: string): boolean {
   if (item.href === pathname) return true;
+  if (item.alsoActiveFor?.includes(pathname)) return true;
   return (item.children ?? []).some((child) => itemContainsPath(child, pathname));
 }
 

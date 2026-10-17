@@ -1,5 +1,6 @@
 'use client';
 
+import { ExercisePrimaryMuscles } from '@/components/exercises/ExercisePrimaryMuscles';
 import { ExerciseListThumbnails } from '@/components/exercises/ExerciseListThumbnails';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
@@ -63,6 +64,10 @@ interface Exercise {
   video_male_url: string | null;
   video_female_url: string | null;
   image_male_thumbnail_url: string | null;
+  effective_image_url?: string | null;
+  effective_image_thumbnail_url?: string | null;
+  effective_image_male_thumbnail_url?: string | null;
+  effective_image_female_thumbnail_url?: string | null;
   image_female_thumbnail_url: string | null;
   video_male_preview_url: string | null;
   video_male_preview_thumbnail_url: string | null;
@@ -391,16 +396,7 @@ export default function CordelExercisesPage() {
       header: t('col_primary_muscles'),
       width: 200,
       mobile: 'secondary',
-      render: (row) => {
-        const keys = (row.muscles ?? []).filter((m) => m.role === 'principal').map((m) => m.key);
-        return keys.length === 0
-          ? <span style={{ color: 'var(--text-muted, #9ca3af)' }}>—</span>
-          : (
-            <span style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {keys.map((k) => <span key={k} style={listNameBadgeStyle}>{muscleLabel(k)}</span>)}
-            </span>
-          );
-      },
+      render: (row) => <ExercisePrimaryMuscles muscles={row.muscles} muscleLabel={muscleLabel} />,
     },
     { header: t('col_created_at'), width: 120, mobile: 'secondary', render: (row) => <span style={{ color: '#888' }}>{formatExerciseDate(row.created_at)}</span> },
     {
@@ -504,7 +500,6 @@ export default function CordelExercisesPage() {
                   { label: t('edit'), onClick: () => openInlineEdit(row) },
                   { label: t('delete'), danger: true, onClick: () => setDeleting(row) },
                 ]}
-                onViewDetails={() => setDetailFor(row)}
                 attributes={renderReadOnly(row)}
               />
             ))}

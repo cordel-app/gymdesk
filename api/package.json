@@ -12,6 +12,7 @@
     "billing:reset-dev": "tsx src/scripts/reset-dev-billing.ts",
     "exercises:import-free-db": "tsx src/scripts/import-free-exercise-db.ts",
     "exercises:purge-legacy-media": "tsx src/scripts/purge-legacy-exercise-media.ts",
+    "exercises:recrop-images": "tsx src/scripts/recrop-exercise-images.ts",
     "exercises:audit-categories": "tsx src/scripts/audit-exercise-categories.ts",
     "exercises:backfill-result-types": "tsx src/scripts/backfill-exercise-result-types.ts",
     "exercises:backfill-descriptions": "tsx src/scripts/backfill-exercise-descriptions.ts",
