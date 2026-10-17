@@ -20,6 +20,7 @@ import {
   NutritionLibraryItemRow,
   emptyNutritionItemForm,
   toNutritionItemFormValues,
+  trimmedDescriptionTranslations,
 } from '@/components/nutritionLibrary/nutritionItemProfile';
 import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/components/ui';
 // #947: the library is tabbed — Foods (this page's own body) and Nutrition Goals.
@@ -29,6 +30,8 @@ import { btnStyle, btnSmall, cardSurfaceStyle, readOnlyStyle } from '@/component
 // in. #948 moved **Personal Goals** out of the strip to its own section
 // (`/{locale}/personal-goals`), which renders that very same component — a
 // Personal Goal does not depend on Nutrition and is a different entity (§8).
+import { DescriptionTranslationsField } from '@/components/nutritionLibrary/DescriptionTranslationsField';
+import { localeLabel as localeLabelFor } from '@/lib/localeLabels';
 import { FoodThumbnail } from '@/components/nutritionLibrary/FoodThumbnail';
 import { LibraryTabs } from '@/components/goalLibrary/LibraryTabs';
 import { GoalLibrarySection } from '@/components/goalLibrary/GoalLibrarySection';
@@ -75,6 +78,9 @@ export default function NutritionLibraryPage() {
   const [total, setTotal] = useState(0);
   const [allCategories, setAllCategories] = useState<Category[]>([]);
   const [allQualities, setAllQualities] = useState<NutritionalQuality[]>([]);
+  // The languages a description can be translated into — the API's list (#1720).
+  const [translatableLocales, setTranslatableLocales] = useState<string[]>([]);
+  const localeLabel = (loc: string) => localeLabelFor(loc, (key) => t(key as any));
   const [loading, setLoading] = useState(true);
 
   const [searchInput, setSearchInput] = useState('');
@@ -131,11 +137,15 @@ export default function NutritionLibraryPage() {
       for (const q of qualityFilter) params.append('quality_id', q);
       if (showDeleted) params.set('status', 'deleted');
       params.set('limit', 'all');
-      const [data, categoriesData, qualitiesData] = await Promise.all([
+      const [data, categoriesData, qualitiesData, localesData] = await Promise.all([
         apiFetch<ListResponse>(`/nutrition-library?${params.toString()}`),
         allCategories.length ? Promise.resolve(allCategories) : apiFetch<Category[]>('/nutrition-library/categories'),
         allQualities.length ? Promise.resolve(allQualities) : apiFetch<NutritionalQuality[]>('/nutrition-library/nutritional-qualities'),
+        translatableLocales.length
+          ? Promise.resolve({ translatable: translatableLocales })
+          : apiFetch<{ translatable: string[] }>('/nutrition-library/locales'),
       ]);
+      setTranslatableLocales(localesData.translatable);
       setItems(data.items);
       setTotal(data.total);
       setAllCategories(categoriesData);
@@ -191,6 +201,7 @@ export default function NutritionLibraryPage() {
         body: JSON.stringify({
           name: newForm.name.trim(),
           description: newForm.description.trim(),
+          description_translations: trimmedDescriptionTranslations(newForm.descriptionTranslations),
           category_ids: newForm.categoryIds,
           quality_ids: newForm.qualityIds,
           image_url: newForm.imageUrl,
@@ -229,6 +240,7 @@ export default function NutritionLibraryPage() {
         body: JSON.stringify({
           name: editForm.name.trim(),
           description: editForm.description.trim(),
+          description_translations: trimmedDescriptionTranslations(editForm.descriptionTranslations),
           category_ids: editForm.categoryIds,
           quality_ids: editForm.qualityIds,
           image_url: editForm.imageUrl,
@@ -350,6 +362,17 @@ export default function NutritionLibraryPage() {
             style={{ ...inlineInputStyle, resize: 'vertical' }}
           />
         </div>
+        <DescriptionTranslationsField
+          locales={translatableLocales}
+          values={form.descriptionTranslations}
+          onChange={(next) => setForm({ ...form, descriptionTranslations: next })}
+          localeLabel={localeLabel}
+          label={t('nutrition_library.label_description_translations')}
+          hint={t('nutrition_library.description_translations_hint')}
+          placeholderFor={(language) => t('nutrition_library.description_in', { language })}
+          labelStyle={inlineLabelStyle}
+          inputStyle={inlineInputStyle}
+        />
         <div style={{ marginBottom: 12 }}>
           <label style={inlineLabelStyle}>{t('nutrition_library.label_categories')} *</label>
           {renderCategoryCheckboxes(form.categoryIds, (ids) => setForm({ ...form, categoryIds: ids }))}

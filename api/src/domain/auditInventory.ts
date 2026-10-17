@@ -58,6 +58,7 @@ export const AUDIT_INVENTORY: Readonly<Record<string, readonly [AuditClass, stri
   "membership_plan_session": ["parent", "membership_plans"],
   "nutrition_library_categories": ["lookup", "catalogue of Food Types"],
   "nutrition_library_item_categories": ["parent", "nutrition_library_items"],
+  "nutrition_library_item_description_translations": ["parent", "nutrition_library_items"],
   "nutrition_library_item_qualities": ["parent", "nutrition_library_items"],
   "nutrition_library_item_translations": ["parent", "nutrition_library_items"],
   "nutrition_plan_template_days": ["parent", "nutrition_plan_templates"],

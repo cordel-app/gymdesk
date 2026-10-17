@@ -9,12 +9,16 @@ import {
   buildListWhere, pagingClause,
   itemDetailColumnsSql, normalizeDescription,
 } from '../domain/nutritionLibrary';
+import {
+  loadDescriptionTranslationsMap, localizedDescriptionSql,
+  parseDescriptionTranslations, replaceDescriptionTranslations,
+} from '../domain/nutritionDescriptionTranslations';
 import { resolveRequestActor } from '../domain/auditActor';
 import {
   buildGymNutritionImageKey,
   gymNutritionFolderKeys,
 } from '../domain/baseNutritionImages';
-import { getRequestLocale } from '../infra/locale';
+import { getRequestLocale, TRANSLATABLE_LOCALES } from '../infra/locale';
 import { buildStorageObjectUrl } from '../infra/storage';
 import {
   isNutritionImageRefusal,
@@ -60,6 +64,13 @@ nutritionLibraryRouter.get('/nutritional-qualities', async (_req, res, next) => 
   } catch (err) { next(err); }
 });
 
+/* ── Languages a description can be translated into (#1720) ──────────────── */
+// Same contract as `GET /platform/nutrition-library/locales`; registered before `/:id`.
+
+nutritionLibraryRouter.get('/locales', (_req, res) => {
+  res.json({ translatable: TRANSLATABLE_LOCALES });
+});
+
 /* ── List ─────────────────────────────────────────────────────────────────── */
 // System items (gym_id IS NULL) are always visible and read-only. Gym-owned
 // items (gym_id = this gym) are visible and, with write access, editable.
@@ -93,7 +104,7 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
     // and what uniqueness is enforced on. `display_name` is the same item in the
     // caller's locale, and is what every UI renders (#643).
     const { rows } = await db.query<{ id: number; gym_id: string | null; name: string; display_name: string; status: string; image_url: string | null; created_at: string; modified_at: string | null }>(
-      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', locale)} AS display_name
+      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', locale)} AS display_name, ${localizedDescriptionSql('nli', locale)} AS display_description
        FROM nutrition_library_items nli
        WHERE ${where}
        ORDER BY display_name ASC
@@ -102,8 +113,8 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
     );
 
     const ids = rows.map((r) => r.id);
-    const [categoriesMap, qualitiesMap, translationsMap] = await Promise.all([
-      loadCategoriesMap(ids), loadQualitiesMap(ids), loadTranslationsMap(ids),
+    const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
+      loadCategoriesMap(ids), loadQualitiesMap(ids), loadTranslationsMap(ids), loadDescriptionTranslationsMap(ids),
     ]);
     res.json({
       items: rows.map((r) => ({
@@ -111,6 +122,7 @@ nutritionLibraryRouter.get('/', async (req, res, next) => {
         categories: categoriesMap[r.id] ?? [],
         qualities: qualitiesMap[r.id] ?? [],
         translations: translationsMap[r.id] ?? {},
+        description_translations: descMap[r.id] ?? {},
       })),
       total,
       limit,
@@ -134,6 +146,8 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
   }
   const description = normalizeDescription(req.body.description);
   if ('error' in description) return res.status(400).json({ error: description.error });
+  const descTr = parseDescriptionTranslations(req.body);
+  if (descTr.error) return res.status(400).json({ error: descTr.error });
   const actor = resolveRequestActor(ctx);
   try {
     const { rows: existing } = await db.query(
@@ -153,16 +167,25 @@ nutritionLibraryRouter.post('/', requireModuleWrite('NUTRITION'), async (req, re
     if (Array.isArray(quality_ids) && quality_ids.length > 0) {
       await replaceQualities(insertId, quality_ids);
     }
+    if (descTr.value !== undefined) {
+      await db.transaction((conn) => replaceDescriptionTranslations(conn, insertId, descTr.value!));
+    }
 
     const { rows } = await db.query(
-      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name
+      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req))} AS display_description
        FROM nutrition_library_items nli WHERE nli.id = ?`,
       [insertId],
     );
-    const [categoriesMap, qualitiesMap] = await Promise.all([loadCategoriesMap([insertId]), loadQualitiesMap([insertId])]);
+    const [categoriesMap, qualitiesMap, descMap] = await Promise.all([
+      loadCategoriesMap([insertId]), loadQualitiesMap([insertId]), loadDescriptionTranslationsMap([insertId]),
+    ]);
     // Gym-owned items carry a single entered name shown in every locale (#643),
-    // so a freshly created one never has translation rows.
-    const item = { ...rows[0], categories: categoriesMap[insertId] ?? [], qualities: qualitiesMap[insertId] ?? [], translations: {} };
+    // so a freshly created one never has name translation rows; descriptions
+    // are translated per locale (#1720).
+    const item = {
+      ...rows[0], categories: categoriesMap[insertId] ?? [], qualities: qualitiesMap[insertId] ?? [], translations: {},
+      description_translations: descMap[insertId] ?? {},
+    };
     recordAudit(req, { action: 'create', entityType: 'nutrition_library_item', entityId: insertId, next: item });
     res.status(201).json(item);
   } catch (err) { next(err); }
@@ -247,18 +270,19 @@ nutritionLibraryRouter.post(
       );
 
       const { rows } = await db.query(
-        `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name
+        `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req))} AS display_description
          FROM nutrition_library_items nli WHERE nli.id = ?`,
         [food.id],
       );
-      const [categoriesMap, qualitiesMap, translationsMap] = await Promise.all([
-        loadCategoriesMap([food.id]), loadQualitiesMap([food.id]), loadTranslationsMap([food.id]),
+      const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
+        loadCategoriesMap([food.id]), loadQualitiesMap([food.id]), loadTranslationsMap([food.id]), loadDescriptionTranslationsMap([food.id]),
       ]);
       const item = {
         ...rows[0],
         categories: categoriesMap[food.id] ?? [],
         qualities: qualitiesMap[food.id] ?? [],
         translations: translationsMap[food.id] ?? {},
+        description_translations: descMap[food.id] ?? {},
       };
       recordAudit(req, {
         action: 'update',
@@ -290,6 +314,8 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
   }
   const description = normalizeDescription(req.body.description);
   if ('error' in description) return res.status(400).json({ error: description.error });
+  const descTr = parseDescriptionTranslations(req.body);
+  if (descTr.error) return res.status(400).json({ error: descTr.error });
   const actor = resolveRequestActor(ctx);
   try {
     const { rows: existing } = await db.query(
@@ -327,20 +353,24 @@ nutritionLibraryRouter.put('/:id', requireModuleWrite('NUTRITION'), async (req, 
     if (Array.isArray(quality_ids)) {
       await replaceQualities(Number(id), quality_ids);
     }
+    if (descTr.value !== undefined) {
+      await db.transaction((conn) => replaceDescriptionTranslations(conn, Number(id), descTr.value!));
+    }
 
     const { rows } = await db.query(
-      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name
+      `SELECT ${ITEM_COLUMNS}, ${localizedNameSql('nli', getRequestLocale(req))} AS display_name, ${localizedDescriptionSql('nli', getRequestLocale(req))} AS display_description
        FROM nutrition_library_items nli WHERE nli.id = ?`,
       [id],
     );
-    const [categoriesMap, qualitiesMap, translationsMap] = await Promise.all([
-      loadCategoriesMap([Number(id)]), loadQualitiesMap([Number(id)]), loadTranslationsMap([Number(id)]),
+    const [categoriesMap, qualitiesMap, translationsMap, descMap] = await Promise.all([
+      loadCategoriesMap([Number(id)]), loadQualitiesMap([Number(id)]), loadTranslationsMap([Number(id)]), loadDescriptionTranslationsMap([Number(id)]),
     ]);
     const item = {
       ...rows[0],
       categories: categoriesMap[Number(id)] ?? [],
       qualities: qualitiesMap[Number(id)] ?? [],
       translations: translationsMap[Number(id)] ?? {},
+        description_translations: descMap[Number(id)] ?? {},
     };
     recordAudit(req, { action: 'update', entityType: 'nutrition_library_item', entityId: id, previous: existing[0], next: item });
     res.json(item);
