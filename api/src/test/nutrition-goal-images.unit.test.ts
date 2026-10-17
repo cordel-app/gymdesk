@@ -13,11 +13,14 @@ import {
 } from '../domain/nutritionGoalImages';
 import {
   SYSTEM_NUTRITION_GOAL_TEXTS,
+  SYSTEM_PERSONAL_GOAL_TRANSLATIONS,
+  goalTranslationsExpr,
+  localizedGoalExprs,
   validateGoalTranslations,
   parseGoalTranslations,
   withGoalTranslations,
 } from '../domain/nutritionGoalTranslations';
-import { SYSTEM_NUTRITION_GOALS, buildGoalListWhere, goalKindHasWebpImage, goalKindIsTranslated } from '../domain/goalLibrary';
+import { SYSTEM_NUTRITION_GOALS, SYSTEM_PERSONAL_GOALS, buildGoalListWhere, goalKindHasWebpImage, goalKindIsTranslated } from '../domain/goalLibrary';
 
 const migration = require(
   join(__dirname, '..', 'infra', 'migrations', '282_nutrition_goal_images_translations.js'),
@@ -69,11 +72,15 @@ describe('isOwnedNutritionGoalImageUrl', () => {
 });
 
 describe('kind declarations', () => {
+<<<<<<< HEAD
   it('give the WebP image to both kinds and the translations to Nutrition Goals only', () => {
+=======
+  it('give the WebP image to Nutrition Goals only and the translations to both kinds', () => {
+>>>>>>> origin/main
     expect(goalKindHasWebpImage('nutrition')).toBe(true);
     expect(goalKindHasWebpImage('personal')).toBe(true);
     expect(goalKindIsTranslated('nutrition')).toBe(true);
-    expect(goalKindIsTranslated('personal')).toBe(false);
+    expect(goalKindIsTranslated('personal')).toBe(true);
   });
 });
 
@@ -108,6 +115,25 @@ describe('translated search', () => {
     expect(buildGoalListWhere('agua', ['1=1'], [], { searchTranslations: true }).params).toHaveLength(3);
     expect(buildGoalListWhere('agua', ['1=1'], [], { searchTranslations: true }).where).toContain('nutrition_goal_translations');
     expect(buildGoalListWhere('agua', ['1=1']).params).toHaveLength(2);
+  });
+});
+
+describe('Personal Goal translations (#1719)', () => {
+  const personalMigration = require(join(__dirname, '..', 'infra', 'migrations', '292_personal_goal_translations.js'));
+
+  it('read and write personal_goal_translations, not the nutrition table', () => {
+    expect(goalTranslationsExpr('g', 'translations', 'personal')).toContain('personal_goal_translations');
+    expect(goalTranslationsExpr('g', 'translations', 'personal')).toContain('personal_goal_id');
+    expect(localizedGoalExprs('g', 'es', 'personal')).toContain('personal_goal_translations');
+    expect(localizedGoalExprs('g', 'es')).toContain('nutrition_goal_translations');
+    const where = buildGoalListWhere('peso', ['1=1'], [], { searchTranslations: true, translationKind: 'personal' }).where;
+    expect(where).toContain('personal_goal_translations');
+    expect(where).not.toContain('nutrition_goal_translations');
+  });
+
+  it("seeds the seven System goals in step with the migration", () => {
+    expect(personalMigration.SEEDS).toEqual(SYSTEM_PERSONAL_GOAL_TRANSLATIONS);
+    expect(Object.keys(SYSTEM_PERSONAL_GOAL_TRANSLATIONS).sort()).toEqual(SYSTEM_PERSONAL_GOALS.map((g) => g.slug).sort());
   });
 });
 

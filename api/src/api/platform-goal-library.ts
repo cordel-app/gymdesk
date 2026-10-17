@@ -21,6 +21,8 @@ import {
   parseGoalTranslations,
   replaceGoalTranslations,
   withGoalTranslations,
+  copyGoalTranslations,
+  type TranslatedGoalKind,
 } from '../domain/nutritionGoalTranslations';
 import {
   clearNutritionGoalImage,
@@ -63,7 +65,11 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
   const hasWebpImage = goalKindHasWebpImage(kind);
   const translated = goalKindIsTranslated(kind);
 
+<<<<<<< HEAD
   const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale)}, ${goalTranslationsExpr('g')},` : ''}
+=======
+  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasImage ? ' g.image_url,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale, kind as TranslatedGoalKind)}, ${goalTranslationsExpr('g', 'translations', kind as TranslatedGoalKind)},` : ''}
+>>>>>>> origin/main
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g')}`;
 
@@ -122,7 +128,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       req.query.search,
       ['g.gym_id IS NULL', status ? 'g.status = ?' : "g.status != 'deleted'"],
       status ? [status] : [],
-      { searchTranslations: translated },
+      { searchTranslations: translated, translationKind: kind as TranslatedGoalKind },
     );
     const limit = clampLimit(req.query.limit);
     const offset = clampOffset(req.query.offset);
@@ -187,7 +193,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
           ],
         );
         // #1623 — the translated name and description commit with the goal.
-        if (goalTranslations.translations) await replaceGoalTranslations(tx, goalId, goalTranslations.translations);
+        if (goalTranslations.translations) await replaceGoalTranslations(tx, goalId, goalTranslations.translations, kind as TranslatedGoalKind);
         return goalId as number;
       });
       const goal = await loadGoal(insertId, getRequestLocale(req));
@@ -252,7 +258,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
       params.push(id);
       await db.transaction(async (tx) => {
         await tx.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`, params);
-        if (goalTranslations.translations) await replaceGoalTranslations(tx, String(id), goalTranslations.translations);
+        if (goalTranslations.translations) await replaceGoalTranslations(tx, String(id), goalTranslations.translations, kind as TranslatedGoalKind);
       });
 
       // #1623: the image key carries the goal's name, so a rename moves it.
