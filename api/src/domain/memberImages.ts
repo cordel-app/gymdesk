@@ -7,7 +7,7 @@
 // authorization — this file owns *where an image goes*, *what is accepted* and
 // *what may be removed*, so all three are decided in one place and can be
 // unit-tested without a database or a bucket. Same split as
-// `personalGoalImages.ts` (#1035), `baseNutritionImages.ts` (#715) and
+// `nutritionGoalImages.ts` (#1035), `baseNutritionImages.ts` (#715) and
 // `exerciseImages.ts` (#719).
 //
 // One root only: a Member belongs to one gym, so unlike a Personal Goal there is

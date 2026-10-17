@@ -1,5 +1,4 @@
 import { Router } from 'express';
-import express from 'express';
 import { db } from '../infra/db';
 import { getTenantContext, requireFeatureWrite } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
@@ -9,7 +8,6 @@ import {
   GOAL_LIBRARY_TABLES,
   GoalLibraryKind,
   buildGoalListWhere,
-  goalKindHasImage,
   goalKindHasWebpImage,
   goalKindIsTranslated,
   goalKindIsGymConfigurable,
@@ -17,29 +15,13 @@ import {
   isMeasurableGoalKind,
   normalizeGoalName,
 } from '../domain/goalLibrary';
-// Where a Personal Goal's image goes and what counts as a valid one is decided
-// in one place, shared with the platform router (#1035 stage 2).
 import {
-  PERSONAL_GOAL_IMAGE_MAX_BYTES,
-  PERSONAL_GOAL_IMAGE_MIME,
-  PERSONAL_GOAL_IMAGE_REJECTION_MESSAGES,
-  buildGymPersonalGoalImageKey,
-  gymPersonalGoalImageFolderKeys,
-  isGymOwnedPersonalGoalImageUrl,
-  validatePersonalGoalImage,
-} from '../domain/personalGoalImages';
-import {
-  buildStorageObjectUrl,
   copyStorageObject,
-  deleteStorageObject,
   describeStorageError,
   ensureStorageFolders,
-  getMissingStorageConfigKeys,
-  getStorageDiagnostics,
   isStorageConfigured,
   StorageOperationError,
   storageKeyFromObjectUrl,
-  uploadStorageObject,
 } from '../infra/storage';
 import { logger } from '../lib/logger';
 import { BASE_LOCALE, SUPPORTED_LOCALES, TRANSLATABLE_LOCALES, getRequestLocale, SupportedLocale } from '../infra/locale';
@@ -50,6 +32,12 @@ import {
   replaceGoalTranslations,
   withGoalTranslations,
 } from '../domain/nutritionGoalTranslations';
+import {
+  GOAL_IMAGE_FOLDERS,
+  buildNutritionGoalImageKey,
+  buildNutritionGoalImageThumbnailKey,
+  nutritionGoalImageFolderKeys,
+} from '../domain/nutritionGoalImages';
 import {
   clearNutritionGoalImage,
   migrateNutritionGoalImageOnRename,
@@ -97,11 +85,6 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   // the global handler turns into a bare 500 (#966). `isMeasurableGoalKind()` is
   // the one place that decides it, asked here rather than branched on per route.
   const measurable = isMeasurableGoalKind(kind);
-  // #1035 stage 2: the same declaration-rather-than-branch rule for `image_url`.
-  // It also decides whether the two image routes are registered at all, so a
-  // Nutrition Goal's `/:id/image` is a 404 rather than a write to a column that
-  // does not exist.
-  const hasImage = goalKindHasImage(kind);
   // #1623: the WebP pair and the translated name/description, each one
   // declaration-rather-than-branch, like the two above.
   const hasWebpImage = goalKindHasWebpImage(kind);
@@ -124,7 +107,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
    * administered from Cordel — so their actor names are Cordel employees' and are
    * not published to every tenant. A gym's own rows carry theirs.
    */
-  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasImage ? ' g.image_url,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale)}, ${goalTranslationsExpr('g')},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
+  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale)}, ${goalTranslationsExpr('g')},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g', { maskPlatformActors: true })}`;
   /** The parameters `COLUMNS` binds before a query's own — the gym of `gym_status`, for a configurable kind. */
@@ -152,21 +135,6 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   async function loadGoal(id: unknown, gymId: string, locale: SupportedLocale = BASE_LOCALE) {
     const { rows } = await db.query(`SELECT ${columnsFor(locale)} FROM ${table} g WHERE g.id = ?`, [...columnParams(gymId), id]);
     return rows[0] ? shapeGoal(rows[0]) : undefined;
-  }
-
-  /**
-   * The gym's own R2 folder prefix, or null for a gym whose bucket was never
-   * initialized. An upload needs somewhere to put the object, so that case is
-   * a 409; removing an image needs no folder at all — the reference is the
-   * gym's to clear either way, and an object that cannot be identified as the
-   * gym's is not deleted anyway (`loadExerciseForMedia()`'s rule, #719).
-   */
-  async function gymStorageFolderPrefix(gymId: string): Promise<string | null> {
-    const { rows } = await db.query<{ storage_folder_prefix: string | null }>(
-      'SELECT storage_folder_prefix FROM gyms WHERE id = ? AND deleted_at IS NULL',
-      [gymId],
-    );
-    return rows[0]?.storage_folder_prefix ?? null;
   }
 
   /**
@@ -355,7 +323,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       // #1623: the image key carries the goal's name, so a rename moves it.
       if (hasWebpImage && name.value !== undefined && name.value !== existing[0].name && existing[0].image_url) {
         await migrateNutritionGoalImageOnRename(
-          { gymId, prefix: await memberGymStorageFolderPrefix(gymId) },
+          { gymId, prefix: await memberGymStorageFolderPrefix(gymId), kind },
           {
             id: existing[0].id, name: name.value,
             image_url: existing[0].image_url, image_thumbnail_url: existing[0].image_thumbnail_url ?? null,
@@ -373,226 +341,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   });
 
 
-  /* ── Image (#1035 stage 2 — a Personal Goal's own artwork) ──────────────── */
-  //
-  // Registered only for a kind that has the column, so there is no route here
-  // for a Nutrition Goal rather than one that writes nowhere (#974's rule, in
-  // the router instead of the form).
-  //
-  // The route takes neither the folder nor the key from the request: the prefix
-  // is the gym's own `storage_folder_prefix` column, the goal is looked up
-  // inside the tenant, and the key is built from the row's id and name. Nothing
-  // a client sends can reach another gym's folder or the platform's (#719 §18).
-  //
-  // Validation is the file's, not the request's: the `Content-Type` header and
-  // the file name are both the client's word. Nothing is uploaded and nothing is
-  // written until the bytes pass, which is how "an invalid upload does not
-  // replace or delete the existing image" holds.
-  if (hasImage) {
-    /**
-     * The gym-owned, editable goal this request is about, or the response that
-     * says why there isn't one.
-     *
-     * A **System** row (`gym_id IS NULL`) answers 403 exactly as `PUT /:id`
-     * does: it is administered from Cordel, and `/platform/personal-goals` is
-     * where its image is uploaded. Another gym's row is a 404, whatever the
-     * payload says.
-     */
-    async function loadGoalForImage(
-      req: any,
-      res: any,
-      options: { requireStoragePrefix: boolean },
-    ): Promise<{ gymId: string; folderPrefix: string | null; goal: { id: number; name: string; image_url: string | null } } | null> {
-      const { gymId } = getTenantContext(req);
-      const { rows } = await db.query<{ id: number; gym_id: string | null; name: string; status: string; image_url: string | null }>(
-        `SELECT id, gym_id, name, status, image_url FROM ${table} WHERE id = ?`,
-        [req.params.id],
-      );
-      const row = rows[0];
-      if (row && row.gym_id === null) {
-        res.status(403).json({ error: 'System goals are read-only' });
-        return null;
-      }
-      if (!row || row.gym_id !== gymId) {
-        res.status(404).json({ error: 'Goal not found' });
-        return null;
-      }
-      if (row.status === 'deleted') {
-        res.status(409).json({ error: 'Goal is deleted' });
-        return null;
-      }
-      const folderPrefix = await gymStorageFolderPrefix(gymId);
-      if (!folderPrefix && options.requireStoragePrefix) {
-        res.status(409).json({
-          error: 'Cloudflare storage has not been initialized for this gym, therefore images cannot be uploaded.',
-        });
-        return null;
-      }
-      return { gymId, folderPrefix, goal: { id: row.id, name: row.name, image_url: row.image_url } };
-    }
-
-    /**
-     * Best-effort removal of the object a goal has stopped pointing at, always
-     * *after* the row has moved: a failure here leaves an orphan to sweep rather
-     * than a goal pointing at nothing.
-     *
-     * `isGymOwnedPersonalGoalImageUrl()` is what keeps a System object
-     * (`cordel/goals/…`), another gym's object and an external URL out of this —
-     * a gym operation never deletes media it does not own (#719 §19).
-     *
-     * There is no "is anything else still pointing at this?" check because
-     * nothing copies a goal's image *reference*: the catalogue has no duplicate,
-     * clone or import path (unlike exercises, #719), and the key carries the
-     * row's own id, so two goals cannot share an object by construction.
-     */
-    async function sweepReplacedImage(
-      folderPrefix: string | null,
-      goalId: number,
-      staleUrl: string | null,
-      keepUrl: string | null,
-    ): Promise<void> {
-      if (!staleUrl || staleUrl === keepUrl) return;
-      if (!isGymOwnedPersonalGoalImageUrl(staleUrl, folderPrefix)) return;
-      const staleKey = storageKeyFromObjectUrl(staleUrl);
-      if (!staleKey) return;
-      const keepKey = keepUrl ? storageKeyFromObjectUrl(keepUrl) : null;
-      if (keepKey && staleKey === keepKey) return;
-      try {
-        await deleteStorageObject(staleKey);
-      } catch (err: any) {
-        const details = err instanceof StorageOperationError
-          ? err.details
-          : describeStorageError(err, { operation: 'deleteStorageObject', key: staleKey });
-        logger.warn({ err, details, goalId }, 'Replaced personal goal image left an orphaned object in Cloudflare R2');
-      }
-    }
-
-    router.post(
-      '/:id/image',
-      requireWrite,
-      // Raw bytes rather than JSON-with-base64: one file, so there is no pair to
-      // keep atomic (which is why an exercise image is JSON, #719 Q2), and this
-      // is the shape `POST /platform/nutrition-library/:id/image` already takes.
-      // `express.json()` only parses `application/json`, so no app-level parser
-      // has to move for this.
-      express.raw({
-        type: (req: any) => (req.headers['content-type'] ?? '').startsWith('image/'),
-        limit: PERSONAL_GOAL_IMAGE_MAX_BYTES + 64 * 1024,
-      }),
-      async (req, res, next) => {
-        try {
-          const mime = req.headers['content-type']?.split(';')[0]?.trim();
-          if (mime !== PERSONAL_GOAL_IMAGE_MIME) {
-            return res.status(415).json({ error: `Unsupported image type. Allowed: ${PERSONAL_GOAL_IMAGE_MIME}` });
-          }
-          // `req.body` is whatever a parser left there, and a request can make
-          // that a string or an array — both carry a `length` and numeric
-          // indices, so they would flow into the size and signature checks as if
-          // they were bytes (CodeQL `js/type-confusion-through-parameter-tampering`).
-          const raw: unknown = req.body;
-          if (typeof raw === 'string' || Array.isArray(raw) || !Buffer.isBuffer(raw)) {
-            return res.status(400).json({ error: 'Request body must be raw image bytes' });
-          }
-          const body: Buffer = raw;
-          if (body.length === 0) return res.status(400).json({ error: 'Request body is empty' });
-          if (body.length > PERSONAL_GOAL_IMAGE_MAX_BYTES) {
-            return res.status(413).json({ error: `Image exceeds ${PERSONAL_GOAL_IMAGE_MAX_BYTES / (1024 * 1024)} MB limit` });
-          }
-          const rejection = validatePersonalGoalImage(body);
-          if (rejection) {
-            return res.status(400).json({ error: PERSONAL_GOAL_IMAGE_REJECTION_MESSAGES[rejection], reason: rejection });
-          }
-
-          if (!isStorageConfigured()) {
-            const missingConfig = getMissingStorageConfigKeys();
-            return res.status(503).json({
-              error: `Cloudflare storage has not been configured for this deployment (missing: ${missingConfig.join(', ')})`,
-              missingConfig,
-            });
-          }
-
-          const context = await loadGoalForImage(req, res, { requireStoragePrefix: true });
-          if (!context) return;
-          const { gymId, goal } = context;
-          const folderPrefix = context.folderPrefix as string;
-
-          const key = buildGymPersonalGoalImageKey(folderPrefix, goal.id, goal.name);
-          const url = buildStorageObjectUrl(key);
-
-          try {
-            await ensureStorageFolders(gymPersonalGoalImageFolderKeys(folderPrefix));
-            await uploadStorageObject(key, PERSONAL_GOAL_IMAGE_MIME, body);
-          } catch (err: any) {
-            const details = err instanceof StorageOperationError
-              ? err.details
-              : describeStorageError(err, { operation: 'uploadStorageObject', key });
-            logger.error(
-              { err, details, diagnostics: getStorageDiagnostics(), gymId, goalId: goal.id },
-              'Cloudflare R2 personal goal image upload failed',
-            );
-            // The row still points at whatever it pointed at before, so the
-            // previous image stays visible — nothing was written.
-            return res.status(502).json({ error: `Failed to upload image: ${details.message}`, details });
-          }
-
-          const imageActor = resolveRequestActor(getTenantContext(req));
-          await db.query(
-            `UPDATE ${table}
-             SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
-             WHERE id = ? AND gym_id = ?`,
-            [url, imageActor, goal.id, gymId],
-          );
-
-          // The key is deterministic, so a replacement normally overwrites its
-          // own object and there is nothing to sweep. What this catches is a key
-          // that genuinely moved: the goal was renamed since its last upload, or
-          // its image predates this shape.
-          await sweepReplacedImage(folderPrefix, goal.id, goal.image_url, url);
-
-          const updated = await loadGoal(goal.id, gymId, getRequestLocale(req));
-          recordAudit(req, {
-            action: 'update', entityType, entityId: goal.id,
-            previous: { image_url: goal.image_url }, next: { image_url: url },
-          });
-          res.json(updated);
-        } catch (err) { next(err); }
-      },
-    );
-
-    /**
-     * Clears a gym goal's image. The reference goes and the gym's own object is
-     * deleted; a System object and an external URL are left alone. There is
-     * deliberately **no fallback** to the System goal's image afterwards — the
-     * goal simply has none (#719 §13's rule, which this feature inherits
-     * wholesale).
-     */
-    router.delete('/:id/image', requireWrite, async (req, res, next) => {
-      try {
-        const context = await loadGoalForImage(req, res, { requireStoragePrefix: false });
-        if (!context) return;
-        const { gymId, folderPrefix, goal } = context;
-
-        const imageActor = resolveRequestActor(getTenantContext(req));
-        await db.query(
-          `UPDATE ${table}
-           SET image_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
-           WHERE id = ? AND gym_id = ?`,
-          [imageActor, goal.id, gymId],
-        );
-
-        await sweepReplacedImage(folderPrefix, goal.id, goal.image_url, null);
-
-        const updated = await loadGoal(goal.id, gymId, getRequestLocale(req));
-        recordAudit(req, {
-          action: 'update', entityType, entityId: goal.id,
-          previous: { image_url: goal.image_url }, next: { image_url: null },
-        });
-        res.json(updated);
-      } catch (err) { next(err); }
-    });
-  }
-
-  /* ── Image (#1623 — a Nutrition Goal's own artwork, WebP master + thumbnail) ── */
+  /* ── Image (#1623, #1722 — a goal's own artwork, WebP master + thumbnail) ── */
   //
   // The Membership Plan's pipeline one entity over: the server makes both files
   // from the one original the client sends. The route takes neither the folder
@@ -631,7 +380,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         if (!context) return;
         const { gymId, goal } = context;
         const stored = await storeNutritionGoalImage({
-          scope: { gymId, prefix: context.prefix as string },
+          scope: { gymId, prefix: context.prefix as string, kind },
           goal, images: parsed,
           modifiedBy: resolveRequestActor(getTenantContext(req)),
         });
@@ -651,7 +400,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         if (!context) return;
         const { gymId, prefix, goal } = context;
         await clearNutritionGoalImage({
-          scope: { gymId, prefix }, goal,
+          scope: { gymId, prefix, kind }, goal,
           modifiedBy: resolveRequestActor(getTenantContext(req)),
         });
         recordAudit(req, {
@@ -698,7 +447,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
   async function loadVisibleGoal(req: any, res: any) {
     const { gymId } = getTenantContext(req);
     const { rows } = await db.query(
-      `SELECT id, gym_id, name, description, status${measurable ? ', target_value, target_unit, target_type' : ''}${hasImage ? ', image_url' : ''}
+      `SELECT id, gym_id, name, description, status${measurable ? ', target_value, target_unit, target_type' : ''}${hasWebpImage ? ', image_url, image_thumbnail_url' : ''}
        FROM ${table} WHERE id = ? AND (gym_id IS NULL OR gym_id = ?)`,
       [req.params.id, gymId],
     );
@@ -732,34 +481,44 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
     }
 
     /**
-     * Copies the source goal's image object into the gym's own key for the new
-     * goal — never a shared reference: the key carries the goal's id, so two
-     * goals cannot point at one object, and a System image under `cordel/goals/`
-     * is read and never written (#1041's rule for cloning a Theme's assets). A
-     * URL that is not an object of this bucket is carried over as the reference
-     * it is. Best-effort: a failed copy leaves the duplicate with no image and
-     * an error in the log, never a half-created goal.
+     * Copies the source goal's image objects (master and thumbnail) into the
+     * gym's own keys for the new goal — never a shared reference: the key
+     * carries the goal's id, so two goals cannot point at one object, and a
+     * System image under `cordel/goals/` is read and never written (#1041's rule
+     * for cloning a Theme's assets). A pre-#1722 PNG master is copied under its
+     * own extension (it has no thumbnail), so the copy never claims to be WebP;
+     * a URL that is not an object of this bucket is carried over as the
+     * reference it is. Best-effort: a failed copy leaves the duplicate with no
+     * image and an error in the log, never a half-created goal.
      */
-    async function copyGoalImageForDuplicate(
+    async function copyGoalImagesForDuplicate(
       gymId: string,
-      sourceUrl: string,
+      source: { image_url: string; image_thumbnail_url: string | null },
       goalId: number,
       goalName: string,
-    ): Promise<string | null> {
-      const sourceKey = storageKeyFromObjectUrl(sourceUrl);
-      if (!sourceKey) return sourceUrl;
+    ): Promise<{ image_url: string; image_thumbnail_url: string | null } | null> {
+      const sourceKey = storageKeyFromObjectUrl(source.image_url);
+      if (!sourceKey) return { image_url: source.image_url, image_thumbnail_url: source.image_thumbnail_url };
       if (!isStorageConfigured()) return null;
-      const folderPrefix = await gymStorageFolderPrefix(gymId);
+      const folderPrefix = await memberGymStorageFolderPrefix(gymId);
       if (!folderPrefix) return null;
-      const destKey = buildGymPersonalGoalImageKey(folderPrefix, goalId, goalName);
+      const folder = GOAL_IMAGE_FOLDERS[kind];
+      const isWebp = sourceKey.endsWith('.webp');
+      const destKey = isWebp
+        ? buildNutritionGoalImageKey(folderPrefix, goalId, goalName, folder)
+        : buildNutritionGoalImageKey(folderPrefix, goalId, goalName, folder).replace(/\.webp$/, sourceKey.slice(sourceKey.lastIndexOf('.')));
+      const thumbSourceKey = isWebp && source.image_thumbnail_url ? storageKeyFromObjectUrl(source.image_thumbnail_url) : null;
+      const destThumbKey = thumbSourceKey ? buildNutritionGoalImageThumbnailKey(folderPrefix, goalId, goalName, folder) : null;
       try {
-        await ensureStorageFolders(gymPersonalGoalImageFolderKeys(folderPrefix));
-        return await copyStorageObject(sourceKey, destKey);
+        await ensureStorageFolders(nutritionGoalImageFolderKeys(folderPrefix, folder));
+        const imageUrl = await copyStorageObject(sourceKey, destKey);
+        const thumbUrl = thumbSourceKey && destThumbKey ? await copyStorageObject(thumbSourceKey, destThumbKey) : null;
+        return { image_url: imageUrl, image_thumbnail_url: thumbUrl };
       } catch (err: any) {
         const details = err instanceof StorageOperationError
           ? err.details
           : describeStorageError(err, { operation: 'copyStorageObject', key: destKey });
-        logger.error({ err, details, gymId, goalId, sourceKey }, 'Duplicating a personal goal could not copy its image');
+        logger.error({ err, details, gymId, goalId, sourceKey }, 'Duplicating a goal could not copy its image');
         return null;
       }
     }
@@ -797,10 +556,13 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
           return goalId as number;
         });
 
-        if (hasImage && source.image_url) {
-          const imageUrl = await copyGoalImageForDuplicate(gymId, source.image_url, insertId, newName);
-          if (imageUrl) {
-            await db.query(`UPDATE ${table} SET image_url = ? WHERE id = ? AND gym_id = ?`, [imageUrl, insertId, gymId]);
+        if (hasWebpImage && source.image_url) {
+          const copied = await copyGoalImagesForDuplicate(gymId, source, insertId, newName);
+          if (copied) {
+            await db.query(
+              `UPDATE ${table} SET image_url = ?, image_thumbnail_url = ? WHERE id = ? AND gym_id = ?`,
+              [copied.image_url, copied.image_thumbnail_url, insertId, gymId],
+            );
           }
         }
 
