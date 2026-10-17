@@ -1607,3 +1607,7 @@ corback (fitness-api)          corfront (fitness-admin, fitness-members, fitness
 ### Membership Plan image (#1514)
 
 `membership_plans.image_url` + `image_thumbnail_url` (migration 278) hold a 1080 × 1080 and a 256 × 256 WebP under `gyms/<prefix>/plans/<plan_id>-<sanitized name>[-thumbnail].webp`. `domain/planImages.ts` builds the keys and the ownership test; `api/plan-image-storage.ts` stores, clears and moves them on a rename, reusing the Member photo's request parsing, `processMemberImage()` and upload limiter. `POST`/`DELETE /membership-plans/:id/image` are the only writers. Admin: the **Media** section of the Plans card (`section_media`, after Centers), `MemberImageField` with `basePath: '/membership-plans'`.
+
+### Promotion image (#1711)
+
+`promotions.image_url` + `image_thumbnail_url` (migration 289) hold a 1080 × 1080 and a 256 × 256 WebP under `gyms/<prefix>/promotions/<promotion_id>-<sanitized name>[-thumbnail].webp`. Same shape as the Membership Plan image: `domain/promotionImages.ts` (keys, ownership test), `api/promotion-image-storage.ts` (store, clear, move on rename), reusing the Member photo's request parsing, `processMemberImage()` and upload limiter; `POST`/`DELETE /promotions/:id/image` are the only writers. Admin: the **Media** section of the Promotions card (`MemberImageField`, `basePath: '/promotions'`; staged in the create form).

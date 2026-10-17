@@ -208,6 +208,13 @@ may delete, and `PUT /membership-plans/:id` moves the objects on a rename
 (copy, re-point, delete). Gym root only (no `cordel/plans/`); appended last to the
 gym's first-level markers with its writer.
 
+**`promotions/` holds a Promotion's image** (#1711):
+`{gym prefix}/promotions/{promotion_id}-{promotion_name}.webp` (1080 × 1080) and
+`…-thumbnail.webp` (256 × 256), written by `POST /promotions/:id/image` (admin) and
+cleared by its `DELETE`, over `api/src/api/promotion-image-storage.ts`; the pipeline,
+the rename move and the delete rule are the Plan image's. Gym root only; appended
+last to the gym's first-level markers with its writer.
+
 **`muscles/images/` holds a muscle's two images** (#1368 stage 3, #1412, #1413):
 `cordel/muscles/images/{muscle_name}-{male|female}.webp` (1080 × 1080) and
 `…-thumbnail.webp` (256 × 256), written only by `POST /platform/muscles/:id/image/:sex`

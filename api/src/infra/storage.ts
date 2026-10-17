@@ -128,6 +128,14 @@ export const ACTIVITIES_FOLDER = 'activities';
 export const PLANS_FOLDER = 'plans';
 
 /**
+ * `promotions` — the gym-root branch holding a Promotion's image (#1711):
+ * `<gym prefix>/promotions/<promotion_id>-<promotion_name>.webp` plus its
+ * `-thumbnail.webp`. Declared here for {@link GOALS_FOLDER}'s reason;
+ * `domain/promotionImages.ts` re-exports it.
+ */
+export const PROMOTIONS_FOLDER = 'promotions';
+
+/**
  * `nutrition_goals` — a Nutrition Goal's image (#1623), under the gym's own
  * prefix and under {@link PLATFORM_STORAGE_ROOT} for a System goal. Distinct from
  * `nutrition/` (foods) and `goals/` (Personal Goals). Declared here for
@@ -207,6 +215,9 @@ const GYM_FOLDERS = [
   // #1623: the gym-level `nutrition_goals/` root, holding a Nutrition Goal's
   // image. Appended last, with its writer (`POST /nutrition-goals/:id/image`).
   `${NUTRITION_GOALS_FOLDER}/`,
+  // #1711: the gym-level `promotions/` root, holding a Promotion's image.
+  // Appended last, with its writer (`POST /promotions/:id/image`).
+  `${PROMOTIONS_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;
