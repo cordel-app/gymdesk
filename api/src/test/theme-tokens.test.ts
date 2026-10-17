@@ -26,6 +26,13 @@ describe('defaultTokens()', () => {
 });
 
 describe('validateTokens()', () => {
+  it('accepts an optional motivationalSentence (#1755) and rejects a non-string or over-long one', () => {
+    expect(validateTokens({ motivationalSentence: 'Keep going.' })).toBeNull();
+    expect(validateTokens({ motivationalSentence: '' })).toBeNull();
+    expect(validateTokens({ motivationalSentence: 5 })).toMatch(/must be a string/);
+    expect(validateTokens({ motivationalSentence: 'x'.repeat(201) })).toMatch(/at most 200/);
+  });
+
   it('rejects a non-object', () => {
     expect(validateTokens(null)).toMatch(/must be an object/);
     expect(validateTokens('nope')).toMatch(/must be an object/);
