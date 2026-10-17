@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1713 (the Exercise cards no longer show the *View full details* button — Details stays in the `⋮` menu — and *Show all attributes* falls back to the theme's brand colour instead of a hard-coded lilac. UI only)
 - **Done**: #1724 (the Membership Fee Simulation section starts collapsed on both the Membership Plan card (existing `CollapsibleCard`) and the Assigned Plan card (chevron toggle in the section header); expanding shows the unchanged table. UI only, no API change)
 - **Done**: #1723 (Base and Gym Nutrition Goal lists draw the goal's 256 px thumbnail in the app's circular `MemberAvatar`, with the goal's initial in the same circle when it has no image. UI only; upload, storage and the read-only/Edit image views are untouched)
 - **Done**: #1700 (My Nutrition's goal and dietary-restriction cards now share My Training's exercise-card look: the 12px separator-bordered surface frame, the image filling the card edge to edge (`cover`), 15px/600 title and 12px detail, full-width 10px/14px primary action buttons stacked inside the card, and the same 300px-at-most card width via a start-aligned grid. UI only: completion actions, progress and data loading are untouched)
