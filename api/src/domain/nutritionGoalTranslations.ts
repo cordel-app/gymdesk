@@ -23,7 +23,17 @@ import { GOAL_NAME_MAX_LENGTH } from './goalLibrary';
  */
 export const GOAL_DESCRIPTION_MAX_LENGTH = 1000;
 
-const TABLE = 'nutrition_goal_translations';
+/**
+ * #1719 — Personal Goals carry the same translated name and description in
+ * `personal_goal_translations` (migration 292). One module serves both kinds, so
+ * the rules (fallback, replace-all, omit-keeps) cannot drift between them.
+ */
+export type TranslatedGoalKind = 'nutrition' | 'personal';
+
+const KIND_TABLES: Record<TranslatedGoalKind, { table: string; fk: string }> = {
+  nutrition: { table: 'nutrition_goal_translations', fk: 'nutrition_goal_id' },
+  personal: { table: 'personal_goal_translations', fk: 'personal_goal_id' },
+};
 
 export interface GoalTranslation {
   name: string;
@@ -73,17 +83,29 @@ export const SYSTEM_NUTRITION_GOAL_TEXTS: Record<string, { en: string; es: GoalT
   },
 };
 
-function column(col: 'name' | 'description', alias: string, locale: SupportedLocale): string {
+/** The System Personal Goals' translated names migration 292 seeds (mirrors its `SEEDS`). */
+export const SYSTEM_PERSONAL_GOAL_TRANSLATIONS: Record<string, { es: string; ca: string }> = {
+  weight_loss: { es: 'Pérdida de peso', ca: 'Pèrdua de pes' },
+  weight_gain: { es: 'Aumento de peso', ca: 'Augment de pes' },
+  muscle_gain: { es: 'Ganancia muscular', ca: 'Guany muscular' },
+  maintenance: { es: 'Mantenimiento', ca: 'Manteniment' },
+  performance: { es: 'Rendimiento', ca: 'Rendiment' },
+  recovery: { es: 'Recuperación', ca: 'Recuperació' },
+  energy: { es: 'Energía', ca: 'Energia' },
+};
+
+function column(col: 'name' | 'description', alias: string, locale: SupportedLocale, kind: TranslatedGoalKind): string {
+  const { table, fk } = KIND_TABLES[kind];
   const literal = localeLiteral(locale);
   if (!literal) return `${alias}.${col}`;
-  return `COALESCE((SELECT NULLIF(ngt.${col}, '') FROM ${TABLE} ngt
-            WHERE ngt.nutrition_goal_id = ${alias}.id AND ngt.locale = ${literal}), ${alias}.${col})`;
+  return `COALESCE((SELECT NULLIF(ngt.${col}, '') FROM ${table} ngt
+            WHERE ngt.${fk} = ${alias}.id AND ngt.locale = ${literal}), ${alias}.${col})`;
 }
 
 /** `display_name` and `display_description`, resolved for `locale` with the base value as fallback. */
-export function localizedGoalExprs(alias: string, locale: SupportedLocale): string {
-  return `${column('name', alias, locale)} AS display_name,
-    ${column('description', alias, locale)} AS display_description`;
+export function localizedGoalExprs(alias: string, locale: SupportedLocale, kind: TranslatedGoalKind = 'nutrition'): string {
+  return `${column('name', alias, locale, kind)} AS display_name,
+    ${column('description', alias, locale, kind)} AS display_description`;
 }
 
 /**
@@ -92,9 +114,10 @@ export function localizedGoalExprs(alias: string, locale: SupportedLocale): stri
  * the row the page already holds, and a form seeded without it would submit an
  * empty replace-all set and wipe the translations on the first save.
  */
-export function goalTranslationsExpr(alias: string, as = 'translations'): string {
+export function goalTranslationsExpr(alias: string, as = 'translations', kind: TranslatedGoalKind = 'nutrition'): string {
+  const { table, fk } = KIND_TABLES[kind];
   return `(SELECT JSON_OBJECTAGG(ngta.locale, JSON_OBJECT('name', ngta.name, 'description', ngta.description))
-            FROM ${TABLE} ngta WHERE ngta.nutrition_goal_id = ${alias}.id) AS ${as}`;
+            FROM ${table} ngta WHERE ngta.${fk} = ${alias}.id) AS ${as}`;
 }
 
 /** The aggregate's `NULL`-for-none as the `{}` the API contract promises. */
@@ -114,10 +137,11 @@ export function withGoalTranslations<T extends { translations?: unknown }>(row: 
  * whatever language its screen is in). Carries three placeholders — bind the
  * same pattern to all of them.
  */
-export function goalTranslatedSearchSql(alias: string): string {
+export function goalTranslatedSearchSql(alias: string, kind: TranslatedGoalKind = 'nutrition'): string {
+  const { table, fk } = KIND_TABLES[kind];
   return `(${alias}.name LIKE ? OR ${alias}.slug LIKE ? OR EXISTS (
-            SELECT 1 FROM ${TABLE} ngts
-             WHERE ngts.nutrition_goal_id = ${alias}.id AND ngts.name LIKE ?))`;
+            SELECT 1 FROM ${table} ngts
+             WHERE ngts.${fk} = ${alias}.id AND ngts.name LIKE ?))`;
 }
 
 /**
@@ -185,7 +209,9 @@ export async function replaceGoalTranslations(
   tx: Tx,
   goalId: number | string,
   translations: Record<string, { name?: string | null; description?: string | null }>,
+  kind: TranslatedGoalKind = 'nutrition',
 ): Promise<void> {
+  const { table: TABLE, fk } = KIND_TABLES[kind];
   const byLocale = new Map<string, { name: string; description: string | null }>();
   for (const [locale, entry] of Object.entries(translations ?? {})) {
     const name = typeof entry?.name === 'string' ? entry.name.trim() : '';
@@ -196,18 +222,18 @@ export async function replaceGoalTranslations(
   const kept = TRANSLATABLE_LOCALES.filter((locale) => byLocale.has(locale));
 
   if (kept.length === 0) {
-    await tx.query(`DELETE FROM ${TABLE} WHERE nutrition_goal_id = ?`, [goalId]);
+    await tx.query(`DELETE FROM ${TABLE} WHERE ${fk} = ?`, [goalId]);
     return;
   }
   const marks = kept.map(() => '?').join(',');
   await tx.query(
-    `DELETE FROM ${TABLE} WHERE nutrition_goal_id = ? AND locale NOT IN (${marks})`,
+    `DELETE FROM ${TABLE} WHERE ${fk} = ? AND locale NOT IN (${marks})`,
     [goalId, ...kept],
   );
   for (const locale of kept) {
     const entry = byLocale.get(locale)!;
     await tx.query(
-      `INSERT INTO ${TABLE} (nutrition_goal_id, locale, name, description) VALUES (?, ?, ?, ?)
+      `INSERT INTO ${TABLE} (${fk}, locale, name, description) VALUES (?, ?, ?, ?)
        ON DUPLICATE KEY UPDATE name = VALUES(name), description = VALUES(description), modified_at = UTC_TIMESTAMP()`,
       [goalId, locale, entry.name, entry.description],
     );
@@ -219,10 +245,12 @@ export async function copyGoalTranslations(
   tx: Tx,
   sourceId: number | string,
   targetId: number | string,
+  kind: TranslatedGoalKind = 'nutrition',
 ): Promise<void> {
+  const { table: TABLE, fk } = KIND_TABLES[kind];
   await tx.query(
-    `INSERT INTO ${TABLE} (nutrition_goal_id, locale, name, description)
-      SELECT ?, locale, name, description FROM ${TABLE} WHERE nutrition_goal_id = ?
+    `INSERT INTO ${TABLE} (${fk}, locale, name, description)
+      SELECT ?, locale, name, description FROM ${TABLE} WHERE ${fk} = ?
       ON DUPLICATE KEY UPDATE name = VALUES(name), description = VALUES(description), modified_at = UTC_TIMESTAMP()`,
     [targetId, sourceId],
   );

@@ -129,12 +129,13 @@ export function goalKindHasWebpImage(kind: GoalLibraryKind): boolean {
 }
 
 /**
- * #1623 — which kinds carry a translated name and description
- * (`nutrition_goal_translations`, migration 282). Exactly one does; Personal
- * Goals keep their label-key mechanism for the System rows. Mirrored in the
- * admin's `TRANSLATED_GOAL_KINDS`.
+ * #1623 / #1719 — which kinds carry a translated name and description
+ * (`nutrition_goal_translations`, migration 282; `personal_goal_translations`,
+ * migration 292). Both do; the Personal kind's seven System rows are translated
+ * by that migration, replacing the label-key mechanism for the Admin. Mirrored
+ * in the admin's `TRANSLATED_GOAL_KINDS`.
  */
-export const TRANSLATED_GOAL_KINDS: readonly GoalLibraryKind[] = ['nutrition'];
+export const TRANSLATED_GOAL_KINDS: readonly GoalLibraryKind[] = ['nutrition', 'personal'];
 
 export function goalKindIsTranslated(kind: GoalLibraryKind): boolean {
   return TRANSLATED_GOAL_KINDS.includes(kind);
@@ -273,16 +274,14 @@ export function normalizeGoalName(
 }
 
 /**
- * The search predicate the two list endpoints share. A Personal Goal has no
- * translation junction table (see the slug note above), so there is one name to
- * match; a Nutrition Goal's translated names are matched too (#1623,
- * `searchTranslations`).
+ * The search predicate the two list endpoints share. Translated names are matched
+ * too for a translated kind (#1623/#1719, `searchTranslations`).
  */
 export function buildGoalListWhere(
   search: unknown,
   base: string[],
   baseParams: unknown[] = [],
-  { searchTranslations = false }: { searchTranslations?: boolean } = {},
+  { searchTranslations = false, translationKind = 'nutrition' }: { searchTranslations?: boolean; translationKind?: 'nutrition' | 'personal' } = {},
 ): { where: string; params: unknown[] } {
   const term = typeof search === 'string' ? search.trim() : '';
   const where = [...base];
@@ -291,9 +290,12 @@ export function buildGoalListWhere(
     if (searchTranslations) {
       // #1623 — the base name, the slug **or any** stored translated name, so a
       // search in one language finds the goal whatever language the screen is in.
+      const t = translationKind === 'personal'
+        ? { table: 'personal_goal_translations', fk: 'personal_goal_id' }
+        : { table: 'nutrition_goal_translations', fk: 'nutrition_goal_id' };
       where.push(`(g.name LIKE ? OR g.slug LIKE ? OR EXISTS (
-        SELECT 1 FROM nutrition_goal_translations ngts
-         WHERE ngts.nutrition_goal_id = g.id AND ngts.name LIKE ?))`);
+        SELECT 1 FROM ${t.table} ngts
+         WHERE ngts.${t.fk} = g.id AND ngts.name LIKE ?))`);
       params.push(`%${term}%`, `%${term}%`, `%${term}%`);
     } else {
       where.push('(g.name LIKE ? OR g.slug LIKE ?)');

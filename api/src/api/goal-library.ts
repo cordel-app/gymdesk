@@ -49,6 +49,8 @@ import {
   parseGoalTranslations,
   replaceGoalTranslations,
   withGoalTranslations,
+  copyGoalTranslations,
+  type TranslatedGoalKind,
 } from '../domain/nutritionGoalTranslations';
 import {
   clearNutritionGoalImage,
@@ -124,7 +126,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
    * administered from Cordel — so their actor names are Cordel employees' and are
    * not published to every tenant. A gym's own rows carry theirs.
    */
-  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasImage ? ' g.image_url,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale)}, ${goalTranslationsExpr('g')},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
+  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasImage ? ' g.image_url,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale, kind as TranslatedGoalKind)}, ${goalTranslationsExpr('g', 'translations', kind as TranslatedGoalKind)},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g', { maskPlatformActors: true })}`;
   /** The parameters `COLUMNS` binds before a query's own — the gym of `gym_status`, for a configurable kind. */
@@ -204,7 +206,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       req.query.search,
       ['(g.gym_id IS NULL OR g.gym_id = ?)', "g.status != 'deleted'"],
       [gymId],
-      { searchTranslations: translated },
+      { searchTranslations: translated, translationKind: kind as TranslatedGoalKind },
     );
     const limit = clampLimit(req.query.limit);
     const offset = clampOffset(req.query.offset);
@@ -279,7 +281,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
         // #1181 — a gym's own goal starts available to that gym, explicitly.
         if (configurable) await writeGymGoalStatus(tx, gymId, goalId, 'active', actor);
         // #1623 — the translated name and description commit with the goal.
-        if (goalTranslations.translations) await replaceGoalTranslations(tx, goalId, goalTranslations.translations);
+        if (goalTranslations.translations) await replaceGoalTranslations(tx, goalId, goalTranslations.translations, kind as TranslatedGoalKind);
         return goalId as number;
       });
       const goal = await loadGoal(insertId, gymId, getRequestLocale(req));
@@ -349,7 +351,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
       params.push(id);
       await db.transaction(async (tx) => {
         await tx.query(`UPDATE ${table} SET ${updates.join(', ')} WHERE id = ?`, params);
-        if (goalTranslations.translations) await replaceGoalTranslations(tx, String(id), goalTranslations.translations);
+        if (goalTranslations.translations) await replaceGoalTranslations(tx, String(id), goalTranslations.translations, kind as TranslatedGoalKind);
       });
 
       // #1623: the image key carries the goal's name, so a rename moves it.
@@ -794,6 +796,8 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
             ],
           );
           await writeGymGoalStatus(tx, gymId, goalId, 'active', actor);
+          // #1719 — translations travel with the text they translate.
+          if (translated) await copyGoalTranslations(tx, source.id, goalId, kind as TranslatedGoalKind);
           return goalId as number;
         });
 

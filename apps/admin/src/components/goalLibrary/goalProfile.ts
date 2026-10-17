@@ -94,12 +94,12 @@ export function goalKindHasWebpImage(kind: GoalKind): boolean {
 
 /**
  * #1623 — which kinds carry a translated name and description, mirroring
- * `TRANSLATED_GOAL_KINDS` in `api/src/domain/goalLibrary.ts`. Exactly one does
- * (Nutrition Goals). For such a kind the API reports `display_name` /
+ * `TRANSLATED_GOAL_KINDS` in `api/src/domain/goalLibrary.ts`. Both do
+ * (Nutrition Goals #1623, Personal Goals #1719). For such a kind the API reports `display_name` /
  * `display_description` in the caller's language and a `translations` map the
  * Edit form is seeded from.
  */
-export const TRANSLATED_GOAL_KINDS: readonly GoalKind[] = ['nutrition'];
+export const TRANSLATED_GOAL_KINDS: readonly GoalKind[] = ['nutrition', 'personal'];
 
 export function goalKindIsTranslated(kind: GoalKind): boolean {
   return TRANSLATED_GOAL_KINDS.includes(kind);
@@ -455,10 +455,15 @@ export const SYSTEM_GOAL_SLUGS: Record<GoalKind, readonly string[]> = {
  * `goal_library.personal_goal_x` on screen.
  */
 export function goalDisplayName(
-  goal: Pick<GoalRow, 'slug' | 'name'>,
+  goal: Pick<GoalRow, 'slug' | 'name'> & { display_name?: string | null },
   kind: GoalKind,
   translate: (key: string) => string,
 ): string {
+  // #1719: a translated kind's row carries the API's `display_name` (the viewer's
+  // language, the base name as fallback) — the seeded System translations
+  // included — so it outranks the label-key rule below, which stays for a row
+  // that arrives without one (an assignment's snapshot).
+  if (goalKindIsTranslated(kind) && goal.display_name) return goal.display_name;
   const known = goal.slug !== null && SYSTEM_GOAL_SLUGS[kind].includes(goal.slug);
   return known ? translate(`${kind}_goal_${goal.slug}`) : goal.name;
 }

@@ -776,7 +776,7 @@ describe('a Nutrition Goal is translated and carries a WebP image (#1623)', () =
     expect([...WEBP_IMAGE_GOAL_KINDS]).toEqual([...API_WEBP_IMAGE_GOAL_KINDS]);
     expect([...TRANSLATED_GOAL_KINDS]).toEqual([...API_TRANSLATED_GOAL_KINDS]);
     expect(goalKindIsTranslated('nutrition')).toBe(true);
-    expect(goalKindIsTranslated('personal')).toBe(false);
+    expect(goalKindIsTranslated('personal')).toBe(true);
   });
 
   const row: GoalRow = {
