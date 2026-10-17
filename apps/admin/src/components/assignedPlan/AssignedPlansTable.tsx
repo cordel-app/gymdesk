@@ -93,9 +93,15 @@ interface Props<T extends AssignedPlanTableRow> {
   /** #958: a body expanded somewhere other than the plan's own card reads only. */
   embedded?: boolean;
   /** The `⋮` this screen puts on a row, if any. */
-  rowActions?: (row: T) => ContextMenuItem[];
+  rowActions?: (row: T, helpers: AssignedPlanRowHelpers) => ContextMenuItem[];
   /** #1533: a row to expand on mount and open in Edit mode (a Draft just created). */
   openInEditId?: number | null;
+}
+
+/** #1725: what a screen's row menu may ask of the table it sits in. */
+export interface AssignedPlanRowHelpers {
+  /** Expand the row's card and open it in Edit mode (the body's own editor). */
+  startEdit: (rowId: number) => void;
 }
 
 export function AssignedPlansTable<T extends AssignedPlanTableRow>({
@@ -114,6 +120,14 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
     if (openInEditId == null) return;
     setExpandedIds((prev) => (prev.has(openInEditId) ? prev : new Set(prev).add(openInEditId)));
   }, [openInEditId]);
+
+  // #1725: the header menu's Edit asks the embedded body to enter Edit mode.
+  // A per-row counter (not a flag) so a second request after Done/Cancel works.
+  const [editTokens, setEditTokens] = useState<Record<number, number>>({});
+  function startEdit(rowId: number) {
+    setExpandedIds((prev) => (prev.has(rowId) ? prev : new Set(prev).add(rowId)));
+    setEditTokens((prev) => ({ ...prev, [rowId]: (prev[rowId] ?? 0) + 1 }));
+  }
 
   function toggleExpand(row: T) {
     setExpandedIds((prev) => {
@@ -141,7 +155,7 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
   const actionsCell = (row: T) => (
     <ContextMenu
       ariaLabel={t('actions_for', { plan: row.plan_name ?? '' })}
-      items={rowActions ? rowActions(row) : []}
+      items={rowActions ? rowActions(row, { startEdit }) : []}
     />
   );
 
@@ -207,7 +221,7 @@ export function AssignedPlansTable<T extends AssignedPlanTableRow>({
             }
           } : undefined}
         >
-          <AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} startEditing={row.id === openInEditId} />
+          <AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} startEditing={row.id === openInEditId} editToken={editTokens[row.id] ?? 0} />
         </div>
       )}
     />
