@@ -109,11 +109,7 @@ export function createGoalLibraryRouter(kind: GoalLibraryKind): Router {
    * administered from Cordel — so their actor names are Cordel employees' and are
    * not published to every tenant. A gym's own rows carry theirs.
    */
-<<<<<<< HEAD
-  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale)}, ${goalTranslationsExpr('g')},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
-=======
-  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasImage ? ' g.image_url,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale, kind as TranslatedGoalKind)}, ${goalTranslationsExpr('g', 'translations', kind as TranslatedGoalKind)},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
->>>>>>> origin/main
+  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale, kind as TranslatedGoalKind)}, ${goalTranslationsExpr('g', 'translations', kind as TranslatedGoalKind)},` : ''}${configurable ? ` ${gymGoalStatusSql('g')} AS gym_status,` : ''}
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g', { maskPlatformActors: true })}`;
   /** The parameters `COLUMNS` binds before a query's own — the gym of `gym_status`, for a configurable kind. */

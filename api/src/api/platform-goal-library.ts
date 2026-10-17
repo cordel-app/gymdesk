@@ -65,11 +65,7 @@ export function createPlatformGoalLibraryRouter(kind: GoalLibraryKind): Router {
   const hasWebpImage = goalKindHasWebpImage(kind);
   const translated = goalKindIsTranslated(kind);
 
-<<<<<<< HEAD
-  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale)}, ${goalTranslationsExpr('g')},` : ''}
-=======
-  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasImage ? ' g.image_url,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale, kind as TranslatedGoalKind)}, ${goalTranslationsExpr('g', 'translations', kind as TranslatedGoalKind)},` : ''}
->>>>>>> origin/main
+  const columnsFor = (locale: SupportedLocale) => `g.id, g.gym_id, g.slug, g.name, g.status,${measurable ? ' g.target_value, g.target_unit, g.target_type,' : ''}${hasWebpImage ? ' g.image_url, g.image_thumbnail_url,' : ''}${translated ? ` ${localizedGoalExprs('g', locale, kind as TranslatedGoalKind)}, ${goalTranslationsExpr('g', 'translations', kind as TranslatedGoalKind)},` : ''}
     g.created_at, g.modified_at,
     ${itemDetailColumnsSql('g')}`;
 
