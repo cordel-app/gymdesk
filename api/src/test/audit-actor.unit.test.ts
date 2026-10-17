@@ -108,6 +108,7 @@ describe('gate: audited tables', () => {
   const TECHNICAL_UPDATES: Array<{ file: string; table: string; why: string }> = [
     { file: 'api/me.ts', table: 'members', why: 'POST /me/link: the member linking their own Clerk account (clerk_user_id, invitation_id, enrolled_at), not a content edit' },
     { file: 'api/member-image-storage.ts', table: 'members', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
+    { file: 'api/promotion-image-storage.ts', table: 'promotions', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/plan-image-storage.ts', table: 'membership_plans', why: 'image_url re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/payment-method-image-storage.ts', table: 'base_payment_methods', why: 'image references re-point after a rename; the PUT that triggered it already recorded modified_by' },
     { file: 'api/staff.ts', table: 'staff', why: 'gym_membership_id link/unlink bookkeeping when app access is granted or revoked' },

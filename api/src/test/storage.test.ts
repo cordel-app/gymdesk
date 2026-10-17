@@ -250,6 +250,18 @@ describe('initializeGymBucket()', () => {
       .toEqual(['gyms/gym_123-GymName/nutrition_goals/']);
   });
 
+  // #1711: `promotions/` holds a Promotion's image, appended last, no leaf.
+  it('creates promotions/ last, and with no leaf below it', async () => {
+    setConfigured();
+    const { initializeGymBucket } = await import('../infra/storage');
+    await initializeGymBucket('gyms/gym_123-GymName');
+
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-1)).toBe('promotions');
+    const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
+    expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/promotions/')))
+      .toEqual(['gyms/gym_123-GymName/promotions/']);
+  });
+
   // #1035 §2/§7: Gym Bucket Initialization writes a *gym's* tree and has never
   // written the platform root — the `cordel/` structure is created by hand in the
   // Cloudflare console, so not one marker here may touch it.

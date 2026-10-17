@@ -476,6 +476,8 @@ Conventions in the entries: a **Membership Plan** is the gym's catalogue offer; 
 
 - **A Membership Plan can carry an image** (#1514). Staff (admins) upload one picture in the plan's Media section; the server stores a square 1080 × 1080 version and a 256 × 256 thumbnail in the gym's own `plans/` folder, replacing or removing the image cleans up the old files, and nothing about pricing, benefits, billing or assignments changes. Enforced in `api/src/domain/planImages.ts` and `api/src/api/plan-image-storage.ts`.
 
+- **A Promotion can carry an image** (#1711). Staff (admins) upload one picture in the promotion's Media section (also when creating it); the server stores a square 1080 × 1080 version and a 256 × 256 thumbnail in the gym's own `promotions/` folder, replacing or removing the image cleans up the old files, and nothing about eligibility, benefits, pricing or status changes. Enforced in `api/src/domain/promotionImages.ts` and `api/src/api/promotion-image-storage.ts`.
+
 ## Not in this file
 
 Constraints that are purely about how the code is organised stay in `CLAUDE.md` alone: where a new status or notification type must be declared, which component renders what, the shared form and list chrome, test gates, naming of identifiers, and the "one place decides it" structure behind most of the entries above. They change how a feature is built, not what a gym or a member sees.
