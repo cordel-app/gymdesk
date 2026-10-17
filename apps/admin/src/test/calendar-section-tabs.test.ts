@@ -23,6 +23,13 @@ describe('#1749 Calendar section tabs', () => {
     expect(read('app', '[locale]', 'calendar', 'page.tsx')).toContain('<CalendarSectionTabs active="calendar" />');
     expect(read('app', '[locale]', 'activity-types', 'page.tsx')).toContain('<CalendarSectionTabs active="activities" />');
   });
+  it('#1770: Calendar is a direct link and Operating Hours is a tab', () => {
+    const group = navigationGroups.find((g) => g.id === 'calendar')!;
+    expect(group.directLink).toBe(true);
+    expect(group.items).toHaveLength(1);
+    expect(group.items[0].alsoActiveFor).toContain('/{{locale}}/calendar/operating-hours');
+    expect(read('app', '[locale]', 'calendar', 'operating-hours', 'page.tsx')).toContain('<CalendarSectionTabs active="operating_hours" />');
+  });
   it('gates the Activities tab like the retired sidebar entry', () => {
     const src = read('components', 'CalendarSectionTabs.tsx');
     expect(src).toContain("useModuleAccess('ORGANIZATION')");
