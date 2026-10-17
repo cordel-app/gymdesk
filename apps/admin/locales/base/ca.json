@@ -2100,7 +2100,6 @@
     "view_cards": "Targetes",
     "view_list": "Llista",
     "card_no_image": "Sense imatge",
-    "card_view_details": "Veure detalls complets",
     "card_show_attributes": "Mostra tots els atributs",
     "card_hide_attributes": "Amaga tots els atributs",
     "card_param_sets": "{count, plural, one {# sèrie} other {# sèries}}",
