@@ -975,6 +975,24 @@ describe('DELETE /user-memberships/:id', () => {
     expect(rows[0].status).toBe('cancelled');
   });
 
+  // #1694: a cancelled assignment is never open-ended.
+  it('stamps an end date when it cancels, and keeps an existing one', async () => {
+    const memberId = await createMember(gymId);
+    const planId = await createPlan(gymId);
+    const umId = await createUserMembershipDirect(gymId, memberId, planId);
+    await db.query('UPDATE user_memberships SET ends_at = NULL WHERE id = ?', [umId]);
+    await request.delete(`/user-memberships/${umId}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    const { rows } = await db.query('SELECT status, ends_at FROM user_memberships WHERE id = ?', [umId]);
+    expect(rows[0].status).toBe('cancelled');
+    expect(rows[0].ends_at).not.toBeNull();
+
+    const other = await createUserMembershipDirect(gymId, await createMember(gymId), planId);
+    await db.query("UPDATE user_memberships SET ends_at = '2030-01-31' WHERE id = ?", [other]);
+    await request.delete(`/user-memberships/${other}`).set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId);
+    const kept = await db.query("SELECT DATE_FORMAT(ends_at, '%Y-%m-%d') AS d FROM user_memberships WHERE id = ?", [other]);
+    expect(kept.rows[0].d).toBe('2030-01-31');
+  });
+
   it('returns 404 when cancelling an already-cancelled membership', async () => {
     const memberId = await createMember(gymId);
     const planId = await createPlan(gymId);
