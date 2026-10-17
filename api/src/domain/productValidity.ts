@@ -44,7 +44,7 @@ export function endDateOnCancel(validUntil: string | null, today: string): strin
   return validUntil ?? today;
 }
 
-export type PurchaseValidityState = 'pending' | 'failed' | 'active' | 'cancelled' | 'expired';
+export type PurchaseValidityState = 'draft' | 'pending' | 'failed' | 'active' | 'cancelled' | 'expired';
 
 /**
  * A cancelled purchase stays valid through its end date, inclusive; it is
@@ -55,6 +55,7 @@ export function purchaseValidityState(row: {
   valid_until: string | null;
   cancelled_on: string | null;
 }, today: string): PurchaseValidityState {
+  if (row.status === 'draft') return 'draft';
   if (row.status === 'pending_payment') return 'pending';
   if (row.status !== 'active') return 'failed';
   if (row.valid_until && row.valid_until < today) return 'expired';

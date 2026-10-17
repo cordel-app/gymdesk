@@ -47,6 +47,7 @@ import {
   type ProductPurchaseFields,
   type PurchaseBlock,
   PENDING_PURCHASE_STATUS,
+  DRAFT_PURCHASE_STATUS,
   PRODUCT_PURCHASE_SOURCE,
   describeProductPurchase,
   productPurchaseBlock,
@@ -178,7 +179,7 @@ async function loadLivePurchases(
   const { rows } = await db.query<{ id: number; product_id: number; status: string }>(
     `SELECT id, product_id, status
        FROM member_products_oneoff_snapshot
-      WHERE gym_id = ? AND member_id = ? AND status <> 'cancelled'
+      WHERE gym_id = ? AND member_id = ? AND status IN ('pending_payment', 'active')
       ORDER BY id DESC`,
     [gymId, memberId],
   );
@@ -224,6 +225,13 @@ export interface StartPurchaseInput {
    * read through the staff catalogue and `actorName` is the creator recorded.
    */
   staff?: { actorName: string };
+  /**
+   * #1657 stage 2 — the staff draft this payment starts from. The draft is
+   * deleted in the same transaction that writes the pending purchase, so it is
+   * promoted rather than duplicated; it is never touched when the provider or
+   * the pricing refuses.
+   */
+  fromDraftId?: number;
 }
 
 export interface StartPurchaseResult {
@@ -267,44 +275,8 @@ export class PricingRefused extends Error {
 /** MySQL: ER_DUP_ENTRY — the pending-purchase key losing a race. */
 const ER_DUP_ENTRY = 1062;
 
-/**
- * Starts a purchase: the provider-side payment, the `payment_requests` row that
- * carries its page token, and the `member_products_oneoff_snapshot` row the webhook completes.
- *
- * Four things about it are the rule rather than the implementation.
- *
- *  - **The Product is read through the catalogue's own predicate**, so a
- *    `staff_only`, inactive or deleted Product is a 404 here exactly as it is
- *    absent there. Two spellings of "may this member see it" is how a member
- *    comes to buy something they were never offered.
- *  - **The amount is the quoted one.** `grossPrice()` is the same figure
- *    `GET /me/products` showed, converted once by `toMinorUnits()` at the
- *    provider boundary (CLAUDE.md: euros on our side, cents on theirs) — there
- *    is no second pricing path and nothing recomputes tax.
- *  - **The purchase row is written `pending_payment`, before the member pays.**
- *    A row created on the *return* from the hosted page would be lost whenever
- *    the member closed the tab, and a webhook retry would create a second one;
- *    created here, the webhook's own "already processed, skipping" guard plus
- *    `UNIQUE (payment_request_id)` make completion idempotent (#1118 §10).
- *  - **It commits both rows together.** A payment request with no purchase
- *    behind it would take the member's money for nothing identifiable, so the
- *    two INSERTs are one transaction and a lost race on the pending key
- *    (`ER_DUP_ENTRY`) is reported as the 409 the route would have answered.
- *  - **An applied Promotion is re-resolved here, not trusted from the client**
- *    (#1118 §5). The member names a `promotion_id`; this route asks
- *    `domain/memberProductPromotion.ts`' one rule again — through the very
- *    loader that produced the offer — and prices the charge from the answer, so
- *    a Promotion that expired or was re-configured between the quote and the
- *    Buy refuses the purchase instead of charging a price the gym no longer
- *    offers. The **snapshot is written in this same transaction** (§7): the
- *    application belongs to the purchase (§7 binds it to "the resulting
- *    purchase"), so there is nothing for it to hang off before one exists —
- *    which is also why tapping *Apply promotion* persists nothing and leaves no
- *    orphan rows behind every member who changes their mind.
- */
-export async function startProductPurchase(
-  input: StartPurchaseInput,
-): Promise<StartPurchaseResult> {
+/** What a purchase is priced and frozen as, before anything is written. */
+async function resolvePurchase(input: StartPurchaseInput, ignoreDraftId?: number) {
   const catalogueSql = input.staff ? staffProductCatalogueSql('p') : memberProductCatalogueSql('p');
   const catalogueParams = input.staff ? [] : memberProductCatalogueParams();
   const { rows } = await db.query<any>(
@@ -323,6 +295,11 @@ export async function startProductPurchase(
   const actorName = input.staff?.actorName ?? input.memberName;
 
   const pending = await hasPendingPurchase(input.gymId, input.memberId, input.productId);
+  // #1657: staff hold at most one draft per Product; a payment started *from*
+  // that draft is the one place it is expected.
+  if (input.staff && (await hasDraftPurchase(input.gymId, input.memberId, input.productId, ignoreDraftId))) {
+    throw new PurchaseRefused('draft_exists');
+  }
   // #1521: a one-time Product already bought (`active`) is not sold again.
   const owned = await hasActivePurchase(input.gymId, input.memberId, input.productId);
   const block = productPurchaseBlock(item, pending, owned);
@@ -373,6 +350,131 @@ export async function startProductPurchase(
     tax_rate_percent: taxRate,
   });
 
+  return { row, snapshot, price, actorName };
+}
+
+/**
+ * #1657 stage 2 — staff **Save** of a one-time Product: the purchase row and
+ * its Promotion snapshots in `draft`, with no payment request, no Billing
+ * Event and no provider call. Priced and frozen exactly as a paid purchase is,
+ * so the draft shows what Pay will charge; Pay re-resolves it anyway.
+ */
+export async function saveProductPurchaseDraft(
+  input: StartPurchaseInput,
+): Promise<{ purchaseId: number; amount: number; currency: string }> {
+  const { snapshot, price, actorName } = await resolvePurchase(input);
+  const purchaseId = await db.transaction(async (tx) => {
+    const { insertId } = await tx.query(
+      `INSERT INTO member_products_oneoff_snapshot
+         (gym_id, member_id, product_id, status,
+          product_name, product_type, billing_frequency, units,
+          amount, currency, tax_rate_percent,
+          payment_request_id, created_by,
+          list_price, direct_discount_percent, direct_discount_amount)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?)`,
+      [
+        input.gymId, input.memberId, input.productId, DRAFT_PURCHASE_STATUS,
+        snapshot.product_name, snapshot.product_type, snapshot.billing_frequency,
+        snapshot.units, snapshot.amount.toFixed(2), snapshot.currency,
+        snapshot.tax_rate_percent, actorName,
+        price.list_price.toFixed(2),
+        price.direct_discount_percent == null ? null : price.direct_discount_percent.toFixed(2),
+        price.direct_discount_amount == null ? null : price.direct_discount_amount.toFixed(2),
+      ],
+    );
+    for (const step of price.promotions) {
+      await writePurchasePromotionStep(tx, input.gymId, insertId, step);
+    }
+    return insertId;
+  });
+  return { purchaseId, amount: snapshot.amount, currency: snapshot.currency };
+}
+
+/**
+ * #1657 stage 2 — **Cancel** of a draft: a hard delete, restricted to this
+ * member's own `draft` row so it can never reach a pending or paid purchase.
+ */
+export async function deletePurchaseDraft(
+  gymId: string,
+  memberId: number,
+  purchaseId: number,
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    const { rows } = await tx.query<{ id: number }>(
+      `SELECT id FROM member_products_oneoff_snapshot
+        WHERE id = ? AND gym_id = ? AND member_id = ? AND status = ?
+        FOR UPDATE`,
+      [purchaseId, gymId, memberId, DRAFT_PURCHASE_STATUS],
+    );
+    if (!rows[0]) return false;
+    await tx.query(
+      'DELETE FROM member_products_oneoff_promotion_snapshot WHERE gym_id = ? AND member_product_id = ?',
+      [gymId, purchaseId],
+    );
+    await tx.query(
+      'DELETE FROM member_products_oneoff_snapshot WHERE id = ? AND gym_id = ? AND status = ?',
+      [purchaseId, gymId, DRAFT_PURCHASE_STATUS],
+    );
+    return true;
+  });
+}
+
+/** One draft of this Product for this member, other than `ignoreId`. */
+async function hasDraftPurchase(
+  gymId: string,
+  memberId: number,
+  productId: number,
+  ignoreId?: number,
+): Promise<boolean> {
+  const { rows } = await db.query<{ id: number }>(
+    `SELECT id FROM member_products_oneoff_snapshot
+      WHERE gym_id = ? AND member_id = ? AND product_id = ? AND status = ?
+      LIMIT 2`,
+    [gymId, memberId, productId, DRAFT_PURCHASE_STATUS],
+  );
+  return rows.some((r) => Number(r.id) !== ignoreId);
+}
+
+/**
+ * Starts a purchase: the provider-side payment, the `payment_requests` row that
+ * carries its page token, and the `member_products_oneoff_snapshot` row the webhook completes.
+ *
+ * Four things about it are the rule rather than the implementation.
+ *
+ *  - **The Product is read through the catalogue's own predicate**, so a
+ *    `staff_only`, inactive or deleted Product is a 404 here exactly as it is
+ *    absent there. Two spellings of "may this member see it" is how a member
+ *    comes to buy something they were never offered.
+ *  - **The amount is the quoted one.** `grossPrice()` is the same figure
+ *    `GET /me/products` showed, converted once by `toMinorUnits()` at the
+ *    provider boundary (CLAUDE.md: euros on our side, cents on theirs) — there
+ *    is no second pricing path and nothing recomputes tax.
+ *  - **The purchase row is written `pending_payment`, before the member pays.**
+ *    A row created on the *return* from the hosted page would be lost whenever
+ *    the member closed the tab, and a webhook retry would create a second one;
+ *    created here, the webhook's own "already processed, skipping" guard plus
+ *    `UNIQUE (payment_request_id)` make completion idempotent (#1118 §10).
+ *  - **It commits both rows together.** A payment request with no purchase
+ *    behind it would take the member's money for nothing identifiable, so the
+ *    two INSERTs are one transaction and a lost race on the pending key
+ *    (`ER_DUP_ENTRY`) is reported as the 409 the route would have answered.
+ *  - **An applied Promotion is re-resolved here, not trusted from the client**
+ *    (#1118 §5). The member names a `promotion_id`; this route asks
+ *    `domain/memberProductPromotion.ts`' one rule again — through the very
+ *    loader that produced the offer — and prices the charge from the answer, so
+ *    a Promotion that expired or was re-configured between the quote and the
+ *    Buy refuses the purchase instead of charging a price the gym no longer
+ *    offers. The **snapshot is written in this same transaction** (§7): the
+ *    application belongs to the purchase (§7 binds it to "the resulting
+ *    purchase"), so there is nothing for it to hang off before one exists —
+ *    which is also why tapping *Apply promotion* persists nothing and leaves no
+ *    orphan rows behind every member who changes their mind.
+ */
+export async function startProductPurchase(
+  input: StartPurchaseInput,
+): Promise<StartPurchaseResult> {
+  const { row, snapshot, price, actorName } = await resolvePurchase(input, input.fromDraftId);
+
   const orderId = crypto.randomUUID();
   const pageToken = crypto.randomUUID();
   const pageTokenExpires = new Date(Date.now() + 10 * 60 * 1000);
@@ -394,6 +496,18 @@ export async function startProductPurchase(
 
   try {
     const purchaseId = await db.transaction(async (tx) => {
+      if (input.fromDraftId != null) {
+        // The draft is promoted, not duplicated: gone in the transaction that
+        // writes its pending replacement (#1657).
+        await tx.query(
+          'DELETE FROM member_products_oneoff_promotion_snapshot WHERE gym_id = ? AND member_product_id = ?',
+          [input.gymId, input.fromDraftId],
+        );
+        await tx.query(
+          `DELETE FROM member_products_oneoff_snapshot WHERE id = ? AND gym_id = ? AND member_id = ? AND status = 'draft'`,
+          [input.fromDraftId, input.gymId, input.memberId],
+        );
+      }
       const { insertId: paymentRequestId } = await tx.query(
         // `user_membership_id` is NULL (migration 228): a purchase belongs to
         // the member, and under #956 they may hold no plan at all.
