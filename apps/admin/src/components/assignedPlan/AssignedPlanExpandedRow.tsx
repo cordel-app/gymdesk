@@ -128,6 +128,8 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
 
   const [detail, setDetail] = useState<AssignedPlanDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  // #1724: the Membership Fee Simulation starts collapsed.
+  const [feeSimOpen, setFeeSimOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [showDetails, setShowDetails] = useState(false);
@@ -492,8 +494,21 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
           Promotion and the Personal Membership Fee Benefit are already in those
           numbers. Read-only by nature: computed on every read, persisted
           nowhere, and it charges nothing. */}
-      <CardSection label={t('section_fee_simulation')}>
-        {detail.example_timeline?.available ? (
+      <CardSection
+        label={t('section_fee_simulation')}
+        action={
+          <button
+            type="button"
+            onClick={() => setFeeSimOpen((o) => !o)}
+            aria-expanded={feeSimOpen}
+            aria-label={t('section_fee_simulation')}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 13 }}
+          >
+            {feeSimOpen ? '▾' : '▸'}
+          </button>
+        }
+      >
+        {!feeSimOpen ? null : detail.example_timeline?.available ? (
           <>
             {detail.example_timeline.anchorDate && (
               <p style={{ ...cardMutedTextStyle, fontSize: 12, margin: '0 0 8px' }}>

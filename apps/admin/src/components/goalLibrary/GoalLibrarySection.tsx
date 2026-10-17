@@ -16,6 +16,7 @@ import {
 } from '@/components/formChrome';
 import { cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
 import { displayValue, formatTimestamp } from '@/components/nutritionLibrary/nutritionItemProfile';
+import { MemberAvatar } from '@/components/MemberAvatar';
 import {
   IMAGE_PREVIEW_THUMBNAIL_SIZE, imagePreviewFrameStyle, imagePreviewImageStyle,
 } from '@/components/imagePreviewFrame';
@@ -515,16 +516,18 @@ export function GoalLibrarySection({
   }
 
   const columns: Column<GoalRow>[] = [
-    // #1623 — the 256 × 256 thumbnail in lists, in the app's one 1:1 frame; a goal
-    // with none reads the frame's own empty state, never a placeholder asset.
+    // #1623 — the 256 × 256 thumbnail in lists; #1723 draws it as the app's one
+    // circular thumbnail (`MemberAvatar`), a goal with none reads its initial in
+    // the same circle.
     ...(hasWebpImage ? [{
       header: label('label_image'),
       width: 64,
       mobile: 'secondary' as const,
       render: (goal: GoalRow) => (
-        <MemberImagePreview
-          src={memberImagePreviewSrc(goal.image_thumbnail_url ?? goal.image_url ?? null, goal.modified_at ?? goal.created_at)}
-          emptyLabel="—"
+        <MemberAvatar
+          name={nameOf(goal)}
+          imageUrl={goal.image_thumbnail_url ?? goal.image_url ?? null}
+          stamp={goal.modified_at ?? goal.created_at}
           size={40}
         />
       ),
