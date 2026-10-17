@@ -98,6 +98,7 @@ async function createProduct(gym: string, name: string): Promise<number> {
   );
   return insertId as number;
 }
+const url = (key: string) => `${R2_ENDPOINT}/${R2_BUCKET}/${key}`;
 async function urlsOf(id: number) {
   const { rows } = await db.query<{ image_url: string | null; image_thumbnail_url: string | null }>(
     'SELECT image_url, image_thumbnail_url FROM products WHERE id = ?', [id]);

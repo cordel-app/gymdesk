@@ -248,7 +248,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-2)).toBe('nutrition_goals');
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-3)).toBe('nutrition_goals');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/nutrition_goals/')))
       .toEqual(['gyms/gym_123-GymName/nutrition_goals/']);
