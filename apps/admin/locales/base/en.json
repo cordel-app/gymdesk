@@ -2114,7 +2114,6 @@
     "view_cards": "Cards",
     "view_list": "List",
     "card_no_image": "No image",
-    "card_view_details": "View full details",
     "card_show_attributes": "Show all attributes",
     "card_hide_attributes": "Hide all attributes",
     "card_param_sets": "{count, plural, one {# set} other {# sets}}",

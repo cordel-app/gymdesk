@@ -33,17 +33,16 @@ const CHIP_BASE: React.CSSProperties = {
  * An image-first, read-only Exercise card (#1386, redesigned in #1530). It renders
  * the same list row the list view does; edits happen in the page's inline editor,
  * which replaces the card (`⋮ → Edit`), so there is still one editor. The card
- * never expands in place: *View full details* opens the page's Details view. The
+ * never expands in place; Details is a `⋮` item. The
  * image is the API's own `effective_image_url` — the fallback to a muscle's image
  * is the server's — with the standard placeholder when missing or broken.
  */
 export function ExerciseCard({
-  exercise, muscleLabel, menuItems, onViewDetails, attributes,
+  exercise, muscleLabel, menuItems, attributes,
 }: {
   exercise: ExerciseCardRow;
   muscleLabel: (key: string) => string;
   menuItems: ContextMenuItem[];
-  onViewDetails: () => void;
   /** The read-only attribute view (#1571), rendered under the toggle; absent → no toggle. */
   attributes?: React.ReactNode;
 }) {
@@ -117,7 +116,7 @@ export function ExerciseCard({
               type="button"
               aria-expanded={showAttributes}
               onClick={() => setShowAttributes((v) => !v)}
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: 'var(--gd-link, #6c63ff)', textAlign: 'left' }}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: 'var(--gd-link, var(--brand))', textAlign: 'left' }}
             >
               {showAttributes ? t('card_hide_attributes') : t('card_show_attributes')}
             </button>
@@ -125,15 +124,6 @@ export function ExerciseCard({
           </div>
         )}
 
-        <div style={{ marginTop: 'auto', paddingTop: 4 }}>
-          <button
-            type="button"
-            onClick={onViewDetails}
-            style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: 'var(--gd-link, #6c63ff)', textAlign: 'left' }}
-          >
-            {t('card_view_details')}
-          </button>
-        </div>
       </div>
     </div>
   );

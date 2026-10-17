@@ -598,7 +598,6 @@ export default function ExercisesPage() {
         exercise={ex}
         muscleLabel={muscleLabel}
         menuItems={exerciseMenuItems(ex)}
-        onViewDetails={() => setDetailFor(ex)}
         attributes={renderViewSection(ex)}
       />
     );

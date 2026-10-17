@@ -506,7 +506,6 @@ export default function CordelExercisesPage() {
                   { label: t('edit'), onClick: () => openInlineEdit(row) },
                   { label: t('delete'), danger: true, onClick: () => setDeleting(row) },
                 ]}
-                onViewDetails={() => setDetailFor(row)}
                 attributes={renderReadOnly(row)}
               />
             ))}
