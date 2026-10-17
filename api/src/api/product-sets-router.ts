@@ -19,8 +19,15 @@ import {
   activateWithEvents, loadProductSetSimulationAssignment, snapshotProductSetFromPlan,
 } from './product-set-configuration';
 import {
-  createProductSetCheckout, initialCharge, loadEditLock,
+  createProductSetCheckout, ensureInitialEvent, initialCharge, loadEditLock,
 } from './product-set-checkout';
+import { methodAvailability, payFlowFor } from '../domain/productSetPayment';
+import { chargeGuard, EarlierAttempt } from '../domain/chargeGuard';
+import { classifyProviderStatus, normaliseProviderStatus } from '../domain/providerPaymentStatus';
+import { getPaymentProvider } from '../payments';
+import { toMinorUnits } from '../payments/money';
+import { getRequestLocale } from '../infra/locale';
+import crypto from 'crypto';
 
 /**
  * #1325 PR 2d — the ProductSet-keyed commercial API.
@@ -32,6 +39,7 @@ import {
  *   POST   /product-sets/draft            #1537 — the member's recurring Draft, created on first use (idempotent)
  *   GET    /product-sets/:id/review       #1537 — diff vs the Active version + the amount due today
  *   POST   /product-sets/:id/save-and-pay Draft → Pending Payment + checkout
+ *   POST   /product-sets/:id/pay          #1664 — Save & Pay with a chosen method (members_app | cash | card | monei)
  *   POST   /product-sets/:id/activate     Draft → Active when nothing is owed
  *   DELETE /product-sets/:id              cancel an in-flight version
  *
@@ -211,7 +219,7 @@ productSetsRouter.post('/', requireModuleWrite('PAYMENTS'), async (req, res) => 
   res.status(201).json(shape(row));
 });
 
-productSetsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), async (req, res) => {
+async function saveAndPayHandler(req: any, res: any) {
   const { gymId } = getTenantContext(req);
   const set = await loadSet(gymId, req.params.id);
   if (!set) return res.status(404).json({ error: 'ProductSet not found' });
@@ -244,7 +252,8 @@ productSetsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), asyn
     payment_request_id: checkout.paymentRequestId, billing_event_id: checkout.billingEventId,
     checkout_url: checkout.checkoutUrl, amount: charge.amount,
   });
-});
+}
+productSetsRouter.post('/:id/save-and-pay', requireModuleWrite('PAYMENTS'), saveAndPayHandler);
 
 productSetsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (req, res) => {
   const { gymId } = getTenantContext(req);
@@ -266,6 +275,129 @@ productSetsRouter.post('/:id/activate', requireModuleWrite('PAYMENTS'), async (r
   if (out.kind !== 'ok') return res.status(409).json({ error: out.kind });
   recordAudit(req, { action: 'activate', entityType: 'product_set', entityId: set.id, next: { status: 'active' } });
   res.json({ product_set_id: Number(set.id), status: 'active', events_created: (out as any).eventsCreated ?? 0 });
+});
+
+/**
+ * #1664 — Save & Pay with the method staff chose in the confirmation modal.
+ *
+ *   members_app  the existing Save & Pay: Pending Payment + a hosted checkout
+ *   cash / card  staff-confirmed money: the version, its first event and a
+ *                completed `cash` / `card_terminal` attempt commit in ONE
+ *                transaction and the version activates; no provider call
+ *   monei        the member's stored token is charged for the first event; the
+ *                version activates only when the provider SETTLES it
+ *
+ * Until this call the version is a Draft; a second submission finds it past
+ * `draft` under the row lock and is refused, so it cannot pay twice.
+ */
+productSetsRouter.post('/:id/pay', requireModuleWrite('PAYMENTS'), async (req, res, next) => {
+  const { gymId } = getTenantContext(req);
+  try {
+    const code = String(req.body?.method ?? '');
+    const flow = payFlowFor(code);
+    if (!flow) return res.status(400).json({ error: 'unsupported_payment_method' });
+    const { rows: cat } = await db.query<{ id: number }>(
+      "SELECT id FROM base_payment_methods WHERE code = ? AND status = 'active' AND deleted_at IS NULL", [code]);
+    if (!cat[0]) return res.status(409).json({ error: 'payment_method_inactive' });
+
+    if (flow.flow === 'members_app') return saveAndPayHandler(req, res);
+
+    const set = await loadSet(gymId, req.params.id);
+    if (!set) return res.status(404).json({ error: 'ProductSet not found' });
+    if (set.status === 'draft' && Number(set.stale) === 1) return res.status(410).json({ error: 'draft_expired' });
+    if (set.status !== 'draft') return res.status(409).json({ error: 'not_committable', status: set.status });
+    const memberId = Number(set.owner_member_id);
+    const blocking = await loadEditLock(gymId, memberId, todayUtc());
+    if (blocking.length > 0) return res.status(409).json({ error: 'edit_locked', blocking });
+
+    const { startsAt, charge } = await commitCharge(gymId, set);
+    if (!charge || charge.amount <= 0) return res.status(409).json({ error: 'nothing_to_pay' });
+    const actor = actorOf(req).name;
+    const { rows: ct } = await db.query<{ id: number }>("SELECT id FROM charge_types WHERE code = 'membership_fee' LIMIT 1");
+    const chargeTypeId = ct[0]?.id ?? null;
+
+    let token: { payment_token: string; sequence_id: string; provider: string | null } | null = null;
+    if (flow.flow === 'monei') {
+      const { rows: pm } = await db.query<any>(
+        `SELECT payment_token, sequence_id, provider FROM payment_methods
+          WHERE gym_id = ? AND member_id = ? AND payment_token IS NOT NULL AND sequence_id IS NOT NULL
+          ORDER BY COALESCE(updated_at, created_at) DESC, id DESC LIMIT 1`, [gymId, memberId]);
+      if (!pm[0]) return res.status(409).json({ error: 'monei_token_missing', message: 'This member does not have a Monei payment token.' });
+      token = pm[0];
+    }
+
+    const orderId = `PS-${String(gymId).slice(0, 8)}-${set.id}-${crypto.randomUUID().slice(0, 8)}`;
+    const staged = await db.transaction(async (tx) => {
+      const { rows: locked } = await tx.query<{ status: string }>(
+        'SELECT status FROM product_sets WHERE id = ? AND gym_id = ? FOR UPDATE', [Number(set.id), gymId]);
+      if (locked[0]?.status !== 'draft') return { kind: 'not_committable' as const, status: locked[0]?.status };
+      const moved = await submitForPayment(tx, gymId, Number(set.id));
+      if (moved.kind !== 'ok') return { kind: moved.kind };
+      const eventId = await ensureInitialEvent(tx, { gymId, productSetId: Number(set.id), memberId, startsAt, charge, chargeTypeId, actor });
+      const { rows: prev } = await tx.query<any>(
+        'SELECT id, method, provider_status, provider_ref, status, attempt FROM payment_requests WHERE billing_event_id = ? FOR UPDATE', [eventId]);
+      const guard = chargeGuard(prev.map((a: any): EarlierAttempt => ({
+        id: Number(a.id), method: a.method, providerStatus: a.provider_status, providerRef: a.provider_ref, status: a.status,
+      })));
+      if (!guard.allowed) return { kind: 'charge_refused' as const, reason: guard.reason };
+      const attempt = prev.reduce((m: number, a: any) => Math.max(m, Number(a.attempt)), 0) + 1;
+      const done = flow.flow === 'manual';
+      const { insertId } = await tx.query(
+        `INSERT INTO payment_requests
+           (gym_id, member_id, amount, currency, charge_type_id, billing_event_id, status, provider,
+            provider_order, source, attempt, method, created_by, created_at${done ? ', completed_at' : ''})
+         VALUES (?, ?, ?, 'EUR', ?, ?, ?, ?, ?, 'manual', ?, ?, ?, UTC_TIMESTAMP()${done ? ', UTC_TIMESTAMP()' : ''})`,
+        [gymId, memberId, charge.amount.toFixed(2), chargeTypeId, eventId, done ? 'completed' : 'pending',
+          token?.provider ?? 'monei', orderId, attempt, done ? flow.attemptMethod : 'provider', actor]);
+      await tx.query('UPDATE product_sets SET payment_request_id = ? WHERE id = ?', [insertId, Number(set.id)]);
+      if (done) {
+        const activated = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor });
+        if (activated.kind !== 'ok') throw Object.assign(new Error(activated.kind), { kind: activated.kind });
+      }
+      return { kind: 'ok' as const, eventId, attemptId: Number(insertId) };
+    }).catch((err: any) => (err?.kind ? { kind: String(err.kind) } : Promise.reject(err)));
+    if (staged.kind !== 'ok') return res.status(409).json({ error: staged.kind, ...(staged as any) });
+    const { eventId, attemptId } = staged as { eventId: number; attemptId: number };
+
+    if (flow.flow === 'manual') {
+      recordAudit(req, { action: 'save_and_pay', entityType: 'product_set', entityId: set.id, next: { status: 'active', method: code } });
+      return res.status(201).json({ product_set_id: Number(set.id), status: 'active', outcome: 'paid', billing_event_id: eventId, amount: charge.amount });
+    }
+
+    // Monei — the provider is called outside any transaction; the attempt row exists first.
+    let outcome: 'paid' | 'failed' | 'pending' | 'unknown' = 'unknown';
+    try {
+      const result = await getPaymentProvider().executeRecurring({
+        orderId, amount: toMinorUnits(charge.amount), currency: 'EUR',
+        paymentToken: token!.payment_token, sequenceId: token!.sequence_id,
+      });
+      const raw = normaliseProviderStatus(result.providerStatus ?? (result.success ? 'SUCCEEDED' : 'FAILED'));
+      const cls = classifyProviderStatus(raw);
+      const settled = result.success === true && cls === 'settled';
+      const internal = settled ? 'completed' : cls === 'in_flight' ? 'pending' : 'failed';
+      await db.transaction(async (tx) => {
+        await tx.query(
+          `UPDATE payment_requests SET status = ?, provider_ref = ?, provider_status = ?, failure_code = ?, failure_message = ?,
+                  completed_at = ${internal === 'completed' ? 'UTC_TIMESTAMP()' : 'NULL'}, modified_at = UTC_TIMESTAMP(), modified_by = ?
+            WHERE id = ?`,
+          [internal, result.providerRef ?? null, raw, result.errorCode ?? null, result.errorMessage?.slice(0, 500) ?? null, actor, attemptId]);
+        if (internal === 'completed') {
+          const a = await activateWithEvents(tx, { gymId, productSetId: Number(set.id), today: todayUtc(), actor });
+          if (a.kind !== 'ok') throw new Error(a.kind);
+        }
+      });
+      outcome = internal === 'completed' ? 'paid' : internal === 'pending' ? 'pending' : 'failed';
+    } catch {
+      // Provider threw or never answered: the attempt stays pending with no provider status —
+      // an unknown outcome the charge guard treats as unresolved. Never reported as paid.
+      outcome = 'unknown';
+    }
+    recordAudit(req, { action: 'save_and_pay', entityType: 'product_set', entityId: set.id, next: { status: outcome === 'paid' ? 'active' : 'pending_payment', method: code, outcome } });
+    res.status(outcome === 'paid' ? 201 : 202).json({
+      product_set_id: Number(set.id), status: outcome === 'paid' ? 'active' : 'pending_payment',
+      outcome, billing_event_id: eventId, amount: charge.amount,
+    });
+  } catch (err) { next(err); }
 });
 
 /**
@@ -414,7 +546,7 @@ productSetsRouter.get('/:id/review', async (req, res, next) => {
     const changes = diffConfigurations(before, after);
 
     let amountDue: number | null = null;
-    let lines: Array<{ item_name: string | null; quantity: number; amount: number }> = [];
+    let lines: any[] = [];
     let error: string | null = null;
     try {
       const blocking = await loadEditLock(gymId, Number(set.owner_member_id), todayUtc());
@@ -425,6 +557,12 @@ productSetsRouter.get('/:id/review', async (req, res, next) => {
         amountDue = charge ? Math.round(charge.amount * 100) / 100 : 0;
         lines = (charge?.lines ?? []).map((l: any) => ({
           item_name: l.item_name ?? null, quantity: Number(l.quantity), amount: Number(l.amount),
+          regular_unit_price: l.regular_unit_price != null ? Number(l.regular_unit_price) : null,
+          promotion_name: l.promotion_name ?? null,
+          treatment_action: l.treatment_action ?? null,
+          treatment_value: l.treatment_value != null ? Number(l.treatment_value) : null,
+          tax_rate_percent: l.tax_rate_percent != null ? Number(l.tax_rate_percent) : null,
+          amount_excl_tax: l.amount_excl_tax != null ? Number(l.amount_excl_tax) : null,
         }));
         if (!Number.isFinite(amountDue) || amountDue < 0) { amountDue = null; error = 'amount_unavailable'; }
       }
@@ -433,7 +571,25 @@ productSetsRouter.get('/:id/review', async (req, res, next) => {
       error = 'amount_unavailable';
     }
 
+    const { rows: tok } = await db.query<{ n: number }>(
+      'SELECT COUNT(*) AS n FROM payment_methods WHERE gym_id = ? AND member_id = ? AND payment_token IS NOT NULL AND sequence_id IS NOT NULL',
+      [gymId, Number(set.owner_member_id)]);
+    const hasMoneiToken = Number(tok[0]?.n ?? 0) > 0;
+    const locale = getRequestLocale(req);
+    const { rows: methods } = await db.query<any>(
+      `SELECT m.code,
+              COALESCE((SELECT t.name FROM base_payment_method_translations t WHERE t.base_payment_method_id = m.id AND t.locale = ?),
+                       (SELECT t.name FROM base_payment_method_translations t WHERE t.base_payment_method_id = m.id AND t.locale = 'en'),
+                       m.code) AS name
+         FROM base_payment_methods m
+        WHERE m.status = 'active' AND m.deleted_at IS NULL ORDER BY m.id`, [locale]);
+    const paymentMethods = methods.map((m: any) => ({ code: String(m.code), name: String(m.name), ...methodAvailability(String(m.code), { hasMoneiToken }) }));
+    const netTotal = lines.reduce((n, l) => n + (l.amount_excl_tax ?? l.amount), 0);
+
     res.json({
+      payment_methods: paymentMethods,
+      net_total: Math.round(netTotal * 100) / 100,
+      tax_total: amountDue != null ? Math.round((amountDue - netTotal) * 100) / 100 : null,
       product_set_id: Number(set.id),
       status: String(set.status),
       has_previous: set.previous_product_set_id != null,
