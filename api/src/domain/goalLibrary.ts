@@ -88,41 +88,23 @@ export function isMeasurableGoalKind(kind: GoalLibraryKind): boolean {
 }
 
 /**
- * #1035 stage 2 — which kinds carry an **image** (`image_url`, migration 225).
- * Exactly one does, for the same reason exactly one is measurable: the ticket's
- * bucket tree (`docs/cloudflare_structure.md`) names
- * `goals/{personal_goal_id}-{personal_goal_name}.png` and nothing for a
- * Nutrition Goal, and the two catalogues are two tables precisely so they can
- * diverge (migration 206's header).
+ * #1623, #1722 — which kinds carry the **WebP** image pair (`image_url` +
+ * `image_thumbnail_url`, migrations 282 and 293): a 1080 × 1080 master and a
+ * 256 × 256 thumbnail the server makes from one original
+ * (`api/src/api/nutrition-goal-image-storage.ts`, the Membership Plan's pipeline
+ * one entity over). Both kinds have it: #1722 replaced the Personal Goal's
+ * PNG-only implementation (#1035 stage 2) rather than keeping it beside this one.
  *
  * It is a declaration rather than a branch on the kind in each router because
  * one factory serves both: the list's projection, the single-row read and the
- * two image routes all ask this, so a kind cannot have the column in one
- * statement and not in the next — and `nutrition_goals` has no such column, so
- * a router that projected it anyway would answer ER_BAD_FIELD_ERROR, which the
- * global handler turns into a bare 500 (#966). The image **routes** are
- * registered only for a kind that has one, so a Nutrition Goal's `/:id/image`
- * is a 404 rather than a control that writes nowhere.
- *
- * Giving a second kind an image therefore goes in **three** places: this list,
- * the column on that kind's table, and the admin's own mirror
- * (`IMAGE_GOAL_KINDS` in `apps/admin/src/components/goalLibrary/goalProfile.ts`).
+ * two image routes all ask this, so a kind cannot have the columns in one
+ * statement and not in the next. The image **routes** are registered only for a
+ * kind that has one. A new kind with an image goes in **three** places: this
+ * list, the two columns on its table and the admin's mirror
+ * (`WEBP_IMAGE_GOAL_KINDS` in `apps/admin/src/components/goalLibrary/goalProfile.ts`),
+ * plus its folder in `GOAL_IMAGE_FOLDERS`.
  */
-export const IMAGE_GOAL_KINDS: readonly GoalLibraryKind[] = ['personal'];
-
-export function goalKindHasImage(kind: GoalLibraryKind): boolean {
-  return IMAGE_GOAL_KINDS.includes(kind);
-}
-
-/**
- * #1623 — which kinds carry the **WebP** image pair (`image_url` +
- * `image_thumbnail_url`, migration 282), made by the server from one original
- * (`api/src/api/nutrition-goal-image-storage.ts`). Exactly one does. It is a
- * separate declaration from {@link IMAGE_GOAL_KINDS} because the two pipelines
- * differ (a Personal Goal's is the PNG-signature one, #1035) and a kind has one.
- * Mirrored in the admin's `WEBP_IMAGE_GOAL_KINDS`.
- */
-export const WEBP_IMAGE_GOAL_KINDS: readonly GoalLibraryKind[] = ['nutrition'];
+export const WEBP_IMAGE_GOAL_KINDS: readonly GoalLibraryKind[] = ['nutrition', 'personal'];
 
 export function goalKindHasWebpImage(kind: GoalLibraryKind): boolean {
   return WEBP_IMAGE_GOAL_KINDS.includes(kind);

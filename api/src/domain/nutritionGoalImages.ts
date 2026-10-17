@@ -11,6 +11,7 @@
 // System one (`docs/cloudflare_structure.md`).
 
 import {
+  GOALS_FOLDER,
   NUTRITION_GOALS_FOLDER,
   PLATFORM_STORAGE_ROOT,
   sanitizeStorageObjectName,
@@ -18,6 +19,16 @@ import {
 } from '../infra/storage';
 
 export { NUTRITION_GOALS_FOLDER };
+
+/**
+ * #1722 — the same pipeline serves a Personal Goal, whose folder is `goals/`
+ * (the one the PNG implementation kept it in, so a pre-#1722 object is still
+ * under its owner's own folder and is swept when its image is replaced). A goal
+ * kind's folder is declared here and nowhere else; every builder below takes it
+ * as a trailing argument defaulting to `nutrition_goals/`.
+ */
+export const GOAL_IMAGE_FOLDERS = { nutrition: NUTRITION_GOALS_FOLDER, personal: GOALS_FOLDER } as const;
+export type GoalImageKind = keyof typeof GOAL_IMAGE_FOLDERS;
 
 /** Same cap as a member's or plan's name in a key, for the same VARCHAR(1024) reason. */
 const MAX_KEY_NAME_CHARS = 80;
@@ -33,18 +44,22 @@ export function sanitizeNutritionGoalImageName(name: string): string {
  * for a System goal. Deterministic, so a replacement overwrites its own object
  * and the id keeps two goals with one name apart.
  */
-export function buildNutritionGoalImageKey(prefix: string, goalId: number | string, name: string): string {
-  return `${prefix}/${NUTRITION_GOALS_FOLDER}/${goalId}-${sanitizeNutritionGoalImageName(name)}.webp`;
+export function buildNutritionGoalImageKey(
+  prefix: string, goalId: number | string, name: string, folder: string = NUTRITION_GOALS_FOLDER,
+): string {
+  return `${prefix}/${folder}/${goalId}-${sanitizeNutritionGoalImageName(name)}.webp`;
 }
 
 /** The 256 × 256 sibling: the master's key with `-thumbnail` before the extension. */
-export function buildNutritionGoalImageThumbnailKey(prefix: string, goalId: number | string, name: string): string {
-  return `${prefix}/${NUTRITION_GOALS_FOLDER}/${goalId}-${sanitizeNutritionGoalImageName(name)}-thumbnail.webp`;
+export function buildNutritionGoalImageThumbnailKey(
+  prefix: string, goalId: number | string, name: string, folder: string = NUTRITION_GOALS_FOLDER,
+): string {
+  return `${prefix}/${folder}/${goalId}-${sanitizeNutritionGoalImageName(name)}-thumbnail.webp`;
 }
 
 /** Folder markers between the bucket root and `nutrition_goals/`, outermost first. */
-export function nutritionGoalImageFolderKeys(prefix: string): string[] {
-  return [`${prefix}/`, `${prefix}/${NUTRITION_GOALS_FOLDER}/`];
+export function nutritionGoalImageFolderKeys(prefix: string, folder: string = NUTRITION_GOALS_FOLDER): string[] {
+  return [`${prefix}/`, `${prefix}/${folder}/`];
 }
 
 /**
@@ -56,11 +71,12 @@ export function nutritionGoalImageFolderKeys(prefix: string): string[] {
 export function isOwnedNutritionGoalImageUrl(
   url: string | null | undefined,
   prefix: string | null | undefined,
+  folder: string = NUTRITION_GOALS_FOLDER,
 ): boolean {
   if (!url || !prefix) return false;
   const key = storageKeyFromObjectUrl(url);
   if (!key) return false;
-  return key.startsWith(`${prefix}/${NUTRITION_GOALS_FOLDER}/`);
+  return key.startsWith(`${prefix}/${folder}/`);
 }
 
 /** The platform's prefix for a System goal's image. */

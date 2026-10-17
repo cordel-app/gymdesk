@@ -72,9 +72,9 @@ describe('isOwnedNutritionGoalImageUrl', () => {
 });
 
 describe('kind declarations', () => {
-  it('give the WebP image to Nutrition Goals only and the translations to both kinds', () => {
+  it('give the WebP image and the translations to both kinds', () => {
     expect(goalKindHasWebpImage('nutrition')).toBe(true);
-    expect(goalKindHasWebpImage('personal')).toBe(false);
+    expect(goalKindHasWebpImage('personal')).toBe(true);
     expect(goalKindIsTranslated('nutrition')).toBe(true);
     expect(goalKindIsTranslated('personal')).toBe(true);
   });
