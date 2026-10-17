@@ -95,7 +95,7 @@ describe('#1051: Active and Past are two instances of that list (§4)', () => {
     expect(sectionSrc).toContain('const live = plans.filter((p) => p.is_live)');
     expect(sectionSrc).toContain('const history = plans.filter((p) => !p.is_live)');
     expect((sectionSrc.match(/<AssignedPlansTable/g) ?? []).length).toBe(2);
-    expect(sectionSrc).toContain('rows={live}');
+    expect(sectionSrc).toContain('rows={visible.rows}');
     expect(sectionSrc).toContain('rows={history}');
   });
 
@@ -133,7 +133,7 @@ describe('#958: the actions stay in the ⋮ menu (Q2)', () => {
   it('leaves the menu to the caller rather than the list', () => {
     // The Assigned Plans page keeps the `⋮` it already had — the one inside
     // the expanded body — so the shared table must not declare one of its own.
-    expect(tableSrc).toContain('rowActions ? rowActions(row) : []');
+    expect(tableSrc).toContain('rowActions ? rowActions(row, { startEdit }) : []');
     expect(pageSrc, 'the Financials list grew a row menu').not.toContain('rowActions');
   });
 
@@ -155,7 +155,7 @@ describe('#958: the expansion is the shared Assigned Plan card body (Q3 share)',
       "import { AssignedPlanExpandedRow } from '@/components/assignedPlan/AssignedPlanExpandedRow'",
     );
     expect(tableSrc).toContain(
-      '<AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} startEditing={row.id === openInEditId} />',
+      '<AssignedPlanExpandedRow assignedPlanId={row.id} onChanged={onChanged} embedded={embedded} viewAsMemberId={viewAsMemberId} startEditing={row.id === openInEditId} editToken={editTokens[row.id] ?? 0} />',
     );
     // The Member card asks for the read-only body; the Assigned Plans page,
     // where a plan's own card lives, does not.
@@ -175,7 +175,7 @@ describe('#958: the expansion is the shared Assigned Plan card body (Q3 share)',
 
   it('keeps the body\'s own header, menu and Edit mode out of an embedded render', () => {
     expect(cardBodySrc).toContain('embedded = false');
-    expect(cardBodySrc).toMatch(/\{!hostEmbedded && \([\s\S]{0,700}<ContextMenu/);
+    expect(cardBodySrc).toMatch(/\{!embedded && \([\s\S]{0,700}<ContextMenu/);
     expect(cardBodySrc).toContain('const editing = !hostEmbedded && isEditing');
   });
 

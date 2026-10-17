@@ -54,7 +54,7 @@ import { apiErrorMessage } from '@/lib/apiClient';
 import { formControlStyle, formErrorStyle, inlineEditorStyle, secondaryBtnSmall } from '@/components/formChrome';
 import type { ContextMenuItem } from '@/components/ContextMenu';
 import { AssignPlanToMembersEditor } from '../plans/AssignPlanToMembersEditor';
-import { AssignedPlansTable } from '@/components/assignedPlan/AssignedPlansTable';
+import { AssignedPlansTable, type AssignedPlanRowHelpers } from '@/components/assignedPlan/AssignedPlansTable';
 import { AssignedPlanDetailsDialog } from '@/components/assignedPlan/AssignedPlanDetailsDialog';
 import { cardSubLabelStyle } from '@/components/formChrome';
 import { primaryBtnSmall } from '@/components/ui';
@@ -174,11 +174,15 @@ export function MemberMembershipPlans({
    * status". `Details` is every row's: reading what a past assignment was
    * agreed with is the whole point of keeping it.
    */
-  function rowActions(plan: MemberPlanRow): ContextMenuItem[] {
+  function rowActions(plan: MemberPlanRow, helpers: AssignedPlanRowHelpers): ContextMenuItem[] {
     // #1191: a Linked plan is the owner's contract seen from another Member —
     // it offers no Assign New Plan or Cancel Plan, only Details.
     const lifecycleItems: ContextMenuItem[] = canWrite && plan.is_live && plan.assignment_relationship !== 'linked'
       ? [
+        // #1725: a Draft is configured in place — the row's own Edit opens it.
+        ...(plan.status === 'draft'
+          ? [{ label: t('action_edit_plan'), onClick: () => helpers.startEdit(plan.id) }]
+          : []),
         ...(canEditLivePlan(plan)
           ? [{ label: t('action_edit_plan'), onClick: () => void editPlan(plan), disabled: creating || assignBusy }]
           : []),
