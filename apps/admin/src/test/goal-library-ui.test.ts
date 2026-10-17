@@ -733,11 +733,13 @@ describe('a Nutrition Goal is translated; both kinds carry a WebP image (#1623, 
     created_at: '2026-01-01T00:00:00Z', created_by: null, modified_at: null, modified_by: null, deleted_at: null, deleted_by: null,
   };
 
-  it('shows the API\'s display_name for a translated kind, the slug rule for the other', () => {
+  it('shows the API\'s display_name for a translated kind, falling back to the base name', () => {
     const translate = (key: string) => `T:${key}`;
     expect(goalListName({ ...row, display_name: 'Proteínas' }, 'nutrition', translate)).toBe('Proteínas');
     expect(goalListName(row, 'nutrition', translate)).toBe('Protein');
-    expect(goalListName({ ...row, slug: 'weight_loss', name: 'Weight Loss' }, 'personal', translate)).toBe('T:personal_goal_weight_loss');
+    expect(goalListName({ ...row, slug: 'weight_loss', name: 'Weight Loss' }, 'personal', translate)).toBe('Weight Loss');
+    expect(goalListName({ ...row, slug: 'weight_loss', name: 'Weight Loss', display_name: 'Pérdida de peso' }, 'personal', translate))
+      .toBe('Pérdida de peso');
   });
 
   it('seeds the form from the row\'s translations and submits only locales with a name', () => {
@@ -752,10 +754,9 @@ describe('a Nutrition Goal is translated; both kinds carry a WebP image (#1623, 
     expect(toTranslationsPayload({ es: { name: ' ', description: 'x' } })).toEqual({});
   });
 
-  it('leaves a Personal Goal\'s form and payload exactly as they were', () => {
-    expect(toGoalFormValues({ ...row, slug: null }).translations).toBeUndefined();
+  it('submits a Personal Goal\'s translations the same way (#1719)', () => {
     expect(toGoalPayload({ ...emptyGoalForm(), name: 'x', translations: { es: { name: 'y', description: '' } } }, 'personal').translations)
-      .toBeUndefined();
+      .toEqual({ es: { name: 'y', description: null } });
   });
 
   it('refuses a translated description without a translated name', () => {
