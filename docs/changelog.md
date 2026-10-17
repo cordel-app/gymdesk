@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1724 (the Membership Fee Simulation section starts collapsed on both the Membership Plan card (existing `CollapsibleCard`) and the Assigned Plan card (chevron toggle in the section header); expanding shows the unchanged table. UI only, no API change)
 - **Done**: #1723 (Base and Gym Nutrition Goal lists draw the goal's 256 px thumbnail in the app's circular `MemberAvatar`, with the goal's initial in the same circle when it has no image. UI only; upload, storage and the read-only/Edit image views are untouched)
 - **Done**: #1700 (My Nutrition's goal and dietary-restriction cards now share My Training's exercise-card look: the 12px separator-bordered surface frame, the image filling the card edge to edge (`cover`), 15px/600 title and 12px detail, full-width 10px/14px primary action buttons stacked inside the card, and the same 300px-at-most card width via a start-aligned grid. UI only: completion actions, progress and data loading are untouched)
 - **Done**: #1709 (My Training's week card no longer shows a rest day for a date whose day card lists a workout: `dayStatus()` (`apps/member/src/lib/trainingDayStatus.ts`) now derives rest from the same list the card shows, i.e. workouts scheduled for that weekday plus weekday-less ones, so a weekday-less workout reads pending/scheduled/completed and only a day listing nothing is rest. Reverses #1554's "weekday-less alone is rest". UI only. Test: `training-day-status.test.ts`)
