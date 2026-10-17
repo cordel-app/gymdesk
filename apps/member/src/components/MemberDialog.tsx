@@ -69,6 +69,10 @@ const styles: Record<string, CSSProperties> = {
   sheet: {
     width: '100%', maxWidth: 480, maxHeight: '85vh', overflowY: 'auto',
     background: memberTheme.surface,
+    // The sheet's own text colour: without it the title's siblings fall back to
+    // whatever the page inherits, which is not the theme's text setting.
+    color: memberTheme.text,
+    border: `1px solid ${memberTheme.cardBorderColor}`,
     borderRadius: 16,
     padding: '20px 18px',
     boxShadow: '0 8px 30px rgba(0,0,0,0.18)',

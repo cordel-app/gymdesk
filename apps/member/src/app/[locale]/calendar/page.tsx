@@ -507,6 +507,7 @@ export default function MemberCalendarPage() {
               // #833 §7 — the event window's own surface setting. It used to
               // borrow the Admin sidebar's colour, which was never its own.
               width: '100%', background: memberTheme.calendarModalBackground,
+              color: memberTheme.text,
               borderRadius: '16px 16px 0 0', padding: '20px 16px',
               boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
             }}

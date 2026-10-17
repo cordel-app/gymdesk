@@ -1,7 +1,7 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { destructiveButtonStyle, secondaryButtonStyle } from '@/lib/memberChrome';
+import { destructiveButtonStyle, memberTheme, secondaryButtonStyle } from '@/lib/memberChrome';
 import { MemberDialog } from '@/components/MemberDialog';
 
 /**
@@ -50,7 +50,7 @@ export function CancelBookingConfirmDialog({ onConfirm, onClose, busy }: {
         </>
       )}
     >
-      <p style={{ margin: 0, fontSize: 15 }}>{t('cancel_confirm_body')}</p>
+      <p style={{ margin: 0, fontSize: 15, color: memberTheme.textSecondary }}>{t('cancel_confirm_body')}</p>
     </MemberDialog>
   );
 }
