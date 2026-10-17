@@ -106,8 +106,10 @@ export function progressDays(logs: ProgressLog[], resultType: AllowedResultType 
   }
   return [...byDate.keys()].sort().map((date) => {
     const dayLogs = byDate.get(date)!;
-    const sets = dayLogs.flatMap((l) => l.sets).map((s) => ({
-      set_number: s.set_number, weight: num(s.weight), reps: num(s.reps),
+    // A registration is its own log, so every one was stored as Set 1: the
+    // number is the set's position among that exercise's sets of the day.
+    const sets = dayLogs.flatMap((l) => l.sets).map((s, i) => ({
+      set_number: i + 1, weight: num(s.weight), reps: num(s.reps),
     }));
     return {
       logged_date: date,
