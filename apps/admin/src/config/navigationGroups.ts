@@ -87,19 +87,16 @@ export const navigationGroups: NavGroup[] = [
     icon: 'calendar',
     featureKey: 'calendar',
     module: 'CALENDAR',
+    // #1770: Calendar is a single page in the main menu; Activities and
+    // Operating Hours are tabs of it (CalendarSectionTabs).
+    directLink: true,
     items: [
       {
         href: '/{{locale}}/calendar',
         labelKey: 'nav.calendar',
         featureKey: 'calendar.calendar',
         // #1749: Activities is a tab of the Calendar page, not a sidebar entry.
-        alsoActiveFor: ['/{{locale}}/activity-types'],
-      },
-      {
-        href: '/{{locale}}/calendar/operating-hours',
-        labelKey: 'nav.operating_hours',
-        featureKey: 'calendar.operating_hours',
-        separatorAbove: true,
+        alsoActiveFor: ['/{{locale}}/activity-types', '/{{locale}}/calendar/operating-hours'],
       },
     ],
   },
