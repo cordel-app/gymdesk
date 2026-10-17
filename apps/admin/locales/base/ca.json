@@ -68,7 +68,7 @@
     "expand_sidebar": "Desplegar menú lateral",
     "localization": "Hora i localització",
     "home": "Inici",
-    "base_payment_methods": "Mètodes de pagament base"
+    "base_payment_methods": "Mètodes de pagament"
   },
   "dashboard": {
     "title": "Tauler",
@@ -4953,8 +4953,8 @@
     "pending_view_all": "Veure els {count} a Pagaments"
   },
   "base_payment_methods": {
-    "title": "Mètodes de pagament base",
-    "add": "+ Nou mètode de pagament",
+    "title": "Mètodes de pagament",
+    "add": "+ Afegeix mètode de pagament",
     "empty": "No hi ha mètodes de pagament.",
     "search": "Cerca…",
     "col_name": "Nom",
@@ -4978,6 +4978,14 @@
     "delete_confirm": "Eliminar \"{name}\"? Es conserva per a l'historial i ja no es podrà seleccionar.",
     "error_load": "No s'han pogut carregar els mètodes de pagament.",
     "error_generic": "Alguna cosa ha anat malament.",
-    "error_required": "El codi i un nom en cada idioma són obligatoris."
+    "error_required": "El codi i un nom en cada idioma són obligatoris.",
+    "image": "Imatge",
+    "image_none": "Sense imatge",
+    "created_at": "Creat el",
+    "created_by": "Creat per",
+    "modified_at": "Modificat el",
+    "modified_by": "Modificat per",
+    "deleted_at": "Eliminat el",
+    "deleted_by": "Eliminat per"
   }
 }

@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1702 (Cordel → Payment Methods, formerly *Base Payment Methods*: the add button sits at the right of the header, create and edit are inline cards with no modal, `⋮ → Details` also shows Created/Modified/Deleted At and By, and each method carries an image — `POST`/`DELETE /platform/base-payment-methods/:id/image` store a server-made 1080 × 1080 WebP and 256 × 256 thumbnail at `cordel/payment_method/<id>-<name>[-thumbnail].webp` through the Member photo's pipeline, migration 288 adds `image_url`/`image_thumbnail_url`, and a rename of the English name moves the objects. Test: `payment-method-images.unit.test.ts`)
 - **Done**: #1712 (Membership Plan cards show the plan's image at the top, through the same `CardSquareImage` the Exercise cards use; a plan with no image renders no image area. UI only, the list view and every card action are unchanged. Test: `plan-view-mode.test.ts`)
 - **Done**: #1713 (the Exercise cards no longer show the *View full details* button — Details stays in the `⋮` menu — and *Show all attributes* falls back to the theme's brand colour instead of a hard-coded lilac. UI only)
 - **Done**: #1724 (the Membership Fee Simulation section starts collapsed on both the Membership Plan card (existing `CollapsibleCard`) and the Assigned Plan card (chevron toggle in the section header); expanding shows the unchanged table. UI only, no API change)

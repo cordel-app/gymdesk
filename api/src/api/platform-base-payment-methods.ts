@@ -4,6 +4,18 @@ import { requireSuperadmin } from '../infra/tenantContext';
 import { recordAudit } from '../infra/audit';
 import { resolvePlatformActor } from '../domain/auditActor';
 import { getRequestLocale as resolveLocale } from '../infra/locale';
+import { paymentMethodImageName } from '../domain/paymentMethodImages';
+import {
+  clearPaymentMethodImage,
+  migratePaymentMethodImageOnRename,
+  storePaymentMethodImage,
+} from './payment-method-image-storage';
+import {
+  isMemberImageRefusal,
+  memberImageBodyParser,
+  memberImageUploadRateLimit,
+  parseMemberImageRequest,
+} from './member-image-storage';
 import {
   BASE_PAYMENT_METHOD_STATUSES,
   parseCode,
@@ -25,6 +37,8 @@ interface MethodRow {
   id: number;
   code: string;
   status: string;
+  image_url: string | null;
+  image_thumbnail_url: string | null;
   created_at: string;
   created_by: string | null;
   modified_at: string | null;
@@ -172,7 +186,17 @@ platformBasePaymentMethodsRouter.put('/:id', requireSuperadmin, async (req, res)
     );
     if (translations) await writeTranslations(tx, existing.id, translations);
   });
-  const row = await loadOne(existing.id, locale);
+  let row = await loadOne(existing.id, locale);
+  // #1702: the image key carries the (English) name, so a rename moves it.
+  if (row && row.image_url) {
+    const nextName = paymentMethodImageName(row.translations, row.code);
+    if (nextName !== paymentMethodImageName(existing.translations, existing.code)) {
+      const moved = await migratePaymentMethodImageOnRename({
+        id: row.id, name: nextName, image_url: row.image_url, image_thumbnail_url: row.image_thumbnail_url,
+      });
+      if (moved) row = await loadOne(existing.id, locale);
+    }
+  }
   recordAudit(req, { action: 'update', entityType: 'base_payment_method', entityId: existing.id, previous: existing, next: row });
   res.json(row);
 });
@@ -189,4 +213,51 @@ platformBasePaymentMethodsRouter.delete('/:id', requireSuperadmin, async (req, r
   );
   recordAudit(req, { action: 'soft_delete', entityType: 'base_payment_method', entityId: existing.id, previous: existing });
   res.status(204).send();
+});
+
+/* ── Image (#1702 — WebP master 1080 × 1080 + thumbnail 256 × 256, cordel/payment_method/) ── */
+
+async function loadForImage(req: any, res: any) {
+  const row = await loadOne(req.params.id, resolveLocale(req));
+  if (!row || row.deleted_at) { res.status(404).json({ error: 'Payment method not found' }); return null; }
+  return {
+    row,
+    method: {
+      id: row.id,
+      name: paymentMethodImageName(row.translations, row.code),
+      image_url: row.image_url,
+      image_thumbnail_url: row.image_thumbnail_url,
+    },
+  };
+}
+
+platformBasePaymentMethodsRouter.post('/:id/image', requireSuperadmin, memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = await parseMemberImageRequest(req);
+    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const loaded = await loadForImage(req, res);
+    if (!loaded) return;
+    const stored = await storePaymentMethodImage({
+      method: loaded.method, images: parsed, modifiedBy: resolvePlatformActor(req.superadminName),
+    });
+    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'base_payment_method', entityId: loaded.row.id,
+      previous: { image_url: loaded.row.image_url }, next: { image_url: stored.image_url },
+    });
+    res.json(await loadOne(loaded.row.id, resolveLocale(req)));
+  } catch (err) { next(err); }
+});
+
+platformBasePaymentMethodsRouter.delete('/:id/image', requireSuperadmin, async (req, res, next) => {
+  try {
+    const loaded = await loadForImage(req, res);
+    if (!loaded) return;
+    await clearPaymentMethodImage({ method: loaded.method, modifiedBy: resolvePlatformActor(req.superadminName) });
+    recordAudit(req, {
+      action: 'update', entityType: 'base_payment_method', entityId: loaded.row.id,
+      previous: { image_url: loaded.row.image_url }, next: { image_url: null },
+    });
+    res.json(await loadOne(loaded.row.id, resolveLocale(req)));
+  } catch (err) { next(err); }
 });

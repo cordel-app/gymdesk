@@ -67,7 +67,7 @@
     "expand_sidebar": "Expandir menú lateral",
     "localization": "Hora y localización",
     "home": "Inicio",
-    "base_payment_methods": "Métodos de pago base"
+    "base_payment_methods": "Métodos de pago"
   },
   "dashboard": {
     "title": "Panel",
@@ -4926,8 +4926,8 @@
     "pending_view_all": "Ver los {count} en Pagos"
   },
   "base_payment_methods": {
-    "title": "Métodos de pago base",
-    "add": "+ Nuevo método de pago",
+    "title": "Métodos de pago",
+    "add": "+ Añadir método de pago",
     "empty": "No hay métodos de pago.",
     "search": "Buscar…",
     "col_name": "Nombre",
@@ -4951,6 +4951,14 @@
     "delete_confirm": "¿Eliminar \"{name}\"? Se conserva para el historial y ya no se podrá seleccionar.",
     "error_load": "No se pudieron cargar los métodos de pago.",
     "error_generic": "Algo salió mal.",
-    "error_required": "El código y un nombre en cada idioma son obligatorios."
+    "error_required": "El código y un nombre en cada idioma son obligatorios.",
+    "image": "Imagen",
+    "image_none": "Sin imagen",
+    "created_at": "Creado el",
+    "created_by": "Creado por",
+    "modified_at": "Modificado el",
+    "modified_by": "Modificado por",
+    "deleted_at": "Eliminado el",
+    "deleted_by": "Eliminado por"
   }
 }
