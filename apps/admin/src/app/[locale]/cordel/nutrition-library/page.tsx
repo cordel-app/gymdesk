@@ -447,7 +447,7 @@ export default function CordelNutritionLibraryPage() {
                     // The key is deterministic, so a replacement reuses the
                     // URL — `modified_at` busts the browser's cache.
                     src={`${item.image_url}?v=${encodeURIComponent(item.modified_at ?? item.created_at)}`}
-                    alt={item.name}
+                    alt={item.display_name ?? item.name}
                     style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
                   />
                 ) : (
@@ -487,10 +487,10 @@ export default function CordelNutritionLibraryPage() {
   }
 
   const columns: Column<LibraryItem>[] = [
-    { header: t('label_name'), mobile: 'name', title: (item) => item.name, render: (item) => (
+    { header: t('label_name'), mobile: 'name', title: (item) => item.display_name ?? item.name, render: (item) => (
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           <FoodThumbnail imageUrl={item.image_url} version={item.modified_at ?? item.created_at} />
-          <strong>{item.name}</strong>
+          <strong>{item.display_name ?? item.name}</strong>
         </span>
       ) },
     {
