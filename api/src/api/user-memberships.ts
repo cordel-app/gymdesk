@@ -924,6 +924,14 @@ userMembershipsRouter.put('/:id', requireModuleWrite('PAYMENTS'), async (req, re
           req.params.id, gymId,
         ],
       );
+      // #1694: a cancelled assignment always carries an end date, whatever the
+      // body set (status flip, or an explicit ends_at: null on a cancelled row).
+      await tx.query(
+        `UPDATE user_memberships
+            SET ends_at = UTC_DATE(), modified_at = UTC_TIMESTAMP(), modified_by = ?
+          WHERE id = ? AND gym_id = ? AND status = 'cancelled' AND ends_at IS NULL`,
+        [resolveRequestActor(getTenantContext(req)), req.params.id, gymId],
+      );
       if (status && status !== current[0].status) {
         await recordStatusChange(tx, {
           gymId, userMembershipId: current[0].id, memberId: current[0].member_id,
@@ -1004,7 +1012,8 @@ userMembershipsRouter.delete('/:id', requireRole('admin'), async (req, res) => {
     await tx.query(
       `UPDATE user_memberships
           SET status = 'cancelled', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
-            modified_at = UTC_TIMESTAMP(), modified_by = ?
+              ends_at = COALESCE(ends_at, UTC_DATE()),
+              modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ?`,
       [resolveRequestActor(getTenantContext(req)), req.params.id, gymId],
     );
@@ -1570,6 +1579,7 @@ userMembershipsRouter.post('/:id/close', requireRole('admin'), async (req, res) 
     await tx.query(
       `UPDATE user_memberships
           SET status = 'cancelled', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
+              ends_at = COALESCE(ends_at, UTC_DATE()),
               modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ?`,
       [resolveRequestActor(getTenantContext(req)), prev.id, gymId],
