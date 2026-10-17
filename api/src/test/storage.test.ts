@@ -352,7 +352,7 @@ describe('initializeGymBucket()', () => {
     const { buildGymFolderPrefix, initializeGymBucket } = await import('../infra/storage');
     const { buildGymExerciseGenderImageKey, buildGymExerciseGenderVideoKey } = await import('../domain/exerciseGenderMedia');
     const { buildThemeFolderPrefix } = await import('../domain/themeMemberImages');
-    const { buildGymPersonalGoalImageKey } = await import('../domain/personalGoalImages');
+    const { GOAL_IMAGE_FOLDERS, buildNutritionGoalImageKey } = await import('../domain/nutritionGoalImages');
     const prefix = buildGymFolderPrefix('gym_123', 'Gym Name');
     await initializeGymBucket(prefix);
 
@@ -363,7 +363,7 @@ describe('initializeGymBucket()', () => {
     expect(markers).toContain(folderOf(buildGymExerciseGenderImageKey(prefix, 'ex_1', 'Squat', 'male')));
     expect(markers).toContain(folderOf(buildGymExerciseGenderVideoKey(prefix, 'ex_1', 'Squat', 'male')));
     expect(markers).toContain(folderOf(buildThemeFolderPrefix(prefix, 'theme_9', 'Dark Modern')));
-    expect(markers).toContain(folderOf(buildGymPersonalGoalImageKey(prefix, 'pg_1', 'Weight Loss')));
+    expect(markers).toContain(folderOf(buildNutritionGoalImageKey(prefix, 'pg_1', 'Weight Loss', GOAL_IMAGE_FOLDERS.personal)));
   });
 
   // ─── #735: the gym-level themes/ folder ────────────────────────────────────

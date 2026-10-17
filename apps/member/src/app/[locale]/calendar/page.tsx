@@ -132,7 +132,18 @@ export default function MemberCalendarPage() {
   const [selected, setSelected] = useState<ScheduleSession | null>(null);
   // #1637 — the activity image opens uncropped in place on click.
   const [imageExpanded, setImageExpanded] = useState(false);
-  useEffect(() => { setImageExpanded(false); }, [selected?.id]);
+  // #1746 — a swipe up on the sheet's drag handle expands the description.
+  const [sheetExpanded, setSheetExpanded] = useState(false);
+  useEffect(() => { setImageExpanded(false); setSheetExpanded(false); }, [selected?.id]);
+  const handleSwipeStartY = useRef<number | null>(null);
+  function handleSwipeEnd(clientY: number) {
+    const start = handleSwipeStartY.current;
+    handleSwipeStartY.current = null;
+    if (start === null) return;
+    const dy = clientY - start;
+    if (dy > SHEET_SWIPE_THRESHOLD) { setSelected(null); setActionMsg(null); }
+    else if (dy < -SHEET_SWIPE_THRESHOLD) setSheetExpanded(true);
+  }
   const [actionLoading, setActionLoading] = useState(false);
   const [confirmCancelOpen, setConfirmCancelOpen] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
@@ -509,10 +520,20 @@ export default function MemberCalendarPage() {
               width: '100%', background: memberTheme.calendarModalBackground,
               color: memberTheme.text,
               borderRadius: '16px 16px 0 0', padding: '20px 16px',
+              maxHeight: '90vh', overflowY: 'auto',
               boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
             }}
           >
-            <div style={{ width: 36, height: 4, background: memberTheme.inputBorder, borderRadius: 2, margin: '0 auto 16px' }} />
+            {/* #1746 — the handle is the swipe target: down closes, up expands. */}
+            <div
+              data-testid="sheet-handle"
+              onPointerDown={(e) => { handleSwipeStartY.current = e.clientY; e.currentTarget.setPointerCapture?.(e.pointerId); }}
+              onPointerUp={(e) => handleSwipeEnd(e.clientY)}
+              onPointerCancel={() => { handleSwipeStartY.current = null; }}
+              style={{ padding: '4px 0 16px', margin: '-4px 0 0', touchAction: 'none', cursor: 'grab' }}
+            >
+              <div style={{ width: 36, height: 4, background: memberTheme.inputBorder, borderRadius: 2, margin: '0 auto' }} />
+            </div>
             {selected.class_type_image_url && (
               <button
                 type="button"
@@ -552,7 +573,9 @@ export default function MemberCalendarPage() {
               <p
                 style={{
                   margin: '6px 0 0', fontSize: 13, color: memberTheme.textSecondary,
-                  display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden',
+                  ...(sheetExpanded
+                    ? { whiteSpace: 'pre-wrap' as const, overflowWrap: 'anywhere' as const }
+                    : { display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical' as const, overflow: 'hidden' }),
                 }}
               >
                 {selected.class_type_description.trim()}
@@ -663,6 +686,9 @@ export default function MemberCalendarPage() {
     </div>
   );
 }
+
+/** #1746 — minimum vertical travel (px) for a handle swipe to count. */
+const SHEET_SWIPE_THRESHOLD = 40;
 
 const OCCUPANCY_BADGE_COLORS: Record<OccupancyStatus, string> = {
   available:       memberTheme.statusInfo,
