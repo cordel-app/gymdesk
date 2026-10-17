@@ -37,7 +37,7 @@ import { withEventExecutionStatus, type EventExecutionInput } from '../domain/ev
 import { diffAuditedFields, SESSION_AUDITED_FIELDS } from '../domain/calendarEventChanges';
 import { effectiveEventImageUrl } from '../domain/calendarEventImages';
 import {
-  ACTIVITY_STORAGE_NOT_INITIALIZED, activityImageBodyParser, gymStorageFolderPrefix,
+  ACTIVITY_STORAGE_NOT_INITIALIZED, activityImageBodyParser, activityImageUploadRateLimit, gymStorageFolderPrefix,
   isActivityImageRefusal, parseActivityImageRequest,
 } from './activity-image-storage';
 import { clearEventImage, storeEventImage } from './calendar-event-image-storage';
@@ -1145,15 +1145,15 @@ async function readSessionRow(gymId: string, id: number | string) {
   return shapeRow(rows[0]);
 }
 
-classSessionsRouter.post('/:id/image', requireRole(...EVENT_IMAGE_ROLES), activityImageBodyParser, async (req, res, next) => {
+classSessionsRouter.post('/:id/image', requireRole(...EVENT_IMAGE_ROLES), activityImageUploadRateLimit, activityImageBodyParser, async (req, res, next) => {
   try {
-    const parsed = parseActivityImageRequest(req);
+    const parsed = await parseActivityImageRequest(req);
     if (isActivityImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
     const context = await loadEventForImage(req, res, true);
     if (!context) return;
     const { gymId, event } = context;
     const stored = await storeEventImage({
-      gymId, folderPrefix: context.folderPrefix as string, event, body: parsed,
+      gymId, folderPrefix: context.folderPrefix as string, event, images: parsed,
       modifiedBy: resolveRequestActor(getTenantContext(req)),
     });
     if (isActivityImageRefusal(stored)) return res.status(stored.status).json(stored.body);

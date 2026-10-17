@@ -10,7 +10,7 @@ describe('calendar event images (#1382)', () => {
   it('keys an event image under the gym activities folder, apart from the Activity\'s own key', () => {
     const eventKey = buildEventImageKey('gyms/g1-demo', 42, 'Yoga Flow');
     const activityKey = buildActivityImageKey('gyms/g1-demo', 7, 'Yoga Flow');
-    expect(eventKey).toBe('gyms/g1-demo/activities/event-42-Yoga-Flow.png');
+    expect(eventKey).toBe('gyms/g1-demo/activities/event-42-Yoga-Flow.webp');
     expect(eventKey).not.toBe(activityKey);
   });
 
