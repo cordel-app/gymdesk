@@ -16,7 +16,7 @@ export const DAY_STATUSES: DayStatus[] = ['completed', 'pending', 'scheduled', '
 export const NUTRITION_DAY_STATUSES: NutritionDayStatus[] = ['completed', 'partial', 'pending', 'scheduled', 'rest'];
 
 /**
- * - no workout scheduled that weekday → rest
+ * - no workout listed that day (scheduled for that weekday, or with no weekday) → rest
  * - every workout listed that day (scheduled for it, or with no weekday) fully logged that date → completed (a partly logged one never is)
  * - a day after today → scheduled
  * - otherwise (today or earlier, not fully done) → pending
@@ -28,10 +28,12 @@ export function dayStatus(
   workouts: DayWorkout[],
   logs: DayBlockLog[],
 ): DayStatus {
-  if (!workouts.some((w) => w.scheduled_weekday === weekday)) return 'rest';
   // The day card lists every workout with no weekday beside the scheduled ones
-  // (each with its own "mark done"), so a day is green only when those are done too.
+  // (each with its own "mark done"), so the indicator is derived from that same
+  // list (#1709): a day showing a workout is never a rest day, and it is green
+  // only when all of them are done.
   const scheduled = workouts.filter((w) => w.scheduled_weekday === weekday || w.scheduled_weekday === null);
+  if (scheduled.length === 0) return 'rest';
   const done = new Set(logs.filter((l) => String(l.logged_date).slice(0, 10) === date).map((l) => l.workout_block_id));
   const complete = (w: DayWorkout) => (w.blocks ?? []).length > 0 && (w.blocks ?? []).every((b) => done.has(b.id));
   if (scheduled.every(complete)) return 'completed';
