@@ -47,16 +47,35 @@ describe('a Draft assignment is created set-first', () => {
     expect(set).toMatchObject({ status: 'draft', owner_member_id: m });
   });
 
-  it('refuses a second Draft for a member who has a version in flight', async () => {
+  it('assigning again while a Draft is open replaces it: one Draft, the latest plan (#1707)', async () => {
     const m = await member();
     const first = await api('post', '/user-memberships')
       .send({ member_id: m, membership_plan_id: await plan('A'), starts_at: '2026-06-01' });
     expect(first.status).toBe(201);
+    const planB = await plan('B');
     const second = await api('post', '/user-memberships')
-      .send({ member_id: m, membership_plan_id: await plan('B'), starts_at: '2026-06-01' });
-    expect(second.status).toBe(409);
-    const { rows } = await db.query('SELECT id FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, m]);
+      .send({ member_id: m, membership_plan_id: planB, starts_at: '2026-06-01' });
+    expect(second.status).toBe(201);
+    const { rows } = await db.query<any>('SELECT id, membership_plan_id FROM user_memberships WHERE gym_id = ? AND member_id = ?', [gymId, m]);
     expect(rows).toHaveLength(1);
+    expect(Number(rows[0].membership_plan_id)).toBe(planB);
+    expect(await draftSetOf(first.body.id)).toBeNull();
+    const { rows: sets } = await db.query<any>(
+      `SELECT id FROM product_sets WHERE gym_id = ? AND owner_member_id = ? AND status IN ('draft','pending_payment')`, [gymId, m]);
+    expect(sets).toHaveLength(1);
+    const { rows: ev } = await db.query<any>('SELECT id FROM billing_events WHERE gym_id = ? AND member_id = ?', [gymId, m]);
+    expect(ev).toHaveLength(0);
+  });
+
+  it('still refuses a new Draft while a version is Pending Payment', async () => {
+    const m = await member();
+    const first = await api('post', '/user-memberships')
+      .send({ member_id: m, membership_plan_id: await plan('PP'), starts_at: '2026-06-01' });
+    const set = await draftSetOf(first.body.id);
+    await db.query(`UPDATE product_sets SET status = 'pending_payment' WHERE id = ?`, [set.id]);
+    const second = await api('post', '/user-memberships')
+      .send({ member_id: m, membership_plan_id: await plan('PQ'), starts_at: '2026-06-01' });
+    expect(second.status).toBe(409);
   });
 
   it('discarding the Draft takes its version with it, so another can be started', async () => {
