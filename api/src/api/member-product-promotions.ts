@@ -67,8 +67,30 @@ export async function loadPromotionOffers(
   memberId: number,
   products: readonly OfferableProduct[],
 ): Promise<Map<number, MemberProductPromotionOffer[]>> {
+  return (await loadPromotionOffersDetailed(gymId, memberId, products)).offers;
+}
+
+/** A Promotion that would be offered but for the new-members-only rule (#1655). */
+export interface SkippedPromotion {
+  promotion_id: number;
+  promotion_name: string;
+  reason: 'new_members_only';
+}
+
+/**
+ * `loadPromotionOffers()` plus, per Product, the Promotions that passed every
+ * other check and were hidden only because the Member is not a New Member
+ * (#927). The staff selector reports them so "No promotions available" can say
+ * why; they are never offers and can never be applied.
+ */
+export async function loadPromotionOffersDetailed(
+  gymId: string,
+  memberId: number,
+  products: readonly OfferableProduct[],
+): Promise<{ offers: Map<number, MemberProductPromotionOffer[]>; skipped: Map<number, SkippedPromotion[]> }> {
   const offers = new Map<number, MemberProductPromotionOffer[]>();
-  if (products.length === 0) return offers;
+  const skipped = new Map<number, SkippedPromotion[]>();
+  if (products.length === 0) return { offers, skipped };
 
   const byCategory = new Map<ProductBenefitCategory, OfferableProduct[]>();
   for (const product of products) {
@@ -98,7 +120,7 @@ export async function loadPromotionOffers(
     `${arms.join(' UNION ALL ')} ORDER BY promotion_name ASC, promotion_id ASC`,
     params,
   );
-  if (rows.length === 0) return offers;
+  if (rows.length === 0) return { offers, skipped };
 
   const newMemberOffers = rows.some((row: any) => !!row.only_applicable_for_new_members);
   const isNew = newMemberOffers ? await isNewMemberStatus(db, gymId, memberId) : false;
@@ -106,8 +128,8 @@ export async function loadPromotionOffers(
   const priceById = new Map(products.map((p) => [Number(p.id), p.price_incl_tax]));
   for (const row of rows as any[]) {
     if (!isOfferableBenefit(row.action, row.value)) continue;
-    if (row.only_applicable_for_new_members && !isNew) continue;
     const productId = Number(row.product_id);
+    const hiddenForNotNew = !!row.only_applicable_for_new_members && !isNew;
     const offer = shapePromotionOffer(row, row.category as ProductBenefitCategory, priceById.get(productId) ?? null);
     // An offer is shown only while it prices the Product **lower than its own
     // price, and above nothing**. Three cases are excluded, and each for its
@@ -138,9 +160,15 @@ export async function loadPromotionOffers(
     const final = offer.final_price_incl_tax;
     if (regular == null || final == null) continue;
     if (!(final > 0) || !(final < regular)) continue;
+    if (hiddenForNotNew) {
+      skipped.set(productId, [...(skipped.get(productId) ?? []), {
+        promotion_id: offer.promotion_id, promotion_name: offer.promotion_name, reason: 'new_members_only',
+      }]);
+      continue;
+    }
     offers.set(productId, [...(offers.get(productId) ?? []), offer]);
   }
-  return offers;
+  return { offers, skipped };
 }
 
 /**

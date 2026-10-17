@@ -399,6 +399,7 @@
     "add_product_none_available": "There are no products available to add for this member.",
     "add_product_promotions": "Promotions",
     "add_product_no_promotions": "No promotions available for this product.",
+    "add_product_promotions_new_members_only": "Not offered to this member: {names} — only for new members (no plan in the last 6 months).",
     "add_product_not_stackable": "cannot be combined",
     "promo_block_blocked_by_non_stackable": "Unavailable: a non-stackable promotion is selected.",
     "promo_block_non_stackable_with_selection": "Unavailable: this promotion cannot be combined with the current selection.",

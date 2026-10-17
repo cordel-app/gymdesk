@@ -400,6 +400,7 @@
     "add_product_none_available": "No hi ha productes disponibles per afegir a aquest membre.",
     "add_product_promotions": "Promocions",
     "add_product_no_promotions": "No hi ha promocions disponibles per a aquest producte.",
+    "add_product_promotions_new_members_only": "No s'ofereix a aquest membre: {names} — només per a membres nous (sense pla en els darrers 6 mesos).",
     "add_product_not_stackable": "no es pot combinar",
     "promo_block_blocked_by_non_stackable": "No disponible: hi ha una promoció no acumulable seleccionada.",
     "promo_block_non_stackable_with_selection": "No disponible: aquesta promoció no es pot combinar amb la selecció actual.",
