@@ -135,6 +135,14 @@ export const PLANS_FOLDER = 'plans';
  */
 export const NUTRITION_GOALS_FOLDER = 'nutrition_goals';
 
+/**
+ * `payment_method` — a Base Payment Method's image (#1702), platform-owned only:
+ * `cordel/payment_method/<id>-<name>.webp` plus its `-thumbnail.webp`. It is not
+ * a gym-root folder, so it is deliberately absent from `GYM_FOLDERS`.
+ * `domain/paymentMethodImages.ts` re-exports it.
+ */
+export const PAYMENT_METHOD_FOLDER = 'payment_method';
+
 // Folder-marker keys under `gyms/<gym_id>-<gym_name>/` (#417, #668). Parents are
 // written as well as leaves so the R2 browser shows the exact tree from the ticket.
 //
