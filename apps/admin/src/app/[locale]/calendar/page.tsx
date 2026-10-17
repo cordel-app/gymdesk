@@ -12,6 +12,7 @@ import { useGym } from '@/context/GymContext';
 import { useCenter } from '@/context/CenterContext';
 import { useToast } from '@/components/Toast';
 import { primaryBtnStyle } from '@/components/ui';
+import { CalendarSectionTabs } from '@/components/CalendarSectionTabs';
 import { useModuleAccess } from '@/lib/useModuleAccess';
 import { toDateTimeLocal, toDateLocal, EMPTY_FORM, type CalendarEventForm } from './CalendarEventModal';
 import { EventDetailsPanel, type EventMeta } from './EventDetailsPanel';
@@ -426,6 +427,7 @@ export default function CalendarPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 120px)', gap: 12 }}>
+      <div style={{ flexShrink: 0 }}><CalendarSectionTabs active="calendar" /></div>
       {/* Page header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <h1 style={{ margin: 0 }}>{t('title')}</h1>

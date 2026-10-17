@@ -10,6 +10,11 @@ export interface NavItem {
   children?: NavItem[];
   /** Draw a divider line above this item (visual grouping within a nav group). */
   separatorAbove?: boolean;
+  /**
+   * #1749: other pages that live inside this item (a tab of its page), so the
+   * item and its group read as active there without a second sidebar entry.
+   */
+  alsoActiveFor?: string[];
 }
 
 export interface NavGroup {
@@ -87,6 +92,8 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/calendar',
         labelKey: 'nav.calendar',
         featureKey: 'calendar.calendar',
+        // #1749: Activities is a tab of the Calendar page, not a sidebar entry.
+        alsoActiveFor: ['/{{locale}}/activity-types'],
       },
       {
         href: '/{{locale}}/calendar/operating-hours',
@@ -121,11 +128,6 @@ export const navigationGroups: NavGroup[] = [
         href: '/{{locale}}/spaces',
         labelKey: 'nav.spaces',
         featureKey: 'organization.spaces',
-      },
-      {
-        href: '/{{locale}}/activity-types',
-        labelKey: 'nav.activity_types',
-        featureKey: 'organization.activity_types',
       },
       {
         href: '/{{locale}}/professional-services',
