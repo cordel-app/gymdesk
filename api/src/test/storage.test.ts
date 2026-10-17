@@ -146,6 +146,8 @@ describe('initializeGymBucket()', () => {
       'gym_123-GymName/plans/',
       // #1623, appended last for the same reason: a Nutrition Goal's image.
       'gym_123-GymName/nutrition_goals/',
+      // #1711, appended last for the same reason: a Promotion's image.
+      'gym_123-GymName/promotions/',
     ]);
     for (const call of sendMock.mock.calls) {
       expect(call[0].input.Bucket).toBe('test-bucket');
@@ -170,7 +172,7 @@ describe('initializeGymBucket()', () => {
     return [...new Set(segments)];
   }
 
-  it('creates nutrition/, exercises/, themes/, goals/, members/, activities/, plans/ and nutrition_goals/ as the only first-level folders', async () => {
+  it('creates nutrition/, exercises/, themes/, goals/, members/, activities/, plans/, nutrition_goals/ and promotions/ as the only first-level folders', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
@@ -181,7 +183,7 @@ describe('initializeGymBucket()', () => {
     // #1374 appended `members/` the same way: a Member's profile image is its
     // writer from the day the folder appears.
     expect(firstLevelFolders('gyms/gym_123-GymName'))
-      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members', 'activities', 'plans', 'nutrition_goals']);
+      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members', 'activities', 'plans', 'nutrition_goals', 'promotions']);
   });
 
   // #1035 §7: `goals/` is the fourth folder in the ticket's target tree, and
@@ -239,12 +241,12 @@ describe('initializeGymBucket()', () => {
   });
 
   // #1623: `nutrition_goals/` holds a Nutrition Goal's image, appended last, no leaf.
-  it('creates nutrition_goals/ last, and with no leaf below it', async () => {
+  it('creates nutrition_goals/ after plans/, and with no leaf below it', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-1)).toBe('nutrition_goals');
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-2)).toBe('nutrition_goals');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/nutrition_goals/')))
       .toEqual(['gyms/gym_123-GymName/nutrition_goals/']);

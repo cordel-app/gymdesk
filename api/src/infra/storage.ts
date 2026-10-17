@@ -215,6 +215,9 @@ const GYM_FOLDERS = [
   // #1623: the gym-level `nutrition_goals/` root, holding a Nutrition Goal's
   // image. Appended last, with its writer (`POST /nutrition-goals/:id/image`).
   `${NUTRITION_GOALS_FOLDER}/`,
+  // #1711: the gym-level `promotions/` root, holding a Promotion's image.
+  // Appended last, with its writer (`POST /promotions/:id/image`).
+  `${PROMOTIONS_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;

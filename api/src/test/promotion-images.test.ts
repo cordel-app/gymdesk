@@ -154,7 +154,7 @@ beforeEach(async () => {
   mockAsNonSuperadmin();
   sendMock.mockReset();
   sendMock.mockResolvedValue({});
-  await db.query('UPDATE promotions SET image_url = NULL, image_thumbnail_url = NULL, name = ?, lifecycle_status = 'active' WHERE id = ?', [PROMOTION_NAME, promotionId]);
+  await db.query('UPDATE promotions SET image_url = NULL, image_thumbnail_url = NULL, name = ?, lifecycle_status = \'active\' WHERE id = ?', [PROMOTION_NAME, promotionId]);
   await db.query('UPDATE promotions SET image_url = NULL, image_thumbnail_url = NULL WHERE id IN (?, ?, ?)', [otherGymPromotionId, noBucketPromotionId, readOnlyPromotionId]);
 });
 
