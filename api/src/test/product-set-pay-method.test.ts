@@ -57,10 +57,14 @@ async function draft(memberId: number): Promise<number> {
 const statusOf = async (id: number) => (await db.query<any>('SELECT status FROM product_sets WHERE id = ?', [id])).rows[0].status;
 
 beforeAll(async () => {
+  process.env.MONEI_API_KEY = 'test-api-key';
+  process.env.MONEI_WEBHOOK_SECRET = 'test-webhook-secret';
   gymId = await createTestGym('Pay Method Gym');
   await createTestMembership(gymId, 'admin');
 });
 afterAll(async () => {
+  delete process.env.MONEI_API_KEY;
+  delete process.env.MONEI_WEBHOOK_SECRET;
   await db.query('DELETE FROM payment_requests WHERE gym_id = ?', [gymId]);
   await db.query('DELETE FROM billing_events WHERE gym_id = ?', [gymId]);
   await cleanupTestGyms();
