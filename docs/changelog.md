@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1704 (Base and Gym Exercises lists share one rendering: both draw the male and female thumbnails, each falling back on its own to the primary muscle's image of that sex (`effective_image_male_thumbnail_url` / `effective_image_female_thumbnail_url` from `resolveEffectiveImage()`), and both show primary muscles as chips through `ExercisePrimaryMuscles`. No behaviour, route or permission changed.)
 - **Done**: #1712 (Membership Plan cards show the plan's image at the top, through the same `CardSquareImage` the Exercise cards use; a plan with no image renders no image area. UI only, the list view and every card action are unchanged. Test: `plan-view-mode.test.ts`)
 - **Done**: #1713 (the Exercise cards no longer show the *View full details* button — Details stays in the `⋮` menu — and *Show all attributes* falls back to the theme's brand colour instead of a hard-coded lilac. UI only)
 - **Done**: #1724 (the Membership Fee Simulation section starts collapsed on both the Membership Plan card (existing `CollapsibleCard`) and the Assigned Plan card (chevron toggle in the section header); expanding shows the unchanged table. UI only, no API change)

@@ -20,18 +20,25 @@ export interface MuscleImageCandidate {
   name: string;
   image_url: string | null;
   image_thumbnail_url: string | null;
+  image_male_thumbnail_url?: string | null;
+  image_female_thumbnail_url?: string | null;
 }
 
 export interface EffectiveImage {
   effective_image_url: string | null;
   effective_image_thumbnail_url: string | null;
+  /** #1704: the thumbnail shown in the male / female position, each falling back on its own to the primary muscle's image of that sex. */
+  effective_image_male_thumbnail_url: string | null;
+  effective_image_female_thumbnail_url: string | null;
 }
 
 /** The principal muscles of exercise alias `alias` that have an image. */
 export const primaryMuscleImagesSql = (alias = 'e') => `
     (SELECT JSON_ARRAYAGG(JSON_OBJECT('id', pm.id, 'name', pm.name,
                                       'image_url', COALESCE(pm.image_male_url, pm.image_female_url),
-                                      'image_thumbnail_url', IF(pm.image_male_url IS NOT NULL, pm.image_male_url_thumbnail, pm.image_female_url_thumbnail)))
+                                      'image_thumbnail_url', IF(pm.image_male_url IS NOT NULL, pm.image_male_url_thumbnail, pm.image_female_url_thumbnail),
+                                      'image_male_thumbnail_url', pm.image_male_url_thumbnail,
+                                      'image_female_thumbnail_url', pm.image_female_url_thumbnail))
      FROM exercise_muscles pem
      JOIN muscles pm ON pm.id = pem.muscle_id
      WHERE pem.exercise_id = ${alias}.id AND pem.role = 'principal' AND COALESCE(pm.image_male_url, pm.image_female_url) IS NOT NULL) AS primary_muscle_images`;
@@ -48,18 +55,25 @@ export function resolveEffectiveImage(
   own: { image_male_url?: string | null; image_female_url?: string | null },
   muscles: unknown,
 ): EffectiveImage {
-  const ownUrl = own.image_male_url || own.image_female_url || null;
-  if (ownUrl) {
-    return { effective_image_url: ownUrl, effective_image_thumbnail_url: imageThumbnailUrlFor(ownUrl) };
-  }
   const sorted = asCandidates(muscles).sort((a, b) => {
     const byName = String(a.name).toLowerCase().localeCompare(String(b.name).toLowerCase());
     return byName !== 0 ? byName : Number(a.id) - Number(b.id);
   });
+  // #1704: each position falls back independently, to the first primary muscle carrying that sex's image.
+  const male = own.image_male_url ? imageThumbnailUrlFor(own.image_male_url)
+    : sorted.find((m) => m.image_male_thumbnail_url)?.image_male_thumbnail_url ?? null;
+  const female = own.image_female_url ? imageThumbnailUrlFor(own.image_female_url)
+    : sorted.find((m) => m.image_female_thumbnail_url)?.image_female_thumbnail_url ?? null;
+  const genders = { effective_image_male_thumbnail_url: male, effective_image_female_thumbnail_url: female };
+  const ownUrl = own.image_male_url || own.image_female_url || null;
+  if (ownUrl) {
+    return { effective_image_url: ownUrl, effective_image_thumbnail_url: imageThumbnailUrlFor(ownUrl), ...genders };
+  }
   const first = sorted[0];
   return {
     effective_image_url: first?.image_url ?? null,
     effective_image_thumbnail_url: first?.image_thumbnail_url ?? null,
+    ...genders,
   };
 }
 
