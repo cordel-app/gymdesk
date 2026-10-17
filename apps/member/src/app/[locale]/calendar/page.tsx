@@ -342,7 +342,7 @@ export default function MemberCalendarPage() {
           <button
             onClick={() => (showFilterPanel ? setShowFilterPanel(false) : openFilterPanel())}
             style={{
-              padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+              padding: '4px 12px', borderRadius: 8, fontSize: 12, cursor: 'pointer',
               border: `1px solid ${memberTheme.inputBorder}`,
               // #983 §5 — a control in the Calendar's own filter bar takes the
               // Calendar Buttons Colour, the setting FullCalendar's navigation

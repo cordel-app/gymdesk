@@ -484,6 +484,6 @@ const styles: Record<string, React.CSSProperties> = {
   blockDoneBtn: { ...primaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   hint: { color: memberTheme.textMuted, fontSize: 14, textAlign: 'center', margin: '20px 0' },
   tabs: { display: 'flex', gap: 8, margin: '12px 0', overflowX: 'auto' },
-  tab: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 999, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', opacity: 0.7 },
+  tab: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 8, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap', opacity: 0.7 },
   tabActive: { ...primaryButtonStyle, opacity: 1 },
 };
