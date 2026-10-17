@@ -4054,6 +4054,8 @@
     "event_image_remove": "Remove image",
     "event_image_removing": "Removing…",
     "event_image_help": "Applies to this event only. Without one, the Activity's image is shown.",
+    "event_image": "Image",
+    "event_image_help_standalone": "Applies to this event only. It is saved with the event.",
     "image_not_configured": "Cloudflare storage is not configured for this deployment, so images cannot be uploaded.",
     "image_not_initialized": "Cloudflare storage has not been initialized for this gym, so images cannot be uploaded.",
     "image_error_not_image": "The file is not an image.",

@@ -4040,6 +4040,8 @@
     "event_image_remove": "Quitar imagen",
     "event_image_removing": "Quitando…",
     "event_image_help": "Solo se aplica a este evento. Sin ella, se muestra la imagen de la actividad.",
+    "event_image": "Imagen",
+    "event_image_help_standalone": "Se aplica solo a este evento. Se guarda con el evento.",
     "image_not_configured": "El almacenamiento de Cloudflare no está configurado en este despliegue, por lo que no se pueden subir imágenes.",
     "image_not_initialized": "El almacenamiento de Cloudflare no se ha inicializado para este gimnasio, por lo que no se pueden subir imágenes.",
     "image_error_not_image": "El archivo no es una imagen.",

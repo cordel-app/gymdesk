@@ -1,10 +1,11 @@
 // The one place a Calendar Event's own image is written to and cleared from
-// Cloudflare R2 (#1382). `activity-image-storage.ts`'s arrangement one table
-// over (upload first, point the row at it second, sweep the previous object
-// last), and it reuses that file's request parsing and refusals rather than
-// restating them. It never touches `activity_types.image_url` nor another
-// event's object: the key is the event's own, and a sweep deletes only an
-// `event-` object under the gym's own `activities/` folder.
+// Cloudflare R2 (#1382, #1765). `activity-image-storage.ts`'s arrangement one
+// table over (upload both objects first, point the row at them second, sweep the
+// previous objects last), and it reuses that file's request parsing and refusals
+// rather than restating them. It never touches `activity_types.image_url` nor
+// another event's object: the key is the event's own, and a sweep deletes only
+// an object under the gym's own `calendar_events/` folder (or a pre-#1765
+// `activities/event-` one).
 
 import { db } from '../infra/db';
 import {
@@ -32,15 +33,19 @@ import type { ActivityImageRefusal } from './activity-image-storage';
 
 export interface EventImageRow {
   id: number;
-  activity_name: string;
+  /** The key's name: the event's title, else its Activity's name. */
+  name: string;
   image_url: string | null;
+  image_thumbnail_url: string | null;
 }
 
 async function sweepReplacedEventImage(
   folderPrefix: string | null,
   eventId: number | string,
   staleUrl: string | null,
+  staleThumbnailUrl: string | null,
   keepUrl: string | null,
+  keepThumbnailUrl: string | null,
 ): Promise<void> {
   if (!staleUrl || staleUrl === keepUrl) return;
   if (!isGymOwnedEventImageUrl(staleUrl, folderPrefix)) return;
@@ -49,9 +54,9 @@ async function sweepReplacedEventImage(
   const keepKey = keepUrl ? storageKeyFromObjectUrl(keepUrl) : null;
   if (keepKey && staleKey === keepKey) return;
   const keys = [staleKey];
-  const staleThumb = activityImageThumbnailUrl(staleUrl);
+  const staleThumb = staleThumbnailUrl ?? activityImageThumbnailUrl(staleUrl);
   const staleThumbKey = staleThumb ? storageKeyFromObjectUrl(staleThumb) : null;
-  const keepThumb = activityImageThumbnailUrl(keepUrl);
+  const keepThumb = keepThumbnailUrl ?? activityImageThumbnailUrl(keepUrl);
   const keepThumbKey = keepThumb ? storageKeyFromObjectUrl(keepThumb) : null;
   if (staleThumbKey && staleThumbKey !== keepThumbKey) keys.push(staleThumbKey);
   for (const key of keys) {
@@ -75,9 +80,10 @@ export async function storeEventImage(args: {
   modifiedBy: string | null;
 }): Promise<string | ActivityImageRefusal> {
   const { gymId, folderPrefix, event, images, modifiedBy } = args;
-  const key = buildEventImageKey(folderPrefix, event.id, event.activity_name);
-  const thumbnailKey = buildEventImageThumbnailKey(folderPrefix, event.id, event.activity_name);
+  const key = buildEventImageKey(folderPrefix, event.id, event.name);
+  const thumbnailKey = buildEventImageThumbnailKey(folderPrefix, event.id, event.name);
   const url = buildStorageObjectUrl(key) as string;
+  const thumbnailUrl = buildStorageObjectUrl(thumbnailKey) as string;
 
   let failingKey = key;
   try {
@@ -97,11 +103,11 @@ export async function storeEventImage(args: {
   }
 
   await db.query(
-    `UPDATE calendar_events SET image_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
+    `UPDATE calendar_events SET image_url = ?, image_thumbnail_url = ?, modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ?`,
-    [url, modifiedBy, event.id, gymId],
+    [url, thumbnailUrl, modifiedBy, event.id, gymId],
   );
-  await sweepReplacedEventImage(folderPrefix, event.id, event.image_url, url);
+  await sweepReplacedEventImage(folderPrefix, event.id, event.image_url, event.image_thumbnail_url, url, thumbnailUrl);
   return url;
 }
 
@@ -114,11 +120,11 @@ export async function clearEventImage(args: {
 }): Promise<void> {
   const { gymId, folderPrefix, event, modifiedBy } = args;
   await db.query(
-    `UPDATE calendar_events SET image_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
+    `UPDATE calendar_events SET image_url = NULL, image_thumbnail_url = NULL, modified_at = UTC_TIMESTAMP(), modified_by = ?
      WHERE id = ? AND gym_id = ?`,
     [modifiedBy, event.id, gymId],
   );
   if (isStorageConfigured()) {
-    await sweepReplacedEventImage(folderPrefix, event.id, event.image_url, null);
+    await sweepReplacedEventImage(folderPrefix, event.id, event.image_url, event.image_thumbnail_url, null, null);
   }
 }

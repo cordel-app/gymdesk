@@ -136,6 +136,8 @@ export const PLANS_FOLDER = 'plans';
 export const PROMOTIONS_FOLDER = 'promotions';
 /** #1715: a Product's image folder, directly under the gym root. */
 export const PRODUCTS_FOLDER = 'products';
+/** #1765: the gym-level `calendar_events/` root, holding a Calendar Event's own image. */
+export const CALENDAR_EVENTS_FOLDER = 'calendar_events';
 
 /**
  * `nutrition_goals` — a Nutrition Goal's image (#1623), under the gym's own
@@ -223,6 +225,9 @@ const GYM_FOLDERS = [
   // #1715: the gym-level `products/` root, holding a Product's image.
   // Appended last, with its writer (`POST /products/:id/image`).
   `${PRODUCTS_FOLDER}/`,
+  // #1765: the gym-level `calendar_events/` root, holding a Calendar Event's image.
+  // Appended last, with its writer (`POST /(class-sessions|calendar-events)/:id/image`).
+  `${CALENDAR_EVENTS_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;

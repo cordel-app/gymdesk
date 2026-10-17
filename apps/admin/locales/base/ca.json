@@ -4067,6 +4067,8 @@
     "event_image_remove": "Treu la imatge",
     "event_image_removing": "Treient…",
     "event_image_help": "Només s'aplica a aquest esdeveniment. Sense ella, es mostra la imatge de l'activitat.",
+    "event_image": "Imatge",
+    "event_image_help_standalone": "S'aplica només a aquest esdeveniment. Es desa amb l'esdeveniment.",
     "image_not_configured": "L'emmagatzematge de Cloudflare no està configurat en aquest desplegament, per tant no es poden pujar imatges.",
     "image_not_initialized": "L'emmagatzematge de Cloudflare no s'ha inicialitzat per a aquest gimnàs, per tant no es poden pujar imatges.",
     "image_error_not_image": "El fitxer no és una imatge.",
