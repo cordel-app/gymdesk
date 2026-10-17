@@ -106,12 +106,14 @@ function fmtMoney(v: string | number | null) {
  * (#797). Expanding a plan on the Member page reads it; editing the assignment
  * stays on the Assigned Plans page, which is where its own card lives.
  */
-export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false, viewAsMemberId, startEditing = false }: {
+export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = false, viewAsMemberId, startEditing = false, editToken = 0 }: {
   assignedPlanId: number;
   onChanged: () => void;
   embedded?: boolean;
   /** #1533: open straight into Edit mode — a Draft just created from the Member card. */
   startEditing?: boolean;
+  /** #1725: bumped by the host's own `⋮ → Edit` to open this body in Edit mode. */
+  editToken?: number;
   /** #1191: the Member whose context this is; a Linked one reads and never edits. */
   viewAsMemberId?: number;
 }) {
@@ -134,6 +136,9 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
 
   const [showDetails, setShowDetails] = useState(false);
   const [isEditing, setIsEditing] = useState(startEditing);
+  useEffect(() => {
+    if (editToken > 0) setIsEditing(true);
+  }, [editToken]);
   const [actionBusy, setActionBusy] = useState(false);
   const [closeStep, setCloseStep] = useState<'none' | 'confirm' | 'warn'>('none');
   const [closeWarnings, setCloseWarnings] = useState<string[]>([]);
@@ -377,7 +382,8 @@ export function AssignedPlanExpandedRow({ assignedPlanId, onChanged, embedded = 
 
   return (
     <div style={panel}>
-      {!hostEmbedded && (
+      {/* #1725: an embedded Draft is driven from the row's one `⋮` in the host. */}
+      {!embedded && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8, marginBottom: 16 }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 15 }}>{detail.plan_name ?? '—'}</div>
