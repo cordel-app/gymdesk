@@ -94,6 +94,8 @@ export const CALENDAR_COLOR_FIELDS = [
   'calendarNavButtonBackground', 'calendarNavButtonText',
 ];
 
+export const MOTIVATIONAL_SENTENCE_MAX = 200;
+
 export function validateTokens(tokens: any): string | null {
   if (!tokens || typeof tokens !== 'object') return 'tokens must be an object';
   const { colors, typography } = tokens;
@@ -101,6 +103,11 @@ export function validateTokens(tokens: any): string | null {
   // setting is not stored, so an empty or absent map is the normal case.
   const membersAppError = validateMembersApp(tokens.membersApp);
   if (membersAppError) return membersAppError;
+  // #1755 — optional free text; empty is stored as an absent key by the editor.
+  if (tokens.motivationalSentence !== undefined) {
+    if (typeof tokens.motivationalSentence !== 'string') return 'motivationalSentence must be a string';
+    if (tokens.motivationalSentence.length > MOTIVATIONAL_SENTENCE_MAX) return `motivationalSentence must be at most ${MOTIVATIONAL_SENTENCE_MAX} characters`;
+  }
   if (colors) {
     const hexFields = [
       'pageBackground', 'textColor', 'secondaryTextColor', 'mutedTextColor', 'sectionHeadingTextColor',
