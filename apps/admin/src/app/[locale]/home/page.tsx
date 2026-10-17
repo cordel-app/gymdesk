@@ -6,6 +6,9 @@ import { useLocale, useTranslations } from 'next-intl';
 import { useUser } from '@clerk/nextjs';
 import { useApiClient } from '@/lib/apiClient';
 import { useGym } from '@/context/GymContext';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
+import { canWriteFeature, canWriteModule } from '@/config/permissions';
+import { MemberCommunicationModal } from '../members/MemberCommunicationModal';
 import { useGymFormatSettings } from '@/lib/useGymFormatSettings';
 import { formatGymAmount, formatGymDate, formatGymTime } from '@/lib/gymFormat';
 import { cardSurfaceStyle } from '@/components/ui';
@@ -42,7 +45,16 @@ export default function HomePage() {
   const tm = useTranslations('members');
   const locale = useLocale();
   const { apiFetch } = useApiClient();
-  const { activeGymId } = useGym();
+  const { activeGymId, activeGym, isSuperadmin } = useGym();
+  const { flags: featureFlags } = useFeatureFlags();
+  const [welcomeFor, setWelcomeFor] = useState<{ id: number; name: string } | null>(null);
+  // Same gate as Members → ⋮ → Send communication, plus MEMBERS write because a
+  // sent welcome also stamps `welcomed_at` (PUT /members/:id/welcomed).
+  const canWelcomeHere = (isSuperadmin
+    || (activeGym?.role != null
+      && canWriteFeature(activeGym.role, 'MEMBERS', 'membership.staff_communications')
+      && canWriteModule(activeGym.role, 'MEMBERS')))
+    && featureFlags['membership.staff_communications'] !== false;
   const { user } = useUser();
   const fmt = useGymFormatSettings();
   const [date, setDate] = useState<string | null>(null);
@@ -165,7 +177,12 @@ export default function HomePage() {
                     </div>
                   )}
                 </div>
-                <Link href={taskHref(task.key, locale)} style={linkStyle}>{t(TASK_ACTION_KEY[task.key])}</Link>
+                {task.key === 'welcome_new_members' && canWelcomeHere && task.samples && task.samples.length > 0 ? (
+                  <button type="button" style={{ ...linkStyle, background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
+                    onClick={() => setWelcomeFor(task.samples![0])}>{t(TASK_ACTION_KEY[task.key])}</button>
+                ) : (
+                  <Link href={taskHref(task.key, locale)} style={linkStyle}>{t(TASK_ACTION_KEY[task.key])}</Link>
+                )}
               </div>
             ))}
           </section>
@@ -213,6 +230,19 @@ export default function HomePage() {
             )}
           </div>
         </>
+      )}
+      {welcomeFor && (
+        <MemberCommunicationModal
+          memberId={welcomeFor.id}
+          memberName={welcomeFor.name}
+          onClose={() => setWelcomeFor(null)}
+          onSent={async () => {
+            // The task counts `welcomed_at IS NULL`, so a sent welcome stamps it
+            // and the refetch drops this member (and only this member).
+            try { await apiFetch(`/members/${welcomeFor.id}/welcomed`, { method: 'PUT', body: JSON.stringify({ welcomed: true }) }); } catch { /* task simply stays */ }
+            load(date);
+          }}
+        />
       )}
     </div>
   );
