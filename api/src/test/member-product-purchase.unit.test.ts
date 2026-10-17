@@ -214,7 +214,7 @@ describe('what a purchase row keeps (#1121 Q2, #635 §16)', () => {
   // happens (stage 1's reason for the fragment existing at all).
   it('is read through the catalogue’s own predicate', () => {
     const loader = read(REPO, 'api', 'src', 'api', 'me-products.ts');
-    const purchase = loader.slice(loader.indexOf('export async function startProductPurchase'));
+    const purchase = loader.slice(loader.indexOf('async function resolvePurchase'));
     expect(purchase).toContain("memberProductCatalogueSql('p')");
     expect(purchase).toContain('memberProductCatalogueParams()');
   });
@@ -243,7 +243,8 @@ describe('what a purchase row keeps (#1121 Q2, #635 §16)', () => {
 
 describe('the vocabulary matches its CHECKs (migration 228)', () => {
   it('the statuses, the actor types and the source are the migration’s', () => {
-    expect(migration.STATUSES).toEqual([...MEMBER_PRODUCT_STATUSES]);
+    expect(migration.STATUSES).toEqual([...MEMBER_PRODUCT_STATUSES].filter((s) => s !== 'draft'));
+    expect(require('../infra/migrations/295_member_product_purchase_draft_status.js').STATUSES).toEqual([...MEMBER_PRODUCT_STATUSES]);
     expect(migration.ACTOR_TYPES).toEqual([...PURCHASE_ACTOR_TYPES]);
     expect(migration.PURCHASE_SOURCE).toBe(PRODUCT_PURCHASE_SOURCE);
     // The Members App mirrors the value (the two apps share no module), so a
