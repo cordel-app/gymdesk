@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Request, Response, Router } from 'express';
 import { resolveRequestActor } from '../domain/auditActor';
 import { db } from '../infra/db';
 import { getTenantContext, requireRole } from '../infra/tenantContext';
@@ -11,6 +11,13 @@ import {
 } from '../domain/productProfessionalServices';
 import { classifyProduct } from '../domain/productClassification';
 import { productFrequencyWriteError } from '../domain/productFrequency';
+import {
+  gymStorageFolderPrefix, isMemberImageRefusal, memberImageBodyParser, memberImageUploadRateLimit,
+  parseMemberImageRequest, STORAGE_NOT_INITIALIZED,
+} from './member-image-storage';
+import {
+  clearProductImage, migrateProductImageOnRename, PRODUCT_IMAGE_COLUMNS, storeProductImage,
+} from './product-image-storage';
 
 export const productsRouter = Router();
 
@@ -47,7 +54,9 @@ const SELECT = `
     gc.modified_at,
     gc.created_by,
     gc.modified_by,
-    gc.deleted_by
+    gc.deleted_by,
+    gc.image_url,
+    gc.image_thumbnail_url
   FROM products gc
   LEFT JOIN charge_types ct ON ct.id = gc.charge_type_id
   LEFT JOIN tax_rates tr ON tr.id = gc.tax_rate_id
@@ -305,8 +314,8 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
         `INSERT INTO products
            (gym_id, name, type, units, description, amount, currency, billing_frequency, status, enrollment_status,
             is_system, mandatory, one_time_purchase, notes, package_information, validity_days, tax_rate_id, tax_behavior,
-            created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            image_url, image_thumbnail_url, created_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           gymId,
           name,
@@ -332,6 +341,11 @@ productsRouter.post('/:id/duplicate', requireRole('admin'), async (req, res, nex
           orig.validity_days,
           orig.tax_rate_id,
           orig.tax_behavior,
+          // #1715: the copy inherits the source's image *references*. No object
+          // is copied or uploaded and nothing is processed — both rows point at
+          // the same assets, which the sweep therefore never deletes while shared.
+          orig.image_url ?? null,
+          orig.image_thumbnail_url ?? null,
           actor,
         ],
       );
@@ -489,6 +503,17 @@ productsRouter.put('/:id', requireRole('admin'), async (req, res, next) => {
     });
     if ((rowCount ?? 0) === 0) return res.status(404).json({ error: 'Not found' });
 
+    // #1715: the image key carries the product's name, so a rename moves it.
+    {
+      const { rows: imgRows } = await db.query(
+        `SELECT ${PRODUCT_IMAGE_COLUMNS} FROM products WHERE id = ? AND gym_id = ?`,
+        [req.params.id, gymId],
+      );
+      if (imgRows[0]?.image_url) {
+        await migrateProductImageOnRename(gymId, await gymStorageFolderPrefix(gymId), imgRows[0]);
+      }
+    }
+
     const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [req.params.id, gymId]);
     const psMap = await loadProfessionalServicesMap([Number(req.params.id)]);
     recordAudit(req, {
@@ -545,6 +570,71 @@ productsRouter.post('/:id/deactivate', requireRole('admin'), async (req, res, ne
     const psMap = await loadProfessionalServicesMap([rows[0].id]);
     recordAudit(req, { action: 'deactivate', entityType: 'product', entityId: String(req.params.id), entityName: rows[0]?.name ?? rows[0]?.charge_type_name });
     res.json(attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap)));
+  } catch (err) { next(err); }
+});
+
+// ─── Image (#1715) ────────────────────────────────────────────────────────────
+// `POST`/`DELETE /:id/image` are the only writers of `products.image_url` /
+// `image_thumbnail_url` (besides Duplicate, which inherits the references). They
+// touch nothing else of the product. A System product is a per-gym row, so it is
+// handled like any other. Processing and limits are the Member photo's.
+
+async function loadProductForImage(req: Request, res: Response, requirePrefix: boolean) {
+  const { gymId } = getTenantContext(req);
+  const { rows } = await db.query(
+    `SELECT ${PRODUCT_IMAGE_COLUMNS} FROM products WHERE id = ? AND gym_id = ? AND deleted_at IS NULL`,
+    [req.params.id, gymId],
+  );
+  const row = rows[0];
+  if (!row) { res.status(404).json({ error: 'Not found' }); return null; }
+  const folderPrefix = await gymStorageFolderPrefix(gymId);
+  if (!folderPrefix && requirePrefix) {
+    res.status(STORAGE_NOT_INITIALIZED.status).json(STORAGE_NOT_INITIALIZED.body);
+    return null;
+  }
+  return {
+    gymId, folderPrefix,
+    product: { id: row.id, name: row.name, image_url: row.image_url, image_thumbnail_url: row.image_thumbnail_url },
+  };
+}
+
+async function readProductForImageAnswer(gymId: string, id: number | string) {
+  const { rows } = await db.query(`${SELECT} WHERE gc.id = ? AND gc.gym_id = ?`, [id, gymId]);
+  const psMap = await loadProfessionalServicesMap([Number(id)]);
+  return attachBenefitCategory(attachProfessionalServices(attachPriceFields(rows[0]), psMap));
+}
+
+productsRouter.post('/:id/image', requireRole('admin'), memberImageUploadRateLimit, memberImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = await parseMemberImageRequest(req);
+    if (isMemberImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const context = await loadProductForImage(req, res, true);
+    if (!context) return;
+    const { gymId, product } = context;
+    const stored = await storeProductImage({
+      gymId, folderPrefix: context.folderPrefix as string, product, images: parsed,
+      modifiedBy: resolveRequestActor(getTenantContext(req)),
+    });
+    if (isMemberImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'product', entityId: String(product.id), entityName: product.name,
+      previous: { image_url: product.image_url }, next: { image_url: stored.image_url },
+    });
+    res.json(await readProductForImageAnswer(gymId, product.id));
+  } catch (err) { next(err); }
+});
+
+productsRouter.delete('/:id/image', requireRole('admin'), async (req, res, next) => {
+  try {
+    const context = await loadProductForImage(req, res, false);
+    if (!context) return;
+    const { gymId, folderPrefix, product } = context;
+    await clearProductImage({ gymId, folderPrefix, product, modifiedBy: resolveRequestActor(getTenantContext(req)) });
+    recordAudit(req, {
+      action: 'update', entityType: 'product', entityId: String(product.id), entityName: product.name,
+      previous: { image_url: product.image_url }, next: { image_url: null },
+    });
+    res.json(await readProductForImageAnswer(gymId, product.id));
   } catch (err) { next(err); }
 });
 
