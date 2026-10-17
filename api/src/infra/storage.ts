@@ -134,6 +134,8 @@ export const PLANS_FOLDER = 'plans';
  * `domain/promotionImages.ts` re-exports it.
  */
 export const PROMOTIONS_FOLDER = 'promotions';
+/** #1715: a Product's image folder, directly under the gym root. */
+export const PRODUCTS_FOLDER = 'products';
 
 /**
  * `nutrition_goals` — a Nutrition Goal's image (#1623), under the gym's own
@@ -218,6 +220,9 @@ const GYM_FOLDERS = [
   // #1711: the gym-level `promotions/` root, holding a Promotion's image.
   // Appended last, with its writer (`POST /promotions/:id/image`).
   `${PROMOTIONS_FOLDER}/`,
+  // #1715: the gym-level `products/` root, holding a Product's image.
+  // Appended last, with its writer (`POST /products/:id/image`).
+  `${PRODUCTS_FOLDER}/`,
 ];
 
 let cachedClient: S3Client | null = null;

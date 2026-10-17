@@ -477,6 +477,7 @@ Conventions in the entries: a **Membership Plan** is the gym's catalogue offer; 
 - **A Membership Plan can carry an image** (#1514). Staff (admins) upload one picture in the plan's Media section; the server stores a square 1080 × 1080 version and a 256 × 256 thumbnail in the gym's own `plans/` folder, replacing or removing the image cleans up the old files, and nothing about pricing, benefits, billing or assignments changes. Enforced in `api/src/domain/planImages.ts` and `api/src/api/plan-image-storage.ts`.
 
 - **A Promotion can carry an image** (#1711). Staff (admins) upload one picture in the promotion's Media section (also when creating it); the server stores a square 1080 × 1080 version and a 256 × 256 thumbnail in the gym's own `promotions/` folder, replacing or removing the image cleans up the old files, and nothing about eligibility, benefits, pricing or status changes. Enforced in `api/src/domain/promotionImages.ts` and `api/src/api/promotion-image-storage.ts`.
+- **A Product can carry an image** (#1715). Staff (admins) upload one picture in the product's card in Edit mode; the server stores a square 1080 × 1080 version and a 256 × 256 thumbnail in the gym's own `products/` folder. Duplicating a Product gives the copy the same image without copying any file, and an image still used by another Product is never overwritten or deleted. Nothing about price, tax, billing or availability changes. Enforced in `api/src/domain/productImages.ts` and `api/src/api/product-image-storage.ts`.
 
 ## Not in this file
 
