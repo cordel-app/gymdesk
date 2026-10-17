@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useApiClient } from '@/lib/apiClient';
@@ -335,6 +335,20 @@ export default function MembersPage() {
     setDefaultCenterId(centers.length === 1 ? centers[0].id : null);
     setModalOpen(true);
   }
+
+  // #1754 — Home's "Add Member" quick action lands here with `?add=1` and opens
+  // the same form the `+ Add Member` button does, once, when the page can write.
+  const addRequestedRef = useRef(
+    typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('add') === '1',
+  );
+  useEffect(() => {
+    if (!addRequestedRef.current || loading || !canWrite) return;
+    addRequestedRef.current = false;
+    openAdd();
+    const p = new URLSearchParams(window.location.search);
+    p.delete('add');
+    window.history.replaceState(null, '', `${window.location.pathname}${p.toString() ? `?${p}` : ''}`);
+  }); // eslint-disable-line react-hooks/exhaustive-deps
 
   function closeModal() {
     setModalOpen(false);

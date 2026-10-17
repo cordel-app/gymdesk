@@ -1,19 +1,39 @@
-// #1367 — Home dashboard: date navigation, task ordering/visibility, destinations,
+// #1367/#1754 — Home dashboard: quick actions, task ordering/visibility, destinations,
 // nav entry and locale coverage.
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { navigationGroups, filterNavGroups } from '@/config/navigationGroups';
-import { shiftDate, taskHref, orderedTasks, memberHref, TASK_ORDER, TASK_ACTION_KEY } from '@/lib/homeDashboard';
+import { nextHalfHour, quickActionHref, startClassHref, canStartClass, taskHref, orderedTasks, memberHref, TASK_ORDER, TASK_ACTION_KEY } from '@/lib/homeDashboard';
 
 const LOCALES = ['en', 'es', 'ca'].map((l) => JSON.parse(readFileSync(join(__dirname, '..', '..', 'locales', 'base', `${l}.json`), 'utf-8')));
 
-describe('date navigation', () => {
-  it('moves by whole days across month and year ends', () => {
-    expect(shiftDate('2026-10-11', 1)).toBe('2026-10-12');
-    expect(shiftDate('2026-10-01', -1)).toBe('2026-09-30');
-    expect(shiftDate('2026-12-31', 1)).toBe('2027-01-01');
-    expect(shiftDate('2026-03-29', 1)).toBe('2026-03-30');
+describe('nextHalfHour', () => {
+  const at = (h: number, m: number, sec = 0) => new Date(2026, 9, 17, h, m, sec);
+  it('picks the next HH:00/HH:30 strictly in the future', () => {
+    expect(nextHalfHour(at(10, 10))).toEqual(at(10, 30));
+    expect(nextHalfHour(at(10, 30))).toEqual(at(11, 0));
+    expect(nextHalfHour(at(10, 45))).toEqual(at(11, 0));
+    expect(nextHalfHour(at(10, 0))).toEqual(at(10, 30));
+    expect(nextHalfHour(at(10, 30, 5))).toEqual(at(11, 0));
+    expect(nextHalfHour(at(10, 29, 59))).toEqual(at(10, 30));
+  });
+  it('rolls into the next day', () => {
+    expect(nextHalfHour(at(23, 45))).toEqual(new Date(2026, 9, 18, 0, 0));
+  });
+});
+
+describe('quick actions', () => {
+  it('lead to the existing screens with the view state they need', () => {
+    expect(quickActionHref('add_member', 'en')).toBe('/en/members?add=1');
+    expect(quickActionHref('manage_member', 'es')).toBe('/es/members');
+    expect(quickActionHref('new_class', 'ca')).toBe('/ca/calendar?new=1');
+    expect(quickActionHref('review_payments', 'en')).toBe('/en/payments/billing-events?status=failed');
+  });
+  it('Start opens that class and only a scheduled one', () => {
+    expect(startClassHref(42, 'en')).toBe('/en/calendar?session=42');
+    expect(canStartClass('scheduled')).toBe(true);
+    for (const s of ['cancelled', 'completed', 'draft']) expect(canStartClass(s)).toBe(false);
   });
 });
 
