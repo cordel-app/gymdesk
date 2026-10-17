@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1709 (My Training's week card no longer shows a rest day for a date whose day card lists a workout: `dayStatus()` (`apps/member/src/lib/trainingDayStatus.ts`) now derives rest from the same list the card shows, i.e. workouts scheduled for that weekday plus weekday-less ones, so a weekday-less workout reads pending/scheduled/completed and only a day listing nothing is rest. Reverses #1554's "weekday-less alone is rest". UI only. Test: `training-day-status.test.ts`)
 - **Done**: #1707 (Assigning a Membership Plan while the member's Draft assignment is open replaces that Draft instead of answering `409 in_flight`; a Pending Payment version or a product-line Draft still refuses)
 - **Done**: #1710 (the Members App's My Goals page no longer shows the PAST GOALS section; the `past_goals` the API returns, goal tracking, progress and management are untouched. UI only)
 - **Done**: #1703 (the Member card's Membership Plan section no longer prints the "Draft plan" sub-label above an in-flight plan; the `membership_plans_draft` locale key is removed and the Active sub-label and status badge are unchanged. UI only)
