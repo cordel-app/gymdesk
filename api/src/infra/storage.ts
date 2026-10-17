@@ -85,7 +85,7 @@ export const EXERCISE_VIDEOS_STORAGE_FOLDER = `${EXERCISE_STORAGE_FOLDER}/videos
  * {@link initializeGymBucket} creates and the key an upload lands under can
  * never disagree in case — in R2 a case difference is a different key, so a
  * marker spelled `Goals/` would add a folder beside the one uploads populate
- * rather than rename it. `domain/personalGoalImages.ts` re-exports it, and that
+ * rather than rename it. `domain/nutritionGoalImages.ts` re-exports it, and that
  * module is the only place a goal-image key is built.
  *
  * Lowercase, like `themes` (#829) and the tree in `docs/cloudflare_structure.md`:
@@ -180,7 +180,7 @@ export const PAYMENT_METHOD_FOLDER = 'payment_method';
 // Every name here is the key builders' own constant and never a literal: the
 // strings come from `domain/exerciseImages.ts`, `domain/exerciseVideos.ts`,
 // `domain/baseNutritionImages.ts`, `domain/themeFolders.ts` and
-// `domain/personalGoalImages.ts`, because a marker that disagreed with a builder
+// `domain/nutritionGoalImages.ts`, because a marker that disagreed with a builder
 // in case alone would add a folder *beside* the one uploads populate rather than
 // rename it.
 const GYM_FOLDERS = [

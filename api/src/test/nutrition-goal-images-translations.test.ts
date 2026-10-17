@@ -270,12 +270,12 @@ describe('POST/DELETE /nutrition-goals/:id/image', () => {
   });
 });
 
-describe('Personal Goals keep their own image pipeline', () => {
-  it("has no WebP image route (the PNG one is Personal Goals' own); translations are #1719's", async () => {
+describe('Personal Goals share the WebP image pipeline (#1722)', () => {
+  it("reports translations (#1719) and a thumbnail reference that starts empty (#1722)", async () => {
     const created = await request.post('/personal-goals')
       .set('Authorization', TEST_AUTH_HEADER).set('x-gym-id', gymId).send({ name: `Personal ${RUN}` });
     expect(created.status).toBe(201);
     expect(created.body.translations).toEqual({});
-    expect(created.body.image_thumbnail_url).toBeUndefined();
+    expect(created.body.image_thumbnail_url).toBeNull();
   });
 });

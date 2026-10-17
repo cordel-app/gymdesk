@@ -60,33 +60,13 @@ export function isMeasurableGoalKind(kind: GoalKind): boolean {
 }
 
 /**
- * #1035 stage 2 — which kinds carry an **image** (`image_url`, migration 225),
- * mirroring `IMAGE_GOAL_KINDS` in `api/src/domain/goalLibrary.ts`. Exactly one
- * does: the ticket's bucket tree names `goals/{personal_goal_id}-{name}.png` and
- * nothing for a Nutrition Goal.
- *
- * `goal-library-ui.test.ts` asserts this mirror and the API's declaration agree,
- * so giving a second kind an image goes in **three** places: that module, the
- * column on its table, and this list. `GoalLibrarySection` asks it rather than
- * branching on the kind, so the read-only preview and the Edit control cannot
- * disagree about whether a kind has one — and for a kind that has none, neither
- * is rendered at all rather than rendered empty (#974: never a control the
- * route would ignore).
- */
-export const IMAGE_GOAL_KINDS: readonly GoalKind[] = ['personal'];
-
-export function goalKindHasImage(kind: GoalKind): boolean {
-  return IMAGE_GOAL_KINDS.includes(kind);
-}
-
-/**
  * #1623 — which kinds carry the **WebP** image pair (`image_url` +
  * `image_thumbnail_url`), mirroring `WEBP_IMAGE_GOAL_KINDS` in
- * `api/src/domain/goalLibrary.ts`. Exactly one does (Nutrition Goals); a Personal
- * Goal's image is the PNG one above. `goal-library-ui.test.ts` asserts the two
- * declarations agree.
+ * `api/src/domain/goalLibrary.ts`. Both kinds do since #1722 replaced the Personal
+ * Goal's PNG-only image with this pipeline. `goal-library-ui.test.ts` asserts
+ * the two declarations agree.
  */
-export const WEBP_IMAGE_GOAL_KINDS: readonly GoalKind[] = ['nutrition'];
+export const WEBP_IMAGE_GOAL_KINDS: readonly GoalKind[] = ['nutrition', 'personal'];
 
 export function goalKindHasWebpImage(kind: GoalKind): boolean {
   return WEBP_IMAGE_GOAL_KINDS.includes(kind);
@@ -158,15 +138,6 @@ export function truncateDescription(text: string | null | undefined, max = DESCR
 }
 
 /**
- * The ceiling the API enforces from the PNG's own IHDR — **at most** 512×512,
- * not an exact square (the answer on #1035 `Q3`). Mirrors
- * `PERSONAL_GOAL_IMAGE_MAX_SIZE` in `api/src/domain/personalGoalImages.ts`, so
- * the control can say what is wrong before the upload rather than instead of it;
- * the server's copy stays the enforcement point.
- */
-export const PERSONAL_GOAL_IMAGE_MAX_SIZE = 512;
-
-/**
  * The tabs the Nutrition Library is organised into (#947 §1/§2), in order. The
  * same declaration drives both libraries, so neither page can offer a different
  * set of tabs or order them differently — which is also why a tab id is either
@@ -231,16 +202,14 @@ export interface GoalRow {
   /** #1229 — `absolute` (a final value) or `relative` (a change from the baseline). */
   target_type?: 'absolute' | 'relative';
   /**
-   * #1035 stage 2 — the Cloudflare URL of this goal's image, or `null` for one
-   * that has none (which is every goal written before migration 225: nothing is
-   * generated or guessed, and there is no fallback to another image). A gym's own
-   * goal points at `<gym prefix>/goals/…` and a System one at `cordel/goals/…`,
-   * which the row's ownership decides and no surface has to. **Absent entirely
-   * for a kind that has no such column**, which is what `goalKindHasImage()` is
-   * asked before the preview or the control is rendered.
+   * The Cloudflare URL of this goal's 1080 × 1080 WebP image (#1722; a goal
+   * written before that may still hold a PNG), or `null` for one that has none:
+   * nothing is generated or guessed, and there is no fallback to another image.
+   * A gym's own goal points at `<gym prefix>/goals/…` and a System one at
+   * `cordel/goals/…`, which the row's ownership decides.
    */
   image_url?: string | null;
-  /** #1623 — the 256 × 256 WebP beside `image_url` (a Nutrition Goal's), for lists and compact UI. */
+  /** The 256 × 256 WebP beside `image_url`, for lists and compact UI; `null` on a legacy PNG goal. */
   image_thumbnail_url?: string | null;
   /**
    * #1623 — the name and description in the caller's language, with the base
