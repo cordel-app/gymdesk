@@ -19,8 +19,6 @@ import {
   primaryButtonStyle,
   secondaryButtonStyle,
   sectionCardStyle,
-  statusPillStyle,
-  statusTone,
 } from '@/lib/memberChrome';
 import {
   AssignableGoal,
@@ -43,8 +41,6 @@ import {
   formatGoalTarget,
   goalDisplayName,
   goalFormError,
-  goalStatusKey,
-  goalStatusToneKey,
   goalSummaryLine,
   toGoalCreatePayload,
   toGoalUpdatePayload,
@@ -98,7 +94,6 @@ export default function GoalsPage() {
   const { flags: featureFlags } = useFeatureFlags();
 
   const [goals, setGoals] = useState<MemberGoal[]>([]);
-  const [pastGoals, setPastGoals] = useState<MemberGoal[]>([]);
   const [available, setAvailable] = useState<AssignableGoal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -140,7 +135,6 @@ export default function GoalsPage() {
       apiFetch<{ goals: AssignableGoal[] }>('/me/personal-goals/available'),
     ]);
     setGoals(mine.goals ?? []);
-    setPastGoals(mine.past_goals ?? []);
     setAvailable(options.goals ?? []);
     const live = (mine.goals ?? []).map((goal) => goal.id);
     // The histories come with the page rather than with the first expand:
@@ -338,16 +332,6 @@ export default function GoalsPage() {
         onSelect: () => { setNotice(null); setFormError(null); setEditing({ kind: 'remove', goal }); },
       },
     ];
-  }
-
-  /** A past goal's one extra line: what it was last measured at, if ever. */
-  function pastSummary(goal: MemberGoal): string | null {
-    const latest = formatReadingValue(goal.latest_reading, goal.target_unit);
-    if (!latest) return null;
-    const progress = formatProgressPercent(goal.progress_percent);
-    return progress
-      ? t('goals.past_summary', { latest, progress })
-      : t('goals.past_summary_latest', { latest });
   }
 
   /**
@@ -568,37 +552,9 @@ export default function GoalsPage() {
         </>
       )}
 
-      {/* `Q4` — the goals that are over: removed, achieved or abandoned. Read
-          only: there is nothing to edit on a goal that has ended, and assigning
-          it again is `Add goal`, which creates a new one rather than reviving
-          this record (§12). */}
-      {pastGoals.length > 0 && (
-        <section style={{ ...styles.section, marginTop: 28 }}>
-          <h2 style={styles.h2}>{t('goals.past_title')}</h2>
-          {pastGoals.map((goal) => (
-            <article key={goal.id} style={{ ...styles.card, ...styles.pastCard }}>
-              <div style={styles.pastHeader}>
-                <p style={styles.goalName}>{nameOf(goal)}</p>
-                <span style={statusPillStyle(statusTone(goalStatusToneKey(goal)))}>
-                  {t(goalStatusKey(goal) as any)}
-                </span>
-              </div>
-              {/* A past goal is read-only and has no actions, so it keeps its
-                  compact summary — the target it was agreed at and, where it was
-                  measured, where it got to. The five-field header belongs to the
-                  card the member is still working on. */}
-              {formatGoalTarget(goal) && <p style={styles.goalTarget}>{formatGoalTarget(goal)}</p>}
-              {pastSummary(goal) && <p style={styles.goalTarget}>{pastSummary(goal)}</p>}
-              <p style={styles.goalDates}>
-                {[
-                  goal.start_date ? t('goals.started_on', { date: goal.start_date }) : null,
-                  goal.end_date ? t('goals.ended_on', { date: goal.end_date }) : null,
-                ].filter(Boolean).join(' · ')}
-              </p>
-            </article>
-          ))}
-        </section>
-      )}
+      {/* #1710 — past goals (removed, achieved, abandoned) are deliberately not
+          shown in the Members App. The API still returns `past_goals`; this is
+          a UI-only decision. */}
 
       {/* §3 / §21 — Add reading, and the same dialog for a new baseline. The
           unit is the goal's and is shown beside the input rather than asked
@@ -704,8 +660,6 @@ const styles: Record<string, React.CSSProperties> = {
   h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   section:    { marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 12 },
   card:       { ...sectionCardStyle, padding: '14px 18px' },
-  pastCard:   { opacity: 0.85 },
-  pastHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' },
   goalName:   { margin: 0, fontSize: 16, fontWeight: 700, color: memberTheme.text },
   goalTarget: { margin: '4px 0 0', fontSize: 14, color: memberTheme.textSecondary },
   goalNotes:  { margin: '6px 0 0', fontSize: 12, color: memberTheme.textMuted, fontStyle: 'italic' },

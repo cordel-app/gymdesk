@@ -62,7 +62,7 @@ async function closeAssignment(tx: Tx, gymId: string, id: number, endsAt: string
   if (!before[0]) return;
   await tx.query(
     `UPDATE user_memberships
-        SET status = 'cancelled', closed_at = UTC_TIMESTAMP(),
+        SET status = 'cancelled', closed_at = COALESCE(closed_at, UTC_TIMESTAMP()),
             ends_at = LEAST(COALESCE(ends_at, ?), ?),
             modified_at = UTC_TIMESTAMP(), modified_by = ?
       WHERE id = ? AND gym_id = ?`,
@@ -135,6 +135,7 @@ export async function projectActiveProductSet(
     await tx.query(
       `UPDATE user_memberships
           SET ends_at = ?, status = IF(status IN ('cancelled','expired'), status, 'active'),
+              purchased_at = IF(status IN ('cancelled','expired'), purchased_at, COALESCE(purchased_at, UTC_TIMESTAMP())),
               modified_at = UTC_TIMESTAMP(), modified_by = ?
         WHERE id = ? AND gym_id = ?`,
       [dateOnly(set.ends_at), actor, umId, gymId],
@@ -144,8 +145,8 @@ export async function projectActiveProductSet(
     const { insertId } = await tx.query(
       `INSERT INTO user_memberships
          (gym_id, member_id, membership_plan_id, starts_at, ends_at, status,
-          created_by)
-       VALUES (?, ?, ?, ?, ?, 'active', ?)`,
+          purchased_at, created_by)
+       VALUES (?, ?, ?, ?, ?, 'active', UTC_TIMESTAMP(), ?)`,
       [gymId, set.owner_member_id, set.membership_plan_id, startsAt, dateOnly(set.ends_at),
         set.created_by],
     );

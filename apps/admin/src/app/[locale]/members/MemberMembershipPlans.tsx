@@ -201,7 +201,8 @@ export function MemberMembershipPlans({
   return (
     <div>
       {/* ACTIVE — the ticket's §4 split, over the Assigned Plans page's table. */}
-      <div style={subLabel}>{t(visible.heading === 'draft' ? 'membership_plans_draft' : 'membership_plans_active')}</div>
+      {/* #1703: an in-flight (Draft) plan carries no sub-label; the status badge says it. */}
+      {visible.heading !== 'draft' && <div style={subLabel}>{t('membership_plans_active')}</div>}
       <AssignedPlansTable
         rows={visible.rows}
         loadingText={t('add_membership_plan_loading')}
@@ -248,7 +249,12 @@ export function MemberMembershipPlans({
               planOptions={selectable}
               initialMember={{ id: memberId, name: memberName, email: memberEmail }}
               onCancel={() => setAdding(false)}
-              onAssigned={() => { setAdding(false); onChanged(); }}
+              onAssigned={(created) => {
+                setAdding(false);
+                // #1692: open the card of the plan just assigned.
+                if (created) setNewDraftId(created.id);
+                onChanged();
+              }}
             />
           )}
         </>
