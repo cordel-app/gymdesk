@@ -90,6 +90,11 @@ export interface ThemeTokens {
    * inheritance stays dynamic instead of becoming a snapshot (§13, §19).
    */
   membersApp?: Record<string, string | number | null>;
+  /**
+   * #1755 — the gym's own motivational sentence (Theme → General). Optional
+   * free text, stored with the other tokens; absent means none is configured.
+   */
+  motivationalSentence?: string;
 }
 
 export interface AdvancedAttribute {

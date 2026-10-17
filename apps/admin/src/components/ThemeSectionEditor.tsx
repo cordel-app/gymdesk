@@ -82,6 +82,13 @@ interface ThemeBrandingEditorProps {
    */
   logoError?: boolean;
   autoFocusName?: boolean;
+  /**
+   * #1755 — the gym's Motivational Sentence. The field renders only when the
+   * page supplies the change handler (Custom Themes); the page owns where the
+   * value is stored (`tokens.motivationalSentence`).
+   */
+  motivationalSentence?: string;
+  onMotivationalSentenceChange?: (next: string) => void;
   /** Extra controls rendered under Name — the Base editor's Status select. */
   children?: React.ReactNode;
 }
@@ -99,6 +106,8 @@ export function ThemeBrandingEditor({
   storageBlock = null,
   logoError = false,
   autoFocusName = false,
+  motivationalSentence = '',
+  onMotivationalSentenceChange,
   children,
 }: ThemeBrandingEditorProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -135,6 +144,21 @@ export function ThemeBrandingEditor({
         rows={2}
         style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }}
       />
+
+      {onMotivationalSentenceChange && (
+        <>
+          <FormLabel>{t('label_motivational_sentence')}</FormLabel>
+          <p style={{ margin: '0 0 8px', fontSize: 12, color: '#888' }}>{t('motivational_sentence_hint')}</p>
+          <textarea
+            value={motivationalSentence}
+            disabled={readOnly}
+            maxLength={200}
+            onChange={(e) => onMotivationalSentenceChange(e.target.value)}
+            rows={2}
+            style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #ccc', fontSize: 14, boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }}
+          />
+        </>
+      )}
 
       {showLogo && (
         <>
