@@ -1653,11 +1653,18 @@ meRouter.post('/exercise-logs', requireRole('member'), requireFeatureEnabled('tr
          duration_seconds ?? null, Boolean(skipped)],
       );
       if (Array.isArray(sets)) {
+        // Sets continue the numbering of the exercise's earlier sets that day.
+        const { rows: prior } = await tx.query(
+          `SELECT COUNT(*) AS n FROM exercise_log_sets s JOIN exercise_logs l ON l.id = s.exercise_log_id
+           WHERE l.gym_id = ? AND l.member_id = ? AND l.exercise_id = ? AND l.logged_date = ? AND l.id <> ?`,
+          [gymId, memberId, exerciseId, logged_date, insertId],
+        );
+        const offset = Number(prior[0]?.n ?? 0);
         for (let i = 0; i < sets.length; i++) {
           const s = sets[i];
           await tx.query(
             'INSERT INTO exercise_log_sets (gym_id, exercise_log_id, set_number, weight, reps, rpe) VALUES (?, ?, ?, ?, ?, ?)',
-            [gymId, insertId, s.set_number ?? i + 1, s.weight ?? null, s.reps ?? null, s.rpe ?? null],
+            [gymId, insertId, s.set_number ?? offset + i + 1, s.weight ?? null, s.reps ?? null, s.rpe ?? null],
           );
         }
       }

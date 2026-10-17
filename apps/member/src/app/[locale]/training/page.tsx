@@ -181,7 +181,6 @@ export default function TrainingPage() {
           workout_exercise_id: we.id,
           logged_date: selectedDate,
           sets: [{
-            set_number: 1,
             weight: draft.weight ? parseFloat(draft.weight) : null,
             reps: parseInt(draft.reps, 10),
           }],
@@ -478,7 +477,7 @@ const styles: Record<string, React.CSSProperties> = {
   logTd: { padding: '4px', borderTop: `1px solid ${memberTheme.separator}` },
   exerciseMeta: { fontSize: 12, color: memberTheme.textMuted },
   expandBody: { margin: '10px 12px 12px', padding: 10, background: memberTheme.pageBackground, borderRadius: 8 },
-  miniInput: { ...inputStyle, width: 70, padding: '6px 8px', borderRadius: 4, fontSize: 14 },
+  miniInput: { ...inputStyle, width: 56, minWidth: 0, boxSizing: 'border-box', padding: '6px 8px', borderRadius: 4, fontSize: 14 },
   addSetBtn: { ...secondaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },
   blockDoneRow: { display: 'flex', gap: 8, alignItems: 'center', marginTop: 10 },
   blockDoneBtn: { ...primaryButtonStyle, padding: '8px 14px', borderRadius: 6, fontSize: 13, fontWeight: 600 },

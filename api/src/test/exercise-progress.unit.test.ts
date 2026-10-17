@@ -58,4 +58,13 @@ describe('exercise progress (#1224)', () => {
     expect(s.best_result).toBeNull();
     expect(s.max_weight).toBe(70);
   });
+
+  it('numbers the sets of a day sequentially across registrations (#1773)', () => {
+    const days = progressDays([
+      log('2026-10-01', [[60, 10]]), log('2026-10-01', [[65, 8]]), log('2026-10-01', [[70, 5]]),
+      log('2026-10-02', [[60, 10]]),
+    ], WEIGHT);
+    expect(days[0].sets.map((s) => s.set_number)).toEqual([1, 2, 3]);
+    expect(days[1].sets.map((s) => s.set_number)).toEqual([1]);
+  });
 });
