@@ -17,6 +17,7 @@ describe('calendar event images (#1382)', () => {
   });
 
   it('owns its own folder and the pre-#1765 activities/event- objects, nothing else', () => {
+    process.env.CLOUDFLARE_R2_PUBLIC_URL = 'https://x.example';
     const prefix = 'gyms/g1-demo';
     expect(isGymOwnedEventImageUrl('https://x.example/gyms/g1-demo/calendar_events/42-Yoga.webp', prefix)).toBe(true);
     expect(isGymOwnedEventImageUrl('https://x.example/gyms/g1-demo/activities/event-42-Yoga.webp', prefix)).toBe(true);

@@ -126,7 +126,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gym_123-GymName');
 
-    expect(sendMock).toHaveBeenCalledTimes(13);
+    expect(sendMock).toHaveBeenCalledTimes(14);
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key);
     expect(keys).toEqual([
       'gym_123-GymName/',
@@ -150,6 +150,8 @@ describe('initializeGymBucket()', () => {
       'gym_123-GymName/promotions/',
       // #1715, appended last for the same reason: a Product's image.
       'gym_123-GymName/products/',
+      // #1765, appended last for the same reason: a standalone Calendar Event's image.
+      'gym_123-GymName/calendar_events/',
     ]);
     for (const call of sendMock.mock.calls) {
       expect(call[0].input.Bucket).toBe('test-bucket');
@@ -248,7 +250,7 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-3)).toBe('nutrition_goals');
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-4)).toBe('nutrition_goals');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/nutrition_goals/')))
       .toEqual(['gyms/gym_123-GymName/nutrition_goals/']);
@@ -260,19 +262,19 @@ describe('initializeGymBucket()', () => {
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-2)).toBe('promotions');
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-3)).toBe('promotions');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/promotions/')))
       .toEqual(['gyms/gym_123-GymName/promotions/']);
   });
 
   // #1715: `products/` holds a Product's image, appended last, no leaf.
-  it('creates products/ last, and with no leaf below it', async () => {
+  it('creates products/ before calendar_events/, and with no leaf below it', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
 
-    expect(firstLevelFolders('gyms/gym_123-GymName').at(-1)).toBe('products');
+    expect(firstLevelFolders('gyms/gym_123-GymName').at(-2)).toBe('products');
     const keys = sendMock.mock.calls.map((call) => call[0].input.Key as string);
     expect(keys.filter((key) => key.startsWith('gyms/gym_123-GymName/products/')))
       .toEqual(['gyms/gym_123-GymName/products/']);
