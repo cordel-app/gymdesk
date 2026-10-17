@@ -222,6 +222,7 @@
   },
   "member_calendar": {
     "filter_all": "Todos",
+    "filter_activity_label": "Actividad",
     "filter_button": "Filtrar",
     "filter_center_label": "Centro",
     "filter_trainer_label": "Entrenador",
