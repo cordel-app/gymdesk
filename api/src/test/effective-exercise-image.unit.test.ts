@@ -19,7 +19,7 @@ describe('resolveEffectiveImage()', () => {
     expect(resolveEffectiveImage(
       { image_male_url: 'https://cdn/1-Press-male.webp', image_female_url: 'https://cdn/1-Press-female.webp' },
       [m(1, 'Chest', 'c', 'c-t')],
-    )).toEqual({
+    )).toMatchObject({
       effective_image_url: 'https://cdn/1-Press-male.webp',
       effective_image_thumbnail_url: 'https://cdn/1-Press-male-thumbnail.webp',
     });
@@ -27,7 +27,7 @@ describe('resolveEffectiveImage()', () => {
 
   it('uses the female image when there is no male one (no sex context)', () => {
     expect(resolveEffectiveImage({ image_male_url: null, image_female_url: 'https://cdn/1-Press-female.webp' }, null))
-      .toEqual({
+      .toMatchObject({
         effective_image_url: 'https://cdn/1-Press-female.webp',
         effective_image_thumbnail_url: 'https://cdn/1-Press-female-thumbnail.webp',
       });
@@ -35,23 +35,23 @@ describe('resolveEffectiveImage()', () => {
 
   it('has no thumbnail for an own image that is not one of ours', () => {
     expect(resolveEffectiveImage({ image_male_url: 'https://elsewhere/pic.png' }, null))
-      .toEqual({ effective_image_url: 'https://elsewhere/pic.png', effective_image_thumbnail_url: null });
+      .toMatchObject({ effective_image_url: 'https://elsewhere/pic.png', effective_image_thumbnail_url: null });
   });
 
   it('falls back to the alphabetically first primary muscle image, case-folded, id as tie-break', () => {
     const muscles = [m(3, 'quads', 'q', 'q-t'), m(2, 'Back', 'b', 'b-t'), m(1, 'back', 'b2', 'b2-t')];
     expect(resolveEffectiveImage({ image_male_url: null, image_female_url: null }, muscles))
-      .toEqual({ effective_image_url: 'b2', effective_image_thumbnail_url: 'b2-t' });
+      .toMatchObject({ effective_image_url: 'b2', effective_image_thumbnail_url: 'b2-t' });
   });
 
   it('accepts the JSON string MySQL returns and ignores muscles without an image', () => {
     const json = JSON.stringify([m(1, 'Abs', null), m(2, 'Biceps', 'bi', null)]);
-    expect(resolveEffectiveImage({}, json)).toEqual({ effective_image_url: 'bi', effective_image_thumbnail_url: null });
+    expect(resolveEffectiveImage({}, json)).toMatchObject({ effective_image_url: 'bi', effective_image_thumbnail_url: null });
   });
 
   it('is null when there is nothing to show', () => {
-    expect(resolveEffectiveImage({ image_male_url: null }, null)).toEqual(NONE);
-    expect(resolveEffectiveImage({ image_male_url: null }, 'not json')).toEqual(NONE);
+    expect(resolveEffectiveImage({ image_male_url: null }, null)).toMatchObject(NONE);
+    expect(resolveEffectiveImage({ image_male_url: null }, 'not json')).toMatchObject(NONE);
   });
 });
 
@@ -100,5 +100,31 @@ describe('SQL spelling', () => {
     expect(url).toMatch(/^COALESCE\(e\.image_female_url, e\.image_male_url, /);
     expect(url).toContain('COALESCE(pm.image_female_url, pm.image_male_url)');
     expect(effectiveImageThumbnailUrlSql('e', 'female')).toContain('COALESCE(e.image_female_url, e.image_male_url) IS NULL');
+  });
+});
+
+describe('per-position gender thumbnails (#1704)', () => {
+  const muscles = [{
+    id: 1, name: 'Chest', image_url: 'm', image_thumbnail_url: 'm-t',
+    image_male_thumbnail_url: 'chest-male-t', image_female_thumbnail_url: 'chest-female-t',
+  }];
+
+  it('falls back to the muscle image of the same sex, independently per position', () => {
+    expect(resolveEffectiveImage({ image_male_url: 'https://cdn/1-Press-male.webp', image_female_url: null }, muscles))
+      .toMatchObject({
+        effective_image_male_thumbnail_url: 'https://cdn/1-Press-male-thumbnail.webp',
+        effective_image_female_thumbnail_url: 'chest-female-t',
+      });
+  });
+
+  it('uses both muscle images when the exercise has none, and nothing when there is no source', () => {
+    expect(resolveEffectiveImage({}, muscles)).toMatchObject({
+      effective_image_male_thumbnail_url: 'chest-male-t',
+      effective_image_female_thumbnail_url: 'chest-female-t',
+    });
+    expect(resolveEffectiveImage({}, null)).toMatchObject({
+      effective_image_male_thumbnail_url: null,
+      effective_image_female_thumbnail_url: null,
+    });
   });
 });

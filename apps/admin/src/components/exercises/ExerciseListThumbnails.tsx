@@ -26,28 +26,20 @@ function Thumb({ src, label }: { src: string | null; label: string }) {
 /**
  * The male and female thumbnails shown before an exercise's name in the Base
  * Exercises and Exercises lists (#1561). Presentation only: it draws the two
- * derived thumbnails the API already reports and invents nothing.
+ * thumbnails the API reports. Since #1704 each position has already fallen back,
+ * on its own, to the primary muscle's image of that sex (server-side).
  */
 export function ExerciseListThumbnails({ exercise }: {
-  exercise: ExerciseGenderMediaValues & { effective_image_url?: string | null; effective_image_thumbnail_url?: string | null };
+  exercise: ExerciseGenderMediaValues & {
+    effective_image_male_thumbnail_url?: string | null;
+    effective_image_female_thumbnail_url?: string | null;
+  };
 }) {
   const t = useTranslations('exercises');
-  const own = exercise.image_male_thumbnail_url || exercise.image_female_thumbnail_url
-    || exercise.image_male_url || exercise.image_female_url;
-  const fallback = exercise.effective_image_thumbnail_url ?? exercise.effective_image_url ?? null;
-  // #1673: with no image of its own the list draws the API's effective image (a
-  // muscle's), the same one the card shows, instead of two empty circles.
-  if (!own && fallback) {
-    return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', flexShrink: 0 }}>
-        <Thumb src={fallback} label={t('card_no_image')} />
-      </span>
-    );
-  }
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
-      <Thumb src={exercise.image_male_thumbnail_url ?? null} label={t('gender_male')} />
-      <Thumb src={exercise.image_female_thumbnail_url ?? null} label={t('gender_female')} />
+      <Thumb src={exercise.effective_image_male_thumbnail_url ?? exercise.image_male_thumbnail_url ?? null} label={t('gender_male')} />
+      <Thumb src={exercise.effective_image_female_thumbnail_url ?? exercise.image_female_thumbnail_url ?? null} label={t('gender_female')} />
     </span>
   );
 }
