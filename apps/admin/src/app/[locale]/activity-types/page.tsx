@@ -23,6 +23,7 @@ import { StatusBadge } from '@/components/StatusBadge';
 import { StatusFilter } from '@/components/StatusFilter';
 import { FilterBar, FilterField, filterControlStyle } from '@/components/FilterBar';
 import { btnSmall, cardSurfaceStyle, primaryBtnSmall, primaryBtnStyle, readOnlyStyle } from '@/components/ui';
+import { CalendarSectionTabs } from '@/components/CalendarSectionTabs';
 import { MemberMultiSelect } from '../calendar/MemberMultiSelect';
 import type { MemberResult } from '../calendar/MemberSearchInput';
 import { WAITLIST_MODES } from '@/lib/waitlistModes';
@@ -1357,6 +1358,7 @@ export default function ActivityTypesPage() {
 
   return (
     <div>
+      <CalendarSectionTabs active="activities" />
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
         <div>

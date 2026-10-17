@@ -1,5 +1,6 @@
 {
   "nav": {
+    "calendar_tabs": "Calendar sections",
     "dashboard": "Dashboard",
     "members": "Members",
     "members_deleted": "Deleted Members",
