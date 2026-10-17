@@ -17,10 +17,12 @@ const MESSAGE_MAX = 2000;
  * decides whether to offer it and the API refuses anyone else. The Member is
  * the URL's (`memberId`), never part of the body.
  */
-export function MemberCommunicationModal({ memberId, memberName, onClose }: {
+export function MemberCommunicationModal({ memberId, memberName, onClose, onSent }: {
   memberId: number;
   memberName: string;
   onClose: () => void;
+  /** Called once, after the API accepted the communication (never on cancel or error). */
+  onSent?: () => void;
 }) {
   const t = useTranslations('members');
   const { apiFetch } = useApiClient();
@@ -44,6 +46,7 @@ export function MemberCommunicationModal({ memberId, memberName, onClose }: {
         body: JSON.stringify({ title: cleanTitle, message: cleanMessage }),
       });
       toast(t('communication_sent', { name: memberName }));
+      onSent?.();
       onClose();
     } catch (err: any) {
       setError(err?.message || t('communication_error'));
