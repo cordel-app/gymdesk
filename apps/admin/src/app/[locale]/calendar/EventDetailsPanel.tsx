@@ -7,6 +7,7 @@ import { useTranslations } from 'next-intl';
 import { FormLabel, FormInput } from '@/components/CrudModal';
 import { primaryActionColors } from '@/components/ui';
 import { toDateTimeLocal, type CalendarEventForm } from './CalendarEventModal';
+import { EventImageControl } from './EventImageControl';
 
 interface ActivityType {
   id: number; name: string; color: string | null;
@@ -28,15 +29,24 @@ export interface EventMeta {
   deleted_at: string | null;
 }
 
+/** #1765 — a standalone event's own image, as the API reports it. */
+export interface EventImageInfo {
+  image_url: string | null;
+  effective_image_url: string | null;
+  modified_at: string | null;
+}
+
 interface Props {
   open: boolean;
-  editing: { id: number; meta: EventMeta } | null;
+  editing: { id: number; meta: EventMeta; image: EventImageInfo } | null;
   initialForm: CalendarEventForm;
   activityTypes: ActivityType[];
   spaces: Space[];
   centers: Center[];
   trainers: Trainer[];
-  onSave: (form: CalendarEventForm) => Promise<void>;
+  onSave: (form: CalendarEventForm, image: Blob | null) => Promise<void>;
+  /** The event's image changed on the server (edit mode). */
+  onImageChanged: () => void;
   onDelete: () => Promise<void>;
   onClose: () => void;
   canWrite: boolean;
@@ -70,7 +80,7 @@ function formatDateTime(iso: string | null, s: GymFormatSettings): string | null
 
 export function EventDetailsPanel({
   open, editing, initialForm, activityTypes, spaces, centers, trainers,
-  onSave, onDelete, onClose, canWrite,
+  onSave, onImageChanged, onDelete, onClose, canWrite,
 }: Props) {
   const t = useTranslations('calendar');
   const gymFormat = useGymFormatSettings();
@@ -78,9 +88,11 @@ export function EventDetailsPanel({
   const [saving, setSaving] = useState(false);
   const [deleteState, setDeleteState] = useState<DeleteState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [stagedImage, setStagedImage] = useState<Blob | null>(null);
 
   useEffect(() => {
     if (open) {
+      setStagedImage(null);
       setForm(initialForm);
       setError(null);
       setSaving(false);
@@ -119,7 +131,7 @@ export function EventDetailsPanel({
       setError(t('error_end_before_start')); return;
     }
     setSaving(true); setError(null);
-    try { await onSave(form); }
+    try { await onSave(form, stagedImage); }
     catch (err: any) { setError(err.message ?? t('error_generic')); }
     finally { setSaving(false); }
   }
@@ -257,6 +269,23 @@ export function EventDetailsPanel({
             style={{ fontSize: 12, color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer' }}>
             {t('color_clear')}
           </button>
+        </div>
+
+        <FormLabel>{t('event_image')}</FormLabel>
+        <div style={{ marginBottom: 12 }}>
+          <EventImageControl
+            sessionId={editing ? editing.id : null}
+            basePath="/calendar-events"
+            helpKey="event_image_help_standalone"
+            effectiveUrl={editing ? editing.image.effective_image_url : null}
+            ownUrl={editing ? editing.image.image_url : null}
+            stamp={editing?.image.modified_at}
+            canEdit={canWrite && !busy}
+            onChanged={onImageChanged}
+            staged={stagedImage}
+            onStage={isNew ? setStagedImage : undefined}
+            label={(key) => t(key as any)}
+          />
         </div>
 
         <FormLabel>{t('event_description')}</FormLabel>

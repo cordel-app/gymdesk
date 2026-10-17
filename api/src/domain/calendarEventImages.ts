@@ -1,24 +1,28 @@
 // Where a **Calendar Event**'s own image lives and which objects a gym may delete
-// (#1382). Pure, like `activityImages.ts` (#1373), whose size, type and byte
-// validation it reuses rather than restates: an event image is an Activity image
-// scoped to one occurrence.
+// (#1382, moved by #1765). Pure, like `activityImages.ts` (#1373), whose request
+// validation the routes reuse: an event image is the shared WebP pipeline's
+// 1080 x 1080 master plus a 256 x 256 thumbnail, scoped to one event.
 //
-// The key sits under the gym's existing `activities/` folder, prefixed `event-`
-// so it can never collide with an Activity's own `<activity_id>-<name>.png`:
-// `<gym prefix>/activities/event-<event_id>-<sanitized activity name>.webp`.
-// No new first-level folder, so no new marker to write.
+// The keys sit under the gym's own `calendar_events/` folder:
+// `<gym prefix>/calendar_events/<event_id>-<sanitized name>[-thumbnail].webp`,
+// the name being the event's title (an Activity's name for a session without
+// one). Before #1765 they sat under `activities/event-<id>-…`; those objects
+// still render from their stored URL and are swept when their event's image is
+// replaced or removed.
 
-import { ACTIVITIES_FOLDER, storageKeyFromObjectUrl } from '../infra/storage';
+import { ACTIVITIES_FOLDER, CALENDAR_EVENTS_FOLDER, storageKeyFromObjectUrl } from '../infra/storage';
 import { sanitizeActivityImageName } from './activityImages';
 
-export { activityImageFolderKeys as eventImageFolderKeys } from './activityImages';
-
-export function buildEventImageKey(folderPrefix: string, eventId: number | string, activityName: string): string {
-  return `${folderPrefix}/${ACTIVITIES_FOLDER}/event-${eventId}-${sanitizeActivityImageName(activityName)}.webp`;
+export function eventImageFolderKeys(folderPrefix: string): string[] {
+  return [`${folderPrefix}/`, `${folderPrefix}/${CALENDAR_EVENTS_FOLDER}/`];
 }
 
-export function buildEventImageThumbnailKey(folderPrefix: string, eventId: number | string, activityName: string): string {
-  return `${folderPrefix}/${ACTIVITIES_FOLDER}/event-${eventId}-${sanitizeActivityImageName(activityName)}-thumbnail.webp`;
+export function buildEventImageKey(folderPrefix: string, eventId: number | string, eventName: string): string {
+  return `${folderPrefix}/${CALENDAR_EVENTS_FOLDER}/${eventId}-${sanitizeActivityImageName(eventName)}.webp`;
+}
+
+export function buildEventImageThumbnailKey(folderPrefix: string, eventId: number | string, eventName: string): string {
+  return `${folderPrefix}/${CALENDAR_EVENTS_FOLDER}/${eventId}-${sanitizeActivityImageName(eventName)}-thumbnail.webp`;
 }
 
 /** Whether `url` is an event-specific object **this gym** owns — never an Activity's own image. */
@@ -29,7 +33,9 @@ export function isGymOwnedEventImageUrl(
   if (!url || !folderPrefix) return false;
   const key = storageKeyFromObjectUrl(url);
   if (!key) return false;
-  return key.startsWith(`${folderPrefix}/${ACTIVITIES_FOLDER}/event-`);
+  return key.startsWith(`${folderPrefix}/${CALENDAR_EVENTS_FOLDER}/`)
+    // #1382's original location, still referenced by events whose image was never replaced.
+    || key.startsWith(`${folderPrefix}/${ACTIVITIES_FOLDER}/event-`);
 }
 
 /** The image an event shows: its own, else its Activity's, else none (the panel draws a placeholder). */

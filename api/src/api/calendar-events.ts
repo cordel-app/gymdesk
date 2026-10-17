@@ -36,6 +36,7 @@ import { isAssignableTrainer } from '../domain/trainerAssignment';
 import { withEventExecutionStatus, type EventExecutionInput } from '../domain/eventExecutionStatus';
 import { diffAuditedFields, SESSION_AUDITED_FIELDS } from '../domain/calendarEventChanges';
 import { effectiveEventImageUrl } from '../domain/calendarEventImages';
+import { activityImageThumbnailUrl } from '../domain/activityImages';
 import {
   ACTIVITY_STORAGE_NOT_INITIALIZED, activityImageBodyParser, activityImageUploadRateLimit, gymStorageFolderPrefix,
   isActivityImageRefusal, parseActivityImageRequest,
@@ -128,8 +129,13 @@ function withEligibleServices<T extends Record<string, any>>(row: T): T {
 }
 
 /** #1382: an event's own image, else its Activity's — resolved here once so no client re-decides it. */
-function withEffectiveImage<T extends { image_url?: string | null; activity_image_url?: string | null }>(row: T) {
-  return { ...row, effective_image_url: effectiveEventImageUrl(row.image_url, row.activity_image_url) };
+function withEffectiveImage<T extends { image_url?: string | null; image_thumbnail_url?: string | null; activity_image_url?: string | null }>(row: T) {
+  const effective = effectiveEventImageUrl(row.image_url, row.activity_image_url);
+  // #1765: the thumbnail follows whichever master wins (a pre-#1765 event image has no stored thumbnail).
+  const thumb = row.image_url
+    ? (row.image_thumbnail_url ?? activityImageThumbnailUrl(row.image_url))
+    : activityImageThumbnailUrl(row.activity_image_url);
+  return { ...row, effective_image_url: effective, effective_image_thumbnail_url: thumb ?? null };
 }
 
 function shapeRow<T extends EventExecutionInput>(row: T) {
@@ -1122,22 +1128,29 @@ classSessionsRouter.post('/:id/reactivate', requireModuleWrite('CALENDAR'), asyn
 
 const EVENT_IMAGE_ROLES = ['admin', 'front_desk', 'trainer_performance', 'trainer_perf_nutrition'] as const;
 
-async function loadEventForImage(req: Request, res: any, requirePrefix: boolean) {
+async function loadEventForImage(req: Request, res: any, requirePrefix: boolean, manual = false) {
   const { gymId } = getTenantContext(req);
+  // A session (`classSessionsRouter`) always has an Activity; a standalone event
+  // (`calendarEventsRouter`, #1765) never does -- the two routers are each other's 404.
   const { rows } = await db.query(
-    `SELECT ce.id, ce.image_url, at.name AS activity_name
-       FROM calendar_events ce JOIN activity_types at ON at.id = ce.activity_type_id
-      WHERE ce.id = ? AND ce.gym_id = ? AND ce.deleted_at IS NULL`,
+    `SELECT ce.id, ce.image_url, ce.image_thumbnail_url,
+            COALESCE(NULLIF(TRIM(ce.title), ''), at.name, 'event') AS name
+       FROM calendar_events ce LEFT JOIN activity_types at ON at.id = ce.activity_type_id
+      WHERE ce.id = ? AND ce.gym_id = ? AND ce.deleted_at IS NULL
+        AND ce.activity_type_id IS ${manual ? '' : 'NOT '}NULL`,
     [req.params.id, gymId],
   );
   const row = rows[0];
-  if (!row) { res.status(404).json({ error: 'Session not found' }); return null; }
+  if (!row) { res.status(404).json({ error: manual ? 'Calendar event not found' : 'Session not found' }); return null; }
   const folderPrefix = await gymStorageFolderPrefix(gymId);
   if (!folderPrefix && requirePrefix) {
     res.status(ACTIVITY_STORAGE_NOT_INITIALIZED.status).json(ACTIVITY_STORAGE_NOT_INITIALIZED.body);
     return null;
   }
-  return { gymId, folderPrefix, event: { id: row.id, activity_name: row.activity_name, image_url: row.image_url } };
+  return {
+    gymId, folderPrefix,
+    event: { id: row.id, name: row.name, image_url: row.image_url, image_thumbnail_url: row.image_thumbnail_url },
+  };
 }
 
 async function readSessionRow(gymId: string, id: number | string) {
@@ -1586,6 +1599,45 @@ calendarEventsRouter.put('/:id', requireModuleWrite('CALENDAR'), async (req, res
   } catch (e: any) {
     next(e);
   }
+});
+
+// ─── Standalone event image (#1765) ──────────────────────────────────────────
+// The same two writers as a session's (#1382), over the same storage module: the
+// only difference is which events each router may name.
+calendarEventsRouter.post('/:id/image', requireModuleWrite('CALENDAR'), activityImageUploadRateLimit, activityImageBodyParser, async (req, res, next) => {
+  try {
+    const parsed = await parseActivityImageRequest(req);
+    if (isActivityImageRefusal(parsed)) return res.status(parsed.status).json(parsed.body);
+    const context = await loadEventForImage(req, res, true, true);
+    if (!context) return;
+    const { gymId, event } = context;
+    const stored = await storeEventImage({
+      gymId, folderPrefix: context.folderPrefix as string, event, images: parsed,
+      modifiedBy: resolveRequestActor(getTenantContext(req)),
+    });
+    if (isActivityImageRefusal(stored)) return res.status(stored.status).json(stored.body);
+    recordAudit(req, {
+      action: 'update', entityType: 'calendar_event', entityId: String(event.id),
+      previous: { image_url: event.image_url }, next: { image_url: stored },
+    });
+    const { rows } = await db.query(`${EVENT_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`, [event.id, gymId]);
+    res.json(shapeRow(rows[0]));
+  } catch (err) { next(err); }
+});
+
+calendarEventsRouter.delete('/:id/image', requireModuleWrite('CALENDAR'), async (req, res, next) => {
+  try {
+    const context = await loadEventForImage(req, res, false, true);
+    if (!context) return;
+    const { gymId, folderPrefix, event } = context;
+    await clearEventImage({ gymId, folderPrefix, event, modifiedBy: resolveRequestActor(getTenantContext(req)) });
+    recordAudit(req, {
+      action: 'update', entityType: 'calendar_event', entityId: String(event.id),
+      previous: { image_url: event.image_url }, next: { image_url: null },
+    });
+    const { rows } = await db.query(`${EVENT_SELECT} WHERE ce.id = ? AND ce.gym_id = ?`, [event.id, gymId]);
+    res.json(shapeRow(rows[0]));
+  } catch (err) { next(err); }
 });
 
 calendarEventsRouter.delete('/:id', requireModuleWrite('CALENDAR'), async (req, res) => {

@@ -174,7 +174,7 @@ describe('initializeGymBucket()', () => {
     return [...new Set(segments)];
   }
 
-  it('creates nutrition/, exercises/, themes/, goals/, members/, activities/, plans/, nutrition_goals/, promotions/ and products/ as the only first-level folders', async () => {
+  it('creates nutrition/, exercises/, themes/, goals/, members/, activities/, plans/, nutrition_goals/, promotions/, products/ and calendar_events/ as the only first-level folders', async () => {
     setConfigured();
     const { initializeGymBucket } = await import('../infra/storage');
     await initializeGymBucket('gyms/gym_123-GymName');
@@ -185,7 +185,7 @@ describe('initializeGymBucket()', () => {
     // #1374 appended `members/` the same way: a Member's profile image is its
     // writer from the day the folder appears.
     expect(firstLevelFolders('gyms/gym_123-GymName'))
-      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members', 'activities', 'plans', 'nutrition_goals', 'promotions', 'products']);
+      .toEqual(['nutrition', 'exercises', 'themes', 'goals', 'members', 'activities', 'plans', 'nutrition_goals', 'promotions', 'products', 'calendar_events']);
   });
 
   // #1035 §7: `goals/` is the fourth folder in the ticket's target tree, and
