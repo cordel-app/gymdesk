@@ -207,6 +207,14 @@ describe('POST /personal-goals/:id/image — auth and ownership', () => {
   });
 
   it('returns 403 for a read-only role', async () => {
+    // The Clerk user is mocked as a superadmin by default, and `tenantContext`
+    // gives a superadmin full admin on any gym, so the `front_desk` membership
+    // only decides anything for an ordinary user. The prefix removes the 409
+    // (no bucket) as a second explanation.
+    mockAsNonSuperadmin();
+    await db.query('UPDATE gyms SET storage_folder_prefix = ? WHERE id = ?', [
+      `gyms/${frontDeskGymId}-PersonalGoalImagesFrontDesk`, frontDeskGymId,
+    ]);
     const res = await upload(`/personal-goals/${frontDeskGoalId}/image`, frontDeskGymId, await photo());
     expect(res.status).toBe(403);
     expect(putKeys()).toHaveLength(0);
