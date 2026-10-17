@@ -413,38 +413,19 @@ export default function MemberCalendarPage() {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto' }}>
-          <button
-            onClick={() => { setFilterAtId(''); }}
-            style={{
-              padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-              border: `1px solid ${memberTheme.inputBorder}`,
-              background: !filterAtId ? memberTheme.calendarButton : 'transparent',
-              color:      !filterAtId ? memberTheme.calendarButtonText : 'inherit',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {t('filter_all')}
-          </button>
+        {/* #1740 — one compact dropdown instead of a chip per activity; the API
+            list (`/me/activity-types`) already holds active activities only. */}
+        <select
+          aria-label={t('filter_activity_label')}
+          value={filterAtId}
+          onChange={(e) => setFilterAtId(e.target.value)}
+          style={{ ...modalInputStyle, flex: 1, minWidth: 0, width: 'auto' }}
+        >
+          <option value="">{t('filter_all')}</option>
           {activityTypes.map((at) => (
-            <button
-              key={at.id}
-              onClick={() => setFilterAtId(String(at.id))}
-              style={{
-                padding: '4px 12px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-                border: `1px solid ${memberTheme.inputBorder}`,
-                // The Activity Type's own colour stays its own (#975): only the
-                // chip for an Activity Type that configures none falls back to
-                // the Calendar Buttons Colour.
-                background: filterAtId === String(at.id) ? (at.color ?? memberTheme.calendarButton) : 'transparent',
-                color:      filterAtId === String(at.id) ? memberTheme.calendarButtonText : 'inherit',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {at.name}
-            </button>
+            <option key={at.id} value={String(at.id)}>{at.name}</option>
           ))}
-        </div>
+        </select>
       </div>
 
       {/* Calendar — `gd-calendar` scopes the theme's Calendar tokens to
