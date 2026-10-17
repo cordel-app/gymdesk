@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { memberTheme, sectionCardStyle } from '@/lib/memberChrome';
+import { memberTheme } from '@/lib/memberChrome';
 
 /**
  * #932 §4 — one image-plus-name row of My Nutrition, shared by the plan's
@@ -59,21 +59,27 @@ export function NutritionItemRow({ name, imageUrl = null, detail = null, actions
   );
 }
 
-/** #1602 — the grid both sections lay their cards out in (like My Training Plan). */
+/**
+ * #1700 — the grid both sections lay their cards out in: the same constrained
+ * card width as a My Training exercise card (`BlockExerciseCarousel`'s slide,
+ * 300px at most), so a card never stretches across the whole section.
+ */
 export const nutritionItemGridStyle: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+  gridTemplateColumns: 'repeat(auto-fill, minmax(min(240px, 100%), 300px))',
+  justifyContent: 'start',
   gap: 12,
   padding: '14px 0',
 };
 
+/** #1700 — the My Training exercise card's frame, image, text and action metrics. */
 const styles: Record<string, React.CSSProperties> = {
-  card:        { ...sectionCardStyle, overflow: 'hidden', display: 'flex', flexDirection: 'column' },
-  imageBox:    { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground },
-  image:       { width: '100%', height: '100%', objectFit: 'contain', display: 'block' },
+  card:        { padding: 0, overflow: 'hidden', borderRadius: 12, border: `1px solid ${memberTheme.separator}`, background: memberTheme.surface, display: 'flex', flexDirection: 'column', boxSizing: 'border-box', minWidth: 0 },
+  imageBox:    { aspectRatio: '1 / 1', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: memberTheme.pageBackground, overflow: 'hidden' },
+  image:       { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
   placeholder: { color: memberTheme.textMuted, fontSize: 12, textAlign: 'center', padding: '0 12px' },
-  body:        { padding: '10px 12px 12px', minWidth: 0 },
-  name:        { margin: 0, fontSize: 14, fontWeight: 700, color: memberTheme.text },
-  detail:      { margin: '2px 0 0', fontSize: 12, color: memberTheme.textMuted },
-  actions:     { padding: '0 12px 12px' },
+  body:        { padding: '8px 12px 0', minWidth: 0, display: 'flex', flexDirection: 'column', gap: 2 },
+  name:        { margin: 0, fontSize: 15, fontWeight: 600, color: memberTheme.text },
+  detail:      { margin: 0, fontSize: 12, color: memberTheme.textMuted },
+  actions:     { padding: '8px 12px 12px' },
 };

@@ -163,9 +163,9 @@ export default function NutritionPage() {
     return (
       <div style={styles.reqActions}>
         {level === 'partial' && <span style={{ ...statusPillStyle(statusTone('scheduled')), fontSize: 11, padding: '2px 8px' }}>{t('nutrition.partially_done_state')}</span>}
-        <button type="button" onClick={() => markRequirement(kind, id, 'done')} disabled={busy} style={styles.reqBtn}>{t('nutrition.mark_done')}</button>
+        <button type="button" onClick={() => markRequirement(kind, id, 'done')} disabled={busy} style={styles.cardBtn}>{t('nutrition.mark_done')}</button>
         {actions.showPartiallyDone && (
-          <button type="button" onClick={() => markRequirement(kind, id, 'partial')} disabled={busy} style={styles.reqBtn}>{t('nutrition.partially_done')}</button>
+          <button type="button" onClick={() => markRequirement(kind, id, 'partial')} disabled={busy} style={styles.cardBtn}>{t('nutrition.partially_done')}</button>
         )}
       </div>
     );
@@ -341,8 +341,9 @@ const styles: Record<string, React.CSSProperties> = {
   h2:         { margin: '0 0 10px', fontSize: 13, fontWeight: 700, color: memberTheme.title2, fontFamily: memberTheme.title2Font, textTransform: 'uppercase', letterSpacing: '0.05em' },
   card:       { ...sectionCardStyle, padding: '4px 18px' },
   mealHead:   { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-  reqActions: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' },
+  reqActions: { display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'stretch' },
   reqBtn:     { ...primaryButtonStyle, padding: '6px 12px', borderRadius: 8, fontSize: 13, fontWeight: 600 },
+  cardBtn:    { ...primaryButtonStyle, display: 'block', boxSizing: 'border-box', maxWidth: '100%', width: '100%', margin: 0, padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   markDoneBtn: { ...primaryButtonStyle, display: 'block', width: '100%', margin: '10px 0 0', padding: '10px 14px', borderRadius: 8, fontSize: 14, fontWeight: 600 },
   weekCard:   { ...sectionCardStyle, padding: 10, marginBottom: 20 },
   weekdayBar: { display: 'flex', justifyContent: 'space-between', gap: 4 },
