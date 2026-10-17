@@ -37,6 +37,8 @@ export interface NutritionLibraryItemRow {
   image_url: string | null;
   /** Per-locale names keyed by locale (#643). Absent locales fall back to `name`. */
   translations?: Record<string, string>;
+  /** Per-locale descriptions keyed by locale (#1720). Absent locales fall back to `description`. */
+  description_translations?: Record<string, string>;
   categories: NutritionItemTaxonomy[];
   qualities: NutritionItemTaxonomy[];
   created_at: string;
@@ -54,11 +56,12 @@ export interface NutritionItemFormValues {
   categoryIds: number[];
   qualityIds: number[];
   translations: Record<string, string>;
+  descriptionTranslations: Record<string, string>;
   imageUrl: string | null;
 }
 
 export function emptyNutritionItemForm(): NutritionItemFormValues {
-  return { name: '', description: '', categoryIds: [], qualityIds: [], translations: {}, imageUrl: null };
+  return { name: '', description: '', categoryIds: [], qualityIds: [], translations: {}, descriptionTranslations: {}, imageUrl: null };
 }
 
 /**
@@ -75,6 +78,7 @@ export function toNutritionItemFormValues(item: NutritionLibraryItemRow): Nutrit
     categoryIds: item.categories.map((c) => c.id),
     qualityIds: item.qualities.map((q) => q.id),
     translations: { ...(item.translations ?? {}) },
+    descriptionTranslations: { ...(item.description_translations ?? {}) },
     imageUrl: item.image_url,
   };
 }
@@ -138,4 +142,14 @@ export function taxonomyChipStyle(assigned: boolean): CSSProperties {
     fontWeight: 500,
     userSelect: 'none',
   };
+}
+
+/** The `description_translations` payload: trimmed, blank locales dropped (they fall back). */
+export function trimmedDescriptionTranslations(values: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [locale, text] of Object.entries(values)) {
+    const trimmed = text.trim();
+    if (trimmed) out[locale] = trimmed;
+  }
+  return out;
 }
