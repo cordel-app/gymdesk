@@ -34,4 +34,13 @@ describe('plan view mode (#1369)', () => {
     expect(src).toContain("viewMode === 'cards'");
     expect(src).toContain('member_count');
   });
+
+  // #1712 — the card shows the plan's image like an Exercise card, and nothing when there is none.
+  it('the plan card renders the shared square image only when the plan has one', () => {
+    const card = readFileSync(join(__dirname, '..', 'app', '[locale]', 'plans', 'PlanCard.tsx'), 'utf8');
+    expect(card).toContain("from '@/components/CardGrid'");
+    expect(card).toMatch(/plan\.imageUrl && \(\s*<CardSquareImage/);
+    const page = readFileSync(join(__dirname, '..', 'app', '[locale]', 'plans', 'page.tsx'), 'utf8');
+    expect(page).toContain('imageUrl: plan.image_url ?? null');
+  });
 });

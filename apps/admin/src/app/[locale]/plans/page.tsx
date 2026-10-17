@@ -1068,6 +1068,8 @@ export default function PlansPage() {
                     periodText: plan.billing_policy
                       ? billingFrequencyText(plan.billing_policy.recurring_billing_interval, plan.billing_policy.recurring_billing_unit)
                       : null,
+                    imageUrl: plan.image_url ?? null,
+                    imageVersion: plan.modified_at ?? null,
                     benefits: rows.map((r) => ({
                       key: `${r.product_id}`,
                       label: r.quantity > 1 ? `${r.quantity} × ${r.product_name}` : r.product_name,
