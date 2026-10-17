@@ -1127,12 +1127,6 @@ export default function MembershipPage() {
         </div>
       )}
 
-      {/* #1122 §7 — Past Membership Plans, directly under the current plan and
-          its own payment banner: it belongs to the Membership Plans group of
-          this page rather than beside the catalogue, and it is collapsed, so it
-          costs one line of vertical space before anything else is pushed down. */}
-      {renderPastPlans()}
-
       {/* #1121 §3 — Additional Products and Services, directly below the
           membership card. The payment banner and Start payment above it belong
           to that card (they are about the fee it charges), so the subsection
@@ -1257,6 +1251,10 @@ export default function MembershipPage() {
           )}
         </PaymentsSubcard>
       </PaymentsCard>
+
+      {/* #1775 — Past Membership Plans close the page: secondary history,
+          collapsed and muted, below everything the member acts on. */}
+      {renderPastPlans()}
 
       {renderDialogs()}
     </main>
