@@ -6,6 +6,7 @@ What the product does today and what is still open is `docs/roadmap.md`; this fi
 
 ## October 2026
 
+- **Done**: #1712 (Membership Plan cards show the plan's image at the top, through the same `CardSquareImage` the Exercise cards use; a plan with no image renders no image area. UI only, the list view and every card action are unchanged. Test: `plan-view-mode.test.ts`)
 - **Done**: #1700 (My Nutrition's goal and dietary-restriction cards now share My Training's exercise-card look: the 12px separator-bordered surface frame, the image filling the card edge to edge (`cover`), 15px/600 title and 12px detail, full-width 10px/14px primary action buttons stacked inside the card, and the same 300px-at-most card width via a start-aligned grid. UI only: completion actions, progress and data loading are untouched)
 - **Done**: #1709 (My Training's week card no longer shows a rest day for a date whose day card lists a workout: `dayStatus()` (`apps/member/src/lib/trainingDayStatus.ts`) now derives rest from the same list the card shows, i.e. workouts scheduled for that weekday plus weekday-less ones, so a weekday-less workout reads pending/scheduled/completed and only a day listing nothing is rest. Reverses #1554's "weekday-less alone is rest". UI only. Test: `training-day-status.test.ts`)
 - **Done**: #1707 (Assigning a Membership Plan while the member's Draft assignment is open replaces that Draft instead of answering `409 in_flight`; a Pending Payment version or a product-line Draft still refuses)
