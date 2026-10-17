@@ -111,16 +111,17 @@ export function ExerciseCard({
         )}
 
         {attributes && (
-          <div>
+          // Pinned to the card's bottom-left: the content column is a flex box and this block takes the free space above it.
+          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12 }}>
+            {showAttributes && <div style={{ alignSelf: 'stretch' }}>{attributes}</div>}
             <button
               type="button"
               aria-expanded={showAttributes}
               onClick={() => setShowAttributes((v) => !v)}
-              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: 'var(--gd-link, var(--brand))', textAlign: 'left' }}
+              style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 13, color: 'var(--gd-link, #6c63ff)', textAlign: 'left' }}
             >
               {showAttributes ? t('card_hide_attributes') : t('card_show_attributes')}
             </button>
-            {showAttributes && <div style={{ marginTop: 12 }}>{attributes}</div>}
           </div>
         )}
 
