@@ -19,8 +19,8 @@ import { latestEnrollmentStatusSql } from '../domain/memberEnrollment';
 import { isAwaitingAction, deriveBillingEventStatus } from '../domain/billingEventStatus';
 import { resolveMemberProfessionalServices } from '../domain/memberProfessionalServices';
 import {
-  dayWindow, weekWindow, nowSql, todayInZone, parseDashboardDate, resolveTimeZone,
-  homeAccess, visibleTasks, groupPendingPaymentMembers, PENDING_PAYMENT_MEMBER_LIMIT,
+  dayWindow, weekWindow, nowSql, todayInZone, resolveTimeZone, completedWeekWindows,
+  attendanceKpis, FOUR_WEEKS, homeAccess, visibleTasks, groupPendingPaymentMembers, PENDING_PAYMENT_MEMBER_LIMIT,
   type HomeTask, type OutstandingEventRow, type UtcWindow,
 } from '../domain/homeDashboard';
 import { memberPaymentStatusSql } from '../domain/memberPaymentStatus';
@@ -196,16 +196,40 @@ async function loadServicesNotScheduled(gymId: string): Promise<HomeTask> {
 }
 
 /**
- * GET /dashboard/home?date=YYYY-MM-DD
+ * Top Trainers and the weekly average (#1754): actual attendance only
+ * (`attendance_status = 'present'` on a still-booked row of a live session),
+ * over the last four complete gym-local weeks. Both are over the same set of
+ * members — the active ones — so the numerator and denominator agree.
+ */
+async function loadAttendanceKpis(gymId: string, today: string, zone: string, activeMembers: number) {
+  const weeks = completedWeekWindows(today, zone, FOUR_WEEKS);
+  const { rows } = await db.query<{ member_id: number; starts_at: Date | string }>(
+    `SELECT ceb.member_id, ce.starts_at
+       FROM calendar_event_bookings ceb
+       JOIN calendar_events ce ON ce.id = ceb.calendar_event_id AND ce.gym_id = ceb.gym_id
+       JOIN members m ON m.id = ceb.member_id AND m.gym_id = ceb.gym_id
+      WHERE ceb.gym_id = ? AND ceb.status = 'booked' AND ceb.attendance_status = 'present'
+        AND ce.deleted_at IS NULL AND ce.status <> 'cancelled' AND ce.activity_type_id IS NOT NULL
+        AND ce.starts_at >= ? AND ce.starts_at < ?
+        AND m.deleted_at IS NULL AND ${latestEnrollmentStatusSql('m')} = 'active'`,
+    [gymId, weeks[0].from, weeks[weeks.length - 1].to],
+  );
+  return attendanceKpis(
+    rows.map((r) => ({ member_id: Number(r.member_id), at: new Date(r.starts_at).toISOString().replace('T', ' ').slice(0, 19) })),
+    weeks,
+    activeMembers,
+  );
+}
+
+/**
+ * GET /dashboard/home — always today (#1754: no date navigation).
  */
 homeDashboardRouter.get('/home', async (req, res, next) => {
   const { gymId, role, isSuperadmin } = getTenantContext(req);
   try {
     const { zone, firstDay } = await loadGymClock(gymId);
     const today = todayInZone(zone);
-    const requested = req.query.date === undefined ? today : parseDashboardDate(req.query.date);
-    if (!requested) return res.status(400).json({ error: 'date must be a valid YYYY-MM-DD' });
-    const date = requested;
+    const date = today;
     const day = dayWindow(date, zone);
     const week = weekWindow(today, zone, firstDay);
     const now = nowSql();
@@ -224,6 +248,7 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
       ]);
       cards.active_members = { count: active, joined_this_week: joinedThisWeek };
       cards.new_members = { count: newOnDay };
+      cards.attendance = await loadAttendanceKpis(gymId, today, zone, active);
 
       const { rows: welcome } = await db.query<{ id: number; name: string }>(
         `SELECT m.id, m.name FROM members m
@@ -259,12 +284,15 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
 
     if (access.classes) {
       const { rows: classes } = await db.query<any>(
-        `SELECT ce.id, ce.starts_at, at.name AS name,
+        `SELECT ce.id, ce.starts_at, ce.ends_at, ce.status, at.name AS name,
+                gmt.name AS trainer_name, sp.name AS space_name,
                 COALESCE(ce.capacity, at.max_capacity) AS capacity,
                 (SELECT COUNT(*) FROM calendar_event_bookings b WHERE b.calendar_event_id = ce.id AND b.status = 'booked') AS booked_count,
                 (SELECT COUNT(*) FROM calendar_event_bookings b WHERE b.calendar_event_id = ce.id AND b.status = 'waitlisted') AS waitlist_count
            FROM calendar_events ce
            JOIN activity_types at ON at.id = ce.activity_type_id
+           LEFT JOIN gym_memberships gmt ON gmt.id = ce.trainer_membership_id
+           LEFT JOIN spaces sp ON sp.id = ce.space_id
           WHERE ${LIVE_SESSION} AND ce.starts_at >= ? AND ce.starts_at < ?
             AND EXISTS (SELECT 1 FROM calendar_event_bookings eb
                          WHERE eb.calendar_event_id = ce.id AND eb.status = 'booked')
@@ -272,7 +300,8 @@ homeDashboardRouter.get('/home', async (req, res, next) => {
         [gymId, day.from, day.to],
       );
       const list = classes.map((c: any) => ({
-        id: Number(c.id), name: c.name, starts_at: iso(c.starts_at),
+        id: Number(c.id), name: c.name, starts_at: iso(c.starts_at), ends_at: iso(c.ends_at), status: c.status,
+        trainer_name: c.trainer_name ?? null, space_name: c.space_name ?? null,
         capacity: c.capacity == null ? null : Number(c.capacity),
         booked_count: Number(c.booked_count), waitlist_count: Number(c.waitlist_count),
       }));
