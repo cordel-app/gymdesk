@@ -83,8 +83,9 @@ describe('translations on a gym Personal Goal', () => {
     const b = await createGoal({ name: `B ${RUN}` });
     expect(b.body.translations).toEqual({});
     await api('put', `/personal-goals/${b.body.id}`, gymId).send({ translations: { es: { name: `Dos ${RUN}` } } });
-    const reread = await api('get', `/personal-goals/${a.body.id}`, gymId, 'es');
-    expect(reread.body.display_name).toBe(`Uno ${RUN}`);
+    const reread = await api('get', `/personal-goals?search=${encodeURIComponent(`Uno ${RUN}`)}`, gymId, 'es');
+    const item = reread.body.items.find((g: any) => g.id === a.body.id);
+    expect(item.display_name).toBe(`Uno ${RUN}`);
   });
 
   it('refuses a bad payload without writing anything', async () => {
